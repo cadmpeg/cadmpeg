@@ -13,12 +13,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
+use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::native::{NativeNamespace, NativeRecord};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
-use super::{BodyColor, BodyPresentation, Entity, Synthesis};
+use super::{DirectoryColor, Entity, Presentation, Synthesis};
 use crate::entities::geometry::SourceObjectId;
 
 /// Native arenas whose records the semantic writer states from the neutral
@@ -110,7 +111,7 @@ const JOINED_LOOP: &str = "that are loops of more than one edge of shells the se
                            writes as trimmed surfaces, whose boundaries state the edges of a \
                            loop as one composite curve";
 const UNUSED_COLOR: &str =
-    "that are colour definitions no written body states with their colour and name";
+    "that are colour definitions no written body or face states with their colour and name";
 const COLOR_NUMBER: &str = "that are colour definitions whose Directory colour number the \
                             semantic writer writes as 0";
 const DISPLAY_FIELDS: &str = "that are Directory line font, level, view, or line weight \
@@ -123,24 +124,28 @@ const SHEET_TOPOLOGY: &str = "that are vertex or edge lists of shells the semant
                               writes as trimmed surfaces, whose boundaries state no vertex or \
                               edge list";
 
-/// The colour and blank status a written body presentation states.
-#[derive(Clone, Copy)]
+/// The colour and blank status the Directory entry of a written entity
+/// states, and the body and the face whose colour it states.
 pub(super) struct Presented {
     color: Option<Color>,
     visible: bool,
+    body: Option<BodyId>,
+    face: Option<FaceId>,
 }
 
 impl Presented {
-    pub(super) fn of(presentation: &BodyPresentation) -> Self {
+    pub(super) fn of(presentation: &Presentation) -> Self {
         Self {
             color: match presentation.color {
-                BodyColor::Standard(number) => {
+                DirectoryColor::Standard(number) => {
                     crate::entities::presentation::standard_color(number)
                 }
-                BodyColor::Custom(color) => Some(color),
-                BodyColor::Definition(_) => None,
+                DirectoryColor::Custom(color) => Color::new(color.r(), color.g(), color.b(), 1.0),
+                DirectoryColor::Definition(_) => None,
             },
             visible: presentation.visible != Some(false),
+            body: presentation.body.clone(),
+            face: presentation.face.clone(),
         }
     }
 }
@@ -1126,5 +1131,6 @@ fn degenerate_native_line(record: &NativeRecord) -> bool {
     endpoints[0] == endpoints[3] && endpoints[1] == endpoints[4] && endpoints[2] == endpoints[5]
 }
 
+pub(super) mod appearances;
 #[cfg(test)]
 mod tests;

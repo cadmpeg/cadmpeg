@@ -10,7 +10,7 @@ use std::path::Path;
 use cadmpeg_ir::codec::write::NativeDisposition;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::{Sources, ENTITY_VIEW_ARENAS};
+use super::{appearances, Sources, ENTITY_VIEW_ARENAS};
 use crate::IgesCodec;
 use readback::{Charged, Compared, Facts, GlobalFacts};
 
@@ -86,7 +86,10 @@ fn every_golden_declaration_reads_back_from_the_written_file() {
 /// rest of the fact is compared. The colour and blank status of a record
 /// decoded from an entity whose display attribute record is Dropped are that
 /// record's loss. Each Regenerated display attribute and colour definition
-/// record reads back with its values. The written Global section restates
+/// record reads back with its values. Each appearance and appearance binding
+/// the write states reads back with its values, the binding with the colour
+/// of its appearance and the record it binds; each it does not state is
+/// charged with its reason and does not read back. The written Global section restates
 /// the source Global cards, so they are Regenerated, and each source Global
 /// fact that does not read back is charged by its field name. Each view of
 /// an entity and each of its Directory and Parameter cards follows the
@@ -104,6 +107,7 @@ fn check(
         output,
         output_global,
         losses,
+        appearances,
     } = &checked;
     let namespace = source.native.namespace("iges").unwrap();
     let arenas = namespace.arenas();
@@ -248,6 +252,55 @@ fn check(
             }
         }
     }
+    for (arena, drops, compared, stated, written) in [
+        (
+            "appearances",
+            &appearances.appearances,
+            readback::appearance_values(source),
+            readback::appearance_values(source),
+            readback::appearance_values(output),
+        ),
+        (
+            "appearance_bindings",
+            &appearances.bindings,
+            readback::binding_values(source, &charged),
+            readback::binding_values(source, &Charged::default()),
+            readback::binding_values(output, &Charged::default()),
+        ),
+    ] {
+        let kept = compared
+            .iter()
+            .filter(|(id, _)| !drops.contains_key(*id))
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>();
+        for (id, value) in &compared {
+            let Some(reason) = drops.get(id) else {
+                if readback::tally(written.values(), value)
+                    < readback::tally(kept.iter().copied(), value)
+                {
+                    failures.push(format!(
+                        "{name} {arena} {id} written, does not read back: {value}"
+                    ));
+                }
+                continue;
+            };
+            let value = &stated[id];
+            if readback::tally(written.values(), value) >= readback::tally(stated.values(), value) {
+                failures.push(format!(
+                    "{name} {arena} {id} charged {reason:?}, reads back: {value}"
+                ));
+            }
+            let charges = |loss: &String| {
+                loss.contains(reason)
+                    && loss
+                        .rsplit_once(": ")
+                        .is_some_and(|(_, ids)| ids.split(", ").any(|charged| charged == id))
+            };
+            if !losses.iter().any(charges) {
+                failures.push(format!("{name} {arena} {id} has no loss for {reason:?}"));
+            }
+        }
+    }
     if let Some(source) = GlobalFacts::of(source) {
         match output_global {
             None => failures.push(format!(
@@ -343,20 +396,20 @@ const NAMED_BODY: &str = concat!(
     "S0000001G0000002D0000016P0000008                                        T      1\n",
 );
 
-/// The write states the body colour as a Type 314 with the source colour
-/// and name, and the body name as a Type 406 Form 15, so the Type 314, its
-/// colour definition, the Type 406, and the display attributes of the shell
-/// and the Type 314 are Regenerated and read back. The face colour is not
-/// written on the face.
+/// The write states the body and the face colour as one Type 314 with the
+/// source colour and name, and the body name as a Type 406 Form 15, so the
+/// Type 314, its colour definition, the Type 406, and the display attributes
+/// of the shell, the face, and the Type 314 are Regenerated and read back,
+/// and so are the appearance and both bindings.
 #[test]
 fn a_named_body_colour_and_a_body_name_read_back() {
     let mut failures = Vec::new();
     check("named_body", NAMED_BODY.as_bytes(), &mut failures).unwrap();
     assert!(failures.is_empty(), "{failures:#?}");
-    let native = readback::write_and_read_back(NAMED_BODY.as_bytes())
+    let checked = readback::write_and_read_back(NAMED_BODY.as_bytes())
         .ok()
-        .unwrap()
-        .native;
+        .unwrap();
+    let native = &checked.native;
     for (arena, id, disposition) in [
         (
             "entities",
@@ -386,11 +439,141 @@ fn a_named_body_colour_and_a_body_name_read_back() {
         (
             "display_attributes",
             "iges:presentation:display-attributes#D9",
-            NativeDisposition::Dropped,
+            NativeDisposition::Regenerated,
         ),
     ] {
         assert_eq!(native.disposition("iges", arena, id), disposition, "{id}");
     }
+    assert!(
+        checked.appearances.appearances.is_empty() && checked.appearances.bindings.is_empty(),
+        "{:?} {:?}",
+        checked.appearances.appearances,
+        checked.appearances.bindings
+    );
+    assert_eq!(checked.source.model.appearance_bindings.len(), 2);
+    assert_eq!(
+        checked
+            .output
+            .native
+            .namespace("iges")
+            .unwrap()
+            .arenas()
+            .get("entities")
+            .into_iter()
+            .flatten()
+            .filter(|record| super::entity_type(record) == Some(314))
+            .count(),
+        1
+    );
+    let global = crate::writer::source_global::source_global_bytes(&checked.output).unwrap();
+    assert!(
+        matches!(
+            crate::global::source_fields(&global).unwrap().get(19),
+            Some(crate::global::SourceField::Real(maximum)) if maximum.get() == 1.0
+        ),
+        "the Type 314 has no coordinates, so the Global maximum coordinate is the vertex at 1"
+    );
+}
+
+/// A trimmed surface whose one Directory colour field states standard colour
+/// 2, which binds both the sheet body and its face.
+const RED_TRIMMED_PLANE: &str = concat!(
+    "original fixture                                                        S      1\n",
+    "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMG      1\n",
+    "M,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;      G      2\n",
+    "     108       1       0       0       0       0       0       000010000D      1\n",
+    "     108       0       0       1       0                   PLANE       0D      2\n",
+    "     106       2       0       0       0       0       0       000010000D      3\n",
+    "     106       0       0       1      63                   MODEL       0D      4\n",
+    "     106       3       0       0       0       0       0       000010500D      5\n",
+    "     106       0       0       1      63                  PCURVE       0D      6\n",
+    "     142       4       0       0       0       0       0       000010000D      7\n",
+    "     142       0       0       1       0                 ON_SURF       0D      8\n",
+    "     144       5       0       0       0       0       0       000000000D      9\n",
+    "     144       0       2       1       0                 TRIMMED       0D     10\n",
+    "108,0,0,1,0,0,0,0,0,0;                                                 1P      1\n",
+    "106,1,5,0,0,0,1,0,1,1,0,1,0,0;                                         3P      2\n",
+    "106,1,5,0,0,0,1,0,1,1,0,1,0,0;                                         5P      3\n",
+    "142,0,1,5,3,3;                                                         7P      4\n",
+    "144,1,1,0,7;                                                           9P      5\n",
+    "S0000001G0000002D0000010P0000005                                        T      1\n",
+);
+
+/// The write states the colour of the sheet body and of its face in the
+/// Directory entries it writes, so the standard appearance and both bindings
+/// read back.
+#[test]
+fn a_trimmed_surface_colour_binds_the_body_and_the_face() {
+    let mut failures = Vec::new();
+    check(
+        "red_trimmed_plane",
+        RED_TRIMMED_PLANE.as_bytes(),
+        &mut failures,
+    )
+    .unwrap();
+    assert!(failures.is_empty(), "{failures:#?}");
+    let checked = readback::write_and_read_back(RED_TRIMMED_PLANE.as_bytes())
+        .ok()
+        .unwrap();
+    assert_eq!(
+        checked
+            .source
+            .model
+            .appearance_bindings
+            .iter()
+            .map(|binding| binding.id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "iges:model:appearance-binding#body-D9",
+            "iges:model:appearance-binding#face-D9"
+        ]
+    );
+    assert!(
+        checked.appearances.appearances.is_empty() && checked.appearances.bindings.is_empty(),
+        "{:?} {:?}",
+        checked.appearances.appearances,
+        checked.appearances.bindings
+    );
+}
+
+/// A free line whose Directory colour states standard colour 2.
+const RED_LINE: &str = concat!(
+    "original fixture                                                        S      1\n",
+    "1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMG      1\n",
+    "M,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;      G      2\n",
+    "     110       1       0       0       0       0       0       000000000D      1\n",
+    "     110       0       2       1       0                    LINE       0D      2\n",
+    "110,0,0,0,1,0,0;                                                       1P      1\n",
+    "S0000001G0000002D0000002P0000001                                        T      1\n",
+);
+
+/// The write states the colour of bodies and faces only, so it charges the
+/// binding of the line and the appearance that binding names, each with its
+/// reason.
+#[test]
+fn a_curve_colour_is_charged_with_its_appearance() {
+    let mut failures = Vec::new();
+    check("red_line", RED_LINE.as_bytes(), &mut failures).unwrap();
+    assert!(failures.is_empty(), "{failures:#?}");
+    let checked = readback::write_and_read_back(RED_LINE.as_bytes())
+        .ok()
+        .unwrap();
+    let bindings = checked
+        .source
+        .model
+        .appearance_bindings
+        .iter()
+        .map(|binding| (binding.id.as_str().to_owned(), appearances::BINDING_TARGET))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(checked.appearances.bindings, bindings);
+    assert_eq!(
+        checked.appearances.appearances,
+        BTreeMap::from([(
+            "iges:appearance:standard#2".to_owned(),
+            appearances::APPEARANCE_UNUSED
+        )])
+    );
 }
 
 /// A point or vertex the decoder derives at an end of a curve states that

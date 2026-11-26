@@ -9,6 +9,7 @@ use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
 use crate::global::SourceField;
+use crate::writer::dispositions::appearances::AppearanceDrops;
 use crate::{IgesCodec, IgesVersion};
 
 /// The geometry arenas whose records are facts an entity states.
@@ -64,6 +65,8 @@ pub(super) struct Checked {
     pub(super) output_global: Option<GlobalFacts>,
     /// The message of each loss the write charges.
     pub(super) losses: Vec<String>,
+    /// The appearances and appearance bindings the write does not state.
+    pub(super) appearances: AppearanceDrops,
 }
 
 fn decode(file: &[u8]) -> Option<CadIr> {
@@ -83,6 +86,7 @@ pub(super) fn write_and_read_back(file: &[u8]) -> Result<Checked, &'static str> 
     let (synthesis, native) =
         crate::writer::target::synthesis_and_dispositions(&recovered.document, IgesVersion::V5_3)
             .map_err(|_| "write")?;
+    let appearances = AppearanceDrops::of(&recovered.document, &synthesis);
     let output = decode(&synthesis.bytes).expect("the written file decodes");
     let output_global = GlobalFacts::of(&output);
     Ok(Checked {
@@ -95,6 +99,7 @@ pub(super) fn write_and_read_back(file: &[u8]) -> Result<Checked, &'static str> 
             .into_iter()
             .map(|loss| loss.message)
             .collect(),
+        appearances,
     })
 }
 
@@ -195,14 +200,7 @@ pub(super) struct Facts {
 impl Facts {
     pub(super) fn of(ir: &CadIr, charged: &Charged) -> Self {
         let geometry = serde_json::to_value(&ir.geometry).unwrap();
-        let mut records = BTreeMap::new();
-        for (arena, values) in geometry.as_object().unwrap() {
-            for record in values.as_array().into_iter().flatten() {
-                if let Some(id) = record.get("id").and_then(Value::as_str) {
-                    records.insert(id.to_owned(), (arena.as_str(), record));
-                }
-            }
-        }
+        let records = geometry_records(&geometry);
         let no_charge = Charged::default();
         let mut facts = BTreeMap::new();
         for (id, (arena, record)) in &records {
@@ -270,6 +268,19 @@ impl Facts {
     }
 }
 
+/// Each record of the serialized geometry `geometry`, with its arena, by id.
+fn geometry_records(geometry: &Value) -> BTreeMap<String, (&str, &Value)> {
+    let mut records = BTreeMap::new();
+    for (arena, values) in geometry.as_object().unwrap() {
+        for record in values.as_array().into_iter().flatten() {
+            if let Some(id) = record.get("id").and_then(Value::as_str) {
+                records.insert(id.to_owned(), (arena.as_str(), record));
+            }
+        }
+    }
+    records
+}
+
 /// Writes the records a geometry record names in place of their names.
 struct Inliner<'a> {
     records: &'a BTreeMap<String, (&'a str, &'a Value)>,
@@ -279,6 +290,31 @@ struct Inliner<'a> {
 }
 
 impl<'a> Inliner<'a> {
+    /// `value` with each geometry record id in it written as the record.
+    fn target(&mut self, value: &'a Value) -> Value {
+        match value {
+            Value::String(text) => match self.records.get_key_value(text) {
+                Some((id, (_, record))) => {
+                    self.named.push(id);
+                    let value = self.stated(record);
+                    self.named.pop();
+                    value
+                }
+                None => value.clone(),
+            },
+            Value::Object(fields) => Value::Object(
+                fields
+                    .iter()
+                    .map(|(key, field)| (key.clone(), self.target(field)))
+                    .collect(),
+            ),
+            Value::Array(items) => {
+                Value::Array(items.iter().map(|item| self.target(item)).collect())
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) => value.clone(),
+        }
+    }
+
     fn stated(&mut self, value: &'a Value) -> Value {
         match value {
             Value::Object(fields) => {
@@ -401,6 +437,63 @@ pub(super) fn color_values(ir: &CadIr) -> BTreeMap<String, Value> {
             (record.id().to_owned(), Value::Object(fields))
         })
         .collect()
+}
+
+/// The value of each appearance of a decode, by id, with no ids.
+pub(super) fn appearance_values(ir: &CadIr) -> BTreeMap<String, Value> {
+    ir.model
+        .appearances
+        .iter()
+        .map(|appearance| {
+            let mut value = serde_json::to_value(appearance).unwrap();
+            let fields = value.as_object_mut().unwrap();
+            fields.remove("id");
+            fields.remove("native_ref");
+            (appearance.id.as_str().to_owned(), value)
+        })
+        .collect()
+}
+
+/// The value of each appearance binding of a decode, by id: the colour of
+/// its appearance in place of the appearance, and the geometry record it
+/// binds written in place of its id, with the values `charged` charges
+/// replaced, and no ids.
+pub(super) fn binding_values(ir: &CadIr, charged: &Charged) -> BTreeMap<String, Value> {
+    let geometry = serde_json::to_value(&ir.geometry).unwrap();
+    let records = geometry_records(&geometry);
+    ir.model
+        .appearance_bindings
+        .iter()
+        .map(|binding| {
+            let mut value = serde_json::to_value(binding).unwrap();
+            let fields = value.as_object_mut().unwrap();
+            fields.remove("id");
+            fields.remove("native_ref");
+            let color = ir
+                .model
+                .appearances
+                .iter()
+                .find(|appearance| appearance.id == binding.appearance)
+                .and_then(|appearance| appearance.base_color);
+            fields.insert(
+                "appearance".to_owned(),
+                serde_json::to_value(color).unwrap(),
+            );
+            let target = fields.remove("target").unwrap_or(Value::Null);
+            let mut inliner = Inliner {
+                records: &records,
+                charged,
+                named: Vec::new(),
+            };
+            fields.insert("target".to_owned(), inliner.target(&target));
+            (binding.id.as_str().to_owned(), value)
+        })
+        .collect()
+}
+
+/// The number of `values` that agree with `value`.
+pub(super) fn tally<'a>(values: impl Iterator<Item = &'a Value>, value: &Value) -> usize {
+    values.filter(|other| same(other, value)).count()
 }
 
 /// Whether `values` holds a value that agrees with `value`.
