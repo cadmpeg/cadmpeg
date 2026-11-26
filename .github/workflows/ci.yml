@@ -265,7 +265,7 @@ jobs:
       CI_FULL: ${{ needs.changes.outputs.full }}
       CI_CODEC_FEATURES: ${{ needs.changes.outputs.codec_scope }}
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 90
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -311,19 +311,6 @@ jobs:
         run: |
           (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
           python3 scripts/ci_cargo.py run-tests
-
-      - name: TEMP interleaved A/B measurement
-        if: always()
-        timeout-minutes: 80
-        shell: bash
-        run: |
-          set +e
-          (lscpu 2>/dev/null | grep -i "model name") || (sysctl -n machdep.cpu.brand_string 2>/dev/null) || true
-          m() { echo "=== $1"; s=$(date +%s); shift; "$@" > m.log 2>&1; rc=$?; e=$(date +%s); grep -E "binaries, |processes, |^  \[" m.log | head -6; grep -E "FAIL|TIMEOUT" m.log | head -20; echo "=== rc $rc wall $((e - s))s"; }
-          m "A split" python3 scripts/ci_cargo_split_tmp.py run-tests
-          m "B nosplit" python3 scripts/ci_cargo.py run-tests
-          m "A split" python3 scripts/ci_cargo_split_tmp.py run-tests
-          m "B nosplit" python3 scripts/ci_cargo.py run-tests
 
       - name: Inventor CLI evidence tests
         if: needs.changes.outputs.inventor_cli == 'true'
@@ -524,7 +511,7 @@ jobs:
     # macos-latest is a 5-core, 14 GiB runner or a 3-core, 7 GiB one. On the
     # 3-core runner the test build takes about 50 minutes when it stays in
     # memory, and the tests about 20; on the 5-core runner, 13 and 9.
-    timeout-minutes: 220
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -564,19 +551,6 @@ jobs:
       - name: Unit and integration tests
         timeout-minutes: 40
         run: python3 scripts/ci_cargo.py run-tests
-
-      - name: TEMP interleaved A/B measurement
-        if: always()
-        timeout-minutes: 80
-        shell: bash
-        run: |
-          set +e
-          (lscpu 2>/dev/null | grep -i "model name") || (sysctl -n machdep.cpu.brand_string 2>/dev/null) || true
-          m() { echo "=== $1"; s=$(date +%s); shift; "$@" > m.log 2>&1; rc=$?; e=$(date +%s); grep -E "binaries, |processes, |^  \[" m.log | head -6; grep -E "FAIL|TIMEOUT" m.log | head -20; echo "=== rc $rc wall $((e - s))s"; }
-          m "A split" python3 scripts/ci_cargo_split_tmp.py run-tests
-          m "B nosplit" python3 scripts/ci_cargo.py run-tests
-          m "A split" python3 scripts/ci_cargo_split_tmp.py run-tests
-          m "B nosplit" python3 scripts/ci_cargo.py run-tests
 
       # A step timeout stops only the step's shell: cargo, rustc and the test
       # binaries keep running. Name them, then stop them before the cache step.
