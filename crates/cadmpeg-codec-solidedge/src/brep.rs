@@ -3,12 +3,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::FinitePoint3;
+use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
+use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId, RegionId,
     ShellId, SurfaceId, VertexId,
@@ -20,14 +22,14 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop, LoopBoundary,
     LoopRing, Point, Region, RegionUnstated, Sense, Shell, Unstated, Vertex,
 };
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{CadIr, SourceProvenance, StreamName};
 use cadmpeg_parasolid::records::primary::Node;
 use cadmpeg_parasolid::records::{node_type as kind, PrimaryRecords};
 
 use crate::geometry::{self, Nodes};
 use crate::loss::SolidEdgeLossCode;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{dropped_with, record_given_up, GivenUpRecord};
+use cadmpeg_ir::unknown::part::{dropped_with, GivenUpRecord};
 
 const MM_PER_METRE: f64 = Magnification::MILLIMETERS_PER_METER.get();
 
@@ -60,6 +62,50 @@ impl Emitted {
     }
     fn curve<'ir>(&self, ir: &'ir CadIr, id: &CurveId) -> Option<&'ir Curve> {
         ir.geometry.curves.get(*self.curves.get(id)?)
+    }
+}
+
+/// Where the nodes of a partition lie: the partition's stream, and the
+/// offset in it of the first byte of the node sequence.
+pub(crate) struct Origin {
+    stream: StreamName,
+    offset: u64,
+}
+
+impl Origin {
+    pub(crate) fn new(stream: StreamName, offset: u64) -> Self {
+        Self { stream, offset }
+    }
+
+    /// `record` at the span of `node` in the partition's stream.
+    fn span(&self, record: GivenUpRecord, node: Option<Node<'_>>) -> GivenUpRecord {
+        let Some(range) = node.map(|node| node.range()) else {
+            return record;
+        };
+        let Some(offset) = self.offset.checked_add(u64_from_index(range.start)) else {
+            return record;
+        };
+        record
+            .at(SourceProvenance::in_stream(
+                "solidedge",
+                self.stream.clone(),
+                offset,
+            ))
+            .spanning(u64_from_index(range.len()))
+    }
+
+    /// The codec loss `why` and the `record.unreadable` of `record`, read
+    /// from `node` and dropped for `why`.
+    fn given_up(
+        &self,
+        record: impl Into<Identity>,
+        node: Option<Node<'_>>,
+        why: LossNote,
+    ) -> [LossNote; 2] {
+        let unreadable = self
+            .span(GivenUpRecord::caused_by(record, &why), node)
+            .loss();
+        [why, unreadable]
     }
 }
 
@@ -336,6 +382,7 @@ pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     records: &PrimaryRecords<'_>,
     stream: u32,
+    origin: &Origin,
     losses: &mut Vec<LossNote>,
 ) -> Result<CadIr, CodecError> {
     let mut nodes = BTreeMap::new();
@@ -522,6 +569,8 @@ pub(crate) fn project(
     // Faces with no surface reference stand on an unknown surface that takes
     // the face's own node index.
     let mut surfaceless = Vec::new();
+    // Surfaces that an intersection carrier names as a support.
+    let mut supports = BTreeSet::new();
     let mut emitted = Emitted::default();
     let mut edge_reads = EdgeReads::new();
     let mut face_reads = Vec::new();
@@ -532,14 +581,15 @@ pub(crate) fn project(
         };
         let (loop_nodes, defect) = chain(&nodes, ptr(face, "loop"), "next");
         let Some(face_sense) = sense(face) else {
-            let face = face_id(stream, face_index);
-            losses.extend(record_given_up(
-                &face,
+            let id = face_id(stream, face_index);
+            losses.extend(origin.given_up(
+                &id,
+                Some(face),
                 SolidEdgeLossCode::FaceSenseUnresolved.note(
                     "a face states no orientation; the face and its loops are not transferred",
                 ),
             ));
-            drop_loops(&nodes, stream, &face, loop_nodes, losses);
+            drop_loops(&nodes, stream, &id, loop_nodes, losses);
             continue;
         };
         let mut complete = defect.is_none();
@@ -551,30 +601,36 @@ pub(crate) fn project(
                 Ok(shape) => loops.push((loop_index, shape)),
                 Err(reason) => {
                     complete = false;
-                    losses.extend(record_given_up(
-                        loop_id(stream, loop_index),
-                        SolidEdgeLossCode::LoopUnreadable
-                            .note(format!("a loop does not read: {reason}")),
-                    ));
+                    losses.extend(
+                        origin.given_up(
+                            loop_id(stream, loop_index),
+                            nodes.get(&loop_index).copied(),
+                            SolidEdgeLossCode::LoopUnreadable
+                                .note(format!("a loop does not read: {reason}")),
+                        ),
+                    );
                     drop_fins(&nodes, stream, loop_index, losses);
                     unreadable.get_or_insert(loop_index);
                 }
             }
         }
         if !complete {
-            let face = face_id(stream, face_index);
+            let id = face_id(stream, face_index);
             match unreadable {
-                Some(loop_index) => losses.push(dropped_with(&face, loop_id(stream, loop_index))),
-                None => losses.extend(record_given_up(
-                    &face,
-                    SolidEdgeLossCode::LoopUnreadable
-                        .note("a face with a loop that does not read is not transferred"),
-                )),
+                Some(loop_index) => losses.push(dropped_with(&id, loop_id(stream, loop_index))),
+                None => losses.extend(
+                    origin.given_up(
+                        &id,
+                        Some(face),
+                        SolidEdgeLossCode::LoopUnreadable
+                            .note("a face with a loop that does not read is not transferred"),
+                    ),
+                ),
             }
             drop_loops(
                 &nodes,
                 stream,
-                &face,
+                &id,
                 loops.iter().map(|(loop_index, _)| *loop_index),
                 losses,
             );
@@ -635,15 +691,15 @@ pub(crate) fn project(
             .map(|curve| geometry::trim_basis(&nodes, curve))
             .filter(|curve| curve.kind() == kind::INTERSECTION)
         {
-            if let Some(supports) = source.pointer_array::<2>("surface") {
-                surfaces.extend(
-                    supports
-                        .into_iter()
+            if let Some(pair) = source.pointer_array::<2>("surface") {
+                supports.extend(
+                    pair.into_iter()
                         .filter(|index| *index > 1 && nodes.contains_key(index)),
                 );
             }
         }
     }
+    surfaces.extend(&supports);
     for surface in surfaces {
         let Some(node) = nodes.get(&surface).copied() else {
             losses.push(
@@ -913,7 +969,14 @@ pub(crate) fn project(
         if ends.is_none() && carrier.curve().is_none() {
             // A vertexless edge bounds no extent without a carrier.
             losses.push(
-                GivenUpRecord::new(edge_id(stream, edge), "a vertexless edge has no carrier")
+                origin
+                    .span(
+                        GivenUpRecord::new(
+                            edge_id(stream, edge),
+                            "a vertexless edge has no carrier",
+                        ),
+                        Some(node),
+                    )
                     .loss(),
             );
             dropped_edges.insert(edge);
@@ -932,6 +995,8 @@ pub(crate) fn project(
         });
     }
     let mut fins = BTreeMap::new();
+    // Faces dropped after their surface was stated, with that surface.
+    let mut dropped_faces = Vec::new();
     for face in face_reads {
         let mut loop_ids = Vec::new();
         let mut face_loops = Vec::new();
@@ -977,8 +1042,9 @@ pub(crate) fn project(
             let bad = loop_id(stream, bad_loop);
             match edge {
                 Some(edge) => losses.push(dropped_with(&bad, edge_id(stream, edge))),
-                None => losses.extend(record_given_up(
+                None => losses.extend(origin.given_up(
                     &bad,
+                    nodes.get(&bad_loop).copied(),
                     SolidEdgeLossCode::LoopUnreadable.note("the fins of a loop do not form a ring"),
                 )),
             }
@@ -996,6 +1062,7 @@ pub(crate) fn project(
             );
             // The loops already admitted for this face leave with it.
             ir.geometry.loops.retain(|loop_| loop_.face != face_id);
+            dropped_faces.push((face_id, face.surface));
             continue;
         }
         fins.extend(
@@ -1056,6 +1123,7 @@ pub(crate) fn project(
             native_ref: None,
         });
     }
+    drop_unused_surfaces(&nodes, &mut ir, stream, &supports, dropped_faces, losses);
     let transferred: BTreeSet<&FaceId> = ir.geometry.faces.iter().map(|face| &face.id).collect();
     for (face, shell) in &face_shells {
         if !transferred.contains(&face_id(stream, *face)) {
@@ -1122,6 +1190,64 @@ pub(crate) fn project(
     }
     trim_edges(ctx, &mut ir, &fit_tolerances, document_linear, losses)?;
     Ok(ir)
+}
+
+/// Drops the surface of each face of `dropped` that no stated face uses and
+/// no intersection carrier names as a support, with its construction, and
+/// the section curve of that construction where nothing else uses it.
+fn drop_unused_surfaces(
+    nodes: &Nodes<'_>,
+    ir: &mut CadIr,
+    stream: u32,
+    supports: &BTreeSet<u32>,
+    dropped: Vec<(FaceId, u32)>,
+    losses: &mut Vec<LossNote>,
+) {
+    for (face, index) in dropped {
+        let surface = surface_id(stream, index);
+        if supports.contains(&index) || ir.geometry.faces.iter().any(|kept| kept.surface == surface)
+        {
+            continue;
+        }
+        let Some(slot) = ir
+            .geometry
+            .surfaces
+            .iter()
+            .position(|record| record.id == surface)
+        else {
+            continue;
+        };
+        let record = ir.geometry.surfaces.remove(slot);
+        losses.push(dropped_with(&surface, &face));
+        let Some(construction) = record.geometry.procedural_construction() else {
+            continue;
+        };
+        ir.geometry
+            .procedural_surfaces
+            .retain(|procedural| &procedural.id != construction);
+        let Some(section) = nodes
+            .get(&index)
+            .and_then(|node| ptr(*node, "section"))
+            .map(|section| curve_id(stream, section))
+        else {
+            continue;
+        };
+        let used = ir
+            .geometry
+            .edges
+            .iter()
+            .any(|edge| edge.carrier.curve() == Some(&section))
+            || ir.geometry.procedural_surfaces.iter().any(|procedural| {
+                matches!(
+                    procedural.definition(),
+                    ProceduralSurfaceDefinition::LinearSweep(sweep) if sweep.directrix() == &section
+                )
+            });
+        if !used {
+            ir.geometry.curves.retain(|curve| curve.id != section);
+            losses.push(dropped_with(&section, &surface));
+        }
+    }
 }
 
 /// A `SWEPT_SURF` with a null scale as the linear sweep of its section curve
