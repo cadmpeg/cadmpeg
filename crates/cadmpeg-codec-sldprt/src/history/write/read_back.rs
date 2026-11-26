@@ -342,7 +342,7 @@ impl<'a> Judge<'a> {
     /// decode: that part is written again.
     fn read(&mut self, (bytes, output): &WrittenPass) -> ReadBack {
         let claims = &output.claims;
-        let Some(source) = output.source.as_ref() else {
+        let Some(source) = output.source.as_ref().map(|source| &source.decoded) else {
             return ReadBack::default();
         };
         let withhold = claims

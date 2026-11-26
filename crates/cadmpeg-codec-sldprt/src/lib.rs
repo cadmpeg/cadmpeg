@@ -355,7 +355,7 @@ impl SldprtCodec {
         let source = shared
             .source_baseline
             .as_deref()
-            .map(|decoded| history::write::brep_agreement::Source::Decoded(&decoded.ir))
+            .map(|source| history::write::brep_agreement::Source::Decoded(&source.decoded.ir))
             .or_else(|| image.map(history::write::brep_agreement::Source::Image));
         let stale_solid = history::write::brep_agreement::agreement(
             ir,
