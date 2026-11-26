@@ -15,10 +15,13 @@
 //! model target cannot yet name in a state that is not current (interim,
 //! §8), with one loss per configuration. The display tables bind to the
 //! active configuration's faces only, so none names a retired record.
+//! [`annotate_state_records`] first keys a copy of the annotations of each
+//! record an evaluation's delta holds by that evaluation (§3.2), so a retired
+//! record keeps them.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::annotations::{AnnotationKey, Annotations};
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::design::evaluation::{StateBase, StateDelta};
 use cadmpeg_ir::design::names::TopoName;
@@ -31,8 +34,22 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 
-use crate::design_v11::states::remove_records;
+use crate::design_v11::states::{remove_records, topology_ids};
 use crate::loss::SldprtLossCode;
+
+/// Annotates each record of the delta of each evaluation as the geometry
+/// record of the same id is annotated, under the record's key in that
+/// evaluation.
+pub(super) fn annotate_state_records(ir: &CadIr, annotations: &mut Annotations) {
+    for evaluation in &ir.design.evaluations {
+        let Some(content) = &evaluation.content else {
+            continue;
+        };
+        topology_ids(&content.delta.records, |id| {
+            annotations.copy_entity(id, AnnotationKey::in_evaluation(&evaluation.id, id));
+        });
+    }
+}
 
 /// Removes the `retired` geometry records, which the evaluations of
 /// configurations that are not active hold, with every model reference to
