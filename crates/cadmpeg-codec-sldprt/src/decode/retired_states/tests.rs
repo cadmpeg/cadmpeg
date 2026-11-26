@@ -4,6 +4,7 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::annotations::{AnnotationKey, AnnotationTarget, Annotations, StreamHandle};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
 use cadmpeg_ir::design::evaluation::{
@@ -25,7 +26,6 @@ use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
-use serde_json::json;
 
 use crate::loss::SldprtLossCode;
 

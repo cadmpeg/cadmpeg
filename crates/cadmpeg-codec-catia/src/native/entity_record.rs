@@ -814,7 +814,7 @@ mod tests {
             let length = invalid_wire[field]
                 .as_u64()
                 .expect("frame length is unsigned");
-            invalid_wire[field] = serde_json::json!(length + 1);
+            invalid_wire[field] = cadmpeg_core::json!(length + 1);
             let error = json::from_value::<CatiaEntityRecord>(invalid_wire)
                 .expect_err("frame length must match the body bytes");
             assert!(error.to_string().contains(field), "{error}");

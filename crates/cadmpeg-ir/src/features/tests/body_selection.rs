@@ -17,7 +17,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
         let json_rows = bodies
             .iter()
             .zip(&native)
-            .map(|(body, native)| serde_json::json!({"body": body, "native": native}))
+            .map(|(body, native)| cadmpeg_core::json!({"body": body, "native": native}))
             .collect::<Vec<_>>();
         let rows = bodies
             .into_iter()
@@ -31,7 +31,7 @@ fn ordered_members_reject_empty_sets_and_duplicates() {
             })
             .collect::<Vec<_>>();
         assert!(BodyMembers::try_from_rows(rows).is_err());
-        assert!(json::from_value::<BodyMembers<BodyId>>(serde_json::json!(json_rows)).is_err());
+        assert!(json::from_value::<BodyMembers<BodyId>>(cadmpeg_core::json!(json_rows)).is_err());
     }
 }
 
@@ -94,10 +94,10 @@ fn historical_body_members_refuse_the_deleted_parallel_arrays() {
 
     let mut restated = wire;
     let value = restated["value"].as_object_mut().unwrap();
-    value.insert("bodies".into(), serde_json::json!(["b", "a"]));
+    value.insert("bodies".into(), cadmpeg_core::json!(["b", "a"]));
     value.insert(
         "native".into(),
-        serde_json::json!(["native-first", "native-second"]),
+        cadmpeg_core::json!(["native-first", "native-second"]),
     );
     let error = json::from_value::<BodySelection>(restated)
         .unwrap_err()
@@ -140,7 +140,7 @@ fn generated_body_members_keep_one_native_per_row() {
     restated["value"]
         .as_object_mut()
         .unwrap()
-        .insert("native".into(), serde_json::json!("a"));
+        .insert("native".into(), cadmpeg_core::json!("a"));
     let error = json::from_value::<BodySelection>(restated)
         .unwrap_err()
         .to_string();

@@ -38,11 +38,12 @@ pub(in crate::design) fn arm_failures<T: Serialize>(
     assert!(!operations.is_empty(), "{family:?} has no sample");
     let kind = to_value(&family);
     let mut failures = Vec::new();
-    if read_desktop::<FeatureOperation>(&serde_json::json!({ "kind": kind }).to_string()).is_ok() {
+    if read_desktop::<FeatureOperation>(&cadmpeg_core::json!({ "kind": kind }).to_string()).is_ok()
+    {
         failures.push(format!("{family:?}: the kind alone was read"));
     }
     for operation in operations {
-        let expected = serde_json::json!({"kind": kind, "value": to_value(&operation)});
+        let expected = cadmpeg_core::json!({"kind": kind, "value": to_value(&operation)});
         let wrapped = arm(Box::new(operation));
         if to_value(&wrapped) != expected {
             failures.push(format!(

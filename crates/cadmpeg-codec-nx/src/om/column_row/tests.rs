@@ -116,7 +116,7 @@ fn column_row_slots_reject_out_of_lane_wire_indices() {
         let decoded = json::from_value::<super::ColumnRowSlot>(value.into());
         assert_eq!(decoded.is_ok(), value < 4);
         if let Ok(slot) = decoded {
-            assert_eq!(json::to_value(slot).unwrap(), serde_json::json!(value));
+            assert_eq!(json::to_value(slot).unwrap(), cadmpeg_core::json!(value));
         }
     }
 }

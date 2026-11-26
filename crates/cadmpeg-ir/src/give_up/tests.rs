@@ -6,7 +6,7 @@ use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::{give_up, Arena, Seed};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};

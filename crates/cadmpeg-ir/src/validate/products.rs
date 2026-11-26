@@ -587,8 +587,8 @@ mod tests {
         ));
         let mut wire = json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
         wire["operands"]["value"]["connectors"][0]["operand"]["occurrence"] =
-            serde_json::json!(occurrence.as_str());
-        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
+            cadmpeg_core::json!(occurrence.as_str());
+        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = cadmpeg_core::json!({
             "path": "external.f3d"
         });
         assert!(json::from_value::<AssemblyJoint>(wire).is_err());

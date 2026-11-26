@@ -15,7 +15,8 @@ mod sweep;
 mod thin;
 pub(super) mod topology;
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;

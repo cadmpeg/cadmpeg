@@ -14,14 +14,14 @@ struct FoldFixture {
 const SLOTS: [u32; 8] = [41, 42, 43, 44, 45, 0, 0, 48];
 
 fn face_item(values: &[u32]) -> Kind {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "form": "face_item",
         "index_references": {
             "marker": 2,
             "metadata": if values.is_empty() {
                 serde_json::Value::Null
             } else {
-                serde_json::json!({"values": [values.len(), 268_435_456], "width": "u32"})
+                cadmpeg_core::json!({"values": [values.len(), 268_435_456], "width": "u32"})
             },
             "values": values,
         }

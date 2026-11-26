@@ -62,12 +62,12 @@ fn occurrence_transfer_wire_admits_valid_scope_and_rejects_inconsistent_fields()
     let admitted: DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(admitted.occurrence_transfer, scope.occurrence_transfer);
     for (field, value) in [
-        ("target_transform_offset", serde_json::json!(1)),
-        ("relation_record_index", serde_json::json!(15)),
-        ("occurrence_record_index", serde_json::json!(0)),
+        ("target_transform_offset", cadmpeg_core::json!(1)),
+        ("relation_record_index", cadmpeg_core::json!(15)),
+        ("occurrence_record_index", cadmpeg_core::json!(0)),
         (
             "component_record_index",
-            serde_json::json!(4_294_967_296_u64),
+            cadmpeg_core::json!(4_294_967_296_u64),
         ),
     ] {
         let mut changed = wire.clone();
@@ -118,12 +118,12 @@ fn occurrence_transfer_intent_wire_keeps_unresolved_optionals_and_rejects_bad_in
         scope.occurrence_transfer_intent
     );
     for (field, value) in [
-        ("relation_record_index", serde_json::json!(0)),
-        ("occurrence_record_index", serde_json::json!(0)),
-        ("component_record_index", serde_json::json!(0)),
+        ("relation_record_index", cadmpeg_core::json!(0)),
+        ("occurrence_record_index", cadmpeg_core::json!(0)),
+        ("component_record_index", cadmpeg_core::json!(0)),
         (
             "component_record_index",
-            serde_json::json!(4_294_967_296_u64),
+            cadmpeg_core::json!(4_294_967_296_u64),
         ),
     ] {
         let mut changed = wire.clone();

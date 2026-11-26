@@ -937,7 +937,7 @@ mod tests {
         );
         assert_eq!(json::from_value::<Annotations>(value).unwrap(), annotations);
 
-        let error = json::from_value::<Annotations>(serde_json::json!({
+        let error = json::from_value::<Annotations>(cadmpeg_core::json!({
             "streams": ["f3d:native"],
             "provenance": {
                 "f3d:body#0": {"stream": "f3d:native", "offset": 42}
@@ -947,7 +947,7 @@ mod tests {
         .to_string();
         assert!(error.contains("unknown field `streams`"), "{error}");
 
-        let error = json::from_value::<Annotations>(serde_json::json!({
+        let error = json::from_value::<Annotations>(cadmpeg_core::json!({
             "provenance": {
                 "f3d:body#0": {"stream": "", "offset": 42}
             }
@@ -1045,13 +1045,13 @@ mod tests {
 
     #[test]
     fn an_entity_note_refuses_byte_exact_and_a_field_note_refuses_an_empty_map() {
-        let error = json::from_value::<ExactnessNote>(serde_json::json!({
+        let error = json::from_value::<ExactnessNote>(cadmpeg_core::json!({
             "kind": "entity", "entity": "byte_exact"
         }))
         .expect_err("byte-exact is the implicit entity exactness");
         assert!(error.to_string().contains("unknown variant"), "{error}");
 
-        let error = json::from_value::<ExactnessNote>(serde_json::json!({
+        let error = json::from_value::<ExactnessNote>(cadmpeg_core::json!({
             "kind": "fields", "fields": {}
         }))
         .expect_err("a field note carries at least one override");
@@ -1063,7 +1063,7 @@ mod tests {
 
     #[test]
     fn explicit_field_exactness_survives_an_equal_entity_note() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "kind": "entity", "entity": "derived",
             "fields": {"geometry": "derived"}
         });
@@ -1086,7 +1086,7 @@ mod tests {
                 if entity_first {
                     wire.clone()
                 } else {
-                    serde_json::json!({"kind": "entity", "entity": "derived", "fields": {}})
+                    cadmpeg_core::json!({"kind": "entity", "entity": "derived", "fields": {}})
                 }
             );
         }
@@ -1145,8 +1145,8 @@ mod tests {
             before
         );
         for wire in [
-            serde_json::json!({"kind": "entity", "entity": "derived", "fields": {"": "derived"}}),
-            serde_json::json!({"kind": "fields", "fields": {"": "derived"}}),
+            cadmpeg_core::json!({"kind": "entity", "entity": "derived", "fields": {"": "derived"}}),
+            cadmpeg_core::json!({"kind": "fields", "fields": {"": "derived"}}),
         ] {
             let error = json::from_value::<ExactnessNote>(wire).expect_err("empty field key");
             assert!(
@@ -1154,7 +1154,7 @@ mod tests {
                 "{error}"
             );
         }
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "kind": "entity", "entity": "derived",
             "fields": {"position.x": "byte_exact"}
         });

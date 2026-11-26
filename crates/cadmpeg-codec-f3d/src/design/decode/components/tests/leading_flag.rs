@@ -105,11 +105,11 @@ fn leading_flag_frames_state_the_occurrence_and_its_offsets() {
             "owner_entity_offset",
         ] {
             let mut changed = wire.clone();
-            changed[field] = serde_json::json!(wire[field].as_u64().unwrap() + 1);
+            changed[field] = cadmpeg_core::json!(wire[field].as_u64().unwrap() + 1);
             assert!(json::from_value::<DesignComponentOccurrence>(changed).is_err());
         }
         let mut owned = wire.clone();
-        owned["owner_type_guid"] = serde_json::json!(OWNER_TYPE);
+        owned["owner_type_guid"] = cadmpeg_core::json!(OWNER_TYPE);
         assert!(json::from_value::<DesignComponentOccurrence>(owned).is_err());
     }
 }

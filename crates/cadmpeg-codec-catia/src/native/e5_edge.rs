@@ -93,7 +93,7 @@ mod tests {
         ]) {
             assert_eq!(
                 row["allocation_terminal"],
-                serde_json::json!({
+                cadmpeg_core::json!({
                     "raw_byte": raw, "value": value, "encoding": encoding
                 })
             );
@@ -131,9 +131,9 @@ mod tests {
                 .expect("source records");
         let wire = json::to_value(&records).expect("stored records");
         for bad in [
-            serde_json::json!({"raw_byte":33,"value":10,"encoding":"backward_distance"}),
-            serde_json::json!({"raw_byte":33,"value":8,"encoding":"selector2"}),
-            serde_json::json!({"raw_byte":38,"value":9,"encoding":"selector2"}),
+            cadmpeg_core::json!({"raw_byte":33,"value":10,"encoding":"backward_distance"}),
+            cadmpeg_core::json!({"raw_byte":33,"value":8,"encoding":"selector2"}),
+            cadmpeg_core::json!({"raw_byte":38,"value":9,"encoding":"selector2"}),
         ] {
             let mut malformed = wire.clone();
             malformed[0]["allocation_terminal"] = bad;

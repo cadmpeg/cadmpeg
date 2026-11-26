@@ -1719,12 +1719,12 @@ mod tests {
                 "owner_entity_offset",
             ] {
                 let mut changed = wire.clone();
-                changed[field] = serde_json::json!(wire[field].as_u64().unwrap() + 1);
+                changed[field] = cadmpeg_core::json!(wire[field].as_u64().unwrap() + 1);
                 assert!(json::from_value::<super::DesignComponentOccurrence>(changed).is_err());
             }
             if matrix {
                 let mut changed = wire.clone();
-                changed["transform_offset"] = serde_json::json!(214);
+                changed["transform_offset"] = cadmpeg_core::json!(214);
                 assert!(json::from_value::<super::DesignComponentOccurrence>(changed).is_err());
             }
             let mut nonzero = frame.clone();
@@ -2024,7 +2024,7 @@ mod tests {
 
         // A serialized zero source target is not a reference.
         let mut zero = json::to_value(&occurrence).unwrap();
-        zero["attributed"]["source_record_index"] = serde_json::json!(0);
+        zero["attributed"]["source_record_index"] = cadmpeg_core::json!(0);
         assert!(json::from_value::<
             crate::records::feature::assembly_features::DesignComponentOccurrence,
         >(zero)
@@ -2191,7 +2191,7 @@ mod tests {
         assert_eq!(wire["attributed"]["key_segment_index"], 10);
         assert_eq!(
             wire["attributed"]["attributes"],
-            serde_json::json!([
+            cadmpeg_core::json!([
                 {"name":"GatedByParent","value":{"type":"bool","value":false}},
                 {"name":"ResolutionTime","value":{"type":"text","value":""}},
                 {"name":"SelfGated","value":{"type":"bool","value":false}}

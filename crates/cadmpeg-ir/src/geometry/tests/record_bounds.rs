@@ -60,7 +60,7 @@ fn partial_record_bounds_round_trip_through_checked_storage() {
     assert_eq!(bounds.get(), [Some(0.1), None, Some(0.2), None]);
 
     let wire = json::to_value(bounds).expect("serialize record bounds");
-    assert_eq!(wire, serde_json::json!([0.1, null, 0.2, null]));
+    assert_eq!(wire, cadmpeg_core::json!([0.1, null, 0.2, null]));
     assert_eq!(
         json::from_value::<RecordBounds>(wire).expect("deserialize record bounds"),
         bounds
@@ -78,7 +78,7 @@ fn an_all_absent_quartet_is_admitted_and_keeps_its_signed_zeros() {
     );
     assert_eq!(
         json::to_value(absent).expect("serialize an absent quartet"),
-        serde_json::json!([null, null, null, null])
+        cadmpeg_core::json!([null, null, null, null])
     );
 
     let signed = RecordBounds::try_new([Some(-0.0), Some(0.0), None, Some(-0.0)])
@@ -144,7 +144,7 @@ fn the_containing_row_separates_an_absent_quartet_from_a_stated_one() {
     let wire = json::to_value(&with).expect("serialize a row with an absent quartet");
     assert_eq!(
         wire["record_bounds"],
-        serde_json::json!([null, null, null, null])
+        cadmpeg_core::json!([null, null, null, null])
     );
     let decoded: crate::geometry::ProceduralSurfaceRow = json::from_value(wire.clone()).unwrap();
     assert_eq!(

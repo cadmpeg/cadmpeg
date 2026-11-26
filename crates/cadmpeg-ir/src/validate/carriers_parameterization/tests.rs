@@ -112,7 +112,7 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     ir.geometry.curves.push(carrier);
     ir.finalize();
     let mut wire = json::to_value(&ir).unwrap();
-    wire["native"] = serde_json::json!({"test": {"unknowns": [
+    wire["native"] = cadmpeg_core::json!({"test": {"unknowns": [
         {"id": "test:source:unknown#good", "links": [carrier_id]},
         {"id": "test:source:unknown#malformed", "links": [null]}
     ]}});
@@ -132,7 +132,7 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
         "{findings:?}"
     );
 
-    wire["native"]["test"]["unknowns"][0]["links"] = serde_json::json!([]);
+    wire["native"]["test"]["unknowns"][0]["links"] = cadmpeg_core::json!([]);
     let orphan = crate::CadIr::from_json(&wire.to_string()).unwrap();
     assert!(validate_neutral(&orphan, Vec::new())
         .expect("validate the neutral model")

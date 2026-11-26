@@ -31,9 +31,9 @@ fn configuration_output_members_are_distinct_and_empty_active_states_remain_vali
     };
     assert_eq!(
         json::to_value(empty).unwrap(),
-        serde_json::json!({"kind":"active", "outputs":[]})
+        cadmpeg_core::json!({"kind":"active", "outputs":[]})
     );
-    let error = json::from_value::<ConfigurationEvaluation>(serde_json::json!({
+    let error = json::from_value::<ConfigurationEvaluation>(cadmpeg_core::json!({
         "kind":"active", "outputs":[body, body]
     }))
     .unwrap_err();
@@ -59,7 +59,7 @@ fn configuration_dependencies_reject_duplicates_at_the_wire_boundary() {
         json::from_value::<ConfigurationFeatureState>(wire.clone()).unwrap(),
         state
     );
-    wire["dependencies"] = serde_json::json!([earlier, earlier]);
+    wire["dependencies"] = cadmpeg_core::json!([earlier, earlier]);
     let error = json::from_value::<ConfigurationFeatureState>(wire.clone()).unwrap_err();
     assert!(error.to_string().contains("dependencies"));
     wire.as_object_mut().unwrap().remove("dependencies");

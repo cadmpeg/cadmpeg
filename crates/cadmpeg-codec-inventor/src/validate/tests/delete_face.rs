@@ -22,14 +22,14 @@ fn delete_face_validation_keeps_unresolved_controls_native() -> TestResult {
     ] {
         let source = crate::feature::tests::test_feature(0, count, &[]);
         let mut wire = json::to_value(&source)?;
-        wire["properties"]["marker"] = serde_json::json!(marker);
+        wire["properties"]["marker"] = cadmpeg_core::json!(marker);
         if marker == 8 {
-            wire["properties"]["metadata"]["width"] = serde_json::json!("u16");
+            wire["properties"]["metadata"]["width"] = cadmpeg_core::json!("u16");
         }
         let source: crate::feature::PmDcFeature = json::from_value(wire)?;
         let identity = &source.identity;
         let mut data = empty_data();
-        data.records.push(json::from_value(serde_json::json!({
+        data.records.push(json::from_value(cadmpeg_core::json!({
             "id": format!("inventor:rse:record#{}-0", identity.segment_token),
             "token": identity.segment_token.as_str(), "ordinal": 0,
             "selector": 0, "type_index": 0, "type_id": identity.type_id.as_str(),
