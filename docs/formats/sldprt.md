@@ -365,6 +365,7 @@ The part kind names the part in a `record.unreadable` loss.
 | `feature-input-parasolid-stream` | One Parasolid stream in a `ResolvedFeatures` section | Its stream header and its extent in the section (§3.1, §3.3) |
 | `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) |
 | `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) |
+| `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) |
 
 A compound stream's bytes are the sectors its chain reaches through the
 sectors its size requires. Two streams whose chains reach one sector are
@@ -374,18 +375,29 @@ bytes of the sectors its chain reached before it stopped. A native block
 that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
 given up; the directory and its other members are read.
 
+A Parasolid site whose streams frame entity records that build no geometry is
+given up as a `parasolid-site` part. A component tree gives no occurrence
+when its XML does not parse, when it repeats a model or file id, when it
+names no active configuration or more than one, when its active model has no
+valid identity or no definition, and when the document holds two different
+trees. Each tree section is then given up as a `component-tree` part. The
+section that the decoder reads is also kept whole, so the part keeps only
+the length and digest of its bytes.
+
 A record that the decoder parses and then drops is given up without a part.
-Its `record.unreadable` loss names the record by its id, and gives its stream,
-offset, and length where the decoder holds them. Such records are a Parasolid
-site whose entity records build no geometry (the site's section), a B-rep face
-or ring edge that the topology walk withholds, a PMI dimension map that does
-not parse, a feature-input edge that projects to no sketch entity, and a
-component tree section that gives no occurrence. A component tree gives no
-occurrence when its XML does not parse, when it repeats a model or file id,
-when it names no active configuration or more than one, when its active model
-has no valid identity or no definition, and when the document holds two
-different trees. A withheld face drops its surface with it, and the loss lists
-that surface.
+Its `record.unreadable` loss names the record by its id, and gives its stream
+and offset where the decoder holds them. Such records are a B-rep face or
+ring edge that the topology walk withholds, a PMI dimension map that does not
+parse, and a feature-input sketch whose face projects no edge to a sketch
+entity. A record of an alternate configuration is named by its id with the
+`@<site>` suffix of that configuration.
+
+A record that the decoder drops only because it needs a given-up record is
+not given up by itself. The loss of the given-up record lists it as dropped.
+A withheld face drops its surface, its loops, and the coedges, surface-parameter
+curves, edges, curves, vertices, and points that only its loops use. A loop
+that uses a withheld edge drops with the edge, and the face that owns that
+loop keeps its other loops.
 
 ---
 

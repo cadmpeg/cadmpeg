@@ -142,8 +142,9 @@ enum Reached {
 /// Adds the occurrences each definition places, walking the definition graph
 /// from its roots (§3.11). A definition reached from a root lists its child
 /// occurrences once, in stored order; a child occurrence of a definition on
-/// the path to it closes a cycle and is left out. The walk stops after
-/// `max_occurrences` occurrences.
+/// the path to it closes a cycle and is left out. The walk adds no
+/// occurrence after `max_occurrences` occurrences; it walks on only to name
+/// the child occurrences it drops.
 pub(crate) fn occurrences(
     ctx: &DecodeContext<'_>,
     structure: &Structure,
@@ -166,6 +167,7 @@ pub(crate) fn occurrences(
     let mut cycles = Vec::new();
     let mut stopped = false;
     let mut stopped_at = None;
+    let mut cut = Vec::new();
     let mut past_depth = Vec::new();
     let mut not_similar = 0_usize;
     let mut invalid = 0_usize;
@@ -211,8 +213,8 @@ pub(crate) fn occurrences(
         }
     }
     let mut reached = vec![Reached::No; definitions.len()];
-    'roots: for root in roots.iter().copied() {
-        if stopped {
+    for root in roots.iter().copied() {
+        if stopped && stopped_at.is_none() {
             break;
         }
         // Each frame is a definition, its depth, and its next child.
@@ -237,13 +239,21 @@ pub(crate) fn occurrences(
                 continue;
             };
             frame.2 += 1;
-            if emitted >= max_occurrences {
+            let counting = stopped_at.is_some();
+            if !counting && emitted >= max_occurrences {
                 stopped = true;
                 stopped_at = Some((parent_definition, next));
-                break 'roots;
-            }
-            if reached.get(child.definition) == Some(&Reached::OnPath) {
+            } else if reached.get(child.definition) == Some(&Reached::OnPath) {
                 cycles.push((parent_definition, next));
+                continue;
+            } else if counting {
+                cut.push((parent_definition, next));
+            }
+            if stopped_at.is_some() {
+                if reached.get(child.definition) == Some(&Reached::No) {
+                    reached[child.definition] = Reached::OnPath;
+                    stack.push((child.definition, depth + 1, 0));
+                }
                 continue;
             }
             let transform = match placement(&child.placement) {
@@ -327,16 +337,25 @@ pub(crate) fn occurrences(
         losses.push(PvzLossCode::StructureOccurrenceTruncated.note(truncation.join("; ")));
     }
     let code = PvzLossCode::StructureOccurrenceTruncated.kind();
-    losses.extend(stopped_at.map(|(definition, occurrence)| {
-        GivenUpRecord::new(
+    if let Some((definition, occurrence)) = stopped_at {
+        let loss = GivenUpRecord::new(
             child_occurrence(definition, occurrence),
             format_args!(
                 "{code}: decoding stopped at this child occurrence, at the limit of \
                  {max_occurrences} occurrences"
             ),
         )
-        .loss()
-    }));
+        .dropping(
+            cut.iter()
+                .map(|&(definition, occurrence)| child_occurrence(definition, occurrence)),
+        )
+        .loss();
+        ctx.retain_bytes(
+            u64_from_index(loss.message.len()),
+            "pvz_occurrence_limit_loss",
+        )?;
+        losses.push(loss);
+    }
     losses.extend(past_depth.iter().map(|&(definition, occurrence)| {
         GivenUpRecord::new(
             child_occurrence(definition, occurrence),

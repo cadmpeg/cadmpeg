@@ -5,7 +5,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::unknown::part::GivenUpPart;
 
 use super::{
-    decode, generation, stored_exact_stream, Container, Generation, MemberGeometry, PackageResidue,
+    decode, generation, stored_exact_streams, Container, Generation, MemberGeometry, PackageResidue,
 };
 use crate::layout::token::{
     STREAM_ATTRIBUTES, STREAM_EDGE_TESSELLATION, STREAM_EXACT_F64, STREAM_SURFACE_TESSELLATION,
@@ -144,9 +144,10 @@ fn a_directory_that_does_not_tile_the_member_is_refused() {
 fn the_exact_stream_is_expanded_on_request() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let plate = plate_member();
-    let exact = stored_exact_stream(&ctx, View::over_retained(&plate))
-        .unwrap()
-        .unwrap();
+    let streams = stored_exact_streams(&ctx, View::over_retained(&plate)).unwrap();
+    let [exact] = streams.as_slice() else {
+        panic!("the plate member carries one exact-geometry stream");
+    };
     assert_eq!(exact.stream_id, STREAM_EXACT_F64);
     assert_eq!(
         crate::gzip::expand(&ctx, exact.stored).unwrap().window(),
@@ -154,9 +155,9 @@ fn the_exact_stream_is_expanded_on_request() {
     );
 
     let bracket = bracket_member();
-    assert!(stored_exact_stream(&ctx, View::over_retained(&bracket))
+    assert!(stored_exact_streams(&ctx, View::over_retained(&bracket))
         .unwrap()
-        .is_none());
+        .is_empty());
 
     let two = member(
         "DIV-OL08BL",
@@ -166,7 +167,12 @@ fn the_exact_stream_is_expanded_on_request() {
             (STREAM_EXACT_F64, stream_index(STREAM_EXACT_F64)),
         ],
     );
-    assert!(stored_exact_stream(&ctx, View::over_retained(&two)).is_err());
+    let ids = stored_exact_streams(&ctx, View::over_retained(&two))
+        .unwrap()
+        .iter()
+        .map(|exact| exact.stream_id)
+        .collect::<Vec<_>>();
+    assert_eq!(ids, [0x0100_0003, STREAM_EXACT_F64]);
 }
 
 #[test]

@@ -236,8 +236,8 @@ fn face_with_an_unprojectable_loop(order: &[usize]) -> crate::brep::graph::Brep 
         Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop, LoopBoundary, LoopRing, Point,
         Sense, Vertex,
     };
-    let id = |kind: &str, n: u32| format!("test:profile:{kind}#{n}");
-    let surface = SurfaceId::mint(id("surface", 1)).unwrap();
+    let id = |kind: &str, n: u32| format!("sldprt:brep:{kind}#{n}");
+    let surface = SurfaceId::mint(id("surf", 1)).unwrap();
     let face = FaceId::mint(id("face", 1)).unwrap();
     let loops = [1, 2].map(|n| LoopId::mint(id("loop", n)).unwrap());
     let coedges = [1, 2].map(|n| CoedgeId::mint(id("coedge", n)).unwrap());
@@ -439,18 +439,6 @@ fn project(
     (projected, losses)
 }
 
-/// `given_up` is the `record.unreadable` of the edge the fixture refuses.
-fn assert_refused_edge_given_up(given_up: &cadmpeg_ir::report::loss::LossNote) {
-    assert_eq!(
-        given_up.code,
-        cadmpeg_ir::unknown::part::record_unreadable_kind()
-    );
-    assert!(given_up
-        .message
-        .split_whitespace()
-        .any(|token| token == "test:profile:edge#2"));
-}
-
 #[test]
 fn a_refused_loop_before_a_projected_loop_leaves_no_profile_in_its_place() {
     let (projected, losses) = project(&face_with_an_unprojectable_loop(&[1, 0]));
@@ -460,84 +448,71 @@ fn a_refused_loop_before_a_projected_loop_leaves_no_profile_in_its_place() {
     let [entity] = projected.entities.as_slice() else {
         panic!("the line edge states the one entity");
     };
-    assert_eq!(entity.native_ref.as_deref(), Some("0:test:profile:edge#1"));
+    assert_eq!(entity.native_ref.as_deref(), Some("0:sldprt:brep:edge#1"));
     assert!(sketch.profiles.is_empty());
-    let [loss, given_up] = losses.as_slice() else {
-        panic!("one loss names the refused edge, which is given up");
+    let [loss] = losses.as_slice() else {
+        panic!("one loss names the refused edge: {losses:?}");
     };
-    assert_refused_edge_given_up(given_up);
-    assert!(loss.message.contains("test:profile:edge#2"));
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::SketchProfileRejected.kind()
+    );
+    assert!(loss.message.contains("sldprt:brep:edge#2"));
     assert!(loss.message.contains(&format!(
         "sketch {} states no entity for the edge and no profile for loop \
-         test:profile:loop#2 or a later loop of face test:profile:face#1",
+         sldprt:brep:loop#2 or a later loop of face sldprt:brep:face#1",
         sketch.id
     )));
 }
 
 #[test]
-fn a_face_whose_only_loop_is_refused_states_no_sketch_and_the_loss_names_none() {
+fn a_face_whose_only_loop_is_refused_gives_up_its_sketch() {
     let (projected, losses) = project(&face_with_an_unprojectable_loop(&[1]));
     assert!(projected.sketches.is_empty());
     assert!(projected.entities.is_empty());
-    let [loss, given_up] = losses.as_slice() else {
-        panic!("one loss names the refused edge, which is given up");
+    let [given_up, loss] = losses.as_slice() else {
+        panic!("the sketch is given up, and one loss names the refused edge: {losses:?}");
     };
-    assert_refused_edge_given_up(given_up);
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(given_up.message.starts_with(
+        "record sldprt:model:sketch#0:0:0 stream=\"Contents/Config-0-ResolvedFeatures\" \
+         offset=0 given up: sldprt/sketch.profile-rejected: "
+    ));
+    assert!(!given_up.message.contains("sldprt:brep:"));
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::SketchProfileRejected.kind()
     );
-    assert!(loss.message.contains("test:profile:edge#2"));
+    assert!(loss.message.contains("sldprt:brep:edge#2"));
     assert!(loss
         .message
-        .ends_with("; face test:profile:face#1 of the feature-input stream states no sketch"));
-    assert!(!loss.message.contains("sldprt:model:sketch#"));
+        .ends_with("; face sldprt:brep:face#1 of the feature-input stream states no sketch"));
 }
 
 #[test]
 fn an_unprojectable_edge_costs_its_loop_profile_and_keeps_the_sketch() {
-    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let brep = face_with_an_unprojectable_loop(&[0, 1]);
-    let stream = cadmpeg_ir::stream_name!("Contents/Config-0-ResolvedFeatures");
-    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
-    let mut losses = Vec::new();
-    let mut projected = super::ProjectedSketches::default();
-    super::project_brep(
-        &ctx,
-        &brep,
-        &super::BrepSketchSource {
-            block_offset: 0,
-            stream_ordinal: 0,
-            stream_offset: 0,
-            source_stream: &stream,
-            sketch_name: "profile",
-            configuration: None,
-            native_ref: "sldprt:feature-input:resolved-features#0",
-        },
-        &mut annotations,
-        &mut losses,
-        &mut projected,
-    )
-    .expect("one unprojectable edge does not fail the projection");
+    let (projected, losses) = project(&face_with_an_unprojectable_loop(&[0, 1]));
     let [sketch] = projected.sketches.as_slice() else {
         panic!("the face states one sketch");
     };
     let [entity] = projected.entities.as_slice() else {
         panic!("the line edge states the one entity");
     };
-    assert_eq!(entity.native_ref.as_deref(), Some("0:test:profile:edge#1"));
+    assert_eq!(entity.native_ref.as_deref(), Some("0:sldprt:brep:edge#1"));
     assert_eq!(sketch.profiles.len(), 1);
     assert_eq!(sketch.profiles[0].len(), 1);
     assert_eq!(sketch.profiles[0][0].entity, *entity.id());
-    let [loss, given_up] = losses.as_slice() else {
-        panic!("one loss names the refused edge, which is given up");
+    let [loss] = losses.as_slice() else {
+        panic!("one loss names the refused edge: {losses:?}");
     };
-    assert_refused_edge_given_up(given_up);
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::SketchProfileRejected.kind()
     );
-    assert!(loss.message.contains("test:profile:edge#2"));
-    assert!(loss.message.contains("test:profile:loop#2"));
+    assert!(loss.message.contains("sldprt:brep:edge#2"));
+    assert!(loss.message.contains("sldprt:brep:loop#2"));
     assert!(loss.message.contains(sketch.id.as_str()));
 }

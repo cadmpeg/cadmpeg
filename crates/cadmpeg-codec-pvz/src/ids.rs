@@ -29,12 +29,6 @@ pub(crate) fn member_stream_name(member: &str) -> cadmpeg_ir::StreamName {
     cadmpeg_ir::stream_name!("pvz:").with_suffix(member)
 }
 
-/// The id of the exact-geometry stream of geometry member `member` in loss
-/// messages.
-pub(crate) fn member_exact_stream(member: &str) -> String {
-    format!("pvz:{}#exact", member_key(member))
-}
-
 /// The document definition that places each of several root definitions.
 pub(crate) fn document() -> ProductDefinitionId {
     ProductDefinitionId::compose(

@@ -27,7 +27,7 @@ use cadmpeg_parasolid::records::{node_type as kind, PrimaryRecords};
 use crate::geometry::{self, Nodes};
 use crate::loss::SolidEdgeLossCode;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, GivenUpRecord};
+use cadmpeg_ir::unknown::part::{dropped_with, record_given_up, GivenUpRecord};
 
 const MM_PER_METRE: f64 = Magnification::MILLIMETERS_PER_METER.get();
 
@@ -153,6 +153,43 @@ fn chain_losses(defect: Option<&'static str>, owner: &str, losses: &mut Vec<Loss
         losses.push(SolidEdgeLossCode::ChainTruncated.note(format!(
             "{defect} of {owner}; the records after the defect are not transferred"
         )));
+    }
+}
+
+/// The notes of loop `loop_index`'s coedges, which the decode drops with
+/// the loop. The fins are those of the loop's ring that name an edge, up to
+/// the first link that does not resolve or that repeats a fin.
+fn drop_fins(nodes: &Nodes<'_>, stream: u32, loop_index: u32, losses: &mut Vec<LossNote>) {
+    let mut seen = BTreeSet::new();
+    let mut current = nodes
+        .get(&loop_index)
+        .and_then(|loop_| ptr(*loop_, "halfedge"));
+    while let Some(index) = current.filter(|index| seen.insert(*index)) {
+        let Some(fin) = nodes.get(&index).copied() else {
+            break;
+        };
+        if ptr(fin, "edge").is_some() {
+            losses.push(dropped_with(
+                coedge_id(stream, index),
+                loop_id(stream, loop_index),
+            ));
+        }
+        current = ptr(fin, "forward");
+    }
+}
+
+/// The notes of the loops `loops` of face `face`, which the decode drops
+/// with the face, and of their coedges.
+fn drop_loops(
+    nodes: &Nodes<'_>,
+    stream: u32,
+    face: &FaceId,
+    loops: impl IntoIterator<Item = u32>,
+    losses: &mut Vec<LossNote>,
+) {
+    for loop_index in loops {
+        losses.push(dropped_with(loop_id(stream, loop_index), face));
+        drop_fins(nodes, stream, loop_index, losses);
     }
 }
 
@@ -493,19 +530,22 @@ pub(crate) fn project(
         let Some(face) = nodes.get(&face_index).copied() else {
             continue;
         };
+        let (loop_nodes, defect) = chain(&nodes, ptr(face, "loop"), "next");
         let Some(face_sense) = sense(face) else {
+            let face = face_id(stream, face_index);
             losses.extend(record_given_up(
-                face_id(stream, face_index),
+                &face,
                 SolidEdgeLossCode::FaceSenseUnresolved.note(
                     "a face states no orientation; the face and its loops are not transferred",
                 ),
             ));
+            drop_loops(&nodes, stream, &face, loop_nodes, losses);
             continue;
         };
-        let (loop_nodes, defect) = chain(&nodes, ptr(face, "loop"), "next");
         let mut complete = defect.is_none();
         chain_losses(defect, "a face's loops", losses);
         let mut loops = Vec::new();
+        let mut unreadable = None;
         for loop_index in loop_nodes {
             match read_loop(&nodes, &mut edge_reads, loop_index) {
                 Ok(shape) => loops.push((loop_index, shape)),
@@ -516,15 +556,28 @@ pub(crate) fn project(
                         SolidEdgeLossCode::LoopUnreadable
                             .note(format!("a loop does not read: {reason}")),
                     ));
+                    drop_fins(&nodes, stream, loop_index, losses);
+                    unreadable.get_or_insert(loop_index);
                 }
             }
         }
         if !complete {
-            losses.extend(record_given_up(
-                face_id(stream, face_index),
-                SolidEdgeLossCode::LoopUnreadable
-                    .note("a face with a loop that does not read is not transferred"),
-            ));
+            let face = face_id(stream, face_index);
+            match unreadable {
+                Some(loop_index) => losses.push(dropped_with(&face, loop_id(stream, loop_index))),
+                None => losses.extend(record_given_up(
+                    &face,
+                    SolidEdgeLossCode::LoopUnreadable
+                        .note("a face with a loop that does not read is not transferred"),
+                )),
+            }
+            drop_loops(
+                &nodes,
+                stream,
+                &face,
+                loops.iter().map(|(loop_index, _)| *loop_index),
+                losses,
+            );
             continue;
         }
         let surface = if let Some(surface) = ptr(face, "surface") {
@@ -882,7 +935,14 @@ pub(crate) fn project(
     for face in face_reads {
         let mut loop_ids = Vec::new();
         let mut face_loops = Vec::new();
-        let mut usable = true;
+        let face_loop_indices = face
+            .loops
+            .iter()
+            .map(|(loop_index, _)| *loop_index)
+            .collect::<Vec<_>>();
+        // The first loop the face cannot keep, and the dropped edge its ring
+        // uses, if that is why.
+        let mut unusable = None;
         for (loop_index, shape) in face.loops {
             let boundary = match shape {
                 LoopShape::Pole(vertex) => LoopBoundary::Vertex {
@@ -890,15 +950,15 @@ pub(crate) fn project(
                     pcurves: Vec::new(),
                 },
                 LoopShape::Ring(ring) => {
-                    if ring.iter().any(|fin| dropped_edges.contains(&fin.edge)) {
-                        usable = false;
+                    if let Some(fin) = ring.iter().find(|fin| dropped_edges.contains(&fin.edge)) {
+                        unusable = Some((loop_index, Some(fin.edge)));
                         break;
                     }
                     let Ok(ring_boundary) = LoopRing::new(
                         ring.iter().map(|fin| coedge_id(stream, fin.fin)).collect(),
                         Vec::new(),
                     ) else {
-                        usable = false;
+                        unusable = Some((loop_index, None));
                         break;
                     };
                     face_loops.extend(ring.iter().map(|fin| (fin.fin, loop_index, fin.edge)));
@@ -913,14 +973,28 @@ pub(crate) fn project(
                 native_ref: None,
             });
         }
-        if !usable {
-            losses.extend(record_given_up(
-                face_id(stream, face.index),
-                SolidEdgeLossCode::LoopUnreadable
-                    .note("a face whose loop uses an edge with no carrier is not transferred"),
-            ));
-            // The loops already admitted for this face leave with it.
+        if let Some((bad_loop, edge)) = unusable {
+            let bad = loop_id(stream, bad_loop);
+            match edge {
+                Some(edge) => losses.push(dropped_with(&bad, edge_id(stream, edge))),
+                None => losses.extend(record_given_up(
+                    &bad,
+                    SolidEdgeLossCode::LoopUnreadable.note("the fins of a loop do not form a ring"),
+                )),
+            }
+            drop_fins(&nodes, stream, bad_loop, losses);
             let face_id = face_id(stream, face.index);
+            losses.push(dropped_with(&face_id, &bad));
+            drop_loops(
+                &nodes,
+                stream,
+                &face_id,
+                face_loop_indices
+                    .into_iter()
+                    .filter(|loop_index| *loop_index != bad_loop),
+                losses,
+            );
+            // The loops already admitted for this face leave with it.
             ir.geometry.loops.retain(|loop_| loop_.face != face_id);
             continue;
         }

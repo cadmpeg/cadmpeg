@@ -259,7 +259,6 @@ fn project_brep(
         // Edge refusals and their loops. The face's profiles end before the
         // first refused loop, so no later loop takes its position.
         let mut refusals = Vec::new();
-        let mut refused_edges = Vec::<&cadmpeg_ir::ids::EdgeId>::new();
         let Some(face_loops) = face.loops.boundary() else {
             continue;
         };
@@ -316,9 +315,6 @@ fn project_brep(
                     let edge_refusals = edge_refusal.take_records();
                     if !edge_refusals.is_empty() {
                         refusals.extend(edge_refusals.into_iter().map(|record| (record, loop_id)));
-                        if !refused_edges.contains(&&edge.id) {
-                            refused_edges.push(&edge.id);
-                        }
                         continue;
                     }
                     let Some((geometry, start_aligned)) = projected else {
@@ -418,6 +414,23 @@ fn project_brep(
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .ok()
             .filter(|profiles| !profiles.is_empty() || entities.len() > first_entity);
+        if profiles.is_none() && !refusals.is_empty() {
+            losses.push(
+                cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                    sketch_id.as_str(),
+                    format_args!(
+                        "{}: no edge of its face projects to a sketch entity",
+                        crate::loss::SldprtLossCode::SketchProfileRejected.kind()
+                    ),
+                )
+                .at(cadmpeg_ir::SourceProvenance::in_stream(
+                    "sldprt",
+                    source_stream.clone(),
+                    cadmpeg_core::decode::u64_from_index(stream_offset),
+                ))
+                .loss(),
+            );
+        }
         for (record, loop_id) in refusals {
             let consequence = match profiles {
                 Some(_) => format!(
@@ -435,16 +448,6 @@ fn project_brep(
                     .note(format!("{record}; {consequence}")),
             );
         }
-        losses.extend(refused_edges.into_iter().map(|edge| {
-            cadmpeg_ir::unknown::part::GivenUpRecord::new(
-                edge,
-                format_args!(
-                    "{}: the edge projects to no sketch entity",
-                    crate::loss::SldprtLossCode::SketchProfileRejected.kind()
-                ),
-            )
-            .loss()
-        }));
         let Some(profiles) = profiles else {
             continue;
         };

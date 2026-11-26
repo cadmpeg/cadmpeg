@@ -263,7 +263,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record sldprt:brep:face#10 stream=\"Contents/Config-1-Partition\" offset=91 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10]",
+        "message": "record sldprt:brep:face#10@block@250 stream=\"Contents/Config-1-Partition\" offset=91 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10@block@250]",
         "provenance": {
           "format": "sldprt",
           "offset": 91,
@@ -305,7 +305,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record sldprt:brep:face#10 stream=\"Contents/Config-0-Partition\" offset=91 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10]",
+        "message": "record sldprt:brep:face#10@block@8 stream=\"Contents/Config-0-Partition\" offset=91 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10@block@8]",
         "provenance": {
           "format": "sldprt",
           "offset": 91,

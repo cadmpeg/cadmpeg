@@ -232,12 +232,26 @@ fn exponential_instancing_stops_at_the_occurrence_limit() {
         ]
     );
     assert!(
-        losses[1]
-            .message
-            .starts_with("record pvz:model:definition#1/occurrence#"),
+        losses[1].message.starts_with(&format!(
+            "record pvz:model:definition#1/occurrence#{} given up: ",
+            LIMIT - 1
+        )),
         "{}",
         losses[1].message
     );
+    // The walk stops inside the first child of A, so every later child of A
+    // is dropped with the stopped child occurrence.
+    let dropped = losses[1]
+        .message
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+        .expect("the charge names the dropped child occurrences");
+    let mut expected = (1..LIMIT)
+        .map(|occurrence| format!("pvz:model:definition#0/occurrence#{occurrence}"))
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(dropped, expected);
 }
 
 /// Each definition's children are walked once (§8.1), so the walk is linear

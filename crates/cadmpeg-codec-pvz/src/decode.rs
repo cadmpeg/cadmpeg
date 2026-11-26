@@ -20,7 +20,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{BodyId, Identity};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::SourceFidelity;
 
 use crate::loss::PvzLossCode;
@@ -265,20 +265,29 @@ fn exact_geometry(
     given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Vec<BodyId>, CodecError> {
     let name = member.name;
-    let stored = match crate::ol::stored_exact_stream(ctx, member.view) {
-        Ok(Some(stored)) => stored,
-        Ok(None) => return Ok(Vec::new()),
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(error) => {
-            losses.extend(record_given_up(
-                crate::ids::member_exact_stream(name),
-                PvzLossCode::GeometryExactUndecoded.note(format!(
-                    "geometry member {name:?}: the exact-geometry stream was not located \
-                     ({error}); the member keeps its tessellation"
-                )),
-            ));
-            return Ok(Vec::new());
+    let mut streams = crate::ol::stored_exact_streams(ctx, member.view)?;
+    if streams.len() > 1 {
+        losses.push(PvzLossCode::GeometryExactUndecoded.note(format!(
+            "geometry member {name:?}: the member carries {} exact-geometry streams, and the \
+             decode takes none of them as its B-rep; the member keeps its tessellation",
+            streams.len()
+        )));
+        for stream in streams {
+            let mut part = crate::ol::stream_part(name, member.view, stream.stored);
+            if let Some(owner) = owner {
+                part = part.contained_in(owner.clone());
+            }
+            given_up.push(ctx.give_up_part(
+                part,
+                CodecError::malformed(
+                    "the geometry member carries more than one exact-geometry stream",
+                ),
+            )?);
         }
+        return Ok(Vec::new());
+    }
+    let Some(stored) = streams.pop() else {
+        return Ok(Vec::new());
     };
     let stream_id = stored.stream_id;
     let mut geometry = Topology::default();

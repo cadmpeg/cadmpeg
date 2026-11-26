@@ -379,6 +379,56 @@ fn a_pinned_decode_refuses_a_face_that_states_no_orientation() {
         .any(|token| token == given_up));
 }
 
+#[test]
+fn a_face_that_states_no_orientation_drops_its_loops_and_coedges() {
+    let mut partition = test_support::cube_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FACE)
+        .unwrap()
+        .field_range("sense")
+        .unwrap();
+    partition[range].copy_from_slice(b"?");
+    let bytes = test_support::with_partitions(&[partition]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let charges: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    let [charge] = charges.as_slice() else {
+        panic!("one record.unreadable: {charges:?}");
+    };
+    assert!(
+        charge.starts_with("record solidedge:brep:face#"),
+        "{charge}"
+    );
+    let dropped = charge
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+        .expect("the face's charge names the records dropped with it");
+    for kind in ["solidedge:brep:loop#", "solidedge:brep:coedge#"] {
+        assert!(dropped.iter().any(|id| id.starts_with(kind)), "{charge}");
+    }
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.faces.len(), 5);
+    assert!(dropped.iter().all(|id| {
+        geometry.loops.iter().all(|loop_| loop_.id.as_str() != *id)
+            && geometry
+                .coedges
+                .iter()
+                .all(|coedge| coedge.id.as_str() != *id)
+    }));
+}
+
 fn surfaceless_face(sense: u8) -> cadmpeg_ir::codec::DecodeResult {
     let mut partition = test_support::sphere_partition();
     let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)

@@ -30,7 +30,7 @@ pub fn structure(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<(), CodecE
 /// exact-stream accessor.
 pub fn geometry(ctx: &DecodeContext<'_>, member: View<'_>) -> Result<(), CodecError> {
     crate::ol::decode(ctx, "geometry.ol", member)?;
-    if let Some(exact) = crate::ol::stored_exact_stream(ctx, member)? {
+    for exact in crate::ol::stored_exact_streams(ctx, member)? {
         crate::gzip::expand(ctx, exact.stored)?;
     }
     Ok(())

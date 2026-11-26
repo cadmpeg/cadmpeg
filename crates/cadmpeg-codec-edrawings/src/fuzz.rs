@@ -29,7 +29,15 @@ pub fn stream<'a>(ctx: &DecodeContext<'a>, member: View<'a>) -> Result<(), Codec
     let model = crate::stream::parse(ctx, member)?;
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let mut losses = Vec::new();
-    crate::hsf::decode_body(ctx, model.body, grammar, &mut ir, &mut losses).map(|_| ())
+    crate::hsf::decode_body(
+        ctx,
+        model.body,
+        grammar,
+        &mut ir,
+        &mut losses,
+        &mut Vec::new(),
+    )
+    .map(|_| ())
 }
 
 /// Exercise the model stream walker, the scene collector, and the CADIR
@@ -42,7 +50,8 @@ pub fn model<'a>(ctx: &DecodeContext<'a>, body: View<'a>) -> Result<(), CodecErr
     ] {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         let mut losses = Vec::new();
-        crate::hsf::decode_body(ctx, body, grammar, &mut ir, &mut losses).map(|_| ())?;
+        crate::hsf::decode_body(ctx, body, grammar, &mut ir, &mut losses, &mut Vec::new())
+            .map(|_| ())?;
     }
     Ok(())
 }

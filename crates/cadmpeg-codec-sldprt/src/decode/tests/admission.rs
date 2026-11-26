@@ -419,9 +419,10 @@ fn a_pinned_decode_refuses_a_partition_whose_entity_records_build_no_geometry() 
     let site = losses
         .iter()
         .filter(|note| note.code == record_unreadable_kind())
-        .flat_map(|note| note.message.split_whitespace())
-        .find(|token| token.starts_with("sldprt:file:"))
-        .expect("record.unreadable names the partition section");
+        .map(|note| note.message.as_str())
+        .find(|message| message.starts_with("part parasolid-site "))
+        .expect("record.unreadable gives up the partition site");
+    assert!(!site.contains("sldprt:file:"));
 
     let failure = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
@@ -430,11 +431,7 @@ fn a_pinned_decode_refuses_a_partition_whose_entity_records_build_no_geometry() 
         panic!("expected a strict rejection, got {failure:?}");
     };
     assert_eq!(rejection.loss().code, record_unreadable_kind());
-    assert!(rejection
-        .loss()
-        .message
-        .split_whitespace()
-        .any(|token| token == site));
+    assert_eq!(rejection.loss().message, site);
 }
 
 #[test]

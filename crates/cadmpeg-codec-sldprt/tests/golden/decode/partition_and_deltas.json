@@ -98,6 +98,10 @@
           {
             "id": "sldprt:file:block#8",
             "links": []
+          },
+          {
+            "id": "sldprt:source:part#91635c373bfc3615289db3ea77006e44e90b8ef76bab255ca60bf9cdbdc982e0",
+            "links": []
           }
         ]
       }
@@ -313,11 +317,12 @@
             "strict_floor": "error"
           }
         },
-        "message": "record sldprt:file:block#8 stream=\"Contents/Config-0-Partition\" offset=0 length=602 given up: sldprt/geometry.parasolid-not-transferred: 1 Parasolid entity record(s) frame and build no geometry; dropped=[]",
+        "message": "part parasolid-site \"partition body\" stream=\"Contents/Config-0-Partition\" offset=0 length=602 record=sldprt:source:part#91635c373bfc3615289db3ea77006e44e90b8ef76bab255ca60bf9cdbdc982e0: malformed container: sldprt/geometry.parasolid-not-transferred: 1 Parasolid entity record(s) frame and build no geometry; dropped=[]",
         "provenance": {
           "format": "sldprt",
           "offset": 0,
-          "stream": "Contents/Config-0-Partition"
+          "stream": "Contents/Config-0-Partition",
+          "tag": "parasolid-site"
         },
         "severity": "error"
       }
@@ -394,6 +399,18 @@
         "offset": 0,
         "stream": "source",
         "untyped": []
+      },
+      "sldprt:source:part#91635c373bfc3615289db3ea77006e44e90b8ef76bab255ca60bf9cdbdc982e0": {
+        "bytes": {
+          "byte_len": 602,
+          "kind": "digest",
+          "sha256": "5b1504d820335fd8233c12b225e907aa50dc5cece6cdf2ea9bb59f4d6338b4e4"
+        },
+        "offset": 0,
+        "stream": "Contents/Config-0-Partition",
+        "untyped": [
+          "model"
+        ]
       }
     },
     "unrepresented": [

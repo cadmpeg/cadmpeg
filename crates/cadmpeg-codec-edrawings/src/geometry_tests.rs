@@ -427,15 +427,18 @@ fn a_pinned_decode_refuses_a_shell_that_does_not_decode() {
     let package = part_package(&model_of(items, None).stream());
     let admitted = decode(&package);
     assert!(codes(&admitted).contains(&EdrawingsLossCode::ModelShellInvalid.kind()));
-    let given_up = admitted
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
-        .flat_map(|loss| loss.message.split_whitespace())
-        .find(|token| token.starts_with("object#"))
-        .expect("record.unreadable names the shell object")
-        .to_owned();
+    let [given_up] = charges(&admitted)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(
+        given_up.starts_with("part model-object stream=\"eModel\" offset="),
+        "{given_up}"
+    );
+    assert!(
+        given_up.contains("edrawings/model.shell-invalid: strip index lies outside the shell"),
+        "{given_up}"
+    );
+    assert!(given_up.contains("; dropped=[]"), "{given_up}");
     assert_eq!(admitted.ir().geometry.faces.len(), 6);
 
     let mut options = DecodeOptions::default();
@@ -450,11 +453,86 @@ fn a_pinned_decode_refuses_a_shell_that_does_not_decode() {
         rejection.loss().code,
         cadmpeg_ir::unknown::part::record_unreadable_kind()
     );
-    assert!(rejection
-        .loss()
-        .message
-        .split_whitespace()
-        .any(|token| token == given_up));
+    assert_eq!(rejection.loss().message, given_up);
+}
+
+/// The messages of the `record.unreadable` charges of `result`.
+fn charges(result: &DecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect()
+}
+
+#[test]
+fn a_shell_that_does_not_decode_drops_its_body_and_occurrence() {
+    let mut spec = assembly();
+    spec.bodies[1] = BodySpec {
+        colour: None,
+        subs: vec![vec![Item::Shell {
+            points: vec![[0.0; 3]; 3],
+            strips: vec![vec![0, 1, 7]],
+        }]],
+    };
+    let result = decode(&assembly_package(&spec.stream()));
+    let [given_up] = charges(&result)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(given_up.starts_with("part model-object "), "{given_up}");
+    let dropped = given_up
+        .split_once("; dropped=[")
+        .and_then(|(_, tail)| tail.split_once(']'))
+        .map(|(list, _)| list.split(", ").collect::<Vec<_>>())
+        .expect("the charge lists its dropped records");
+    let [body, occurrence] = dropped.as_slice() else {
+        panic!("a body and an occurrence: {dropped:?}");
+    };
+    assert!(body.starts_with("edrawings:model:body#"), "{body}");
+    assert!(
+        occurrence.starts_with("edrawings:model:occurrence#"),
+        "{occurrence}"
+    );
+    let ir = result.ir();
+    assert!(ir.geometry.bodies.iter().all(|b| b.id.to_string() != *body));
+    assert!(ir
+        .model
+        .occurrences
+        .iter()
+        .all(|o| o.id.to_string() != *occurrence));
+    assert_eq!(ir.model.occurrences.len(), 4);
+}
+
+#[test]
+fn objects_outside_a_body_and_repeated_ids_give_up_their_own_records() {
+    let mut s = Stream::new();
+    s.shell_placeholder().slot();
+    s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
+    s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
+    s.raw(b"z");
+    let result = decode(&part_package(s.bytes()));
+    let given_up = charges(&result);
+    let offsets: Vec<u64> = given_up
+        .iter()
+        .map(|message| {
+            let tail = message
+                .strip_prefix("part model-object stream=\"eModel\" offset=")
+                .unwrap_or_else(|| panic!("an object part: {message}"));
+            tail.split_once(' ').unwrap().0.parse().unwrap()
+        })
+        .collect();
+    let [kept, later] = offsets.as_slice() else {
+        panic!("two object parts: {given_up:?}");
+    };
+    assert!(kept < later, "{given_up:?}");
+    assert!(given_up
+        .iter()
+        .any(|message| message.contains("outside every library body")));
+    assert!(given_up
+        .iter()
+        .any(|message| message.contains("an earlier object has the id 0")));
 }
 
 #[test]
@@ -502,9 +580,20 @@ fn an_instance_without_a_library_body_is_charged() {
         codes(&result),
         [
             EdrawingsLossCode::ModelObjectInvalid.kind(),
+            EdrawingsLossCode::ModelNoGeometry.kind(),
             cadmpeg_ir::unknown::part::record_unreadable_kind(),
-            EdrawingsLossCode::ModelNoGeometry.kind()
         ]
+    );
+    let [given_up] = charges(&result)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(
+        given_up.starts_with("part tree-node stream=\"eModel\" offset="),
+        "{given_up}"
+    );
+    assert!(
+        given_up.contains("edrawings/model.object-invalid: the instance names no library body"),
+        "{given_up}"
     );
 }
 

@@ -229,7 +229,7 @@ fn decode_inner(
     let part = assembly.is_none();
     let mut decoded = decode_scan(ctx, scan, &placed_virtual, part)?;
     if let Some(assembly) = assembly {
-        assembly.apply(&mut decoded);
+        assembly.apply(ctx, &mut decoded)?;
     }
     // The root is stated once, after the assembly projection has added its
     // definitions, so an assembly states its own root and no bare part root.
@@ -2830,30 +2830,25 @@ fn untaken_local_bodies_losses(
         .collect()
 }
 
-/// The `record.unreadable` of a Parasolid site whose entity records frame and
-/// build no geometry; a site that holds no entity record gives up nothing.
-/// The record is the site's section, at the start of its stream.
-fn site_not_transferred(
-    site: &ActiveParasolidSite<'_>,
+/// Gives up the Parasolid site `part` whose entity records frame and build
+/// no geometry. A site that holds no entity record gives up nothing.
+fn give_up_unbuilt_site(
+    ctx: &DecodeContext<'_>,
+    part: Part<'_>,
     decoded: &Brep,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    given_up: &mut Vec<GivenUpPart>,
+) -> Result<(), CodecError> {
     let records = decoded.stats.source_entity_records;
-    (records > 0).then(|| {
-        cadmpeg_ir::unknown::part::GivenUpRecord::new(
-            site.section.native_id(),
-            format_args!(
+    if records > 0 {
+        given_up.push(ctx.give_up_part(
+            part,
+            CodecError::malformed(format_args!(
                 "{}: {records} Parasolid entity record(s) frame and build no geometry",
                 SldprtLossCode::GeometryParasolidNotTransferred.kind()
-            ),
-        )
-        .at(cadmpeg_ir::SourceProvenance::in_stream(
-            "sldprt",
-            site.source_stream().clone(),
-            0,
-        ))
-        .spanning(u64_from_index(site.section.payload().len()))
-        .loss()
-    })
+            )),
+        )?);
+    }
+    Ok(())
 }
 
 /// The loss for `unreadable` of `total` imported body streams.
@@ -2905,7 +2900,7 @@ fn try_decode_brep(
         let mut decoded = Brep::default();
         merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded, given_up)?;
         if decoded.bodies.is_empty() {
-            fallback_losses.append(&mut decoded.losses);
+            fallback_losses.extend(decoded.take_losses());
             return Ok(None);
         }
         let report = build_geometry_report(
@@ -2950,10 +2945,15 @@ fn try_decode_brep(
         selected_is_empty_model && (resolved_active_site.is_some() || !any_site_has_geometry);
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
-            let (_, representative, decoded) = &decoded_sites[selected_site];
-            fallback_losses.extend(decoded.losses.iter().cloned());
+            let (site, _, decoded) = &mut decoded_sites[selected_site];
+            fallback_losses.extend(decoded.take_losses());
             append_topology_record_losses(&decoded.stats, fallback_losses);
-            fallback_losses.extend(site_not_transferred(&streams[*representative], decoded));
+            give_up_unbuilt_site(
+                ctx,
+                site_part(streams, &sites[site.as_str()]),
+                decoded,
+                given_up,
+            )?;
             return Ok(None);
         }
     } else {
@@ -2970,10 +2970,16 @@ fn try_decode_brep(
                 })
         });
         if !any_site_has_geometry && !any_empty_model {
-            for (_, representative, decoded) in &decoded_sites {
-                fallback_losses.extend(decoded.losses.iter().cloned());
+            for (site, _, decoded) in &mut decoded_sites {
+                decoded.qualify_ids(site)?;
+                fallback_losses.extend(decoded.take_losses());
                 append_topology_record_losses(&decoded.stats, fallback_losses);
-                fallback_losses.extend(site_not_transferred(&streams[*representative], decoded));
+                give_up_unbuilt_site(
+                    ctx,
+                    site_part(streams, &sites[site.as_str()]),
+                    decoded,
+                    given_up,
+                )?;
             }
             return Ok(None);
         }
@@ -3322,6 +3328,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
         .append(&mut source.native_body_identities);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.losses.append(&mut source.losses);
+    target.dropped.append(&mut source.dropped);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
@@ -5163,6 +5170,7 @@ fn build_geometry_report(
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
+    let mut brep_losses = decoded.take_losses();
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -5186,7 +5194,7 @@ fn build_geometry_report(
         }
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
-    losses.append(&mut decoded.losses);
+    losses.append(&mut brep_losses);
     if s.unknown_curve_edges > 0 {
         losses.push(
             SldprtLossCode::GeometryEdgeSupportCurveUntyped.note(format!(

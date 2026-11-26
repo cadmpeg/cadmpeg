@@ -96,6 +96,23 @@ pub(super) struct Node {
     pub(super) default_colour: Option<[u8; 3]>,
     /// Whether the node's user option sets `defaultvisibility=off`.
     pub(super) hidden_by_default: bool,
+    /// The bytes of the node segment, from its open record to its close
+    /// record.
+    pub(super) span: Span,
+}
+
+/// The bytes of a record or a segment: offsets in the model stream.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Span {
+    pub(super) start: usize,
+    pub(super) end: usize,
+}
+
+/// An object of the store and the bytes of its record.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Stored<'a> {
+    pub(super) object: Object<'a>,
+    pub(super) span: Span,
 }
 
 /// An object of the store.
@@ -152,12 +169,14 @@ enum Frame {
 pub(super) struct Scene<'a> {
     /// The record rules the stream was read with.
     pub(super) grammar: Option<Grammar>,
+    /// The model stream.
+    pub(super) stream: &'a [u8],
     /// Library bodies in stream order.
     pub(super) bodies: Vec<LibraryBody>,
     /// Tree nodes in stream order.
     pub(super) nodes: Vec<Node>,
     /// Shells and shell instances by object id.
-    pub(super) objects: BTreeMap<u32, Object<'a>>,
+    pub(super) objects: BTreeMap<u32, Stored<'a>>,
     /// Text objects by object id.
     pub(super) texts: BTreeMap<u32, String>,
     /// The document name text slot.
@@ -172,8 +191,9 @@ pub(super) struct Scene<'a> {
     default_state: Option<String>,
     /// Slots of shell placeholders that lie outside every library body.
     pub(super) orphan_slots: Vec<u32>,
-    /// Ids of later objects whose id was already taken.
-    pub(super) duplicate_objects: Vec<u32>,
+    /// Later objects whose id was already taken: the id and the bytes of
+    /// the later record.
+    pub(super) duplicate_objects: Vec<(u32, Span)>,
     /// Number of records walked.
     pub(super) records: usize,
     /// Geometry and image side objects: 2D annotation content.
@@ -262,6 +282,7 @@ impl<'a> Scene<'a> {
             grammar,
             scene: Scene {
                 grammar: Some(grammar),
+                stream: view.window(),
                 ..Scene::default()
             },
             ..Builder::default()
@@ -272,7 +293,11 @@ impl<'a> Scene<'a> {
             if matches!(record, Record::End) {
                 break;
             }
-            builder.record(record).map_err(|reason| WalkError {
+            let span = Span {
+                start: walker.offset(),
+                end: walker.end(),
+            };
+            builder.record(record, span).map_err(|reason| WalkError {
                 offset: walker.offset(),
                 reason,
             })?;
@@ -328,7 +353,7 @@ impl<'a> Builder<'a> {
         })
     }
 
-    fn open(&mut self, name: &str) -> Result<(), &'static str> {
+    fn open(&mut self, name: &str, span: Span) -> Result<(), &'static str> {
         let under = self.top();
         let frame = if (name.starts_with(LIBRARY_PREFIX) || name.starts_with(RELATIVE_PREFIX))
             && name.contains(BODY_INFIX)
@@ -356,6 +381,7 @@ impl<'a> Builder<'a> {
             self.scene.nodes.push(Node {
                 segment: name.to_owned(),
                 parent,
+                span,
                 ..Node::default()
             });
             Frame::Node(self.scene.nodes.len() - 1)
@@ -511,24 +537,31 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn object(&mut self, id: u32, object: Object<'a>) -> Result<(), &'static str> {
+    fn object(&mut self, id: u32, object: Object<'a>, span: Span) -> Result<(), &'static str> {
         if self.scene.objects.len() >= MAX_OBJECTS {
             return Err("object count exceeds the cap");
         }
         if self.scene.objects.contains_key(&id) || self.scene.texts.contains_key(&id) {
-            self.scene.duplicate_objects.push(id);
+            self.scene.duplicate_objects.push((id, span));
         } else {
-            self.scene.objects.insert(id, object);
+            self.scene.objects.insert(id, Stored { object, span });
         }
         Ok(())
     }
 
-    fn record(&mut self, record: Record<'a>) -> Result<(), &'static str> {
+    fn record(&mut self, record: Record<'a>, span: Span) -> Result<(), &'static str> {
         self.scene.records += 1;
         let closed = self.closed.take();
         match record {
-            Record::Open(name) => self.open(&latin1(name))?,
-            Record::Close => self.closed = self.stack.pop(),
+            Record::Open(name) => self.open(&latin1(name), span)?,
+            Record::Close => {
+                self.closed = self.stack.pop();
+                if let Some(Frame::Node(index)) = self.closed {
+                    if let Some(node) = self.scene.nodes.get_mut(index) {
+                        node.span.end = span.end;
+                    }
+                }
+            }
             Record::UserOption(text) => self.user_option(&latin1(text)),
             Record::UserOptionWide(text) => self.user_option(&utf16(text)),
             Record::Colour(rgb) => {
@@ -562,9 +595,9 @@ impl<'a> Builder<'a> {
                 self.closed = closed;
                 self.slot(kind)?;
             }
-            Record::Shell(shell) => self.object(shell.id, Object::Shell(shell))?,
+            Record::Shell(shell) => self.object(shell.id, Object::Shell(shell), span)?,
             Record::Instance(instance) => match u32::try_from(instance.own) {
-                Ok(id) => self.object(id, Object::Instance(instance))?,
+                Ok(id) => self.object(id, Object::Instance(instance), span)?,
                 Err(_) => return Err("shell instance id exceeds 32 bits"),
             },
             Record::SideImage | Record::SideGeometry => {
@@ -575,7 +608,7 @@ impl<'a> Builder<'a> {
             Record::SideText(id, text) => {
                 self.stack.push(Frame::Side);
                 if self.scene.objects.contains_key(&id) || self.scene.texts.contains_key(&id) {
-                    self.scene.duplicate_objects.push(id);
+                    self.scene.duplicate_objects.push((id, span));
                 } else if self.scene.texts.len() < MAX_OBJECTS {
                     self.scene.texts.insert(id, utf16(text));
                 } else {

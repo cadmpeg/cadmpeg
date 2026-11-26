@@ -82,7 +82,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     ));
     let mut geometry_transferred = false;
     if let Some(body) = model_body {
-        match crate::hsf::decode_body(ctx, body, grammar, &mut ir, &mut losses)? {
+        match crate::hsf::decode_body(ctx, body, grammar, &mut ir, &mut losses, &mut given_up)? {
             Ok(transferred) => geometry_transferred = transferred,
             Err(error) => given_up.push(give_up_model(ctx, &package, error)?),
         }

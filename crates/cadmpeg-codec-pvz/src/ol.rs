@@ -181,22 +181,18 @@ pub(crate) struct StoredExactStream<'m> {
     pub(crate) stored: View<'m>,
 }
 
-/// The stored exact-geometry stream of `member`, if it has one.
-pub(crate) fn stored_exact_stream<'m>(
+/// The stored exact-geometry streams of `member`, in stored order.
+pub(crate) fn stored_exact_streams<'m>(
     ctx: &DecodeContext<'_>,
     member: View<'m>,
-) -> Result<Option<StoredExactStream<'m>>, CodecError> {
+) -> Result<Vec<StoredExactStream<'m>>, CodecError> {
     let container = Container::open(ctx, member)?;
-    let mut exact = container.streams.iter().filter(|(id, _)| is_exact(*id));
-    let Some(&(stream_id, stored)) = exact.next() else {
-        return Ok(None);
-    };
-    if exact.next().is_some() {
-        return Err(CodecError::malformed(
-            "geometry member carries more than one exact-geometry stream",
-        ));
-    }
-    Ok(Some(StoredExactStream { stream_id, stored }))
+    Ok(container
+        .streams
+        .iter()
+        .filter(|(id, _)| is_exact(*id))
+        .map(|&(stream_id, stored)| StoredExactStream { stream_id, stored })
+        .collect())
 }
 
 /// The part of a stored stream of geometry member `name`, whose bytes
