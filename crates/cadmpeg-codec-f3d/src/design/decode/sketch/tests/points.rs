@@ -78,7 +78,9 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
         (8, false, 0, 0, false),
         (10, false, 0, 1, false),
         (10, true, 0, 1, false),
+        (10, true, 1, 0, false),
         (10, true, 2, 1, false),
+        (10, true, 4, 0, false),
         (11, true, 0, 0, false),
     ];
     for (version, inline_typed, selector, state, padded) in cases {
@@ -101,9 +103,19 @@ fn point_record_parser_closes_every_versioned_three_coordinate_form() {
             SketchPointClosure::from_pair(selector, state)
         );
     }
-    assert!(
-        decode_sketch_point_record(&tagged_point_payload(10, false, 2, 1, false), 10,).is_none()
-    );
+    for (inline_typed, selector, state) in [
+        (false, 1, 0),
+        (false, 2, 1),
+        (false, 4, 0),
+        (true, 1, 1),
+        (true, 4, 1),
+    ] {
+        assert!(decode_sketch_point_record(
+            &tagged_point_payload(10, inline_typed, selector, state, false),
+            10,
+        )
+        .is_none());
+    }
     for (selector, state) in [(0, 0), (0, 1), (1, 0), (1, 1), (2, 1), (4, 0), (4, 1)] {
         for padded_paired_reference in [false, true] {
             let decoded = decode_sketch_point_record(
