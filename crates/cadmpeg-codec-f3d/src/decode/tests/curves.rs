@@ -47,7 +47,7 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 const EPS_CONE_ANGLE: f64 = 1.0e-12;
 
 #[test]
-fn transform_decodes_column_major_basis_and_scaled_translation() {
+fn transform_decodes_column_major_basis_and_centimetre_translation() {
     use cadmpeg_asm::sab::{Record, Token};
 
     let record = Record {
@@ -65,10 +65,10 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
         offset: 0,
         len: 0,
     };
-    let transform = cadmpeg_asm::brep::attributes::decode_transform(&record, 60.0).unwrap();
-    assert_eq!(transform.rows()[0], [1.0, 0.0, 0.0, 600.0]);
-    assert_eq!(transform.rows()[1], [0.0, 1.0, 0.0, 1200.0]);
-    assert_eq!(transform.rows()[2], [0.0, 0.0, 1.0, 1800.0]);
+    let transform = cadmpeg_asm::brep::attributes::decode_transform(&record).unwrap();
+    assert_eq!(transform.rows()[0], [1.0, 0.0, 0.0, 10.0]);
+    assert_eq!(transform.rows()[1], [0.0, 1.0, 0.0, 20.0]);
+    assert_eq!(transform.rows()[2], [0.0, 0.0, 1.0, 30.0]);
     assert_eq!(transform.rows()[3], [0.0, 0.0, 0.0, 1.0]);
 }
 

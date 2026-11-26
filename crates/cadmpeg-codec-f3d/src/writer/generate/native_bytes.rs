@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Low-level native record byte writers for source-less generation.
 
+use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::CodecError;
@@ -159,9 +160,9 @@ pub(super) fn native_transform(
             transform.rows()[2][2],
         ],
         [
-            transform.rows()[0][3] / 600.0,
-            transform.rows()[1][3] / 600.0,
-            transform.rows()[2][3] / 600.0,
+            transform.rows()[0][3] / LEN_TO_MM,
+            transform.rows()[1][3] / LEN_TO_MM,
+            transform.rows()[2][3] / LEN_TO_MM,
         ],
     ] {
         native_vector(bytes, vector);

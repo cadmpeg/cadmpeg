@@ -501,7 +501,6 @@ pub fn decode_with_table(
     let saved_entity_limit = header
         .and_then(|header| header.entity_count)
         .and_then(|count| i64::try_from(count).ok());
-    let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(records)?;
     let mut reach = Reachable::default();
@@ -588,7 +587,6 @@ pub fn decode_with_table(
             reach: &reach,
             wire: &wire,
             stream,
-            header_scale,
             format,
         },
     )?;

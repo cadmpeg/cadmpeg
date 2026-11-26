@@ -2217,6 +2217,30 @@ sha256 = "c300050a3bb5f741b68245e08db942c239fa74c7b05dccd26e7f8aba3ced5da5"
 notes = "STEP AP214 ground-truth export of sldprt/extrude_up_to_vertex_high.SLDPRT. 8 x 8 mm boss on Front plane (x 12..20) extruded Up To Vertex (10, 10, 22) on step edge (DI-15)."
 
 [[file]]
+filename = "ironcad/Ironcad_2025_simple_test_parts.sat"
+format = "sat"
+dialect = "sat:text"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "32b6f62837665d52ba53af477496692b85afd355fdda695469b7639d19972c44"
+notes = "ACIS 2021 R31 text export of an IronCAD scene of five parts: a header extension line, extended entity prefixes with the body integer, and one scaled, translated body transform per body."
+
+[[file]]
+filename = "ironcad/Assembly_moved.sat"
+format = "sat"
+dialect = "sat:text"
+author = "cadmpeg project contributors"
+authoring_app = "IronCAD"
+authoring_app_version = "2025 27.0 Product Update 1 Service Pack 2"
+acquisition_date = "2026-11-26"
+license = "CC0-1.0"
+sha256 = "1b036c51136d6115ea3cb4abe2f44524c2d581a68a0a930326cf6aa5e7c74287"
+notes = "ACIS 2021 R31 text export of two identical blocks of an IronCAD assembly; each body transform has scale 10 and a millimetre translation."
+
+[[file]]
 filename = "ironcad/Block_ACIS_100x50x20.ics"
 format = "ironcad"
 dialect = "ironcad:cfb"

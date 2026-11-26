@@ -5157,8 +5157,6 @@ pub struct ContainerInputs<'a, 'record> {
     pub wire: &'a WireShellTopology,
     /// Source stream name.
     pub stream: &'a str,
-    /// Transform length scale.
-    pub header_scale: f64,
     /// Identity format.
     pub format: IdFormat,
 }
@@ -5176,7 +5174,6 @@ pub fn emit_containers(
         reach,
         wire,
         stream,
-        header_scale,
         format,
     } = inputs;
     let Reachable {
@@ -5298,8 +5295,7 @@ pub fn emit_containers(
                 out.bodies.push(Body {
                     id: body_id,
                     kind: cadmpeg_ir::topology::BodyKind::Solid,
-                    transform: transform_record
-                        .and_then(|transform| decode_transform(transform, header_scale)),
+                    transform: transform_record.and_then(|transform| decode_transform(transform)),
                     name: attribute_name(r)?,
                     color: attribute_color(r),
                     visible: None,
