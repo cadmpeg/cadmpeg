@@ -131,9 +131,9 @@ fn attachment_edges_keep_wrapper_item_and_selector_order() {
             },
         ]
     );
-    let wire = serde_json::to_value(&attachment).expect("native wire");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&attachment).expect("native wire");
     assert_eq!(
-        serde_json::from_value::<AttachmentEdges>(wire).expect("native read"),
+        cadmpeg_core::serde_erase::json::from_value::<AttachmentEdges>(wire).expect("native read"),
         attachment
     );
     assert_eq!(
@@ -241,7 +241,7 @@ fn edge_attached_loss_names_the_decoded_edge_count() {
     refusals.insert("plate".to_owned(), ContourRefusal::EdgeAttached(4));
     let losses = refusals.losses(&[native("attached", "plate")]);
     assert_eq!(losses.len(), 1);
-    let text = serde_json::to_string(&losses).expect("loss");
+    let text = cadmpeg_core::serde_erase::json::to_string(&losses).expect("loss");
     assert!(text.contains("contour-flange check is edge-attached"));
     assert!(text.contains("decoded attachment selects 4 input edge(s)"));
 }
@@ -311,9 +311,11 @@ fn native_contour_retains_unique_item_matched_brep_revisions() {
             let retained = inventory.sheet_metal_flanges[0].attachment_edges.as_ref();
             if invalid.is_none() {
                 assert_eq!(retained, Some(&expected));
-                let wire = serde_json::to_value(&inventory.sheet_metal_flanges[0])
-                    .expect("native contour");
-                let decoded: Flange = serde_json::from_value(wire).expect("native contour read");
+                let wire =
+                    cadmpeg_core::serde_erase::json::to_value(&inventory.sheet_metal_flanges[0])
+                        .expect("native contour");
+                let decoded: Flange =
+                    cadmpeg_core::serde_erase::json::from_value(wire).expect("native contour read");
                 assert_eq!(decoded.attachment_edges.as_ref(), Some(&expected));
             } else {
                 assert_eq!(retained, None);

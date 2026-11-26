@@ -692,8 +692,8 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
     reordered[start..=inspection].rotate_left(1 + "isBasic".len() + 1);
     let other = parse_payload(&reordered, &mut losses);
     assert!(losses.is_empty(), "{losses:?}");
-    let mut left = serde_json::to_value(&original[0]).unwrap();
-    let mut right = serde_json::to_value(&other[0]).unwrap();
+    let mut left = cadmpeg_core::serde_erase::json::to_value(&original[0]).unwrap();
+    let mut right = cadmpeg_core::serde_erase::json::to_value(&other[0]).unwrap();
     for value in [&mut left, &mut right] {
         for field in [
             "value_offset",

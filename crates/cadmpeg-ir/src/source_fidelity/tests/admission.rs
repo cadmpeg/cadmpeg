@@ -10,7 +10,7 @@ fn sidecar_wire() -> serde_json::Value {
     fidelity
         .insert_retained_record(id("a"), record(b"abc"))
         .unwrap();
-    serde_json::to_value(DecodeSidecar::bind_sha256(
+    cadmpeg_core::serde_erase::json::to_value(DecodeSidecar::bind_sha256(
         crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
         report(),
         fidelity,
@@ -168,7 +168,7 @@ fn complete_sidecar_requires_the_current_ir_version_on_both_read_routes() {
     let valid = sidecar_wire();
     assert_eq!(valid["ir_version"], crate::IR_VERSION);
     assert!(DecodeSidecar::from_json(&valid.to_string()).is_ok());
-    assert!(serde_json::from_value::<DecodeSidecar>(valid.clone()).is_ok());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DecodeSidecar>(valid.clone()).is_ok());
     for version in [
         None,
         Some(serde_json::Value::Null),
@@ -192,7 +192,7 @@ fn complete_sidecar_requires_the_current_ir_version_on_both_read_routes() {
         }
         let error = DecodeSidecar::from_json(&wire.to_string()).unwrap_err();
         assert!(error.to_string().contains("ir_version"), "{error}");
-        let error = serde_json::from_value::<DecodeSidecar>(wire).unwrap_err();
+        let error = cadmpeg_core::serde_erase::json::from_value::<DecodeSidecar>(wire).unwrap_err();
         assert!(error.to_string().contains("ir_version"), "{error}");
     }
 }
@@ -521,7 +521,7 @@ fn attached_unknown_record_retains_its_native_text_once() {
 
     let link = "synthetic:model:point#target";
     let incoming = UnknownRecord::retained(id("bytes"), 0, vec![1, 2, 3, 4], vec![link.into()]);
-    let native_text = serde_json::to_vec(&serde_json::json!({
+    let native_text = cadmpeg_core::serde_erase::json::to_vec(&serde_json::json!({
         "id": id("bytes").as_str(),
         "links": [link],
     }))

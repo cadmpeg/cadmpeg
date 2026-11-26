@@ -16,8 +16,11 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
             wire.as_object_mut()
                 .unwrap()
                 .extend(binding.as_object().unwrap().clone());
-            let value: T = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(value).unwrap(), wire);
+            let value: T = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(value).unwrap(),
+                wire
+            );
         }
         for binding in [
             serde_json::json!({"historical_entity_kind": "loop"}),
@@ -31,7 +34,7 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
                 .as_object_mut()
                 .unwrap()
                 .extend(binding.as_object().unwrap().clone());
-            let error = serde_json::from_value::<T>(invalid)
+            let error = cadmpeg_core::serde_erase::json::from_value::<T>(invalid)
                 .unwrap_err()
                 .to_string();
             assert!(error.contains("historical_entity_kind"));
@@ -52,7 +55,7 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     for field in ["asset_id", "context_id"] {
         let mut invalid = member.clone();
         invalid[field] = serde_json::json!("asset");
-        assert!(serde_json::from_value::<
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
             crate::records::topology::extrude_selection::DesignExtrudeSelectionMember,
         >(invalid)
         .expect_err("non-GUID selection identity")
@@ -79,7 +82,7 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
         framed["local_id_offset"] = local_id_offset.into();
         framed["asset_id_offset"] = (local_id_offset + 18).into();
         framed["context_id_offset"] = (local_id_offset + 94).into();
-        let operand = serde_json::from_value::<
+        let operand = cadmpeg_core::serde_erase::json::from_value::<
             crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
         >(framed)
         .expect("edge-identity prologue framing");
@@ -93,7 +96,7 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
         framed["asset_id_offset"] = (local_id_offset + 18).into();
         framed["context_id_offset"] = (local_id_offset + 94).into();
         assert!(
-            serde_json::from_value::<
+            cadmpeg_core::serde_erase::json::from_value::<
                 crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
             >(framed)
             .is_err(),
@@ -103,7 +106,7 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     for field in ["asset_id", "context_id"] {
         let mut invalid = member.clone();
         invalid[field] = serde_json::json!("asset");
-        assert!(serde_json::from_value::<
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
             crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
         >(invalid)
         .expect_err("non-GUID edge identity")

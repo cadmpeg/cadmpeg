@@ -187,7 +187,7 @@ mod axis_side {
         let entities = (0..4)
             .map(|index| {
                 let (start, end) = (corners[index], corners[(index + 1) % 4]);
-                serde_json::from_value(json!({
+                cadmpeg_core::serde_erase::json::from_value(json!({
                     "id": format!("inventor:test:entity#{index}"),
                     "sketch": "inventor:test:sketch#1",
                     "construction": false, "endpoint_refs": [],
@@ -203,7 +203,7 @@ mod axis_side {
         let chain = (0..4)
             .map(|index| json!({"entity": format!("inventor:test:entity#{index}"), "reversed": false}))
             .collect::<Vec<_>>();
-        let sketch = serde_json::from_value(json!({
+        let sketch = cadmpeg_core::serde_erase::json::from_value(json!({
             "id": "inventor:test:sketch#1",
             "placement": {"kind": "resolved", "frame": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -217,7 +217,7 @@ mod axis_side {
     }
 
     fn axis(origin: [f64; 3], direction: [f64; 3]) -> RevolutionAxis {
-        serde_json::from_value(json!({
+        cadmpeg_core::serde_erase::json::from_value(json!({
             "origin": {"x": origin[0], "y": origin[1], "z": origin[2]},
             "direction": {"x": direction[0], "y": direction[1], "z": direction[2]},
         }))
@@ -225,7 +225,7 @@ mod axis_side {
     }
 
     fn profile() -> PlanarProfileRef {
-        serde_json::from_value(json!({
+        cadmpeg_core::serde_erase::json::from_value(json!({
             "kind": "sketch_regions",
             "value": {
                 "sketch": "inventor:test:sketch#1",
@@ -283,14 +283,14 @@ mod axis_side {
 
     /// One curve in the same plane as [`square`], as a one-entity profile loop.
     fn single(geometry: &serde_json::Value) -> (Sketch, Vec<SketchEntity>) {
-        let entity = serde_json::from_value(json!({
+        let entity = cadmpeg_core::serde_erase::json::from_value(json!({
             "id": "inventor:test:entity#0",
             "sketch": "inventor:test:sketch#1",
             "construction": false, "endpoint_refs": [],
             "geometry": geometry,
         }))
         .expect("curve entity");
-        let sketch = serde_json::from_value(json!({
+        let sketch = cadmpeg_core::serde_erase::json::from_value(json!({
             "id": "inventor:test:sketch#1",
             "placement": {"kind": "resolved", "frame": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},

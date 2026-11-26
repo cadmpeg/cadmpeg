@@ -22,7 +22,7 @@ fn captured_positions_keep_repeated_targets_and_order_on_the_wire() {
     let operation = FeatureOperation::CapturedComponentPositions {
         positions: vec![first, second],
     };
-    let wire = serde_json::to_value(&operation).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&operation).unwrap();
     assert_eq!(
         wire,
         serde_json::json!({"kind":"captured_component_positions", "value":{"positions":[
@@ -31,23 +31,27 @@ fn captured_positions_keep_repeated_targets_and_order_on_the_wire() {
         ]}})
     );
     assert_eq!(
-        serde_json::from_value::<FeatureOperation>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(wire.clone()).unwrap(),
         operation
     );
     let mut null = wire.clone();
     null["value"]["positions"][1]["occurrence"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<FeatureOperation>(null)
-        .unwrap_err()
-        .to_string()
-        .contains("occurrence"));
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(null)
+            .unwrap_err()
+            .to_string()
+            .contains("occurrence")
+    );
     let mut invalid = wire;
     invalid["value"]["positions"][0]["selector"] = serde_json::json!("");
-    assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(invalid).is_err());
     let empty =
         serde_json::json!({"kind":"captured_component_positions", "value":{"positions":[]}});
     assert_eq!(
-        serde_json::to_value(serde_json::from_value::<FeatureOperation>(empty.clone()).unwrap())
-            .unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(
+            cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(empty.clone()).unwrap()
+        )
+        .unwrap(),
         empty
     );
 }
@@ -66,7 +70,7 @@ fn captured_position_identity_rewrite_maps_selector_and_occurrence() {
         }],
     };
     let mut references = Vec::new();
-    let wire = serde_json::to_value(&source).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&source).unwrap();
     assert_eq!(
         wire["value"]["positions"][0]["transform"],
         serde_json::json!({
@@ -74,7 +78,7 @@ fn captured_position_identity_rewrite_maps_selector_and_occurrence() {
         })
     );
     assert_eq!(
-        serde_json::from_value::<FeatureOperation>(wire).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(wire).unwrap(),
         source
     );
     source

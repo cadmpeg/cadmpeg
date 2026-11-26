@@ -379,9 +379,11 @@ pub(crate) fn empty_container_scan() -> crate::container::ContainerScan<'static>
 
 /// Decodes native payload strings for exact byte assertions.
 pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
-    serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
-        .expect("native hexadecimal byte string")
-        .into_inner()
+    cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(
+        value.clone(),
+    )
+    .expect("native hexadecimal byte string")
+    .into_inner()
 }
 
 /// A component table: a sub-assembly at the identity,

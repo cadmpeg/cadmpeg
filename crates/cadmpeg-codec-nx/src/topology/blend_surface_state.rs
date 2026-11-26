@@ -234,7 +234,7 @@ mod tests {
         let offsets = BlendOffsets::from_metres(source).unwrap();
         let model: [f64; 2] = offsets.into();
         assert!((model[0] - model[1]).abs() > EPS_SOURCE_OFFSET_METRES * METRES_TO_MM);
-        let json = serde_json::to_string(&offsets).unwrap();
+        let json = cadmpeg_core::serde_erase::json::to_string(&offsets).unwrap();
         assert_eq!(
             serde_json::from_str::<BlendOffsets>(&json).unwrap(),
             offsets
@@ -283,7 +283,10 @@ mod tests {
             let json = format!(
                 r#"{{"support_xmts":[6,7],"spine_xmt":{spine},"offsets":[-3.0,3.0],"thumb_weights":[-0.0,-2.0]}}"#
             );
-            assert_eq!(serde_json::to_string(&state).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&state).unwrap(),
+                json
+            );
             assert_eq!(
                 serde_json::from_str::<BlendSurfaceState>(&json).unwrap(),
                 state

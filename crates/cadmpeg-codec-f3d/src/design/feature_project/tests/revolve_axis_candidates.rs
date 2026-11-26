@@ -51,7 +51,7 @@ fn group(
     member: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
         "scope_record_index": 12,
         "scope_reference_ordinal": record_index - 100,
@@ -83,17 +83,20 @@ fn axis_selection(
     face_states: &[i64],
     edge: bool,
 ) -> DesignEntitySelectionOperand {
-    let mut selection = serde_json::from_value::<DesignEntitySelectionOperand>(serde_json::json!({
-        "id": "f3d:Design/BulkStream.dat:entity-selection#201", "scope_record_index": 12,
-        "group_record_index": 101, "group_member_ordinal": 0,
-        "record_index": 201, "byte_offset": 100, "class_tag": "307",
-        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 130,
-        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 210,
-        "identity_record_index": 204, "identity_record_offset": 300,
-        "primary_identity": primary_identity, "primary_identity_offset": 321,
-        "next_record_index": 205, "next_byte_offset": 329
-    }))
-    .unwrap();
+    let mut selection =
+        cadmpeg_core::serde_erase::json::from_value::<DesignEntitySelectionOperand>(
+            serde_json::json!({
+                "id": "f3d:Design/BulkStream.dat:entity-selection#201", "scope_record_index": 12,
+                "group_record_index": 101, "group_member_ordinal": 0,
+                "record_index": 201, "byte_offset": 100, "class_tag": "307",
+                "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 130,
+                "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 210,
+                "identity_record_index": 204, "identity_record_offset": 300,
+                "primary_identity": primary_identity, "primary_identity_offset": 321,
+                "next_record_index": 205, "next_byte_offset": 329
+            }),
+        )
+        .unwrap();
     if !face_states.is_empty() {
         selection.historical_face_candidates = vec![DesignEntitySelectionFaceCandidate {
             history_id: "history".into(),

@@ -135,7 +135,7 @@ fn set_carrier(
         });
     }
     if let crate::records::feature::scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-        slot.point = Some(serde_json::from_value(construction).unwrap());
+        slot.point = Some(cadmpeg_core::serde_erase::json::from_value(construction).unwrap());
     }
 }
 
@@ -827,7 +827,7 @@ fn extent_group(
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| 1026 + ordinal * 11)
         .collect();
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": "f3d:Design/BulkStream.dat:group#40",
         "scope_record_index": 32,
         "scope_reference_ordinal": 8,

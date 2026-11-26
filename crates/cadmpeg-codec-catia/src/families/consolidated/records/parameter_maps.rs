@@ -47,13 +47,19 @@ fn class23_affine_map_rejects_contradictory_intervals_scale_and_slots() {
 #[test]
 fn class23_slots_reject_other_local_slot_pairs() {
     for pair in [[0, 1], [1, 1], [2, 2], [1, 3]] {
-        assert!(serde_json::from_value::<super::Class23Slots>(serde_json::json!(pair)).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<super::Class23Slots>(serde_json::json!(
+                pair
+            ))
+            .is_err()
+        );
     }
     for pair in [[1, 2], [2, 1]] {
         let slots: super::Class23Slots =
-            serde_json::from_value(serde_json::json!(pair)).expect("known local slots");
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!(pair))
+                .expect("known local slots");
         assert_eq!(
-            serde_json::to_value(slots).expect("serialize local slots"),
+            cadmpeg_core::serde_erase::json::to_value(slots).expect("serialize local slots"),
             serde_json::json!(pair)
         );
     }

@@ -30,7 +30,7 @@ fn enlarge_pipeline_resolves_the_owning_class_without_inventing_face_roles() {
     let namespace = result.ir().native.namespace("nx").unwrap();
     let records = &namespace.arenas()["feature_enlarge_construction_envelopes"];
     assert_eq!(records.len(), 1);
-    let wire = serde_json::to_value(&records[0]).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&records[0]).unwrap();
     assert_eq!(wire["parameter_class_index"], 3);
     assert_eq!(wire["scalars"], serde_json::json!([1.0, 0.0, 0.0, 0.0]));
     assert_eq!(
@@ -39,7 +39,8 @@ fn enlarge_pipeline_resolves_the_owning_class_without_inventing_face_roles() {
     );
     assert_eq!(wire["byte_len"], 63);
     let feature = &result.ir().model.features[0];
-    let definition = serde_json::to_value(feature.evaluation.definition()).unwrap();
+    let definition =
+        cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
     assert_eq!(
         definition,
         serde_json::json!({"kind": "operation", "value": {"kind": "extend_surface", "value": {"faces":{"kind":"unresolved"}, "method":"unresolved"}}})

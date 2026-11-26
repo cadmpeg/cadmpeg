@@ -824,7 +824,7 @@ fn trim_end(result: &cadmpeg_ir::codec::DecodeResult) -> f64 {
     let [curve] = result.ir().geometry.procedural_curves.as_slice() else {
         panic!("one trimmed curve");
     };
-    let value = serde_json::to_value(curve).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(curve).unwrap();
     value["definition"]["parameter_range"][1].as_f64().unwrap()
 }
 

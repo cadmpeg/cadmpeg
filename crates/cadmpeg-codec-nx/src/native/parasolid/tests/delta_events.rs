@@ -16,9 +16,9 @@ fn owned_definitions_are_shared_and_instances_retain_exact_source_ranges() {
     assert!(events.records.is_empty());
     assert_eq!(events.metadata.len(), 4);
     assert!(events.residual_spans.is_empty());
-    let first = serde_json::to_value(&events.instances[0]).unwrap();
-    let later = serde_json::to_value(&events.instances[1]).unwrap();
-    let schema = serde_json::to_value(&events.schemas[2]).unwrap();
+    let first = cadmpeg_core::serde_erase::json::to_value(&events.instances[0]).unwrap();
+    let later = cadmpeg_core::serde_erase::json::to_value(&events.instances[1]).unwrap();
+    let schema = cadmpeg_core::serde_erase::json::to_value(&events.schemas[2]).unwrap();
     assert_eq!(first["schema"], schema["id"]);
     assert_eq!(later["schema"], schema["id"]);
     assert!(first.get("definition").is_none());
@@ -64,13 +64,15 @@ fn unsupported_packets_and_every_later_marker_remain_one_exact_suffix() {
         assert_eq!(events.transmit_headers.len(), 1);
         assert_eq!(events.partition_prefixes.len(), 1);
         assert_eq!(events.residual_spans.len(), 1);
-        let span = serde_json::to_value(&events.residual_spans[0]).unwrap();
+        let span = cadmpeg_core::serde_erase::json::to_value(&events.residual_spans[0]).unwrap();
         assert_eq!(span["inflated_offset"], at);
         assert_eq!(span["byte_len"], bytes.len() - at);
         assert_eq!(
             span["sha256"],
-            serde_json::to_value(cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[at..]))
-                .unwrap()
+            cadmpeg_core::serde_erase::json::to_value(
+                cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes[at..])
+            )
+            .unwrap()
         );
     }
 }
@@ -95,7 +97,7 @@ fn region_projection_uses_the_same_owned_fields_as_generic_native_values() {
             assert_eq!(record.family.node_id(), u32::MAX);
             assert_eq!(u8::from(fields.region_type), region_type);
             assert_eq!(fields.references().count(), usize::from(layout - 2));
-            let wire = serde_json::to_value(&events.instances[0]).unwrap();
+            let wire = cadmpeg_core::serde_erase::json::to_value(&events.instances[0]).unwrap();
             assert_eq!(wire["fields"][0]["values"][0]["value"], u32::MAX);
         }
     }
@@ -114,12 +116,13 @@ fn two_streams_join_instances_to_their_own_aggregate_schema_indices() {
     assert_eq!(events.instances.len(), 2);
     assert_eq!(events.metadata.len(), 8);
     for (ordinal, expected_kind) in [(0, 12), (1, 19)] {
-        let instance = serde_json::to_value(&events.instances[ordinal]).unwrap();
+        let instance =
+            cadmpeg_core::serde_erase::json::to_value(&events.instances[ordinal]).unwrap();
         assert_eq!(instance["stream_ordinal"], ordinal);
         let schema = events
             .schemas
             .iter()
-            .map(|schema| serde_json::to_value(schema).unwrap())
+            .map(|schema| cadmpeg_core::serde_erase::json::to_value(schema).unwrap())
             .find(|schema| schema["id"] == instance["schema"])
             .unwrap();
         assert_eq!(schema["stream_ordinal"], ordinal);

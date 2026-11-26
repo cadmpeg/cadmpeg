@@ -534,9 +534,18 @@ mod tests {
             depth: MAX_NATIVE_NESTING_DEPTH,
         };
         let expected = serde_json::from_str::<Value>(TEXT).unwrap();
-        assert_eq!(serde_json::to_value(&member).unwrap(), expected);
-        assert_eq!(serde_json::to_string(&member).unwrap(), TEXT);
-        assert_eq!(serde_json::to_value(&member).unwrap(), expected);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&member).unwrap(),
+            expected
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&member).unwrap(),
+            TEXT
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&member).unwrap(),
+            expected
+        );
     }
 
     /// One budget spans the whole replay: the parser's own limit restarts per
