@@ -3,11 +3,13 @@
 //! Rule W3).
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeSet;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::CadIr;
 
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::{IgesCodec, IgesVersion};
@@ -27,22 +29,38 @@ fn entity(
     }
 }
 
-/// The `native.records-omitted` messages of a semantic write of `file`.
-fn omitted(file: &[u8]) -> Vec<String> {
-    let decoded = IgesCodec
+const WITHHELD_CURVE: &str = "whose neutral curve the semantic writer withholds";
+const WITHHELD_POINT: &str = "whose neutral point the semantic writer withholds";
+
+fn decode(file: &[u8]) -> CadIr {
+    IgesCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
-        .unwrap();
+        .unwrap()
+        .ir()
+        .clone()
+}
+
+/// The code and message of each loss of a semantic write of `file`.
+fn losses(file: &[u8]) -> Vec<(String, String)> {
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
+            EncodeInput::new(&decode(file), None),
             TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
         .unwrap();
     plan.report()
         .losses
         .iter()
-        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
-        .map(|loss| loss.message.clone())
+        .map(|loss| (loss.code.to_string(), loss.message.clone()))
+        .collect()
+}
+
+/// The `native.records-omitted` messages of a semantic write of `file`.
+fn omitted(file: &[u8]) -> Vec<String> {
+    losses(file)
+        .into_iter()
+        .filter(|(code, _)| code == "export/native.records-omitted")
+        .map(|(_, message)| message)
         .collect()
 }
 
@@ -194,6 +212,110 @@ fn a_transformation_no_written_record_uses_is_listed_in_both_native_views() {
         [format!(
             "the IGES write omits 1 native record(s) of `iges` arena `entities` {reason}: \
              iges:entity:directory#1"
+        )]
+    );
+}
+
+/// A physically dependent curve that no written record owns is withheld.
+#[test]
+fn a_withheld_support_curve_is_listed_by_id() {
+    let messages = omitted(&owned_test_file(&[entity(
+        110,
+        "SUPPORT",
+        "00010000",
+        "110,0,0,0,1,0,0;",
+    )]));
+    assert_eq!(
+        of_arena(&messages, "entities"),
+        [format!(
+            "the IGES write omits 1 native record(s) of `iges` arena `entities` \
+             {WITHHELD_CURVE}: iges:entity:directory#1"
+        )]
+    );
+}
+
+/// A physically dependent Type 116 that no record names is withheld.
+#[test]
+fn a_withheld_support_point_is_listed_by_id() {
+    let messages = omitted(&owned_test_file(&[entity(
+        116,
+        "SUPPORT",
+        "00010000",
+        "116,1,2,3,0;",
+    )]));
+    assert_eq!(
+        of_arena(&messages, "entities"),
+        [format!(
+            "the IGES write omits 1 native record(s) of `iges` arena `entities` \
+             {WITHHELD_POINT}: iges:entity:directory#1"
+        )]
+    );
+}
+
+/// A physically dependent Type 116 that only a dropped record names is
+/// withheld with its own reason.
+#[test]
+fn a_point_only_a_dropped_record_names_is_listed_by_id() {
+    let messages = omitted(&owned_test_file(&[
+        entity(116, "MEMBER", "00010000", "116,1,2,3,0;"),
+        OwnedTestEntity {
+            form: 7,
+            ..entity(402, "GROUP", "00000000", "402,1,1;")
+        },
+    ]));
+    assert_eq!(
+        of_arena(&messages, "entities"),
+        [format!(
+            "the IGES write omits 2 native record(s) of `iges` arena `entities`: \
+             iges:entity:directory#1, iges:entity:directory#3; whose entity the semantic \
+             writer does not encode: iges:entity:directory#3; {WITHHELD_POINT}: \
+             iges:entity:directory#1"
+        )]
+    );
+}
+
+/// A file that holds no entity holds none of the source's Directory and
+/// Parameter cards, and its Start section holds the writer's own text; its
+/// Global and Terminate sections are the written file's.
+#[test]
+fn the_cards_of_an_empty_output_are_listed_by_id() {
+    let file = owned_test_file(&[entity(110, "SUPPORT", "00010000", "110,0,0,0,1,0,0;")]);
+    let losses = losses(&file);
+    assert!(
+        losses.iter().any(|(code, _)| code == "export/output.empty"),
+        "{losses:#?}"
+    );
+    let decoded = decode(&file);
+    let cards = |sections: &[&str]| {
+        decoded.native.namespace("iges").unwrap().arenas()["cards"]
+            .iter()
+            .filter(|card| {
+                card.field("section")
+                    .is_some_and(|section| sections.contains(&section.as_str().unwrap()))
+            })
+            .map(|card| card.id().to_owned())
+            .collect::<BTreeSet<_>>()
+    };
+    let list = |ids: &BTreeSet<String>| ids.iter().cloned().collect::<Vec<_>>().join(", ");
+    let start = cards(&["start"]);
+    let entry = cards(&["directory", "parameter"]);
+    assert_eq!(entry.len(), 3);
+    let all = start.union(&entry).cloned().collect::<BTreeSet<_>>();
+    let messages = losses
+        .into_iter()
+        .filter(|(code, _)| code == "export/native.records-omitted")
+        .map(|(_, message)| message)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        of_arena(&messages, "cards"),
+        [format!(
+            "the IGES write omits {} native record(s) of `iges` arena `cards`: {}; that are \
+             Start section cards, whose text the semantic writer replaces with its own: {}; \
+             {WITHHELD_CURVE}: {}",
+            all.len(),
+            list(&all),
+            list(&start),
+            list(&entry)
         )]
     );
 }

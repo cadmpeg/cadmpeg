@@ -99,6 +99,20 @@ const WITHHELD_SURFACE: &str = "whose neutral surface the semantic writer withho
 /// The reason the location of withheld analytic surfaces is dropped.
 const WITHHELD_LOCATION: &str =
     "that are points that locate only analytic surfaces the semantic writer withholds";
+/// The reason a curve whose neutral record the writer withholds is dropped.
+const WITHHELD_CURVE: &str = "whose neutral curve the semantic writer withholds";
+/// The reason a point whose neutral record the writer withholds is dropped.
+const WITHHELD_POINT: &str = "whose neutral point the semantic writer withholds";
+/// The reason the cards of the Start section are dropped.
+const START_CARD: &str =
+    "that are Start section cards, whose text the semantic writer replaces with its own";
+/// The reason a Directory or Parameter card of no typed entity is dropped.
+const UNOWNED_CARD: &str =
+    "that are Directory or Parameter cards of no typed entity, which the semantic writer does \
+     not write";
+/// The reason a line outside the five sections is dropped.
+const OUTSIDE_SECTIONS: &str =
+    "that are lines outside the five IGES sections, which the semantic writer does not write";
 /// The reason a transformation no written record uses is dropped.
 const UNUSED_TRANSFORMATION: &str =
     "that are transformations no written record uses, which the semantic writer does not \
@@ -325,6 +339,14 @@ fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
         counts.insert("116_point".into(), ir.geometry.points.len());
     }
     counts
+}
+
+/// The ids of the neutral records whose entities the semantic writer emits.
+#[derive(Default)]
+struct WrittenGeometry {
+    surfaces: BTreeSet<String>,
+    curves: BTreeSet<String>,
+    points: BTreeSet<String>,
 }
 
 struct Synthesis {
@@ -610,14 +632,14 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
         }
     }
     let mut body_presentations = BTreeMap::new();
-    let mut written_surfaces = BTreeSet::new();
+    let mut written = WrittenGeometry::default();
 
     let mut entities = if has_brep_topology(ir) {
         brep_entities(
             ctx,
             validate_brep_topology(ctx, &index, version)?,
             &mut body_presentations,
-            &mut written_surfaces,
+            &mut written,
             &mut losses,
         )?
     } else if has_trimmed_sheet_topology(ir) {
@@ -625,7 +647,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
             ctx,
             validate_trimmed_sheet_topology(ctx, &index, version)?,
             &mut body_presentations,
-            &mut written_surfaces,
+            &mut written,
             &mut losses,
         )?
     } else {
@@ -664,11 +686,11 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
                 "surface",
                 surface.id.as_str(),
                 |entities, losses| {
-                    let written = append_surface_entities(
+                    let index = append_surface_entities(
                         ctx, entities, ir, surface, version, &ownership, losses,
                     )?;
-                    if written.is_some() {
-                        written_surfaces.insert(surface.id.as_str().to_owned());
+                    if index.is_some() {
+                        written.surfaces.insert(surface.id.as_str().to_owned());
                     }
                     Ok(())
                 },
@@ -681,6 +703,14 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
                 .iter()
                 .filter(|surface| ownership.surface_status(surface).is_some()),
             &mut consumed_curves,
+        )?;
+        mark_native_construction_curves(
+            ir,
+            ir.geometry
+                .surfaces
+                .iter()
+                .filter(|surface| written.surfaces.contains(surface.id.as_str())),
+            &mut written.curves,
         )?;
         let mut edges = ir.geometry.edges.iter().collect::<Vec<_>>();
         edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
@@ -702,6 +732,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
                         entities,
                         &mut consumed_curves,
                         &mut consumed_points,
+                        &mut written,
                         losses,
                     )
                 },
@@ -717,6 +748,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
             },
             &mut entities,
             &mut consumed_curves,
+            &mut written.curves,
             &mut losses,
         )?;
 
@@ -726,11 +758,13 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
             if consumed_points.contains(&point.id) {
                 continue;
             }
-            append_free_point_entity(&mut entities, point, &ownership, &mut losses);
+            if append_free_point_entity(&mut entities, point, &ownership, &mut losses) {
+                written.points.insert(point.id.as_str().to_owned());
+            }
         }
         entities
     };
-    let native = native_dispositions(ir, &written_surfaces);
+    let native = native_dispositions(ir, &written);
     append_color_definitions(&mut entities, &mut body_presentations)?;
     ensure_version_support(&entities, version)?;
     resolve_entity_references(&mut entities)?;
@@ -856,6 +890,7 @@ fn append_free_edge(
     entities: &mut Vec<Entity>,
     consumed_curves: &mut BTreeSet<String>,
     consumed_points: &mut BTreeSet<PointId>,
+    written: &mut WrittenGeometry,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let FreeEdge {
@@ -906,9 +941,14 @@ fn append_free_edge(
         },
     )?;
     mark_curve_descendants(ir, curve_id, consumed_curves, &mut BTreeSet::new())?;
+    let mut points = Vec::new();
     for vertex in edge.vertices() {
-        consumed_points.insert(vertex_point_id(index, vertex)?);
+        let point = vertex_point_id(index, vertex)?;
+        consumed_points.insert(point.clone());
+        points.push(point.as_str().to_owned());
     }
+    written.curves.extend(curve_and_descendants(ir, curve_id));
+    written.points.extend(points);
     Ok(())
 }
 
@@ -2092,7 +2132,7 @@ fn brep_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
     body_presentations: &mut BTreeMap<usize, BodyPresentation>,
-    written_surfaces: &mut BTreeSet<String>,
+    written: &mut WrittenGeometry,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, Unwritten> {
     let index = topology.index;
@@ -2139,7 +2179,7 @@ fn brep_entities(
             append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, losses)
                 .map_err(naming(surface.id.as_str()))?
         {
-            written_surfaces.insert(surface.id.as_str().to_owned());
+            written.surfaces.insert(surface.id.as_str().to_owned());
             surface_indices.insert(surface.id.as_str().to_owned(), index);
         }
     }
@@ -2198,6 +2238,7 @@ fn brep_entities(
             )?;
             edge_curve_indices.insert(edge.id.as_str().to_owned(), index);
             mark_curve_descendants(ir, curve_id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
+            written.curves.extend(curve_and_descendants(ir, curve_id));
             Ok(())
         })?;
     }
@@ -2210,6 +2251,14 @@ fn brep_entities(
             .filter(|surface| surface_indices.contains_key(surface.id.as_str())),
         &mut consumed_curve_ids,
     )?;
+    mark_native_construction_curves(
+        ir,
+        ir.geometry
+            .surfaces
+            .iter()
+            .filter(|surface| surface_indices.contains_key(surface.id.as_str())),
+        &mut written.curves,
+    )?;
     let ignored_curves = append_unowned_curves(
         UnownedCurves {
             ir,
@@ -2219,6 +2268,7 @@ fn brep_entities(
         },
         &mut entities,
         &mut consumed_curve_ids,
+        &mut written.curves,
         losses,
     )?;
     ignored_carriers.report_omitted(ignored_curves, "B-rep", losses);
@@ -2730,8 +2780,11 @@ fn brep_entities(
             )));
             continue;
         }
-        append_free_point_entity(&mut entities, point, &ownership, losses);
+        if append_free_point_entity(&mut entities, point, &ownership, losses) {
+            written.points.insert(point.id.as_str().to_owned());
+        }
     }
+    written.points.extend(topology_point_ids);
     Ok(entities)
 }
 
@@ -3075,7 +3128,7 @@ fn topology_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
     body_presentations: &mut BTreeMap<usize, BodyPresentation>,
-    written_surfaces: &mut BTreeSet<String>,
+    written_geometry: &mut WrittenGeometry,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, Unwritten> {
     let index = topology.index;
@@ -3104,7 +3157,9 @@ fn topology_entities(
             append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, losses)
                 .map_err(naming(surface.id.as_str()))?
         {
-            written_surfaces.insert(surface.id.as_str().to_owned());
+            written_geometry
+                .surfaces
+                .insert(surface.id.as_str().to_owned());
             surface_indices.insert(surface.id.as_str().to_owned(), index);
         }
     }
@@ -3153,6 +3208,15 @@ fn topology_entities(
                 *stored = (*stored).max(form);
             }
             stored_pcurves.extend(stored_pcurve_ids(&written.pcurves));
+        }
+    }
+    // Each coedge of a written boundary writes its edge curve, as the stored
+    // edge entity or a reversed copy.
+    for (_, boundary) in &boundaries {
+        for coedge in &boundary.coedges {
+            written_geometry
+                .curves
+                .extend(curve_and_descendants(ir, coedge.carrier.curve_id));
         }
     }
 
@@ -3221,6 +3285,14 @@ fn topology_entities(
             .filter(|surface| surface_indices.contains_key(surface.id.as_str())),
         &mut consumed_curves,
     )?;
+    mark_native_construction_curves(
+        ir,
+        ir.geometry
+            .surfaces
+            .iter()
+            .filter(|surface| surface_indices.contains_key(surface.id.as_str())),
+        &mut written_geometry.curves,
+    )?;
     let ignored_curves = append_unowned_curves(
         UnownedCurves {
             ir,
@@ -3230,6 +3302,7 @@ fn topology_entities(
         },
         &mut entities,
         &mut consumed_curves,
+        &mut written_geometry.curves,
         losses,
     )?;
     ignored_carriers.report_omitted(ignored_curves, "trimmed-sheet", losses);
@@ -3382,8 +3455,11 @@ fn topology_entities(
             )));
             continue;
         }
-        append_free_point_entity(&mut entities, point, &ownership, losses);
+        if append_free_point_entity(&mut entities, point, &ownership, losses) {
+            written_geometry.points.insert(point.id.as_str().to_owned());
+        }
     }
+    written_geometry.points.extend(consumed_points);
     Ok(entities)
 }
 
@@ -5642,15 +5718,6 @@ fn drop_entity(drops: &mut BTreeMap<String, &'static str>, id: &str, reason: &'s
     drops.entry(id.to_owned()).or_insert(reason);
 }
 
-/// Whether an entity's Directory subordinate switch is 01, physically
-/// dependent.
-fn physically_dependent(record: &cadmpeg_ir::native::NativeRecord) -> bool {
-    record
-        .field("subordinate_status")
-        .and_then(|value| value.as_i64())
-        == Some(1)
-}
-
 /// Whether a Type 106 record is a point form (Forms 1 to 3), whose tuples
 /// project to neutral points.
 fn is_point_copious_data(record: &cadmpeg_ir::native::NativeRecord) -> bool {
@@ -5685,9 +5752,10 @@ fn degenerate_native_line(record: &cadmpeg_ir::native::NativeRecord) -> bool {
 }
 
 /// What the semantic writer does with each native arena and record (§3.4,
-/// Rule W3). An arena this declares nothing for is dropped, and the export
-/// wrapper charges every dropped record.
-fn native_dispositions(ir: &CadIr, written_surfaces: &BTreeSet<String>) -> NativeDispositions {
+/// Rule W3), from the neutral records it emitted. An arena this declares
+/// nothing for is dropped, and the export wrapper charges every dropped
+/// record.
+fn native_dispositions(ir: &CadIr, written: &WrittenGeometry) -> NativeDispositions {
     let mut native = NativeDispositions::dropped("which the semantic writer does not encode");
     let Some(namespace) = ir.native.namespace("iges") else {
         return native;
@@ -5743,12 +5811,15 @@ fn native_dispositions(ir: &CadIr, written_surfaces: &BTreeSet<String>) -> Nativ
     let object_id = |sequence: u32| crate::entities::geometry::SourceObjectId::new(sequence).text();
     // The neutral records projected from each entity, keyed by its source
     // object id.
-    let curve_objects = ir
-        .geometry
-        .curves
-        .iter()
-        .filter_map(|curve| iges_object(&curve.source_object))
-        .collect::<BTreeSet<_>>();
+    let mut curve_objects = BTreeMap::<String, Vec<&str>>::new();
+    for curve in &ir.geometry.curves {
+        if let Some(object) = iges_object(&curve.source_object) {
+            curve_objects
+                .entry(object)
+                .or_default()
+                .push(curve.id.as_str());
+        }
+    }
     let mut surface_objects = BTreeMap::<String, Vec<&str>>::new();
     for surface in &ir.geometry.surfaces {
         if let Some(object) = iges_object(&surface.source_object) {
@@ -5762,7 +5833,7 @@ fn native_dispositions(ir: &CadIr, written_surfaces: &BTreeSet<String>) -> Nativ
         .geometry
         .points
         .iter()
-        .map(|point| point.id.as_str())
+        .map(|point| point.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     // Each dropped entity with its reason; the first reason stated wins.
     let mut drops = BTreeMap::<String, &'static str>::new();
@@ -5803,37 +5874,12 @@ fn native_dispositions(ir: &CadIr, written_surfaces: &BTreeSet<String>) -> Nativ
             drop_entity(&mut drops, record.id(), WITHOUT_SEQUENCE);
             continue;
         };
-        if !curve_objects.contains(&object_id(sequence)) {
-            drop_entity(&mut drops, record.id(), WITHOUT_GEOMETRY);
-        }
-    }
-    // Points: an independent Type 116 projects to one neutral point, and a
-    // Type 106 point form to one per tuple.
-    for record in native_entities
-        .iter()
-        .filter(|record| match entity_type(record) {
-            Some(116) => !physically_dependent(record),
-            Some(106) => is_point_copious_data(record),
-            _ => false,
-        })
-    {
-        let Some(sequence) = directory_sequence(record) else {
-            drop_entity(&mut drops, record.id(), WITHOUT_SEQUENCE);
-            continue;
-        };
-        let point = format!("iges:model:point#D{sequence}");
-        let projected = if entity_type(record) == Some(116) {
-            point_ids.contains(point.as_str())
-        } else {
-            // The tuples project to `{point}-1`, `{point}-2`, and on.
-            let tuple = format!("{point}-");
-            point_ids
-                .range(tuple.as_str()..)
-                .next()
-                .is_some_and(|id| id.starts_with(&tuple))
-        };
-        if !projected {
-            drop_entity(&mut drops, record.id(), WITHOUT_GEOMETRY);
+        match curve_objects.get(&object_id(sequence)) {
+            None => drop_entity(&mut drops, record.id(), WITHOUT_GEOMETRY),
+            Some(curves) if !curves.iter().any(|curve| written.curves.contains(*curve)) => {
+                drop_entity(&mut drops, record.id(), WITHHELD_CURVE);
+            }
+            Some(_) => {}
         }
     }
     // Surfaces: one is written where the writer emitted the neutral surface
@@ -5860,7 +5906,7 @@ fn native_dispositions(ir: &CadIr, written_surfaces: &BTreeSet<String>) -> Nativ
             drop_entity(&mut drops, record.id(), WITHOUT_GEOMETRY);
         } else if neutral
             .iter()
-            .any(|surface| written_surfaces.contains(*surface))
+            .any(|surface| written.surfaces.contains(*surface))
         {
             if let Some(pointers) = pointers {
                 written_pointers.extend(pointers.location);
@@ -5876,14 +5922,47 @@ fn native_dispositions(ir: &CadIr, written_surfaces: &BTreeSet<String>) -> Nativ
     }) {
         drop_entity(&mut drops, record.id(), UNREFERENCED_DIRECTION);
     }
-    // An independent point is written from its own neutral point; a
-    // physically dependent one only as a written surface's location.
-    for record in native_entities.iter().filter(|record| {
-        withheld_locations.contains(record.id())
-            && !written_pointers.contains(record.id())
-            && physically_dependent(record)
-    }) {
-        drop_entity(&mut drops, record.id(), WITHHELD_LOCATION);
+    // Points: a Type 116 is written from its neutral point or as the
+    // location of a written analytic surface, and a Type 106 point form from
+    // the neutral points of its tuples.
+    for record in native_entities
+        .iter()
+        .filter(|record| match entity_type(record) {
+            Some(116) => true,
+            Some(106) => is_point_copious_data(record),
+            _ => false,
+        })
+    {
+        let Some(sequence) = directory_sequence(record) else {
+            drop_entity(&mut drops, record.id(), WITHOUT_SEQUENCE);
+            continue;
+        };
+        if written_pointers.contains(record.id()) {
+            continue;
+        }
+        let point = format!("iges:model:point#D{sequence}");
+        // The tuples of a Type 106 project to `{point}-1`, `{point}-2`, and on.
+        let tuple = format!("{point}-");
+        let projected = |ids: &BTreeSet<String>| {
+            if entity_type(record) == Some(116) {
+                ids.contains(&point)
+            } else {
+                ids.range(tuple.clone()..)
+                    .next()
+                    .is_some_and(|id| id.starts_with(&tuple))
+            }
+        };
+        if projected(&written.points) {
+            continue;
+        }
+        let reason = if withheld_locations.contains(record.id()) {
+            WITHHELD_LOCATION
+        } else if projected(&point_ids) {
+            WITHHELD_POINT
+        } else {
+            WITHOUT_GEOMETRY
+        };
+        drop_entity(&mut drops, record.id(), reason);
     }
     if !has_trimmed_sheet_topology(ir) {
         // With no neutral faces the writer emits no trimmed surface, B-rep
@@ -5944,6 +6023,7 @@ fn native_dispositions(ir: &CadIr, written_surfaces: &BTreeSet<String>) -> Nativ
             }
         }
     }
+    mirrored.extend(card_drops(namespace, &drops));
     let mut by_reason = BTreeMap::<&str, Vec<String>>::new();
     for (id, reason) in drops.into_iter().chain(mirrored) {
         by_reason.entry(reason).or_default().push(id);
@@ -5952,6 +6032,70 @@ fn native_dispositions(ir: &CadIr, written_surfaces: &BTreeSet<String>) -> Nativ
         native.drop_records("iges", reason, ids);
     }
     native
+}
+
+/// The physical cards the semantic writer does not write, each with its
+/// reason: the Start section, which it writes with its own text, each
+/// Directory and Parameter card of a dropped or untyped entity, and each line
+/// outside the five sections. It writes the Global and Terminate sections
+/// for the file and restates the cards of every entity it writes.
+fn card_drops(
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+    drops: &BTreeMap<String, &'static str>,
+) -> Vec<(String, &'static str)> {
+    let arenas = namespace.arenas();
+    let integer = |record: &cadmpeg_ir::native::NativeRecord, field: &str| {
+        record.field(field).and_then(|value| value.as_u64())
+    };
+    let mut directory_owners = BTreeMap::new();
+    let mut parameter_owners = BTreeMap::new();
+    for record in arenas.get("entities").into_iter().flatten() {
+        if let Some(sequence) = integer(record, "directory_sequence") {
+            directory_owners.insert(sequence, record.id());
+            directory_owners.insert(sequence.saturating_add(1), record.id());
+        }
+        if let (Some(start), Some(count)) = (
+            integer(record, "parameter_start"),
+            integer(record, "parameter_line_count"),
+        ) {
+            parameter_owners.insert(start, (start.saturating_add(count), record.id()));
+        }
+    }
+    let parameter_owner = |sequence: u64| {
+        parameter_owners
+            .range(..=sequence)
+            .next_back()
+            .filter(|(_, (end, _))| sequence < *end)
+            .map(|(_, (_, owner))| *owner)
+    };
+    let mut dropped = Vec::new();
+    for card in arenas.get("cards").into_iter().flatten() {
+        let section = card.field("section");
+        let sequence = integer(card, "sequence");
+        let owner = match (section.as_ref().and_then(|value| value.as_str()), sequence) {
+            (Some("global" | "terminate"), _) => continue,
+            (Some("start"), _) => {
+                dropped.push((card.id().to_owned(), START_CARD));
+                continue;
+            }
+            (Some("directory"), Some(sequence)) => directory_owners.get(&sequence).copied(),
+            (Some("parameter"), Some(sequence)) => parameter_owner(sequence),
+            (Some("directory" | "parameter"), None) => None,
+            _ => {
+                dropped.push((card.id().to_owned(), OUTSIDE_SECTIONS));
+                continue;
+            }
+        };
+        match owner {
+            None => dropped.push((card.id().to_owned(), UNOWNED_CARD)),
+            Some(owner) => {
+                if let Some(reason) = drops.get(owner) {
+                    dropped.push((card.id().to_owned(), *reason));
+                }
+            }
+        }
+    }
+    dropped
 }
 
 #[derive(Clone, Copy)]
@@ -6018,18 +6162,21 @@ fn report_unowned_support(losses: &mut Vec<LossNote>, id: &str) {
     losses.push(code.note(message));
 }
 
+/// Writes `point` as a Type 116 entity and returns whether it did; a
+/// physically dependent point is withheld with a loss.
 fn append_free_point_entity(
     entities: &mut Vec<Entity>,
     point: &cadmpeg_ir::topology::Point,
     ownership: &ownership::SourceOwnership<'_>,
     losses: &mut Vec<LossNote>,
-) {
+) -> bool {
     let status = ownership.status(point.source_object.as_ref());
     if status.is_physically_dependent() {
         report_unowned_support(losses, point.id.as_str());
-        return;
+        return false;
     }
     entities.push(point_entity_with_status(point.position(), status));
+    true
 }
 
 fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Entity {
@@ -7499,13 +7646,15 @@ struct UnownedCurves<'a, 'ir> {
 }
 
 /// Writes each curve that no written entity has consumed, in identity order,
-/// and returns the number of `ignored` curves skipped. A physically dependent
-/// entity is valid only under a written parent, so a physically dependent
-/// curve that no written curve consumes is withheld with a loss.
+/// adds each curve it writes to `written`, and returns the number of
+/// `ignored` curves skipped. A physically dependent entity is valid only
+/// under a written parent, so a physically dependent curve that no written
+/// curve consumes is withheld with a loss.
 fn append_unowned_curves(
     request: UnownedCurves<'_, '_>,
     entities: &mut Vec<Entity>,
     consumed: &mut BTreeSet<String>,
+    written: &mut BTreeSet<String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<usize, CodecError> {
     let UnownedCurves {
@@ -7555,7 +7704,9 @@ fn append_unowned_curves(
                         reference_offset: 0,
                     },
                 )?;
-                mark_curve_descendants(ir, &curve.id, consumed, &mut BTreeSet::new())
+                mark_curve_descendants(ir, &curve.id, consumed, &mut BTreeSet::new())?;
+                written.extend(curve_and_descendants(ir, &curve.id));
+                Ok(())
             },
         )?;
     }
@@ -7573,6 +7724,28 @@ fn append_unowned_curves(
         }
     }
     Ok(ignored_curves)
+}
+
+/// `curve` and every curve its composite segments name, at any depth.
+fn curve_and_descendants(ir: &CadIr, curve: &CurveId) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    let mut pending = vec![curve];
+    while let Some(id) = pending.pop() {
+        if !found.insert(id.as_str().to_owned()) {
+            continue;
+        }
+        let segments = ir
+            .geometry
+            .curves
+            .iter()
+            .find(|curve| curve.id == *id)
+            .and_then(|curve| match curve.geometry.solved() {
+                Some(SolvedCurveGeometry::Composite { segments, .. }) => Some(segments),
+                _ => None,
+            });
+        pending.extend(segments.into_iter().flatten().map(|segment| &segment.curve));
+    }
+    found
 }
 
 fn mark_curve_descendants(

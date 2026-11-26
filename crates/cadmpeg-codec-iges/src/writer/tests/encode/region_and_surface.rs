@@ -502,7 +502,7 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
         )
         .unwrap(),
         &mut std::collections::BTreeMap::new(),
-        &mut std::collections::BTreeSet::new(),
+        &mut crate::writer::WrittenGeometry::default(),
         &mut Vec::new(),
     )
     .unwrap();

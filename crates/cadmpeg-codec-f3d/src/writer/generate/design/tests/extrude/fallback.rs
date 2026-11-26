@@ -344,11 +344,16 @@ fn dropped_items_after_a_held_state_write_every_current_body() {
     assert!(!reduction.drops_neutral_design());
     assert_eq!(reduction.ir().geometry.bodies.len(), 2);
     let reason = held_reason(&second);
-    let (losses, _native) = reduction.finish();
+    let (losses, native) = reduction.finish();
     assert!(
         !losses.iter().any(|loss| loss.message.contains(&reason)),
         "{losses:#?}"
     );
+    // Taking the unheld reduction back leaves the native declaration a write
+    // with no held state makes.
+    let mut unheld = Reduction::new(&ir, MissingStateForm::HistoryTrue);
+    unheld.prepare().expect("the document prepares");
+    assert_eq!(native, unheld.finish().1);
 }
 
 /// Where the plan of the design fails after a held state, the writer drops
