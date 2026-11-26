@@ -4,7 +4,8 @@ use super::native_scope_definition;
 use super::project_face_selection;
 use super::ProjectInputs;
 use crate::design::edge_resolve::{
-    project_fixed_fillet_with_corners, resolved_edge_treatment_group_with_corners,
+    partition_leftover_treatment_groups, project_fixed_fillet_with_corners,
+    resolved_edge_treatment_group_with_corners, ScopeTreatmentGroup,
 };
 use crate::design::feature_project::edge_treatments::project_full_round_fillet;
 use crate::design::feature_project::edge_treatments::project_variable_fillet;
@@ -120,34 +121,52 @@ pub(super) fn project<'a>(
         let Some(assignments) = resolved_fillet_assignments(&assignments, parameters) else {
             return project_partial(ctx, inputs, scope, parameters, native_scope, losses);
         };
-        let mut groups = Vec::new();
-        for resolved in assignments {
+        let feature_id = crate::ids::neutral_feature_id(scope);
+        let treatment_inputs = |treatment_radius| crate::design::edge_resolve::EdgeTreatmentInputs {
+            groups: inputs.construction_groups,
+            operands: inputs.edge_operands,
+            identity_operands: inputs.edge_identity_operands,
+            vertex_operands: inputs.edge_treatment_vertex_operands,
+            histories: inputs.histories,
+            previous_state_id: scope.previous_history_state_id(),
+            feature_id: &feature_id,
+            treatment_radius,
+        };
+        let mut scope_groups = Vec::new();
+        let mut selections = Vec::new();
+        for resolved in &assignments {
             let edge_radius = match &resolved.radius {
                 RadiusSpec::Constant { radius } => Some(radius.get()),
                 _ => None,
             };
-            let edges = if let Some(group) = inputs.construction_groups.iter().find(|group| {
+            let group = inputs.construction_groups.iter().find(|group| {
                 native_stream(&group.id) == Some(native_scope)
                     && group.record_index == resolved.assignment.group_record_index
-            }) {
+            });
+            let edges = if let Some(group) = group {
                 resolved_edge_treatment_group_with_corners(
                     group,
-                    crate::design::edge_resolve::EdgeTreatmentInputs {
-                        groups: inputs.construction_groups,
-                        operands: inputs.edge_operands,
-                        identity_operands: inputs.edge_identity_operands,
-                        vertex_operands: inputs.edge_treatment_vertex_operands,
-                        histories: inputs.histories,
-                        previous_state_id: scope.previous_history_state_id(),
-                        feature_id: &crate::ids::neutral_feature_id(scope),
-                        treatment_radius: edge_radius,
-                    },
+                    treatment_inputs(edge_radius),
                     ctx,
                     losses,
                 )?
             } else {
                 EdgeSelection::Native(resolved.assignment.id.clone())
             };
+            scope_groups.push(ScopeTreatmentGroup {
+                group,
+                radius: edge_radius,
+            });
+            selections.push(edges);
+        }
+        partition_leftover_treatment_groups(
+            &scope_groups,
+            &mut selections,
+            treatment_inputs(None),
+            losses,
+        );
+        let mut groups = Vec::new();
+        for (resolved, edges) in assignments.into_iter().zip(selections) {
             groups.push(FilletGroup {
                 edges,
                 radius: resolved.radius,
