@@ -17,18 +17,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "source.preserved-image-unavailable",
-            "kind": "preserved_source_unavailable",
-            "namespace": "iges"
-          }
-        },
-        "message": "preserved IGES source image is unavailable; semantic regeneration is required",
-        "severity": "blocking"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "geometry.procedural-reduced",
             "kind": "procedural_reduced",
             "namespace": "iges"
@@ -115,7 +103,7 @@
     ],
     "synthesis_cause": {
       "kind": "patch_declined",
-      "reason": "the source fidelity holds no IGES source image"
+      "reason": "the encode holds no source fidelity"
     },
     "write_path": {
       "fidelity": {
