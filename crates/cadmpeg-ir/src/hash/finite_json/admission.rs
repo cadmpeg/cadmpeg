@@ -23,7 +23,7 @@ impl<'ctx, 'input> CanonicalAdmission<'ctx, 'input> {
         }
     }
 
-    pub(super) fn context(&self) -> Option<(&'ctx DecodeContext<'input>, &'static str)> {
+    pub(crate) fn context(&self) -> Option<(&'ctx DecodeContext<'input>, &'static str)> {
         self.context
     }
 }

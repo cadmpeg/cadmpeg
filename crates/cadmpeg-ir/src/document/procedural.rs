@@ -292,19 +292,6 @@ impl Topology {
     }
 }
 
-pub(super) fn standard_owners<'a, T>(
-    carriers: impl Iterator<Item = (&'a str, &'a T)>,
-) -> HashMap<&'a str, Option<&'a T>> {
-    let mut owners = HashMap::new();
-    for (construction, owner) in carriers {
-        owners
-            .entry(construction)
-            .and_modify(|previous| *previous = None)
-            .or_insert(Some(owner));
-    }
-    owners
-}
-
 // Serde reconstruction has no decode session. It uses standard allocation
 // with the same owner selection and semantic rejection as decode admission.
 pub(super) struct ReconstructedAdmission {
