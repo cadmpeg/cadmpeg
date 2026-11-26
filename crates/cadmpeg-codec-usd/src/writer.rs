@@ -246,6 +246,7 @@ pub(crate) fn plan(
         losses,
         notes: vec![format!("USDA {version} text layer, {}", units_note(metres))],
         written_row: None,
+        annotations: None,
     };
     (body, members)
 }

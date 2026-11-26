@@ -277,6 +277,7 @@ fn finish(
         native,
         notes: outcome.notes,
         written_row: None,
+        annotations: None,
     })
 }
 

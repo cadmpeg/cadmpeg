@@ -641,3 +641,58 @@ fn the_cadir_writer_names_a_native_record_dropped_with_an_excluded_record() {
         )]
     );
 }
+
+/// A write that leaves out records leaves out their annotations: those of an
+/// evaluation the scope excludes and of each record of its delta go, and
+/// those of a record the write keeps stay, as does a key that named no record
+/// of the input (§3.2, §3.4).
+#[test]
+fn the_cadir_writer_drops_the_annotations_of_the_records_it_leaves_out() {
+    use crate::annotations::{AnnotationKey, StreamHandle};
+    let mut ir = crate::validate::design::fixture::document();
+    let face = ir.geometry.faces[0].id.as_str().to_owned();
+    let copy = ir.geometry.faces[0].clone();
+    let evaluation = ir.design.evaluations[0].id.clone();
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta
+        .records
+        .faces = vec![copy];
+    ir.finalize();
+    ir.set_scope(cadmpeg_core::decode::ContentScope::geometry());
+    let qualified = AnnotationKey::in_delta(&evaluation, &face).to_string();
+    let dangling = "test:design:face#missing";
+    let stream = StreamHandle::new(crate::stream_name!("test:source"));
+    let mut builder = crate::AnnotationBuilder::new();
+    for key in [
+        face.as_str(),
+        evaluation.as_str(),
+        qualified.as_str(),
+        dangling,
+    ] {
+        builder.note(key, &stream, 0, None);
+        builder.exactness(key, crate::provenance::Exactness::Inferred);
+    }
+    let mut fidelity = SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"source"));
+    fidelity.annotations = builder.build();
+
+    let plan = CadirEncoder
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Unnamed,
+        )
+        .expect("a scope breach does not refuse the write");
+    let annotations = plan
+        .annotations()
+        .expect("the write leaves out annotated records");
+    for gone in [evaluation.as_str(), qualified.as_str()] {
+        assert!(!annotations.provenance.contains_key(gone), "{gone}");
+        assert!(!annotations.exactness().contains_key(gone), "{gone}");
+    }
+    for kept in [face.as_str(), dangling] {
+        assert!(annotations.provenance.contains_key(kept), "{kept}");
+        assert!(annotations.exactness().contains_key(kept), "{kept}");
+    }
+}
