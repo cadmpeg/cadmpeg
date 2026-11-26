@@ -10,7 +10,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use super::super::{widen_measuring, Measured};
 use crate::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use crate::codec::loss::DecodeLossCode;
-use crate::design::evaluation::StateBase;
+use crate::design::evaluation::{StateBase, StateDelta};
 use crate::design::refs::RecordRef;
 use crate::document::{CadIr, Topology};
 use crate::features::geometry::FinitePoint3;
@@ -183,6 +183,62 @@ fn a_state_whose_chain_of_bases_does_not_resolve_is_charged_and_the_others_are_m
         };
         assert!(vertex.tolerance.is_some(), "{vertex:?}");
     }
+}
+
+#[test]
+fn a_state_measures_again_the_records_in_which_its_base_widens_a_vertex() {
+    // `after-extrude`, on the current state, moves corner 0 off the ends of
+    // its three edges by 0.02·√3, and corner 1 0.015625 along the line of
+    // edge 0 toward corner 0. Its measure widens corner 0. Corner 1 misses
+    // the end of edge 0 on that edge's line, so it keeps its tolerance.
+    // `a-chained`, based on it, changes no record. In its resolved state the
+    // widened corner 0 covers the end of edge 0, and corner 1 misses only
+    // the ends of its two other edges, off their lines.
+    let mut ir = document();
+    let moved = |ir: &CadIr, from: Point3, to: Point3| {
+        let mut point = ir
+            .geometry
+            .points
+            .iter()
+            .find(|point| point.position().get() == from)
+            .unwrap()
+            .clone();
+        point.set_position(FinitePoint3::new(to).unwrap());
+        point
+    };
+    let points = vec![
+        moved(
+            &ir,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(-0.02, -0.02, -0.02),
+        ),
+        moved(
+            &ir,
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(10.0 - 0.015_625, 0.0, 0.0),
+        ),
+    ];
+    let base = &mut ir.design.evaluations[0];
+    base.content.as_mut().unwrap().delta.records.points = points;
+    let mut chained = base.clone();
+    chained.id = id("evaluation", "a-chained");
+    let content = chained.content.as_mut().unwrap();
+    content.base = StateBase::Evaluation(base.id.clone());
+    content.delta = StateDelta::default();
+    ir.design.evaluations.insert(0, chained);
+    let whole = widened(ir.clone(), Measured::Whole);
+    let region = widened(ir, Measured::Region);
+    let delta = &whole.0.design.evaluations[0]
+        .content
+        .as_ref()
+        .unwrap()
+        .delta;
+    assert_eq!(delta.records.vertices.len(), 1, "{delta:?}");
+    super::assert_close(
+        super::vertex_tolerance(&delta.records, 1).unwrap(),
+        0.015_625,
+    );
+    assert_eq!(region, whole);
 }
 
 /// Prints the time of the vertex tolerance pass on stored histories of

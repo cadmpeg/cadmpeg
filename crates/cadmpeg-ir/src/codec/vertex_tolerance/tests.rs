@@ -625,6 +625,13 @@ fn a_ceiling_met_in_the_resolved_states_keeps_the_current_widening_and_is_charge
         unmeasured.code,
         DecodeLossCode::VertexToleranceUnmeasured.note("").code
     );
+    assert!(
+        unmeasured
+            .message
+            .ends_with(&format!(": {}", ir.design.evaluations[0].id.as_str())),
+        "{}",
+        unmeasured.message
+    );
     assert_close(
         vertex_tolerance(&ir.geometry, 0).unwrap(),
         moved_corner_gap(),

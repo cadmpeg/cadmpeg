@@ -196,17 +196,14 @@ impl<'a> Forest<'a> {
 
     /// The records that the chain of bases below the record `at` passes,
     /// nearest first.
-    pub(super) fn bases(&self, at: usize) -> Vec<Stored<'a>> {
-        let mut bases = Vec::new();
-        let mut parent = self.parents.get(at).copied().flatten();
-        while let Some(Parent::Record(base)) = parent {
-            if bases.len() == self.records.len() {
-                break;
-            }
-            bases.push(self.records[base]);
-            parent = self.parents[base];
-        }
-        bases
+    pub(super) fn bases(&self, at: usize) -> impl Iterator<Item = Stored<'a>> + '_ {
+        let parent = |at: usize| match self.parents.get(at).copied().flatten() {
+            Some(Parent::Record(base)) => Some(base),
+            _ => None,
+        };
+        std::iter::successors(parent(at), move |&base| parent(base))
+            .take(self.records.len())
+            .map(|base| self.records[base])
     }
 
     fn is_checked(&self, at: usize) -> bool {

@@ -24,9 +24,9 @@
 //! with a record its delta changes or with a vertex its base widens: every
 //! other vertex is compared as in the base, where it was measured. A state
 //! whose base is the current state or empty is measured whole. A state
-//! whose chain of bases the pass does not resolve keeps its stored
-//! tolerances, and the pass charges `geometry.vertex-tolerance-unmeasured`
-//! naming it. A record inside a history body or a witness body has no
+//! whose chain of bases the pass does not resolve, or that it does not
+//! measure before a resource ceiling, keeps its stored tolerances, and the
+//! pass charges `geometry.vertex-tolerance-unmeasured` naming it. A record inside a history body or a witness body has no
 //! annotation key of its own, so its widened tolerance could not be marked
 //! derived; it keeps its stored tolerance, and validation reports its gaps.
 
@@ -74,9 +74,9 @@ const SURFACE_PROJECTION_WORK: usize = 1_000_000;
 /// where it widens one. The pass measures in a session of its own under
 /// `policy`. Where it meets a resource ceiling of that session, it widens no
 /// tolerance of the geometry it has not measured and returns the
-/// `geometry.vertex-tolerance-unmeasured` loss. It returns that loss also
-/// where it resolves no state of an evaluation or a process state with
-/// content, naming each.
+/// `geometry.vertex-tolerance-unmeasured` loss. That loss names each
+/// evaluation and process state with content whose resolved state the pass
+/// does not measure.
 pub(super) fn widen(
     ir: &mut CadIr,
     annotations: &mut Annotations,
@@ -173,10 +173,15 @@ fn widen_measuring(
     }
     if let Some(stopped) = stopped {
         let stopped = CodecError::from(stopped);
+        let named = if unresolved.is_empty() {
+            String::new()
+        } else {
+            format!(": {}", unresolved.join(", "))
+        };
         losses.push(DecodeLossCode::VertexToleranceUnmeasured.note(format!(
             "the decode wrapper's vertex tolerance pass stopped ({stopped}), so it widened no \
              vertex tolerance of the resolved states of evaluations and process states it had not \
-             measured"
+             measured{named}"
         )));
     } else if !unresolved.is_empty() {
         losses.push(DecodeLossCode::VertexToleranceUnmeasured.note(format!(
@@ -268,7 +273,7 @@ impl<'w> StateWidening<'w> {
             return None;
         }
         if let Some(widened) = self.by_state.get(id) {
-            for &base in &state.bases {
+            for base in state.bases() {
                 if let Some((_, tolerance)) = widened.iter().find(|(holder, _)| holder == base) {
                     return Some(*tolerance);
                 }
@@ -293,22 +298,22 @@ impl<'w> StateWidening<'w> {
         state: &StateView<'_, '_>,
     ) -> Result<(), ResourceLimit> {
         let base = state
-            .bases
-            .first()
-            .filter(|base| self.measured_states.contains(**base));
+            .bases()
+            .next()
+            .filter(|base| self.measured_states.contains(*base));
         let mut topology = match (self.measured, base) {
             (Measured::Region, Some(base)) => state.region(
                 ctx,
                 self.by_holder
-                    .get(*base)
+                    .get(base)
                     .into_iter()
                     .flatten()
                     .map(String::as_str),
             )?,
             _ => state.whole(),
         };
-        self.measured_states.insert(state.holder.to_owned());
         if topology.vertices.is_empty() {
+            self.measured_states.insert(state.holder.to_owned());
             return Ok(());
         }
         for vertex in &mut topology.vertices {
@@ -326,6 +331,7 @@ impl<'w> StateWidening<'w> {
             None => id.to_owned(),
         };
         let tolerances = measure(ctx, &alone, &|id| read(&key(id)))?;
+        self.measured_states.insert(state.holder.to_owned());
         for vertex in alone.geometry.vertices {
             let Some(tolerance) = tolerances
                 .get(vertex.id.as_str())
@@ -363,20 +369,20 @@ impl<'w> StateWidening<'w> {
 /// record; `None` where no evaluation or process state of that id has
 /// content.
 fn write_into_delta(ir: &mut CadIr, holder: &str, vertex: Vertex) -> Option<(AnnotationKey, bool)> {
-    let (key, delta) = if let Some(evaluation) = ir
+    let (key, delta) = if let Ok(at) = ir
         .design
         .evaluations
-        .iter_mut()
-        .find(|evaluation| evaluation.id.as_str() == holder)
+        .binary_search_by(|evaluation| evaluation.id.as_str().cmp(holder))
     {
+        let evaluation = &mut ir.design.evaluations[at];
         let key = AnnotationKey::in_delta(&evaluation.id, vertex.id.as_str());
         (key, &mut evaluation.content.as_mut()?.delta)
     } else {
-        let state = ir
-            .process
-            .states
-            .iter_mut()
-            .find(|state| state.id.as_str() == holder)?;
+        let states = &mut ir.process.states;
+        let at = states
+            .binary_search_by(|state| state.id.as_str().cmp(holder))
+            .ok()?;
+        let state = &mut states[at];
         let key = AnnotationKey::in_delta(&state.id, vertex.id.as_str());
         (key, &mut state.content.as_mut()?.delta)
     };

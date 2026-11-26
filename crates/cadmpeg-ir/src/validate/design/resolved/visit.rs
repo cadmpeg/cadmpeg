@@ -20,15 +20,20 @@ use crate::process::state::ProcessState;
 pub(crate) struct StateView<'s, 'a> {
     /// The id of the evaluation or process state.
     pub(crate) holder: &'a str,
-    /// The ids of the evaluations and process states that the chain of bases
-    /// below `holder` passes, nearest first.
-    pub(crate) bases: Vec<&'a str>,
+    forest: &'s Forest<'a>,
+    at: usize,
     state: &'s State<'a>,
     applied: &'s Applied<'a>,
     holders: &'s HashMap<*const Topology, &'a str>,
 }
 
 impl<'a> StateView<'_, 'a> {
+    /// The ids of the evaluations and process states that the chain of bases
+    /// below `holder` passes, nearest first.
+    pub(crate) fn bases(&self) -> impl Iterator<Item = &'a str> + '_ {
+        self.forest.bases(self.at).map(Stored::id)
+    }
+
     /// The evaluation or process state whose delta holds the state's record
     /// `id`; `None` for a record of the current geometry.
     pub(crate) fn source(&self, id: &str) -> Option<&'a str> {
@@ -150,7 +155,8 @@ pub(in crate::validate) fn visit_states<'a>(
                 }
                 visit(StateView {
                     holder,
-                    bases: forest.bases(at).into_iter().map(Stored::id).collect(),
+                    forest: &forest,
+                    at,
                     state,
                     applied: &applied,
                     holders: &holders,
