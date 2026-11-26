@@ -1,5 +1,6 @@
-use super::{is_turn_block, turn_block_after_zeros};
+use super::{axistail, is_turn_block, turn_block_after_zeros};
 use crate::carchive::reader::Reader;
+use crate::carchive::reader::V;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use std::collections::HashMap;
 
@@ -60,4 +61,41 @@ fn zero_bytes_in_place_of_the_mark_record_end_at_the_turn_block() {
         with_reader(&short, |r| turn_block_after_zeros(r, 0)),
         Ok(None)
     );
+}
+
+/// A handle block's version `version`, twenty zero bytes, the seven f64 of an
+/// axis tail (a value, a point and a direction) and its zero byte, with the
+/// offset of the first f64.
+fn axis_tail(version: u32) -> (Vec<u8>, usize) {
+    let mut bytes = version.to_le_bytes().to_vec();
+    bytes.extend([0; 20]);
+    let start = bytes.len();
+    for value in [0.005, 0.0375, 0.0025, 0.0, 0.0, -1.0, 0.0] {
+        bytes.extend(f64::to_le_bytes(value));
+    }
+    bytes.push(0);
+    bytes.extend([0xaa; 4]);
+    (bytes, start)
+}
+
+#[test]
+fn a_version_15000_axis_tail_holds_seven_f64_after_twenty_zero_bytes() {
+    let (bytes, start) = axis_tail(15000);
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::desktop()).expect("context");
+    let mut reader = Reader::new(&ctx, &bytes, start, HashMap::new(), 0, None);
+    let V::List(values) = axistail(&mut reader).expect("the tail reads") else {
+        panic!("seven f64");
+    };
+    assert_eq!(
+        values,
+        [0.005, 0.0375, 0.0025, 0.0, 0.0, -1.0, 0.0].map(V::from)
+    );
+    assert_eq!(reader.p, start + 57);
+    let (other, start) = axis_tail(16000);
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(&other, &arena, &DecodePolicy::desktop()).expect("context");
+    let mut reader = Reader::new(&ctx, &other, start, HashMap::new(), 0, None);
+    assert!(axistail(&mut reader).is_err());
 }

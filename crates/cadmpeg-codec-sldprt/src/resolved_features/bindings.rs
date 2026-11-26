@@ -24,6 +24,7 @@ use super::selections::{
     unique_marker_candidate,
 };
 use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
+use super::walked_patterns::{walked_circular, WalkedPatterns};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::classify::HistoryMetadata;
@@ -43,6 +44,8 @@ use std::collections::{HashMap, HashSet};
 
 const EPS_BINDINGS_BIND_PATTERN_INPUTS_E12: f64 = 1e-12;
 const EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9: f64 = 1e-9;
+/// How far a walked circular-pattern angle may lie from a full turn.
+const EPS_FULL_TURN_RAD: f64 = 1e-9;
 
 pub(super) fn history_metadata_ids(histories: &[crate::records::FeatureHistory]) -> HashSet<&str> {
     let mut ids = HashSet::new();
@@ -63,6 +66,17 @@ pub(crate) fn bind_pattern_inputs(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    bind_pattern_inputs_walked(model_features, histories, lanes, &WalkedPatterns::new())
+}
+
+/// [`bind_pattern_inputs`], with the circular-pattern operands of `walked`
+/// where the feature-input objects state none.
+pub(crate) fn bind_pattern_inputs_walked(
+    model_features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    walked: &WalkedPatterns,
+) -> Result<(), cadmpeg_core::CodecError> {
     let metadata_ids = history_metadata_ids(histories);
     let history_features = histories
         .iter()
@@ -79,6 +93,7 @@ pub(crate) fn bind_pattern_inputs(
         Vec::<(usize, cadmpeg_ir::features::FeatureId, PathRef)>::new();
     let mut pattern_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut circular_axis_assignments = Vec::<(usize, FinitePoint3, UnitVector3)>::new();
+    let mut walked_transforms = HashMap::<usize, (u32, f64)>::new();
     let mut linear_direction_assignments = Vec::<(usize, FeatureDirection3)>::new();
     let mut mirror_plane_assignments = Vec::<(usize, Point3, Vector3)>::new();
 
@@ -182,6 +197,10 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 };
                 let end = pattern_object_end();
+                let walked_pattern = walked_circular(walked, &lane.id, &feature.name, |name| {
+                    feature.parameters.contains_key(name)
+                });
+                let seeds_before = pattern_seed_assignments.len();
                 if needs_seed {
                     if let Some(pattern_source) = feature.source_value() {
                         let seed_candidates = generated_identities
@@ -223,9 +242,36 @@ pub(crate) fn bind_pattern_inputs(
                         }
                     }
                 }
+                if needs_seed && pattern_seed_assignments.len() == seeds_before {
+                    if let Some([seed]) = walked_pattern
+                        .as_ref()
+                        .and_then(|pattern| pattern.seeds.as_deref())
+                    {
+                        let mut named = history_features.iter().filter(|candidate| {
+                            &candidate.name == seed && !metadata_ids.contains(candidate.id.as_str())
+                        });
+                        if let (Some(found), None) = (named.next(), named.next()) {
+                            if let Some(&seed_index) = model_by_native.get(found.id.as_str()) {
+                                if seed_index != model_index {
+                                    pattern_seed_assignments
+                                        .push((model_index, model_features[seed_index].id.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
                 if needs_axis {
                     if let Some(axis) = temporary_axis_reference(&lane.native_payload, start, end) {
                         circular_axis_assignments.push((model_index, axis.0, axis.1));
+                    } else if let Some((origin, direction)) =
+                        walked_pattern.as_ref().and_then(|pattern| pattern.axis)
+                    {
+                        circular_axis_assignments.push((model_index, origin, direction));
+                    }
+                }
+                if let Some(pattern) = &walked_pattern {
+                    if let (Some(count), Some(angle)) = (pattern.count, pattern.angle) {
+                        walked_transforms.insert(model_index, (count, angle));
                     }
                 }
                 continue;
@@ -606,10 +652,17 @@ pub(crate) fn bind_pattern_inputs(
         else {
             continue;
         };
+        let walked_transform = walked_transforms.get(&index);
         let Some(angle) = native
             .parameters
             .get("Angle")
             .and_then(|value| parse_positive_angle_rad(value))
+            .or_else(|| {
+                walked_transform
+                    .map(|(_, angle)| *angle)
+                    .filter(|angle| (angle - std::f64::consts::TAU).abs() <= EPS_FULL_TURN_RAD)
+                    .and_then(|angle| cadmpeg_ir::scalar::PositiveAngle::try_from(angle).ok())
+            })
         else {
             continue;
         };
@@ -617,6 +670,7 @@ pub(crate) fn bind_pattern_inputs(
             .parameters
             .get("Count")
             .and_then(|value| parse_count(value))
+            .or_else(|| walked_transform.map(|(count, _)| *count))
         else {
             continue;
         };

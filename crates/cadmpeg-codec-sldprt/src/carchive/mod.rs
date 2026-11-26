@@ -42,9 +42,51 @@ pub(crate) struct Walk {
     /// The `moPMarkRecord_c` objects read, each with the named object that
     /// holds it.
     pub(crate) marks: Vec<reader::MarkOwner>,
+    /// The seed lists of the feature patterns read, by name.
+    pub(crate) pattern_seeds: Vec<PatternSeeds>,
     /// Top-level pointers read.
     #[cfg(test)]
     pub(crate) tops: usize,
+}
+
+/// A feature pattern's seeds, named through the map indices its seed list
+/// references (sldprt.md §2.2, §2.3).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PatternSeeds {
+    /// The pattern's name, when its header gave one.
+    pub(crate) pattern: Option<String>,
+    /// Each seed's name, `None` where the entry names no object this stream
+    /// read under a name.
+    pub(crate) seeds: Vec<Option<String>>,
+    /// The parameter objects the pattern holds.
+    pub(crate) parameters: Vec<reader::ParameterRecord>,
+    /// A circular pattern's axis tail: its seven f64 and the byte after them.
+    pub(crate) axis: Option<([f64; 7], u8)>,
+}
+
+/// The seeds of `lists`, named through `positions` and `names`.
+fn pattern_seeds(
+    lists: &[reader::PatternSeedList],
+    positions: &HashMap<u32, usize>,
+    names: &HashMap<usize, String>,
+) -> Vec<PatternSeeds> {
+    lists
+        .iter()
+        .map(|list| PatternSeeds {
+            pattern: names.get(&list.at).cloned(),
+            seeds: list
+                .seeds
+                .iter()
+                .map(|seed| {
+                    seed.and_then(|index| positions.get(&index))
+                        .and_then(|at| names.get(at))
+                        .cloned()
+                })
+                .collect(),
+            parameters: list.parameters.clone(),
+            axis: list.axis,
+        })
+        .collect()
 }
 
 /// A sketch's profile body and the stream extent of the profile-family object
@@ -110,6 +152,7 @@ pub(crate) fn walk<'b>(
     Some(Walk {
         sketch_profiles: sketch_profiles(&r.profile_bodies, &r.ends),
         status,
+        pattern_seeds: pattern_seeds(&r.pattern_seeds, &r.positions, &r.names),
         parameters: r.parameters,
         marks: r.marks,
         #[cfg(test)]

@@ -90,6 +90,10 @@ pub(crate) const M12345: [u8; 12] = [
     0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
 ];
 
+/// The handle-block version whose axis tail writes twenty zero bytes before
+/// its seven f64 (sldprt.md §2.3).
+const SW_VERSION_15000: u32 = 15000;
+
 /// The shared rule state.
 #[derive(Debug, Clone)]
 pub(crate) struct CoreState {
@@ -490,6 +494,18 @@ pub(crate) fn objat(r: &Reader<'_>, q: usize) -> bool {
 
 /// `axistail`.
 pub(crate) fn axistail(r: &mut Reader<'_>) -> Res<V> {
+    if r.p >= 24
+        && r.pu32(r.p - 24)
+            .is_ok_and(|version| version == SW_VERSION_15000)
+        && r.zeros(r.p - 20, 20)
+    {
+        let mut ax = Vec::new();
+        for _ in 0..7 {
+            ax.push(V::from(r.f64()?));
+        }
+        r.expect_bytes(&[0], "axis u8 0")?;
+        return Ok(V::List(ax));
+    }
     if r.p >= 8 && r.ffs(r.p - 8, 4) && r.zeros(r.p - 4, 8) && !r.zeros(r.p + 4, 8) {
         r.skip(4);
         let mut ax = Vec::new();
@@ -1586,15 +1602,25 @@ fn units_after_head(r: &mut Reader<'_>, hd: &V) -> Res<()> {
     Ok(())
 }
 
-/// `moLPattern_c`, `moCirPattern_c`, `moMirrorPattern_c`.
+/// `moLPattern_c`, `moCirPattern_c`, `moMirrorPattern_c`, with the parameter
+/// objects the pattern holds noted with its seed list.
 pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
+    let from = reader.parameters.len();
+    let value = featpattern_body(reader)?;
+    reader.note_pattern_parameters(from);
+    Ok(value)
+}
+
+/// The body of [`featpattern`].
+fn featpattern_body(reader: &mut Reader<'_>) -> Res<V> {
     let class = reader.last_class().ok_or(Stop::End(reader.p))?;
     let class = &*class;
     let count = feature(reader, class)?;
     let hd = bodyhead(reader, class)?;
     units_after_head(reader, &hd)?;
     reader.ptr(Some(&["moPMarkRecord_c"]))?;
-    reader.ptr(Some(&["suObList"]))?;
+    let seeds = reader.ptr(Some(&["suObList"]))?;
+    reader.note_pattern_seeds(&seeds);
     reader.ptr(Some(&["suObList"]))?;
     if !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
         && !reader.eq(reader.p, &[1, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0])
@@ -1642,10 +1668,12 @@ pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
         reader.expect_bytes(&[0, 0], "cirpattern u16 0")?;
         let ax = reader.ptr(None)?;
         item1(reader, &ax)?;
-        axistail(reader)?;
-        if reader.u8()? > 1 {
+        let tail = axistail(reader)?;
+        let flag = reader.u8()?;
+        if flag > 1 {
             return Err(bad("cirpattern flag byte"));
         }
+        reader.note_pattern_axis(&tail, flag);
         display_objects(reader)?;
         reader.expect_bytes(
             &[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],

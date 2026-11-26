@@ -852,3 +852,27 @@ fn a_mark_record_is_noted_with_the_feature_that_holds_it() {
         }]
     );
 }
+
+#[test]
+fn a_pattern_seed_is_named_by_the_object_its_map_index_opened() {
+    let lists = [super::reader::PatternSeedList {
+        at: 100,
+        seeds: vec![Some(7), Some(9), None],
+        parameters: Vec::new(),
+        axis: None,
+    }];
+    let positions = std::collections::HashMap::from([(7, 40), (9, 60), (11, 100)]);
+    let names = std::collections::HashMap::from([
+        (40, "Cut-Extrude2".to_owned()),
+        (100, "CirPattern1".to_owned()),
+    ]);
+    assert_eq!(
+        super::pattern_seeds(&lists, &positions, &names),
+        [super::PatternSeeds {
+            pattern: Some("CirPattern1".to_owned()),
+            seeds: vec![Some("Cut-Extrude2".to_owned()), None, None],
+            parameters: Vec::new(),
+            axis: None,
+        }]
+    );
+}
