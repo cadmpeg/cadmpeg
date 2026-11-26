@@ -120,6 +120,10 @@ pub(crate) struct RetainedSource {
     /// What the write of `decoded` with no edit reads back as, from the first
     /// pass that reads back a difference no edit explains.
     pub(crate) unedited: OnceLock<Vec<crate::history::write::read_back::document::Difference>>,
+    /// The bytes of the first pass that writes no edit as edited, and the
+    /// part the read-back decoded from them: a pass of any write of this
+    /// source that writes the same bytes reads back the same part.
+    pub(crate) edit_free: OnceLock<(Vec<u8>, Arc<cadmpeg_ir::codec::DecodeResult>)>,
 }
 
 /// Reusable decoded source baseline and native records across read-back retries
@@ -3349,6 +3353,7 @@ fn retained_source_baseline<'a>(
             native,
             records: OnceLock::new(),
             unedited: OnceLock::new(),
+            edit_free: OnceLock::new(),
         }));
     }
     Ok(baseline.as_deref())

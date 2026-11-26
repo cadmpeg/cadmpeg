@@ -52,7 +52,13 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     session: &SldprtWriteSession<'_>,
-) -> Result<(ExportBody, Option<cadmpeg_ir::codec::DecodeResult>), CodecError> {
+) -> Result<
+    (
+        ExportBody,
+        Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>,
+    ),
+    CodecError,
+> {
     let of_document;
     let (digests, unverified) = match input.fidelity {
         Some(fidelity) => (&fidelity.codec_digests, false),
@@ -67,7 +73,7 @@ pub(crate) fn plan(
     };
     let (mut written, bytes) = write(input, resolved, digests, session)?;
     let read_back = match &mut written {
-        Written::Semantic { read_back, .. } => read_back.take().map(|decoded| *decoded),
+        Written::Semantic { read_back, .. } => read_back.take(),
         Written::Replayed | Written::Stored { .. } => None,
     };
     let mut body = finish(input, &written, bytes, digests);

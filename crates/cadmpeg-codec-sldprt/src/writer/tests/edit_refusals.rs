@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
+use std::sync::Arc;
 
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
@@ -22,7 +23,7 @@ use crate::{SldprtCodec, SldprtWriteSession};
 /// Writes through the sealed encoder in the write session of the source: the
 /// export report, the bytes, and the written part as the write read it back,
 /// when it did.
-fn write(decoded: &EditableDecodeResult) -> (ExportReport, Vec<u8>, Option<DecodeResult>) {
+fn write(decoded: &EditableDecodeResult) -> (ExportReport, Vec<u8>, Option<Arc<DecodeResult>>) {
     let fidelity = decoded.source_fidelity();
     let own;
     let session = match crate::test_support::nist::session(fidelity) {
@@ -44,8 +45,8 @@ fn write(decoded: &EditableDecodeResult) -> (ExportReport, Vec<u8>, Option<Decod
 
 /// The written part `bytes` as the write read it back, or decoded again
 /// where the write did not read it back.
-fn written(read_back: Option<DecodeResult>, bytes: &[u8]) -> DecodeResult {
-    read_back.unwrap_or_else(|| decode_read_back(bytes))
+fn written(read_back: Option<Arc<DecodeResult>>, bytes: &[u8]) -> Arc<DecodeResult> {
+    read_back.unwrap_or_else(|| Arc::new(decode_read_back(bytes)))
 }
 
 fn decode(bytes: Vec<u8>) -> DecodeResult {

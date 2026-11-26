@@ -16,7 +16,7 @@ use crate::SldprtCodec;
 /// it back.
 struct SessionWrite<'s, 'f> {
     session: &'s crate::SldprtWriteSession<'f>,
-    read_back: std::cell::Cell<Option<cadmpeg_ir::codec::DecodeResult>>,
+    read_back: std::cell::Cell<Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>>,
 }
 
 impl cadmpeg_ir::codec::write::EncoderBackend for SessionWrite<'_, '_> {
@@ -58,7 +58,7 @@ pub(crate) fn plan_in_session(
 ) -> Result<
     (
         cadmpeg_ir::codec::write::ExportPlan,
-        Option<cadmpeg_ir::codec::DecodeResult>,
+        Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>,
     ),
     EncodeError,
 > {
@@ -314,7 +314,7 @@ fn write_without_stale_solid(
     fidelity: &SourceFidelity,
 ) -> (
     cadmpeg_ir::report::export::ExportReport,
-    cadmpeg_ir::codec::DecodeResult,
+    std::sync::Arc<cadmpeg_ir::codec::DecodeResult>,
     SourceFidelity,
 ) {
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))
@@ -334,7 +334,9 @@ fn write_without_stale_solid(
         Vec::<String>::new()
     );
     let written = read_back.unwrap_or_else(|| {
-        crate::decode::decode_for_read_back(&output).expect("the written part decodes")
+        std::sync::Arc::new(
+            crate::decode::decode_for_read_back(&output).expect("the written part decodes"),
+        )
     });
     (report, written, fidelity)
 }
@@ -363,7 +365,7 @@ fn loss_messages(
 pub(crate) fn write_unwritten_feature_edits(
     ir: &CadIr,
     fidelity: &SourceFidelity,
-) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
+) -> (Vec<String>, std::sync::Arc<cadmpeg_ir::codec::DecodeResult>) {
     let (report, written, _) = write_without_stale_solid(ir, fidelity);
     (
         report
@@ -384,7 +386,7 @@ pub(crate) fn write_unwritten_feature_edits(
 pub(crate) fn unwritten_feature_edits(
     ir: &CadIr,
     fidelity: &SourceFidelity,
-) -> (Vec<String>, cadmpeg_ir::codec::DecodeResult) {
+) -> (Vec<String>, std::sync::Arc<cadmpeg_ir::codec::DecodeResult>) {
     let (report, written, written_from) = write_without_stale_solid(ir, fidelity);
     let unwritten = report
         .losses

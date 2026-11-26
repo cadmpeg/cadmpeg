@@ -202,8 +202,10 @@ fn run(
         .count();
     let written = match read_back {
         Some(written) => written,
-        None => crate::decode::decode_for_read_back(&output)
-            .map_err(|error| format!("{label}: output does not decode: {error}"))?,
+        None => std::sync::Arc::new(
+            crate::decode::decode_for_read_back(&output)
+                .map_err(|error| format!("{label}: output does not decode: {error}"))?,
+        ),
     };
     let read = named(&written.ir().model.features, &job.feature);
     let [read] = read.as_slice() else {

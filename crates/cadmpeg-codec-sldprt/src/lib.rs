@@ -419,7 +419,7 @@ impl SldprtCodec {
             unwritten_edits,
             unwritten,
             losses,
-            read_back: read_back.decoded.take().map(Box::new),
+            read_back: read_back.decoded.take(),
         })
     }
 }
@@ -521,7 +521,7 @@ enum Written {
         /// The write's other losses.
         losses: Vec<cadmpeg_ir::report::loss::LossNote>,
         /// The written part as the write read it back, when it did.
-        read_back: Option<Box<cadmpeg_ir::codec::DecodeResult>>,
+        read_back: Option<Arc<cadmpeg_ir::codec::DecodeResult>>,
     },
 }
 
