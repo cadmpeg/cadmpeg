@@ -1680,8 +1680,12 @@ fn input_body_writers_name_state_bodies_once_and_model_features() {
         writer: FeatureId::mint(feature).expect("identity grammar"),
     };
     let mut ir = CadIr::empty();
-    ir.model.features.push(feature("test:model:feature#extrude", 0));
-    ir.model.features.push(feature("test:model:feature#shell", 1));
+    ir.model
+        .features
+        .push(feature("test:model:feature#extrude", 0));
+    ir.model
+        .features
+        .push(feature("test:model:feature#shell", 1));
     ir.model
         .feature_input_topologies
         .push(FeatureInputTopology {
