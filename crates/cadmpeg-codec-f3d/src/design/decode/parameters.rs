@@ -1541,9 +1541,9 @@ fn has_standalone_scalar_scope(scan: &ContainerScan) -> Result<bool, CodecError>
     Ok(false)
 }
 
-/// Largest local ordinal of a Thread scope's standalone scalar owner: the
+/// Last local ordinal of a Thread scope's standalone scalar owner: the
 /// scope stores its offset and its length.
-const MAX_THREAD_OWNER_ORDINAL: u32 = 1;
+const LAST_THREAD_OWNER_ORDINAL: u32 = 1;
 
 /// Scalar owners of uniquely registered Pipe and Thread scopes in one Design stream,
 /// each with its compact-trailer flag.
@@ -1600,7 +1600,7 @@ fn standalone_scalar_owners(
             continue;
         };
         if !matches!(parsed.frame_length, 103 | 104)
-            || (thread && parsed.local_ordinal > MAX_THREAD_OWNER_ORDINAL)
+            || (thread && parsed.local_ordinal > LAST_THREAD_OWNER_ORDINAL)
             || records
                 .frames(parsed.record_index)
                 .filter(|(start, end)| *start == frame.start && *end == frame.member_end)
