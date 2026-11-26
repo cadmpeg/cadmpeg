@@ -6,11 +6,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::construction::InputReference;
+use cadmpeg_ir::design::container::{Container, OrderedKind, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::ops::sketch::{
     DistanceAxis, EntityDefinition, EntityForm, Operand, RadialMeasure, SketchPlane, SketchRelation,
 };
+use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::Anchor;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
@@ -218,6 +221,59 @@ fn the_group_and_a_minted_owner_of_an_archive_member_take_the_member_key() {
         .id
         .as_str()
         .starts_with("f3d:member.f3d@design:sketch-owner#"));
+}
+
+#[test]
+fn a_sketch_group_beside_a_timeline_is_named_and_a_group_alone_is_not() {
+    const GROUP: &str = "f3d:design:container#sketches";
+    let hold = |into: &mut super::timeline::Projected| {
+        let mut losses = Vec::new();
+        crate::test_support::with_decode_context(|ctx| {
+            super::hold(ctx, "", vec![unresolved_sketch(OWNER)], into, &mut losses)
+        })
+        .unwrap();
+        losses
+    };
+    let group = |into: &super::timeline::Projected| {
+        into.containers
+            .iter()
+            .find_map(|container| match container {
+                Container::Unordered { id, kind, members } if id.as_str() == GROUP => {
+                    Some((*kind, members.clone()))
+                }
+                _ => None,
+            })
+    };
+    let owner = Member::Feature(FeatureId::mint(OWNER).unwrap());
+
+    let mut alone = super::timeline::Projected::default();
+    let losses = hold(&mut alone);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(
+        group(&alone),
+        Some((UnorderedKind::Group, BTreeSet::from([owner.clone()])))
+    );
+    assert_eq!(alone.features.len(), 1);
+
+    let mut beside = super::timeline::Projected::default();
+    beside.containers.push(Container::Ordered {
+        id: ContainerId::mint("f3d:design:container#timeline").unwrap(),
+        kind: OrderedKind::Timeline,
+        members: Vec::new(),
+        folders: Vec::new(),
+        rollback: None,
+        placement: None,
+    });
+    let losses = hold(&mut beside);
+    assert!(
+        names(&losses, F3dLossCode::DesignSketchOutsideTimeline, GROUP),
+        "{losses:?}"
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        group(&beside),
+        Some((UnorderedKind::Group, BTreeSet::from([owner])))
+    );
 }
 
 #[test]

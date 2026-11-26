@@ -45,7 +45,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, Rollback, UnorderedKind};
+use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::{Member, Position};
@@ -56,7 +56,6 @@ use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
-use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 use crate::records::feature::scope::DesignScopeTailFlags;
 
@@ -183,26 +182,7 @@ pub(crate) fn project(
                 timeline::Projected::default(),
             )
         });
-        let group = sketch::group_id(&prefix)?;
-        if into
-            .containers
-            .iter()
-            .any(|container| matches!(container, Container::Ordered { .. }))
-        {
-            losses.push(F3dLossCode::DesignSketchOutsideTimeline.note(format!(
-                "container {group}: sketches whose owner has no timeline item are members of one unordered group"
-            )));
-        }
-        ctx.charge_entities(1, "project F3D v11 sketch group")?;
-        into.containers.push(Container::Unordered {
-            id: group,
-            kind: UnorderedKind::Group,
-            members: owners
-                .iter()
-                .map(|owner| Member::Feature(owner.id.clone()))
-                .collect(),
-        });
-        into.features.extend(owners);
+        sketch::hold(ctx, &prefix, owners, into, losses)?;
     }
     definitions.extend(
         scopes

@@ -11,8 +11,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::construction::{Construction, ConstructionInput, InputReference};
+use cadmpeg_ir::design::container::{Container, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
@@ -27,6 +29,7 @@ use cadmpeg_ir::design::projection::sketch::{
     self as relation, native_entity_kind, native_relation, planar_curve, stored_frame,
     stored_value, DimensionValue, Loci,
 };
+use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::design::units::ValueKind;
 use cadmpeg_ir::document::Model;
@@ -105,9 +108,43 @@ pub(super) fn outside(
     Ok(out)
 }
 
+/// Hold `owners`, the owners of the sketches of the document at `prefix`
+/// that no timeline item lists, in one root unordered group of `into`. The
+/// spec places such a group only in a scope with no timeline, so a group
+/// beside a timeline is named as interim.
+pub(super) fn hold(
+    ctx: &DecodeContext<'_>,
+    prefix: &str,
+    owners: Vec<Feature>,
+    into: &mut timeline::Projected,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let group = group_id(prefix)?;
+    if into
+        .containers
+        .iter()
+        .any(|container| matches!(container, Container::Ordered { .. }))
+    {
+        losses.push(F3dLossCode::DesignSketchOutsideTimeline.note(format!(
+            "container {group}: sketches whose owner has no timeline item are members of one unordered group"
+        )));
+    }
+    ctx.charge_entities(1, "project F3D v11 sketch group")?;
+    into.containers.push(Container::Unordered {
+        id: group,
+        kind: UnorderedKind::Group,
+        members: owners
+            .iter()
+            .map(|owner| Member::Feature(owner.id.clone()))
+            .collect(),
+    });
+    into.features.extend(owners);
+    Ok(())
+}
+
 /// The container of the sketches outside the timelines of the document at
 /// `prefix`.
-pub(super) fn group_id(prefix: &str) -> Result<ContainerId, CodecError> {
+fn group_id(prefix: &str) -> Result<ContainerId, CodecError> {
     let id = ContainerId::from(cadmpeg_ir::ids::Identity::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "design", "container"),
         cadmpeg_ir::identity_key!("sketches"),
