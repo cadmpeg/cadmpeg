@@ -17,6 +17,7 @@ use crate::history_records::{
 };
 
 const EPS_START_OFFSET_ANGULAR: f64 = 1.0e-9;
+const EPS_START_OFFSET_LENGTH: f64 = 1.0e-12;
 
 fn length(value: f64) -> Length {
     Length::new(value).expect("finite length")
@@ -99,10 +100,22 @@ fn a_start_offset_changes_sign_when_the_outward_normal_runs_against_the_travel()
 }
 
 #[test]
-fn a_start_offset_has_no_travel_reading_when_the_outward_normal_is_oblique() {
+fn an_inclined_start_face_offset_divides_by_the_normal_travel_cosine() {
+    let along = along_travel(
+        length(0.5),
+        Vector3::new(-1.0, 0.0, 1.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        EPS_START_OFFSET_ANGULAR,
+    )
+    .expect("an inclined face has a travel reading");
+    assert!((along.get() - 0.5 * std::f64::consts::SQRT_2).abs() < EPS_START_OFFSET_LENGTH);
+}
+
+#[test]
+fn a_start_offset_has_no_travel_reading_when_the_outward_normal_is_perpendicular() {
     let along = along_travel(
         length(-5.0),
-        Vector3::new(0.0, 1.0, 1.0),
+        Vector3::new(0.0, 1.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
         EPS_START_OFFSET_ANGULAR,
     );

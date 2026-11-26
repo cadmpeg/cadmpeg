@@ -3188,18 +3188,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** A one-sided distance New Body scope with a `ProfileOffset` and no face or shape target group projects with an unresolved start face. The neutral feature retains the stored start offset along the travel direction and the blind distance. The decoder reports `feature.extrude-start-face-unresolved` and, for a nonzero start offset, `feature.extrude-start-offset-direction-assumed`.
 
-### DR-1064. Start offset from an inclined or curved start face
-
-**Question.** Along which direction does a selected-face `Extrude` start apply its `ProfileOffset` when the start face is not planar, or when its normal is inclined to the travel direction?
-
-**Known.** `f3d.md` §3.1 "The reference-aware `Extrude` or `Extrusion` prologue" gives the `ProfileOffset` of a selected-face start as a signed distance along the outward normal of the start face. For a planar start face whose normal is parallel to the travel direction, the start plane is the face plane displaced by that distance along the outward normal. The decoder reads every other start offset as the stored distance along the travel direction and reports `feature.extrude-start-offset-direction-assumed`.
-
-**Need.** Saves of a one-sided distance New Body `Extrude` with a nonzero start offset From Object on a planar face inclined at 45 degrees to the travel direction, and on a cylindrical face, each with the result body extent recorded.
-
-**Conflict.** None.
-
-**Note.** None.
-
 ### DR-326. Extrude start face on another component's body
 
 **Question.** Which identity in a role-`0x0000001100000000` start group names the selected face when that face belongs to a body of another component, and in which ASM history and state is it resolved?

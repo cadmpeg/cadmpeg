@@ -42,8 +42,9 @@ pub(crate) fn travel(
     sweep.unit()
 }
 
-/// The offset along `travel` of a start offset stored along `outward`, when
-/// the two directions are parallel or antiparallel.
+/// The offset along `travel` that moves a planar start face onto its plane
+/// offset by `stored` along `outward`, when `outward` is not perpendicular to
+/// `travel`.
 pub(crate) fn along_travel(
     stored: Length,
     outward: Vector3,
@@ -51,10 +52,10 @@ pub(crate) fn along_travel(
     angular_tolerance: f64,
 ) -> Option<Length> {
     let cosine = outward.unit()?.dot(travel.unit()?);
-    if (cosine.abs() - 1.0).abs() > angular_tolerance {
+    if cosine.abs() <= angular_tolerance {
         return None;
     }
-    Length::new(stored.get() * cosine.signum())
+    Length::new(stored.get() / cosine)
 }
 
 fn sole<T>(mut rows: impl Iterator<Item = T>) -> Option<T> {
@@ -194,7 +195,7 @@ pub(crate) fn unoriented_start_losses(
         })
         .map(|feature| {
             F3dLossCode::FeatureExtrudeStartOffsetDirectionAssumed.note(format!(
-                "Extrude {} reads its start-face offset along the travel direction because the start face normal is not proven parallel to the travel (DR-1064).",
+                "Extrude {} reads its start-face offset along the travel direction; the start surface is the start face offset along its outward normal, which a travel offset states only for a planar face whose normal the decoder resolves.",
                 feature.id
             ))
         })
