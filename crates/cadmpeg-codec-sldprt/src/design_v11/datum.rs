@@ -13,32 +13,39 @@ use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::geometry::{FeatureDatumPlaneFrame, FeatureDirection3};
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::units::UnitVector3;
 
 use super::swept::{self, Context};
 
 /// Type each unresolved datum of `features` whose decoded record states its
-/// plane, axis, point or frame.
-pub(super) fn project(features: &mut [Feature], context: &Context<'_>) {
+/// plane, axis, point or frame, and return the id and name of each one whose
+/// record states none.
+pub(super) fn project(
+    features: &mut [Feature],
+    context: &Context<'_>,
+) -> Vec<(FeatureId, Option<String>)> {
+    let mut unresolved = Vec::new();
     swept::walk(features, OperationFamily::Datum, |feature, _| {
-        let Some(source) = context
+        let element = context
             .model
             .features
             .iter()
             .find(|candidate| candidate.id == feature.id)
-        else {
-            return;
-        };
-        if let Some(element) = element(source.evaluation.definition()) {
-            feature.definition.operation = FeatureOperation::Datum(Box::new(Datum {
-                element,
-                link: None,
-                native_options: NativeOptions::new(),
-                source_settings: NativeOptions::new(),
-            }));
+            .and_then(|source| element(source.evaluation.definition()));
+        match element {
+            Some(element) => {
+                feature.definition.operation = FeatureOperation::Datum(Box::new(Datum {
+                    element,
+                    link: None,
+                    native_options: NativeOptions::new(),
+                    source_settings: NativeOptions::new(),
+                }));
+            }
+            None => unresolved.push((feature.id.clone(), feature.name.clone())),
         }
     });
+    unresolved
 }
 
 /// The datum element of a decoded definition that states its geometry.

@@ -69,6 +69,8 @@ pub(super) struct Typed {
     /// The note of the revolves whose decoded axis carries the turn sense
     /// their record stores and whose solid depends on it.
     pub(super) revolve_sense_assumed: Option<LossNote>,
+    /// The user datums whose decoded record states no geometry.
+    pub(super) datum_unresolved: Option<LossNote>,
 }
 
 /// The scope the typed records belong to, and what the decoder read of
@@ -114,7 +116,7 @@ pub(super) fn project(
         sketches: &stated,
         entities: &sketches.entities,
     };
-    datum::project(&mut timeline.features, &context);
+    let datums_unresolved = datum::project(&mut timeline.features, &context);
     let extrudes = extrude::project(&mut timeline.features, &context);
     let revolves = revolve::project(&mut timeline.features, &context);
     pattern::project(&mut timeline.features, &context);
@@ -156,6 +158,7 @@ pub(super) fn project(
     );
     let revolve_boolean_unstated = boolean_unstated(&revolves.boolean_unstated);
     let revolve_sense_assumed = sense_assumed(&revolves.sense_assumed);
+    let datum_unresolved = datum_unresolved(&datums_unresolved);
     let revolve_profile_differs = profile_differs(
         SldprtLossCode::DesignRevolveProfileDiffers,
         "revolves",
@@ -204,6 +207,7 @@ pub(super) fn project(
         revolve_profile_differs,
         revolve_profile_unchecked,
         revolve_sense_assumed,
+        datum_unresolved,
     }
 }
 
@@ -387,6 +391,20 @@ fn sense_assumed(revolves: &[(FeatureId, Option<String>)]) -> Option<LossNote> {
                 .iter()
                 .map(|(feature, name)| named(feature, name.as_deref()))
         ),
+    )))
+}
+
+/// The note naming `datums`, the user datums whose decoded record states no
+/// plane, axis, point or frame.
+fn datum_unresolved(datums: &[(FeatureId, Option<String>)]) -> Option<LossNote> {
+    if datums.is_empty() {
+        return None;
+    }
+    Some(SldprtLossCode::DesignDatumUnresolved.note(format!(
+        "{} user datums state their family without geometry: their decoded record states no \
+         plane, axis, point or frame: {}",
+        datums.len(),
+        listed(datums.iter().map(|(feature, name)| named(feature, name.as_deref()))),
     )))
 }
 

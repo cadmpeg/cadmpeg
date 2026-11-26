@@ -559,6 +559,9 @@ pub(crate) enum SldprtLossCode {
     /// Design features whose operation the decoder typed in its own records
     /// state their family without operands.
     DesignFeatureUnresolved,
+    /// User datums whose decoded record states no plane, axis, point or
+    /// frame state their family without geometry.
+    DesignDatumUnresolved,
     /// A feature folder whose members regeneration order does not keep in
     /// one run is not stated.
     DesignFolderDropped,
@@ -843,6 +846,7 @@ impl SldprtLossCode {
         Self::AssemblyEmbeddedDocumentsNotTransferred,
         Self::AssemblyBomExclusionNotTransferred,
         Self::DesignFeatureUnresolved,
+        Self::DesignDatumUnresolved,
         Self::DesignFolderDropped,
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
@@ -1108,6 +1112,7 @@ impl SldprtLossCode {
             }
             Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
+            Self::DesignDatumUnresolved => "design.datum-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
@@ -1355,6 +1360,7 @@ impl SldprtLossCode {
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
+            | Self::DesignDatumUnresolved
             | Self::SketchSecondReading
             | Self::SketchDimensionRepeated
             | Self::DesignExtrudeProfileUnchecked
@@ -1449,9 +1455,9 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
-            Self::DesignFeatureUnresolved | Self::DesignEquationUnread => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::DesignFeatureUnresolved
+            | Self::DesignDatumUnresolved
+            | Self::DesignEquationUnread => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
@@ -1996,6 +2002,7 @@ mod tests {
                 "assembly.embedded-documents-not-transferred",
                 "assembly.bom-exclusion-not-transferred",
                 "design.feature-unresolved",
+                "design.datum-unresolved",
                 "design.folder-dropped",
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",

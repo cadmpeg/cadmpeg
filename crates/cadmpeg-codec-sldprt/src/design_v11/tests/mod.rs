@@ -1568,6 +1568,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 }
 
 mod configuration_states;
+mod datum;
 mod dimension_curves;
 mod parameters;
 mod pattern;
