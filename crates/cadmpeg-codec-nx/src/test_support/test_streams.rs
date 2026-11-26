@@ -709,6 +709,65 @@ pub(crate) fn topology_partition_stream() -> Vec<u8> {
     s
 }
 
+/// [`topology_partition_stream`] under a base-13006 transmit header whose
+/// primary framing stops before the first record, with a base-schema BODY
+/// that stores `res_linear` (metres) in place of the fixed BODY record.
+pub(crate) fn primary_stopped_topology_stream(res_linear: f64) -> Vec<u8> {
+    primary_stopped_stream(
+        &topology_partition_stream(),
+        ": TRANSMIT FILE (partition) created by modeller",
+        40,
+        res_linear,
+    )
+}
+
+/// `fixed`, a stream whose first record after the `SCH_TEST_1_9999` header is
+/// a 24-byte BODY, under a base-13006 transmit header of `description` whose
+/// primary framing stops before the first record, with a base-schema BODY of
+/// node id `body_node_id` that stores `res_linear` (metres) in place of the
+/// fixed BODY record.
+pub(crate) fn primary_stopped_stream(
+    fixed: &[u8],
+    description: &str,
+    body_node_id: u32,
+    res_linear: f64,
+) -> Vec<u8> {
+    use super::test_bytes::encoded_xmt;
+    let marker = b"SCH_TEST_1_9999\x00";
+    let records = fixed
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap()
+        + marker.len();
+    let mut s = b"PS".to_vec();
+    for field in [description, "SCH_999_13006"] {
+        s.extend(u32::try_from(field.len()).unwrap().to_be_bytes());
+        s.extend(field.as_bytes());
+    }
+    s.extend(0u32.to_be_bytes());
+    // Node type 0 stops the primary sequence.
+    s.extend([0, 0]);
+    s.extend(12u16.to_be_bytes());
+    s.extend(encoded_xmt(2));
+    s.extend(body_node_id.to_be_bytes());
+    for _ in 0..6 {
+        s.extend(encoded_xmt(1));
+    }
+    s.extend(1.0e3f64.to_be_bytes());
+    s.extend(res_linear.to_be_bytes());
+    for _ in 0..3 {
+        s.extend(encoded_xmt(1));
+    }
+    s.push(0);
+    s.extend(encoded_xmt(1));
+    s.extend([1, 0]);
+    for _ in 0..7 {
+        s.extend(encoded_xmt(1));
+    }
+    s.extend_from_slice(&fixed[records + 24..]);
+    s
+}
+
 /// `stream`, a [`topology_partition_stream`], with the identity of each record
 /// whose XMT `widen` selects, and every reference to it, moved past 32767 into
 /// the four-byte pointer cell.

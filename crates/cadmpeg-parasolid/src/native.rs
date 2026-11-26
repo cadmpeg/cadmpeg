@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Little-endian native binary transmits (`parasolid.md` §4).
+//! Little-endian native binary transmits (`parasolid.md` §5).
 //!
 //! A native binary transmit has the node grammar of the neutral-binary
 //! encoding with little-endian scalars and `u32` node indices. [`to_neutral`]

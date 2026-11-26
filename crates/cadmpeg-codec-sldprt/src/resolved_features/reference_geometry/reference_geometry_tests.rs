@@ -922,13 +922,13 @@ fn named_reference_plane_data_classes_anchor_frame_lengths() {
         (24, 0.0),
         (32, 0.0),
         (40, 1.0),
-        (57, -0.0),
+        (49, -0.0125),
+        (57, 0.002),
         (65, -0.003),
         (73, 1.0),
     ] {
         minimal[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    minimal[56] = 0x80;
     let (payload, root) = payload_for("moDefaultRefPlnData_c", &minimal);
     assert_eq!(
         constraint_reference_plane_frame(&payload, root, "moDefaultRefPlnData_c"),

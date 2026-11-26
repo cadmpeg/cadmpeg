@@ -62,4 +62,4 @@ Parsed by:
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
-| Parasolid kernel prologue | §3.1 | A lead byte, then a u16-length description and a u32-length schema token (parasolid.md §4); every later offset depends on those lengths. |
+| Parasolid kernel prologue | §3.1 | A lead byte, then a u16-length description and a u32-length schema token (parasolid.md §5); every later offset depends on those lengths. |

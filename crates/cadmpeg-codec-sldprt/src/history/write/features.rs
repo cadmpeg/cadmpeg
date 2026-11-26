@@ -442,15 +442,12 @@ pub(in crate::history) fn sync_neutral_features(
                 .map(|edit| edit.applied(original, feature))
                 .collect::<Vec<_>>()
         });
+        // A feature whose source does not state suppression is not
+        // suppressed (§5.10).
         let suppressed = feature
             .suppressed
             .or_else(|| existing.as_deref().map(|record| record.suppressed))
-            .ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "SLDPRT writing requires resolved suppression for feature {}",
-                    feature.id
-                ))
-            })?;
+            .unwrap_or(false);
         let encoder = |feature, contradicted_travel: bool| NeutralFeatureEncoder {
             contradicted_travel,
             feature,

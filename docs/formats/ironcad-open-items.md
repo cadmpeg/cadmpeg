@@ -14,7 +14,7 @@ The two ACIS streams of a one-block pair hold the same closed body. The body of 
 
 **Question.** What does the lead byte `0x41` of a native binary transmit mean, and is the description length always a `u16`?
 
-**Known.** A native binary transmit starts with `0x41`, a little-endian `u16` description length, the description, a little-endian `u32` schema-token length, and the token (`parasolid.md` §4). The neutral-binary header of `parasolid.md` §1 starts with `PS` and a big-endian `u32` description length. Each Parasolid kernel record of `Brep Data` stores a native binary transmit whose description is 51 bytes long.
+**Known.** A native binary transmit starts with `0x41`, a little-endian `u16` description length, the description, a little-endian `u32` schema-token length, and the token (`parasolid.md` §5). The neutral-binary header of `parasolid.md` §1 starts with `PS` and a big-endian `u32` description length. Each Parasolid kernel record of `Brep Data` stores a native binary transmit whose description is 51 bytes long.
 
 **Need.** Save a scene whose kernel transmit has a description longer than 255 bytes, or a scene from another IronCAD release, and compare the leading bytes.
 

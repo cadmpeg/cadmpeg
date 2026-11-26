@@ -127,6 +127,6 @@ anchor = "`0x80000002` for Parasolid"
 
 [[not_applicable]]
 area = "Parasolid kernel prologue"
-reason = "A lead byte, then a u16-length description and a u32-length schema token (parasolid.md §4); every later offset depends on those lengths."
+reason = "A lead byte, then a u16-length description and a u32-length schema token (parasolid.md §5); every later offset depends on those lengths."
 section = "3.1"
 anchor = "The kernel bytes are a native binary Parasolid transmit"

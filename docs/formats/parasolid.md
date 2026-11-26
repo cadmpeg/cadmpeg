@@ -140,7 +140,28 @@ these effective field lists:
 The variable fields carry their element count in the node header before the
 node index. The `teeth` arrays can contain null pointers after populated teeth.
 
-## 4. Native binary encoding
+## 4. Modeller precision
+
+A BODY node stores `res_size` and `res_linear` as f64 BE values in metres.
+`res_linear` is the linear precision of the body: two positions closer than
+`res_linear` are one position. The modeller default is `1.0e-8` m. The angular
+precision of the modeller is `1.0e-11` rad, and no node stores it.
+
+A `res_linear` states a linear precision when it is finite and positive in
+metres and in millimetres. The linear tolerance of a part is the largest
+`res_linear` that states a linear precision among the bodies that the
+document holds after body selection, in every configuration and stored
+state, converted to millimetres. When no such body stores one, the linear
+tolerance is the modeller default, `1.0e-5` mm. The angular tolerance of a
+part is the modeller angular precision. The geometry of one stream is
+evaluated at the largest linear precision among the bodies of that stream.
+
+A body that the document holds and whose BODY `res_linear` states no linear
+precision is charged `body.resolution-invalid`. A body that the document
+holds and for which no BODY `res_linear` is read is charged
+`body.resolution-unread`. Each charge names the body.
+
+## 5. Native binary encoding
 
 A native binary transmit holds the header fields and the node grammar of the
 neutral-binary encoding (§§1–2) in other widths and byte order. The header is
