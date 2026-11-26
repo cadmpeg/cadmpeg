@@ -375,7 +375,10 @@ impl SldprtCodec {
             writer::CachedNative::Unloaded => ir
                 .native
                 .namespace("sldprt")
-                .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
+                .map(|namespace| {
+                    native::SldprtNative::load(namespace, ir.tolerances.linear)
+                        .map_err(CodecError::from)
+                })
                 .transpose()?,
         };
         let source = shared
