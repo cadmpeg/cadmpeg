@@ -208,7 +208,7 @@ fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport
     let report = F3dCodec
         .plan(
             EncodeInput::new(ir, None).with_missing_states(missing_states),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");
@@ -241,6 +241,25 @@ fn tails(decoded: &CadIr) -> Vec<Tail> {
             ))
         })
         .collect()
+}
+
+/// Makes the records of each of `ids` fail to write in every attempt on
+/// this thread while the returned guard lives.
+#[must_use]
+fn fail_records<'a>(ids: impl IntoIterator<Item = &'a str>) -> FailingRecords {
+    super::FAIL_RECORDS.with(|fail| {
+        fail.borrow_mut().extend(ids.into_iter().map(str::to_owned));
+    });
+    FailingRecords
+}
+
+/// Clears the identities [`fail_records`] made fail when it drops.
+struct FailingRecords;
+
+impl Drop for FailingRecords {
+    fn drop(&mut self) {
+        super::FAIL_RECORDS.with(|fail| fail.borrow_mut().clear());
+    }
 }
 
 fn loss<'a>(report: &'a ExportReport, code: &str) -> Vec<&'a str> {

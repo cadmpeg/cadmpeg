@@ -1244,7 +1244,7 @@ fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
     use super::super::sketch::{plan, RelationKind, TangencyEnds};
     let mut ir = scoped_cube();
     let id = tangent_sketch().add_to(&mut ir);
-    let plan = plan(&ir, &[&id], None);
+    let plan = plan(&ir, &[&id], None, &std::collections::BTreeMap::new());
     let [item] = plan.items.as_slice() else {
         panic!("one written sketch: {:?}", plan.unwritten);
     };
@@ -1355,7 +1355,7 @@ fn a_tangent_via_a_shared_endpoint_writes_its_branch_and_branchless_uses_shared_
             },
         );
     let id = sketch.add_to(&mut ir);
-    let planned = plan(&ir, &[&id], None);
+    let planned = plan(&ir, &[&id], None, &std::collections::BTreeMap::new());
     let [item] = planned.items.as_slice() else {
         panic!("one written sketch: {:?}", planned.unwritten);
     };

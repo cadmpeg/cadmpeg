@@ -17,7 +17,7 @@ fn generated_source_less_closed_circle_edge_without_range_spans_one_revolution()
     let source_less = cadmpeg_test_support::solids::solid_cylinder();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cylinder encode");
     let round_trip = F3dCodec

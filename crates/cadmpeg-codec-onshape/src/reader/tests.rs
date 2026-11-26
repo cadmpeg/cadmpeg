@@ -158,6 +158,14 @@ fn part_studio_parts_are_one_design_but_moved_parts_stay_placed() {
     assert!(!moved.ir.model.occurrences.is_empty());
 }
 
+#[test]
+fn a_part_label_names_the_part_body_over_its_solid_name() {
+    let mut model = two_part_studio(0.0);
+    model.ir.geometry.bodies[0].name = Some("Body1".to_owned());
+    part_studio_bodies(&mut model);
+    assert_eq!(model.ir.geometry.bodies[0].name.as_deref(), Some("Part 1"));
+}
+
 /// The two-product studio with both placements owned by one root file product.
 fn rooted_two_part_studio() -> Model {
     let model = two_part_studio(0.0);

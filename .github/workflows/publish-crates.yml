@@ -50,6 +50,7 @@ jobs:
             cadmpeg-codec-freecad
             cadmpeg-codec-iges
             cadmpeg-codec-inventor
+            cadmpeg-codec-ironcad
             cadmpeg-codec-nx
             cadmpeg-codec-onshape
             cadmpeg-codec-pvz

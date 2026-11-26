@@ -60,7 +60,7 @@ pub(crate) fn convert_to_step(bytes: &[u8]) -> StepConversion {
     let plan = StepCodec::default()
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .expect("plan the STEP export");
     let carried = plan.carried_errors(&ir, &validation);

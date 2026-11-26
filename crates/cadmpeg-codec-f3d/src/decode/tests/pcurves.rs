@@ -185,7 +185,7 @@ fn generated_surface_offset_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less surface-offset encode");
     let round_trip = F3dCodec
@@ -299,7 +299,7 @@ fn generated_spring_curve_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less spring encode");
     let round_trip = F3dCodec
@@ -368,7 +368,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less null-support spring encode");
     let round_trip = F3dCodec
@@ -469,7 +469,7 @@ fn generated_deformable_curves_decode_and_write_source_less() {
         ));
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less deformable encode");
         let round_trip = F3dCodec
@@ -1395,7 +1395,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_offset() {
         .unwrap();
     let mut source_less = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut source_less))
         .expect("source-less ref-form pcurve encode");
     let source_less_round_trip = F3dCodec
@@ -1438,7 +1438,7 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_offset() {
     mixed.geometry.pcurves.push(inline);
     let mut mixed_bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&mixed, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&mixed, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut mixed_bytes))
         .expect("mixed inline/ref-form pcurve encode");
     let mixed_round_trip = F3dCodec

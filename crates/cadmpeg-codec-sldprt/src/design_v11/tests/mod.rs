@@ -664,7 +664,11 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
             ("moExtrusion_c", "Boss", 7),
         ],
     );
-    let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
+    let native = crate::native::SldprtNative::load(
+        ir.native.namespace("sldprt").unwrap(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
     let id = |name: &str| {
         ir.model
             .features
@@ -1435,7 +1439,11 @@ fn members_follow_the_features_they_depend_on() {
 #[test]
 fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
-    let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
+    let native = crate::native::SldprtNative::load(
+        ir.native.namespace("sldprt").unwrap(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
     let names = |timeline: &super::tree::Timeline| {
         timeline
             .features

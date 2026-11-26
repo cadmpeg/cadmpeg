@@ -34,7 +34,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
     ];
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("encode two timestamp carriers");
     let decoded = F3dCodec
@@ -85,7 +85,7 @@ fn timestamp_patch_keeps_identity_after_native_storage_sorts_records() {
     let report = F3dCodec
         .plan(
             EncodeInput::new(&target, Some(&fidelity)),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut patched))
         .expect("patch timestamps after record-list reordering");
