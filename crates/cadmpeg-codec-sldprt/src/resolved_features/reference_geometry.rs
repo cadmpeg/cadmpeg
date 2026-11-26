@@ -2845,20 +2845,30 @@ type ReferencePlaneFrame = (Point3, Vector3, Vector3);
 fn fixed_reference_plane_frame_candidates(
     payload: &[u8],
 ) -> impl Iterator<Item = (usize, ReferencePlaneFrame)> + '_ {
-    payload
-        .windows(fixed_plane::LEN)
-        .enumerate()
+    marked_windows(payload, fixed_plane::FRAME_MARKER, 1, fixed_plane::LEN)
+        .filter_map(|(offset, bytes)| {
+            fixed_reference_plane_frame(bytes)
+                .or_else(|| repeated_normal_reference_plane_frame(bytes))
+                .map(|frame| (offset, frame))
+        })
         .filter(|(offset, _)| {
             payload
                 .get(*offset..*offset + matrix_plane::LEN)
                 .and_then(matrix_reference_plane_frame)
                 .is_none()
         })
-        .filter_map(|(offset, bytes)| {
-            fixed_reference_plane_frame(bytes)
-                .or_else(|| repeated_normal_reference_plane_frame(bytes))
-                .map(|frame| (offset, frame))
-        })
+}
+
+/// Each window of `len` bytes of `payload` whose byte at `marker` is
+/// `value`, with its offset, in offset order.
+fn marked_windows(
+    payload: &[u8],
+    marker: usize,
+    value: u8,
+    len: usize,
+) -> impl Iterator<Item = (usize, &[u8])> + '_ {
+    memchr::memchr_iter(value, payload.get(marker..).unwrap_or_default())
+        .filter_map(move |offset| Some((offset, payload.get(offset..offset.checked_add(len)?)?)))
 }
 
 fn offset_reference_plane_frame_pair(
@@ -3028,14 +3038,9 @@ fn raw_angled_reference_plane_frame_candidates(
         let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
-    payload
-        .windows(ANGLED_REFERENCE_PLANE_FRAME_LEN)
-        .enumerate()
-        .filter_map(move |(offset, bytes)| {
-            if bytes.get(16) != Some(&1)
-                || bytes.get(89..113)?.iter().any(|byte| *byte != 0)
-                || scalar(bytes, 113)? != 1.0
-            {
+    marked_windows(payload, 16, 1, ANGLED_REFERENCE_PLANE_FRAME_LEN).filter_map(
+        move |(offset, bytes)| {
+            if bytes.get(89..113)?.iter().any(|byte| *byte != 0) || scalar(bytes, 113)? != 1.0 {
                 return None;
             }
             let u_axis = Vector3::new(scalar(bytes, 17)?, scalar(bytes, 25)?, scalar(bytes, 33)?);
@@ -3055,7 +3060,8 @@ fn raw_angled_reference_plane_frame_candidates(
                 return None;
             }
             Some((offset, (Point3::new(0.0, 0.0, 0.0), normal, u_axis)))
-        })
+        },
+    )
 }
 
 #[cfg(test)]
@@ -3093,13 +3099,8 @@ fn matrix_reference_plane_frame_candidates(
         let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
-    payload
-        .windows(matrix_plane::LEN)
-        .enumerate()
-        .filter_map(move |(offset, bytes)| {
-            if bytes[matrix_plane::FRAME_MARKER] != 1 {
-                return None;
-            }
+    marked_windows(payload, matrix_plane::FRAME_MARKER, 1, matrix_plane::LEN).filter_map(
+        move |(offset, bytes)| {
             let origin = Point3::new(
                 scalar(bytes, matrix_plane::ORIGIN)? * NATIVE_TO_IR,
                 scalar(bytes, matrix_plane::ORIGIN + 8)? * NATIVE_TO_IR,
@@ -3150,7 +3151,8 @@ fn matrix_reference_plane_frame_candidates(
                 return None;
             }
             Some((offset, (origin, normal, u_axis)))
-        })
+        },
+    )
 }
 
 fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
@@ -3159,10 +3161,9 @@ fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vec
         let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
     };
-    let mut frames = payload
-        .windows(MINIMAL_REFERENCE_PLANE_FRAME_LEN)
-        .filter_map(|bytes| {
-            if bytes[56] != 0x80 || bytes[48..56].iter().any(|byte| *byte != 0) {
+    let mut frames = marked_windows(payload, 56, 0x80, MINIMAL_REFERENCE_PLANE_FRAME_LEN)
+        .filter_map(|(_, bytes)| {
+            if bytes[48..56].iter().any(|byte| *byte != 0) {
                 return None;
             }
             let origin = Point3::new(scalar(bytes, 0)?, scalar(bytes, 8)?, scalar(bytes, 16)?);
@@ -3220,8 +3221,9 @@ fn compact_reference_plane_frame_candidates(
                 let u_axis =
                     Vector3::new(scalar(bytes, 40)?, scalar(bytes, 48)?, scalar(bytes, 56)?);
                 let v_xy = scalar(bytes, 65).zip(scalar(bytes, 73))?;
-                if (u_axis.dot(u_axis) - 1.0).abs()
-                    > EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9
+                if !may_be_unit(u_axis)
+                    || (u_axis.dot(u_axis) - 1.0).abs()
+                        > EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9
                 {
                     return None;
                 }
@@ -3255,6 +3257,14 @@ fn compact_reference_plane_frame_candidates(
             })();
             candidates.into_iter().flatten().flatten()
         })
+}
+
+/// Whether `vector` can have unit length: a unit vector's largest component
+/// magnitude lies in `[1/sqrt(3), 1]`. A cheap test that rejects most byte
+/// windows before an exact length test.
+fn may_be_unit(vector: Vector3) -> bool {
+    let largest = vector.x.abs().max(vector.y.abs()).max(vector.z.abs());
+    (0.5..=2.0).contains(&largest)
 }
 
 fn ranges_overlap(
