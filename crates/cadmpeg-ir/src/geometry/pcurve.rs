@@ -44,7 +44,14 @@ pub struct WeightedPole2<P = Point2> {
 /// The poles of a parameter-space NURBS curve.
 // A source states raw positions; a `PcurveNurbs` holds the admitted poles,
 // whose positions are `FinitePoint2` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -1471,7 +1478,14 @@ pub struct WeightedPolarNurbsPole<P = Point2, S = f64> {
 
 /// The poles of a polar parameter-space NURBS curve.
 // A source states raw values; a `PolarPcurveNurbs` holds the admitted poles.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

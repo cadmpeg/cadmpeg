@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::{assembly, wire, EditableDecodeResult};
 
 use crate::test_support::assembly_test::{
@@ -127,7 +128,8 @@ fn f3z_archive_merges_identity_occurrences() {
         .all(|id| id.starts_with(prefix)));
     // A merged F3Z has no retained image of itself, so there is nothing to
     // preserve, and `f3d:f3z-multi-document` is not a row the generator can
-    // synthesize. `Inherit` writes the catalog default and says so.
+    // synthesize. A request that names no target writes the catalog default and
+    // says so.
     let report = crate::test_support::assert_written_with_loss(
         decoded.ir(),
         Some(decoded.source_fidelity()),
@@ -363,7 +365,7 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
     let plan = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .expect("unmerged F3Z archive remains replayable");
     let reported = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
@@ -637,10 +639,8 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
         "{:?}",
         decoded.report().losses
     );
-    let admitted: cadmpeg_ir::CadIr = cadmpeg_core::serde_erase::json::from_slice(
-        &cadmpeg_core::serde_erase::json::to_vec(decoded.ir()).unwrap(),
-    )
-    .expect("complete merged CADIR admission");
+    let admitted: cadmpeg_ir::CadIr = json::from_slice(&json::to_vec(decoded.ir()).unwrap())
+        .expect("complete merged CADIR admission");
     for ir in [decoded.ir(), &admitted] {
         assert_eq!(ir.model.occurrences.len(), 2);
         let outer_id =

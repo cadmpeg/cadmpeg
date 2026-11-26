@@ -2,6 +2,7 @@
 
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::serde_erase::json;
 
 use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
 use crate::features::{Feature, FeatureDefinition, FeatureOperation};
@@ -76,11 +77,10 @@ fn mutated_parent_graphs_write_and_produce_located_validation_findings() {
             }
             _ => unreachable!(),
         }
-        let model = cadmpeg_core::serde_erase::json::to_value(&ir.model).expect(mutation);
+        let model = json::to_value(&ir.model).expect(mutation);
         assert!(model.get("features").is_none(), "{mutation}");
-        cadmpeg_core::serde_erase::json::to_value(&ir).expect(mutation);
-        cadmpeg_core::serde_erase::json::to_value(ir.geometry.geometry_snapshot(&ir.model, "brep"))
-            .expect(mutation);
+        json::to_value(&ir).expect(mutation);
+        json::to_value(ir.geometry.geometry_snapshot(&ir.model, "brep")).expect(mutation);
         let written = ir.to_canonical_json().expect(mutation);
         assert!(!written.contains("test:parent-wire:feature#"), "{mutation}");
         let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");

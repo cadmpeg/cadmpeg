@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic region mutations shared by reader and writer regressions.
+use cadmpeg_core::serde_erase::json;
 use serde_json::{json, Value};
 
 #[allow(clippy::panic)]
@@ -64,7 +65,7 @@ pub(crate) fn frame(response: &mut Value, divider: bool) {
         "operationId":[format!("{native}.wireOp")],"sketchEntityId":"hole"}},-1]]}]});
     response["features"][1]["parameters"][2]["queries"][0]["queryString"] = json!(format!(
         "query=qCompressed(1.0,{},id);",
-        cadmpeg_core::serde_erase::json::to_string(&format!("%{}", compact(&query))).unwrap()
+        json::to_string(&format!("%{}", compact(&query))).unwrap()
     ));
 }
 

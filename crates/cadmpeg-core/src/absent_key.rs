@@ -44,7 +44,7 @@ where
 
         fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
             let field = self.1;
-            if crate::read_session::repair(crate::read_session::Repair::Spelling, || {
+            if crate::read_session::repair(crate::read_session::Repair::Spelling, &|| {
                 format!("`{field}` states null for an omitted value")
             }) {
                 return Ok(None);
@@ -82,8 +82,12 @@ where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,
 {
-    present(deserializer, field)
-        .map_err(|error| serde::de::Error::custom(format_args!("{field}: {error}")))
+    present(deserializer, field).map_err(|error| serde::de::Error::custom(named(field, &error)))
+}
+
+/// The refusal `error` with the key `field` before it.
+fn named(field: &str, error: &dyn std::fmt::Display) -> String {
+    format!("{field}: {error}")
 }
 
 /// Define the named reader one optional key is declared with.

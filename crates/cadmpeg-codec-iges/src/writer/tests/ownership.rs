@@ -277,7 +277,7 @@ fn standalone_edge_with_support_curve_is_withheld_with_counted_export_loss() {
         .unwrap()
         .geometry_role = Some(SourceGeometryRole::Support);
     let plan = IgesCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .unwrap();
     assert!(plan.report().losses.iter().any(|loss| loss.code
         == crate::loss::IgesLossCode::WriterSupportEdgeNotRepresented.kind()

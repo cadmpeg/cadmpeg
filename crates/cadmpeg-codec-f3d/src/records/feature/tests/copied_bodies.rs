@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
+use cadmpeg_core::serde_erase::json;
 
 fn copied_wire() -> serde_json::Value {
     serde_json::json!({
@@ -14,8 +15,7 @@ fn copied_wire() -> serde_json::Value {
 
 #[test]
 fn copied_bodies_reject_empty_aliased_and_misaligned_rows() {
-    let admitted: DesignCopyPasteBodiesOperation =
-        cadmpeg_core::serde_erase::json::from_value(copied_wire()).unwrap();
+    let admitted: DesignCopyPasteBodiesOperation = json::from_value(copied_wire()).unwrap();
     let construct = |bodies| {
         DesignCopyPasteBodiesOperation::try_new(
             bodies,
@@ -54,10 +54,7 @@ fn copied_bodies_reject_empty_aliased_and_misaligned_rows() {
     ] {
         empty[field] = serde_json::json!([]);
     }
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignCopyPasteBodiesOperation>(empty)
-            .is_err()
-    );
+    assert!(json::from_value::<DesignCopyPasteBodiesOperation>(empty).is_err());
     for (field, lane, value) in [
         ("source_body_entity_suffixes", 1, 11),
         ("copied_body_entity_suffixes", 1, 11),
@@ -70,15 +67,11 @@ fn copied_bodies_reject_empty_aliased_and_misaligned_rows() {
         let mut wire = copied_wire();
         wire[field][lane] = serde_json::json!(value);
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignCopyPasteBodiesOperation>(wire)
-                .is_err(),
+            json::from_value::<DesignCopyPasteBodiesOperation>(wire).is_err(),
             "{field}"
         );
     }
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(admitted).unwrap(),
-        copied_wire()
-    );
+    assert_eq!(json::to_value(admitted).unwrap(), copied_wire());
 }
 
 #[test]
@@ -86,10 +79,7 @@ fn copied_bodies_reject_overflowed_operand_origin() {
     let mut wire = copied_wire();
     wire["body_group_byte_offset"] = u64::MAX.into();
     wire["body_operand_record_offsets"] = serde_json::json!([u64::MAX, u64::MAX]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignCopyPasteBodiesOperation>(wire)
-            .is_err()
-    );
+    assert!(json::from_value::<DesignCopyPasteBodiesOperation>(wire).is_err());
 }
 
 #[test]
@@ -98,10 +88,7 @@ fn copied_bodies_reject_overflowed_source_origin() {
     wire["relation_byte_offset"] = u64::MAX.into();
     wire["source_body_entity_suffix_offsets"] = serde_json::json!([u64::MAX, u64::MAX]);
     wire["copied_body_entity_suffix_offsets"] = serde_json::json!([u64::MAX, u64::MAX]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignCopyPasteBodiesOperation>(wire)
-            .is_err()
-    );
+    assert!(json::from_value::<DesignCopyPasteBodiesOperation>(wire).is_err());
 }
 
 #[test]
@@ -110,10 +97,7 @@ fn copied_bodies_reject_overflowed_copied_offset() {
     wire["relation_byte_offset"] = (u64::MAX - 25).into();
     wire["source_body_entity_suffix_offsets"] = serde_json::json!([u64::MAX, u64::MAX]);
     wire["copied_body_entity_suffix_offsets"] = serde_json::json!([u64::MAX, u64::MAX]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignCopyPasteBodiesOperation>(wire)
-            .is_err()
-    );
+    assert!(json::from_value::<DesignCopyPasteBodiesOperation>(wire).is_err());
 }
 
 #[test]
@@ -121,10 +105,7 @@ fn copied_bodies_reject_overflowed_operand_stride() {
     let mut wire = copied_wire();
     wire["body_group_byte_offset"] = (u64::MAX - 26).into();
     wire["body_operand_record_offsets"] = serde_json::json!([u64::MAX, u64::MAX]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignCopyPasteBodiesOperation>(wire)
-            .is_err()
-    );
+    assert!(json::from_value::<DesignCopyPasteBodiesOperation>(wire).is_err());
 }
 
 #[test]
@@ -133,8 +114,5 @@ fn copied_bodies_reject_overflowed_source_stride() {
     wire["relation_byte_offset"] = (u64::MAX - 50).into();
     wire["source_body_entity_suffix_offsets"] = serde_json::json!([u64::MAX - 25, u64::MAX]);
     wire["copied_body_entity_suffix_offsets"] = serde_json::json!([u64::MAX - 10, u64::MAX]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignCopyPasteBodiesOperation>(wire)
-            .is_err()
-    );
+    assert!(json::from_value::<DesignCopyPasteBodiesOperation>(wire).is_err());
 }

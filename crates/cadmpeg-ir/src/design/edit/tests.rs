@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The resolvers and edit helpers on small documents.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
@@ -701,10 +702,9 @@ fn an_integer_expression_whose_value_is_not_whole_has_no_cache() {
 #[test]
 fn an_edit_clears_the_resolved_transformation_its_parameter_binds() {
     let mut document = timeline();
-    let identity =
-        cadmpeg_core::serde_erase::json::to_value(crate::transform::Transform::identity()).unwrap();
+    let identity = json::to_value(crate::transform::Transform::identity()).unwrap();
     let moved = |parameter: u32| -> FeatureOperation {
-        cadmpeg_core::serde_erase::json::from_value(json!({
+        json::from_value(json!({
             "kind": "transform_bodies",
             "value": {
                 "bodies": {"at": {"kind": "input"}, "picks": {"kind": "unread"}},
@@ -785,7 +785,7 @@ fn set_dimension_marks_dependents_and_recomputes_caches() {
         Some(11.0),
     ));
     document.design.parameters[1].tolerance = Some(Tolerance::Fit {
-        fit: cadmpeg_core::serde_erase::json::from_value::<LimitsAndFits>(json!({
+        fit: json::from_value::<LimitsAndFits>(json!({
             "form_variance": "H", "zone": "shaft", "grade": "7", "source": {"kind": "iso286"}
         }))
         .unwrap(),
@@ -1062,7 +1062,7 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
 fn set_parameter_expression_refuses_an_ill_typed_tree() {
     let mut document = timeline();
     document.design.parameters[1].value = None;
-    let before = cadmpeg_core::serde_erase::json::to_value(&document.design).unwrap();
+    let before = json::to_value(&document.design).unwrap();
     for (text, refs) in [
         ("if(true, 2[mm], 1[deg])", &[][..]),
         ("if(false, 1[deg], 2[mm])", &[]),
@@ -1083,7 +1083,7 @@ fn set_parameter_expression_refuses_an_ill_typed_tree() {
             .set_parameter_expression(&parameter_id(1), neutral(text, refs, &[]));
         assert!(refused.is_err(), "{text} is refused");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&document.design).unwrap(),
+            json::to_value(&document.design).unwrap(),
             before,
             "refusing {text} changes nothing"
         );
@@ -1365,10 +1365,8 @@ fn removing_a_member_rebases_and_retargets() {
     );
     assert_eq!(rollback, &Rollback::Before(Member::Feature(feature(3))));
     assert_eq!((folders[0].first, folders[0].last), (1, 1));
-    let anchor =
-        cadmpeg_core::serde_erase::json::to_value(&document.design.parameters[2].definition)
-            .unwrap();
-    let retargeted = cadmpeg_core::serde_erase::json::to_value(Anchor::Pinned(after(1))).unwrap();
+    let anchor = json::to_value(&document.design.parameters[2].definition).unwrap();
+    let retargeted = json::to_value(Anchor::Pinned(after(1))).unwrap();
     assert!(
         anchor.to_string().contains(&retargeted.to_string()),
         "{anchor}"
@@ -1408,10 +1406,8 @@ fn removal_refuses_while_a_kept_record_names_a_deleted_one() {
 }
 
 fn native_name(text: &str) -> NameEntry {
-    cadmpeg_core::serde_erase::json::from_value(
-        json!({"native": {"codec": "test", "value": {"kind": "text", "value": text}}}),
-    )
-    .unwrap()
+    json::from_value(json!({"native": {"codec": "test", "value": {"kind": "text", "value": text}}}))
+        .unwrap()
 }
 
 fn generated_by(key: u32) -> TopoName {
@@ -1625,10 +1621,8 @@ fn removing_an_unordered_member_removes_its_own_result() {
     let rebased = &document.design.evaluations[0];
     assert_eq!(rebased.content.as_ref().unwrap().base, StateBase::Empty);
     assert_eq!(document.resolved(&id("evaluation", 5)).unwrap(), resolved);
-    let anchor =
-        cadmpeg_core::serde_erase::json::to_value(&document.design.parameters[0].definition)
-            .unwrap();
-    let current = cadmpeg_core::serde_erase::json::to_value(Anchor::Current).unwrap();
+    let anchor = json::to_value(&document.design.parameters[0].definition).unwrap();
+    let current = json::to_value(Anchor::Current).unwrap();
     assert!(
         anchor.to_string().contains(&current.to_string()),
         "{anchor}"
@@ -1701,7 +1695,7 @@ fn configured() -> CadIr {
         .product_definitions
         .push(product_definition(&[1]));
     let name = |text: &str| -> NameEntry {
-        cadmpeg_core::serde_erase::json::from_value(
+        json::from_value(
             json!({"native": {"codec": "test", "value": {"kind": "text", "value": text}}}),
         )
         .unwrap()

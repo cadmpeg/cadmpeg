@@ -159,7 +159,7 @@ pub struct AttributeMapEntry {
 /// A typed JSON value.
 ///
 /// Its nesting has no ceiling of its own: the JSON depth limit bounds it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -231,6 +231,7 @@ pub struct SourceAttribute {
 #[cfg(test)]
 mod tests {
     use super::AttributeTarget;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn attribute_target_copy_preserves_the_target() {
@@ -245,24 +246,15 @@ mod tests {
             crate::features::ConfigurationId::mint("test:design:configuration#large").unwrap(),
         );
         let wire = serde_json::json!({"kind": "configuration", "value": "test:design:configuration#large"});
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&target).unwrap(),
-            wire
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<AttributeTarget>(wire).unwrap(),
-            target
-        );
+        assert_eq!(json::to_value(&target).unwrap(), wire);
+        assert_eq!(json::from_value::<AttributeTarget>(wire).unwrap(), target);
         let value = super::AttributeValue::Parameter(
             crate::features::ParameterId::mint("test:design:parameter#mass").unwrap(),
         );
         let wire = serde_json::json!({"kind": "parameter", "value": "test:design:parameter#mass"});
+        assert_eq!(json::to_value(&value).unwrap(), wire);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&value).unwrap(),
-            wire
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<super::AttributeValue>(wire).unwrap(),
+            json::from_value::<super::AttributeValue>(wire).unwrap(),
             value
         );
     }

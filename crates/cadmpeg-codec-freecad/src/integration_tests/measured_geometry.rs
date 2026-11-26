@@ -182,7 +182,7 @@ fn patched_corpus_documents_keep_measured_geometry() {
                             });
                         let mut encoded = Vec::new();
                         let plan = FcstdCodec
-                            .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+                            .plan(EncodeInput::new(&edited, None), TargetRequest::Unnamed)
                             .unwrap_or_else(|_| panic!("{label}: the edit is not planned"));
                         assert!(
                             matches!(plan.report().write_path(), WritePath::Patched { .. }),

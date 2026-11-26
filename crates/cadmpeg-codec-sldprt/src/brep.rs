@@ -475,6 +475,7 @@ pub(crate) fn patch_nurbs_by_attr(
 mod tests {
     use super::index::scan_carriers;
     use super::{parse_carrier, parse_carrier_for_role, tag, Carrier};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
@@ -972,8 +973,8 @@ mod tests {
             assert_eq!(old.offset, accepted.offset);
             assert_eq!(old.end, accepted.end);
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(old.geometry).unwrap(),
-                cadmpeg_core::serde_erase::json::to_value(accepted.geometry).unwrap()
+                json::to_value(old.geometry).unwrap(),
+                json::to_value(accepted.geometry).unwrap()
             );
             assert!(super::parse_carrier_for_role(&delta, 0, false).is_none());
             let mut malformed = delta.clone();

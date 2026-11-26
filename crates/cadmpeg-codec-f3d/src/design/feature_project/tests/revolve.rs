@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn revolve_projects_with_native_profile() {
     use crate::records::feature::path_features::{
@@ -31,37 +33,35 @@ fn revolve_projects_with_native_profile() {
         })
         .unwrap();
     let group = |record_index, ordinal, member, role: DesignOperandRole| {
-        cadmpeg_core::serde_erase::json::from_value::<DesignConstructionOperandGroup>(
-            serde_json::json!({
-                "id": format!("f3d:test:group#{record_index}"),
-                "scope_record_index": 12,
-                "scope_reference_ordinal": ordinal,
-                "record_index": record_index,
-                "byte_offset": 1000,
-                "class_tag": "332",
-                "members": [member],
-                "member_offsets": [1026],
-                "frame": {
-                    "member_count_offset": 1021,
-                    "opaque_index": 1,
-                    "opaque_index_offset": 1072,
-                    "opaque_scalar": 0.0,
-                    "opaque_scalar_offset": 1076,
-                    "variant": false
-                },
-                "role": role.raw(),
-                "role_offset": 1054,
-                "paired_class_tag": "259",
-                "paired_byte_offset": 1125
-            }),
-        )
+        json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+            "id": format!("f3d:test:group#{record_index}"),
+            "scope_record_index": 12,
+            "scope_reference_ordinal": ordinal,
+            "record_index": record_index,
+            "byte_offset": 1000,
+            "class_tag": "332",
+            "members": [member],
+            "member_offsets": [1026],
+            "frame": {
+                "member_count_offset": 1021,
+                "opaque_index": 1,
+                "opaque_index_offset": 1072,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 1076,
+                "variant": false
+            },
+            "role": role.raw(),
+            "role_offset": 1054,
+            "paired_class_tag": "259",
+            "paired_byte_offset": 1125
+        }))
         .unwrap()
     };
     let groups = [
         group(100, 0, 200, DesignOperandRole::PROFILE),
         group(101, 1, 201, DesignOperandRole::ROLE_0X21),
     ];
-    let axis: DesignEdgeOperand = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let axis: DesignEdgeOperand = json::from_value(serde_json::json!({
         "id": "f3d:test:edge-operand#201",
         "scope_record_index": 12,
         "scope_reference_ordinal": 1,
@@ -177,30 +177,28 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
         })
         .unwrap();
     let group = |record_index, ordinal, member, role: DesignOperandRole| {
-        cadmpeg_core::serde_erase::json::from_value::<DesignConstructionOperandGroup>(
-            serde_json::json!({
-                "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
-                "scope_record_index": 12,
-                "scope_reference_ordinal": ordinal,
-                "record_index": record_index,
-                "byte_offset": 1000,
-                "class_tag": "332",
-                "members": [member],
-                "member_offsets": [1026],
-                "frame": {
-                    "member_count_offset": 1021,
-                    "opaque_index": 1,
-                    "opaque_index_offset": 1072,
-                    "opaque_scalar": 0.0,
-                    "opaque_scalar_offset": 1076,
-                    "variant": false
-                },
-                "role": role.raw(),
-                "role_offset": 1054,
-                "paired_class_tag": "259",
-                "paired_byte_offset": 1125
-            }),
-        )
+        json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+            "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
+            "scope_record_index": 12,
+            "scope_reference_ordinal": ordinal,
+            "record_index": record_index,
+            "byte_offset": 1000,
+            "class_tag": "332",
+            "members": [member],
+            "member_offsets": [1026],
+            "frame": {
+                "member_count_offset": 1021,
+                "opaque_index": 1,
+                "opaque_index_offset": 1072,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 1076,
+                "variant": false
+            },
+            "role": role.raw(),
+            "role_offset": 1054,
+            "paired_class_tag": "259",
+            "paired_byte_offset": 1125
+        }))
         .unwrap()
     };
     let groups = [
@@ -208,18 +206,16 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
         group(101, 2, 201, DesignOperandRole::ROLE_0X21),
     ];
     let selection = |primary_identity: u64| {
-        cadmpeg_core::serde_erase::json::from_value::<DesignEntitySelectionOperand>(
-            serde_json::json!({
-                "id": "f3d:Design/BulkStream.dat:entity-selection#201", "scope_record_index": 12,
-                "group_record_index": 101, "group_member_ordinal": 0,
-                "record_index": 201, "byte_offset": 100, "class_tag": "307",
-                "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 130,
-                "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 210,
-                "identity_record_index": 204, "identity_record_offset": 300,
-                "primary_identity": primary_identity, "primary_identity_offset": 321,
-                "next_record_index": 205, "next_byte_offset": 329
-            }),
-        )
+        json::from_value::<DesignEntitySelectionOperand>(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:entity-selection#201", "scope_record_index": 12,
+            "group_record_index": 101, "group_member_ordinal": 0,
+            "record_index": 201, "byte_offset": 100, "class_tag": "307",
+            "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 130,
+            "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 210,
+            "identity_record_index": 204, "identity_record_offset": 300,
+            "primary_identity": primary_identity, "primary_identity_offset": 321,
+            "next_record_index": 205, "next_byte_offset": 329
+        }))
         .unwrap()
     };
     let project = |selection: &DesignEntitySelectionOperand| {

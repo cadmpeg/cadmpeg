@@ -1513,6 +1513,7 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::u64_from_index;
+    use cadmpeg_core::serde_erase::json;
 
     use std::io::{Cursor, Write};
 
@@ -2915,7 +2916,7 @@ mod tests {
             .unwrap();
         assert_eq!(recipes.len(), 1);
         assert_eq!(recipes[0].record_index, None);
-        let wire = cadmpeg_core::serde_erase::json::to_value(&recipes[0]).expect("recipe wire");
+        let wire = json::to_value(&recipes[0]).expect("recipe wire");
         assert_eq!(wire.get("record_index"), None);
         assert_eq!(wire.get("record_index_offset"), None);
     }

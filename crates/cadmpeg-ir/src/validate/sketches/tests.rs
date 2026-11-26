@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 
 use super::sketch_curve_offset_matches;
 use crate::examples::unit_cube;
@@ -832,8 +833,7 @@ fn sketch_constraint_native_ref_must_resolve() {
                 && finding.entity.as_deref() == Some(id.as_str())
                 && finding.message.contains("native:missing-operand#0")
         }));
-    let serialized =
-        cadmpeg_core::serde_erase::json::to_string(&ir.model.sketch_constraints).unwrap();
+    let serialized = json::to_string(&ir.model.sketch_constraints).unwrap();
     let round_trip: Vec<crate::sketches::SketchConstraint> =
         serde_json::from_str(&serialized).unwrap();
     assert!(matches!(
@@ -855,10 +855,7 @@ fn sketch_constraint_native_ref_must_resolve() {
         .as_object_mut()
         .unwrap()
         .remove("native_properties");
-    let error =
-        cadmpeg_core::serde_erase::json::from_value::<Vec<crate::sketches::SketchConstraint>>(
-            without_properties,
-        )
+    let error = json::from_value::<Vec<crate::sketches::SketchConstraint>>(without_properties)
         .unwrap_err()
         .to_string();
     assert!(error.contains("native_properties"), "{error}");

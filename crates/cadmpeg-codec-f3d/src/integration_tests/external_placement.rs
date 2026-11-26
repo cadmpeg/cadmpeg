@@ -5,6 +5,7 @@ use crate::loss::F3dLossCode;
 use crate::test_support::assembly_test::{
     f3d_with_identity_xrefs, f3d_with_redirections_json, f3d_without_brep, redirections_json,
 };
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn placement_admission_preserves_existing_identity_and_omits_only_new_mixed_rows() {
@@ -20,10 +21,7 @@ fn placement_admission_preserves_existing_identity_and_omits_only_new_mixed_rows
             ))
             .unwrap();
             table["references"][1]["type"] = "DERIVED".into();
-            f3d_with_redirections_json(
-                "assembly-design",
-                &cadmpeg_core::serde_erase::json::to_vec(&table).unwrap(),
-            )
+            f3d_with_redirections_json("assembly-design", &json::to_vec(&table).unwrap())
         } else {
             f3d_without_brep("assembly-design", "root.f3d", &targets)
         };
