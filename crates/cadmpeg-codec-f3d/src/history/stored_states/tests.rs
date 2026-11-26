@@ -13,7 +13,7 @@ use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind,
 };
 
-use super::{Ambiguous, Blob, Budget, Read, MAX_STATE_WORK};
+use super::{Ambiguous, Blob, Budget, Read, Want, MAX_STATE_WORK};
 
 fn state(state_id: i64, changes: Vec<AsmEntityChangeKind>) -> AsmDeltaState {
     AsmDeltaState {
@@ -84,21 +84,24 @@ fn a_board_that_updates_each_slot_once_leaves_no_slot_ambiguous() {
     assert_eq!(ambiguous.first(), None);
 }
 
+fn blob(bytes: &[u8]) -> Blob<'_> {
+    Blob {
+        bytes,
+        stream: "history",
+        width: RefWidth::Eight,
+        namespace: None,
+    }
+}
+
 /// The read of the head of the history `bytes`, charged to `budget`.
 fn read_head(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     budget: &Budget,
 ) -> Result<Result<Read, String>, CodecError> {
-    let blob = Blob {
-        bytes,
-        stream: "history",
-        width: RefWidth::Eight,
-        namespace: None,
-    };
     super::read(
         ctx,
-        &blob,
+        &blob(bytes),
         &BTreeSet::new(),
         &BTreeSet::new(),
         &BTreeSet::new(),
@@ -128,5 +131,36 @@ fn a_table_past_the_retained_share_of_the_stored_states_is_not_read_and_the_deco
             Some("its head is not read (the retained-byte allowance of the stored states is reached)")
         );
         assert_eq!(ctx.resource_refusal(), None);
+    });
+}
+
+#[test]
+fn a_want_of_the_head_state_that_keeps_consumed_bodies_is_read() {
+    let bytes = crate::history::tests::budgets::geometry_history(true);
+    let blob = blob(&bytes);
+    let head = *super::state_ids(&blob)
+        .expect("state headers")
+        .keys()
+        .next_back()
+        .expect("head state");
+    let want = Want {
+        state: head,
+        consumed: BTreeSet::from([1]),
+    };
+    crate::test_support::with_decode_context(|ctx| {
+        let budget = Budget::new(ctx, MAX_STATE_WORK);
+        let read = super::read(
+            ctx,
+            &blob,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &BTreeSet::from([want.clone()]),
+            &Tolerances::default(),
+            &budget,
+        )
+        .expect("no ceiling")
+        .expect("history read");
+        assert_eq!(read.head, head);
+        assert!(matches!(read.states.as_slice(), [(found, Ok(_))] if *found == want));
     });
 }

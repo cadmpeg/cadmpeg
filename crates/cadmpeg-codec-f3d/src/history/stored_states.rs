@@ -122,8 +122,8 @@ pub(crate) struct Read {
     /// The bodies of the head that are not current, that no consumed key
     /// selects, and that are no sketch region.
     pub(crate) head_unnamed: BTreeSet<BodyId>,
-    /// Each wanted state other than the head, newest first, with its records,
-    /// or why they are not read.
+    /// Each state of the wanted states, newest first, with its records, or
+    /// why they are not read.
     pub(crate) states: Vec<(Want, Result<StateRecords, String>)>,
 }
 
@@ -193,46 +193,43 @@ pub(crate) fn read(
                 ambiguous.undo(&states[later]);
             }
             let state_id = states[index].state_id;
-            let outcome = match &head {
-                None => decoder
-                    .measured(versions.len(), || decoder.head(versions, current, keys))
-                    .map(|found| {
-                        head = Some(found.map(|found| (state_id, found)));
-                    }),
-                Some(Err(_)) => Ok(()),
-                Some(Ok((_, found))) => {
-                    let mut outcome = Ok(());
-                    for want in wanted.iter().filter(|want| want.state == state_id) {
-                        if let Some(reason) = &stopped {
-                            read.push((want.clone(), Err(reason.clone())));
-                            continue;
-                        }
-                        if let Some((slot, by)) = ambiguous.first() {
-                            let reason = format!("slot {slot} is updated twice by state {by}");
-                            stopped = Some(format!("a later state is not read ({reason})"));
-                            read.push((want.clone(), Err(reason)));
-                            continue;
-                        }
-                        match decoder.measured(versions.len(), || {
-                            decoder.state(versions, current, found, &want.consumed)
-                        }) {
-                            Ok(records) => {
-                                if let Err(reason) = &records {
-                                    stopped = Some(format!("a later state is not read ({reason})"));
-                                }
-                                read.push((want.clone(), records));
-                            }
-                            Err(error) => {
-                                outcome = Err(error);
-                                break;
-                            }
-                        }
+            if head.is_none() {
+                match decoder.measured(versions.len(), || decoder.head(versions, current, keys)) {
+                    Ok(found) => head = Some(found.map(|found| (state_id, found))),
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
                     }
-                    outcome
                 }
+            }
+            let Some(Ok((_, found))) = &head else {
+                return;
             };
-            if let Err(error) = outcome {
-                failure = Some(error);
+            for want in wanted.iter().filter(|want| want.state == state_id) {
+                if let Some(reason) = &stopped {
+                    read.push((want.clone(), Err(reason.clone())));
+                    continue;
+                }
+                if let Some((slot, by)) = ambiguous.first() {
+                    let reason = format!("slot {slot} is updated twice by state {by}");
+                    stopped = Some(format!("a later state is not read ({reason})"));
+                    read.push((want.clone(), Err(reason)));
+                    continue;
+                }
+                match decoder.measured(versions.len(), || {
+                    decoder.state(versions, current, found, &want.consumed)
+                }) {
+                    Ok(records) => {
+                        if let Err(reason) = &records {
+                            stopped = Some(format!("a later state is not read ({reason})"));
+                        }
+                        read.push((want.clone(), records));
+                    }
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
+                    }
+                }
             }
         },
     );
