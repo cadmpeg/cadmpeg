@@ -10,8 +10,7 @@ use crate::features::direct_edit::{FlexForm, FlexMode, ScaleFactors, ThickenSide
 use crate::features::evaluation::{
     EdgeSupport, FeatureInputTopology, FeatureResultMembers, FeatureResultTopology,
     HistoricalBodyWriter, HistoricalEdgeCarrier, HistoricalEdgeGeometry, HistoricalFaceGeometry,
-    HistoricalFaceOwner,
-    HistoricalFaceSurface,
+    HistoricalFaceOwner, HistoricalFaceSurface,
 };
 use crate::features::geometry::{
     FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc, FeatureImageBounds,
