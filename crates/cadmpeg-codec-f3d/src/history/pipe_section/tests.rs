@@ -13,6 +13,7 @@ use crate::records::topology::construction::{
     DesignConstructionOperandRole,
 };
 use crate::records::topology::extrude_selection::DesignOperandRole;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::profiles::PathRef;
 use cadmpeg_ir::features::sweeps::{GeneratedSweepSection, SweepSection, SweepShape};
@@ -67,7 +68,7 @@ fn projected_fixture(
             &inputs,
         )
         .unwrap();
-        let first = cadmpeg_core::serde_erase::json::to_value(&features).unwrap();
+        let first = json::to_value(&features).unwrap();
         assert!(super::projection::project(
             scan,
             &native.design_types,
@@ -77,10 +78,7 @@ fn projected_fixture(
         )
         .unwrap()
         .is_empty());
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&features).unwrap(),
-            first
-        );
+        assert_eq!(json::to_value(&features).unwrap(), first);
         (
             features.remove(0),
             losses.into_iter().map(|loss| loss.code).collect(),

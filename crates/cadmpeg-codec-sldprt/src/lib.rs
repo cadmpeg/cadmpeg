@@ -73,7 +73,7 @@
 //! SldprtCodec
 //!     .plan(
 //!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-//!         TargetRequest::Inherit,
+//!         TargetRequest::Unnamed,
 //!     )?
 //!     .write_to(&mut output)?;
 //! # Ok(())
@@ -400,7 +400,10 @@ impl SldprtCodec {
             writer::CachedNative::Unloaded => ir
                 .native
                 .namespace("sldprt")
-                .map(|namespace| native::SldprtNative::load(namespace).map_err(CodecError::from))
+                .map(|namespace| {
+                    native::SldprtNative::load(namespace, ir.tolerances.linear)
+                        .map_err(CodecError::from)
+                })
                 .transpose()?,
         };
         let source = shared

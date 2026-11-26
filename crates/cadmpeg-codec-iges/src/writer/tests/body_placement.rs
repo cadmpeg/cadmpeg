@@ -3,6 +3,7 @@
 //! and topology that bodies under different transforms share, and a copied
 //! record that has no placed image.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -92,10 +93,9 @@ fn renamed(value: &mut Value, kinds: &[&str], suffix: &str) {
 
 /// `records` with `suffix` appended to each identity of a kind in `kinds`.
 fn copied<T: Serialize + DeserializeOwned>(records: &[T], kinds: &[&str], suffix: &str) -> Vec<T> {
-    let mut value =
-        cadmpeg_core::serde_erase::json::to_value(records).expect("the records serialize");
+    let mut value = json::to_value(records).expect("the records serialize");
     renamed(&mut value, kinds, suffix);
-    cadmpeg_core::serde_erase::json::from_value(value).expect("the renamed records deserialize")
+    json::from_value(value).expect("the renamed records deserialize")
 }
 
 /// `records` with each identity of a kind in `kinds` renamed for the second

@@ -71,6 +71,7 @@ impl<'de> Deserialize<'de> for StateMessageText<String> {
 #[cfg(test)]
 mod tests {
     use super::StateMessageText;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn message_text_derives_length_and_preserves_spaces() {
@@ -83,12 +84,9 @@ mod tests {
             let json = format!(
                 r#"{{"declared_length":{},"text":{}}}"#,
                 text.len() + 2,
-                cadmpeg_core::serde_erase::json::to_string(&text).unwrap()
+                json::to_string(&text).unwrap()
             );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-                json
-            );
+            assert_eq!(json::to_string(&value).unwrap(), json);
             assert_eq!(
                 serde_json::from_str::<StateMessageText<String>>(&json).unwrap(),
                 value

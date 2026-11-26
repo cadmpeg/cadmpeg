@@ -3,6 +3,7 @@
 //! cannot carry is kept as stored and named.
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -664,12 +665,11 @@ fn is_fillet(feature: &Feature) -> bool {
 
 /// Edits the wire form of `feature`'s definition.
 fn edit_definition(feature: &mut Feature, edit: impl FnOnce(&mut serde_json::Value)) {
-    let mut wire =
-        cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
+    let mut wire = json::to_value(feature.evaluation.definition()).unwrap();
     edit(&mut wire);
     feature
         .evaluation
-        .set_definition(cadmpeg_core::serde_erase::json::from_value(wire).unwrap());
+        .set_definition(json::from_value(wire).unwrap());
 }
 
 /// Adds one to the first nonzero real number under `value`, depth first.
@@ -810,7 +810,7 @@ fn a_kept_fillet_does_not_name_the_radius_its_parameter_carries() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some(name.as_str()))
         .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(fillet.evaluation.definition()).unwrap();
+    let wire = json::to_value(fillet.evaluation.definition()).unwrap();
     assert!((wire.pointer(RADIUS).unwrap().as_f64().unwrap() - EDITED).abs() <= 1.0e-9);
 }
 
@@ -856,8 +856,7 @@ fn a_fillet_radius_definition_edit_is_written() {
         edit_definition(fillet, |wire| {
             assert!(bump_first_real(wire.pointer_mut(RADIUS).unwrap()));
         });
-        let wire =
-            cadmpeg_core::serde_erase::json::to_value(fillet.evaluation.definition()).unwrap();
+        let wire = json::to_value(fillet.evaluation.definition()).unwrap();
         (
             fillet.name.clone().unwrap(),
             wire.pointer(RADIUS).unwrap().clone(),
@@ -876,7 +875,7 @@ fn a_fillet_radius_definition_edit_is_written() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some(name.as_str()))
         .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(fillet.evaluation.definition()).unwrap();
+    let wire = json::to_value(fillet.evaluation.definition()).unwrap();
     assert_eq!(wire.pointer(RADIUS), Some(&radius));
 }
 
@@ -943,15 +942,18 @@ fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
         unwritten[0]
     );
     let record = |ir: &CadIr| {
-        crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap())
-            .unwrap()
-            .feature_histories
-            .iter()
-            .flat_map(|history| &history.features)
-            .find(|feature| feature.name == "Axis1")
-            .unwrap()
-            .properties
-            .clone()
+        crate::native::SldprtNative::load(
+            ir.native.namespace("sldprt").unwrap(),
+            ir.tolerances.linear,
+        )
+        .unwrap()
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|feature| feature.name == "Axis1")
+        .unwrap()
+        .properties
+        .clone()
     };
     assert_eq!(record(written.ir()), record(ftc_08().ir()));
 }
@@ -1230,13 +1232,24 @@ fn an_unedited_lane_is_written_as_stored() {
     let mut lane = decoded_lane.clone();
     lane.scalars[0].feature_ref = Some("sldprt:test:other-owner".into());
 
-    let written =
-        crate::writer::lane_payload(&lane, Some(&lane), &native.feature_histories, &[]).unwrap();
+    let written = crate::writer::lane_payload(
+        &lane,
+        Some(&lane),
+        &native.feature_histories,
+        &[],
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap();
     assert_eq!(written, lane.native_payload.to_vec());
 
-    let error =
-        crate::writer::lane_payload(&lane, Some(&decoded_lane), &native.feature_histories, &[])
-            .unwrap_err();
+    let error = crate::writer::lane_payload(
+        &lane,
+        Some(&decoded_lane),
+        &native.feature_histories,
+        &[],
+        cadmpeg_ir::units::Tolerances::default().linear,
+    )
+    .unwrap_err();
     assert!(
         error.to_string().contains("edited named scalars"),
         "{error}"
@@ -1276,13 +1289,12 @@ fn edit_definition_at(
         .iter_mut()
         .find(|feature| feature.name.as_deref() == Some(name))
         .unwrap();
-    let mut wire =
-        cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap();
+    let mut wire = json::to_value(feature.evaluation.definition()).unwrap();
     let pointer = place(&wire, "", suffix).unwrap();
     change(wire.pointer_mut(&pointer).unwrap());
     feature
         .evaluation
-        .set_definition(cadmpeg_core::serde_erase::json::from_value(wire).unwrap());
+        .set_definition(json::from_value(wire).unwrap());
     (feature.id.clone(), pointer)
 }
 
@@ -1334,9 +1346,7 @@ fn a_held_back_edit_names_only_its_own_feature() {
         .features
         .iter()
         .find(|feature| feature.id == extrusion)
-        .map(|feature| {
-            cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap()
-        })
+        .map(|feature| json::to_value(feature.evaluation.definition()).unwrap())
         .unwrap();
 
     let (report, output, read_back) = write(&decoded);
@@ -1361,9 +1371,7 @@ fn a_held_back_edit_names_only_its_own_feature() {
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Boss-Extrude1"))
-        .map(|feature| {
-            cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition()).unwrap()
-        })
+        .map(|feature| json::to_value(feature.evaluation.definition()).unwrap())
         .unwrap();
     assert_eq!(read.pointer(&pointer), edited.pointer(&pointer));
 }
@@ -1500,7 +1508,7 @@ fn a_depth_edit_beside_a_removed_hole_is_carried() {
     let (report, output, read_back) = write(&decoded);
 
     let written = written(read_back, &output);
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(
+    let mut wire = json::to_value(
         named_feature(written.ir(), "Boss-Extrude1")
             .evaluation
             .definition(),

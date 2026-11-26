@@ -15,11 +15,19 @@ use cadmpeg_core::CodecError;
 
 use crate::provenance::{AnnotationProvenance, Exactness, StreamName};
 
+mod key;
 mod sparse;
+pub use key::{AnnotationKey, AnnotationTarget};
 pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 
-/// Document-wide provenance and exactness tables keyed by globally unique
-/// entity id.
+/// Document-wide provenance and exactness tables keyed by annotation key.
+///
+/// The key of a top-level entity is its globally unique entity id. The key
+/// of a record inside the delta of an evaluation or a process state is the
+/// id of that evaluation or process state, one space, and the record's id.
+/// Validation reports a key whose qualifier names no evaluation or process
+/// state, or whose record that delta does not hold, as it reports a key that
+/// names no entity.
 ///
 /// An entity absent from `exactness` is byte-exact.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,10 +36,15 @@ pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 pub struct Annotations {
     /// Source location for each annotated entity.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    pub provenance: BTreeMap<String, AnnotationProvenance>,
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "BTreeMap<String, AnnotationProvenance>")
+    )]
+    pub provenance: BTreeMap<AnnotationKey, AnnotationProvenance>,
     /// Non-byte-exact entity or field annotations.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
-    exactness: BTreeMap<String, ExactnessNote>,
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeMap<String, ExactnessNote>"))]
+    exactness: BTreeMap<AnnotationKey, ExactnessNote>,
 }
 
 /// Candidate annotation tables held until a transaction commits or is discarded.
@@ -485,12 +498,13 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
         Ok(self)
     }
 
-    /// Retain exactness selected by identity.
+    /// Retain the exactness entries whose owner [`AnnotationKey::owner`]
+    /// `keep` selects, in increasing key order.
     pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) -> &mut Self {
         self.state
             .annotations
             .exactness
-            .retain(|identity, _| keep(identity));
+            .retain(|key, _| keep(key.owner()));
         self
     }
 
@@ -563,7 +577,9 @@ impl AnnotationState {
             AnnotationProvenance::annotation(stream.0.clone(), offset, tag.map(str::to_owned));
         match id {
             std::borrow::Cow::Owned(id) => {
-                self.annotations.provenance.insert(id, provenance);
+                self.annotations
+                    .provenance
+                    .insert(AnnotationKey::from(id), provenance);
             }
             std::borrow::Cow::Borrowed(id) => {
                 if let Some(previous) = self.annotations.provenance.get_mut(id) {
@@ -571,7 +587,7 @@ impl AnnotationState {
                 } else {
                     self.annotations
                         .provenance
-                        .insert(id.to_owned(), provenance);
+                        .insert(AnnotationKey::from(id), provenance);
                 }
             }
         }
@@ -617,12 +633,8 @@ impl AnnotationState {
                 };
             }
         } else if let Ok(entity) = Inexactness::try_from(exactness) {
-            let id = match id {
-                std::borrow::Cow::Owned(id) => id,
-                std::borrow::Cow::Borrowed(id) => id.to_owned(),
-            };
             self.annotations.exactness.insert(
-                id,
+                AnnotationKey::from(id.into_owned()),
                 ExactnessNote::Entity {
                     entity,
                     fields: BTreeMap::new(),
@@ -671,7 +683,7 @@ impl AnnotationState {
 
     fn set_field_exactness(&mut self, id: String, field: FieldName, exactness: Exactness) {
         if exactness == Exactness::ByteExact {
-            if let Some(note) = self.annotations.exactness.get_mut(&id) {
+            if let Some(note) = self.annotations.exactness.get_mut(id.as_str()) {
                 match note {
                     ExactnessNote::Entity { fields, .. } => {
                         fields.insert(field, exactness);
@@ -681,11 +693,11 @@ impl AnnotationState {
                     }
                 }
                 if matches!(note, ExactnessNote::Fields { fields } if fields.0.is_empty()) {
-                    self.annotations.exactness.remove(&id);
+                    self.annotations.exactness.remove(id.as_str());
                 }
             }
         } else {
-            match self.annotations.exactness.entry(id) {
+            match self.annotations.exactness.entry(AnnotationKey::from(id)) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(ExactnessNote::Fields {
                         fields: NonEmptyMap(BTreeMap::from([(field, exactness)])),
@@ -712,93 +724,78 @@ impl Annotations {
         }
     }
 
-    /// Retain provenance selected by identity.
+    /// Retain the provenance entries whose owner [`AnnotationKey::owner`]
+    /// `keep` selects, in increasing key order.
     pub fn retain_provenance(&mut self, mut keep: impl FnMut(&str) -> bool) {
-        self.provenance.retain(|identity, _| keep(identity));
+        self.provenance.retain(|key, _| keep(key.owner()));
     }
 
-    /// Retain the provenance and exactness entries selected by identity.
+    /// Retain the provenance and exactness entries whose owner
+    /// [`AnnotationKey::owner`] `keep` selects.
     pub fn retain_entities(&mut self, mut keep: impl FnMut(&str) -> bool) {
-        self.provenance.retain(|identity, _| keep(identity));
-        self.exactness.retain(|identity, _| keep(identity));
+        self.provenance.retain(|key, _| keep(key.owner()));
+        self.exactness.retain(|key, _| keep(key.owner()));
     }
 
-    /// Remap both tables. A collision leaves both tables unchanged.
+    /// Replace each id that a key of either table holds by `map` of that id,
+    /// calling `map` once per id in increasing order. A collision leaves both
+    /// tables unchanged.
     pub fn map_ids(
         &mut self,
         mut map: impl FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
     ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
-        enum Destination {
-            Provenance(String),
-            Exactness(String),
-            Both {
-                provenance: String,
-                exactness: String,
-            },
-        }
-        let mut ids = std::collections::BTreeSet::new();
-        for id in self.provenance.keys().chain(self.exactness.keys()) {
-            ids.insert(id);
+        let keys = self
+            .provenance
+            .keys()
+            .chain(self.exactness.keys())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut mapped = BTreeMap::new();
+        for id in keys
+            .iter()
+            .flat_map(|key| key.ids())
+            .collect::<std::collections::BTreeSet<_>>()
+        {
+            mapped.insert(id, map(id)?);
         }
         let mut targets = std::collections::BTreeSet::new();
-        let mut remapping = Vec::new();
-        for id in ids {
-            let target = map(id)?;
-            if targets.contains(&target) {
-                return Ok(Err(AnnotationIdentityCollision { id: target }));
+        let mut remapping = Vec::with_capacity(keys.len());
+        for key in keys {
+            let target = key.map(|id| mapped[id].clone());
+            if !targets.insert(target.clone()) {
+                return Ok(Err(AnnotationIdentityCollision {
+                    id: target.to_string(),
+                }));
             }
-            targets.insert(target.clone());
-            remapping.push((id.to_owned(), target));
-        }
-        let mut destinations = Vec::new();
-        for (id, target) in remapping {
-            let destination = match (
-                self.provenance.contains_key(&id),
-                self.exactness.contains_key(&id),
-            ) {
-                (true, true) => Destination::Both {
-                    provenance: target.clone(),
-                    exactness: target,
-                },
-                (true, false) => Destination::Provenance(target),
-                (false, true) => Destination::Exactness(target),
-                (false, false) => continue,
-            };
-
-            destinations.push((id, destination));
+            remapping.push((key.clone(), target));
         }
         let mut remapped = Self::default();
-        for (id, destination) in destinations {
-            match destination {
-                Destination::Provenance(target) => {
-                    if let Some(provenance) = self.provenance.remove(&id) {
-                        remapped.provenance.insert(target, provenance);
-                    }
-                }
-                Destination::Exactness(target) => {
-                    if let Some(exactness) = self.exactness.remove(&id) {
-                        remapped.exactness.insert(target, exactness);
-                    }
-                }
-                Destination::Both {
-                    provenance,
-                    exactness,
-                } => {
-                    if let Some(value) = self.provenance.remove(&id) {
-                        remapped.provenance.insert(provenance, value);
-                    }
-                    if let Some(value) = self.exactness.remove(&id) {
-                        remapped.exactness.insert(exactness, value);
-                    }
-                }
+        for (key, target) in remapping {
+            if let Some(provenance) = self.provenance.remove(&key) {
+                remapped.provenance.insert(target.clone(), provenance);
+            }
+            if let Some(exactness) = self.exactness.remove(&key) {
+                remapped.exactness.insert(target, exactness);
             }
         }
         *self = remapped;
         Ok(Ok(()))
     }
 
-    /// Sparse non-byte-exact annotations keyed by entity identity.
-    pub fn exactness(&self) -> &BTreeMap<String, ExactnessNote> {
+    /// Annotate `to` as the entity `from` is annotated, replacing the
+    /// annotations of `to`.
+    pub fn copy_entity(&mut self, from: &str, to: AnnotationKey) {
+        match self.provenance.get(from).cloned() {
+            Some(provenance) => self.provenance.insert(to.clone(), provenance),
+            None => self.provenance.remove(&to),
+        };
+        match self.exactness.get(from).cloned() {
+            Some(note) => self.exactness.insert(to, note),
+            None => self.exactness.remove(&to),
+        };
+    }
+
+    /// Sparse non-byte-exact annotations by annotation key.
+    pub fn exactness(&self) -> &BTreeMap<AnnotationKey, ExactnessNote> {
         &self.exactness
     }
 
@@ -816,7 +813,7 @@ impl Annotations {
     pub fn append(&mut self, mut other: Self) -> Result<(), AnnotationIdentityCollision> {
         for id in other.provenance.keys().chain(other.exactness.keys()) {
             if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
-                return Err(AnnotationIdentityCollision { id: id.to_owned() });
+                return Err(AnnotationIdentityCollision { id: id.to_string() });
             }
         }
         self.provenance.append(&mut other.provenance);
@@ -827,6 +824,8 @@ impl Annotations {
 
 #[cfg(test)]
 mod tests {
+
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn annotation_remap_moves_nested_records_to_the_mapped_identity() {
@@ -886,6 +885,7 @@ mod tests {
         assert_eq!(annotated.build(), expected.build());
     }
 
+    mod delta_keys;
     mod entity_exactness;
     mod identity_merges;
     mod provenance;
@@ -904,13 +904,11 @@ mod tests {
     #[cfg(feature = "schema")]
     #[test]
     fn exactness_schemas_preserve_field_and_population_admission() {
-        let schema =
-            cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(NonEmptyMap)).unwrap();
+        let schema = json::to_value(schemars::schema_for!(NonEmptyMap)).unwrap();
         assert_eq!(schema["minProperties"], 1);
         assert_eq!(schema["additionalProperties"], false);
         assert!(schema["patternProperties"].get("[\\s\\S]").is_some());
-        let schema =
-            cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(FieldName)).unwrap();
+        let schema = json::to_value(schemars::schema_for!(FieldName)).unwrap();
         assert_eq!(schema["type"], "string");
         assert_eq!(schema["minLength"], 1);
 
@@ -918,11 +916,8 @@ mod tests {
         for field in [" ", "\n", "geometry.radius"] {
             let key = FieldName::try_from(field.to_owned()).unwrap();
             let map = NonEmptyMap::try_from(BTreeMap::from([(key, Exactness::Derived)])).unwrap();
-            let wire = cadmpeg_core::serde_erase::json::to_value(&map).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::from_value::<NonEmptyMap>(wire).unwrap(),
-                map
-            );
+            let wire = json::to_value(&map).unwrap();
+            assert_eq!(json::from_value::<NonEmptyMap>(wire).unwrap(), map);
         }
         assert!(FieldName::try_from(String::new()).is_err());
         assert!(NonEmptyMap::try_from(BTreeMap::new()).is_err());
@@ -978,10 +973,8 @@ mod tests {
         assert_eq!(provenance.offset, 11);
         assert_eq!(provenance.tag, None);
 
-        let wire =
-            cadmpeg_core::serde_erase::json::to_value(&annotations).expect("serialize annotations");
-        let restored: Annotations =
-            cadmpeg_core::serde_erase::json::from_value(wire).expect("annotation wire round-trips");
+        let wire = json::to_value(&annotations).expect("serialize annotations");
+        let restored: Annotations = json::from_value(wire).expect("annotation wire round-trips");
         assert_eq!(restored, annotations);
     }
 
@@ -993,13 +986,9 @@ mod tests {
 
         let annotations = builder.build();
         assert_eq!(annotations.provenance["whitespace"].stream(), " \t");
-        let wire =
-            cadmpeg_core::serde_erase::json::to_value(&annotations).expect("serialize annotations");
+        let wire = json::to_value(&annotations).expect("serialize annotations");
         assert_eq!(wire["provenance"]["whitespace"]["stream"], " \t");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<Annotations>(wire).unwrap(),
-            annotations
-        );
+        assert_eq!(json::from_value::<Annotations>(wire).unwrap(), annotations);
     }
 
     #[test]
@@ -1009,18 +998,15 @@ mod tests {
         builder.note("f3d:body#0", &stream, 42, Some("body"));
         let annotations = builder.build();
 
-        let value = cadmpeg_core::serde_erase::json::to_value(&annotations).unwrap();
+        let value = json::to_value(&annotations).unwrap();
         assert!(value.get("streams").is_none());
         assert_eq!(
             value["provenance"]["f3d:body#0"]["stream"],
             "f3d:Breps.BlobParts/body.smbh"
         );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<Annotations>(value).unwrap(),
-            annotations
-        );
+        assert_eq!(json::from_value::<Annotations>(value).unwrap(), annotations);
 
-        let error = cadmpeg_core::serde_erase::json::from_value::<Annotations>(serde_json::json!({
+        let error = json::from_value::<Annotations>(serde_json::json!({
             "streams": ["f3d:native"],
             "provenance": {
                 "f3d:body#0": {"stream": "f3d:native", "offset": 42}
@@ -1030,7 +1016,7 @@ mod tests {
         .to_string();
         assert!(error.contains("unknown field `streams`"), "{error}");
 
-        let error = cadmpeg_core::serde_erase::json::from_value::<Annotations>(serde_json::json!({
+        let error = json::from_value::<Annotations>(serde_json::json!({
             "provenance": {
                 "f3d:body#0": {"stream": "", "offset": 42}
             }
@@ -1067,8 +1053,8 @@ mod tests {
         ] {
             let annotations = builder.build();
             assert_eq!(annotations.provenance[id].stream(), "first");
-            let wire = cadmpeg_core::serde_erase::json::to_value(&annotations).unwrap();
-            let restored: Annotations = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            let wire = json::to_value(&annotations).unwrap();
+            let restored: Annotations = json::from_value(wire).unwrap();
             assert_eq!(restored, annotations);
             assert_eq!(restored.provenance[id].stream(), "first");
         }
@@ -1142,18 +1128,16 @@ mod tests {
 
     #[test]
     fn an_entity_note_refuses_byte_exact_and_a_field_note_refuses_an_empty_map() {
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<ExactnessNote>(serde_json::json!({
-                "kind": "entity", "entity": "byte_exact"
-            }))
-            .expect_err("byte-exact is the implicit entity exactness");
+        let error = json::from_value::<ExactnessNote>(serde_json::json!({
+            "kind": "entity", "entity": "byte_exact"
+        }))
+        .expect_err("byte-exact is the implicit entity exactness");
         assert!(error.to_string().contains("unknown variant"), "{error}");
 
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<ExactnessNote>(serde_json::json!({
-                "kind": "fields", "fields": {}
-            }))
-            .expect_err("a field note carries at least one override");
+        let error = json::from_value::<ExactnessNote>(serde_json::json!({
+            "kind": "fields", "fields": {}
+        }))
+        .expect_err("a field note carries at least one override");
         assert!(
             error.to_string().contains("needs a field override"),
             "{error}"
@@ -1166,12 +1150,8 @@ mod tests {
             "kind": "entity", "entity": "derived",
             "fields": {"geometry": "derived"}
         });
-        let note: ExactnessNote =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(note).unwrap(),
-            wire
-        );
+        let note: ExactnessNote = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(note).unwrap(), wire);
 
         for entity_first in [false, true] {
             let mut builder = AnnotationBuilder::new();
@@ -1185,10 +1165,7 @@ mod tests {
                 builder.exactness("nx:model:surface#1", Exactness::Derived);
             }
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(
-                    &builder.state.annotations.exactness["nx:model:surface#1"]
-                )
-                .unwrap(),
+                json::to_value(&builder.state.annotations.exactness["nx:model:surface#1"]).unwrap(),
                 if entity_first {
                     wire.clone()
                 } else {
@@ -1227,8 +1204,7 @@ mod tests {
         let mut builder = AnnotationBuilder::new();
         builder.exactness(id, Exactness::Inferred);
         builder.derived(id, "position.x").expect("nonempty path");
-        let before = cadmpeg_core::serde_erase::json::to_value(&builder.state.annotations)
-            .expect("serialize annotations");
+        let before = json::to_value(&builder.state.annotations).expect("serialize annotations");
         for exactness in [
             Exactness::ByteExact,
             Exactness::Derived,
@@ -1242,23 +1218,20 @@ mod tests {
                 "{error}"
             );
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(&builder.state.annotations)
-                    .expect("serialize annotations"),
+                json::to_value(&builder.state.annotations).expect("serialize annotations"),
                 before
             );
         }
         assert!(builder.derived(id, "").is_err());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&builder.state.annotations)
-                .expect("serialize annotations"),
+            json::to_value(&builder.state.annotations).expect("serialize annotations"),
             before
         );
         for wire in [
             serde_json::json!({"kind": "entity", "entity": "derived", "fields": {"": "derived"}}),
             serde_json::json!({"kind": "fields", "fields": {"": "derived"}}),
         ] {
-            let error = cadmpeg_core::serde_erase::json::from_value::<ExactnessNote>(wire)
-                .expect_err("empty field key");
+            let error = json::from_value::<ExactnessNote>(wire).expect_err("empty field key");
             assert!(
                 error.to_string().contains("field name cannot be empty"),
                 "{error}"
@@ -1268,12 +1241,8 @@ mod tests {
             "kind": "entity", "entity": "derived",
             "fields": {"position.x": "byte_exact"}
         });
-        let admitted: ExactnessNote =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("nonempty path");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(admitted).expect("serialize note"),
-            wire
-        );
+        let admitted: ExactnessNote = json::from_value(wire.clone()).expect("nonempty path");
+        assert_eq!(json::to_value(admitted).expect("serialize note"), wire);
     }
     #[test]
     fn repeated_exactness_field_keys_are_refused_through_the_decode_sidecar() {
@@ -1302,8 +1271,7 @@ mod tests {
                     crate::hash::digest::Sha256Digest::digest(b"test source"),
                 ),
             );
-            let text =
-                cadmpeg_core::serde_erase::json::to_string(&sidecar).expect("serialize sidecar");
+            let text = json::to_string(&sidecar).expect("serialize sidecar");
             assert_eq!(
                 crate::source_fidelity::DecodeSidecar::from_json(&text).unwrap(),
                 sidecar

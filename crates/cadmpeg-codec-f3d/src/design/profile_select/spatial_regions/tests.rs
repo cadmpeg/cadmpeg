@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
@@ -136,7 +137,7 @@ fn operand(regions: &[Vec<Vec<(u32, u32)>>]) -> DesignSketchProfileOperand {
             }));
         }
     }
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "scope_reference_ordinal": 0,
         "record_index": 100,
         "byte_offset": 10,

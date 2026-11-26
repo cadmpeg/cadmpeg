@@ -8,6 +8,7 @@ use crate::native::{PropertyRecord, ValueRecord};
 use crate::test_support::test_archive::{archive_entries, CORE_DESIGN_PRODUCT};
 use crate::writer::{entry_order, serialize_property, serialize_value};
 use crate::FcstdCodec;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -40,15 +41,13 @@ fn entries_follow_the_ledger_order_and_unplaced_entries_follow_them() {
         )
     };
     let span = |id: &str, name: &str, start: u64| {
-        cadmpeg_core::serde_erase::json::from_value::<crate::native::ArchiveSpan>(
-            serde_json::json!({
-                "id": id,
-                "start": start,
-                "end": start + 4,
-                "role": "local-signature",
-                "entry": name,
-            }),
-        )
+        json::from_value::<crate::native::ArchiveSpan>(serde_json::json!({
+            "id": id,
+            "start": start,
+            "end": start + 4,
+            "role": "local-signature",
+            "entry": name,
+        }))
         .expect("ledger span fixture")
     };
     let entries = [
@@ -85,7 +84,7 @@ pub(super) fn export_messages<'r>(
         .collect()
 }
 
-/// Writes `ir` through `Inherit` and decodes the file.
+/// Writes `ir` with a request that names no target and decodes the file.
 pub(super) fn write_and_read_back(
     ir: &cadmpeg_ir::CadIr,
 ) -> (
@@ -95,7 +94,7 @@ pub(super) fn write_and_read_back(
 ) {
     let mut bytes = Vec::new();
     let report = FcstdCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the retained document patches");
     let decoded = FcstdCodec
@@ -169,8 +168,9 @@ fn a_repeated_entry_name_is_written_once_and_reported() {
     );
 }
 
-/// An entry the document no longer holds is left out of the archive, and the
-/// report names the ledger span of its ZIP member.
+/// An entry the document no longer holds is left out of the archive. The
+/// report names each property that names it, and no ledger span of its ZIP
+/// member, since those properties account for the member.
 #[test]
 fn a_removed_entry_is_left_out_and_its_member_is_reported() {
     let decoded = FcstdCodec
@@ -188,14 +188,7 @@ fn a_removed_entry_is_left_out_and_its_member_is_reported() {
     let removed = entries.remove(index);
     let naming = properties_naming(&ir, removed.name());
     replace_arena(&mut ir, "entries", &entries);
-    let payload_spans = native_arena::<crate::native::ArchiveSpan>(&ir, "physical_ledger")
-        .into_iter()
-        .filter(|span| {
-            matches!(&span.role, crate::native::ArchiveSpanRole::CompressedPayload(name)
-                if name == removed.name())
-        })
-        .map(|span| span.id)
-        .collect::<Vec<_>>();
+    let payload_spans = payload_spans(&ir, removed.name());
     assert!(!payload_spans.is_empty());
 
     let (report, bytes, round_trip) = write_and_read_back(&ir);
@@ -203,11 +196,24 @@ fn a_removed_entry_is_left_out_and_its_member_is_reported() {
     let omitted = export_messages(&report, "native.records-omitted");
     for id in &payload_spans {
         assert!(
-            omitted.iter().any(|message| message.contains(id.as_str())),
+            omitted.iter().all(|message| !message.contains(id.as_str())),
             "{id}: {omitted:?}"
         );
     }
     assert_unheld_entry_reported(&report, round_trip.ir(), &naming, removed.name());
+}
+
+/// The ids of the ledger spans that hold the compressed payload of member
+/// `name`.
+pub(super) fn payload_spans(ir: &cadmpeg_ir::CadIr, name: &str) -> Vec<String> {
+    native_arena::<crate::native::ArchiveSpan>(ir, "physical_ledger")
+        .into_iter()
+        .filter(|span| {
+            matches!(&span.role, crate::native::ArchiveSpanRole::CompressedPayload(member)
+                if member == name)
+        })
+        .map(|span| span.id)
+        .collect()
 }
 
 /// The properties of `ir` that name the archive entry `name`.
@@ -289,7 +295,7 @@ fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
     .expect_err("constructor refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
     let wire = serde_json::json!({"id": "test:native:entry#backslash", "name": r"..\outside", "role": "auxiliary", "byte_len": 0, "sha256": cadmpeg_ir::hash::sha256_hex(&[]), "referenced_by": [], "data": ""});
-    let error = cadmpeg_core::serde_erase::json::from_value::<crate::native::EntryRecord>(wire)
+    let error = json::from_value::<crate::native::EntryRecord>(wire)
         .expect_err("native entry refuses backslash");
     assert!(error.to_string().contains("unsafe ZIP entry path"));
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
@@ -392,7 +398,7 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
     let report = FcstdCodec
         .plan(
             EncodeInput::new(&edited, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("encode edit");
@@ -552,7 +558,7 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .expect("decode source");
     let mut staged = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut staged))
         .expect("write-only fallback");
     let mut streamed = Cursor::new(Vec::new());
@@ -734,7 +740,7 @@ fn retaining_writes_preserve_physical_restoration_order_after_cadir_finalization
             }
             let mut output = Vec::new();
             FcstdCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                 .and_then(|plan| plan.write_to(&mut output))
                 .expect("required invariant");
             let mut archive =
@@ -811,7 +817,7 @@ fn typed_input_edits_persist_owner_recompute_state_without_touching_outputs_or_n
             );
             let mut bytes = Vec::new();
             FcstdCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                 .and_then(|plan| plan.write_to(&mut bytes))
                 .expect("write edit");
             let output = FcstdCodec
@@ -905,7 +911,7 @@ fn checked_native_input_record_edits_also_schedule_owner_recomputation() {
         .expect("replace values");
     let mut bytes = Vec::new();
     FcstdCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("write native edit");
     let output = FcstdCodec

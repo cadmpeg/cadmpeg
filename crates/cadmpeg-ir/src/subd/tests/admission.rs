@@ -4,6 +4,7 @@ use crate::scalar::PositiveReal;
 use crate::subd::{
     SubdCage, SubdGripDirection, SubdGripWedge, SubdSecondaryGrip, SubdVertexGripLayout,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn gripped_cage() -> SubdCage {
     let mut cage = super::triangle_cage();
@@ -46,16 +47,14 @@ fn cage_validation_keeps_a_gripped_cage_and_names_a_missing_face_edge() {
             .collect(),
     )
     .unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&cage).unwrap();
+    let wire = json::to_value(&cage).unwrap();
     let error = SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries).unwrap_err();
     assert_eq!(
         error.to_string(),
         "faces[0].edges references a missing edge"
     );
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<SubdCage>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains("faces[0].edges references a missing edge")
-    );
+    assert!(json::from_value::<SubdCage>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("faces[0].edges references a missing edge"));
 }

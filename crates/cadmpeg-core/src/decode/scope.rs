@@ -367,7 +367,7 @@ mod tests {
         let wire = serde_json::to_value(&classes).expect("class set serializes");
         assert_eq!(wire, serde_json::json!(["model", "process"]));
         assert_eq!(
-            serde_json::from_value::<ArenaClasses>(wire).expect("class set parses"),
+            crate::serde_erase::json::from_value::<ArenaClasses>(wire).expect("class set parses"),
             classes
         );
     }

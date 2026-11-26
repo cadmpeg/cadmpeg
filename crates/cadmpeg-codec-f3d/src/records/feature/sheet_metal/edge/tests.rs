@@ -2,6 +2,7 @@ use super::{DesignEdgeFlangeScope, DesignReferenceEdgeFlange, DesignReferenceFla
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 
 #[test]
@@ -12,7 +13,7 @@ fn reference_edge_wire_retains_independent_controls() {
         "edges": [{"group": {"value": 11, "offset": 100}}]
     });
     let construction: DesignReferenceEdgeFlange =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("partial source controls");
+        json::from_value(wire.clone()).expect("partial source controls");
     assert!(construction.height_owner.is_none());
     assert_eq!(
         construction
@@ -24,7 +25,7 @@ fn reference_edge_wire_retains_independent_controls() {
         0.25
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(construction).expect("source controls wire"),
+        json::to_value(construction).expect("source controls wire"),
         wire
     );
     for key in [
@@ -40,18 +41,12 @@ fn reference_edge_wire_retains_independent_controls() {
     ] {
         let mut invalid = json!({});
         invalid[key] = serde_json::Value::Null;
-        let error =
-            cadmpeg_core::serde_erase::json::from_value::<DesignReferenceEdgeFlange>(invalid)
-                .expect_err("null source control")
-                .to_string();
+        let error = json::from_value::<DesignReferenceEdgeFlange>(invalid)
+            .expect_err("null source control")
+            .to_string();
         assert!(error.contains(key), "{error}");
     }
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignReferenceFlangeEdge>(
-            json!({"first_owner":null})
-        )
-        .is_err()
-    );
+    assert!(json::from_value::<DesignReferenceFlangeEdge>(json!({"first_owner":null})).is_err());
 }
 
 #[test]
@@ -61,16 +56,11 @@ fn reference_edge_scope_wire_keeps_one_source_form() {
     if let DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
         *slot = DesignEdgeFlangeScope::ReferenceFramed(DesignReferenceEdgeFlange::default());
     }
-    let wire =
-        cadmpeg_core::serde_erase::json::to_value(&scope).expect("reference edge scope wire");
+    let wire = json::to_value(&scope).expect("reference edge scope wire");
     assert_eq!(wire["edge_flange_construction"], json!({}));
     assert!(wire.get("edge_flange_operation").is_none());
-    let decoded: DesignParameterScope =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("reference scope");
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(decoded).expect("reference scope wire"),
-        wire
-    );
+    let decoded: DesignParameterScope = json::from_value(wire.clone()).expect("reference scope");
+    assert_eq!(json::to_value(decoded).expect("reference scope wire"), wire);
     let mut both = wire;
     both["edge_flange_operation"] = json!({
         "edge_wrapper_record_indices":[11],
@@ -91,7 +81,7 @@ fn reference_edge_scope_wire_keeps_one_source_form() {
         "height_datum":"inner_faces",
         "bend_position":"inside"
     });
-    let error = cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(both)
+    let error = json::from_value::<DesignParameterScope>(both)
         .expect_err("two source forms")
         .to_string();
     assert!(error.contains("more than one payload family"), "{error}");
