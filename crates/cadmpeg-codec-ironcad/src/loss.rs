@@ -18,6 +18,7 @@ pub(crate) enum IronCadLossCode {
     ParasolidBodyPartial,
     BodyRecordsRetained,
     BodyExtensionsRetained,
+    BodyPartitionUnread,
     FeatureShapeRetained,
     FaceBoundaryUnstated,
     SurfaceUntyped,
@@ -61,6 +62,10 @@ impl IronCadLossCode {
             Self::BodyExtensionsRetained => (
                 "body.extensions-retained",
                 LossTaxonomy::GeometryNotTransferred,
+            ),
+            Self::BodyPartitionUnread => (
+                "body.partition-unread",
+                LossTaxonomy::FeatureHistoryRetained,
             ),
             Self::FeatureShapeRetained => (
                 "body.feature-shape-retained",

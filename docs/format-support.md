@@ -757,7 +757,7 @@ Parasolid record that follows a part's child node decodes into B-rep topology
 and geometry in the part frame; feature records are retained. Each part is
 placed in the scene by the matrix of its `Public Access` part record, with its
 properties and mass density; the scene units come from `Document Data`. Assembly
-structure and feature history are pending, and each scene stream other than
+structure and feature history are pending, and each non-empty scene stream other than
 `Brep Data` produces a loss. The headline is L0. The codec is read-only.
 
 See [`formats/ironcad.md`](formats/ironcad.md) and

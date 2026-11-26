@@ -468,15 +468,15 @@ projection.
 
 **Question.** What do the boolean and the string of the header extension encode (`asm.md` §2.4 "An interned ACIS binary stream")?
 
-**Known.** The header extension stores the token `0x0A` and one `0x07` string of 77 bytes. The string holds uppercase ASCII letters, digits, and `_`. Two streams of one kernel record pair store the same string. The decoder reads the tokens and projects neither.
+**Known.** The header extension stores the token `0x0A` and one `0x07` string of 77 bytes. The string holds uppercase ASCII letters, digits, and `_`. Two streams of one kernel record pair store the same string. The framer also reads the token `0x0B` alone as a header extension. The decoder reads the tokens and projects neither.
 
-**Need.** Save one model in two sessions and on two installations, and save a model with the extension boolean false if a save option selects it. Compare the boolean and the string.
+**Need.** Save one model in two sessions and on two installations, and save a model with the extension boolean false if a save option selects it. Compare the boolean and the string, and the bytes that follow a `0x0B` extension.
 
 ### BE-02. Extension integers of the interned entity prefix
 
 **Question.** What do the extension integer of the extended entity prefix and the `body` integer before the first lump encode (`asm.md` §2.4 "A record whose fields 1 and 2")?
 
-**Known.** The extension integer is `-1` in each topology and geometry record. The `body` integer is `0`. The decoder removes both integers before it reads the §5.2 fields, retains the kernel record, and charges `ironcad.body.extensions-retained`.
+**Known.** The extension integer is `-1` in each record that carries the extended prefix. A `transform` record stores the attribute reference and the entity-id integer, then its matrix. The `body` integer is `0`. The decoder removes both integers before it reads the §5.2 fields, retains the kernel record, and charges `ironcad.body.extensions-retained`.
 
 **Need.** Save a body with a pattern, a body with several lumps, and a body after a boolean operation. Compare the extension integers and the `body` integer.
 
@@ -484,6 +484,6 @@ projection.
 
 **Question.** What do the record tails of `asm.md` §2.4 "In `body`, `lump`, `shell`" encode?
 
-**Known.** Each tail is a boolean and two positions; a `face` tail adds one boolean, and a `loop` tail adds one enumeration value. The boolean is `TRUE` in each `body`, `lump`, `shell`, `loop`, and `edge` tail. The two positions are the low and high corners of the axis-aligned box of the record's points in model units. A `face` tail stores `TRUE` for each planar face, the box of the face, and `FALSE`. The `loop` enumeration value is `0`. The decoder reads the tails and projects none.
+**Known.** The first tail boolean is `TRUE` with two positions in each tail of some streams, and `FALSE` with no positions in each tail of other streams. The two positions are the low and high corners of the axis-aligned box of the record's geometry in model units: a face on a cone and a full-circle edge store boxes wider than their vertices. The second `face` boolean is `FALSE`, or `TRUE` with four doubles that are the parameter extents of the face on its surface: `-5`, `5`, `-2.5`, `2.5` on the top face of a 10 × 5 × 2 cm block, `-2.5`, `2.5`, `-2.5`, `2.5` on the cap of a cylinder of radius 2.5 cm, and `0`, `2`, `-π`, `π` on the side face of that cylinder. The `loop` enumeration value takes `0`, `1`, and `4`. The decoder reads the tails and projects none.
 
-**Need.** Save a body with a curved face whose box is wider than its vertices, a face with two loops, and a stream after a move without a recompute. Compare the tail booleans, boxes, and enumeration values.
+**Need.** Save one body with the box option of the save toggled, a face with two loops, and a stream after a move without a recompute. Compare the tail booleans, boxes, face doubles, and loop enumeration values and references.

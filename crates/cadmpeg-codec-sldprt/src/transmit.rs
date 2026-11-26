@@ -29,8 +29,9 @@ pub struct TransmitGeometry {
 ///
 /// # Errors
 ///
-/// Returns the builder's error when the node sequence does not decode, and a
-/// resource refusal when a decode limit is reached.
+/// Returns [`CodecError::Malformed`] when the node sequence does not frame to
+/// its terminator, the builder's error when it does not decode, and a resource
+/// refusal when a decode limit is reached.
 pub fn decode(
     ctx: &DecodeContext<'_>,
     transmit: &[u8],
@@ -39,6 +40,13 @@ pub fn decode(
     let Some(header) = crate::parasolid::stream_header(transmit)? else {
         return Ok(None);
     };
+    let frames = cadmpeg_parasolid::records::PrimaryRecords::read(transmit)?
+        .is_some_and(|records| records.is_terminated());
+    if !frames {
+        return Err(CodecError::malformed(
+            "Parasolid transmit node sequence does not frame to its terminator",
+        ));
+    }
     let mut brep = crate::brep::graph::decode_bodies(ctx, &[(transmit, &header)], stream)?;
     let losses = crate::decode::brep_losses(&mut brep);
     let geometry = Topology {

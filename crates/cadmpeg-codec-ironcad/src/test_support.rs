@@ -89,6 +89,7 @@ pub(crate) enum Sab {
     Long(i32),
     Position([f64; 3]),
     Vector([f64; 3]),
+    True,
     False,
     End,
 }
@@ -147,6 +148,7 @@ pub(crate) fn acis_stream(items: &[Sab]) -> Vec<u8> {
                     bytes.extend_from_slice(&component.to_le_bytes());
                 }
             }
+            Sab::True => bytes.push(0x0a),
             Sab::False => bytes.push(0x0b),
             Sab::End => bytes.push(0x11),
         }
@@ -164,17 +166,53 @@ pub(crate) fn plane_face_body() -> Vec<u8> {
 /// A solid made of one face on a surface record of class `surface`, in
 /// interned ACIS 32.0 form.
 pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
-    use Sab::{End, False, Long, Name, Position, Ref, SubName, Vector};
+    use Sab::{End, False, Long, Name, Position, Ref, SubName, True, Vector};
+    let low = Position([0.0, 0.0, 0.0]);
+    let high = Position([1.0, 1.0, 0.0]);
     let prefix = [Ref(-1), Long(-1), Long(-1), Ref(-1)];
     let mut items = vec![Name("body")];
     items.extend(prefix);
-    items.extend([Long(0), Ref(1), Ref(-1), Ref(-1), End, Name("lump")]);
+    items.extend([
+        Long(0),
+        Ref(1),
+        Ref(-1),
+        Ref(-1),
+        True,
+        low,
+        high,
+        End,
+        Name("lump"),
+    ]);
     items.extend(prefix);
-    items.extend([Ref(-1), Ref(2), Ref(0), End, Name("shell")]);
+    items.extend([Ref(-1), Ref(2), Ref(0), True, low, high, End, Name("shell")]);
     items.extend(prefix);
-    items.extend([Ref(-1), Ref(-1), Ref(3), Ref(-1), Ref(1), End, Name("face")]);
+    items.extend([
+        Ref(-1),
+        Ref(-1),
+        Ref(3),
+        Ref(-1),
+        Ref(1),
+        True,
+        low,
+        high,
+        End,
+        Name("face"),
+    ]);
     items.extend(prefix);
-    items.extend([Ref(-1), Ref(-1), Ref(2), Ref(-1), Ref(4), False, False, End]);
+    items.extend([
+        Ref(-1),
+        Ref(-1),
+        Ref(2),
+        Ref(-1),
+        Ref(4),
+        False,
+        False,
+        True,
+        low,
+        high,
+        False,
+        End,
+    ]);
     items.extend([SubName(surface), Name("surface")]);
     items.extend(prefix);
     items.extend([
@@ -189,4 +227,14 @@ pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
         End,
     ]);
     acis_stream(&items)
+}
+
+/// A native binary Parasolid transmit with no nodes: the prologue, the
+/// maximum node type, `user_fields`, and the terminator.
+pub(crate) fn parasolid_record(description: &str, user_fields: u32) -> Vec<u8> {
+    let mut bytes = parasolid_prologue(description, "SCH_3401176_34101_13006");
+    bytes.extend_from_slice(&231_u16.to_le_bytes());
+    bytes.extend_from_slice(&user_fields.to_le_bytes());
+    bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+    bytes
 }
