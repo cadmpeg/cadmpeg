@@ -218,6 +218,7 @@ fn surface_stitch_fixture() -> StitchFixture {
     let input_topologies = vec![FeatureInputTopology {
         face_owners: Vec::new(),
         face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
         bodies: cadmpeg_ir::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
