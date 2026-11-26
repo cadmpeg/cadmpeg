@@ -169,7 +169,7 @@ macro_rules! __json_internal {
     };
 
     ($other:expr) => {
-        $crate::serde_erase::to_json_value(&$other).unwrap()
+        $crate::serde_erase::json_value_from_erased(&$other)
     };
 }
 
