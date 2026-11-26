@@ -125,8 +125,9 @@ fn scope_placements_decode_without_relation_or_carrier_records() {
             if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
                 payload.unresolved_placement = Some(value);
             }
-            let encoded = serde_json::to_vec(&scope).unwrap();
-            let decoded: DesignParameterScope = serde_json::from_slice(&encoded).unwrap();
+            let encoded = cadmpeg_core::serde_erase::json::to_vec(&scope).unwrap();
+            let decoded: DesignParameterScope =
+                cadmpeg_core::serde_erase::json::from_slice(&encoded).unwrap();
             assert_eq!(decoded, scope);
             assert!(decoded.component_insert_construction().is_none());
         }
@@ -175,17 +176,17 @@ fn partial_insert_payload_cannot_coexist_with_a_complete_or_other_family_payload
     if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
         payload.unresolved_placement = Some(value);
     }
-    let mut encoded = serde_json::to_value(&scope).unwrap();
+    let mut encoded = cadmpeg_core::serde_erase::json::to_value(&scope).unwrap();
     encoded["component_insert_construction"] = serde_json::json!({
         "relation_record_index":20,
         "carrier_record_index":10,
         "neutron_role":"11111111-2222-3333-4444-555555555555",
         "neutron_role_offset":0
     });
-    assert!(serde_json::from_value::<DesignParameterScope>(encoded).is_err());
-    let mut encoded = serde_json::to_value(scope).unwrap();
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(encoded).is_err());
+    let mut encoded = cadmpeg_core::serde_erase::json::to_value(scope).unwrap();
     encoded["kind"] = serde_json::json!("WorkPoint");
-    assert!(serde_json::from_value::<DesignParameterScope>(encoded).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(encoded).is_err());
 }
 
 fn legacy_fixture(frame: usize, name: &str) -> (Vec<u8>, DesignParameterScope, usize, usize) {
@@ -306,9 +307,10 @@ fn legacy_scope_frames_retain_placements_without_source_records() {
             if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
                 payload.unresolved_placement = Some(placement);
             }
-            let encoded = serde_json::to_vec(&scope).unwrap();
+            let encoded = cadmpeg_core::serde_erase::json::to_vec(&scope).unwrap();
             assert_eq!(
-                serde_json::from_slice::<DesignParameterScope>(&encoded).unwrap(),
+                cadmpeg_core::serde_erase::json::from_slice::<DesignParameterScope>(&encoded)
+                    .unwrap(),
                 scope
             );
         }

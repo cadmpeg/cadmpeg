@@ -15,8 +15,8 @@ struct Record<'a, T> {
 
 fn assert_borrowed_wire<T: Serialize, W: Serialize>(id: &'static str, value: &T, wire: W) {
     assert_eq!(
-        serde_json::to_vec(value).expect("borrowed wire"),
-        serde_json::to_vec(&wire).expect("owned wire")
+        cadmpeg_core::serde_erase::json::to_vec(value).expect("borrowed wire"),
+        cadmpeg_core::serde_erase::json::to_vec(&wire).expect("owned wire")
     );
     let record = Record { id, value };
     let expected = serde_json::json!({"id": id, "value": wire});

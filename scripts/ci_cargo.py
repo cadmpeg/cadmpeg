@@ -80,6 +80,8 @@ def main() -> int:
     if full and arguments[:2] == ['nextest', 'run'] and ram_gib is not None:
         env = os.environ.copy()
         if ram_gib <= LOW_RAM_GIB:
+            current_jobs = int(env.get('CARGO_BUILD_JOBS', '2'))
+            env['CARGO_BUILD_JOBS'] = str(min(current_jobs, 2))
             if sys.platform != 'win32':
                 lock_dir = tempfile.mkdtemp(prefix='cadmpeg-rustc-lock-')
                 env['RUSTC_WRAPPER'] = str(low_ram_rustc_wrapper())

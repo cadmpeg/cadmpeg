@@ -5,6 +5,7 @@ use crate::archive;
 mod assembly;
 pub(super) mod expression;
 mod features;
+mod intersection;
 mod planes;
 pub(super) mod query;
 mod regions;
@@ -84,7 +85,7 @@ pub(super) fn id(kind: &str, native: &str) -> String {
 
 fn push<T: serde::de::DeserializeOwned>(arena: &mut Vec<T>, row: Value) -> Mapping<()> {
     arena.push(
-        serde_json::from_value(row)
+        cadmpeg_core::serde_erase::json::from_value(row)
             .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?,
     );
     Ok(())
@@ -179,11 +180,21 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
             .product_definitions
             .iter()
             .filter(|d| Some(&d.id) != owner_id.as_ref())
-            .any(|d| !placed.contains(d.id.as_str()))
+            .any(|d| {
+                // A part body is an embedded leaf definition, active, with no own
+                // occurrences, instance bodies or representations; anything else is a
+                // real insertion and keeps its occurrence.
+                !placed.contains(d.id.as_str())
+                    || !matches!(d.storage, cadmpeg_ir::products::Storage::Embedded)
+                    || !d.occurrences.is_empty()
+                    || !d.instance_bodies.is_empty()
+                    || !d.representations.is_empty()
+                    || d.active == Some(false)
+            })
     {
         return;
     }
-    let Ok(text) = serde_json::to_string(&model.ir) else {
+    let Ok(text) = cadmpeg_core::serde_erase::json::to_string(&model.ir) else {
         return;
     };
     let named = |id: &str| text.matches(&format!("\"{id}\"")).count();
@@ -676,7 +687,7 @@ fn studio(
                 &unresolved_variables,
             )
             .and_then(|definition| {
-                serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
+                cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
                     definition.clone(),
                 )
                 .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?;

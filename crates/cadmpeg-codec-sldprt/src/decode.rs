@@ -215,6 +215,55 @@ pub(crate) fn decode_for_read_back(
     result
 }
 
+/// Content key `(sha256, byte_len)` for caching pure read-back decodes.
+pub(crate) type ReadBackKey = (cadmpeg_ir::hash::digest::Sha256Digest, usize);
+
+/// Decodes a written SLDPRT byte slice for read-back comparison, memoizing
+/// recent outputs by content digest and length so repeated read-backs of the
+/// same written bytes avoid redundant decodes.
+pub(crate) fn decode_for_read_back_cached_with_key(
+    bytes: &[u8],
+) -> Result<
+    (std::sync::Arc<cadmpeg_ir::codec::DecodeResult>, ReadBackKey),
+    cadmpeg_ir::codec::DecodeFailure,
+> {
+    type CachedReadBack = (ReadBackKey, std::sync::Arc<cadmpeg_ir::codec::DecodeResult>);
+    static READ_BACK_CACHE: std::sync::Mutex<Vec<CachedReadBack>> =
+        std::sync::Mutex::new(Vec::new());
+
+    let key = (
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
+        bytes.len(),
+    );
+    if let Ok(mut guard) = READ_BACK_CACHE.lock() {
+        if let Some(index) = guard.iter().position(|(cached_key, _)| *cached_key == key) {
+            let entry = guard.remove(index);
+            let cached = std::sync::Arc::clone(&entry.1);
+            guard.push(entry);
+            return Ok((cached, key));
+        }
+    }
+    let decoded = std::sync::Arc::new(decode_for_read_back(bytes)?);
+    if let Ok(mut guard) = READ_BACK_CACHE.lock() {
+        if !guard.iter().any(|(cached_key, _)| *cached_key == key) {
+            if guard.len() >= 12 {
+                guard.remove(0);
+            }
+            guard.push((key.clone(), std::sync::Arc::clone(&decoded)));
+        }
+    }
+    Ok((decoded, key))
+}
+
+/// Decodes a written SLDPRT byte slice for read-back comparison, reusing a
+/// cached [`cadmpeg_ir::codec::DecodeResult`] when identical bytes were decoded
+/// recently.
+pub(crate) fn decode_for_read_back_cached(
+    bytes: &[u8],
+) -> Result<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>, cadmpeg_ir::codec::DecodeFailure> {
+    decode_for_read_back_cached_with_key(bytes).map(|(decoded, _)| decoded)
+}
+
 fn decode_inner(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -1342,7 +1391,9 @@ pub(crate) fn append_design_losses(
     let incomplete_body_selection = |selection: &BodySelection| match selection {
         BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
         BodySelection::Historical { bodies, .. } => bodies.is_empty(),
-        BodySelection::ResolvedSet { .. } | BodySelection::HistoricalSet { .. } => false,
+        BodySelection::ResolvedSet { .. }
+        | BodySelection::HistoricalSet { .. }
+        | BodySelection::GeneratedSet { .. } => false,
         BodySelection::Generated { bodies, .. } => bodies.is_empty(),
         BodySelection::Local { bodies, .. } => bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => true,

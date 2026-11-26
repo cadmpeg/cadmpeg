@@ -227,8 +227,8 @@ mod tests {
             let objects = HeaderReferences::read(bytes).unwrap();
             let old = HeaderReferencesWire::from(objects);
             assert_eq!(
-                serde_json::to_vec(&objects).unwrap(),
-                serde_json::to_vec(&old).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(&objects).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&old).unwrap()
             );
             let record = Record {
                 id: "nx:test:header-references#1",
@@ -297,7 +297,10 @@ mod tests {
             assert_eq!(HeaderSlot::try_from(number), Ok(slot));
             assert_eq!(format!("{slot:010}"), format!("{number:010}"));
             let wire = number.to_string();
-            assert_eq!(serde_json::to_string(&slot).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&slot).unwrap(),
+                wire
+            );
             assert_eq!(serde_json::from_str::<HeaderSlot>(&wire).unwrap(), slot);
         }
         for number in 4u8..=255 {

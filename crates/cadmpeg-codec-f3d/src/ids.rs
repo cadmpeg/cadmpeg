@@ -1337,8 +1337,8 @@ mod tests {
             "f3d:model:component#aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
         );
         assert_eq!(
-            serde_json::to_string(&guid).unwrap(),
-            serde_json::to_string(text).unwrap()
+            cadmpeg_core::serde_erase::json::to_string(&guid).unwrap(),
+            cadmpeg_core::serde_erase::json::to_string(text).unwrap()
         );
         let token_text = format!("{text}_Post2015_Post2015");
         let token: crate::records::references::DesignVisualToken =
@@ -1348,8 +1348,8 @@ mod tests {
             format!("f3d:design:appearance#{token_text}")
         );
         assert_eq!(
-            serde_json::to_string(&token).unwrap(),
-            serde_json::to_string(&token_text).unwrap()
+            cadmpeg_core::serde_erase::json::to_string(&token).unwrap(),
+            cadmpeg_core::serde_erase::json::to_string(&token_text).unwrap()
         );
         assert!(crate::records::mesh::DesignRelaxedGuidText::try_from(String::new()).is_err());
         assert!(crate::records::references::DesignVisualToken::try_from(String::new()).is_err());

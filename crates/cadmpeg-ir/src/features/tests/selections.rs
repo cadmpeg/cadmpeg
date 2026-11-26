@@ -24,9 +24,9 @@ fn historical_selection_admission_preserves_partial_and_reference_semantics() {
             let valid = wire.clone();
             let accepts = |value: serde_json::Value| {
                 if field == "edges" {
-                    serde_json::from_value::<EdgeSelection>(value).is_ok()
+                    cadmpeg_core::serde_erase::json::from_value::<EdgeSelection>(value).is_ok()
                 } else {
-                    serde_json::from_value::<FaceSelection>(value).is_ok()
+                    cadmpeg_core::serde_erase::json::from_value::<FaceSelection>(value).is_ok()
                 }
             };
             assert!(accepts(valid.clone()));
@@ -68,9 +68,9 @@ fn generated_selection_admission_rejects_blank_identities_and_preserves_duplicat
         }});
         let accepts = |value: serde_json::Value| {
             if field == "edges" {
-                serde_json::from_value::<EdgeSelection>(value).is_ok()
+                cadmpeg_core::serde_erase::json::from_value::<EdgeSelection>(value).is_ok()
             } else {
-                serde_json::from_value::<FaceSelection>(value).is_ok()
+                cadmpeg_core::serde_erase::json::from_value::<FaceSelection>(value).is_ok()
             }
         };
         assert!(accepts(wire.clone()));
@@ -83,8 +83,10 @@ fn generated_selection_admission_rejects_blank_identities_and_preserves_duplicat
     for native in ["", " "] {
         assert!(VertexSelection::native(native.into()).is_err());
         assert!(
-            serde_json::from_value::<VertexSelection>(json!({"kind":"native","value":native}))
-                .is_err()
+            cadmpeg_core::serde_erase::json::from_value::<VertexSelection>(
+                json!({"kind":"native","value":native})
+            )
+            .is_err()
         );
     }
 }
@@ -109,14 +111,16 @@ fn selection_wire_errors_name_the_rejected_field() {
             "local_id",
         ),
     ] {
-        let error = serde_json::from_value::<EdgeSelection>(wire).unwrap_err();
+        let error = cadmpeg_core::serde_erase::json::from_value::<EdgeSelection>(wire).unwrap_err();
         assert!(error.to_string().contains(field), "{error}");
     }
     let wire = json!({"kind":"generated","value":{"faces":[],"native":"face"}});
-    assert!(serde_json::from_value::<FaceSelection>(wire)
-        .unwrap_err()
-        .to_string()
-        .contains("faces"));
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<FaceSelection>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("faces")
+    );
 }
 
 #[test]
@@ -128,8 +132,12 @@ fn vertex_selection_wire_admission_preserves_valid_forms() {
         json!({"kind":"historical","value":{"state":"test:model:state#1","vertex":"vertex","native":" n "}}),
         json!({"kind":"generated","value":{"vertex":{"feature":feature,"local_id":"vertex"},"native":"native"}}),
     ] {
-        let admitted = serde_json::from_value::<VertexSelection>(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        let admitted =
+            cadmpeg_core::serde_erase::json::from_value::<VertexSelection>(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(admitted).unwrap(),
+            wire
+        );
     }
     for (native, local_id) in [
         ("", "vertex"),
@@ -138,6 +146,6 @@ fn vertex_selection_wire_admission_preserves_valid_forms() {
         ("native", " "),
     ] {
         let wire = json!({"kind":"generated","value":{"vertex":{"feature":feature,"local_id":local_id},"native":native}});
-        assert!(serde_json::from_value::<VertexSelection>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<VertexSelection>(wire).is_err());
     }
 }

@@ -12,9 +12,9 @@ fn consolidated_cylinder_deserialization_admits_each_layout_chart() {
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.consolidated_cylinders.len(), 3);
     for cylinder in &native.consolidated_cylinders {
-        let valid = serde_json::to_value(cylinder).expect("cylinder wire");
+        let valid = cadmpeg_core::serde_erase::json::to_value(cylinder).expect("cylinder wire");
         assert_eq!(
-            serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(valid.clone())
+            cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaConsolidatedCylinder>(valid.clone())
                 .expect("admitted chart"),
             *cylinder
         );
@@ -33,8 +33,10 @@ fn consolidated_cylinder_deserialization_admits_each_layout_chart() {
             let mut invalid = valid.clone();
             invalid["payload"][field] = value;
             assert!(
-                serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(invalid)
-                    .is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<
+                    crate::native::CatiaConsolidatedCylinder,
+                >(invalid)
+                .is_err(),
                 "layout {} field {field}",
                 valid["layout"]
             );
@@ -42,9 +44,10 @@ fn consolidated_cylinder_deserialization_admits_each_layout_chart() {
         let mut invalid = valid;
         invalid["u_range"] = serde_json::json!([0.0, 0.1]);
         // A partial interval is valid only for the range-origin layout, whose redundant origin must also match.
-        assert!(
-            serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(invalid).is_err()
-        );
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
+            crate::native::CatiaConsolidatedCylinder,
+        >(invalid)
+        .is_err());
     }
 }
 
@@ -53,9 +56,9 @@ fn wide_cylinder_deserialization_uses_the_layout_5a_admission() {
     let native = crate::native::CatiaNative::decode(&b2_wide_cylinder_stream());
     assert!(!native.consolidated_cylinders.is_empty());
     for cylinder in &native.consolidated_cylinders {
-        let valid = serde_json::to_value(cylinder).expect("cylinder wire");
+        let valid = cadmpeg_core::serde_erase::json::to_value(cylinder).expect("cylinder wire");
         assert_eq!(
-            serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(valid.clone())
+            cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaConsolidatedCylinder>(valid.clone())
                 .expect("admitted wide-header chart"),
             *cylinder
         );
@@ -72,8 +75,10 @@ fn wide_cylinder_deserialization_uses_the_layout_5a_admission() {
                 invalid["payload"][field] = value;
             }
             assert!(
-                serde_json::from_value::<crate::native::CatiaConsolidatedCylinder>(invalid)
-                    .is_err(),
+                cadmpeg_core::serde_erase::json::from_value::<
+                    crate::native::CatiaConsolidatedCylinder,
+                >(invalid)
+                .is_err(),
                 "{field}"
             );
         }
@@ -94,12 +99,12 @@ fn fixed_nine_wire_rejects_nested_metadata_instead_of_dropping_it() {
     {
         let native = crate::native::CatiaNative::decode(&bytes);
         let packet = &native.consolidated_owner_packets[0];
-        let valid = serde_json::to_value(packet).expect("fixed-nine wire");
+        let valid = cadmpeg_core::serde_erase::json::to_value(packet).expect("fixed-nine wire");
         assert!(valid.get(field).is_some(), "fixture carries {field}");
-        assert!(
-            serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(valid.clone())
-                .is_ok()
-        );
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
+            crate::native::CatiaConsolidatedOwnerPacket,
+        >(valid.clone())
+        .is_ok());
         for remove_top in [true, false] {
             let mut invalid = valid.clone();
             let nested = invalid[field].clone();
@@ -110,9 +115,10 @@ fn fixed_nine_wire_rejects_nested_metadata_instead_of_dropping_it() {
                     .expect("packet object")
                     .remove(field);
             }
-            let error =
-                serde_json::from_value::<crate::native::CatiaConsolidatedOwnerPacket>(invalid)
-                    .expect_err("nested metadata is refused");
+            let error = cadmpeg_core::serde_erase::json::from_value::<
+                crate::native::CatiaConsolidatedOwnerPacket,
+            >(invalid)
+            .expect_err("nested metadata is refused");
             assert!(error.to_string().contains("packet level"));
         }
     }
@@ -122,11 +128,15 @@ fn fixed_nine_wire_rejects_nested_metadata_instead_of_dropping_it() {
 fn counted_owner_tail_deserialization_rejects_empty_and_retains_arbitrary_nonempty_bytes() {
     use crate::families::b2::counted_owner_tail::CountedOwnerTail;
     assert!(CountedOwnerTail::new(vec![]).is_none());
-    assert!(serde_json::from_value::<CountedOwnerTail>(serde_json::json!("")).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<CountedOwnerTail>(serde_json::json!(""))
+            .is_err()
+    );
     for bytes in [vec![0], vec![3], vec![0x83, 0x41, 0x92, 0, 1]] {
         let tail = CountedOwnerTail::new(bytes.clone()).expect("nonempty class-0x62 tail");
-        let wire = serde_json::to_value(&tail).expect("tail wire");
-        let decoded: CountedOwnerTail = serde_json::from_value(wire).expect("admitted tail");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&tail).expect("tail wire");
+        let decoded: CountedOwnerTail =
+            cadmpeg_core::serde_erase::json::from_value(wire).expect("admitted tail");
         assert_eq!(decoded.as_slice(), bytes);
     }
 }

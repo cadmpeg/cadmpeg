@@ -35,6 +35,8 @@ use cadmpeg_ir::CadIr;
 
 use crate::{IgesCodec, IgesVersion};
 
+mod loop_periods;
+
 /// The sweep of the sphere lune and the cone sector, narrower than 45°.
 const SECTOR: f64 = PI / 6.0;
 const SPHERE_RADIUS: f64 = 10.0;
@@ -800,6 +802,27 @@ fn a_cylinder_face_whose_parameter_curves_have_no_exact_form_keeps_its_model_spa
 /// Points of the support of the one face of `read` at a 24 × 24 grid of its
 /// knot domain.
 fn support_points(read: &CadIr) -> Vec<Point3> {
+    let (support, [u_domain, v_domain]) = rational_support(read);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
+        .expect("an evaluation context");
+    let at =
+        |[start, end]: [f64; 2], step: u32| (f64::from(step) / 24.0).mul_add(end - start, start);
+    let mut points = Vec::new();
+    for u in 0..=24 {
+        for v in 0..=24 {
+            points.push(
+                surface_point_solved(&ctx, support, at(u_domain, u), at(v_domain, v))
+                    .expect("a point on the support")
+                    .get(),
+            );
+        }
+    }
+    points
+}
+
+/// The rational support of the one face of `read` and its parameter domain.
+fn rational_support(read: &CadIr) -> (&SolvedSurfaceGeometry, [[f64; 2]; 2]) {
     let face = &read.geometry.faces[0];
     let surface = read
         .geometry
@@ -817,26 +840,28 @@ fn support_points(read: &CadIr) -> Vec<Point3> {
         panic!("the support reads back as {support:?}");
     };
     let domain = |knots: &[f64]| [knots[0], knots[knots.len() - 1]];
-    let [u_domain, v_domain] = [
-        domain(nurbs.u_knots().as_slice()),
-        domain(nurbs.v_knots().as_slice()),
-    ];
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
-        .expect("an evaluation context");
-    let at =
-        |[start, end]: [f64; 2], step: u32| (f64::from(step) / 24.0).mul_add(end - start, start);
-    let mut points = Vec::new();
-    for u in 0..=24 {
-        for v in 0..=24 {
-            points.push(
-                surface_point_solved(&ctx, support, at(u_domain, u), at(v_domain, v))
-                    .expect("a point on the support")
-                    .get(),
+    (
+        support,
+        [
+            domain(nurbs.u_knots().as_slice()),
+            domain(nurbs.v_knots().as_slice()),
+        ],
+    )
+}
+
+/// Assert that each parameter curve end on the boundary of the one face of
+/// `read` lies in the parameter domain of its rational support.
+fn assert_boundary_in_domain(read: &CadIr) {
+    let (_, domain) = rational_support(read);
+    let (_, ends) = boundary(read);
+    for end in &ends {
+        for (value, [low, high]) in end.iter().zip(domain) {
+            assert!(
+                (low - ON_SURFACE..=high + ON_SURFACE).contains(value),
+                "the parameter curve end {end:?} lies outside the domain {domain:?}"
             );
         }
     }
-    points
 }
 
 /// The largest gap between consecutive angles of `angles` around the turn.
@@ -1276,6 +1301,27 @@ fn sphere_lune_with_covering_pole_uses(sweep: f64) -> CadIr {
 fn a_pole_use_over_part_of_its_parameter_curve_writes_only_the_part_it_covers() {
     for stretch in [UNMOVED, STRETCH, MIRROR_STRETCH] {
         let read = read_back(sphere_lune_with_covering_pole_uses(SECTOR), stretch);
+        assert_lune_boundary(&read, stretch);
+    }
+}
+
+/// The amount by which a use reaches past the end of its parameter curve,
+/// within the tolerance on equal parameter ranges.
+const NEAR_RANGE_GAP: f64 = 1.0e-12;
+
+#[test]
+fn a_use_almost_equal_to_the_range_of_its_parameter_curve_keeps_the_curve() {
+    let mut ir = sphere_lune_with_pole_uses(SECTOR);
+    ir.geometry
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id == id(CoedgeId::mint, "coedge", "end"))
+        .expect("the lune coedge")
+        .pcurves[0]
+        .parameter_range =
+        Some(DirectedParameterRange::new([0.0, PI + NEAR_RANGE_GAP]).expect("a range"));
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let read = read_back(ir.clone(), stretch);
         assert_lune_boundary(&read, stretch);
     }
 }

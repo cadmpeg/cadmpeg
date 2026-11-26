@@ -360,13 +360,15 @@ mod tests {
     #[test]
     fn native_edge_node_rejects_a_token_wider_than_its_declared_width() {
         let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
-        let mut wire = serde_json::to_value(&native).expect("native wire")
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&native).expect("native wire")
             ["consolidated_edge_nodes"][0]
             .clone();
         wire["width"] = serde_json::json!(1);
         wire["header_token"] = serde_json::json!(256);
-        let wire = serde_json::from_value::<super::CatiaConsolidatedEdgeNodeWire>(wire)
-            .expect("wire shape");
+        let wire = cadmpeg_core::serde_erase::json::from_value::<
+            super::CatiaConsolidatedEdgeNodeWire,
+        >(wire)
+        .expect("wire shape");
         assert!(super::CatiaConsolidatedEdgeNode::try_from(wire)
             .expect_err("token exceeds width")
             .contains("does not fit"));
@@ -415,7 +417,8 @@ mod tests {
     #[test]
     fn vertex_wire_join_preserves_ids_and_rejects_conflicting_ids() {
         let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
-        let mut wire = serde_json::to_value(&native).expect("serialize native arenas");
+        let mut wire =
+            cadmpeg_core::serde_erase::json::to_value(&native).expect("serialize native arenas");
         assert_eq!(
             wire["consolidated_edge_nodes"][0]["vertices"],
             serde_json::json!([
@@ -424,12 +427,13 @@ mod tests {
             ])
         );
         assert_eq!(
-            serde_json::from_value::<CatiaNative>(wire.clone()).expect("load joined vertices"),
+            cadmpeg_core::serde_erase::json::from_value::<CatiaNative>(wire.clone())
+                .expect("load joined vertices"),
             native
         );
         wire["consolidated_edge_nodes"][0]["vertices"][0] =
             serde_json::json!("catia:consolidated:vertex-identity#1");
-        let error = serde_json::from_value::<CatiaNative>(wire)
+        let error = cadmpeg_core::serde_erase::json::from_value::<CatiaNative>(wire)
             .expect_err("reject conflicting vertex join");
         assert!(error.to_string().contains("vertices differ"));
     }

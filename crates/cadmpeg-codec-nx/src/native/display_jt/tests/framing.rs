@@ -72,7 +72,7 @@ fn compressed_jt_fixture() -> (Vec<u8>, super::super::DisplayJtSegment) {
     let mut data = vec![0; 33];
     data.extend_from_slice(&compressed);
     let compression: super::super::DisplayJtCompression =
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "flag": 2,
             "compressed_data_byte_len": compressed.len() + 1,
             "algorithm": 2,

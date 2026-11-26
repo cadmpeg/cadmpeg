@@ -3564,16 +3564,19 @@ impl RecordPayload for PmDcSketchConstraintPayload {
 }
 
 #[cfg(test)]
+use cadmpeg_core::serde_erase::json as json_wire;
+
+#[cfg(test)]
 mod tests {
     use super::{
         block_curve_offsets, block_definition_curves, distinct_operand_keys, entity_endpoint_refs,
-        inventory, parse_constraint, parse_direction, parse_entity, parse_sketch, parse_transform,
-        placed_endpoint_refs, project, project_placed_geometry, solver_hint, BlockPlacement,
-        PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity, PmDcSketchEntityKind,
-        PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload, PointTail,
-        SketchConstraintTag, SketchEntityTag, SketchInventory, BLOCK_INSTANCE_TYPE, CIRCLE_TYPE,
-        COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE, POINT_TYPE,
-        SKETCH_TYPE, TRANSFORM_TYPE,
+        inventory, json_wire, parse_constraint, parse_direction, parse_entity, parse_sketch,
+        parse_transform, placed_endpoint_refs, project, project_placed_geometry, solver_hint,
+        BlockPlacement, PmDcSketchConstraint, PmDcSketchConstraintKind, PmDcSketchEntity,
+        PmDcSketchEntityKind, PmDcSketchEntityPayload, PmDcSketchPayload, PmDcTransformPayload,
+        PointTail, SketchConstraintTag, SketchEntityTag, SketchInventory, BLOCK_INSTANCE_TYPE,
+        CIRCLE_TYPE, COINCIDENT_TYPE, DIRECTION_TYPE, HORIZONTAL_TYPE, LINE_TYPE, MIDPOINT_TYPE,
+        POINT_TYPE, SKETCH_TYPE, TRANSFORM_TYPE,
     };
     use crate::container::InventorContainer;
     use crate::pmdc::{PmDcReference, PmDcReferenceList};
@@ -4432,7 +4435,7 @@ mod tests {
             let parsed = parse(&bytes, |_, source| {
                 parse_constraint(tag, source, 22).expect(expected)
             });
-            let form = serde_json::to_value(parsed.kind).expect("constraint kind")["form"].clone();
+            let form = json_wire::to_value(parsed.kind).expect("constraint kind")["form"].clone();
             assert_eq!(form, expected);
         }
         let mut polygon = entity_prefix(7, 3, 0);
@@ -5147,13 +5150,13 @@ mod tests {
 
     /// The same record read as a tangent relation.
     fn as_tangent(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
-        let mut wire = serde_json::to_value(relation).expect("relation wire");
+        let mut wire = json_wire::to_value(relation).expect("relation wire");
         wire["kind"] = serde_json::json!({
             "form": "tangent",
             "first": wire["kind"]["first"].clone(),
             "second": wire["kind"]["second"].clone(),
         });
-        serde_json::from_value(wire).expect("tangent wire")
+        json_wire::from_value(wire).expect("tangent wire")
     }
 
     #[test]
@@ -5408,22 +5411,22 @@ mod tests {
             "state": null, "associations": null
         });
         let point: PmDcSketchEntityKind =
-            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
+            json_wire::from_value(wire.clone()).expect("paired point fixture round-trips");
         assert_eq!(
-            serde_json::to_value(point).expect("paired point fixture round-trips"),
+            json_wire::to_value(point).expect("paired point fixture round-trips"),
             wire
         );
         wire["state"] = serde_json::json!(0);
-        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire.clone()).is_err());
+        assert!(json_wire::from_value::<PmDcSketchEntityKind>(wire.clone()).is_err());
         wire["associations"] = list;
         let point: PmDcSketchEntityKind =
-            serde_json::from_value(wire.clone()).expect("paired point fixture round-trips");
+            json_wire::from_value(wire.clone()).expect("paired point fixture round-trips");
         assert_eq!(
-            serde_json::to_value(point).expect("paired point fixture round-trips"),
+            json_wire::to_value(point).expect("paired point fixture round-trips"),
             wire
         );
         wire["state"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<PmDcSketchEntityKind>(wire).is_err());
+        assert!(json_wire::from_value::<PmDcSketchEntityKind>(wire).is_err());
     }
     #[test]
     fn transform_prefix_wire_is_constant_or_absent() {
@@ -5434,27 +5437,27 @@ mod tests {
             parse_transform(source, 22).expect("constant-prefix transform fixture is valid")
         });
         let mut wire =
-            serde_json::to_value(transform).expect("constant-prefix transform fixture is valid");
+            json_wire::to_value(transform).expect("constant-prefix transform fixture is valid");
         for (prefix, present) in [
             (serde_json::Value::Null, false),
             (serde_json::json!(515), true),
         ] {
             wire["prefix"] = prefix;
-            let parsed: PmDcTransformPayload = serde_json::from_value(wire.clone())
+            let parsed: PmDcTransformPayload = json_wire::from_value(wire.clone())
                 .expect("constant-prefix transform fixture is valid");
             assert_eq!(parsed.prefix_present, present);
             assert_eq!(
-                serde_json::to_value(parsed).expect("constant-prefix transform fixture is valid"),
+                json_wire::to_value(parsed).expect("constant-prefix transform fixture is valid"),
                 wire
             );
         }
         wire["prefix"] = serde_json::json!(516);
-        assert!(serde_json::from_value::<PmDcTransformPayload>(wire.clone()).is_err());
+        assert!(json_wire::from_value::<PmDcTransformPayload>(wire.clone()).is_err());
         wire.as_object_mut()
             .expect("constant-prefix transform fixture is valid")
             .remove("prefix");
         assert!(
-            !serde_json::from_value::<PmDcTransformPayload>(wire)
+            !json_wire::from_value::<PmDcTransformPayload>(wire)
                 .expect("constant-prefix transform fixture is valid")
                 .prefix_present
         );

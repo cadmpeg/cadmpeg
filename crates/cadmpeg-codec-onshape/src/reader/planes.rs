@@ -16,7 +16,7 @@ pub(super) fn created(model: &Model, native: &str) -> Mapping<Value> {
         .iter()
         .find(|feature| feature.id.as_str() == feature_id)
         .ok_or("the selected datum plane is unresolved")?;
-    let wire = serde_json::to_value(feature.evaluation.definition())
+    let wire = cadmpeg_core::serde_erase::json::to_value(feature.evaluation.definition())
         .map_err(|_| "the selected datum plane is unreadable")?;
     match wire.pointer("/value/kind").and_then(Value::as_str) {
         Some("datum_plane") => wire

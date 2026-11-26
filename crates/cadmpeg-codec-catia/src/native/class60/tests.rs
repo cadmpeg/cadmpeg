@@ -27,8 +27,12 @@ fn counted_lists_preserve_child_ordinals_and_reference_forms() {
     let mut changed = native;
     changed[0].references[0].value = 1;
     assert!(validate(&changed).is_err());
-    let wire = serde_json::to_value(&changed[0]).expect("changed reference wire");
-    assert!(serde_json::from_value::<super::CatiaConsolidatedClass60Record>(wire).is_err());
+    let wire =
+        cadmpeg_core::serde_erase::json::to_value(&changed[0]).expect("changed reference wire");
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<super::CatiaConsolidatedClass60Record>(wire)
+            .is_err()
+    );
 }
 
 #[test]

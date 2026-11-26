@@ -486,7 +486,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(index, (stream, key))| {
-                    serde_json::from_value(serde_json::json!({
+                    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                         "id":format!("f3d:xref:reference#{index}"), "ordinal":index,
                         "from":"root.f3d", "relative_path":"part.f3d",
                         "neutron_role":"same-role", "neutron_data":"",
@@ -539,7 +539,7 @@ mod tests {
             .is_none());
         let key_c = "cccccccc-cccc-cccc-cccc-cccccccccccc";
         let mut table = table;
-        table.references[2] = serde_json::from_value(serde_json::json!({
+        table.references[2] = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id":"f3d:xref:reference#2", "ordinal":2,
             "from":"root.f3d", "relative_path":"part.f3d",
             "neutron_role":"same-role", "neutron_data":"",
@@ -579,12 +579,17 @@ mod tests {
             repeated_paths.resolve(stream, &keys(&[key_b, key_c])),
             Some((chain[2].id.clone(), 2))
         );
-        let encoded = serde_json::to_value(&table.references[0]).unwrap();
+        let encoded = cadmpeg_core::serde_erase::json::to_value(&table.references[0]).unwrap();
         let retained: crate::records::xref::XrefReference =
-            serde_json::from_value(encoded.clone()).unwrap();
+            cadmpeg_core::serde_erase::json::from_value(encoded.clone()).unwrap();
         assert_eq!(retained, table.references[0]);
         let mut invalid = encoded;
         invalid["placement_source"]["occurrence_guid"] = serde_json::json!("part.f3d");
-        assert!(serde_json::from_value::<crate::records::xref::XrefReference>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<crate::records::xref::XrefReference>(
+                invalid
+            )
+            .is_err()
+        );
     }
 }

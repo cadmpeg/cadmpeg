@@ -984,7 +984,10 @@ mod tests {
         let json = r#"{"id":"occurrence","ordinal":0,"occurrence_lane_form":1,"marker":49,"marker_source_offset":12,"prototype":"nx:fast-load:prototype#253","prototype_index":254,"component_uuid":"uuid","uuid_source_offset":20,"source_entry":"om","source_offset":16}"#;
         let occurrences: FastLoadOccurrences = serde_json::from_str(&format!("[{json}]")).unwrap();
         let occurrence = occurrences.wire_records().next().unwrap();
-        assert_eq!(serde_json::to_string(&occurrence).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&occurrence).unwrap(),
+            json
+        );
         for (field, invalid) in [
             ("occurrence_lane_form", 2),
             ("occurrence_lane_form", 255),
@@ -996,10 +999,12 @@ mod tests {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = invalid.into();
             assert!(
-                serde_json::from_value::<FastLoadOccurrences>(serde_json::json!([wire]))
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
+                cadmpeg_core::serde_erase::json::from_value::<FastLoadOccurrences>(
+                    serde_json::json!([wire])
+                )
+                .unwrap_err()
+                .to_string()
+                .contains(field)
             );
         }
         let invalid = json.replace("nx:fast-load:prototype#253", "nx:fast-load:prototype#252");
@@ -1010,12 +1015,17 @@ mod tests {
     fn uuid_group_preserves_flat_wire_and_rejects_missing_members() {
         let json = r#"{"id":"group","component_uuid":"component","uuid":"00000000-0000-0000-0000-000000000000","occurrences":["use"],"object_uuid_values":["value"],"source_entry":"om","source_offset":12}"#;
         let group: FastLoadComponentObjectGroup = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&group).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&group).unwrap(),
+            json
+        );
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["object_uuid_values"] = serde_json::json!([]);
-        assert!(serde_json::from_value::<FastLoadComponentObjectGroup>(wire)
-            .unwrap_err()
-            .to_string()
-            .contains("occurrences/object_uuid_values"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FastLoadComponentObjectGroup>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("occurrences/object_uuid_values")
+        );
     }
 }

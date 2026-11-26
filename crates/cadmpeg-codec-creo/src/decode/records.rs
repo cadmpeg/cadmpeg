@@ -1180,8 +1180,10 @@ mod feature_projection_tests {
         let scan = scan();
         let geometry = feature_geometry_table_records(&scan);
         let history = feature_loop_history_entry_records(&scan);
-        let geometry = serde_json::to_value(&geometry[0]).expect("record serializes");
-        let history = serde_json::to_value(&history[0]).expect("record serializes");
+        let geometry =
+            cadmpeg_core::serde_erase::json::to_value(&geometry[0]).expect("record serializes");
+        let history =
+            cadmpeg_core::serde_erase::json::to_value(&history[0]).expect("record serializes");
         assert_eq!(geometry["entry_ids"], serde_json::json!([4, 5]));
         assert_eq!(
             history["field_bytes"],
@@ -1281,7 +1283,9 @@ mod feature_choice_field_record_tests {
         let records = feature_choice_field_records(&scan);
         let values = records
             .iter()
-            .map(|record| serde_json::to_value(&record.value).expect("value serializes"))
+            .map(|record| {
+                cadmpeg_core::serde_erase::json::to_value(&record.value).expect("value serializes")
+            })
             .collect::<Vec<_>>();
         assert_eq!(
             serde_json::Value::Array(values),
@@ -1481,8 +1485,10 @@ mod topology_projection_tests {
         let scan = scan();
         let loops = loop_records(&scan);
         let rows = loop_array_record_records(&scan);
-        let loop_value = serde_json::to_value(&loops[0]).expect("loop serializes");
-        let row_value = serde_json::to_value(&rows[0]).expect("row serializes");
+        let loop_value =
+            cadmpeg_core::serde_erase::json::to_value(&loops[0]).expect("loop serializes");
+        let row_value =
+            cadmpeg_core::serde_erase::json::to_value(&rows[0]).expect("row serializes");
         assert_eq!(
             loop_value["half_edges"],
             serde_json::json!([{"curve_id":8,"side":0}])
@@ -1806,8 +1812,9 @@ mod curve_plane_projection_tests {
         let fc = fc_curve_coordinate_records(&scan);
         let plane =
             plane_envelope_records(&scan, &scan.planes.envelopes, "creo:surface:plane_envelope");
-        let fc = serde_json::to_value(&fc[0]).expect("record serializes");
-        let plane = serde_json::to_value(&plane[0]).expect("record serializes");
+        let fc = cadmpeg_core::serde_erase::json::to_value(&fc[0]).expect("record serializes");
+        let plane =
+            cadmpeg_core::serde_erase::json::to_value(&plane[0]).expect("record serializes");
         assert_eq!(crate::test_support::native_bytes(&fc["body"]), [0xfc, 1]);
         assert_eq!(fc["values_mm"], serde_json::json!([2.0]));
         assert_eq!(plane["scalar_tokens"], serde_json::json!(["f9"]));
@@ -2452,7 +2459,8 @@ mod surface_projection_tests {
         let unchanged = prototype.clone();
         let records =
             surface_prototype_records(&scan, std::slice::from_ref(&prototype), "visibgeom");
-        let value = serde_json::to_value(&records[0]).expect("owned parameter serializes");
+        let value = cadmpeg_core::serde_erase::json::to_value(&records[0])
+            .expect("owned parameter serializes");
         let params = &value["parameters"][2];
         assert_eq!(params["value_kind"], "cubic_knots");
         assert_eq!(
@@ -2518,8 +2526,8 @@ mod surface_projection_tests {
             assert!(prototype.tabulated_cylinder_cubic_knots().is_none());
             let records =
                 surface_prototype_records(&scan, std::slice::from_ref(&prototype), "visibgeom");
-            let value =
-                serde_json::to_value(&records[0]).expect("unqualified parameter serializes");
+            let value = cadmpeg_core::serde_erase::json::to_value(&records[0])
+                .expect("unqualified parameter serializes");
             assert!(value["parameters"]
                 .as_array()
                 .expect("parameters")
@@ -2528,7 +2536,8 @@ mod surface_projection_tests {
         }
         let duplicates = [original.clone(), original];
         for record in surface_prototype_records(&scan, &duplicates, "visibgeom") {
-            let value = serde_json::to_value(record).expect("duplicate diagnostic record");
+            let value = cadmpeg_core::serde_erase::json::to_value(record)
+                .expect("duplicate diagnostic record");
             assert_eq!(value["parameters"][2]["value_kind"], "counted_scalar_array");
         }
     }
@@ -2541,7 +2550,9 @@ mod surface_projection_tests {
         let values = records[0]
             .parameters
             .iter()
-            .map(|parameter| serde_json::to_value(parameter).expect("parameter serializes"))
+            .map(|parameter| {
+                cadmpeg_core::serde_erase::json::to_value(parameter).expect("parameter serializes")
+            })
             .collect::<Vec<_>>();
         assert_eq!(values[1]["compact_values"], serde_json::json!([4]));
         assert_eq!(values[2]["compact_values"], serde_json::json!([4, 5]));
@@ -2786,8 +2797,10 @@ mod curve_projection_tests {
         let parameters = curve_parameter_records(&scan, &scan.curves.parameters, "visibgeom")
             .expect("parameters are admitted");
         let replay = tabulated_cylinder_curve_replay_records(&scan);
-        let parameter = serde_json::to_value(&parameters[0]).expect("parameter serializes");
-        let replay = serde_json::to_value(&replay[0]).expect("replay serializes");
+        let parameter = cadmpeg_core::serde_erase::json::to_value(&parameters[0])
+            .expect("parameter serializes");
+        let replay =
+            cadmpeg_core::serde_erase::json::to_value(&replay[0]).expect("replay serializes");
         assert_eq!(parameter["scalar_values"], serde_json::json!([2.0]));
         assert_eq!(
             parameter["scalar_tokens"],
@@ -2975,7 +2988,8 @@ mod surface_parameter_projection_tests {
             &scan.surfaces.parameters,
             "visibgeom",
         );
-        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        let value =
+            cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record serializes");
         assert_eq!(crate::test_support::native_bytes(&value["body"]), [249, 0]);
         assert_eq!(
             value["slots"],
@@ -3259,7 +3273,8 @@ mod curve_expression_projection_tests {
     fn borrowed_curve_expression_preserves_nested_json() {
         let scan = scan();
         let records = curve_expression_records(&scan);
-        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        let value =
+            cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record serializes");
         assert_eq!(
             crate::test_support::native_bytes(&value["local_system"]["body"]),
             [249]
@@ -3797,7 +3812,8 @@ mod sketch_projection_tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = sketch_records(&ctx, &scan).expect("sketch projection is admitted");
-        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        let value =
+            cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record serializes");
         assert_eq!(
             value["section_3d"]["reference_plane_entity_ids"],
             serde_json::json!([3])
@@ -3836,7 +3852,8 @@ mod sketch_projection_tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let records = sketch_records(&ctx, &scan).expect("parse the sketch records");
-        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        let value =
+            cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record serializes");
         assert_eq!(
             crate::test_support::native_bytes(&value["variables"][0]["value_body"]),
             [249]
@@ -3980,7 +3997,8 @@ mod feature_definition_projection_tests {
     fn borrowed_feature_definition_preserves_nested_json() {
         let scan = scan();
         let records = feature_definition_records(&scan);
-        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        let value =
+            cadmpeg_core::serde_erase::json::to_value(&records[0]).expect("record serializes");
         assert_eq!(crate::test_support::native_bytes(&value["body"]), [227]);
         assert_eq!(
             crate::test_support::native_bytes(&value["parameter_frames"][0]["body"]),
@@ -4089,7 +4107,7 @@ mod tests {
         let records = feature_operation_state_records(&scan)?;
         Ok(records
             .iter()
-            .map(|record| serde_json::to_value(record).expect("record JSON"))
+            .map(|record| cadmpeg_core::serde_erase::json::to_value(record).expect("record JSON"))
             .collect())
     }
 
