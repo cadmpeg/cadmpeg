@@ -661,4 +661,5 @@ mod state;
 mod state_topology;
 #[cfg(test)]
 mod tests;
+pub(crate) mod visit;
 mod walk;
