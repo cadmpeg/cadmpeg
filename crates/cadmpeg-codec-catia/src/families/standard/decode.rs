@@ -2211,6 +2211,7 @@ fn try_decode_standard_population(
     let mut plane_normals = standard_plane_normals_from_face_frames(&records, &face_frame_vectors);
     crate::families::freeform::standard_carriers::recover_missing_plane_normals(
         &scan.data,
+        &sources,
         &consolidated_records,
         brep,
         &records,
@@ -2834,10 +2835,10 @@ fn try_decode_standard_population(
     };
     consolidated_curve_bindings.standard_face_surfaces +=
         match crate::families::freeform::standard_carriers::bind_journal_standard_surfaces(
-            ctx,
             &mut ir,
             &mut annotations,
             &scan.data,
+            &sources,
             &consolidated_records,
             &a5_carriers,
             refusal,
@@ -2866,8 +2867,11 @@ fn try_decode_standard_population(
     let weighted = match crate::families::freeform::weighted_edges::attach(
         &mut ir,
         &mut annotations,
-        &scan.data,
-        &consolidated_records,
+        crate::families::freeform::weighted_edges::ConsolidatedSource {
+            data: &scan.data,
+            sources: &sources,
+            records: &consolidated_records,
+        },
         &a5_carriers,
         refusal,
         &mut admission,

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationStorage;
 use cadmpeg_ir::document::CadIr;
@@ -31,7 +31,7 @@ use crate::families::standard::records::{
     standard_face_bounds, AnalyticSurfaceKind, StandardSurfaceRecord,
 };
 use crate::wire::bytes::{allocation_reference, AllocationReference, AllocationReferenceEncoding};
-use crate::wire::records::{ConsolidatedFamily, ConsolidatedRecord};
+use crate::wire::records::{ConsolidatedFamily, ConsolidatedRecord, SourceExtent};
 
 use super::rolling_ball_patch::fit_edge_with_error;
 use super::weighted_plane::lift_plane_pcurve;
@@ -55,13 +55,14 @@ const MAX_BSPLINE_PCURVE_KNOTS: usize = 4096;
 #[inline(never)]
 pub(in crate::families) fn recover_missing_plane_normals(
     data: &[u8],
+    sources: &[Vec<SourceExtent>],
     records: &[ConsolidatedRecord],
     brep: &[u8],
     surface_records: &[StandardSurfaceRecord],
     normals: &mut HashMap<u32, FiniteVector<3>>,
 ) {
     let journal = AllocationJournal::new(records);
-    let face_carriers = unique_5f_carriers(data, records, &journal);
+    let face_carriers = unique_5f_carriers(data, sources, records, &journal);
     let b2_planes: HashMap<_, _> = b2_plane_carriers_from_records(data, records)
         .into_iter()
         .map(|carrier| (carrier.pos, carrier))
@@ -109,7 +110,7 @@ pub(in crate::families) fn recover_missing_plane_normals(
         );
         if let Some(Some((_, carrier))) = face_carriers.get(&u64::from(prefix.target)) {
             if let Some(plane) =
-                resolve_b2_plane(data, &journal, carrier, &b2_planes, &b2_offsets, 0)
+                resolve_b2_plane(data, sources, &journal, carrier, &b2_planes, &b2_offsets, 0)
             {
                 let axis = *plane.frame().axis().as_raw();
                 let offset = center.vector_from(plane.origin().get()).dot(axis).abs();
@@ -153,16 +154,16 @@ pub(in crate::families) fn recover_missing_plane_normals(
 /// `b2 03 30`/`31` offsets, and consolidated analytics).
 #[inline(never)]
 pub(in crate::families) fn bind_journal_standard_surfaces(
-    _ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl AnnotationStorage>,
     data: &[u8],
+    sources: &[Vec<SourceExtent>],
     records: &[ConsolidatedRecord],
     a5_carriers: &[FreeformSurface],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<usize, CodecError> {
     let journal = AllocationJournal::new(records);
-    let face_carriers = unique_5f_carriers(data, records, &journal);
+    let face_carriers = unique_5f_carriers(data, sources, records, &journal);
     if face_carriers.is_empty() {
         return Ok(0);
     }
@@ -204,6 +205,7 @@ pub(in crate::families) fn bind_journal_standard_surfaces(
 
     let resolver = CarrierResolver {
         data,
+        sources,
         journal: &journal,
         a5_by_pos: &a5_by_pos,
         b2_planes: &b2_planes,
@@ -244,6 +246,7 @@ pub(in crate::families) fn bind_journal_standard_surfaces(
 
 struct CarrierResolver<'a> {
     data: &'a [u8],
+    sources: &'a [Vec<SourceExtent>],
     journal: &'a AllocationJournal<'a>,
     a5_by_pos: &'a HashMap<usize, &'a NurbsSurface>,
     b2_planes: &'a HashMap<usize, crate::families::b2::records::B2PlaneCarrier>,
@@ -285,9 +288,15 @@ impl<'a> CarrierResolver<'a> {
                     .into_iter()
                     .next()
                     .map(|surface| SolvedSurfaceGeometry::Nurbs(surface.geometry))
+                })
+                .or_else(|| {
+                    decode_u32_nurbs_surface(self.data, self.sources, carrier, refusal)
+                        .map(SolvedSurfaceGeometry::Nurbs)
                 }),
-            (ConsolidatedFamily::B, 0x27) => decode_b2_plane(self.data, carrier, self.b2_planes)
-                .map(SolvedSurfaceGeometry::Plane),
+            (ConsolidatedFamily::B, 0x27) => {
+                decode_b2_plane_in_sources(self.data, self.sources, carrier, self.b2_planes)
+                    .map(SolvedSurfaceGeometry::Plane)
+            }
             (ConsolidatedFamily::B, 0x28) => self
                 .b2_cylinders
                 .get(&carrier.byte_offset())
@@ -323,12 +332,12 @@ impl<'a> CarrierResolver<'a> {
                 .decode_extrusion(carrier_index, carrier, refusal, depth + 1)
                 .map(SolvedSurfaceGeometry::Nurbs),
             (ConsolidatedFamily::B, 0x2e) => {
-                let payload = carrier.payload().and_then(|range| self.data.get(range))?;
+                let payload = carrier.payload_bytes(self.data, self.sources)?;
                 let mut at = 0;
                 if payload.first() == Some(&0x81) {
                     at = 1;
                 }
-                let inner_ref = allocation_reference(payload, &mut at)?;
+                let inner_ref = allocation_reference(&payload, &mut at)?;
                 let inner = resolve_ref(self.journal, carrier_index, inner_ref)?;
                 self.resolve_surface(carrier_index, inner, refusal, depth + 1)
             }
@@ -346,9 +355,9 @@ impl<'a> CarrierResolver<'a> {
         refusal: &mut crate::nurbs::LaneRefusals,
         depth: usize,
     ) -> Option<SolvedSurfaceGeometry> {
-        let payload = carrier.payload().and_then(|range| self.data.get(range))?;
+        let payload = carrier.payload_bytes(self.data, self.sources)?;
         let mut at = 0;
-        let base_ref = allocation_reference(payload, &mut at)?;
+        let base_ref = allocation_reference(&payload, &mut at)?;
         let base_record = resolve_ref(self.journal, carrier_index, base_ref)?;
         let (distance, u_range, v_range) =
             if let Some(parsed) = self.b2_offsets.get(&carrier.byte_offset()) {
@@ -392,9 +401,9 @@ impl<'a> CarrierResolver<'a> {
         refusal: &mut crate::nurbs::LaneRefusals,
         depth: usize,
     ) -> Option<NurbsSurface> {
-        let payload = carrier.payload().and_then(|range| self.data.get(range))?;
+        let payload = carrier.payload_bytes(self.data, self.sources)?;
         let mut at = 0;
-        let directrix_ref = allocation_reference(payload, &mut at)?;
+        let directrix_ref = allocation_reference(&payload, &mut at)?;
         let mut view = View::over_retained(payload.get(at..)?);
         let direction = ExactUnitVector3::new([view.f64_le()?, view.f64_le()?, view.f64_le()?])?;
         let direction = UnitVector3::from(direction);
@@ -428,14 +437,12 @@ impl<'a> CarrierResolver<'a> {
             == ConsolidatedFamily::B
             && directrix_record.class() == 0x24
         {
-            let dpl = directrix_record
-                .payload()
-                .and_then(|range| self.data.get(range))?;
+            let dpl = directrix_record.payload_bytes(self.data, self.sources)?;
             if dpl.first() != Some(&0x81) {
                 return None;
             }
             let mut dat = 1;
-            let cref = allocation_reference(dpl, &mut dat)?;
+            let cref = allocation_reference(&dpl, &mut dat)?;
             let mut dview = View::over_retained(dpl.get(dat..)?);
             let range = match dview.u8()? {
                 0x0f => {
@@ -477,10 +484,11 @@ impl<'a> CarrierResolver<'a> {
                 .b2_nurbs_curves
                 .get(&record.byte_offset())
                 .cloned()
-                .or_else(|| decode_compact_nurbs_curve(self.data, record, refusal)),
+                .or_else(|| decode_compact_nurbs_curve(self.data, self.sources, record, refusal)),
             (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x21) => {
-                let (support_ref, pcurve_nurbs, range) =
-                    decode_u32_bspline_pcurve(self.data, record)?;
+                let (support_ref, pcurve_nurbs, range) = decode_u32_bspline_pcurve_payload(
+                    &record.payload_bytes(self.data, self.sources)?,
+                )?;
                 let support_record = resolve_ref(self.journal, curve_index, support_ref)?;
                 let support_geom =
                     self.resolve_surface(curve_index, support_record, refusal, depth + 1)?;
@@ -506,8 +514,9 @@ impl<'a> CarrierResolver<'a> {
                     let range = explicit_range.unwrap_or(jet.range.endpoints());
                     lift_pcurve_to_3d(&pcurve, &support_geom, range, refusal)
                 } else {
+                    let payload = record.payload_bytes(self.data, self.sources)?;
                     let (support_ref, pcurve, range) =
-                        decode_u32_jet_pcurve(self.data, record, refusal)?;
+                        decode_u32_jet_pcurve_payload(&payload, refusal)?;
                     let support_record = resolve_ref(self.journal, curve_index, support_ref)?;
                     let support_geom =
                         self.resolve_surface(curve_index, support_record, refusal, depth + 1)?;
@@ -620,14 +629,21 @@ pub(in crate::families) fn extrude_nurbs_curve(
 }
 
 /// Decode a `u32le`-header class-`0x21` 2D B-spline pcurve (`A_21` or `B_21`).
-pub(in crate::families) fn decode_u32_bspline_pcurve(
+pub(super) fn decode_u32_bspline_pcurve_in_sources(
     data: &[u8],
+    sources: &[Vec<SourceExtent>],
     record: &ConsolidatedRecord,
 ) -> Option<(AllocationReference, PcurveNurbs, [f64; 2])> {
     if record.class() != 0x21 {
         return None;
     }
-    let payload = record.payload().and_then(|range| data.get(range))?;
+    let payload = record.payload_bytes(data, sources)?;
+    decode_u32_bspline_pcurve_payload(&payload)
+}
+
+fn decode_u32_bspline_pcurve_payload(
+    payload: &[u8],
+) -> Option<(AllocationReference, PcurveNurbs, [f64; 2])> {
     let mut at = 0;
     let support_ref = allocation_reference(payload, &mut at)?;
     let mut view = View::over_retained(payload.get(at..)?);
@@ -684,15 +700,23 @@ pub(in crate::families) fn decode_u32_bspline_pcurve(
 }
 
 /// Decode a `u32le`-header class-`0x20` quintic UV jet pcurve (`A_20` or `B_20`).
-pub(in crate::families) fn decode_u32_jet_pcurve(
+pub(super) fn decode_u32_jet_pcurve_in_sources(
     data: &[u8],
+    sources: &[Vec<SourceExtent>],
     record: &ConsolidatedRecord,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(AllocationReference, PcurveGeometry, [f64; 2])> {
     if record.class() != 0x20 {
         return None;
     }
-    let payload = record.payload().and_then(|range| data.get(range))?;
+    let payload = record.payload_bytes(data, sources)?;
+    decode_u32_jet_pcurve_payload(&payload, refusal)
+}
+
+fn decode_u32_jet_pcurve_payload(
+    payload: &[u8],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<(AllocationReference, PcurveGeometry, [f64; 2])> {
     let mut at = 0;
     let support_ref = allocation_reference(payload, &mut at)?;
     let mut view = View::over_retained(payload.get(at..)?);
@@ -723,11 +747,31 @@ pub(in crate::families) fn decode_u32_jet_pcurve(
         Vec::with_capacity(nknots),
         Vec::with_capacity(nknots),
     ];
-    for lane in &mut lanes {
+    for lane in &mut lanes[..4] {
         for _ in 0..nknots {
             lane.push(cadmpeg_ir::scalar::FiniteReal::new(view.f64_le()?)?);
         }
     }
+    if [view.u8()?, view.u8()?] != [0x01, 0x00] {
+        return None;
+    }
+    for lane in &mut lanes[4..] {
+        for _ in 0..nknots {
+            lane.push(cadmpeg_ir::scalar::FiniteReal::new(view.f64_le()?)?);
+        }
+    }
+    let range = if view.remaining() == 18 {
+        let t0 = view.f64_le()?;
+        let t1 = view.f64_le()?;
+        if [view.u8()?, view.u8()?] != [0xfe, 0xff] {
+            return None;
+        }
+        IncreasingParameterInterval::new([t0, t1])?.endpoints()
+    } else if view.is_empty() {
+        [*raw_knots.first()?, *raw_knots.last()?]
+    } else {
+        return None;
+    };
     let [u, v, du, dv, d2u, d2v] = lanes;
     let points: Vec<[f64; 2]> = u
         .into_iter()
@@ -744,7 +788,6 @@ pub(in crate::families) fn decode_u32_jet_pcurve(
         .zip(d2v)
         .map(|(x, y)| [x.get(), y.get()])
         .collect();
-    let range = [*raw_knots.first()?, *raw_knots.last()?];
     let pcurve = crate::assemble::quintic_jet_pcurve(
         5,
         &raw_knots,
@@ -841,6 +884,7 @@ pub(in crate::families) fn offset_analytic_surface(
 
 fn resolve_b2_plane<'a>(
     data: &'a [u8],
+    sources: &[Vec<SourceExtent>],
     journal: &AllocationJournal<'a>,
     carrier: &'a ConsolidatedRecord,
     b2_planes: &HashMap<usize, crate::families::b2::records::B2PlaneCarrier>,
@@ -851,22 +895,32 @@ fn resolve_b2_plane<'a>(
         return None;
     }
     match (carrier.family(), carrier.class()) {
-        (ConsolidatedFamily::B, 0x27) => decode_b2_plane(data, carrier, b2_planes),
+        (ConsolidatedFamily::B, 0x27) => {
+            decode_b2_plane_in_sources(data, sources, carrier, b2_planes)
+        }
         (ConsolidatedFamily::B, 0x2e) => {
             let carrier_index =
                 journal.index(carrier.source_index(), carrier.source_range().start)?;
-            let payload = carrier.payload().and_then(|range| data.get(range))?;
+            let payload = carrier.payload_bytes(data, sources)?;
             let mut at = usize::from(payload.first() == Some(&0x81));
-            let inner_ref = allocation_reference(payload, &mut at)?;
+            let inner_ref = allocation_reference(&payload, &mut at)?;
             let inner = resolve_ref(journal, carrier_index, inner_ref)?;
-            resolve_b2_plane(data, journal, inner, b2_planes, b2_offsets, depth + 1)
+            resolve_b2_plane(
+                data,
+                sources,
+                journal,
+                inner,
+                b2_planes,
+                b2_offsets,
+                depth + 1,
+            )
         }
         (ConsolidatedFamily::B, 0x30 | 0x31) => {
             let carrier_index =
                 journal.index(carrier.source_index(), carrier.source_range().start)?;
-            let payload = carrier.payload().and_then(|range| data.get(range))?;
+            let payload = carrier.payload_bytes(data, sources)?;
             let mut at = 0;
-            let base_ref = allocation_reference(payload, &mut at)?;
+            let base_ref = allocation_reference(&payload, &mut at)?;
             let base = resolve_ref(journal, carrier_index, base_ref)?;
             let distance = if let Some(parsed) = b2_offsets.get(&carrier.byte_offset()) {
                 parsed.distance.get()
@@ -884,7 +938,15 @@ fn resolve_b2_plane<'a>(
                 IncreasingParameterInterval::new([v0, v1])?;
                 d
             };
-            let plane = resolve_b2_plane(data, journal, base, b2_planes, b2_offsets, depth + 1)?;
+            let plane = resolve_b2_plane(
+                data,
+                sources,
+                journal,
+                base,
+                b2_planes,
+                b2_offsets,
+                depth + 1,
+            )?;
             let axis = *plane.frame().axis().as_raw();
             let origin = FinitePoint3::new(plane.origin().get().translated(axis, distance))?;
             Some(PlaneSurface::new(origin, *plane.frame()))
@@ -893,8 +955,9 @@ fn resolve_b2_plane<'a>(
     }
 }
 
-pub(super) fn decode_b2_plane(
+pub(super) fn decode_b2_plane_in_sources(
     data: &[u8],
+    sources: &[Vec<SourceExtent>],
     record: &ConsolidatedRecord,
     b2_planes: &HashMap<usize, crate::families::b2::records::B2PlaneCarrier>,
 ) -> Option<PlaneSurface> {
@@ -913,8 +976,8 @@ pub(super) fn decode_b2_plane(
     {
         return Some(plane);
     }
-    let bytes = record.payload().and_then(|range| data.get(range))?;
-    decode_bitmask_plane(bytes).or_else(|| decode_uncompressed_axis_mask_plane(bytes))
+    let bytes = record.payload_bytes(data, sources)?;
+    decode_bitmask_plane(&bytes).or_else(|| decode_uncompressed_axis_mask_plane(&bytes))
 }
 
 /// Decode a compact-header class-`0x16` 3D NURBS curve (`A_16` or `B_16`).
@@ -926,13 +989,15 @@ pub(super) fn decode_b2_plane(
 /// terminal-span local domain alongside the identity affine map `[1.0, 0.0]`.
 fn decode_compact_nurbs_curve(
     data: &[u8],
+    sources: &[Vec<SourceExtent>],
     record: &ConsolidatedRecord,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<NurbsCurve> {
     if record.class() != 0x16 {
         return None;
     }
-    let payload = record.payload().and_then(|range| data.get(range))?;
+    let payload_cow = record.payload_bytes(data, sources)?;
+    let payload: &[u8] = &payload_cow;
     let mut at = 0usize;
     let degree = crate::wire::bytes::compact_int(payload, &mut at)?;
     let knot_count = usize::try_from(crate::wire::bytes::compact_int(payload, &mut at)?).ok()?;
@@ -1025,19 +1090,25 @@ fn decode_compact_nurbs_curve(
 }
 
 /// Decode an uncompressed `b2 03 27` plane carrier storing a 24-byte `f64le`
-/// origin, a 1-byte `0xc0 | zero_mask` axis bitmask (`ux, uy, uz, vx, vy, vz`
-/// in bits `0..6`), and only the non-zero `f64le` axis components.
+/// origin, a 1-byte axis bitmask (`0xc0 | zero_mask` unbounded, or `0x40 |
+/// zero_mask` followed by 4 trailing `f64le` UV bounds), and only the non-zero
+/// `f64le` axis components (`ux, uy, uz, vx, vy, vz` in bits `0..6`).
 fn decode_uncompressed_axis_mask_plane(bytes: &[u8]) -> Option<PlaneSurface> {
     if bytes.len() < 25 {
         return None;
     }
     let mask = bytes[24];
-    if (mask & 0xc0) != 0xc0 {
-        return None;
-    }
+    let has_bounds = match mask & 0xc0 {
+        0xc0 => false,
+        0x40 => true,
+        _ => return None,
+    };
     let zero_mask = mask & 0x3f;
     let stored_components = 6usize.checked_sub(usize::try_from(zero_mask.count_ones()).ok()?)?;
-    let expected_len = 25usize.checked_add(stored_components.checked_mul(8)?)?;
+    let bounds_bytes = if has_bounds { 32usize } else { 0usize };
+    let expected_len = 25usize
+        .checked_add(stored_components.checked_mul(8)?)?
+        .checked_add(bounds_bytes)?;
     if bytes.len() != expected_len {
         return None;
     }
@@ -1054,6 +1125,13 @@ fn decode_uncompressed_axis_mask_plane(bytes: &[u8]) -> Option<PlaneSurface> {
             *slot = value;
         }
     }
+    if has_bounds {
+        for _ in 0..4 {
+            if !view.f64_le()?.is_finite() {
+                return None;
+            }
+        }
+    }
     if !view.is_empty() {
         return None;
     }
@@ -1063,6 +1141,199 @@ fn decode_uncompressed_axis_mask_plane(bytes: &[u8]) -> Option<PlaneSurface> {
         origin,
         OrthonormalFrame3::completing(u, v)?,
     ))
+}
+
+/// Decode an uncompressed `u32le`-header class-`0x34` NURBS surface (`A_34`).
+///
+/// Each axis carries `(degree: u32le, distinct_count: u32le)`, a knot marker
+/// (`0x04`, or `0x00` + `u32le` flag), strictly increasing `f64le` knots, and
+/// a multiplicity mode (`0x01` standard, or `0x00` explicit `u32le` vector).
+/// Follows with `[mode: u16le]` (`0` polynomial, `1` rational with inline
+/// `f64le` weights), `u_count * v_count` poles, and a `>= 152`-byte tail
+/// carrying `[u_lo, u_hi, v_lo, v_hi]` (`u16le`), the 8-scalar chart block with
+/// identity affine map `[1.0, 0.0, 1.0, 0.0]`, and terminal `fe ff fe ff`.
+pub(super) fn decode_u32_nurbs_surface(
+    data: &[u8],
+    sources: &[Vec<SourceExtent>],
+    record: &ConsolidatedRecord,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<NurbsSurface> {
+    if record.family() != ConsolidatedFamily::A || record.class() != 0x34 {
+        return None;
+    }
+    let payload = record.payload_bytes(data, sources)?;
+    let mut view = View::over_retained(&payload);
+    let (u_degree, u_knots, u_count) = read_u32_nurbs_axis(&mut view)?;
+    let (v_degree, v_knots, v_count) = read_u32_nurbs_axis(&mut view)?;
+    let mode = [view.u8()?, view.u8()?];
+    let rational = match mode {
+        [0x00, 0x00] => false,
+        [0x01, 0x00] => true,
+        _ => return None,
+    };
+    let poles = crate::nurbs_surface_control_count(u_count, v_count)?;
+    let pole_bytes = poles.checked_mul(24)?;
+    let weight_bytes = if rational { poles.checked_mul(8)? } else { 0 };
+    if pole_bytes.checked_add(weight_bytes)?.checked_add(152)? > view.remaining() {
+        return None;
+    }
+    let mut raw_points = Vec::with_capacity(poles);
+    for _ in 0..poles {
+        let x = view.f64_le()?;
+        let y = view.f64_le()?;
+        let z = view.f64_le()?;
+        if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+            return None;
+        }
+        raw_points.push(Point3::new(x, y, z));
+    }
+    let raw_weights = if rational {
+        let mut weights = Vec::with_capacity(poles);
+        for _ in 0..poles {
+            let weight = view.f64_le()?;
+            if !weight.is_finite() || weight <= 0.0 {
+                return None;
+            }
+            weights.push(weight);
+        }
+        Some(weights)
+    } else {
+        None
+    };
+    let tail = view.take(view.remaining())?;
+    if tail.len() < 152 || tail.get(tail.len() - 4..) != Some(&[0xfe, 0xff, 0xfe, 0xff]) {
+        return None;
+    }
+    let mut tail_view = View::over_retained(tail);
+    let u_lo = tail_view.u16_le()?;
+    let u_hi = tail_view.u16_le()?;
+    let v_lo = tail_view.u16_le()?;
+    let v_hi = tail_view.u16_le()?;
+    if u_lo != 1 || v_lo != 1 || u_hi == 0 || v_hi == 0 {
+        return None;
+    }
+    let mut parameters = [0.0_f64; 8];
+    for slot in &mut parameters {
+        let value = tail_view.f64_le()?;
+        if !value.is_finite() {
+            return None;
+        }
+        *slot = value;
+    }
+    if parameters[4..] != [1.0, 0.0, 1.0, 0.0] {
+        return None;
+    }
+    let grid = if let Some(weights) = raw_weights {
+        let mut rows = Vec::with_capacity(u_count);
+        for u in 0..u_count {
+            let mut row = Vec::with_capacity(v_count);
+            for v in 0..v_count {
+                let idx = u * v_count + v;
+                row.push(cadmpeg_ir::geometry::nurbs::WeightedPole3 {
+                    point: raw_points[idx],
+                    weight: cadmpeg_ir::scalar::NonZeroReal::new(weights[idx])?,
+                });
+            }
+            rows.push(row);
+        }
+        NurbsPoleGrid::Rational { rows }
+    } else {
+        let mut rows = Vec::with_capacity(u_count);
+        for u in 0..u_count {
+            let start = u * v_count;
+            rows.push(raw_points[start..start + v_count].to_vec());
+        }
+        NurbsPoleGrid::Polynomial { rows }
+    };
+    crate::nurbs::note_refusal(
+        NurbsSurface::new(
+            NurbsSurfaceAxis::new(u_degree, u_knots, false),
+            NurbsSurfaceAxis::new(v_degree, v_knots, false),
+            grid,
+            false,
+        ),
+        refusal,
+        format_args!(
+            "u32le A_34 NURBS surface record at byte {}",
+            record.byte_offset()
+        ),
+    )
+}
+
+fn read_u32_nurbs_axis(view: &mut View<'_>) -> Option<(u32, Vec<f64>, usize)> {
+    let degree = view.u32_le()?;
+    let distinct_count = usize::try_from(view.u32_le()?).ok()?;
+    if !(1..=64).contains(&degree)
+        || distinct_count < 2
+        || distinct_count.checked_mul(8)? > view.remaining()
+    {
+        return None;
+    }
+    match view.u8()? {
+        0x04 => {}
+        0x00 => {
+            let _flag = view.u32_le()?;
+        }
+        _ => return None,
+    }
+    let mut distinct = Vec::with_capacity(distinct_count);
+    for _ in 0..distinct_count {
+        let knot = view.f64_le()?;
+        if !knot.is_finite() {
+            return None;
+        }
+        distinct.push(knot);
+    }
+    if !cadmpeg_ir::geometry::nurbs::knots_strictly_increasing(&distinct) {
+        return None;
+    }
+    let deg_usize = usize::try_from(degree).ok()?;
+    let multiplicities: Vec<usize> = match view.u8()? {
+        0x01 => {
+            let interior = match degree {
+                _ if distinct_count == 2 => 1usize,
+                1..=3 => 1usize,
+                5 => 3usize,
+                _ => return None,
+            };
+            (0..distinct_count)
+                .map(|index| {
+                    if index == 0 || index + 1 == distinct_count {
+                        deg_usize + 1
+                    } else {
+                        interior
+                    }
+                })
+                .collect()
+        }
+        0x00 => {
+            if distinct_count.checked_mul(4)? > view.remaining() {
+                return None;
+            }
+            let mut mults = Vec::with_capacity(distinct_count);
+            for _ in 0..distinct_count {
+                let mult = usize::try_from(view.u32_le()?).ok()?;
+                if mult == 0 || mult > deg_usize + 1 {
+                    return None;
+                }
+                mults.push(mult);
+            }
+            mults
+        }
+        _ => return None,
+    };
+    let total_knots = multiplicities
+        .iter()
+        .try_fold(0usize, |acc, &m| acc.checked_add(m))?;
+    let pole_count = total_knots.checked_sub(deg_usize.checked_add(1)?)?;
+    if pole_count <= deg_usize {
+        return None;
+    }
+    let mut knots = Vec::with_capacity(total_knots);
+    for (&knot, &mult) in distinct.iter().zip(&multiplicities) {
+        knots.extend(std::iter::repeat_n(knot, mult));
+    }
+    Some((degree, knots, pole_count))
 }
 
 /// General bitmask decoder for `b2 03 27` plane payloads.
@@ -1145,6 +1416,7 @@ fn decode_bitmask_plane(bytes: &[u8]) -> Option<PlaneSurface> {
 
 fn unique_5f_carriers<'a>(
     data: &[u8],
+    sources: &[Vec<SourceExtent>],
     records: &'a [ConsolidatedRecord],
     journal: &AllocationJournal<'a>,
 ) -> HashMap<u64, Option<(usize, &'a ConsolidatedRecord)>> {
@@ -1156,7 +1428,7 @@ fn unique_5f_carriers<'a>(
         let Some(face_tag) = journal.absolute_address(face_index) else {
             continue;
         };
-        let Some(payload) = record.payload().and_then(|range| data.get(range)) else {
+        let Some(payload) = record.payload_bytes(data, sources) else {
             continue;
         };
         let Some(count) = payload.first().and_then(|byte| byte.checked_sub(0x80)) else {
@@ -1166,7 +1438,7 @@ fn unique_5f_carriers<'a>(
             continue;
         }
         let mut at = 1;
-        let Some(carrier_ref) = allocation_reference(payload, &mut at) else {
+        let Some(carrier_ref) = allocation_reference(&payload, &mut at) else {
             continue;
         };
         let Some(carrier) = resolve_ref(journal, face_index, carrier_ref) else {
@@ -1188,17 +1460,17 @@ pub(in crate::families) fn resolve_ref<'a>(
         AllocationReferenceEncoding::BackwardDistance | AllocationReferenceEncoding::WidthCoded => {
             journal.resolve_weighted_distance(origin, reference.value)
         }
-        AllocationReferenceEncoding::OwnedChild => journal.resolve_address(
+        AllocationReferenceEncoding::OwnedChild
+        | AllocationReferenceEncoding::TaggedU8
+        | AllocationReferenceEncoding::TaggedU16
+        | AllocationReferenceEncoding::TaggedU24 => journal.resolve_address(
             origin,
             journal
                 .address(origin)?
                 .checked_add(u64::from(reference.value))?
                 .checked_add(1)?,
         ),
-        AllocationReferenceEncoding::Selector2
-        | AllocationReferenceEncoding::TaggedU8
-        | AllocationReferenceEncoding::TaggedU16
-        | AllocationReferenceEncoding::TaggedU24 => None,
+        AllocationReferenceEncoding::Selector2 => None,
     }
 }
 
@@ -1282,7 +1554,8 @@ mod tests {
         let records = crate::wire::records::consolidated_records(&frame);
         assert_eq!(records.len(), 1);
         let (support_ref, nurbs, range) =
-            super::decode_u32_bspline_pcurve(&frame, &records[0]).expect("decoded 0x21 pcurve");
+            super::decode_u32_bspline_pcurve_in_sources(&frame, &[], &records[0])
+                .expect("decoded 0x21 pcurve");
         assert_eq!(support_ref.value, 1);
         assert_eq!(nurbs.degree(), 5);
         assert_eq!(nurbs.control_points().len(), 6);
@@ -1379,11 +1652,17 @@ mod tests {
             payload.extend_from_slice(&v.to_le_bytes());
         }
         payload.extend_from_slice(&[0x00, 0x07]);
-        let mut frame = vec![0xb2, 0x03, 0x16, u8::try_from(payload.len()).unwrap(), 0x05];
+        let mut frame = vec![
+            0xb2,
+            0x03,
+            0x16,
+            u8::try_from(payload.len()).expect("payload length fits in u8"),
+            0x05,
+        ];
         frame.extend_from_slice(&payload);
         let records = crate::wire::records::consolidated_records(&frame);
         let mut refusal = crate::nurbs::LaneRefusals::new();
-        let curve = super::decode_compact_nurbs_curve(&frame, &records[0], &mut refusal)
+        let curve = super::decode_compact_nurbs_curve(&frame, &[], &records[0], &mut refusal)
             .expect("decoded shifted B_16 curve");
         assert_eq!(curve.degree(), 5);
         assert_eq!(curve.control_points().len(), 6);
@@ -1406,11 +1685,15 @@ mod tests {
         }
         a_payload.extend_from_slice(&[0x00, 0x07]);
         let mut a_frame = vec![0xa5, 0x03, 0x16];
-        a_frame.extend_from_slice(&u32::try_from(a_payload.len()).unwrap().to_le_bytes());
+        a_frame.extend_from_slice(
+            &u32::try_from(a_payload.len())
+                .expect("payload length fits in u32")
+                .to_le_bytes(),
+        );
         a_frame.push(0x05);
         a_frame.extend_from_slice(&a_payload);
         let a_records = crate::wire::records::consolidated_records(&a_frame);
-        let a_curve = super::decode_compact_nurbs_curve(&a_frame, &a_records[0], &mut refusal)
+        let a_curve = super::decode_compact_nurbs_curve(&a_frame, &[], &a_records[0], &mut refusal)
             .expect("decoded multi-span A_16 curve");
         assert_eq!(a_curve.degree(), 5);
         assert_eq!(a_curve.control_points().len(), 12);
@@ -1447,5 +1730,134 @@ mod tests {
         assert!(n.x.abs() < TOL);
         assert!((n.y - 0.8).abs() < TOL);
         assert!((n.z - 0.6).abs() < TOL);
+
+        // Bounded 105-byte plane (mask 0x40: all 6 axis components + 4 UV bounds).
+        let mut bounded = full.clone();
+        bounded[24] = 0x40;
+        for b in [0.0_f64, 100.0, 0.0, 50.0] {
+            bounded.extend_from_slice(&b.to_le_bytes());
+        }
+        assert_eq!(bounded.len(), 105);
+        let plane3 = super::decode_uncompressed_axis_mask_plane(&bounded).expect("105-byte plane");
+        assert!(
+            plane3
+                .origin()
+                .get()
+                .distance(Point3::new(10.0, 20.0, 30.0))
+                < TOL
+        );
+        assert!((plane3.frame().axis().as_raw().z - 1.0).abs() < TOL);
+    }
+
+    #[test]
+    fn u32_a34_decodes_polynomial_rational_and_explicit_multiplicity_surfaces() {
+        // Build a degree (1, 1) rational 2x2 u32le A_34 surface with explicit V multiplicities.
+        let mut payload = Vec::new();
+        // U axis: deg=1, distinct=2, marker=0x04, knots=[0.0, 10.0], mult_mode=0x01
+        payload.extend_from_slice(&1_u32.to_le_bytes());
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+        payload.push(0x04);
+        for k in [0.0_f64, 10.0] {
+            payload.extend_from_slice(&k.to_le_bytes());
+        }
+        payload.push(0x01);
+        // V axis: deg=1, distinct=2, marker=0x00 + flag 2, knots=[0.0, 5.0], mult_mode=0x00, mults=[2, 2]
+        payload.extend_from_slice(&1_u32.to_le_bytes());
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+        payload.push(0x00);
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+        for k in [0.0_f64, 5.0] {
+            payload.extend_from_slice(&k.to_le_bytes());
+        }
+        payload.push(0x00);
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+        // Mode: rational [1, 0]
+        payload.extend_from_slice(&[0x01, 0x00]);
+        for p in [
+            [0.0_f64, 0.0, 0.0],
+            [0.0, 5.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [10.0, 5.0, 1.0],
+        ] {
+            for c in p {
+                payload.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        for w in [1.0_f64, 1.0, 1.0, 1.0] {
+            payload.extend_from_slice(&w.to_le_bytes());
+        }
+        // 152-byte tail: [1,1,1,1] u16 + [0,10,0,5,1,0,1,0] f64 + 76 zero bytes + fe ff fe ff
+        for h in [1_u16, 1, 1, 1] {
+            payload.extend_from_slice(&h.to_le_bytes());
+        }
+        for v in [0.0_f64, 10.0, 0.0, 5.0, 1.0, 0.0, 1.0, 0.0] {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x00; 76]);
+        payload.extend_from_slice(&[0xfe, 0xff, 0xfe, 0xff]);
+
+        let mut frame = vec![0xa5, 0x03, 0x34];
+        frame.extend_from_slice(
+            &u32::try_from(payload.len())
+                .expect("payload length fits in u32")
+                .to_le_bytes(),
+        );
+        frame.push(0x05);
+        frame.extend_from_slice(&payload);
+        let records = crate::wire::records::consolidated_records(&frame);
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        let surf = super::decode_u32_nurbs_surface(&frame, &[], &records[0], &mut refusal)
+            .expect("decoded u32le A_34 surface");
+        assert_eq!(surf.u_degree(), 1);
+        assert_eq!(surf.v_degree(), 1);
+        assert_eq!(surf.u_count(), 2);
+        assert_eq!(surf.v_count(), 2);
+        assert!(refusal.take_notes().is_empty());
+    }
+
+    #[test]
+    fn u32_jet_pcurve_decodes_quintic_lanes_with_second_derivative_marker() {
+        const TOL: f64 = 1.0e-12;
+        let mut payload = vec![0x05]; // support_ref = BackwardDistance(1)
+        payload.extend_from_slice(&5_u32.to_le_bytes());
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+        payload.push(0x04);
+        for k in [0.0_f64, 10.0] {
+            payload.extend_from_slice(&k.to_le_bytes());
+        }
+        payload.push(0x01);
+        payload.extend_from_slice(&2_u32.to_le_bytes());
+        // 4 lanes: u, v, du, dv
+        for v in [0.0_f64, 10.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0] {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        // Second-derivative flag [0x01, 0x00] + 2 lanes: d2u, d2v
+        payload.extend_from_slice(&[0x01, 0x00]);
+        for v in [0.0_f64, 0.0, 0.0, 0.0] {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        // Active range [0.0, 10.0] + fe ff
+        for v in [0.0_f64, 10.0] {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0xfe, 0xff]);
+        let mut frame = vec![
+            0xb2,
+            0x03,
+            0x20,
+            u8::try_from(payload.len()).expect("payload length fits in u8"),
+            0x05,
+        ];
+        frame.extend_from_slice(&payload);
+        let records = crate::wire::records::consolidated_records(&frame);
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        let (support_ref, _pcurve, range) =
+            super::decode_u32_jet_pcurve_in_sources(&frame, &[], &records[0], &mut refusal)
+                .expect("decoded u32le 0x20 quintic jet pcurve");
+        assert_eq!(support_ref.value, 1);
+        assert!((range[0] - 0.0).abs() < TOL);
+        assert!((range[1] - 10.0).abs() < TOL);
+        assert!(refusal.take_notes().is_empty());
     }
 }

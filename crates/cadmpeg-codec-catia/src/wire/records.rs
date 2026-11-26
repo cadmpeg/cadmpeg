@@ -618,6 +618,49 @@ impl ConsolidatedRecord {
     pub(crate) fn source_index(&self) -> usize {
         self.source_index
     }
+    pub(crate) fn payload_bytes<'a>(
+        &self,
+        data: &'a [u8],
+        sources: &[Vec<SourceExtent>],
+    ) -> Option<std::borrow::Cow<'a, [u8]>> {
+        match &self.placement {
+            ConsolidatedPlacement::Contiguous { payload, .. } => {
+                Some(std::borrow::Cow::Borrowed(data.get(payload.clone())?))
+            }
+            ConsolidatedPlacement::Spanning { .. } => {
+                let header_len = match self.family {
+                    ConsolidatedFamily::A => a_frame::LEN,
+                    ConsolidatedFamily::B => b_frame::LEN,
+                };
+                let prefix = header_len.checked_add(usize::from(u8::from(self.width())))?;
+                let payload_start = self.source_range.start.checked_add(prefix)?;
+                let payload_end = self.source_range.end;
+                if payload_start > payload_end {
+                    return None;
+                }
+                let extents = sources.get(self.source_index)?;
+                let mut out = Vec::with_capacity(payload_end - payload_start);
+                let mut logical = 0usize;
+                for extent in extents {
+                    let range = extent.range();
+                    let ext_len = range.end.checked_sub(range.start)?;
+                    let ext_end = logical.checked_add(ext_len)?;
+                    if ext_end > payload_start && logical < payload_end {
+                        let copy_start = payload_start.max(logical) - logical;
+                        let copy_end = payload_end.min(ext_end) - logical;
+                        out.extend_from_slice(
+                            data.get(range.start + copy_start..range.start + copy_end)?,
+                        );
+                    }
+                    logical = ext_end;
+                    if logical >= payload_end {
+                        break;
+                    }
+                }
+                (out.len() == payload_end - payload_start).then_some(std::borrow::Cow::Owned(out))
+            }
+        }
+    }
     pub(crate) fn source_range(&self) -> &Range<usize> {
         &self.source_range
     }
@@ -1580,7 +1623,10 @@ mod width_token_admission_tests {
             super::consolidated_records_in_sources(&bytes, &sources).expect("scan spanning source");
         assert_eq!(records.len(), 3);
         assert_eq!(records[1].source_range(), &(spanning_start..after_start));
-        assert!(records[1].payload().is_none());
+        assert_eq!(
+            records[1].payload_bytes(&bytes, &sources).as_deref(),
+            Some(payload.as_slice())
+        );
         let journal = crate::families::consolidated::allocation::AllocationJournal::new(&records);
         assert_eq!(journal.absolute_address(0), Some(1));
         assert_eq!(journal.absolute_address(1), Some(2));

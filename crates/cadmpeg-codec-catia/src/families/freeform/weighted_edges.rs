@@ -34,7 +34,7 @@ use crate::families::consolidated::parameter_representation::{
 use crate::families::consolidated::records::class25::{self, Class25SourceRelation};
 use crate::wire::bytes::{allocation_reference, AllocationReference, AllocationReferenceEncoding};
 use crate::wire::compact_unsigned::CompactUnsigned;
-use crate::wire::records::{ConsolidatedFamily, ConsolidatedRecord};
+use crate::wire::records::{ConsolidatedFamily, ConsolidatedRecord, SourceExtent};
 
 const PLANE_OFFSET_TOLERANCE: f64 = 2.0e-3;
 const PARAMETER_TOLERANCE: f64 = 1.0e-9;
@@ -58,6 +58,51 @@ struct Plan {
 pub(in crate::families) struct AttachResult {
     pub(in crate::families) edges: usize,
     pub(in crate::families) pcurves: usize,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::families) struct ConsolidatedSource<'a> {
+    pub(in crate::families) data: &'a [u8],
+    pub(in crate::families) sources: &'a [Vec<SourceExtent>],
+    pub(in crate::families) records: &'a [ConsolidatedRecord],
+}
+
+type LiftedCandidate<'a> = (&'a ConsolidatedRecord, Option<[f64; 2]>, Option<u64>);
+
+fn collect_uncompressed_candidates<'a>(
+    data: &[u8],
+    sources: &[Vec<SourceExtent>],
+    journal: &AllocationJournal<'a>,
+    owners: &OwnerClosureIndex,
+    node_index: usize,
+    map_record: Option<(&ConsolidatedRecord, usize)>,
+) -> Vec<LiftedCandidate<'a>> {
+    let mut map_ranges: HashMap<usize, [f64; 2]> = HashMap::new();
+    let mut map_direct: Vec<LiftedCandidate<'a>> = Vec::new();
+    if let Some((record, map_index)) = map_record {
+        for (rep, opt_range) in
+            uncompressed_map_candidates(data, sources, journal, record, map_index)
+        {
+            if let (Some(rep_idx), Some(r)) = (
+                journal.index(rep.source_index(), rep.source_range().start),
+                opt_range,
+            ) {
+                map_ranges.insert(rep_idx, r);
+            }
+            map_direct.push((rep, opt_range, None));
+        }
+    }
+    let mut candidates: Vec<LiftedCandidate<'a>> = owners
+        .all_edge_occurrences(node_index)
+        .iter()
+        .filter_map(|occ| {
+            let rep = journal.record(occ.representation_index)?;
+            let opt_range = map_ranges.get(&occ.representation_index).copied();
+            Some((rep, opt_range, Some(occ.face_tag)))
+        })
+        .collect();
+    candidates.extend(map_direct);
+    candidates
 }
 
 fn rounds_to_stored(exact: cadmpeg_ir::math::Point3, stored: cadmpeg_ir::math::Point3) -> bool {
@@ -122,7 +167,7 @@ fn curve_record<'a>(
     let is_class25 = |record: &ConsolidatedRecord| {
         matches!(
             (record.family(), record.class()),
-            (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x25)
+            (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x23 | 0x25)
         )
     };
     let record = match encoding {
@@ -131,11 +176,17 @@ fn curve_record<'a>(
             .resolve_record_distance(origin, value)
             .filter(|candidate| is_class25(candidate))
             .or_else(|| journal.resolve_weighted_distance(origin, value)),
-        AllocationReferenceEncoding::OwnedChild => journal.resolve_owned_child(origin, value),
-        AllocationReferenceEncoding::Selector2
+        AllocationReferenceEncoding::OwnedChild
         | AllocationReferenceEncoding::TaggedU8
         | AllocationReferenceEncoding::TaggedU16
-        | AllocationReferenceEncoding::TaggedU24 => None,
+        | AllocationReferenceEncoding::TaggedU24 => journal.resolve_address(
+            origin,
+            journal
+                .address(origin)?
+                .checked_add(u64::from(value))?
+                .checked_add(1)?,
+        ),
+        AllocationReferenceEncoding::Selector2 => None,
     }?;
     is_class25(record).then_some(record)
 }
@@ -143,6 +194,54 @@ fn curve_record<'a>(
 struct CompactEdgeEndpoints {
     start_vertex: AllocationReference,
     end_vertex: AllocationReference,
+}
+
+fn uncompressed_map_candidates<'a>(
+    data: &[u8],
+    sources: &[Vec<SourceExtent>],
+    journal: &AllocationJournal<'a>,
+    map_record: &ConsolidatedRecord,
+    map_index: usize,
+) -> Vec<(&'a ConsolidatedRecord, Option<[f64; 2]>)> {
+    let mut out = Vec::new();
+    let Some(payload) = map_record.payload_bytes(data, sources) else {
+        return out;
+    };
+    let Some(count) = payload.first().and_then(|byte| byte.checked_sub(0x80)) else {
+        return out;
+    };
+    let mut at = 1usize;
+    let mut refs = Vec::new();
+    for _ in 0..usize::from(count).min(2) {
+        let Some(rep_ref) = allocation_reference(&payload, &mut at) else {
+            break;
+        };
+        refs.push(rep_ref);
+    }
+    let mut ranges: [Option<[f64; 2]>; 2] = [None, None];
+    if matches!(
+        payload.get(at..at + 3),
+        Some([0x0a | 0x0b, 0x03 | 0x05, 0x00])
+    ) {
+        let mut view = cadmpeg_core::decode::View::over_retained(&payload[at + 3..]);
+        if let (Some(t0), Some(t1)) = (view.f64_le(), view.f64_le()) {
+            if t0.is_finite() && t1.is_finite() && t0 < t1 {
+                ranges[0] = Some([t0, t1]);
+            }
+        }
+        let _accuracy = view.f64_le();
+        if let (Some(s0), Some(s1)) = (view.f64_le(), view.f64_le()) {
+            if s0.is_finite() && s1.is_finite() && s0 < s1 {
+                ranges[1] = Some([s0, s1]);
+            }
+        }
+    }
+    for (slot, rep_ref) in refs.into_iter().enumerate() {
+        if let Some(rep) = super::standard_carriers::resolve_ref(journal, map_index, rep_ref) {
+            out.push((rep, ranges.get(slot).copied().flatten()));
+        }
+    }
+    out
 }
 
 fn parse_four_ref_edge_node(payload: &[u8]) -> Option<CompactEdgeEndpoints> {
@@ -170,6 +269,7 @@ fn parse_four_ref_edge_node(payload: &[u8]) -> Option<CompactEdgeEndpoints> {
 
 fn decode_representation_candidates(
     data: &[u8],
+    sources: &[Vec<SourceExtent>],
     record: &ConsolidatedRecord,
     opt_range: Option<[f64; 2]>,
     jets: &HashMap<usize, crate::wire::records::ConsolidatedPcurve>,
@@ -184,14 +284,10 @@ fn decode_representation_candidates(
                     &ConsolidatedCarrierChart::Identity,
                     refusal,
                 ) {
-                    let support_ref =
-                        record
-                            .payload()
-                            .and_then(|range| data.get(range))
-                            .and_then(|payload| {
-                                let mut at = 0;
-                                allocation_reference(payload, &mut at)
-                            });
+                    let support_ref = record.payload_bytes(data, sources).and_then(|payload| {
+                        let mut at = 0;
+                        allocation_reference(&payload, &mut at)
+                    });
                     out.push((
                         pcurve,
                         opt_range.unwrap_or_else(|| jet.range.endpoints()),
@@ -199,14 +295,18 @@ fn decode_representation_candidates(
                     ));
                 }
             } else if let Some((support_ref, pcurve, range)) =
-                super::standard_carriers::decode_u32_jet_pcurve(data, record, refusal)
+                super::standard_carriers::decode_u32_jet_pcurve_in_sources(
+                    data, sources, record, refusal,
+                )
             {
                 out.push((pcurve, opt_range.unwrap_or(range), Some(support_ref)));
             }
         }
         (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x21) => {
             if let Some((support_ref, nurbs, range)) =
-                super::standard_carriers::decode_u32_bspline_pcurve(data, record)
+                super::standard_carriers::decode_u32_bspline_pcurve_in_sources(
+                    data, sources, record,
+                )
             {
                 out.push((
                     PcurveGeometry::Nurbs { nurbs },
@@ -216,18 +316,38 @@ fn decode_representation_candidates(
             }
         }
         (ConsolidatedFamily::B, 0x18) => {
-            let Some(payload) = record.payload().and_then(|range| data.get(range)) else {
+            let Some(payload) = record.payload_bytes(data, sources) else {
                 return out;
             };
             let mut at = 0;
-            let Some(support_ref) = allocation_reference(payload, &mut at) else {
+            let Some(support_ref) = allocation_reference(&payload, &mut at) else {
                 return out;
             };
+            if payload.get(at..at + 2) == Some(&[0x00, 0x00]) && payload.len() == at + 50 {
+                let mut view = cadmpeg_core::decode::View::over_retained(&payload[at + 2..]);
+                if let (Some(u0), Some(v0), Some(du), Some(dv), Some(t0), Some(t1)) = (
+                    view.f64_le(),
+                    view.f64_le(),
+                    view.f64_le(),
+                    view.f64_le(),
+                    view.f64_le(),
+                    view.f64_le(),
+                ) {
+                    let range = opt_range.unwrap_or([t0, t1]);
+                    if range[0].is_finite() && range[1].is_finite() && range[0] < range[1] {
+                        if let Ok(line) =
+                            LinePcurve::try_new(Point2::new(u0, v0), Point2::new(du, dv))
+                        {
+                            out.push((PcurveGeometry::Line(line), range, Some(support_ref)));
+                        }
+                    }
+                }
+            }
             if let Some(range) = opt_range {
                 let mut cu_at = 0;
-                if let Some(operand) = CompactUnsigned::read(payload, &mut cu_at) {
+                if let Some(operand) = CompactUnsigned::read(&payload, &mut cu_at) {
                     if let Some(side) =
-                        chart_side_payload(payload, record.byte_offset(), operand.value())
+                        chart_side_payload(&payload, record.byte_offset(), operand.value())
                     {
                         for sign in [1.0, -1.0] {
                             if sign < 0.0 && !side.line.sign_ambiguous {
@@ -270,6 +390,7 @@ struct LiftedPlanContext<'a> {
     ctx: &'a DecodeContext<'a>,
     ir: &'a CadIr,
     data: &'a [u8],
+    sources: &'a [Vec<SourceExtent>],
     journal: &'a AllocationJournal<'a>,
     a5_by_pos: &'a HashMap<usize, &'a cadmpeg_ir::geometry::nurbs::NurbsSurface>,
     jets: &'a HashMap<usize, crate::wire::records::ConsolidatedPcurve>,
@@ -329,11 +450,26 @@ fn resolve_support_surface_and_chart<'a>(
                             matches!(face_surface, Some(SolvedSurfaceGeometry::Nurbs(_))),
                         ));
                     }
+                    if let Some(nurbs) = super::standard_carriers::decode_u32_nurbs_surface(
+                        env.data,
+                        env.sources,
+                        support_rec,
+                        refusal,
+                    ) {
+                        return Some((
+                            SolvedSurfaceGeometry::Nurbs(nurbs),
+                            ConsolidatedCarrierChart::Identity,
+                            matches!(face_surface, Some(SolvedSurfaceGeometry::Nurbs(_))),
+                        ));
+                    }
                 }
                 (ConsolidatedFamily::B, 0x27) => {
-                    if let Some(b2_plane) =
-                        super::standard_carriers::decode_b2_plane(env.data, support_rec, env.planes)
-                    {
+                    if let Some(b2_plane) = super::standard_carriers::decode_b2_plane_in_sources(
+                        env.data,
+                        env.sources,
+                        support_rec,
+                        env.planes,
+                    ) {
                         return Some((
                             SolvedSurfaceGeometry::Plane(b2_plane),
                             ConsolidatedCarrierChart::Identity,
@@ -553,7 +689,7 @@ fn build_general_lifted_plan(
             });
 
         for (pcurve_raw, range, support_ref) in
-            decode_representation_candidates(data, rep, opt_range, jets, refusal)
+            decode_representation_candidates(data, env.sources, rep, opt_range, jets, refusal)
         {
             if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
                 continue;
@@ -812,12 +948,16 @@ fn line_curve(
 pub(in crate::families) fn attach(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl AnnotationStorage>,
-    data: &[u8],
-    records: &[ConsolidatedRecord],
+    consolidated: ConsolidatedSource<'_>,
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<AttachResult, CodecError> {
+    let ConsolidatedSource {
+        data,
+        sources,
+        records,
+    } = consolidated;
     let journal = AllocationJournal::new(records);
     let mut nodes = HashMap::new();
     let mut four_ref_nodes = HashMap::new();
@@ -997,19 +1137,29 @@ pub(in crate::families) fn attach(
                 if !((a == start_tag && b == end_tag) || (a == end_tag && b == start_tag)) {
                     continue;
                 }
-                let candidates: Vec<_> = owners
-                    .all_edge_occurrences(*node_index)
-                    .iter()
-                    .filter_map(|occ| {
-                        let rep = journal.record(occ.representation_index)?;
-                        Some((rep, None, Some(occ.face_tag)))
+                let next_map = journal
+                    .record(node_index + 1)
+                    .filter(|r| {
+                        matches!(
+                            (r.family(), r.class()),
+                            (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x23 | 0x25)
+                        )
                     })
-                    .collect();
+                    .map(|next_rec| (next_rec, node_index + 1));
+                let candidates = collect_uncompressed_candidates(
+                    data,
+                    sources,
+                    &journal,
+                    &owners,
+                    *node_index,
+                    next_map,
+                );
                 if let Some(plan) = build_general_lifted_plan(
                     &LiftedPlanContext {
                         ctx: admission.context(),
                         ir,
                         data,
+                        sources,
                         journal: &journal,
                         a5_by_pos: &a5_by_pos,
                         jets: &jets,
@@ -1071,17 +1221,60 @@ pub(in crate::families) fn attach(
         else {
             continue;
         };
-        let Some(map) = map_record
-            .payload()
-            .and_then(|range| data.get(range))
-            .and_then(|payload| {
-                if map_record.family() == ConsolidatedFamily::A {
-                    class25::parse_a(payload)
-                } else {
-                    class25::parse(payload)
+        let map_payload = map_record.payload_bytes(data, sources);
+        let parsed_map = map_payload.as_deref().and_then(|payload| {
+            if map_record.class() != 0x25 {
+                return None;
+            }
+            if map_record.family() == ConsolidatedFamily::A {
+                class25::parse_a(payload)
+            } else {
+                class25::parse(payload)
+            }
+        });
+        let Some(map) = parsed_map else {
+            let candidates = collect_uncompressed_candidates(
+                data,
+                sources,
+                &journal,
+                &owners,
+                *node_index,
+                Some((map_record, map_index)),
+            );
+            if !candidates.is_empty() {
+                if let Some(plan) = build_general_lifted_plan(
+                    &LiftedPlanContext {
+                        ctx: admission.context(),
+                        ir,
+                        data,
+                        sources,
+                        journal: &journal,
+                        a5_by_pos: &a5_by_pos,
+                        jets: &jets,
+                        planes: &planes,
+                        cylinders: &cylinders,
+                        cones: &cones,
+                        spheres: &spheres,
+                        tori: &tori,
+                        loop_faces: &loop_faces,
+                        faces: &faces,
+                        surfaces: &surfaces,
+                        edge_coedges: &edge_coedges,
+                        vertex_indices: &vertex_indices,
+                    },
+                    LiftedEdgeTarget {
+                        edge_index,
+                        curve_index,
+                        procedure_index,
+                        start_pos: start.position().get(),
+                        end_pos: end.position().get(),
+                    },
+                    &candidates,
+                    refusal,
+                )? {
+                    plans.push(plan);
                 }
-            })
-        else {
+            }
             continue;
         };
         let reps = class25_representations(&journal, map_index, &map);
@@ -1543,6 +1736,7 @@ pub(in crate::families) fn attach(
                     ctx: admission.context(),
                     ir,
                     data,
+                    sources,
                     journal: &journal,
                     a5_by_pos: &a5_by_pos,
                     jets: &jets,
@@ -1692,7 +1886,11 @@ pub(in crate::families) fn attach(
 mod tests {
     use cadmpeg_ir::math::Point3;
 
-    use super::{endpoint_matches, unique_matching_coedge};
+    use crate::families::consolidated::allocation::AllocationJournal;
+    use crate::wire::bytes::AllocationReferenceEncoding;
+    use crate::wire::records::consolidated_records;
+
+    use super::{curve_record, endpoint_matches, unique_matching_coedge};
 
     #[test]
     fn endpoint_match_uses_the_stored_binary32_cell_or_declared_tolerance() {
@@ -1709,5 +1907,37 @@ mod tests {
         assert_eq!(unique_matching_coedge(&[]), None);
         assert_eq!(unique_matching_coedge(&[7]), Some(7));
         assert_eq!(unique_matching_coedge(&[7, 9]), None);
+    }
+
+    #[test]
+    fn curve_record_admits_class23_and_class25_maps() {
+        let mut bytes = Vec::new();
+        // Record 0: A_23 parameter map (family A, class 0x23, 2-byte payload).
+        bytes.extend_from_slice(&[0xa5, 0x03, 0x23, 0x02, 0x00, 0x00, 0x00, 0x05, 0x82, 0x00]);
+        // Record 1: B_25 parameter map (family B, class 0x25, 2-byte payload).
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x25, 0x02, 0x05, 0x82, 0x00]);
+        // Record 2: B_5e edge node (family B, class 0x5e, 1-byte payload).
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x5e, 0x01, 0x05, 0x00]);
+        let records = consolidated_records(&bytes);
+        assert_eq!(records.len(), 3);
+        let journal = AllocationJournal::new(&records);
+
+        let rec23 = curve_record(
+            &journal,
+            2,
+            2,
+            AllocationReferenceEncoding::BackwardDistance,
+        )
+        .expect("class 0x23 map record should resolve");
+        assert_eq!(rec23.class(), 0x23);
+
+        let rec25 = curve_record(
+            &journal,
+            2,
+            1,
+            AllocationReferenceEncoding::BackwardDistance,
+        )
+        .expect("class 0x25 map record should resolve");
+        assert_eq!(rec25.class(), 0x25);
     }
 }
