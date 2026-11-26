@@ -137,7 +137,7 @@ pub(super) fn emit_topology(
     } = topology_stream;
 
     let scope = IdScope::stream_from_index(stream_index)?;
-    let mut left_out = LeftOut::new(ctx, (stream_index, source_stream.as_str()));
+    let mut left_out = LeftOut::new(ctx, (stream_index, source_stream.name()));
     let unresolved = |what: String| {
         crate::loss::NxLossCode::TopologyRecordUnresolved
             .note(format!("parasolid#{stream_index} {what}"))
@@ -318,7 +318,7 @@ pub(super) fn emit_topology(
             ));
             let part = super::build::give_up_record(
                 ctx,
-                (stream_index, source_stream.as_str()),
+                (stream_index, source_stream.name()),
                 shell,
                 &withheld,
             )?;
@@ -494,7 +494,7 @@ pub(super) fn emit_topology(
             } else if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
                 given_up.push(super::build::give_up_record(
                     ctx,
-                    (stream_index, source_stream.as_str()),
+                    (stream_index, source_stream.name()),
                     node,
                     &withheld,
                 )?);

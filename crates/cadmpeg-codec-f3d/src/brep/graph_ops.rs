@@ -287,7 +287,7 @@ impl Brep {
         );
         let mut annotations = Vec::new();
         for row in std::mem::take(&mut self.asm.annotation_records) {
-            if reachable.contains(&row.id) {
+            if reachable.contains(row.id.as_str()) {
                 annotations.push(row);
             }
         }

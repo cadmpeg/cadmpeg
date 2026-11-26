@@ -18,14 +18,17 @@ use crate::topology::Node;
 /// charge names either id as the record it needs.
 pub(super) struct LeftOut<'ctx, 'data, 'stream> {
     ctx: &'ctx DecodeContext<'data>,
-    stream: (usize, &'stream str),
+    stream: (usize, &'stream cadmpeg_ir::StreamName),
     ids: BTreeMap<(NodeKind, u32), Identity>,
     losses: Vec<LossNote>,
     given_up: Vec<GivenUpPart>,
 }
 
 impl<'ctx, 'data, 'stream> LeftOut<'ctx, 'data, 'stream> {
-    pub(super) fn new(ctx: &'ctx DecodeContext<'data>, stream: (usize, &'stream str)) -> Self {
+    pub(super) fn new(
+        ctx: &'ctx DecodeContext<'data>,
+        stream: (usize, &'stream cadmpeg_ir::StreamName),
+    ) -> Self {
         Self {
             ctx,
             stream,

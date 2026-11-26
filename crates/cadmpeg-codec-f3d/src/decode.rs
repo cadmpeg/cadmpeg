@@ -5854,6 +5854,16 @@ fn note_native_annotation(
     Ok(())
 }
 
+fn note_projected_annotation(
+    annotations: &mut AnnotationBuilder,
+    stream: &StreamHandle,
+    id: &impl AsRef<cadmpeg_ir::ids::Identity>,
+    tag: &str,
+) {
+    let id = id.as_ref();
+    annotations.note(id, stream, trailing_offset(id.as_str()), Some(tag));
+}
+
 fn populate_annotations(
     ir: &CadIr,
     scan: &ContainerScan,
@@ -5867,11 +5877,14 @@ fn populate_annotations(
     if let Some((stream_name, records)) = brep {
         let stream = annotation_stream(stream_name)?;
         for record in records {
-            let key = cadmpeg_ir::ids::Identity::new(record.id.as_str())
-                .map_err(CodecError::malformed)?;
-            annotations.note(&key, &stream, record.offset, Some(record.tag.as_str()));
+            annotations.note(
+                &record.id,
+                &stream,
+                record.offset,
+                Some(record.tag.as_str()),
+            );
             for field in &record.derived_fields {
-                annotations.derived(&key, field)?;
+                annotations.derived(&record.id, field)?;
             }
         }
     }
@@ -5880,7 +5893,7 @@ fn populate_annotations(
     for constraint in &ir.model.sketch_constraints {
         if let Some(native_ref) = constraint.native_ref.as_deref() {
             if !constraints_by_native.contains_key(native_ref) {
-                constraints_by_native.insert(native_ref, constraint.id.as_str());
+                constraints_by_native.insert(native_ref, &constraint.id);
             }
         }
     }
@@ -5911,6 +5924,11 @@ fn populate_annotations(
             note_native_annotation(&mut annotations, &native_stream, $id, $tag)?;
         }};
     }
+    macro_rules! note_projected {
+        ($id:expr, $tag:expr $(,)?) => {{
+            note_projected_annotation(&mut annotations, &native_stream, $id, $tag);
+        }};
+    }
     {
         for entity in &native.construction_recipes {
             note!(&entity.id, "construction_recipe");
@@ -5933,13 +5951,13 @@ fn populate_annotations(
         for entity in &native.design_dimension_locus_pairs {
             note!(&entity.id, "design_dimension_locus_pair");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_annotation_frames {
             note!(&entity.id, "design_dimension_annotation_frame");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_presentation_frames {
@@ -5955,19 +5973,19 @@ fn populate_annotations(
                         .flatten()
                 });
             if let Some(projected) = projected {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_locus_groups {
             note!(&entity.id, "design_dimension_locus_group");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_dimension_null_locus_pairs {
             note!(&entity.id, "design_dimension_null_locus_pair");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
-                note!(projected, "sketch_constraint");
+                note_projected!(*projected, "sketch_constraint");
             }
         }
         for entity in &native.design_parameter_owners {
@@ -5989,11 +6007,11 @@ fn populate_annotations(
             note!(&entity.id, "design_sketch_placement");
             let planar = crate::ids::neutral_sketch_id(entity);
             if planar_sketches.contains(planar.as_str()) {
-                note!(planar.as_str(), "sketch");
+                note_projected!(&planar, "sketch");
             }
             let spatial = crate::ids::neutral_spatial_sketch_id(entity);
             if spatial_sketches.contains(spatial.as_str()) {
-                note!(spatial.as_str(), "spatial_sketch");
+                note_projected!(&spatial, "spatial_sketch");
             }
         }
         for entity in &native.design_entity_headers {
@@ -6013,19 +6031,19 @@ fn populate_annotations(
             if constraints_by_native.contains_key(entity.id.as_str()) {
                 let constraint =
                     crate::ids::neutral_sketch_constraint_id(&entity.id, entity.record_index);
-                note!(constraint.as_str(), "sketch_constraint");
+                note_projected!(&constraint, "sketch_constraint");
             }
         }
         for entity in &native.sketch_points {
             note!(&entity.id, "sketch_point");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
-                note!(projected.as_str(), "sketch_entity");
+                note_projected!(*projected, "sketch_entity");
             }
         }
         for entity in &native.sketch_curve_identities {
             note!(&entity.id, "sketch_curve");
             if let Some(projected) = entities_by_native.get(entity.id.as_str()) {
-                note!(projected.as_str(), "sketch_entity");
+                note_projected!(*projected, "sketch_entity");
                 // Admitted z noise is read as zero, so the projected
                 // endpoints are derived rather than byte-exact.
                 if entity.planar_z_noise.is_some() {

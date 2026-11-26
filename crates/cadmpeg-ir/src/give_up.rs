@@ -612,43 +612,50 @@ fn remove(
 /// record, so nothing needs the given-up one, and it releases nothing.
 /// `naming` states which fields of a record name an id.
 ///
+/// Each release goes into `released` as it runs, so `released` holds what
+/// left `ir` also when a release stops on an error.
+///
 /// # Errors
 ///
-/// A resource refusal for a rewritten `unknowns` arena or for the walk of
-/// the carriers.
+/// A refusal of a rewritten `unknowns` arena, or a resource refusal for the
+/// walk of the carriers.
 pub(crate) fn release_lost(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     ids: &[String],
     naming: Naming,
-) -> Result<Vec<(String, Released)>, CodecError> {
+    released: &mut Vec<(String, Released)>,
+) -> Result<(), CodecError> {
     let mut cascade = Cascade::naming(ctx, ir, ids, naming)?;
     let Cascade {
         references,
         lazy,
         unreached,
     } = &mut cascade;
-    let mut released_ids = Vec::new();
     for id in ids {
         if references.holds(id) {
             continue;
         }
-        let mut released = Released::new(id.clone());
-        release(
+        let mut release_of = Released::new(id.clone());
+        let outcome = release(
             ctx,
             ir,
             references,
             lazy,
             BTreeSet::from([id.clone()]),
             Vec::new(),
-            &mut released,
-        )?;
-        if !released.dropped.is_empty() || !released.states.is_empty() {
-            drop_orphans(ctx, ir, references, lazy, unreached, &mut released)?;
-        }
-        released_ids.push((id.clone(), released));
+            &mut release_of,
+        )
+        .and_then(|_| {
+            if release_of.dropped.is_empty() && release_of.states.is_empty() {
+                return Ok(());
+            }
+            drop_orphans(ctx, ir, references, lazy, unreached, &mut release_of)
+        });
+        released.push((id.clone(), release_of));
+        outcome?;
     }
-    Ok(released_ids)
+    Ok(())
 }
 
 /// Drops each carrier that the releases so far left with no user, until
