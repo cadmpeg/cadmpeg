@@ -5,7 +5,7 @@ use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::io::Write;
 use std::num::NonZeroU16;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 mod accounting;
 mod body_drop;
@@ -97,7 +97,7 @@ pub(crate) struct SemanticOutput {
     pub(crate) claims: crate::history::write::read_back::ReadBackClaims,
     /// The retained source image decoded again, when the write compared the
     /// document with it.
-    pub(crate) source: Option<Arc<cadmpeg_ir::codec::Decoded>>,
+    pub(crate) source: Option<Arc<RetainedSource>>,
     /// The write's other losses.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
@@ -110,12 +110,69 @@ pub(crate) enum CachedNative {
     Loaded(Option<SldprtNative>),
 }
 
+/// The retained source image decoded again, and what the writes of one
+/// source fidelity derive from it: what every pass of those writes compares
+/// the caller's document with.
+pub(crate) struct RetainedSource {
+    pub(crate) decoded: cadmpeg_ir::codec::Decoded,
+    pub(crate) native: Option<SldprtNative>,
+    /// The records of `decoded` as the read-back compares them, from the
+    /// first pass that reads back; `None` inside when they do not serialize.
+    pub(crate) records: OnceLock<Option<crate::history::write::read_back::document::Document>>,
+    /// What the write of `decoded` with no edit reads back as, from the first
+    /// pass that reads back a difference no edit explains.
+    pub(crate) unedited: OnceLock<Vec<crate::history::write::read_back::document::Difference>>,
+    /// The bytes of the first pass that writes no edit as edited, and the
+    /// part the read-back decoded from them: a pass of any write of this
+    /// source that writes the same bytes reads back the same part.
+    pub(crate) edit_free: OnceLock<(Vec<u8>, Arc<cadmpeg_ir::codec::DecodeResult>)>,
+}
+
+impl RetainedSource {
+    /// The written part `bytes` as the full decoder reads it back: the
+    /// edit-free part when `bytes` are its bytes, else decoded again. The
+    /// bytes of a pass that writes no edit as edited (`edit_free`) become the
+    /// edit-free part when there is none yet.
+    pub(crate) fn read_back(
+        &self,
+        bytes: &[u8],
+        edit_free: bool,
+    ) -> Result<Arc<cadmpeg_ir::codec::DecodeResult>, cadmpeg_ir::codec::DecodeFailure> {
+        if let Some((_, decoded)) = self.edit_free.get().filter(|(kept, _)| kept == bytes) {
+            return Ok(Arc::clone(decoded));
+        }
+        let decoded = Arc::new(crate::decode::decode_for_read_back(bytes)?);
+        if edit_free {
+            self.edit_free
+                .get_or_init(|| (bytes.to_vec(), Arc::clone(&decoded)));
+        }
+        Ok(decoded)
+    }
+}
+
 /// Reusable decoded source baseline and native records across read-back retries
 /// of one semantic write.
 #[derive(Default)]
 pub(crate) struct SemanticWriteCache {
-    pub(crate) source_baseline: Option<Arc<cadmpeg_ir::codec::Decoded>>,
+    pub(crate) source_baseline: Option<Arc<RetainedSource>>,
     pub(crate) native: CachedNative,
+}
+
+impl SemanticWriteCache {
+    /// A write's cache that starts from the decoded source `source` holds.
+    pub(crate) fn of_source(source: Option<&OnceLock<Arc<RetainedSource>>>) -> Self {
+        Self {
+            source_baseline: source.and_then(OnceLock::get).cloned(),
+            native: CachedNative::Unloaded,
+        }
+    }
+
+    /// Keeps the source this write decoded in `source`, unless it holds one.
+    pub(crate) fn keep_source(&self, source: Option<&OnceLock<Arc<RetainedSource>>>) {
+        if let (Some(source), Some(decoded)) = (source, &self.source_baseline) {
+            source.get_or_init(|| Arc::clone(decoded));
+        }
+    }
 }
 
 /// Per-pass withheld features and shaping edits for one semantic write.
@@ -163,11 +220,14 @@ pub(crate) fn write_semantic_with_records_cached(
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, CodecError> {
     let SemanticWriteControls { withheld, shaped } = controls;
-    let source_baseline = &mut cache.source_baseline;
+    let SemanticWriteCache {
+        source_baseline,
+        native: cached_native,
+    } = cache;
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
         DecodeContext::from_root_bytes(&[], &digest_arena, &DecodePolicy::desktop())?;
-    if matches!(cache.native, CachedNative::Unloaded) {
+    if matches!(cached_native, CachedNative::Unloaded) {
         let loaded = ir
             .native
             .namespace("sldprt")
@@ -175,12 +235,13 @@ pub(crate) fn write_semantic_with_records_cached(
                 SldprtNative::load(namespace, ir.tolerances.linear).map_err(CodecError::from)
             })
             .transpose()?;
-        cache.native = CachedNative::Loaded(loaded);
+        *cached_native = CachedNative::Loaded(loaded);
     }
-    let mut native = match &cache.native {
-        CachedNative::Loaded(loaded) => loaded.clone(),
+    let input_native = match &*cached_native {
+        CachedNative::Loaded(loaded) => loaded.as_ref(),
         CachedNative::Unloaded => None,
     };
+    let mut native = input_native.cloned();
     // A feature history or feature-input lane the input already holds comes
     // from a SolidWorks part; the write generates its own for any other source.
     let solidworks_history = native.as_ref().is_some_and(|native| {
@@ -307,13 +368,16 @@ pub(crate) fn write_semantic_with_records_cached(
         renamed = history_drop::foreign_records_as_keywords(&mut normalized);
     }
     let mut dropped_history = history_drop::HistoryDrop::default();
+    let source = source_baseline.clone();
     let (feature_input_renames, edit_outcome) = loop {
         let snapshot = reducible.then(|| (normalized.model.parameters.clone(), native.clone()));
         let mut attempt_cut = Vec::new();
         let mut edits = crate::history::write::edits::SourceEdits::new(
             ir,
             native.as_ref(),
-            source_baseline.as_ref().map(|baseline| &baseline.ir),
+            source
+                .as_deref()
+                .map(|source| (&source.decoded.ir, source.native.as_ref())),
             withheld,
         )?;
         match prepare_history(
@@ -348,21 +412,14 @@ pub(crate) fn write_semantic_with_records_cached(
         source_lanes,
     } = edit_outcome;
     let mut shaping = shaped.to_vec();
-    if let Some(baseline) = &source_baseline {
-        let input_native = ir
-            .native
-            .namespace("sldprt")
-            .map(|namespace| {
-                SldprtNative::load(namespace, ir.tolerances.linear).map_err(CodecError::from)
-            })
-            .transpose()?;
+    if let Some(baseline) = &source {
         shaping.extend(
             crate::history::write::brep_agreement::agreement(
                 ir,
                 digests,
-                input_native.as_ref(),
+                input_native,
                 Some(crate::history::write::brep_agreement::Source::Decoded(
-                    &baseline.ir,
+                    &baseline.decoded.ir,
                 )),
                 &written,
                 &HashSet::new(),
@@ -467,7 +524,7 @@ pub(crate) fn write_semantic_with_records_cached(
                 let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
                 losses.extend(materials::retained_materials_kept(
                     ir,
-                    baseline.map(|baseline| &baseline.ir),
+                    baseline.map(|baseline| &baseline.decoded.ir),
                 ));
             }
             members.written = patch_retained_swobjects_metadata(
@@ -487,7 +544,7 @@ pub(crate) fn write_semantic_with_records_cached(
                 .flatten();
             losses.extend(materials::retained_materials_omitted(
                 ir,
-                baseline.map(|baseline| &baseline.ir),
+                baseline.map(|baseline| &baseline.decoded.ir),
             ));
         }
         for attribute in metadata_attributes(ir) {
@@ -536,7 +593,11 @@ pub(crate) fn write_semantic_with_records_cached(
     }
     if !ir.model.tessellations.is_empty() {
         let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
-        if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref()) {
+        if let Some(retained) = retained_display_sections(
+            ir,
+            baseline.map(|baseline| &baseline.decoded),
+            source_scan.as_ref(),
+        ) {
             for (section, payload) in retained {
                 members.push(&mut sections, &mut unwritten, section, payload);
             }
@@ -663,7 +724,7 @@ pub(crate) fn write_semantic_with_records_cached(
             section,
             lane_payload(
                 lane,
-                source_lanes.get(&lane.id),
+                source_lanes.get(lane.id.as_str()).copied(),
                 histories,
                 &feature_input_renames,
                 ir.tolerances.linear,
@@ -673,7 +734,7 @@ pub(crate) fn write_semantic_with_records_cached(
     let patch_active_configuration = if input_active_configuration.is_some() {
         let baseline = retained_source_baseline(source_baseline, source_context.as_ref())?;
         baseline.is_none_or(|baseline| {
-            active_configuration_intent(&baseline.ir) != input_active_configuration
+            active_configuration_intent(&baseline.decoded.ir) != input_active_configuration
         })
     } else {
         false
@@ -3303,47 +3364,28 @@ fn active_configuration_intent(ir: &CadIr) -> Option<ActiveConfigurationIntent<'
 }
 
 fn retained_source_baseline<'a>(
-    baseline: &'a mut Option<Arc<cadmpeg_ir::codec::Decoded>>,
+    baseline: &'a mut Option<Arc<RetainedSource>>,
     source: Option<&(DecodeContext<'_>, cadmpeg_core::decode::View<'_>)>,
-) -> Result<Option<&'a cadmpeg_ir::codec::Decoded>, CodecError> {
-    type CachedBaseline = (
-        cadmpeg_ir::hash::digest::Sha256Digest,
-        usize,
-        Arc<cadmpeg_ir::codec::Decoded>,
-    );
-    static SOURCE_BASELINE_CACHE: std::sync::Mutex<Vec<CachedBaseline>> =
-        std::sync::Mutex::new(Vec::new());
-
+) -> Result<Option<&'a RetainedSource>, CodecError> {
     if baseline.is_none() {
         let Some((ctx, root)) = source else {
             return Ok(None);
         };
-        let raw = root.window();
-        let digest = cadmpeg_ir::hash::digest::Sha256Digest::digest(raw);
-        let len = raw.len();
-        if let Ok(guard) = SOURCE_BASELINE_CACHE.lock() {
-            if let Some((_, _, cached)) = guard.iter().find(|(cached_digest, cached_len, _)| {
-                *cached_digest == digest && *cached_len == len
-            }) {
-                *baseline = Some(Arc::clone(cached));
-                return Ok(baseline.as_deref());
-            }
-        }
         let mut decoded = crate::decode::decode_without_digests(ctx, *root)?;
         sort_arenas(&mut decoded.ir);
-        let shared = Arc::new(decoded);
-        if let Ok(mut guard) = SOURCE_BASELINE_CACHE.lock() {
-            if !guard.iter().any(|(cached_digest, cached_len, _)| {
-                *cached_digest == digest && *cached_len == len
-            }) {
-                if guard.len() >= 8 {
-                    guard.remove(0);
-                }
-                guard.push((digest, len, Arc::clone(&shared)));
-            }
-        }
-        *baseline = Some(shared);
-        return Ok(baseline.as_deref());
+        let native = decoded
+            .ir
+            .native
+            .namespace("sldprt")
+            .map(|namespace| SldprtNative::load(namespace, decoded.ir.tolerances.linear))
+            .transpose()?;
+        *baseline = Some(Arc::new(RetainedSource {
+            decoded,
+            native,
+            records: OnceLock::new(),
+            unedited: OnceLock::new(),
+            edit_free: OnceLock::new(),
+        }));
     }
     Ok(baseline.as_deref())
 }
@@ -3395,21 +3437,20 @@ fn retained_display_sections(
     Some(result)
 }
 
-fn retained_history_sections(
-    baseline: &cadmpeg_ir::codec::Decoded,
+fn retained_history_sections<'a>(
+    baseline: &'a RetainedSource,
     scan: &crate::container::ContainerScan<'_>,
-) -> Result<Vec<crate::history::write::keywords::RetainedHistory>, CodecError> {
+) -> Result<Vec<crate::history::write::keywords::RetainedHistory<'a>>, CodecError> {
     // Compare the same source-only decode stage that supplied the caller's
     // native records. In particular, decoding infers configuration source
     // indices from the active partition after parsing the Keywords XML.
-    let Some(namespace) = baseline.ir.native.namespace("sldprt") else {
+    let Some(native) = &baseline.native else {
         return Ok(Vec::new());
     };
-    let native = SldprtNative::load(namespace, baseline.ir.tolerances.linear)?;
-    let annotations = &baseline.source_fidelity.annotations;
+    let annotations = &baseline.decoded.source_fidelity.annotations;
     native
         .feature_histories
-        .into_iter()
+        .iter()
         .map(|history| {
             let provenance = annotations
                 .provenance
