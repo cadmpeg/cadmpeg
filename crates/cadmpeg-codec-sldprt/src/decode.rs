@@ -234,11 +234,10 @@ fn decode_inner(
     // The root is stated once, after the assembly projection has added its
     // definitions, so an assembly states its own root and no bare part root.
     // A scoped root lists only the bodies of its current states and its
-    // unproduced bodies. A body of a
-    // configuration that is not active and whose state the design does not
-    // state stays in the geometry unlisted, as a scoped CATIA or Rhino root
-    // leaves its own (interim, errata A1). Local digests are stamped after
-    // the root is complete.
+    // unproduced bodies. A body of a configuration that is not active and
+    // whose state the design does not state stays in the geometry unlisted,
+    // as a scoped CATIA or Rhino root leaves its own (interim, errata A1).
+    // Local digests are stamped after the root is complete.
     let current = (!decoded.ir.design.scopes.is_empty()).then(|| {
         decoded
             .ir
