@@ -245,7 +245,8 @@ fn second_records(ir: &CadIr) -> Vec<String> {
 }
 
 /// The writer charges the result body of the item that ends the run, and
-/// each record only that body uses, by id.
+/// each other record only that body uses, by id: each record is named once
+/// (cadir-v11.md §3.2).
 #[test]
 fn a_held_state_charges_the_body_after_it_and_its_records() {
     let (ir, second) = with_a_second_extrude(Boolean::NewBody);
@@ -272,8 +273,13 @@ fn a_held_state_charges_the_body_after_it_and_its_records() {
             format!("body {body} was not written, with the topology and geometry only it uses: {reason}")
         )]
     );
+    let body_id = body.to_string();
     let records = second_records(&ir);
-    assert!(records.contains(&body.to_string()), "{records:?}");
+    assert!(records.contains(&body_id), "{records:?}");
+    let records = records
+        .into_iter()
+        .filter(|record| *record != body_id)
+        .collect::<Vec<_>>();
     assert_eq!(
         charged(F3dLossCode::WriterGeometryOmitted),
         [(
@@ -308,11 +314,11 @@ fn a_held_state_keeps_the_stale_status_of_the_current_state() {
     );
 }
 
-/// Where a later failure drops the design scope after a held state, the
-/// file holds every current body in the geometry-true form, as it does
-/// with no held state (cadir-v11.md §3.4, Geometry-true).
+/// Where a later failure drops the geometry items after a held state, the
+/// document holds every current body again, as it does with no held state
+/// (cadir-v11.md §3.4, Geometry-true).
 #[test]
-fn a_dropped_design_after_a_held_state_writes_every_current_body() {
+fn dropped_items_after_a_held_state_write_every_current_body() {
     let (ir, second) = with_a_second_extrude(Boolean::NewBody);
     let error = || CodecError::NotImplemented("a test failure of the design".into());
     let mut reduction = Reduction::new(&ir, MissingStateForm::HistoryTrue);
@@ -330,17 +336,50 @@ fn a_dropped_design_after_a_held_state_writes_every_current_body() {
         )
         .expect("the run ends at the second extrude");
     assert_eq!(reduction.ir().geometry.bodies.len(), 1);
-    while !reduction.drops_neutral_design() {
+    while !reduction.fallback().drops_items() {
         reduction
             .degrade(Failure::neutral_design(error()), writes_alone)
             .expect("the design scope falls back");
     }
+    assert!(!reduction.drops_neutral_design());
     assert_eq!(reduction.ir().geometry.bodies.len(), 2);
     let reason = held_reason(&second);
     let losses = reduction.finish();
     assert!(
         !losses.iter().any(|loss| loss.message.contains(&reason)),
         "{losses:#?}"
+    );
+}
+
+/// Where the plan of the design fails after a held state, the writer drops
+/// the design scope, and the file holds every current body with no loss of
+/// the held state (cadir-v11.md §3.4, Geometry-true).
+#[test]
+fn a_dropped_design_after_a_held_state_writes_every_current_body() {
+    let (ir, second) = with_a_second_extrude(Boolean::NewBody);
+    let _failing = fail_records([second.as_str()]);
+    super::super::super::FAIL_ENDED_PLANS.with(|fail| fail.set(true));
+    let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);
+    super::super::super::FAIL_ENDED_PLANS.with(|fail| fail.set(false));
+    assert_eq!(decoded.geometry.bodies.len(), 2, "{:#?}", report.losses);
+    assert_eq!(decoded.geometry.faces.len(), 12, "{:#?}", report.losses);
+    let reason = held_reason(&second);
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::WriterBodyOmitted.kind()
+                || loss.message.contains(&reason)),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        report.losses.iter().any(|loss| loss
+            .message
+            .contains("(not implemented yet: a test failure of the design plan)")
+            && loss.message.contains(second.as_str())),
+        "{:#?}",
+        report.losses
     );
 }
 

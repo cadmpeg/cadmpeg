@@ -90,6 +90,13 @@ thread_local! {
 
 #[cfg(test)]
 thread_local! {
+    /// Makes each plan on this thread fail where its fallback ends the
+    /// history-true run at a feature.
+    static FAIL_ENDED_PLANS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+thread_local! {
     /// Makes the next attempt that writes a `Sketch` item on this thread
     /// fail in the sketch records.
     static FAIL_NEXT_SKETCHES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -536,6 +543,12 @@ pub(super) fn plan<'a>(
     missing_states: MissingStateForm,
     fallback: &Fallback,
 ) -> Result<Option<NeutralDesign<'a>>, CodecError> {
+    #[cfg(test)]
+    if FAIL_ENDED_PLANS.with(std::cell::Cell::get) && !fallback.ends.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "a test failure of the design plan".into(),
+        ));
+    }
     let Some(scope) = root_scope(target) else {
         return Ok(None);
     };
@@ -984,8 +997,6 @@ pub(in crate::writer::generate) fn state_at_marker(
 /// The state the history-true form writes at its timeline marker where a
 /// failure ends the run at an item: the state after the items before it.
 pub(super) struct HeldState {
-    /// The position of the root scope among the document's scopes.
-    pub(super) scope: usize,
     /// The state, as the scope's current state.
     pub(super) state: CurrentState,
     /// The feature the timeline marker stands before.
@@ -998,9 +1009,11 @@ pub(super) struct HeldState {
 /// plans, with the result bodies of those items, as
 /// [`NeutralDesign::history_states`] commits it (f3d.md §3.1, "History
 /// states"; cadir-v11.md §3.4, Features without their state). `None` where
-/// that attempt writes no item before the feature.
+/// that attempt writes no item before the feature. `scope` is the position
+/// of the root scope ([`root_scope_at`]).
 pub(super) fn held_state(
     target: &CadIr,
+    scope: usize,
     missing_states: MissingStateForm,
     earlier: &Fallback,
     fallback: &Fallback,
@@ -1009,8 +1022,7 @@ pub(super) fn held_state(
         .ends
         .keys()
         .find(|feature| !earlier.ends.contains_key(*feature))?;
-    let at = root_scope_at(target)?;
-    let scope = &target.design.scopes[at];
+    let scope = &target.design.scopes[scope];
     let [current] = scope.current.as_slice() else {
         return None;
     };
@@ -1025,7 +1037,6 @@ pub(super) fn held_state(
         .collect::<Vec<_>>();
     let after = kept.last()?.feature();
     Some(HeldState {
-        scope: at,
         state: CurrentState {
             at: Position::After(Member::Feature(after.clone())),
             bodies: kept
@@ -1209,7 +1220,7 @@ pub(super) fn root_scope(target: &CadIr) -> Option<&DesignScope> {
 }
 
 /// The position of [`root_scope`] among the document's scopes.
-fn root_scope_at(target: &CadIr) -> Option<usize> {
+pub(super) fn root_scope_at(target: &CadIr) -> Option<usize> {
     match target.design.scopes.as_slice() {
         [] => None,
         [_] => Some(0),

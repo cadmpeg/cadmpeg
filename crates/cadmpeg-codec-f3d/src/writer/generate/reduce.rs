@@ -1441,17 +1441,28 @@ impl<'a> Reduction<'a> {
         }
         if self.fallback.drops_items() {
             self.unhold();
-        } else if let Some(held) =
-            super::design::held_state(&self.ir, self.missing_states, &earlier, &self.fallback)
-        {
-            self.hold(held)?;
+        } else {
+            self.hold(&earlier)?;
         }
         Ok(true)
     }
 
-    /// Write `held` as the current state: the bodies outside it are not
-    /// written.
-    fn hold(&mut self, held: super::design::HeldState) -> Result<(), CodecError> {
+    /// Write the state the history-true design holds where the current
+    /// fallback ends its run at a feature that `earlier` does not: the
+    /// bodies outside that state are not written.
+    fn hold(&mut self, earlier: &super::design::Fallback) -> Result<(), CodecError> {
+        let Some(scope) = super::design::root_scope_at(&self.ir) else {
+            return Ok(());
+        };
+        let Some(held) = super::design::held_state(
+            &self.ir,
+            scope,
+            self.missing_states,
+            earlier,
+            &self.fallback,
+        ) else {
+            return Ok(());
+        };
         if self.unheld.is_none() {
             self.unheld = Some(Box::new(self.clone()));
         }
@@ -1473,7 +1484,7 @@ impl<'a> Reduction<'a> {
             .iter()
             .map(|body| body.as_str().to_owned())
             .collect::<Vec<_>>();
-        self.ir.to_mut().design.scopes[held.scope].current = vec![held.state];
+        self.ir.to_mut().design.scopes[scope].current = vec![held.state];
         let kept = kept.iter().map(String::as_str).collect();
         self.retain_reporting_bodies(&kept, &dropped, &reason)
     }
@@ -1637,7 +1648,13 @@ impl<'a> Reduction<'a> {
                 "body {body} was not written, with the topology and geometry only it uses: {reason}"
             )));
         }
-        self.retain(kept, reason)?;
+        let mut removed = retain_bodies(self.ir.to_mut(), kept)?;
+        let omitted = dropped_bodies
+            .iter()
+            .filter(|body| removed.remove(body.as_str()))
+            .cloned()
+            .collect();
+        self.charge_removed(&removed, &omitted, reason);
         Ok(())
     }
 
