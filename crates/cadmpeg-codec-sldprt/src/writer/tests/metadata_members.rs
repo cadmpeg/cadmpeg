@@ -1096,7 +1096,7 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
                 decoded.ir(),
                 Some(decoded.source_fidelity()),
             ),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
         )
         .unwrap();
     let losses: Vec<String> = plan

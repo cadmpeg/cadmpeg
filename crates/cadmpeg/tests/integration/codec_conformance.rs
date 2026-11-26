@@ -633,7 +633,7 @@ mod product_roundtrip {
 
         let mut step = Vec::new();
         StepCodec::default()
-            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut step))
             .expect("write STEP assembly");
         let decoded = StepCodec::default()
@@ -703,7 +703,7 @@ mod product_roundtrip {
 
         let mut step = Vec::new();
         StepCodec::default()
-            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut step))
             .expect("write STEP");
         let decoded = StepCodec::default()
@@ -727,7 +727,7 @@ mod product_roundtrip {
             .0;
         let mut step = Vec::new();
         StepCodec::default()
-            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut step))
             .expect("write STEP");
         let decoded = StepCodec::default()
@@ -1041,7 +1041,7 @@ mod subset_carriers {
                 );
                 let mut step = Vec::new();
                 let report = StepCodec::default()
-                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                     .and_then(|plan| plan.write_to(&mut step))
                     .unwrap();
                 let losses = report
@@ -1073,7 +1073,7 @@ mod subset_carriers {
                 let ir = cube(basis, sense);
                 let mut iges = Vec::new();
                 IgesCodec
-                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                     .and_then(|plan| plan.write_to(&mut iges))
                     .unwrap_or_else(|error| panic!("{basis:?} {sense}: {error}"));
                 assert!(!iges.is_empty());
@@ -1090,7 +1090,7 @@ mod subset_carriers {
                 assert_valid(&ir, &label);
                 let mut iges = Vec::new();
                 IgesCodec
-                    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                    .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                     .and_then(|plan| plan.write_to(&mut iges))
                     .unwrap_or_else(|error| panic!("{label}: {error}"));
                 let decoded = IgesCodec
@@ -1119,7 +1119,7 @@ mod subset_carriers {
             assert_valid(&ir, &label);
             let mut f3d = Vec::new();
             cadmpeg_codec_f3d::F3dCodec
-                .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
                 .and_then(|plan| plan.write_to(&mut f3d))
                 .unwrap_or_else(|error| panic!("{label}: {error}"));
             let decoded = cadmpeg_codec_f3d::F3dCodec

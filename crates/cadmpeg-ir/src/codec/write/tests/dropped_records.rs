@@ -7,7 +7,7 @@ use super::*;
 /// messages of its losses of `code` and the document its bytes read back as.
 fn written_with_losses(ir: &CadIr, code: &str) -> (Vec<String>, CadIr) {
     let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .expect("the CADIR writer drops what it cannot write and does not refuse");
     let messages = plan
         .report()
@@ -61,7 +61,7 @@ fn the_cadir_writer_does_not_check_feature_parent_relations_it_omits() {
         let plan = CadirEncoder
             .plan(
                 EncodeInput::new(ir, None).with_strictness(&reject_errors),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .expect("the writer checks no relation it omits");
         let invalid = plan

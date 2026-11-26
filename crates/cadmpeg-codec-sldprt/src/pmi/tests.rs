@@ -1687,7 +1687,7 @@ fn duplicate_member_identity_replays_and_names_a_semantic_edit_over_the_stored_s
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &SldprtCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())

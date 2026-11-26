@@ -208,7 +208,7 @@ fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport
     let report = F3dCodec
         .plan(
             EncodeInput::new(ir, None).with_missing_states(missing_states),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");

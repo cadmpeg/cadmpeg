@@ -35,7 +35,7 @@ fn decoded_object_names(payload: &[u8], parent: &str) -> Vec<crate::records::Fea
 fn named_invalid(ir: &cadmpeg_ir::CadIr, fidelity: &cadmpeg_ir::SourceFidelity, finding: &str) {
     let report = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(fidelity)),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())
