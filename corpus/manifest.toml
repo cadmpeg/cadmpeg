@@ -47,7 +47,7 @@ authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
 generator = "freecad_fcstd/author_fixtures.py"
 license = "CC0-1.0"
-sha256 = "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317"
+sha256 = "e5fc333ebaf01c39b95c1bff3e0b5129303fd3c14e3a40bf991af9f0eaf913cd"
 notes = "Blank-document TechDraw page, template, model view, dimension, visible annotation, symbol, and embedded SVG assets."
 
 [[file]]
@@ -179,7 +179,7 @@ authoring_app = "FreeCAD"
 authoring_app_version = "1.1.4"
 generator = "freecad_fcstd/author_techdraw_fixture.py"
 license = "CC0-1.0"
-sha256 = "50450fbe592989557b01a854f4c4b5916c46fa4654f85d78cae3817fda95879b"
+sha256 = "bc6a3b88d923b2b69ed9d171e662076d18d3fc2dbd2d6622513dd1d3c9628bc9"
 notes = "Original SVG frame and editable title, physical sheets and page annotations; authored from blank documents with public scripting. No installed template or third-party model."
 
 [[file]]
@@ -191,7 +191,7 @@ authoring_app = "FreeCAD"
 authoring_app_version = "1.1.4"
 generator = "freecad_fcstd/author_techdraw_fixture.py"
 license = "CC0-1.0"
-sha256 = "1890643d11d5055048dbdf05d53e5335945907312201152f3d8856278de95091"
+sha256 = "38414c4216a9ff3da55adff08d6e4005780ab236936f73e2805fac242c86ce00"
 notes = "Original SVG frame and editable title, physical sheets and page annotations; authored from blank documents with public scripting. No installed template or third-party model."
 
 [[file]]
@@ -203,7 +203,7 @@ authoring_app = "FreeCAD"
 authoring_app_version = "1.1.4"
 generator = "freecad_fcstd/author_techdraw_fixture.py"
 license = "CC0-1.0"
-sha256 = "8afd602cdd801c879b4830be6cb437270ca087532dfcb3a51f7a6da50d2841b0"
+sha256 = "1b22c22a63a43f8bd2cae6fcf3af8596f95b309f802e40620357dd8510e6693c"
 notes = "Original SVG circular arcs and editable title; blank-document projection, section, detail, asymmetric triangle and dimensions. All embedded SVGs are original; no installed content."
 
 [[file]]
@@ -215,7 +215,7 @@ authoring_app = "FreeCAD"
 authoring_app_version = "1.1.4"
 generator = "freecad_fcstd/author_techdraw_fixture.py"
 license = "CC0-1.0"
-sha256 = "a1ec94417092ac8de667b13a164922e01adb23cc427a9a535ca2f51e12a61f75"
+sha256 = "b8a851cef1337a187f3776e9b6fbf8046b365dfd4955bfd6f2a155d8f389d58c"
 notes = "Original SVG circular arcs and editable title; blank-document projection, section, detail, asymmetric triangle and dimensions. All embedded SVGs are original; no installed content."
 
 [[file]]
@@ -227,7 +227,7 @@ authoring_app = "FreeCAD"
 authoring_app_version = "1.1.4"
 generator = "freecad_fcstd/author_techdraw_fixture.py"
 license = "CC0-1.0"
-sha256 = "09f0953e5a30c05166725f9c430e0f14ba20b2af3c330ff7837b7134b77a5ed8"
+sha256 = "57b255f1853b95539a2bb6617eda6441e247cf9fa4b7acd5e546060d0ba057c9"
 notes = "Second original TechDraw dimension configuration: 42 mm box length, 11 mm cylinder radius and an asymmetric reference with a stored Y-down cache; no installed template or third-party model."
 
 [[file]]

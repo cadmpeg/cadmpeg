@@ -866,7 +866,7 @@
     },
     {
       "filename": "techdraw_annotations.FCStd",
-      "sha256": "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317",
+      "sha256": "e5fc333ebaf01c39b95c1bff3e0b5129303fd3c14e3a40bf991af9f0eaf913cd",
       "canonical_cadir_sha256": "35a5911b5ddc32c322c794ff10804b3161f34cd33db868178e1ae7aa00b55982",
       "deterministic": true,
       "blocking_losses": 0,

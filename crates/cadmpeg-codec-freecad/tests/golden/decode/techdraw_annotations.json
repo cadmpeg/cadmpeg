@@ -2741,7 +2741,7 @@
       "fcstd_uncarried_local_sha256": "<elided: digest over tolerantly compared geometry>"
     },
     "content_digest": "<elided: digest over tolerantly compared geometry>",
-    "decode_digest": "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317",
+    "decode_digest": "e5fc333ebaf01c39b95c1bff3e0b5129303fd3c14e3a40bf991af9f0eaf913cd",
     "file_digests": {},
     "retained_records": {},
     "unrepresented": []
