@@ -46,19 +46,17 @@ impl NameReferences {
 #[cfg(test)]
 mod tests {
     use super::{NameReferences, NAME_REFERENCES_INTO_WIRE_COUNT};
+    use cadmpeg_core::serde_erase::json;
     #[test]
     fn field_names_preserve_numeric_wire_and_reject_empty_or_null_references() {
         let wire = "[2,4294967295]";
         let names: NameReferences = serde_json::from_str(wire).unwrap();
+        assert_eq!(json::to_string(&names).unwrap(), wire);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&names).unwrap(),
-            wire
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&names).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(
-                &Vec::<cadmpeg_parasolid::xmt::NonNullXmt>::from(names.clone())
-            )
+            json::to_vec(&names).unwrap(),
+            json::to_vec(&Vec::<cadmpeg_parasolid::xmt::NonNullXmt>::from(
+                names.clone()
+            ))
             .unwrap()
         );
         for wire in ["[]", "[0]", "[1]", "[2,1]"] {

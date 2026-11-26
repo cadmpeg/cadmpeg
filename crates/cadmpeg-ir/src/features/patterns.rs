@@ -526,7 +526,7 @@ pub enum PatternForm {
 }
 
 /// Spatial transform used to repeat or reflect seed features.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PatternTransform<C = CompositePattern> {
@@ -721,7 +721,7 @@ impl<C: Serialize> Serialize for PatternKind<C> {
     }
 }
 
-impl<'de, C: Deserialize<'de>> Deserialize<'de> for PatternKind<C> {
+impl<'de, C: serde::de::DeserializeOwned> Deserialize<'de> for PatternKind<C> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,

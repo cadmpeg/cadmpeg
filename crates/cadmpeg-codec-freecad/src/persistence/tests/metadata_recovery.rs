@@ -2,6 +2,7 @@
 //! Independent metadata admission and bounded property indexing.
 
 use crate::native::PropertyBody;
+use cadmpeg_core::serde_erase::json;
 use std::fmt::Write as _;
 
 #[test]
@@ -83,11 +84,9 @@ fn malformed_unused_links_remain_explicitly_source_only() {
             == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
                 .note(String::new())
                 .code));
-        let wire =
-            cadmpeg_core::serde_erase::json::to_value(&graph.properties[0]).expect("serialize");
+        let wire = json::to_value(&graph.properties[0]).expect("serialize");
         let property: crate::native::PropertyRecord =
-            cadmpeg_core::serde_erase::json::from_value(wire)
-                .expect("deserialize source-only property");
+            json::from_value(wire).expect("deserialize source-only property");
         assert_eq!(property, graph.properties[0]);
     }
 }

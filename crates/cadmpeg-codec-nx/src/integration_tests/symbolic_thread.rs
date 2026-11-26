@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Symbolic-thread witness extraction, neutral projection, and native admission.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -32,7 +33,7 @@ fn decode(selector: u8) -> cadmpeg_ir::codec::DecodeResult {
 #[test]
 fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
     let result = decode(3);
-    let wire = cadmpeg_core::serde_erase::json::to_value(
+    let wire = json::to_value(
         &result.ir().native.namespace("nx").unwrap().arenas()["feature_symbolic_threads"][0],
     )
     .unwrap();
@@ -87,7 +88,7 @@ fn symbolic_thread_pipeline_checks_witness_without_inventing_faces_or_extent() {
     });
     for selector in [0, 1, 4] {
         let result = decode(selector);
-        let wire = cadmpeg_core::serde_erase::json::to_value(
+        let wire = json::to_value(
             &result.ir().native.namespace("nx").unwrap().arenas()["feature_symbolic_threads"][0],
         )
         .unwrap();

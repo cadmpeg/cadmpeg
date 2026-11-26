@@ -3,6 +3,7 @@
 use crate::records::sketch_links::{
     DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{BodyId, FaceId};
@@ -19,23 +20,20 @@ fn persistent_design_text_preserves_decimal_spelling_without_an_integer_bound() 
             design_reference: 1,
             ordinal: 0,
         };
-        let wire = cadmpeg_core::serde_erase::json::to_value(&link).unwrap();
+        let wire = json::to_value(&link).unwrap();
         assert_eq!(wire["design_id"], text);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<PersistentDesignLink>(wire.clone())
-                .unwrap(),
+            json::from_value::<PersistentDesignLink>(wire.clone()).unwrap(),
             link
         );
         for invalid in ["", "-1", "+1", " 1", "1 ", "1.0", "a", "１２"] {
             assert!(DesignPersistentIdText::try_from(invalid.to_owned()).is_err());
             let mut invalid_wire = wire.clone();
             invalid_wire["design_id"] = invalid.into();
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<PersistentDesignLink>(invalid_wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("design_id")
-            );
+            assert!(json::from_value::<PersistentDesignLink>(invalid_wire)
+                .unwrap_err()
+                .to_string()
+                .contains("design_id"));
         }
     }
 }
@@ -54,20 +52,17 @@ fn persistent_subentity_tokens_require_content_and_preserve_non_numeric_text() {
             design_references: vec![],
             ordinal: 0,
         };
-        let wire = cadmpeg_core::serde_erase::json::to_value(&tag).unwrap();
+        let wire = json::to_value(&tag).unwrap();
         assert_eq!(wire["token"], text);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<PersistentSubentityTag>(wire.clone())
-                .unwrap(),
+            json::from_value::<PersistentSubentityTag>(wire.clone()).unwrap(),
             tag
         );
         let mut invalid = wire;
         invalid["token"] = "".into();
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<PersistentSubentityTag>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains("token")
-        );
+        assert!(json::from_value::<PersistentSubentityTag>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("token"));
     }
 }

@@ -4,6 +4,7 @@
 //! needs it, and keeps the design scope, its construction planes and its
 //! other sketches.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
 use cadmpeg_core::CodecError;
@@ -228,7 +229,7 @@ fn held_reason(before: &FeatureId) -> String {
 /// prism in [`with_a_second_extrude`], in id order.
 fn second_records(ir: &CadIr) -> Vec<String> {
     let serde_json::Value::Object(arenas) =
-        cadmpeg_core::serde_erase::json::to_value(&ir.geometry).expect("the geometry serializes")
+        json::to_value(&ir.geometry).expect("the geometry serializes")
     else {
         panic!("the geometry's arenas");
     };

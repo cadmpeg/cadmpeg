@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use crate::test_support::test_fixtures::{content_at, parse as with_view};
+use cadmpeg_core::serde_erase::json;
 
 fn word(bytes: &mut Vec<u8>, value: u32) {
     bytes.extend_from_slice(&value.to_le_bytes());
@@ -86,10 +87,9 @@ fn closed_polynomial_arrays_survive_versioned_headers() {
         assert_eq!(curve.control_points()[2].get(), Point2::new(2., 2.));
         assert!(curve.periodic());
         assert!(curve.weights().is_none());
-        let wire = cadmpeg_core::serde_erase::json::to_value(&data).expect("serialize spline");
+        let wire = json::to_value(&data).expect("serialize spline");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<Box<SplineRecord>>(wire)
-                .expect("deserialize spline"),
+            json::from_value::<Box<SplineRecord>>(wire).expect("deserialize spline"),
             data
         );
     }
