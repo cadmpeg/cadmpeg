@@ -84,8 +84,8 @@ fn minimal_reference_plane_validates_its_redundant_offset_tail() {
 }
 
 fn class_payload(class: &str, frame: &[u8]) -> (Vec<u8>, usize) {
-    let root = 7;
-    let mut payload = vec![0xaa; root];
+    let mut payload = vec![0xaa; 7];
+    let root = payload.len();
     payload.extend(CLASS_MARKER);
     payload.extend(u16::try_from(class.len()).unwrap().to_le_bytes());
     payload.extend(class.as_bytes());
