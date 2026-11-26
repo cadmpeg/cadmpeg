@@ -1973,7 +1973,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#17 given up: iges/geometry.not-projected",
+        "message": "record iges:entity:directory#17 stream=\"iges\" offset=1539 length=161 given up: iges/geometry.not-projected: IGES entity type 508 form 1 geometry was not projected: loop edge-use tuple is invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 1539,
@@ -2010,7 +2010,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#19 given up: iges/geometry.not-projected",
+        "message": "record iges:entity:directory#19 stream=\"iges\" offset=1701 length=161 given up: iges/geometry.not-projected: IGES entity type 510 form 1 geometry was not projected: face loop is missing; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 1701,
@@ -2047,7 +2047,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#21 given up: iges/geometry.not-projected",
+        "message": "record iges:entity:directory#21 stream=\"iges\" offset=1863 length=161 given up: iges/geometry.not-projected: IGES entity type 514 form 2 geometry was not projected: shell face-use tuple is invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 1863,
@@ -2062,8 +2062,7 @@
           "value": {
             "code": "parameter.data-quarantined",
             "kind": "noncanonical_source_syntax",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
@@ -2085,10 +2084,10 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:quarantine:parameter#15 given up: iges/parameter.data-quarantined",
+        "message": "record iges:quarantine:parameter#15 stream=\"iges\" offset=2592 length=161 given up: iges/parameter.data-quarantined: IGES Parameter Data of D15 (P8 through P9) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
         "provenance": {
           "format": "iges",
-          "offset": 2642,
+          "offset": 2592,
           "stream": "iges",
           "tag": "D15:parameter"
         },

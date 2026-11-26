@@ -247,7 +247,12 @@
             "strict_floor": "error"
           }
         },
-        "message": "record sldprt:brep:face#10 given up: sldprt/topology.face-withheld",
+        "message": "record sldprt:brep:face#10 stream=\"Contents/Config-0-Partition\" offset=297 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10]",
+        "provenance": {
+          "format": "sldprt",
+          "offset": 297,
+          "stream": "Contents/Config-0-Partition"
+        },
         "severity": "error"
       },
       {

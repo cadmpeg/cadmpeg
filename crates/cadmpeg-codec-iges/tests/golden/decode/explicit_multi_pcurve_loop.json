@@ -2803,7 +2803,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#25 given up: iges/geometry.not-projected",
+        "message": "record iges:entity:directory#25 stream=\"iges\" offset=2187 length=161 given up: iges/geometry.not-projected: IGES entity type 510 form 1 geometry was not projected: face loop is missing; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 2187,
@@ -2840,7 +2840,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#27 given up: iges/geometry.not-projected",
+        "message": "record iges:entity:directory#27 stream=\"iges\" offset=2349 length=161 given up: iges/geometry.not-projected: IGES entity type 514 form 2 geometry was not projected: shell face-use tuple is invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 2349,
@@ -2855,8 +2855,7 @@
           "value": {
             "code": "parameter.data-quarantined",
             "kind": "noncanonical_source_syntax",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
@@ -2878,10 +2877,10 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:quarantine:parameter#23 given up: iges/parameter.data-quarantined",
+        "message": "record iges:quarantine:parameter#23 stream=\"iges\" offset=3402 length=161 given up: iges/parameter.data-quarantined: IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
         "provenance": {
           "format": "iges",
-          "offset": 3464,
+          "offset": 3402,
           "stream": "iges",
           "tag": "D23:parameter"
         },

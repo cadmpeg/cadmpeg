@@ -751,7 +751,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#1 given up: iges/entity.not-projected",
+        "message": "record iges:entity:directory#1 stream=\"iges\" offset=243 length=161 given up: iges/entity.not-projected: IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 243,
@@ -788,7 +788,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#3 given up: iges/entity.not-projected",
+        "message": "record iges:entity:directory#3 stream=\"iges\" offset=405 length=161 given up: iges/entity.not-projected: IGES entity type 410 form 1 was not projected: view number, projection, transform, scale, or clipping fields are invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 405,

@@ -1202,7 +1202,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#11 given up: iges/entity.not-projected",
+        "message": "record iges:entity:directory#11 stream=\"iges\" offset=1053 length=161 given up: iges/entity.not-projected: IGES entity type 404 form 1 was not projected: drawing view placements or drawing-space annotations are invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 1053,
@@ -1239,7 +1239,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#1 given up: iges/entity.not-projected",
+        "message": "record iges:entity:directory#1 stream=\"iges\" offset=243 length=161 given up: iges/entity.not-projected: IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 243,

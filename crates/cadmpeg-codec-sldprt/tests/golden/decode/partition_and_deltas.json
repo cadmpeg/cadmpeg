@@ -271,7 +271,12 @@
             "strict_floor": "error"
           }
         },
-        "message": "record sldprt:brep:face#10 given up: sldprt/topology.face-withheld",
+        "message": "record sldprt:brep:face#10 stream=\"Contents/Config-0-Partition\" offset=149 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10]",
+        "provenance": {
+          "format": "sldprt",
+          "offset": 149,
+          "stream": "Contents/Config-0-Partition"
+        },
         "severity": "error"
       },
       {
@@ -308,7 +313,12 @@
             "strict_floor": "error"
           }
         },
-        "message": "record sldprt:file:block#8 given up: sldprt/geometry.parasolid-not-transferred",
+        "message": "record sldprt:file:block#8 stream=\"Contents/Config-0-Partition\" offset=0 length=602 given up: sldprt/geometry.parasolid-not-transferred: 1 Parasolid entity record(s) frame and build no geometry; dropped=[]",
+        "provenance": {
+          "format": "sldprt",
+          "offset": 0,
+          "stream": "Contents/Config-0-Partition"
+        },
         "severity": "error"
       }
     ],

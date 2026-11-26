@@ -803,7 +803,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record catia:standard:face#0 given up: catia/topology.boundary-graph-not-emitted",
+        "message": "record catia:standard:face#0 given up: catia/topology.boundary-graph-not-emitted: the curve support table is absent or empty; dropped=[]",
         "severity": "error"
       },
       {
@@ -816,7 +816,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record catia:standard:face#1 given up: catia/topology.boundary-graph-not-emitted",
+        "message": "record catia:standard:face#1 given up: catia/topology.boundary-graph-not-emitted: the curve support table is absent or empty; dropped=[]",
         "severity": "error"
       }
     ],

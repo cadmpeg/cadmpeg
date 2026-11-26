@@ -998,7 +998,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#1 given up: iges/entity.not-projected",
+        "message": "record iges:entity:directory#1 stream=\"iges\" offset=243 length=161 given up: iges/entity.not-projected: IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 243,
@@ -1035,7 +1035,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#5 given up: iges/entity.not-projected",
+        "message": "record iges:entity:directory#5 stream=\"iges\" offset=567 length=161 given up: iges/entity.not-projected: IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 567,
@@ -1072,7 +1072,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#3 given up: iges/entity.not-projected",
+        "message": "record iges:entity:directory#3 stream=\"iges\" offset=405 length=161 given up: iges/entity.not-projected: IGES entity type 402 form 3 was not projected: view-visibility blocks, display overrides, entities, or back pointers are invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 405,
@@ -1109,7 +1109,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record iges:entity:directory#7 given up: iges/entity.not-projected",
+        "message": "record iges:entity:directory#7 stream=\"iges\" offset=729 length=161 given up: iges/entity.not-projected: IGES entity type 402 form 4 was not projected: view-visibility blocks, display overrides, entities, or back pointers are invalid; dropped=[]",
         "provenance": {
           "format": "iges",
           "offset": 729,

@@ -1179,7 +1179,7 @@
             "strict_floor": "error"
           }
         },
-        "message": "record object#10 given up: edrawings/model.shell-invalid",
+        "message": "record object#10 given up: edrawings/model.shell-invalid: strip index lies outside the shell; dropped=[]",
         "severity": "error"
       },
       {

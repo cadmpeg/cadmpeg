@@ -4140,7 +4140,18 @@
       ],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "pvz": {
+        "unknowns": [
+          {
+            "id": "pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4",
+            "links": [
+              "pvz:model:definition#3"
+            ]
+          }
+        ]
+      }
+    },
     "process": {
       "features": [],
       "groups": [],
@@ -4236,19 +4247,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
-            "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
-          }
-        },
-        "message": "record pvz:plate.ol#0x01000004 given up: pvz/geometry.exact-undecoded",
-        "severity": "error"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "attributes.appearance-tail-undecoded",
             "kind": "material_not_transferred",
             "namespace": "pvz"
@@ -4280,6 +4278,25 @@
         },
         "message": "edge tessellation was decoded but not transferred: 1 edge polylines with 2 points and 1 segments, 1 edge index tables, and other records none; the model carries no edge display polylines (PVZ-16)",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part ol-stream stream=\"pvz:plate.ol\" offset=414 length=35 record=pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4: malformed container: exact stream does not end with its stream terminator; dropped=[]",
+        "provenance": {
+          "format": "pvz",
+          "offset": 414,
+          "stream": "pvz:plate.ol",
+          "tag": "ol-stream"
+        },
+        "severity": "error"
       }
     ],
     "notes": [],
@@ -6324,7 +6341,21 @@
     "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "1873214c7bc8bc79b4b39b60e614ad37a4c86f13c77cab4184f382afe07e87fd",
     "file_digests": {},
-    "retained_records": {},
-    "unrepresented": []
+    "retained_records": {
+      "pvz:source:part#95c1ad136c77ca6873f674275c1a3430c189c05119636986f3226165b81542a4": {
+        "bytes": {
+          "data": "H4sIAAAAAAAA/wEMAPP/AgAAAQQAAAAEAAAAHtW9iwwAAAA=",
+          "kind": "inline"
+        },
+        "offset": 414,
+        "stream": "pvz:plate.ol",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }
