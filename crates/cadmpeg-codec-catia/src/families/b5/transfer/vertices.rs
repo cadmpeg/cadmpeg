@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Vertex-layer transfer: endpoint tolerance solving and the point/vertex emit
+//! Vertex-layer transfer: endpoint gate residuals and the point/vertex emit
 //! pass.
 
 use std::collections::BTreeMap;
@@ -19,7 +19,10 @@ use crate::math::distance;
 
 const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
-pub(super) fn transfer_vertex_tolerances(
+/// The largest distance of each vertex from the lifted ends of its edges'
+/// supports and from the graph's own lifted ends, keyed by combined vertex
+/// index. The support gates read it as their radius.
+pub(super) fn endpoint_gate_residuals(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &B5Graph,
     supports: &B5SupportPlan,
@@ -27,7 +30,7 @@ pub(super) fn transfer_vertex_tolerances(
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
 ) -> Result<BTreeMap<usize, PositiveReal>, cadmpeg_core::CodecError> {
     let mut tolerances = BTreeMap::new();
-    for (&vertex, &tolerance) in &graph.vertex_tolerances {
+    for (&vertex, &tolerance) in &graph.vertex_residuals {
         tolerances.insert(vertex, tolerance);
     }
     for (&edge, supports) in supports {
@@ -87,7 +90,6 @@ pub(super) fn emit_vertices(
     admission: &mut crate::families::FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let used_vertices = &plan.used_vertices;
-    let vertex_tolerances = &plan.vertex_tolerances;
     for (index, coordinates) in graph.vertices.raw_points().iter().enumerate() {
         if !used_vertices.contains(&index) {
             continue;
@@ -125,10 +127,7 @@ pub(super) fn emit_vertices(
         ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: vertex_tolerances
-                .get(&index)
-                .copied()
-                .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
+            tolerance: None,
             native_ref: None,
         });
     }
@@ -172,10 +171,7 @@ pub(super) fn emit_vertices(
         ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: vertex_tolerances
-                .get(&index)
-                .copied()
-                .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
+            tolerance: None,
             native_ref: None,
         });
     }

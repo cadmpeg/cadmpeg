@@ -2374,8 +2374,6 @@ enum ConsolidatedCarrierChart<'a> {
 #[derive(Clone, Copy, Default)]
 pub(in crate::families) struct ConsolidatedCurveBindingCounts {
     pub(super) standard_edges: usize,
-    pub(in crate::families) widened_vertices: usize,
-    pub(in crate::families) max_vertex_widening: f64,
     pub(super) partner_supports: usize,
     pub(super) partner_face_pcurve_pairs: usize,
     pub(super) standard_face_surfaces: usize,

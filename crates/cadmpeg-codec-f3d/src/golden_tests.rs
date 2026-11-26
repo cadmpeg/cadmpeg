@@ -932,11 +932,75 @@ fn neutral_document(ir: &CadIr) -> String {
     }))
 }
 
+/// `edited` with the vertex tolerances the decode of `round_trip` widened
+/// (CADIR §2.3), and the number it widened. Moving the first point by
+/// [`MUTATION_MM`] opens a gap of that length at each vertex on the point:
+/// only such a vertex changes its tolerance, which the decode marks derived
+/// and sets to the gap within the allowance the vertex stated before.
+fn with_widened_tolerances(
+    name: &str,
+    edited: &CadIr,
+    round_trip: &DecodeResult,
+) -> (CadIr, usize) {
+    let moved = &edited.geometry.points[0].id;
+    let derived = |id: &str| {
+        round_trip
+            .source_fidelity()
+            .annotations
+            .exactness()
+            .get(id)
+            .and_then(|note| {
+                note.fields()
+                    .iter()
+                    .find(|(field, _)| field.as_str() == "tolerance")
+            })
+            .is_some_and(|(_, exactness)| *exactness == cadmpeg_ir::Exactness::Derived)
+    };
+    let mut expected = edited.clone();
+    let mut widened = 0;
+    for vertex in &mut expected.geometry.vertices {
+        let Some(decoded) = round_trip
+            .ir()
+            .geometry
+            .vertices
+            .iter()
+            .find(|decoded| decoded.id == vertex.id)
+        else {
+            continue;
+        };
+        if decoded.tolerance == vertex.tolerance {
+            continue;
+        }
+        let id = vertex.id.as_str();
+        assert_eq!(
+            &vertex.point, moved,
+            "fixture `{name}`: vertex {id} off the moved point changed its tolerance"
+        );
+        assert!(
+            derived(id),
+            "fixture `{name}`: vertex {id}'s widened tolerance is not derived"
+        );
+        let allowance = vertex.tolerance.unwrap_or(edited.tolerances.linear).get();
+        let tolerance = decoded
+            .tolerance
+            .expect("a widened tolerance is stated")
+            .get();
+        assert!(
+            (tolerance - MUTATION_MM).abs() <= allowance,
+            "fixture `{name}`: vertex {id} widened to {tolerance}, away from the {MUTATION_MM} mm gap"
+        );
+        vertex.tolerance = decoded.tolerance;
+        widened += 1;
+    }
+    (expected, widened)
+}
+
 /// An edit to a decoded document survives the patch writer.
 #[test]
 fn an_edit_survives_the_patch_writer() {
     let mut edited_count = 0usize;
     let mut measured_count = 0usize;
+    let mut widened_count = 0usize;
     let mut skipped: Vec<&str> = Vec::new();
     for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
@@ -970,8 +1034,10 @@ fn an_edit_survives_the_patch_writer() {
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \
                          edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
                     );
+                    let (expected, widened) = with_widened_tolerances(name, edited, &round_trip);
+                    widened_count += widened;
                     if let Err(mismatch) = snapshots_agree(
-                        &neutral_document(edited),
+                        &neutral_document(&expected),
                         &neutral_document(round_trip.ir()),
                     ) {
                         panic!(
@@ -1010,6 +1076,10 @@ fn an_edit_survives_the_patch_writer() {
     assert!(
         measured_count >= MEASURED_FIXTURE_FLOOR,
         "fewer fixtures than the floor measure a comparable body through the patch writer"
+    );
+    assert!(
+        widened_count > 0,
+        "no moved point opened a gap at a vertex the decode widened"
     );
 }
 

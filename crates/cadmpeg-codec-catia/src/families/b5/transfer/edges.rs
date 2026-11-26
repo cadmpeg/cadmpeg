@@ -41,28 +41,17 @@ pub(super) fn merge_curve_plan(
         .parameter_range
         .zip(candidate.parameter_range)
         .is_some_and(|(left, right)| left != right);
-    let edge_tolerance_conflict = existing
-        .edge_tolerance
-        .zip(candidate.edge_tolerance)
-        .is_some_and(|(left, right)| left != right);
     let cache_tolerance_conflict = existing
         .cache_fit_tolerance
         .zip(candidate.cache_fit_tolerance)
         .is_some_and(|(left, right)| left != right);
-    if existing.geometry != candidate.geometry
-        || range_conflict
-        || edge_tolerance_conflict
-        || cache_tolerance_conflict
-    {
+    if existing.geometry != candidate.geometry || range_conflict || cache_tolerance_conflict {
         conflicts.insert(edge);
         plans.remove(&edge);
         return;
     }
     if existing.parameter_range.is_none() {
         existing.parameter_range = candidate.parameter_range;
-    }
-    if existing.edge_tolerance.is_none() {
-        existing.edge_tolerance = candidate.edge_tolerance;
     }
     if existing.cache_fit_tolerance.is_none() {
         existing.cache_fit_tolerance = candidate.cache_fit_tolerance;
@@ -371,7 +360,6 @@ pub(super) fn emit_edges(
                     record: Some(payload.clone()),
                 }),
                 parameter_range: None,
-                edge_tolerance: None,
                 cache_fit_tolerance: None,
             }
         };
@@ -379,7 +367,6 @@ pub(super) fn emit_edges(
         let helix = plan.edge_helix_plan.remove(&edge_id);
         let edge_range = curve_plan.parameter_range;
         let support_curve_range = curve_plan_parameter_range(&curve_plan);
-        let edge_tolerance = curve_plan.edge_tolerance;
         let cache_fit_tolerance = curve_plan.cache_fit_tolerance;
         let geometry = curve_plan.geometry;
         annotate(
@@ -471,9 +458,6 @@ pub(super) fn emit_edges(
         if edge_range.is_some() {
             annotations.derived(&id, "carrier.param_range")?;
         }
-        if edge_tolerance.is_some() {
-            annotations.derived(&id, "tolerance")?;
-        }
         let map_id = id.clone();
         edge_id_map.insert(edge_id, map_id);
         let start = crate::resource::compose_index_id(
@@ -492,8 +476,7 @@ pub(super) fn emit_edges(
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
-            tolerance: edge_tolerance
-                .map(cadmpeg_ir::scalar::PositiveLength::from_assigned_positive_real),
+            tolerance: None,
             native_ref: None,
         });
     }
