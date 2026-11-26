@@ -41,6 +41,7 @@ const PLANE_BOUNDS_TOLERANCE_MM: f64 = 0.05;
 const ZERO_EXTENT_TOLERANCE_MM: f64 = 1.0e-5;
 const NONZERO_EXTENT_MIN_MM: f64 = 1.0e-3;
 const DIRECTRIX_FIT_TOLERANCE_MM: f64 = 0.0005;
+const TERMINAL_SPAN_DOMAIN_TOLERANCE: f64 = 1.0e-6;
 const MAX_ALIAS_DEPTH: usize = 3;
 const MAX_BSPLINE_PCURVE_KNOTS: usize = 4096;
 
@@ -472,9 +473,11 @@ impl<'a> CarrierResolver<'a> {
             return None;
         }
         match (record.family(), record.class()) {
-            (ConsolidatedFamily::B, 0x16) => {
-                self.b2_nurbs_curves.get(&record.byte_offset()).cloned()
-            }
+            (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x16) => self
+                .b2_nurbs_curves
+                .get(&record.byte_offset())
+                .cloned()
+                .or_else(|| decode_compact_nurbs_curve(self.data, record, refusal)),
             (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x21) => {
                 let (support_ref, pcurve_nurbs, range) =
                     decode_u32_bspline_pcurve(self.data, record)?;
@@ -911,7 +914,155 @@ pub(super) fn decode_b2_plane(
         return Some(plane);
     }
     let bytes = record.payload().and_then(|range| data.get(range))?;
-    decode_bitmask_plane(bytes)
+    decode_bitmask_plane(bytes).or_else(|| decode_uncompressed_axis_mask_plane(bytes))
+}
+
+/// Decode a compact-header class-`0x16` 3D NURBS curve (`A_16` or `B_16`).
+///
+/// Handles single-span curves of degrees `1..=64` and multi-span curves of
+/// degrees `1`, `3`, and `5` (with interior knot multiplicity `3` for degree 5
+/// and `1` for degrees `1` and `3`), polynomial (`0x01`) or rational weights,
+/// and tails carrying either the full knot domain, zero-origin full span, or
+/// terminal-span local domain alongside the identity affine map `[1.0, 0.0]`.
+fn decode_compact_nurbs_curve(
+    data: &[u8],
+    record: &ConsolidatedRecord,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<NurbsCurve> {
+    if record.class() != 0x16 {
+        return None;
+    }
+    let payload = record.payload().and_then(|range| data.get(range))?;
+    let mut at = 0usize;
+    let degree = crate::wire::bytes::compact_int(payload, &mut at)?;
+    let knot_count = usize::try_from(crate::wire::bytes::compact_int(payload, &mut at)?).ok()?;
+    if !(1..=64).contains(&degree) || knot_count < 2 || payload.get(at) != Some(&0x0c) {
+        return None;
+    }
+    at += 1;
+    let interior_mult = match degree {
+        _ if knot_count == 2 => 1usize,
+        1 | 3 => 1usize,
+        5 => 3usize,
+        _ => return None,
+    };
+    let deg_usize = usize::try_from(degree).ok()?;
+    let control_count = deg_usize
+        .checked_add(1)?
+        .checked_add(interior_mult.checked_mul(knot_count.checked_sub(2)?)?)?;
+    if knot_count
+        .checked_mul(8)?
+        .checked_add(control_count.checked_mul(24)?)?
+        .checked_add(at)?
+        > payload.len()
+    {
+        return None;
+    }
+    let mut distinct = Vec::with_capacity(knot_count);
+    for _ in 0..knot_count {
+        distinct.push(crate::wire::bytes::f64_le(payload, at)?.get());
+        at += 8;
+    }
+    if !cadmpeg_ir::geometry::nurbs::knots_strictly_increasing(&distinct) {
+        return None;
+    }
+    let mode = *payload.get(at)?;
+    if mode != 0x01 {
+        return None;
+    }
+    at += 1;
+    let mut control_points = Vec::with_capacity(control_count);
+    for _ in 0..control_count {
+        control_points.push(crate::wire::bytes::f64_point(payload, at)?.get());
+        at += 24;
+    }
+    let start_span = crate::wire::bytes::compact_int(payload, &mut at)?;
+    let end_span = crate::wire::bytes::compact_int(payload, &mut at)?;
+    let span_count = u32::try_from(knot_count.checked_sub(1)?).ok()?;
+    if start_span != 1 || end_span != span_count {
+        return None;
+    }
+    let dom0 = crate::wire::bytes::f64_le(payload, at)?.get();
+    let dom1 = crate::wire::bytes::f64_le(payload, at.checked_add(8)?)?.get();
+    let scale = crate::wire::bytes::f64_le(payload, at.checked_add(16)?)?.get();
+    let offset = crate::wire::bytes::f64_le(payload, at.checked_add(24)?)?.get();
+    at = at.checked_add(32)?;
+    if scale.to_bits() != 1.0_f64.to_bits()
+        || offset.to_bits() != 0.0_f64.to_bits()
+        || payload.get(at..) != Some(&[0x00, 0x07])
+    {
+        return None;
+    }
+    let k_first = distinct[0];
+    let k_last = distinct[knot_count - 1];
+    let k_prev = distinct[knot_count - 2];
+    let last_span = k_last - k_prev;
+    let k_scale = 1.0_f64.max(k_last.abs()).max(k_prev.abs());
+    let domain_ok = (dom0.to_bits() == k_first.to_bits() && dom1.to_bits() == k_last.to_bits())
+        || (dom0.to_bits() == 0.0_f64.to_bits() && dom1.to_bits() == k_last.to_bits())
+        || (dom0.to_bits() == 0.0_f64.to_bits()
+            && (dom1 - last_span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * k_scale);
+    if !domain_ok {
+        return None;
+    }
+    let mut knots = Vec::with_capacity(control_count + deg_usize + 1);
+    for (index, &knot) in distinct.iter().enumerate() {
+        let mult = if index == 0 || index + 1 == knot_count {
+            deg_usize + 1
+        } else {
+            interior_mult
+        };
+        knots.extend(std::iter::repeat_n(knot, mult));
+    }
+    crate::nurbs::note_refusal(
+        NurbsCurve::from_lanes(degree, knots, control_points, None, false),
+        refusal,
+        format_args!(
+            "compact 0x16 NURBS curve record at byte {}",
+            record.byte_offset()
+        ),
+    )
+}
+
+/// Decode an uncompressed `b2 03 27` plane carrier storing a 24-byte `f64le`
+/// origin, a 1-byte `0xc0 | zero_mask` axis bitmask (`ux, uy, uz, vx, vy, vz`
+/// in bits `0..6`), and only the non-zero `f64le` axis components.
+fn decode_uncompressed_axis_mask_plane(bytes: &[u8]) -> Option<PlaneSurface> {
+    if bytes.len() < 25 {
+        return None;
+    }
+    let mask = bytes[24];
+    if (mask & 0xc0) != 0xc0 {
+        return None;
+    }
+    let zero_mask = mask & 0x3f;
+    let stored_components = 6usize.checked_sub(usize::try_from(zero_mask.count_ones()).ok()?)?;
+    let expected_len = 25usize.checked_add(stored_components.checked_mul(8)?)?;
+    if bytes.len() != expected_len {
+        return None;
+    }
+    let mut view = View::over_retained(bytes);
+    let origin = FinitePoint3::new(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))?;
+    let _mask = view.u8()?;
+    let mut components = [0.0_f64; 6];
+    for (bit, slot) in components.iter_mut().enumerate() {
+        if (zero_mask & (1u8 << bit)) == 0 {
+            let value = view.f64_le()?;
+            if !value.is_finite() {
+                return None;
+            }
+            *slot = value;
+        }
+    }
+    if !view.is_empty() {
+        return None;
+    }
+    let u = UnitVector3::new(Vector3::new(components[0], components[1], components[2]))?;
+    let v = UnitVector3::new(Vector3::new(components[3], components[4], components[5]))?;
+    Some(PlaneSurface::new(
+        origin,
+        OrthonormalFrame3::completing(u, v)?,
+    ))
 }
 
 /// General bitmask decoder for `b2 03 27` plane payloads.
@@ -1208,5 +1359,93 @@ mod tests {
             ConeSurface::try_new(origin, z, x, 4.0, 1.5, half).expect("elliptical cone"),
         );
         assert!(super::offset_analytic_surface(&ell_cone, dist).is_none());
+    }
+
+    #[test]
+    fn compact_0x16_decodes_shifted_single_span_and_multispan_polynomial_curves() {
+        // Single-span degree-5 B_16 curve with shifted knots [10.0, 25.0] and terminal-span tail [0.0, 15.0].
+        let mut payload = vec![0x15, 0x09, 0x0c];
+        for k in [10.0_f64, 25.0] {
+            payload.extend_from_slice(&k.to_le_bytes());
+        }
+        payload.push(0x01);
+        for i in 0..6 {
+            payload.extend_from_slice(&(f64::from(i) * 3.0).to_le_bytes());
+            payload.extend_from_slice(&0.0_f64.to_le_bytes());
+            payload.extend_from_slice(&5.0_f64.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x05, 0x05]);
+        for v in [0.0_f64, 15.0, 1.0, 0.0] {
+            payload.extend_from_slice(&v.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x00, 0x07]);
+        let mut frame = vec![0xb2, 0x03, 0x16, u8::try_from(payload.len()).unwrap(), 0x05];
+        frame.extend_from_slice(&payload);
+        let records = crate::wire::records::consolidated_records(&frame);
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        let curve = super::decode_compact_nurbs_curve(&frame, &records[0], &mut refusal)
+            .expect("decoded shifted B_16 curve");
+        assert_eq!(curve.degree(), 5);
+        assert_eq!(curve.control_points().len(), 6);
+        assert!(refusal.take_notes().is_empty());
+
+        // Multi-span degree-5 A_16 curve with 4 knots [0, 10, 20, 22] and terminal-span tail [0.0, 2.0].
+        let mut a_payload = vec![0x15, 0x11, 0x0c];
+        for k in [0.0_f64, 10.0, 20.0, 22.0] {
+            a_payload.extend_from_slice(&k.to_le_bytes());
+        }
+        a_payload.push(0x01);
+        for i in 0..12 {
+            a_payload.extend_from_slice(&(f64::from(i)).to_le_bytes());
+            a_payload.extend_from_slice(&(f64::from(i) * 0.5).to_le_bytes());
+            a_payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        }
+        a_payload.extend_from_slice(&[0x05, 0x0d]);
+        for v in [0.0_f64, 2.0, 1.0, 0.0] {
+            a_payload.extend_from_slice(&v.to_le_bytes());
+        }
+        a_payload.extend_from_slice(&[0x00, 0x07]);
+        let mut a_frame = vec![0xa5, 0x03, 0x16];
+        a_frame.extend_from_slice(&u32::try_from(a_payload.len()).unwrap().to_le_bytes());
+        a_frame.push(0x05);
+        a_frame.extend_from_slice(&a_payload);
+        let a_records = crate::wire::records::consolidated_records(&a_frame);
+        let a_curve = super::decode_compact_nurbs_curve(&a_frame, &a_records[0], &mut refusal)
+            .expect("decoded multi-span A_16 curve");
+        assert_eq!(a_curve.degree(), 5);
+        assert_eq!(a_curve.control_points().len(), 12);
+        assert!(refusal.take_notes().is_empty());
+    }
+
+    #[test]
+    fn uncompressed_axis_mask_plane_decodes_full_and_elided_zero_axes() {
+        const TOL: f64 = 1.0e-12;
+        // Full 73-byte plane (mask 0xc0): u=(1,0,0), v=(0,1,0) -> normal +Z.
+        let mut full = Vec::new();
+        for v in [10.0_f64, 20.0, 30.0] {
+            full.extend_from_slice(&v.to_le_bytes());
+        }
+        full.push(0xc0);
+        for v in [1.0_f64, 0.0, 0.0, 0.0, 1.0, 0.0] {
+            full.extend_from_slice(&v.to_le_bytes());
+        }
+        let plane = super::decode_uncompressed_axis_mask_plane(&full).expect("73-byte plane");
+        assert!(plane.origin().get().distance(Point3::new(10.0, 20.0, 30.0)) < TOL);
+        assert!((plane.frame().axis().as_raw().z - 1.0).abs() < TOL);
+
+        // Elided 49-byte plane (mask 0xf1: ux, vy, vz omitted): u=(0, 0.6, -0.8), v=(-1, 0, 0).
+        let mut elided = Vec::new();
+        for v in [1.0_f64, 2.0, 3.0] {
+            elided.extend_from_slice(&v.to_le_bytes());
+        }
+        elided.push(0xf1);
+        for v in [0.6_f64, -0.8, -1.0] {
+            elided.extend_from_slice(&v.to_le_bytes());
+        }
+        let plane2 = super::decode_uncompressed_axis_mask_plane(&elided).expect("49-byte plane");
+        let n = plane2.frame().axis().as_raw();
+        assert!(n.x.abs() < TOL);
+        assert!((n.y - 0.8).abs() < TOL);
+        assert!((n.z - 0.6).abs() < TOL);
     }
 }
