@@ -8,8 +8,8 @@
 //! its own. The state of an item lies in the one history that stores its id,
 //! or, where several histories store it, in the history that the item's
 //! parameter scope binds. The states of the items of one history tile its
-//! chain: from the head back, the state after each item is the state before
-//! the next later item of that history. The state after an item holds, of
+//! chain, which the walk follows back from the head: the state after each
+//! item is the state before the next later item of that history. The state after an item holds, of
 //! each history, the state that this walk reaches at the item, with the
 //! consumed bodies of the head whose consumer is later in the timeline
 //! (§5.5).
