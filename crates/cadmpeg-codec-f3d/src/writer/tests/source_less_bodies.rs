@@ -401,14 +401,6 @@ fn generated_source_less_drops_lossy_design_link_metadata() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "of sketch-curve links that share their coedge with another link",
-    );
-
-    f3d_native_mut(&mut source_less).sketch_curve_links.pop();
-    crate::test_support::assert_written_with_loss(
-        &source_less,
-        None,
-        "export/native.records-omitted",
         "contiguous ordinals",
     );
 }

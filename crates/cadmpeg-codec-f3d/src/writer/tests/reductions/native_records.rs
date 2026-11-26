@@ -111,7 +111,7 @@ fn a_tangent_not_g2_edge_continuity_is_written() {
 }
 
 #[test]
-fn sketch_curve_links_that_share_a_coedge_are_dropped_alone() {
+fn sketch_curve_links_that_share_a_coedge_are_written_in_order() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let coedges = [0, 0, 1].map(|index| ir.geometry.coedges[index].id.clone());
     f3d_native_mut(&mut ir).sketch_curve_links = coedges
@@ -128,22 +128,15 @@ fn sketch_curve_links_that_share_a_coedge_are_dropped_alone() {
         })
         .collect();
 
-    let report = assert_written_with_loss(
-        &ir,
-        None,
-        OMITTED,
-        "of sketch-curve links that share their coedge with another link",
-    );
-    assert_no_whole_drop(&report);
-    let messages = omitted(&report).join("\n");
-    assert!(
-        messages.contains("f3d:generated:sketch-curve-link#0, f3d:generated:sketch-curve-link#1"),
-        "{messages}"
-    );
-    assert!(
-        !messages.contains("f3d:generated:sketch-curve-link#2"),
-        "{messages}"
-    );
+    let decoded = write_and_decode(&ir);
+    let links = &f3d_native(&decoded).sketch_curve_links;
+    let curves = links
+        .iter()
+        .map(|link| link.sketch_curve_id)
+        .collect::<Vec<_>>();
+    assert_eq!(curves, [113, 114, 115]);
+    assert_eq!(links[0].target, links[1].target);
+    assert_ne!(links[1].target, links[2].target);
 }
 
 #[test]

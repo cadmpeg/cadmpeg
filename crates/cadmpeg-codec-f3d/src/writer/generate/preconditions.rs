@@ -322,7 +322,6 @@ pub(super) fn unwritable_link_records(
         .iter()
         .map(|coedge| &coedge.id)
         .collect::<HashSet<_>>();
-    let mut by_coedge = BTreeMap::<_, Vec<&str>>::new();
     let mut unresolved = BTreeSet::new();
     for link in &native.sketch_curve_links {
         // Only a coedge-owned link is regenerated; a link on any other owner is
@@ -330,26 +329,13 @@ pub(super) fn unwritable_link_records(
         let AttributeTarget::Coedge(coedge) = &link.target else {
             continue;
         };
-        if coedges.contains(coedge) {
-            by_coedge.entry(coedge).or_default().push(&link.id);
-        } else {
+        if !coedges.contains(coedge) {
             unresolved.insert(link.id.clone());
         }
     }
     if let Some(unwritable) = Unwritable::of(
         "of sketch-curve links that name a coedge the document does not hold",
         unresolved,
-    ) {
-        return Ok(Some(unwritable));
-    }
-    if let Some(unwritable) = Unwritable::of(
-        "of sketch-curve links that share their coedge with another link (the B-rep stream holds one sketch-curve link on each coedge, and the records do not state which link it is)",
-        by_coedge
-            .into_values()
-            .filter(|links| links.len() > 1)
-            .flatten()
-            .map(str::to_owned)
-            .collect(),
     ) {
         return Ok(Some(unwritable));
     }
