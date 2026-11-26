@@ -4,7 +4,7 @@
 
 use cadmpeg_core::decode::index_from_u32;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::native::F3dNative;
 use crate::records::{
@@ -262,6 +262,46 @@ pub(super) fn unreachable_record_headers(native: &F3dNative) -> Option<Unwritabl
             .iter()
             .filter(|header| !reachable.contains(&header.record_index))
             .map(|header| header.id.clone())
+            .collect(),
+    )
+}
+
+/// The sketch-curve links the B-rep stream cannot hold as they stand, the
+/// first family that holds one.
+pub(super) fn unwritable_link_records(target: &CadIr, native: &F3dNative) -> Option<Unwritable> {
+    let coedges = target
+        .geometry
+        .coedges
+        .iter()
+        .map(|coedge| &coedge.id)
+        .collect::<HashSet<_>>();
+    let mut by_coedge = BTreeMap::<_, Vec<&str>>::new();
+    let mut unresolved = BTreeSet::new();
+    for link in &native.sketch_curve_links {
+        // Only a coedge-owned link is regenerated; a link on any other owner is
+        // reported as a source-fidelity loss instead of refusing the write.
+        let AttributeTarget::Coedge(coedge) = &link.target else {
+            continue;
+        };
+        if coedges.contains(coedge) {
+            by_coedge.entry(coedge).or_default().push(&link.id);
+        } else {
+            unresolved.insert(link.id.clone());
+        }
+    }
+    if let Some(unwritable) = Unwritable::of(
+        "of sketch-curve links that name a coedge the document does not hold",
+        unresolved,
+    ) {
+        return Some(unwritable);
+    }
+    Unwritable::of(
+        "of sketch-curve links that share their coedge with another link (the B-rep stream holds one sketch-curve link on each coedge, and the records do not state which link it is)",
+        by_coedge
+            .into_values()
+            .filter(|links| links.len() > 1)
+            .flatten()
+            .map(str::to_owned)
             .collect(),
     )
 }
@@ -758,28 +798,6 @@ pub(super) fn validate_source_less_design_links(
         .iter()
         .map(|coedge| (&coedge.id, coedge))
         .collect::<HashMap<_, _>>();
-    let mut linked_coedges = BTreeSet::new();
-    for link in &native.sketch_curve_links {
-        // Only a coedge-owned link is regenerated; a link on any other owner is
-        // reported as a source-fidelity loss instead of refusing the write.
-        let AttributeTarget::Coedge(coedge) = &link.target else {
-            continue;
-        };
-        if !coedges.contains_key(coedge) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch-curve link {} targets a missing coedge {}",
-                link.id,
-                coedge.as_str()
-            )));
-        }
-        if !linked_coedges.insert(coedge) {
-            return Err(CodecError::InvalidInput(format!(
-                "source-less F3D generation supports one sketch-curve link per coedge: {}",
-                coedge.as_str()
-            )));
-        }
-    }
-
     let bodies = target
         .geometry
         .bodies

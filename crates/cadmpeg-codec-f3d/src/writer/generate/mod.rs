@@ -26,7 +26,7 @@ mod records;
 mod reduce;
 mod smbh;
 use preconditions::{
-    unreachable_record_headers, validate_source_less_auxiliary_geometry,
+    unreachable_record_headers, unwritable_link_records, validate_source_less_auxiliary_geometry,
     validate_source_less_design_bindings, validate_source_less_design_links,
     validate_source_less_design_ownership, validate_source_less_history_graph,
     validate_source_less_procedural_carriers, validate_source_less_recipes,
@@ -204,6 +204,9 @@ fn attempt<W: Write + Seek>(
         attributes
     };
     if has_native {
+        if let Some(unwritable) = unwritable_link_records(target, &native) {
+            return Err(Failure::unwritable(Stage::Design, unwritable));
+        }
         validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
     }
     let brep = if body_less {

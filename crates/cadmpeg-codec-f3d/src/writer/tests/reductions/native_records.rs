@@ -3,9 +3,11 @@
 //! with a loss naming it, and the other native records are written
 //! (cadir-v11.md §3.4, W1).
 
+use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::export::ExportReport;
 
+use crate::records::sketch_links::{SketchCurveLink, SketchLinkSense};
 use crate::test_support::assert_written_with_loss;
 use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 
@@ -50,6 +52,42 @@ fn write_and_decode(ir: &CadIr) -> CadIr {
     )
     .expect("the written file decodes");
     decoded.into_parts().0
+}
+
+#[test]
+fn sketch_curve_links_that_share_a_coedge_are_dropped_alone() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let coedges = [0, 0, 1].map(|index| ir.geometry.coedges[index].id.clone());
+    f3d_native_mut(&mut ir).sketch_curve_links = coedges
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, coedge)| SketchCurveLink {
+            id: format!("f3d:generated:sketch-curve-link#{ordinal}"),
+            target: AttributeTarget::Coedge(coedge),
+            sketch_curve_id: 113 + i64::try_from(ordinal).expect("small ordinal"),
+            ref_b: 0,
+            sense: Some(SketchLinkSense::try_from(1).expect("link sense")),
+            role: 2,
+            closure: 3,
+        })
+        .collect();
+
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        OMITTED,
+        "of sketch-curve links that share their coedge with another link",
+    );
+    assert_no_whole_drop(&report);
+    let messages = omitted(&report).join("\n");
+    assert!(
+        messages.contains("f3d:generated:sketch-curve-link#0, f3d:generated:sketch-curve-link#1"),
+        "{messages}"
+    );
+    assert!(
+        !messages.contains("f3d:generated:sketch-curve-link#2"),
+        "{messages}"
+    );
 }
 
 #[test]
