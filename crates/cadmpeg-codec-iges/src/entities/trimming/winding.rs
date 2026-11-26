@@ -320,9 +320,10 @@ fn boundary_extremes(
     Ok(joined)
 }
 
-/// The extremes on `axis` of a parameter curve over `range`. Each knot span
-/// is a Bézier span with positive weights: it lies in the hull of its
-/// controls and passes through its end controls. A span of degree one has
+/// The extremes on `axis` of a parameter curve over `range`, from the Bézier
+/// net of each knot span inside `range` (see `restricted_pcurve_spans`). A
+/// Bézier span with positive weights lies in the hull of its controls and
+/// passes through its end controls. A span of degree one has
 /// its extremes at its ends, and a span of degree two at its ends or where
 /// its derivative on `axis` is zero. A span of higher degree has each
 /// extreme between its control extreme and the extreme of its points at the
