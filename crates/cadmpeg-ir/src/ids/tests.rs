@@ -84,6 +84,43 @@ fn three_component_ids_are_valid() {
 }
 
 #[test]
+fn the_format_component_is_a_codec_id() {
+    for (format, valid) in [
+        ("step", true),
+        ("3mf", true),
+        ("Step", false),
+        ("st-ep", false),
+        ("st_ep", false),
+        ("st\u{e9}p", false),
+    ] {
+        let id = format!("{format}:file:signature#0");
+        assert_eq!(is_valid_identity(&id), valid, "{format}");
+        assert_eq!(
+            serde_json::from_value::<super::Identity>(serde_json::json!(id)).is_ok(),
+            valid,
+            "{format}"
+        );
+        assert_eq!(
+            super::StaticIdentityNamespace::new(format, "file", "signature").is_some(),
+            valid,
+            "{format}"
+        );
+        assert_eq!(
+            IdentityNamespace::new(format, "file", "signature").is_ok(),
+            valid,
+            "{format}"
+        );
+    }
+    assert!(matches!(
+        IdentityNamespace::new("STEP", "file", "signature"),
+        Err(IdentityError::InvalidComponent {
+            label: "format",
+            ..
+        })
+    ));
+}
+
+#[test]
 fn two_component_ids_are_rejected() {
     assert!(!is_valid_identity("step:signature#0"));
     assert!(matches!(
@@ -451,9 +488,9 @@ fn const_whitespace_grammar_matches_runtime_identity_grammar_for_every_scalar() 
         );
 
         identity.clear();
-        identity.push('a');
+        identity.push_str("a:a");
         identity.push(character);
-        identity.push_str("b:c:d#key");
+        identity.push_str("b:d#key");
         assert_eq!(
             super::valid_component_text(&component),
             super::is_valid_identity(&identity),

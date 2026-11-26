@@ -16,7 +16,7 @@ mod detailing;
 pub(super) mod extrude;
 pub(super) mod from_ir;
 pub(super) mod sketch;
-mod streams;
+pub(crate) mod streams;
 pub(super) mod tree;
 
 #[cfg(test)]

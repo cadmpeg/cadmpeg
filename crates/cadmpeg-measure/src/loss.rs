@@ -31,8 +31,7 @@ impl MeasureLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         let kind =
-            NamespacedLossKind::new(NAMESPACE, self.code(), LossTaxonomy::GeometryNotTransferred)
-                .with_strict_floor(None);
+            NamespacedLossKind::new(NAMESPACE, self.code(), LossTaxonomy::GeometryNotTransferred);
         LossNote::new(kind, message).with_severity(self.severity())
     }
 }
