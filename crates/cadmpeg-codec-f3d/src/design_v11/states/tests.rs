@@ -739,10 +739,13 @@ fn a_state_that_several_histories_store_lies_in_the_history_its_scope_binds() {
         bind(&histories, &tail(Some("f3d:Breps/BREP.x:asm-history")), 5),
         bound(0, 5, Some(2))
     );
-    assert!(matches!(
+    assert_eq!(
         bind(&histories, &tail(None), 5),
-        Kind::Unresolved(_)
-    ));
+        Kind::Ambiguous {
+            state: 5,
+            stored: vec![0, 1],
+        }
+    );
     assert_eq!(bind(&histories, &tail(None), 2), bound(0, 2, Some(1)));
     assert!(matches!(
         bind(&histories, &tail(None), 4),
@@ -809,6 +812,41 @@ fn an_unplaced_item_that_steps_a_history_ends_the_states_before_it() {
     );
     let stop = stop.expect("a stop");
     assert_eq!(stop.features, [feature_id("a"), feature_id("c")]);
+}
+
+#[test]
+fn an_item_whose_state_several_histories_store_ends_the_walk_where_one_of_them_stands_at_it() {
+    let design = design(&["c", "a", "u", "b", "d"], "d", Vec::new());
+    let entries = entries(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(1, 2, None),
+            Kind::Ambiguous {
+                state: 3,
+                stored: vec![0, 1],
+            },
+            bound(1, 4, Some(2)),
+            bound(0, 5, Some(3)),
+        ],
+    );
+    let Plan { planned, stop } = plan(&entries, &[Some(5), Some(4)], &["BREP.x", "BREP.y"]);
+    assert_eq!(
+        planned,
+        [Planned {
+            entry: 3,
+            targets: vec![Some(3), Some(4)],
+        }]
+    );
+    let stop = stop.expect("a stop");
+    assert_eq!(stop.features, [feature_id("c"), feature_id("a")]);
+    assert!(
+        stop.reason
+            .contains("stores state 3, which 2 ASM histories store")
+            && stop.reason.contains("BREP.x"),
+        "{}",
+        stop.reason
+    );
 }
 
 #[test]

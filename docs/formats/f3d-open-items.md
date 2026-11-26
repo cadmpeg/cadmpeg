@@ -1005,7 +1005,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A design with two components, each with a Sketch and a new-body `Extrude`, and a `Move` of the body of the second component whose parameter scope stores no body-map entity suffix, saved once. For the `Move` item, its current identity compared with the `delta_state` chain of each history, and the history whose state changes the moved body.
 
-**Note.** The decoder states the evaluations of that item and of the items after it, and charges `history.state-unread` for the states of the items before it.
+**Note.** The decoder states no evaluation of that item and charges `history.state-unread` for it. Where the states of the later items reach that identity in one of the histories, the decoder takes the item to store the state there, states the evaluations of the later items, and charges `history.state-unread` for the states of the items before it. Elsewhere the decoder takes the item to commit no state.
 
 ### DR-1068. History states after the state of the last timeline item
 

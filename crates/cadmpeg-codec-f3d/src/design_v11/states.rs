@@ -26,8 +26,10 @@
 //! no evaluation. An item that stores no state id holds members and poses
 //! that the walk does not read: it has no evaluation, and a loss names it.
 //! An item whose state the walk does not place has no evaluation, and a
-//! loss names it and the assumption that it commits no state. The walk
-//! stops where the stored states of the items of one history do not meet,
+//! loss names it and the assumption that it commits no state. An item whose
+//! state id several histories store, where the walk stands at that state in
+//! one of them, is taken to have stored it there, and the walk stops at it.
+//! The walk also stops where the stored states of the items of one history do not meet,
 //! and a loss names each feature whose state it leaves unstated.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -156,6 +158,9 @@ enum Kind {
     },
     /// The state id is not placed in one history, for this reason.
     Unresolved(String),
+    /// The histories `stored` store the state id `state`, and the parameter
+    /// scope binds none of them.
+    Ambiguous { state: i64, stored: Vec<usize> },
 }
 
 /// A built timeline item of a feature of the root document.
@@ -271,7 +276,27 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
                 at[*history] = *previous;
                 set[*history] = planned.len();
             }
-            Kind::NoState | Kind::Unresolved(_) => {}
+            Kind::Ambiguous { state, stored } if !entry.stateless => {
+                if let Some(history) = stored
+                    .iter()
+                    .copied()
+                    .find(|history| at[*history] == Some(*state))
+                {
+                    return Plan {
+                        planned,
+                        stop: Some(Stop {
+                            reason: format!(
+                                "feature {} stores state {state}, which {} ASM histories store, and the items after it leave {} at that state",
+                                entry.feature,
+                                stored.len(),
+                                names[history]
+                            ),
+                            features: earlier.collect(),
+                        }),
+                    };
+                }
+            }
+            Kind::NoState | Kind::Unresolved(_) | Kind::Ambiguous { .. } => {}
         }
     }
     Plan {
@@ -430,6 +455,8 @@ fn unstated(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Option<L
 /// One loss for each item of `entries` whose state the walk does not place.
 /// The walk takes such an item to commit no state, and the check between
 /// the items of each history stops it where their stored states disagree.
+/// An item whose state id several histories store ends the walk where the
+/// walk stands at that state in one of them.
 fn unresolved(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Vec<LossNote> {
     entries
         .iter()
@@ -438,6 +465,11 @@ fn unresolved(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Vec<Lo
             Kind::Unresolved(reason) => Some(F3dLossCode::HistoryStateUnread.note(format!(
                 "scope {definition}: the state after feature {} is not stated: {reason}. The item is taken to commit no history state, and the states of the other items are their own stored states.",
                 entry.feature
+            ))),
+            Kind::Ambiguous { state, stored } => Some(F3dLossCode::HistoryStateUnread.note(format!(
+                "scope {definition}: the state after feature {} is not stated: {} ASM histories store state {state}, and its parameter scope binds none of them. Where the walk stands at state {state} in one of them, the item is taken to have stored it there, and the walk stops at the item; elsewhere the item is taken to commit no history state, and the states of the other items are their own stored states.",
+                entry.feature,
+                stored.len()
             ))),
             Kind::Bound { .. } | Kind::NoState => None,
         })
@@ -1250,7 +1282,7 @@ impl<'r> Reader<'r, '_> {
                     Kind::Bound { history, state, .. } => {
                         chain.histories[history].states.get(&state).cloned()
                     }
-                    Kind::NoState | Kind::Unresolved(_) => None,
+                    Kind::NoState | Kind::Unresolved(_) | Kind::Ambiguous { .. } => None,
                 },
             });
             depth += 1;
@@ -1416,24 +1448,19 @@ fn bind(histories: &[History<'_>], tail: &Tail<'_>, state: i64) -> Kind {
         .collect::<Vec<_>>();
     let history = match stored.as_slice() {
         [] => return Kind::Unresolved(format!("the file stores no state {state}")),
-        [one] => *one,
-        _ => {
-            let bound =
-                tail.history
-                    .and_then(historical_brep_source)
-                    .and_then(|source| {
-                        stored.iter().copied().find(|index| {
-                            histories[*index].name.strip_prefix("BREP.") == Some(source)
-                        })
-                    });
-            let Some(bound) = bound else {
-                return Kind::Unresolved(format!(
-                    "{} ASM histories store state {state}, and its parameter scope binds none of them",
-                    stored.len()
-                ));
-            };
-            bound
-        }
+        [one] => Some(*one),
+        _ => tail
+            .history
+            .and_then(historical_brep_source)
+            .and_then(|source| {
+                stored
+                    .iter()
+                    .copied()
+                    .find(|index| histories[*index].name.strip_prefix("BREP.") == Some(source))
+            }),
+    };
+    let Some(history) = history else {
+        return Kind::Ambiguous { state, stored };
     };
     let states = &histories[history].states;
     let previous = tail
