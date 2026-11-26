@@ -570,9 +570,33 @@ pub(super) fn decode(
         "BREP_WITH_VOIDS",
     ];
     let mut root_sources = BTreeMap::new();
+    let mut root_names = BTreeMap::<RootKey, Vec<(u64, Option<String>)>>::new();
     for (id, record) in exchange.entities_any(&topology_root_types) {
         if let Some(key) = root_key(record, exchange, &shells) {
+            root_names
+                .entry(key.clone())
+                .or_default()
+                .push((id, root_name(exchange, record, id, &mut losses)));
             root_sources.entry(key).or_insert((id, record));
+        }
+    }
+    let body_names = root_names
+        .iter()
+        .map(|(key, names)| {
+            let name = names.iter().find_map(|(_, name)| name.clone());
+            (key.clone(), name)
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (key, names) in &root_names {
+        let Some(Some(kept)) = body_names.get(key) else {
+            continue;
+        };
+        for (id, name) in names {
+            if let Some(name) = name.as_ref().filter(|name| *name != kept) {
+                losses.push(StepLossCode::TopologyAliasRootNameDropped.note(format!(
+                    "STEP topology root #{id} names its body '{name}', but the body it shares                      with its alias roots takes the first name in instance order, '{kept}'"
+                )));
+            }
         }
     }
     let scope_distinct_roots = root_sources.len() > 1;
@@ -589,9 +613,11 @@ pub(super) fn decode(
             .then(|| ModelIndex::new_model_only(commit_session.document()));
         for (key, (id, record)) in root_sources {
             let mut root_losses = Vec::new();
+            let name = body_names.get(&key).cloned().flatten();
             let outcome = build(
                 id,
                 record,
+                name.as_deref(),
                 BuildSources {
                     exchange,
                     index: index.as_ref(),
@@ -2916,6 +2942,8 @@ struct BuildRoot<'a> {
     shell_steps: &'a [u64],
     bid: BodyId,
     rid: &'a RegionId,
+    /// The name the root's body takes.
+    name: Option<&'a str>,
 }
 
 #[derive(Clone, Copy)]
@@ -2928,6 +2956,7 @@ struct BuildScope {
 fn build(
     id: u64,
     root: &RawRecord,
+    name: Option<&str>,
     sources: BuildSources<'_, '_>,
     scope_root: bool,
     losses: &mut Vec<LossNote>,
@@ -2965,6 +2994,7 @@ fn build(
                 shell_steps: &shell_steps,
                 bid: body,
                 rid: &region,
+                name,
             },
             BuildScope {
                 faces: scope_shell_carriers,
@@ -3028,6 +3058,7 @@ fn build(
                 shell_steps: &[shell_reference],
                 bid: body,
                 rid: &region,
+                name,
             },
             BuildScope {
                 faces: scoped || scope_root,
@@ -3080,6 +3111,7 @@ fn build_one(
         shell_steps,
         bid,
         rid,
+        name,
     } = root_parts;
     let BuildScope {
         faces: scope_faces,
@@ -3107,7 +3139,7 @@ fn build_one(
             BodyKind::Sheet
         },
         transform: None,
-        name: None,
+        name: name.map(str::to_owned),
         color: None,
         visible: None,
         native_ref: None,
@@ -5844,6 +5876,46 @@ fn face_attributes_inner<'a>(
         _ => None,
     };
     Ok(result)
+}
+
+/// The `REPRESENTATION_ITEM.name` of topology root `id`, decoded, unless it
+/// is empty. A complex instance whose `REPRESENTATION_ITEM` partial is absent
+/// takes the name from its first root-type partial.
+fn root_name(
+    exchange: &Exchange,
+    root: &RawRecord,
+    id: u64,
+    losses: &mut Vec<LossNote>,
+) -> Option<String> {
+    let value = if root.partials.len() == 1 {
+        root.parameter(0)
+    } else {
+        root.partial("REPRESENTATION_ITEM")
+            .and_then(|partial| partial.parameters.first())
+            .or_else(|| {
+                [
+                    "BREP_WITH_VOIDS",
+                    "FACETED_BREP",
+                    "MANIFOLD_SOLID_BREP",
+                    "FACE_BASED_SURFACE_MODEL",
+                    "SHELL_BASED_SURFACE_MODEL",
+                ]
+                .into_iter()
+                .find_map(|name| {
+                    root.partial(name)
+                        .and_then(|partial| partial.parameters.first())
+                })
+            })
+    }?;
+    super::decode_text(
+        exchange,
+        value,
+        losses,
+        id,
+        "body name",
+        StepLossCode::MetadataStringInvalid,
+    )
+    .filter(|name| !name.is_empty())
 }
 
 fn face_name_value(record: &RawRecord) -> Option<&Value> {

@@ -512,7 +512,7 @@ macro_rules! model_write_value {
             Vec::new()
         } else {
             let owners =
-                procedural::standard_owners($model.surfaces.iter().filter_map(|carrier| {
+                crate::hash::procedural_owners($model.surfaces.iter().filter_map(|carrier| {
                     carrier
                         .geometry
                         .procedural_construction()
@@ -522,7 +522,7 @@ macro_rules! model_write_value {
                 .procedural_surfaces
                 .iter()
                 .map(|procedural| ProceduralSurfaceWire {
-                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    owner: owners.get(procedural.id.as_str()),
                     procedural,
                 })
                 .collect()
@@ -532,17 +532,18 @@ macro_rules! model_write_value {
         if $model.procedural_curves.is_empty() {
             Vec::new()
         } else {
-            let owners = procedural::standard_owners($model.curves.iter().filter_map(|carrier| {
-                carrier
-                    .geometry
-                    .procedural_construction()
-                    .map(|construction| (construction.as_str(), &carrier.id))
-            }));
+            let owners =
+                crate::hash::procedural_owners($model.curves.iter().filter_map(|carrier| {
+                    carrier
+                        .geometry
+                        .procedural_construction()
+                        .map(|construction| (construction.as_str(), &carrier.id))
+                }));
             $model
                 .procedural_curves
                 .iter()
                 .map(|procedural| ProceduralCurveWire {
-                    owner: owners.get(procedural.id.as_str()).copied().flatten(),
+                    owner: owners.get(procedural.id.as_str()),
                     procedural,
                 })
                 .collect()
@@ -1662,6 +1663,26 @@ macro_rules! declare_arena_name {
                 written
             }
 
+            /// Each record of an arena the CADIR wire carries whose canonical
+            /// JSON, written alone, is refused, with the refusal.
+            pub(crate) fn unwritable(self) -> Vec<(crate::give_up::Seed, crate::hash::finite_json::CanonicalJsonError)> {
+                let mut unwritable = Vec::new();
+                $(if !ArenaName::WIRE_OMITTED.contains(&arena_name!($field, $class, $home)) {
+                    for record in &self.$home.$field {
+                        if let Some(refusal) = crate::hash::canonical_refusal(record) {
+                            unwritable.push((
+                                crate::give_up::Seed {
+                                    arena: crate::give_up::Arena::Home { home: stringify!($home), field: stringify!($field) },
+                                    id: crate::schema::ArenaRecord::record_identity(record).to_owned(),
+                                },
+                                refusal,
+                            ));
+                        }
+                    }
+                })*
+                unwritable
+            }
+
             /// The first registered arena of `class` that holds a record.
             pub(crate) fn populated_arena(self, class: ArenaClass) -> Option<ArenaName> {
                 $(if arena_class!($class) == class && !self.$home.$field.is_empty() {
@@ -1833,7 +1854,6 @@ macro_rules! declare_model_wire {
             where
                 S: Serializer,
             {
-                feature_parents::validate(&[self]).map_err(serde::ser::Error::custom)?;
                 if !self.is_finalized() {
                     let mut sorted = self.clone();
                     sorted.finalize();
@@ -1897,11 +1917,8 @@ macro_rules! declare_model_wire {
 
         impl Model {
             /// Borrow every arena the wire carries in canonical identity order.
-            pub(crate) fn sorted(&self) -> Result<SortedModel<'_>, CodecError> {
-                if let Err(error) = feature_parents::validate(&[self]) {
-                    return Err(CodecError::malformed(format_args!("{error}")));
-                }
-                Ok(SortedModel { $($field: sorted_model_value!(self, $field),)* })
+            pub(crate) fn sorted(&self) -> SortedModel<'_> {
+                SortedModel { $($field: sorted_model_value!(self, $field),)* }
             }
         }
     };
@@ -2045,16 +2062,14 @@ pub struct GeometrySnapshot<'a> {
 }
 
 impl Topology {
-    /// Admit `model`'s feature parents and indexed owners for a borrowed
-    /// geometry serialization view that embeds `model`'s tessellations.
+    /// Index owners for a borrowed geometry serialization view that embeds
+    /// `model`'s tessellations.
+    #[must_use]
     pub fn geometry_snapshot<'a>(
         &'a self,
         model: &'a Model,
         kind: &'a str,
-    ) -> Result<GeometrySnapshot<'a>, CodecError> {
-        if let Err(error) = feature_parents::validate(&[model]) {
-            return Err(CodecError::malformed(format_args!("{error}")));
-        }
+    ) -> GeometrySnapshot<'a> {
         let curves = if self.procedural_curves.is_empty() {
             Vec::new()
         } else {
@@ -2084,13 +2099,13 @@ impl Topology {
                 .map(|procedural| (owners.get(procedural.id.as_str()), procedural))
                 .collect()
         };
-        Ok(GeometrySnapshot {
+        GeometrySnapshot {
             geometry: self,
             tessellations: &model.tessellations,
             kind,
             curves: ProceduralCurveRows(curves),
             surfaces: ProceduralSurfaceRows(surfaces),
-        })
+        }
     }
 }
 
@@ -2881,7 +2896,36 @@ struct CadIrWriteWire<'a> {
     model: &'a Model,
     design: &'a Design,
     process: &'a Process,
-    native: &'a Native,
+    #[cfg_attr(feature = "schema", schemars(with = "Native"))]
+    native: NativeWrite<'a>,
+}
+
+/// How [`CadIr::serialize_wire`] writes the native records.
+#[derive(Clone, Copy)]
+enum NativeText<'a, 'input> {
+    /// Each record through its own `Serialize`, for any serializer.
+    Records,
+    /// Each record's stored text, for a pretty canonical JSON writer with
+    /// this depth admission.
+    Stored(crate::hash::finite_json::admission::CanonicalAdmission<'a, 'input>),
+}
+
+/// What the `native` member of [`CadIrWriteWire`] writes: the same JSON value
+/// either way.
+enum NativeWrite<'a> {
+    /// Each record through its own `Serialize`, for any serializer.
+    Records(&'a Native),
+    /// Each record's stored text, for a pretty canonical JSON writer.
+    Pretty(crate::hash::PrettyNative<'a, 'a>),
+}
+
+impl Serialize for NativeWrite<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Records(native) => native.serialize(serializer),
+            Self::Pretty(native) => native.serialize(serializer),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -2916,13 +2960,32 @@ impl CadIr {
         &self,
         serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
     ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+        self.serialize_wire(serializer, NativeText::Records)
+    }
+
+    /// [`Self::serialize_erased`] for a pretty canonical JSON writer: each
+    /// native record writes its stored text without a parse, at the depth
+    /// `admission` admits.
+    pub(crate) fn serialize_pretty_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+        admission: crate::hash::finite_json::admission::CanonicalAdmission<'_, '_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
+        self.serialize_wire(serializer, NativeText::Stored(admission))
+    }
+
+    fn serialize_wire(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+        native: NativeText<'_, '_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
         if !(self.design.is_finalized()
             && self.process.is_finalized()
             && self.native.is_finalized())
         {
             let mut sorted = self.clone();
             sorted.finalize();
-            return sorted.serialize_erased(serializer);
+            return sorted.serialize_wire(serializer, native);
         }
         CadIrWriteWire {
             ir_version: IrVersion,
@@ -2936,7 +2999,13 @@ impl CadIr {
             model: &self.model,
             design: &self.design,
             process: &self.process,
-            native: &self.native,
+            native: match native {
+                NativeText::Records => NativeWrite::Records(&self.native),
+                NativeText::Stored(admission) => NativeWrite::Pretty(crate::hash::PrettyNative {
+                    ctx: admission.context().map(|(ctx, _)| ctx),
+                    native: &self.native,
+                }),
+            },
         }
         .serialize(serializer)
     }
@@ -2980,7 +3049,7 @@ impl CadIr {
             model: &self.model,
             design,
             process,
-            native: &empty_native,
+            native: NativeWrite::Records(&empty_native),
         }
         .serialize(serializer)
     }
