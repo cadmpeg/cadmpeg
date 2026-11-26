@@ -1348,6 +1348,7 @@ impl CodecBackend for FcstdCodec {
 
 impl EncoderBackend for FcstdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "FCStd";
     /// Writes the feature tree and patches retained sources, so it plans from
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
