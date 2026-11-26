@@ -255,35 +255,27 @@ mod tests {
     use super::super::RmDisplayColorAssignment;
     use super::super::RmDisplayColorAssignmentEncoding;
     use crate::test_support::test_wire::check_wire;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn color_assignment_derives_both_offsets_from_its_row_and_token() {
         let json = r#"{"id":"color","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":"02","target_index_source_offset":15,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":"8080","source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
         let assignment: RmDisplayColorAssignment = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&assignment).unwrap(),
-            json
-        );
+        assert_eq!(json::to_string(&assignment).unwrap(), json);
         for field in ["source_offset", "row_source_offset"] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = 99.into();
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<RmDisplayColorAssignment>(wire)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
-            );
+            assert!(json::from_value::<RmDisplayColorAssignment>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["color_index"] = 127.into();
         wire["raw_color_index"] = serde_json::json!("7f");
         wire["source_offset"] = 9.into();
-        let assignment: RmDisplayColorAssignment =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(assignment).unwrap(),
-            wire
-        );
+        let assignment: RmDisplayColorAssignment = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(assignment).unwrap(), wire);
     }
 
     #[test]

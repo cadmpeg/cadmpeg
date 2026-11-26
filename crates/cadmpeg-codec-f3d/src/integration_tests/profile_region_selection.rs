@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted partial-curve selections bind trimmed neutral Extrude regions.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
@@ -83,7 +84,7 @@ fn fixture_with_flags(
         entities.push(SketchEntity::new(
             crate::ids::neutral_sketch_curve_id(&sketch_id, u64::from(primary), 0),
             sketch_id.clone(),
-            cadmpeg_core::serde_erase::json::from_value::<SketchGeometry>(geometry).unwrap(),
+            json::from_value::<SketchGeometry>(geometry).unwrap(),
         ));
         curves.push(SketchCurveIdentity {
             id: format!("f3d:Design/BulkStream.dat:curve#{primary}"),
@@ -121,7 +122,7 @@ fn fixture_with_flags(
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: cadmpeg_core::serde_erase::json::from_value(json!(profiles)).unwrap(),
+        profiles: json::from_value(json!(profiles)).unwrap(),
         native_ref: None,
     };
     let members = members
@@ -135,7 +136,7 @@ fn fixture_with_flags(
             })
         })
         .collect::<Vec<_>>();
-    let operand: DesignSketchProfileOperand = cadmpeg_core::serde_erase::json::from_value(json!({
+    let operand: DesignSketchProfileOperand = json::from_value(json!({
         "scope_reference_ordinal": 0, "record_index": 100, "byte_offset": 10,
         "class_tag": "301", "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
         "asset_id_offset": 20, "entity_id": "0_42", "entity_suffix": 42,
@@ -183,7 +184,7 @@ fn bound_fixture_with_losses(
     ),
 ) -> (ProfileRef, Vec<LossNote>) {
     let work = ProfileGeometryWork::new();
-    let mut feature: Feature = cadmpeg_core::serde_erase::json::from_value(json!({
+    let mut feature: Feature = json::from_value(json!({
         "id": "synthetic:test:feature#cut", "ordinal": 0, "suppressed": false,
         "native_ref": scope.id,
         "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch.id}},
@@ -429,7 +430,7 @@ fn a_selection_beside_a_full_ellipse_reports_the_island_absence_assumption() {
         json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
         json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
         json!({"kind": "line", "start": {"u": 0.0, "v": -2.0}, "end": {"u": 0.0, "v": -1.0}}),
-        cadmpeg_core::serde_erase::json::to_value(ellipse).unwrap(),
+        json::to_value(ellipse).unwrap(),
     ];
     let (profile, losses) =
         bound_fixture_with_losses(fixture_with(geometry, &[&[0, 1, 2, 3]], &[1, 1, 2, 3, 4]));

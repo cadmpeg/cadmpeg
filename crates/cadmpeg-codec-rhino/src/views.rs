@@ -1732,6 +1732,7 @@ mod tests {
         anonymous_chunk, class_userdata_v2_with_direct_payload, crc_chunk, crc_chunk_excluding,
         file_reference, long_chunk, point, short_chunk, utf16_bytes,
     };
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::scalar::Fraction;
 
     fn serialized_plane(bytes: &mut Vec<u8>) {
@@ -2142,7 +2143,7 @@ mod tests {
         assert_eq!(value.top.get(), 0.0);
         assert_eq!(value.bottom.get(), 1.0);
         assert_eq!(value.floating_viewport, 3);
-        let json = cadmpeg_core::serde_erase::json::to_value(&value).expect("window position JSON");
+        let json = json::to_value(&value).expect("window position JSON");
         assert_eq!(json["left"], 0.1);
         assert_eq!(json["right"], 0.9);
     }

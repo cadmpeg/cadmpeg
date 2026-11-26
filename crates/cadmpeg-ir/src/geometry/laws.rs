@@ -13,7 +13,14 @@ use serde::{Deserialize, Serialize};
 /// One recursively framed native law formula.
 // A source states raw values; a law store holds the admitted formula, whose
 // scalars, vectors and points are checked.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(
@@ -89,7 +96,9 @@ pub(super) const LAW_EXPRESSION_DEPTH_LIMIT: usize = 64;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
+#[serde(bound(
+    deserialize = "R: ::serde::de::DeserializeOwned, V: ::serde::de::DeserializeOwned, P: ::serde::de::DeserializeOwned"
+))]
 #[cfg_attr(
     feature = "schema",
     schemars(
@@ -115,7 +124,14 @@ pub struct LawSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Mode-specific payload of a native law surface's standard surface tail.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LawSurfaceTail<R = f64> {
@@ -152,7 +168,14 @@ pub enum LawSurfaceTail<R = f64> {
 }
 
 /// One native law-expression node.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(

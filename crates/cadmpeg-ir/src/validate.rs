@@ -403,6 +403,7 @@ mod tests {
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
     use crate::CadIr;
+    use cadmpeg_core::serde_erase::json;
     use std::collections::BTreeMap;
 
     #[test]
@@ -579,7 +580,7 @@ mod tests {
         ];
         for &(bytes, valid) in cases {
             let method: crate::features::surfaces::SplitFaceMethod =
-                cadmpeg_core::serde_erase::json::from_slice(bytes).unwrap();
+                json::from_slice(bytes).unwrap();
             for configuration_local in [false, true] {
                 let definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
                     targets: FaceSelection::Unresolved,
@@ -809,18 +810,13 @@ mod tests {
             SplitBodyTool::Faces(FaceSelection::Unresolved),
             SplitBodyTool::Plane { plane },
         ] {
-            let wire = cadmpeg_core::serde_erase::json::to_value(&tool).expect("serialize tool");
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::from_value::<SplitBodyTool>(wire).expect("tool"),
-                tool
-            );
+            let wire = json::to_value(&tool).expect("serialize tool");
+            assert_eq!(json::from_value::<SplitBodyTool>(wire).expect("tool"), tool);
         }
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<SplitBodyTool>(
-                serde_json::json!({"kind": "planes", "value": []})
-            )
-            .is_err()
-        );
+        assert!(json::from_value::<SplitBodyTool>(
+            serde_json::json!({"kind": "planes", "value": []})
+        )
+        .is_err());
     }
 }
 

@@ -5,6 +5,7 @@ use super::check_annotations;
 use crate::report::check::Check;
 use crate::validate::validate_neutral;
 use crate::{examples::unit_cube, NativeNamespace, NativeRecord};
+use cadmpeg_core::serde_erase::json;
 use serde_json::{Map, Value};
 
 #[test]
@@ -76,10 +77,7 @@ fn native_topology_link_must_resolve() {
             cadmpeg_core::nonblank_literal!("sketch_curve_links"),
             vec![NativeRecord::new(
                 crate::ids::Identity::new("native:test:link#0").expect("valid identity"),
-                cadmpeg_core::serde_erase::json::from_value(
-                    serde_json::json!({"links": ["missing"]}),
-                )
-                .unwrap(),
+                json::from_value(serde_json::json!({"links": ["missing"]})).unwrap(),
             )
             .expect("valid native identity")],
         );
@@ -183,7 +181,7 @@ fn complete_document_native_link_validation_reports_malformed_shapes() {
         serde_json::json!([{}]),
         serde_json::json!([[]]),
     ] {
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(unit_cube().unwrap()).unwrap();
+        let mut wire = json::to_value(unit_cube().unwrap()).unwrap();
         wire["native"] = serde_json::json!({"test": {"unknowns": [{
             "id": "test:source:unknown#malformed", "links": links
         }]}});
@@ -214,7 +212,7 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
         serde_json::json!([{"object": "source-object", "subelements": ["Face1"]}]),
         serde_json::json!(["source-specific value", {"row": 7}]),
     ] {
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(unit_cube().unwrap()).unwrap();
+        let mut wire = json::to_value(unit_cube().unwrap()).unwrap();
         wire["native"] = serde_json::json!({"test": {"properties": [{
             "id": "test:native:property#links", "links": links
         }]}});
@@ -228,10 +226,7 @@ fn codec_owned_link_payloads_do_not_inherit_unknown_record_shape() {
                 .all(|finding| finding.check != Check::NativeLinks),
             "{findings:?}"
         );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&ir).unwrap()["native"],
-            wire["native"]
-        );
+        assert_eq!(json::to_value(&ir).unwrap()["native"], wire["native"]);
     }
 }
 
@@ -381,7 +376,7 @@ fn a_native_record_links_no_neutral_record_while_a_stub_may() {
     let cube = unit_cube().unwrap();
     let face = cube.geometry.faces[0].id.as_str().to_owned();
     let native_links = |links: serde_json::Value| {
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(&cube).unwrap();
+        let mut wire = json::to_value(&cube).unwrap();
         wire["native"] = serde_json::json!({"test": {
             "properties": [
                 {"id": "test:native:property#a", "links": links},
@@ -411,4 +406,205 @@ fn a_native_record_links_no_neutral_record_while_a_stub_may() {
         findings[0].message.contains("names a neutral record"),
         "{findings:?}"
     );
+}
+
+/// The unit cube with one evaluation whose delta holds a copy of its first
+/// vertex, and the evaluation's id.
+fn cube_with_vertex_state() -> (crate::CadIr, crate::design::ids::EvaluationId) {
+    use crate::design::evaluation::{
+        Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
+    };
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let id = crate::design::ids::EvaluationId::mint("test:design:evaluation#1").unwrap();
+    let mut records = crate::document::Topology::default();
+    records.vertices.push(ir.geometry.vertices[0].clone());
+    ir.design.evaluations.push(Evaluation {
+        id: id.clone(),
+        scope: crate::ids::ProductDefinitionId::mint("test:model:definition#1").unwrap(),
+        configuration: None,
+        of: crate::design::refs::Evaluated::Tool(
+            crate::features::FeatureId::mint("test:design:feature#1").unwrap(),
+        ),
+        status: EvaluationStatus::Current,
+        content: Some(StateContent {
+            base: StateBase::Empty,
+            delta: StateDelta {
+                records,
+                ..StateDelta::default()
+            },
+        }),
+        native_ref: None,
+    });
+    (ir, id)
+}
+
+fn annotation_findings(
+    ir: &crate::CadIr,
+    annotations: crate::Annotations,
+) -> Vec<crate::report::check::Finding> {
+    let mut source_fidelity =
+        crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
+    source_fidelity.annotations = annotations;
+    crate::validate_neutral_with_source_fidelity(ir, &source_fidelity, Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Annotations)
+        .collect()
+}
+
+#[test]
+fn a_key_qualified_by_an_evaluation_resolves_to_its_delta_record() {
+    let (ir, evaluation) = cube_with_vertex_state();
+    let vertex = ir.geometry.vertices[0].id.as_str().to_owned();
+    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, &vertex);
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations.note(&key, &stream, 0, None);
+    annotations.derived(&key, "point").unwrap();
+    annotations.derived(&vertex, "point").unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
+#[test]
+fn a_key_qualified_by_a_process_state_resolves_to_its_delta_record() {
+    use crate::design::evaluation::{EvaluationStatus, StateBase, StateDelta};
+    use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
+    let (mut ir, _) = cube_with_vertex_state();
+    let edge = ir.geometry.edges[0].clone();
+    let state = crate::design::ids::ProcessStateId::mint("test:process:state#1").unwrap();
+    let mut records = crate::document::Topology::default();
+    records.edges.push(edge.clone());
+    ir.process.states.push(ProcessState {
+        id: state.clone(),
+        of: ProcessStateOf::Stock(
+            crate::design::ids::SetupId::mint("test:process:setup#1").unwrap(),
+        ),
+        configuration: None,
+        status: EvaluationStatus::Current,
+        content: Some(ProcessContent {
+            base: ProcessBase::Design(StateBase::Empty),
+            delta: StateDelta {
+                records,
+                ..StateDelta::default()
+            },
+        }),
+        feature: None,
+    });
+    let key = crate::annotations::AnnotationKey::in_delta(&state, edge.id.as_str());
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations.note(&key, &stream, 0, None);
+    annotations.exactness(&key, crate::provenance::Exactness::Inferred);
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(findings.is_empty(), "{findings:?}");
+}
+
+#[test]
+fn a_qualified_key_outside_every_delta_is_reported_like_a_dangling_key() {
+    let (ir, evaluation) = cube_with_vertex_state();
+    let vertex = ir.geometry.vertices[0].id.as_str();
+    let edge = ir.geometry.edges[0].id.as_str();
+    let other = crate::design::ids::EvaluationId::mint("test:design:evaluation#2").unwrap();
+    let keys = [
+        crate::annotations::AnnotationKey::in_delta(&other, vertex).to_string(),
+        crate::annotations::AnnotationKey::in_delta(&evaluation, edge).to_string(),
+        format!("{}  {vertex}", evaluation.as_str()),
+        format!(" {vertex}"),
+        format!("{} ", evaluation.as_str()),
+    ];
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for key in &keys {
+        annotations.note(key, &stream, 0, None);
+        annotations.exactness(key, crate::provenance::Exactness::Inferred);
+    }
+    let findings = annotation_findings(&ir, annotations.build());
+    for key in &keys {
+        for rule in [
+            "annotations_native.provenance-key-does-not-resolve-entity",
+            "annotations_native.exactness-key-does-not-resolve-entity",
+        ] {
+            assert!(
+                findings.iter().any(|finding| {
+                    finding.severity == crate::report::Severity::Error
+                        && finding.entity.as_deref() == Some(key.as_str())
+                        && finding.rule.as_str() == rule
+                }),
+                "{key}: {rule}: {findings:?}"
+            );
+        }
+    }
+    assert_eq!(findings.len(), 2 * keys.len(), "{findings:?}");
+}
+
+#[test]
+fn a_field_path_of_a_delta_record_is_checked_against_that_record() {
+    let (ir, evaluation) = cube_with_vertex_state();
+    let vertex = ir.geometry.vertices[0].id.as_str();
+    let key = crate::annotations::AnnotationKey::in_delta(&evaluation, vertex);
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations.derived(&key, "not_a_serialized_field").unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    assert!(
+        matches!(findings.as_slice(), [finding]
+            if finding.severity == crate::report::Severity::Warning
+                && finding.message.contains("`not_a_serialized_field`")),
+        "{findings:?}"
+    );
+}
+
+/// The design fixture with a process state that has no content.
+fn design_with_process_state() -> (crate::CadIr, crate::design::ids::ProcessStateId) {
+    use crate::design::evaluation::EvaluationStatus;
+    use crate::process::state::{ProcessState, ProcessStateOf};
+    let mut ir = crate::validate::design::fixture::document();
+    let state = crate::design::ids::ProcessStateId::mint("test:process:state#1").unwrap();
+    ir.process.states.push(ProcessState {
+        id: state.clone(),
+        of: ProcessStateOf::Stock(
+            crate::design::ids::SetupId::mint("test:process:setup#1").unwrap(),
+        ),
+        configuration: None,
+        status: EvaluationStatus::Current,
+        content: None,
+        feature: None,
+    });
+    (ir, state)
+}
+
+#[test]
+fn keys_of_design_and_process_records_resolve() {
+    let (ir, state) = design_with_process_state();
+    let named = [
+        "test:design:feature#extrude",
+        "test:design:evaluation#after-extrude",
+        state.as_str(),
+    ];
+    let absent = "test:design:feature#absent";
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for key in named.iter().chain([&absent]) {
+        annotations.note(key, &stream, 0, None);
+        annotations.exactness(key, crate::provenance::Exactness::Inferred);
+    }
+    annotations
+        .derived("test:design:feature#fillet", "source_content")
+        .unwrap();
+    let findings = annotation_findings(&ir, annotations.build());
+    for rule in [
+        "annotations_native.provenance-key-does-not-resolve-entity",
+        "annotations_native.exactness-key-does-not-resolve-entity",
+    ] {
+        assert!(
+            findings.iter().any(|finding| {
+                finding.severity == crate::report::Severity::Error
+                    && finding.entity.as_deref() == Some(absent)
+                    && finding.rule.as_str() == rule
+            }),
+            "{rule}: {findings:?}"
+        );
+    }
+    assert_eq!(findings.len(), 2, "{findings:?}");
 }

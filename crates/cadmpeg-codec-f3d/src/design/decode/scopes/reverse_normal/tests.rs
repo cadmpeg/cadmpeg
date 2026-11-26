@@ -6,6 +6,7 @@ use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
 use crate::test_support::{indexed_header, lp_utf16};
+use cadmpeg_core::serde_erase::json;
 
 const REVERSE_NORMAL_TYPE_GUID: &str = "693D6578-4BCE-44F8-B15A-2CE5162A23EE";
 const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
@@ -117,7 +118,7 @@ fn type_guid_selects_reverse_normal_for_a_localized_compact_scope() {
         [GROUP, BODIES[0], BODIES[1]]
     );
     let restored: DesignParameterScope =
-        serde_json::from_str(&cadmpeg_core::serde_erase::json::to_string(&scope).unwrap()).unwrap();
+        serde_json::from_str(&json::to_string(&scope).unwrap()).unwrap();
     assert_eq!(restored, scope);
 }
 
@@ -177,8 +178,7 @@ fn a_linked_scope_keeps_its_link_guid() {
         let link = operation.link.as_ref().expect("link GUID");
         assert_eq!((link.value.as_str(), link.offset), (guid, offset));
         let restored: DesignParameterScope =
-            serde_json::from_str(&cadmpeg_core::serde_erase::json::to_string(&scope).unwrap())
-                .unwrap();
+            serde_json::from_str(&json::to_string(&scope).unwrap()).unwrap();
         assert_eq!(restored, scope);
     }
 }

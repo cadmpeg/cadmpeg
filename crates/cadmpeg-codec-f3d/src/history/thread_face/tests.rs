@@ -107,6 +107,7 @@ impl Fixture {
         transition.topology.surfaces.deleted = vec![88];
         let topology = FeatureInputTopology {
             face_owners: Vec::new(),
+            face_geometry: Vec::new(),
             id: crate::ids::history_input_state_id(&prefix),
             input_of: id,
             bodies: Default::default(),

@@ -1693,7 +1693,10 @@ pub(super) fn validate_configuration_edits(
         if before != after {
             edits.insert(
                 name.to_owned(),
-                crate::records::configuration::encode_configuration_payload(after)?,
+                crate::records::configuration::encode_configuration_payload(
+                    after.entry_name(),
+                    after.payload(),
+                )?,
             );
         }
     }
@@ -3834,6 +3837,7 @@ mod tests {
     };
     use crate::native::F3dNative;
     use crate::records::references::DesignMaterialAssignment;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::geometry::analytic::{CircleCurve, ConeSurface, LineCurve};
     use cadmpeg_ir::geometry::nurbs::{
         NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
@@ -4461,7 +4465,7 @@ mod tests {
             document["physical_token"] = "Prism-002".into();
             document["physical_token_offset"] = 90.into();
         }
-        cadmpeg_core::serde_erase::json::from_value(document).expect("material assignment")
+        json::from_value(document).expect("material assignment")
     }
 
     fn native(assignments: Vec<DesignMaterialAssignment>) -> F3dNative {

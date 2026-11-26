@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn repro_streams_keep_member_grammar_and_share_anonymous_owner() {
@@ -46,8 +47,7 @@ fn repro_body_binding_accepts_anonymous_stream_and_blob() {
     });
     let mut original = original;
     original.as_object_mut().unwrap().remove("body");
-    let _: crate::records::bodies::DesignBodyBinding =
-        cadmpeg_core::serde_erase::json::from_value(original.clone()).unwrap();
+    let _: crate::records::bodies::DesignBodyBinding = json::from_value(original.clone()).unwrap();
     let mut document = CadIr::empty();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -62,8 +62,7 @@ fn repro_body_binding_accepts_anonymous_stream_and_blob() {
     original["stream"] = serde_json::json!(anonymous);
     original["id"] = serde_json::json!(format!("f3d:{anonymous}:design-body-binding#16"));
     original["blob_name"] = serde_json::json!(replacements["BREP.PLANTED_FILE.smb"]);
-    let _: crate::records::bodies::DesignBodyBinding =
-        cadmpeg_core::serde_erase::json::from_value(original.clone()).unwrap();
+    let _: crate::records::bodies::DesignBodyBinding = json::from_value(original.clone()).unwrap();
     assert!(!original.to_string().contains("PLANTED"));
 }
 
@@ -76,8 +75,7 @@ fn repro_xref_stream_keeps_occurrence_and_member_joins() {
         "entity_suffix":7, "entity_suffix_offset":24,
         "blob_name":"BREP.PLANTED_FILE.smb", "blob_name_offset":32
     });
-    let _: crate::records::bodies::DesignBodyBinding =
-        cadmpeg_core::serde_erase::json::from_value(original.clone()).unwrap();
+    let _: crate::records::bodies::DesignBodyBinding = json::from_value(original.clone()).unwrap();
     let mut document = CadIr::empty();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -94,8 +92,7 @@ fn repro_xref_stream_keeps_occurrence_and_member_joins() {
         replacements["f3d:PLANTED_CONTEXT/occurrence-7@PLANTED_SOURCE/Design1/BulkStream.dat"]
     ));
     original["blob_name"] = serde_json::json!(replacements["BREP.PLANTED_FILE.smb"]);
-    let _: crate::records::bodies::DesignBodyBinding =
-        cadmpeg_core::serde_erase::json::from_value(original.clone()).unwrap();
+    let _: crate::records::bodies::DesignBodyBinding = json::from_value(original.clone()).unwrap();
     assert!(original["id"].as_str().unwrap().contains("/occurrence-7@"));
     assert!(!original.to_string().contains("PLANTED"));
 }

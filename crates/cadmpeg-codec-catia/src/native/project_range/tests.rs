@@ -10,6 +10,7 @@ use crate::native::{
 };
 use crate::object_graph::{ObjectPayload, PayloadField};
 use crate::test_support::with_service_context;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Topology;
 
 const PROGRAM: [u8; 19] = [
@@ -221,8 +222,8 @@ impl Fixture {
         };
         let mut geometry = Topology::default();
         for i in 0..2 {
-            geometry.surfaces.push(cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":format!("synthetic:test:surface#{i}"),"geometry":{"kind": "solved", "value": {"kind":"cylinder","origin":{"x":2.,"y":3.,"z":-100.},"axis":{"x":0.,"y":0.,"z":1.},"ref_direction":{"x":1.,"y":0.,"z":0.},"radius":3.}}})).expect("valid fixture"));
-            geometry.faces.push(cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":format!("synthetic:test:face#{i}"),"shell":"synthetic:test:shell#0","surface":format!("synthetic:test:surface#{i}"),"sense":"forward","loops":{"kind":"unspecified","loops":[]}})).expect("valid fixture"));
+            geometry.surfaces.push(json::from_value(serde_json::json!({"id":format!("synthetic:test:surface#{i}"),"geometry":{"kind": "solved", "value": {"kind":"cylinder","origin":{"x":2.,"y":3.,"z":-100.},"axis":{"x":0.,"y":0.,"z":1.},"ref_direction":{"x":1.,"y":0.,"z":0.},"radius":3.}}})).expect("valid fixture"));
+            geometry.faces.push(json::from_value(serde_json::json!({"id":format!("synthetic:test:face#{i}"),"shell":"synthetic:test:shell#0","surface":format!("synthetic:test:surface#{i}"),"sense":"forward","loops":{"kind":"unspecified","loops":[]}})).expect("valid fixture"));
         }
         Self { native, geometry }
     }

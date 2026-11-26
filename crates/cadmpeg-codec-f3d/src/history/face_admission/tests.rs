@@ -9,6 +9,7 @@ use cadmpeg_ir::ids::FaceId;
 fn input(feature: &FeatureId, slot: i64) -> FeatureInputTopology {
     FeatureInputTopology {
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
         id: crate::ids::feature_input_topology_id(feature, 4),
         input_of: feature.clone(),
         bodies: Default::default(),

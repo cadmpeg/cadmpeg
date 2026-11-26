@@ -3,11 +3,9 @@
 //! on a B-rep face: the writer writes the covered part of each curve.
 
 use std::collections::BTreeSet;
-use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::eval::decode::{pcurve_uv, surface_point_solved};
 use cadmpeg_ir::examples::unit_cube;
@@ -24,6 +22,7 @@ use cadmpeg_ir::topology::{BodyKind, PcurveUse, Sense};
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
+use crate::test_support::decoded_with;
 use crate::{IgesCodec, IgesVersion};
 
 /// Bound on the distance between a read-back point and its expected place.
@@ -269,6 +268,8 @@ fn first_face_sheet(mut ir: CadIr) -> CadIr {
     ir
 }
 
+/// `ir` written, with the losses of the write and the document that reads
+/// back with no loss.
 fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
     let plan = IgesCodec
         .plan(
@@ -279,12 +280,7 @@ fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    let read = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes")
-        .ir()
-        .clone();
-    (losses, read)
+    (losses, decoded_with(&bytes, &[]))
 }
 
 /// A parameter curve use of a coedge, lifted onto the support of its face
@@ -292,7 +288,8 @@ fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
 struct Trace {
     /// The ends of the coedge.
     ends: [Point3; 2],
-    /// The points of the use at the [`SAMPLES`] of its range.
+    /// The points of the use at the [`SAMPLES`] of its run from the start
+    /// to the end of the coedge.
     samples: Vec<Point3>,
     /// The degree, the lifted poles, the weights and the knot span of a
     /// B-spline curve.
@@ -369,18 +366,16 @@ fn traces(geometry: &Topology) -> Vec<Trace> {
                 },
                 DirectedParameterRange::endpoints,
             );
-            let mut samples = SAMPLES
-                .map(|fraction| {
-                    let uv = pcurve_uv(&ctx, &pcurve.geometry, fraction.mul_add(to - from, from))
-                        .expect("a parameter point")
-                        .get();
-                    lift(uv)
-                })
+            let at = |fraction: f64| {
+                let uv = pcurve_uv(&ctx, &pcurve.geometry, fraction.mul_add(to - from, from))
+                    .expect("a parameter point")
+                    .get();
+                lift(uv)
+            };
+            let flipped = !near(at(0.0), ends[0]);
+            let samples = SAMPLES
+                .map(|fraction| at(if flipped { 1.0 - fraction } else { fraction }))
                 .to_vec();
-            let flipped = !near(samples[0], ends[0]);
-            if flipped {
-                samples.reverse();
-            }
             assert!(
                 near(samples[0], ends[0]) && near(samples[SAMPLES.len() - 1], ends[1]),
                 "{} runs from {:?} to {:?}, off the coedge ends {ends:?}",
@@ -495,6 +490,49 @@ fn near(first: Point3, second: Point3) -> bool {
     (first.x - second.x).abs() <= ON_EDGE
         && (first.y - second.y).abs() <= ON_EDGE
         && (first.z - second.z).abs() <= ON_EDGE
+}
+
+/// `ir` with the parameter line of each reversed coedge run in the
+/// direction of its edge, from the end of the coedge to its start, over the
+/// same range.
+fn with_lines_along_reversed_edges(mut ir: CadIr) -> CadIr {
+    let reversed = ir
+        .geometry
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.sense == Sense::Reversed);
+    for coedge in reversed {
+        let pcurve = ir
+            .geometry
+            .pcurves
+            .iter_mut()
+            .find(|pcurve| coedge.pcurves.iter().any(|used| used.pcurve == pcurve.id))
+            .expect("the coedge parameter curve");
+        let length = pcurve
+            .parameter_range()
+            .expect("a bounded parameter line")
+            .get()[1];
+        let PcurveGeometry::Line(line) = &pcurve.geometry else {
+            panic!("the uncovered cube carries parameter lines");
+        };
+        let (origin, direction): (Point2, Point2) = (**line.origin(), *line.direction().as_raw());
+        let end = Point2::new(origin.u + direction.u, origin.v + direction.v);
+        pcurve.geometry = PcurveGeometry::Line(
+            LinePcurve::try_new(
+                along(origin, end, length),
+                Point2::new(-direction.u, -direction.v),
+            )
+            .expect("a unit direction"),
+        );
+    }
+    ir
+}
+
+#[test]
+fn a_parameter_line_stated_along_the_edge_of_a_reversed_coedge_is_written() {
+    let cube = with_lines_along_reversed_edges(cube_with_pcurves(false));
+    assert_covered_parts_written(&first_face_sheet(cube.clone()));
+    assert_covered_parts_written(&cube);
 }
 
 #[test]

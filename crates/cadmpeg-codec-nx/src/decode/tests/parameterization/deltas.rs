@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::test_support::{test_deltas as d, test_prt, test_streams as s};
 use crate::NxCodec;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -98,13 +99,8 @@ fn every_unselected_deltas_family_preserves_its_paired_primary_model() {
             )
             .unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value((&paired.ir().geometry, &paired.ir().model))
-                .unwrap(),
-            cadmpeg_core::serde_erase::json::to_value((
-                &baseline.ir().geometry,
-                &baseline.ir().model
-            ))
-            .unwrap()
+            json::to_value((&paired.ir().geometry, &paired.ir().model)).unwrap(),
+            json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
         );
         assert!(
             cadmpeg_ir::validate::validate_neutral(paired.ir(), Vec::new())

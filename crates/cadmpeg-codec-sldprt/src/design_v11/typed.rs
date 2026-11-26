@@ -21,7 +21,7 @@ use super::profile_check::{Difference, Unchecked};
 use super::revolve::AxisPick;
 use super::sketch::{DimensionCircle, Sketches};
 use super::tree::Timeline;
-use super::{extrude, revolve, sketch, swept};
+use super::{extrude, pattern, revolve, sketch, swept};
 use crate::loss::{SldprtLossCode, NAMED_INSTANCES_PER_NOTE};
 use crate::records::{FeatureHistory, FeatureInputLane};
 
@@ -116,6 +116,7 @@ pub(super) fn project(
     };
     let extrudes = extrude::project(&mut timeline.features, &context);
     let revolves = revolve::project(&mut timeline.features, &context);
+    pattern::project(&mut timeline.features, &context);
     let mut bound = HashMap::<ParameterId, Option<Quantity>>::new();
     for (parameter, quantity) in sketches
         .bound
@@ -506,15 +507,13 @@ fn loss(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::features::FeatureId;
 
     #[test]
     fn the_unresolved_note_names_every_reason_however_many_features_it_lists() {
         let id = |index: usize| -> FeatureId {
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!(format!(
-                "sldprt:model:feature#{index}"
-            )))
-            .unwrap()
+            json::from_value(serde_json::json!(format!("sldprt:model:feature#{index}"))).unwrap()
         };
         let extrudes = (0..12)
             .map(|index| {

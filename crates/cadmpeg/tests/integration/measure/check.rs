@@ -4,6 +4,7 @@
 //! whose volume readings conflict. Expectations come from the dumped
 //! document's own rings and shells; warnings never change the exit status.
 
+use cadmpeg_core::serde_erase::json;
 #[cfg(any(feature = "fcstd", feature = "iges"))]
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -29,7 +30,7 @@ fn check_json(path: &Path, args: &[&str]) -> Value {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap()
+    json::from_slice(&output.stdout).unwrap()
 }
 
 /// The findings of one check, each a warning.
@@ -58,7 +59,7 @@ fn dumped(path: &Path) -> Value {
         .arg(&out)
         .assert()
         .success();
-    cadmpeg_core::serde_erase::json::from_slice(&std::fs::read(&out).unwrap()).unwrap()
+    json::from_slice(&std::fs::read(&out).unwrap()).unwrap()
 }
 
 #[cfg(any(feature = "fcstd", feature = "iges"))]
@@ -141,11 +142,7 @@ fn rings_listed_out_of_traversal_order_are_check_warnings() {
     assert!(!expected.is_empty());
     let dir = tempdir().unwrap();
     let path = dir.path().join("reversed.cadir.json");
-    std::fs::write(
-        &path,
-        cadmpeg_core::serde_erase::json::to_vec(&document).unwrap(),
-    )
-    .unwrap();
+    std::fs::write(&path, json::to_vec(&document).unwrap()).unwrap();
     let report = check_json(&path, &[]);
     let found: BTreeMap<String, String> = warnings(&report, "ring_order")
         .into_iter()
@@ -219,11 +216,7 @@ fn conflicting_void_solid(dir: &Path) -> std::path::PathBuf {
         }
     }
     let out = dir.join("conflicting.cadir.json");
-    std::fs::write(
-        &out,
-        cadmpeg_core::serde_erase::json::to_vec(&document).unwrap(),
-    )
-    .unwrap();
+    std::fs::write(&out, json::to_vec(&document).unwrap()).unwrap();
     out
 }
 
@@ -242,8 +235,7 @@ fn conversion_carries_measurement_warnings_and_succeeds() {
         .arg(&report)
         .assert()
         .success();
-    let report: Value =
-        cadmpeg_core::serde_erase::json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
+    let report: Value = json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
     assert_eq!(warnings(&report, "orientation").len(), 5);
 }
 
@@ -329,7 +321,7 @@ fn declared_geometry_errors_fail_check_and_unresolved_targets_warn() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let report: Value = cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
+        let report: Value = json::from_slice(&output.stdout).unwrap();
         let found: Vec<_> = report["check_report"]["findings"]
             .as_array()
             .unwrap()

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use serde::ser::{SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant};
 use serde::{Serialize, Serializer};
 
@@ -257,13 +258,9 @@ fn raw_json_values_use_the_same_canonical_native_admission() {
             .namespace_mut(crate::codec_id!("future"))
             .set_arena(&ctx, "records", &[record])
             .expect("raw fields have ordinary JSON semantics");
-        let wire = cadmpeg_core::serde_erase::json::to_value(&document).expect("document writes");
-        let admitted: crate::CadIr =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("document reads");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&admitted).expect("document writes"),
-            wire
-        );
+        let wire = json::to_value(&document).expect("document writes");
+        let admitted: crate::CadIr = json::from_value(wire.clone()).expect("document reads");
+        assert_eq!(json::to_value(&admitted).expect("document writes"), wire);
         let namespace = admitted.native.namespace("future").expect("namespace");
         let read = namespace
             .arena_as::<Record>("records")
@@ -441,8 +438,8 @@ fn a_display_member_writes_its_text_through_collect_str() {
     assert_eq!(stored.field("letter"), Some(serde_json::json!("\"")));
     assert_eq!(stored.field("keyed"), Some(serde_json::json!({"<key>": 1})));
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&stored).expect("the stored record writes"),
-        cadmpeg_core::serde_erase::json::to_value(&record).expect("the typed record writes")
+        json::to_value(&stored).expect("the stored record writes"),
+        json::to_value(&record).expect("the typed record writes")
     );
 }
 
@@ -512,8 +509,8 @@ fn native_float_keys_keep_the_scalar_json_spelling_with_one_zero() {
             keyed: Keyed(value + 0.0),
         };
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&stored).unwrap(),
-            cadmpeg_core::serde_erase::json::to_value(&one_zero).unwrap()
+            json::to_value(&stored).unwrap(),
+            json::to_value(&one_zero).unwrap()
         );
     }
     for value in [
@@ -533,8 +530,8 @@ fn native_float_keys_keep_the_scalar_json_spelling_with_one_zero() {
             keyed: Keyed(value + 0.0),
         };
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&stored).unwrap(),
-            cadmpeg_core::serde_erase::json::to_value(&one_zero).unwrap()
+            json::to_value(&stored).unwrap(),
+            json::to_value(&one_zero).unwrap()
         );
     }
 }
@@ -634,9 +631,7 @@ fn members_are_placed_in_key_order_however_they_arrive() {
     }
 
     fn oracle<T: Serialize>(record: &T) -> String {
-        let serde_json::Value::Object(mut fields) =
-            cadmpeg_core::serde_erase::json::to_value(record).unwrap()
-        else {
+        let serde_json::Value::Object(mut fields) = json::to_value(record).unwrap() else {
             panic!("record serializes as an object");
         };
         let id = fields.remove("id").unwrap();
@@ -652,8 +647,7 @@ fn members_are_placed_in_key_order_however_they_arrive() {
     }
 
     fn stored<T: Serialize>(record: &T) -> String {
-        cadmpeg_core::serde_erase::json::to_string(&NativeRecord::from_typed(record).unwrap())
-            .unwrap()
+        json::to_string(&NativeRecord::from_typed(record).unwrap()).unwrap()
     }
 
     let leading = Leading {
@@ -850,9 +844,7 @@ fn a_long_payload_member_keeps_canonical_order() {
         alpha: "a",
     };
     let stored = crate::native::NativeRecord::from_typed(&segment).unwrap();
-    let serde_json::Value::Object(mut fields) =
-        cadmpeg_core::serde_erase::json::to_value(&segment).unwrap()
-    else {
+    let serde_json::Value::Object(mut fields) = json::to_value(&segment).unwrap() else {
         panic!("record serializes as an object");
     };
     let id = fields.remove("id").unwrap();
@@ -864,8 +856,5 @@ fn a_long_payload_member_keeps_canonical_order() {
         expected.push_str(&value.to_string());
     }
     expected.push('}');
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&stored).unwrap(),
-        expected
-    );
+    assert_eq!(json::to_string(&stored).unwrap(), expected);
 }

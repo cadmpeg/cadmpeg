@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic bundle builders and reader assertion adapters.
 use crate::{reader::Model, OnshapeCodec};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 use std::io::{Cursor, Write};
@@ -34,8 +35,7 @@ pub(crate) fn fixture(name: &str) -> Vec<u8> {
         .compression_method(zip::CompressionMethod::Deflated);
     for (path, value) in members.as_object().unwrap() {
         zip.start_file(path, options).unwrap();
-        zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(value).unwrap())
-            .unwrap();
+        zip.write_all(&json::to_vec(value).unwrap()).unwrap();
     }
     zip.start_file("partstudios/studio/export.step", options)
         .unwrap();

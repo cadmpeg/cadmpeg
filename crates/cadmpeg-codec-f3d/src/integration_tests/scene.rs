@@ -3,6 +3,7 @@
 
 use crate::scene::SceneBinding;
 use crate::test_support::scene::{override_row, with_world};
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn scene_local_paths_bind_without_changing_occurrences_or_joints() {
@@ -68,7 +69,7 @@ fn scene_archive_reads_root_rows_and_excludes_member_rows() {
         SceneBinding::Unbound {}
     ));
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&native.display_poses[0].path).unwrap(),
+        json::to_value(&native.display_poses[0].path).unwrap(),
         serde_json::json!([3, 17])
     );
 }

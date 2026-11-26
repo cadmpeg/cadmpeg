@@ -2,6 +2,7 @@
 //! A configuration's materials pick bodies of the scope's definitions, and
 //! no two of them select one body.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
@@ -14,7 +15,7 @@ use crate::document::CadIr;
 use crate::report::Severity;
 
 fn material(pick: &Value) -> MaterialOverride {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "target": {"at": {"kind": "current"}, "picks": {"kind": "named", "value": [pick]}},
         "material": {"kind": "named", "value": "steel"}
     }))
@@ -29,7 +30,7 @@ fn root() -> TopoName {
 
 fn body_pick(ir: &CadIr) -> Value {
     json!({
-        "target": {"kind": "entity", "value": cadmpeg_core::serde_erase::json::to_value(root()).unwrap()},
+        "target": {"kind": "entity", "value": json::to_value(root()).unwrap()},
         "resolved": [{"kind": "body", "value": ir.geometry.bodies[0].id.as_str()}]
     })
 }
@@ -66,7 +67,7 @@ fn two_materials_that_select_one_body_are_an_error() {
 
 #[test]
 fn names_select_bodies_only_in_the_active_configuration() {
-    let name = json!({"target": {"kind": "entity", "value": cadmpeg_core::serde_erase::json::to_value(root()).unwrap()}});
+    let name = json!({"target": {"kind": "entity", "value": json::to_value(root()).unwrap()}});
     let mut ir = named();
     ir.design.configurations[0].materials = vec![material(&name), material(&name)];
     assert!(overlap(&ir), "{:#?}", design_findings(&ir));
@@ -111,7 +112,7 @@ fn a_material_target_picks_bodies() {
 fn a_material_target_picks_in_a_definition_the_scope_spans() {
     let mut ir = named();
     let pick = json!({
-        "target": {"kind": "entity", "value": cadmpeg_core::serde_erase::json::to_value(root()).unwrap()},
+        "target": {"kind": "entity", "value": json::to_value(root()).unwrap()},
         "context": {"kind": "definition", "value": {"definition": "test:design:definition#elsewhere"}}
     });
     ir.design.configurations[1].materials = vec![material(&pick)];

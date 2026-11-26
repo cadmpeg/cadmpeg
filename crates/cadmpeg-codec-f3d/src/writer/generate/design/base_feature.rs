@@ -28,6 +28,7 @@ use crate::records::sketch_links::{
     DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
 use crate::writer::generate::presentation::{deterministic_guid, GeneratedDesignRegistry, TypeRow};
+use crate::writer::generate::records::ParameterRecords;
 
 /// The first value of the persistent-identity counter: a `Sketch` or
 /// `WorkPlane` scope owns one identity and the `Base Feature` scope the
@@ -314,12 +315,12 @@ impl BaseFeaturePlan<'_> {
         &self,
         parameters: &ParameterPlan,
         registry: &mut GeneratedDesignRegistry,
-    ) -> Result<(Vec<u8>, DesignRecords, Vec<LossNote>), CodecError> {
+    ) -> Result<(ParameterRecords, DesignRecords, Vec<LossNote>), CodecError> {
         let bodies = self.body_records(registry)?;
         let parameter_indices = parameters.allocate(registry)?;
         let indices = Indices::allocate(registry)?;
         let classes = Classes::register(registry, &indices, &bodies)?;
-        let parameter_bytes =
+        let parameter_records =
             parameters.encode(registry, &parameter_indices, Some(indices.collection))?;
         let mut out = DesignRecords::default();
         let writer = Writer {
@@ -341,7 +342,7 @@ impl BaseFeaturePlan<'_> {
         writer.parameter_collection(&mut out, &parameter_indices)?;
         out.record(&classes.aggregate, indices.aggregate);
         writer.body_references(&mut out)?;
-        Ok((parameter_bytes, out, residual_losses(&indices, &bodies)))
+        Ok((parameter_records, out, residual_losses(&indices, &bodies)))
     }
 
     /// Each result body as the roster writes it.

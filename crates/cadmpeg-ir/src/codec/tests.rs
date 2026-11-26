@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::test_support::wire;
+use cadmpeg_core::serde_erase::json;
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -230,16 +231,14 @@ impl CodecBackend for ForeignIdentityCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "identity": {"kind": "unclassified", "format": "foreign"},
-                "container_kind": "flat",
-                "entries": [],
-                "losses": [],
-                "notes": []
-            }))
-            .expect("foreign inspection fixture"),
-        )
+        Ok(json::from_value(serde_json::json!({
+            "identity": {"kind": "unclassified", "format": "foreign"},
+            "container_kind": "flat",
+            "entries": [],
+            "losses": [],
+            "notes": []
+        }))
+        .expect("foreign inspection fixture"))
     }
 
     fn decode_impl(
@@ -590,7 +589,7 @@ fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
 fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = Some(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -1207,7 +1206,7 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
             result.source_fidelity().content_digest,
             Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
         );
-        let text = cadmpeg_core::serde_erase::json::to_string(result.ir()).unwrap();
+        let text = json::to_string(result.ir()).unwrap();
         assert!(CadIr::from_json(&text).is_ok());
     }
 }
@@ -1497,7 +1496,7 @@ fn assert_resolves(result: &DecodeResult) {
         .filter(|finding| finding.check == crate::report::check::Check::ReferentialIntegrity)
         .collect::<Vec<_>>();
     assert!(unresolved.is_empty(), "{unresolved:?}");
-    let text = cadmpeg_core::serde_erase::json::to_string(ir).unwrap();
+    let text = json::to_string(ir).unwrap();
     assert!(CadIr::from_json(&text).is_ok());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).unwrap();
