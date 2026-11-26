@@ -665,6 +665,10 @@
             "class_tag": "268",
             "feature_ordinal": 1,
             "feature_ordinal_offset": 3422,
+            "flange_side": {
+              "offset": 3133,
+              "value": "side_one"
+            },
             "frame_length": 416,
             "history_state_id_offset": 3394,
             "kind": "BaseFlange",
@@ -1616,18 +1620,6 @@
         },
         "severity": "warning",
         "message": "1 sheet-metal base flange(s) use the thickness copy their scope stores: their sheet-metal rule states no readable thickness, and the copy can differ from it."
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "namespace": "f3d",
-            "code": "feature.base-flange-side-assumed",
-            "kind": "feature_history_retained"
-          }
-        },
-        "severity": "warning",
-        "message": "Base flange f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#3088 assumes the Forward material side; its operation frame stores no readable side (DR-67)."
       },
       {
         "code": {

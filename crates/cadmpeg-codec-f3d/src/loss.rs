@@ -561,7 +561,7 @@ pub(crate) enum F3dLossCode {
     BaseFlangeProfileUnresolved,
     BaseFlangeThicknessUnresolved,
     BaseFlangeSideUnresolved,
-    /// Base flanges with a read operation frame project the Forward material side, which the frame does not store.
+    /// Base flanges with a read operation frame and no admitted side bytes project the Forward material side.
     BaseFlangeSideAssumed,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,

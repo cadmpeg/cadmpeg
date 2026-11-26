@@ -2,6 +2,8 @@
 
 use super::*;
 use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+use crate::records::feature::sheet_metal::DesignFlangeSide;
+use crate::records::identity::Located;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
 
@@ -42,6 +44,13 @@ fn unread_operation(scope: &mut DesignParameterScope) {
     slot.as_mut().unwrap().base_flange_operation = None;
 }
 
+fn stored_side(side: DesignFlangeSide) -> Located<DesignFlangeSide> {
+    Located {
+        value: side,
+        offset: 45,
+    }
+}
+
 #[test]
 fn unread_operation_keeps_the_profile_and_owned_rule_thickness() {
     let (mut scope, groups, placements) = fixture();
@@ -54,6 +63,7 @@ fn unread_operation_keeps_the_profile_and_owned_rule_thickness() {
         "rule_thickness": 0.125, "rule_thickness_offset": 850,
     })).unwrap();
     unread_operation(&mut scope);
+    scope.flange_side = None;
     let mut losses = Vec::new();
     let (definition, stored) =
         project(&scope, &groups, &placements, &[settings], &mut losses).unwrap();
@@ -82,6 +92,7 @@ fn unread_operation_keeps_the_profile_and_owned_rule_thickness() {
 fn unread_thickness_and_side_keep_the_readable_profile() {
     let (mut scope, groups, placements) = fixture();
     unread_operation(&mut scope);
+    scope.flange_side = None;
     let mut losses = Vec::new();
     let (definition, stored) = project(&scope, &groups, &placements, &[], &mut losses).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
@@ -110,7 +121,8 @@ fn unread_thickness_and_side_keep_the_readable_profile() {
 
 #[test]
 fn unread_profile_keeps_fixed_form_thickness_and_side() {
-    let (scope, _, _) = fixture();
+    let (mut scope, _, _) = fixture();
+    scope.flange_side = None;
     let mut losses = Vec::new();
     let (definition, stored) = project(&scope, &[], &[], &[], &mut losses).unwrap();
     assert!(
@@ -171,4 +183,41 @@ fn unread_operation_preserves_a_region_selection_with_its_sketch() {
     assert!(losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::BaseFlangeProfileUnresolved.kind()));
+}
+
+#[test]
+fn stored_side_selects_the_thickness_direction() {
+    for (side, expected) in [
+        (DesignFlangeSide::SideOne, SheetMetalThicknessSide::Forward),
+        (DesignFlangeSide::SideTwo, SheetMetalThicknessSide::Reverse),
+        (
+            DesignFlangeSide::Centered,
+            SheetMetalThicknessSide::Symmetric,
+        ),
+    ] {
+        for read_operation in [true, false] {
+            let (mut scope, groups, placements) = fixture();
+            if !read_operation {
+                unread_operation(&mut scope);
+            }
+            scope.flange_side = Some(stored_side(side));
+            let mut losses = Vec::new();
+            let (definition, _) = project(&scope, &groups, &placements, &[], &mut losses).unwrap();
+            let FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
+                side: projected,
+                ..
+            }) = definition
+            else {
+                panic!("base flange");
+            };
+            assert_eq!(projected, Some(expected), "{side:?} read={read_operation}");
+            assert!(
+                !losses.iter().any(|loss| {
+                    loss.code == F3dLossCode::BaseFlangeSideAssumed.kind()
+                        || loss.code == F3dLossCode::BaseFlangeSideUnresolved.kind()
+                }),
+                "{side:?} read={read_operation}"
+            );
+        }
+    }
 }

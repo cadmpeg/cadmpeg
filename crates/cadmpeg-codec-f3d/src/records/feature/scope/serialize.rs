@@ -144,6 +144,7 @@ impl Serialize for DesignParameterScope {
         emit_opt!("display_name", self.display_name.as_deref());
         emit_opt!("tail_flags", self.tail_flags.as_ref());
         emit_opt!("companion_suppressed", self.companion_suppressed.as_ref());
+        emit_opt!("flange_side", self.flange_side.as_ref());
         emit_opt!("history_state_id", self.history_state_id);
         emit!("history_state_id_offset", self.history_state_id_offset());
         emit_opt!("previous_history_state_id", self.previous_history_state_id);

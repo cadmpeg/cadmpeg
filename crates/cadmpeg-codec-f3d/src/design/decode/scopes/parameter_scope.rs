@@ -57,6 +57,7 @@ use super::replace_face::exact_replace_face_operation;
 use super::sheet_metal::bind_hem_operation_from_parameters;
 use super::sheet_metal::exact_base_flange_operation;
 use super::sheet_metal::exact_edge_flange_operation;
+use super::sheet_metal::flange_side;
 use super::solid_primitive::exact_solid_primitive;
 use super::surfaces::exact_ruled_surface_operation;
 use super::surfaces::exact_surface_extend_operation;
@@ -2590,6 +2591,12 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             }),
             None => None,
         };
+        if matches!(
+            scope.kind(),
+            scope::DesignFeatureKind::Face | scope::DesignFeatureKind::BaseFlange
+        ) {
+            scope.flange_side = flange_side(bytes, start, paired_at);
+        }
         if let Some(prologue) = extrude_prologue {
             {
                 let construction = Some(scope::DesignExtrudeScope {

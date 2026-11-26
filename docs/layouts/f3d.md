@@ -9448,6 +9448,24 @@ Unstated regions:
 - `131..146` (15 B): Controls before the repeated profile-group index.
 - `150..416` (266 B): Remaining scope controls and ordered references.
 
+## `sheet_metal_scope_flange_side`
+
+Spec §3.1 · layout: byte offsets · size: not stated
+
+This size-less byte record describes a `Face` or `BaseFlange` scope. Offsets are relative to the scope's primary indexed header. The pair `00 00` is Side One, `01 00` is Side Two, and `00 01` is Centered.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/sheet_metal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 45 | 1 | `second_side` | `u8` | little | spec | Offset 45 selects Side Two |
+| 46 | 1 | `centered` | `u8` | little | spec | offset 46 selects Centered |
+
+Unstated regions:
+
+- `0..45` (45 B): Scope header and controls before the side bytes.
+
 ## `sheet_metal_rule_v0_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 25 B

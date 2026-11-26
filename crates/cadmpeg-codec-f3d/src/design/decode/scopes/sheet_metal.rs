@@ -17,6 +17,7 @@ use crate::layout::hem_common_controls as hem_controls;
 use crate::layout::hem_gap_length_fixed_operation_section as hem_gap;
 use crate::layout::hem_rolled_fixed_operation_section as hem_rolled;
 use crate::layout::hem_teardrop_fixed_operation_section as hem_teardrop;
+use crate::layout::sheet_metal_scope_flange_side as flange_side_layout;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::sheet_metal::DesignBaseFlangeOperation;
 use crate::records::feature::sheet_metal::DesignBendPosition;
@@ -24,6 +25,7 @@ use crate::records::feature::sheet_metal::DesignEdgeFlangeHeightExtent;
 use crate::records::feature::sheet_metal::DesignEdgeFlangeOperation;
 use crate::records::feature::sheet_metal::DesignEdgeFlangeWidthParameterSource;
 use crate::records::feature::sheet_metal::DesignEdgeWidthMode;
+use crate::records::feature::sheet_metal::DesignFlangeSide;
 use crate::records::feature::sheet_metal::DesignHemOperation;
 use crate::records::feature::sheet_metal::DesignHemParameterOwners;
 use crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum;
@@ -31,6 +33,27 @@ use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+
+/// Material side stored in the two Boolean bytes of a `Face` or `BaseFlange`
+/// scope frame, or `None` when the frame stores no admitted pair.
+pub(super) fn flange_side(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+) -> Option<crate::records::identity::Located<DesignFlangeSide>> {
+    let at = start.checked_add(flange_side_layout::SECOND_SIDE)?;
+    if paired_at <= start.checked_add(flange_side_layout::CENTERED)? {
+        return None;
+    }
+    let side = DesignFlangeSide::from_bytes(
+        *bytes.get(at)?,
+        *bytes.get(start.checked_add(flange_side_layout::CENTERED)?)?,
+    )?;
+    Some(crate::records::identity::Located {
+        value: side,
+        offset: u64::try_from(at).ok()?,
+    })
+}
 
 pub(super) fn exact_base_flange_operation(
     bytes: &[u8],
