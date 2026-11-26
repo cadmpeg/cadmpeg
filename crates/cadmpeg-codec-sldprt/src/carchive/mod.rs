@@ -62,6 +62,9 @@ pub(crate) struct PatternSeeds {
     pub(crate) parameters: Vec<reader::ParameterRecord>,
     /// A circular pattern's axis tail: its seven f64 and the byte after them.
     pub(crate) axis: Option<([f64; 7], u8)>,
+    /// Whether the pattern's object holds a seed identity record or a
+    /// temporary-axis carrier.
+    pub(crate) other_sources: bool,
 }
 
 /// The seeds of `lists`, named through `positions` and `names`.
@@ -85,6 +88,7 @@ fn pattern_seeds(
                 .collect(),
             parameters: list.parameters.clone(),
             axis: list.axis,
+            other_sources: list.other_sources,
         })
         .collect()
 }

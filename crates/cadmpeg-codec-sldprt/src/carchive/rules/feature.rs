@@ -1624,9 +1624,10 @@ fn units_after_head(r: &mut Reader<'_>, hd: &V) -> Res<()> {
 pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
     let from = reader.parameters.len();
     let lists = reader.pattern_seeds.len();
+    let opened = reader.counter;
     match featpattern_body(reader) {
         Ok(value) => {
-            reader.note_pattern_parameters(from);
+            reader.note_pattern_parameters(from, opened);
             Ok(value)
         }
         Err(stop) => {

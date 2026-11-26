@@ -860,6 +860,7 @@ fn a_pattern_seed_is_named_by_the_object_its_map_index_opened() {
         seeds: vec![Some(7), Some(9), None],
         parameters: Vec::new(),
         axis: None,
+        other_sources: false,
     }];
     let positions = std::collections::HashMap::from([(7, 40), (9, 60), (11, 100)]);
     let names = std::collections::HashMap::from([
@@ -873,6 +874,7 @@ fn a_pattern_seed_is_named_by_the_object_its_map_index_opened() {
             seeds: vec![Some("Cut-Extrude2".to_owned()), None, None],
             parameters: Vec::new(),
             axis: None,
+            other_sources: false,
         }]
     );
 }

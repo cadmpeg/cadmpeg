@@ -355,6 +355,9 @@ pub(crate) struct PatternSeedList {
     pub(crate) parameters: Vec<ParameterRecord>,
     /// A circular pattern's axis tail: its seven f64 and the byte after them.
     pub(crate) axis: Option<([f64; 7], u8)>,
+    /// Whether the pattern's object holds a seed identity record or a
+    /// temporary-axis carrier.
+    pub(crate) other_sources: bool,
 }
 
 /// A `moPMarkRecord_c` object the walk read and the named object that holds it.
@@ -385,8 +388,7 @@ pub(crate) struct Snapshot {
     profile_bodies: Vec<ProfileBody>,
     names: HashMap<usize, String>,
     marks: Vec<MarkOwner>,
-    positions: HashMap<u32, usize>,
-    pattern_seeds: Vec<PatternSeedList>,
+    pattern_seeds: usize,
 }
 
 impl<'b> Reader<'b> {
@@ -441,8 +443,7 @@ impl<'b> Reader<'b> {
             profile_bodies: self.profile_bodies.clone(),
             names: self.names.clone(),
             marks: self.marks.clone(),
-            positions: self.positions.clone(),
-            pattern_seeds: self.pattern_seeds.clone(),
+            pattern_seeds: self.pattern_seeds.len(),
         }
     }
 
@@ -463,8 +464,9 @@ impl<'b> Reader<'b> {
         self.profile_bodies = snapshot.profile_bodies;
         self.names = snapshot.names;
         self.marks = snapshot.marks;
-        self.positions = snapshot.positions;
-        self.pattern_seeds = snapshot.pattern_seeds;
+        let counter = snapshot.counter;
+        self.positions.retain(|index, _| *index < counter);
+        self.pattern_seeds.truncate(snapshot.pattern_seeds);
     }
 
     /// Record `list`, the seed list of the pattern being read.
@@ -494,6 +496,7 @@ impl<'b> Reader<'b> {
             seeds,
             parameters: Vec::new(),
             axis: None,
+            other_sources: false,
         });
     }
 
@@ -523,11 +526,19 @@ impl<'b> Reader<'b> {
     }
 
     /// Give the seed list of the pattern being read the parameter objects
-    /// read since `from`.
-    pub(crate) fn note_pattern_parameters(&mut self, from: usize) {
+    /// read since `from`, and whether an object opened at map index `opened`
+    /// or later is a seed identity record or a temporary-axis carrier.
+    pub(crate) fn note_pattern_parameters(&mut self, from: usize, opened: u32) {
         let Some(&(_, at)) = self.open.last() else {
             return;
         };
+        let other_sources = self.objs.iter().any(|(index, class)| {
+            *index >= opened
+                && matches!(
+                    &**class,
+                    "moCirPatternSurfIdRep_c" | "moCirPatternSurfIdRep2_c" | "moTempAxisRef_w"
+                )
+        });
         let Some(list) = self
             .pattern_seeds
             .iter_mut()
@@ -537,6 +548,7 @@ impl<'b> Reader<'b> {
             return;
         };
         list.parameters = self.parameters.get(from..).unwrap_or_default().to_vec();
+        list.other_sources = other_sources;
     }
 
     fn take<const N: usize>(&mut self) -> Res<[u8; N]> {

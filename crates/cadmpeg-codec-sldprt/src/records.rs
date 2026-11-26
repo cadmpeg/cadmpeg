@@ -400,10 +400,13 @@ pub(crate) const LINEAR_PATTERN_DIRECTION_PROPERTIES: [&str; 2] = ["Direction", 
 pub(crate) const CIRCULAR_PATTERN_WALKED_PROPERTIES: [&str; 5] = [
     "AxisOrigin",
     "AxisDirection",
-    "Seeds",
+    CIRCULAR_PATTERN_SEED_SOURCES,
     CIRCULAR_PATTERN_COUNT_DIMENSION,
     CIRCULAR_PATTERN_ANGLE_DIMENSION,
 ];
+
+/// The source ids of a walked circular pattern's seeds.
+pub(crate) const CIRCULAR_PATTERN_SEED_SOURCES: &str = "SeedSources";
 
 /// The name of the dimension that holds a walked circular pattern's count.
 pub(crate) const CIRCULAR_PATTERN_COUNT_DIMENSION: &str = "CountDimension";

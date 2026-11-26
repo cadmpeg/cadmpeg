@@ -35,6 +35,7 @@ fn pattern(name: &str, angle: f64) -> PatternSeeds {
             parameter("moAngleParameter_c", "D3", angle),
         ],
         axis: Some(([0.001, 0.0, 0.0005, 0.0, 0.0, 1.0, 0.0], 1)),
+        other_sources: false,
     }
 }
 
@@ -155,7 +156,7 @@ fn a_full_turn_walked_pattern_fills_the_record() {
     enrich_circular_patterns(&mut histories, &walked(vec![pattern("CirPattern1", TAU)]));
     assert_eq!(property(&histories, "AxisOrigin"), Some("0mm,0.5mm,0mm"));
     assert_eq!(property(&histories, "AxisDirection"), Some("0,1,0"));
-    assert_eq!(property(&histories, "Seeds"), Some("41"));
+    assert_eq!(property(&histories, "SeedSources"), Some("41"));
     assert_eq!(property(&histories, "CountDimension"), Some("D1"));
     assert_eq!(property(&histories, "AngleDimension"), Some("D3"));
 }
@@ -164,7 +165,7 @@ fn a_full_turn_walked_pattern_fills_the_record() {
 fn a_partial_turn_disagreeing_lanes_or_a_stated_group_leave_the_record() {
     let mut partial = history();
     enrich_circular_patterns(&mut partial, &walked(vec![pattern("CirPattern1", PI)]));
-    assert_eq!(property(&partial, "Seeds"), None);
+    assert_eq!(property(&partial, "SeedSources"), None);
 
     let mut other = pattern("CirPattern1", TAU);
     other.parameters[0].value = 6.0;
@@ -174,7 +175,7 @@ fn a_partial_turn_disagreeing_lanes_or_a_stated_group_leave_the_record() {
     ]);
     let mut disagreeing = history();
     enrich_circular_patterns(&mut disagreeing, &lanes);
-    assert_eq!(property(&disagreeing, "Seeds"), None);
+    assert_eq!(property(&disagreeing, "SeedSources"), None);
 
     let mut stated = history();
     stated[0].features[1].properties.insert(
@@ -182,6 +183,38 @@ fn a_partial_turn_disagreeing_lanes_or_a_stated_group_leave_the_record() {
         "1mm,2mm,3mm".to_owned(),
     );
     enrich_circular_patterns(&mut stated, &walked(vec![pattern("CirPattern1", TAU)]));
-    assert_eq!(property(&stated, "Seeds"), None);
+    assert_eq!(property(&stated, "SeedSources"), None);
     assert_eq!(property(&stated, "AxisOrigin"), Some("1mm,2mm,3mm"));
+}
+
+#[test]
+fn an_ambiguous_lane_a_carrier_a_repeated_seed_name_or_another_class_leave_the_record() {
+    let lanes = WalkedPatterns::from([
+        ("lane".to_owned(), vec![pattern("CirPattern1", TAU)]),
+        (
+            "other".to_owned(),
+            vec![pattern("CirPattern1", TAU), pattern("CirPattern1", TAU)],
+        ),
+    ]);
+    let mut ambiguous = history();
+    enrich_circular_patterns(&mut ambiguous, &lanes);
+    assert_eq!(property(&ambiguous, "SeedSources"), None);
+
+    let mut carried = pattern("CirPattern1", TAU);
+    carried.other_sources = true;
+    let mut with_carrier = history();
+    enrich_circular_patterns(&mut with_carrier, &walked(vec![carried]));
+    assert_eq!(property(&with_carrier, "SeedSources"), None);
+
+    let mut repeated = history();
+    repeated[0]
+        .features
+        .push(feature("Cut-Extrude2", "42", "moExtrusion_c", &[]));
+    enrich_circular_patterns(&mut repeated, &walked(vec![pattern("CirPattern1", TAU)]));
+    assert_eq!(property(&repeated, "SeedSources"), None);
+
+    let mut linear = history();
+    linear[0].features[1].input_class = Some("moLPattern_c".to_owned());
+    enrich_circular_patterns(&mut linear, &walked(vec![pattern("CirPattern1", TAU)]));
+    assert_eq!(property(&linear, "SeedSources"), None);
 }

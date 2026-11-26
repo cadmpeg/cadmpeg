@@ -13,7 +13,7 @@ use crate::carchive::reader::V;
 use crate::carchive::PatternSeeds;
 use crate::records::{
     FeatureHistory, CIRCULAR_PATTERN_ANGLE_DIMENSION, CIRCULAR_PATTERN_COUNT_DIMENSION,
-    CIRCULAR_PATTERN_WALKED_PROPERTIES,
+    CIRCULAR_PATTERN_SEED_SOURCES, CIRCULAR_PATTERN_WALKED_PROPERTIES,
 };
 
 #[cfg(test)]
@@ -61,7 +61,7 @@ pub(crate) fn walked_circular(
         .iter()
         .filter(|pattern| pattern.pattern.as_deref() == Some(name));
     let pattern = matching.next()?;
-    if matching.next().is_some() {
+    if matching.next().is_some() || pattern.other_sources {
         return None;
     }
     let seeds = pattern
@@ -112,9 +112,10 @@ pub(crate) fn walked_circular(
 }
 
 /// Give each circular pattern of `histories` whose record states none of the
-/// walked group the operands its walked object states, where every lane that
-/// walked it agrees on them, its one seed names one other feature of its
-/// history, and its angle is a full turn.
+/// walked group the operands its walked object states, where its object holds
+/// no seed identity record and no temporary-axis carrier, every lane that
+/// walked it walked it once and agrees on them, its one seed names one other
+/// feature of its history, and its angle is a full turn.
 pub(crate) fn enrich_circular_patterns(histories: &mut [FeatureHistory], walked: &WalkedPatterns) {
     let mut lanes = walked.keys().collect::<Vec<_>>();
     lanes.sort_unstable();
@@ -126,18 +127,26 @@ pub(crate) fn enrich_circular_patterns(histories: &mut [FeatureHistory], walked:
             {
                 continue;
             }
-            let mut readings = lanes.iter().filter_map(|lane| {
-                walked_circular(walked, lane, &feature.name, |name| {
-                    feature.parameters.contains_key(name)
+            let readings = lanes
+                .iter()
+                .filter(|lane| {
+                    walked[**lane]
+                        .iter()
+                        .any(|pattern| pattern.pattern.as_deref() == Some(feature.name.as_str()))
                 })
-            });
-            let Some(reading) = readings.next() else {
+                .map(|lane| {
+                    walked_circular(walked, lane, &feature.name, |name| {
+                        feature.parameters.contains_key(name)
+                    })
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some((reading, others)) = readings.as_deref().and_then(<[_]>::split_first) else {
                 continue;
             };
-            if !readings.all(|other| other == reading) {
+            if others.iter().any(|other| other != reading) {
                 continue;
             }
-            let Some(properties) = walked_properties(&reading, history, &feature.name) else {
+            let Some(properties) = walked_properties(reading, history, &feature.name) else {
                 continue;
             };
             history.features[index].properties.extend(properties);
@@ -181,7 +190,7 @@ fn walked_properties(
             format!("{},{},{}", direction.x, direction.y, direction.z),
         ),
         (
-            cadmpeg_core::nonblank_literal!("Seeds"),
+            NonBlankString::new(CIRCULAR_PATTERN_SEED_SOURCES)?,
             seed.source_value()?.to_string(),
         ),
         (

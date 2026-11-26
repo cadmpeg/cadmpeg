@@ -20,6 +20,25 @@ const RESOLVED_FEATURES_SUFFIX: &str = "-resolvedfeatures";
 /// The `Config-N` class map each `ResolvedFeatures` lane continues, by lane id.
 pub(crate) type ConfigurationMaps = HashMap<String, ConfigurationMap>;
 
+/// The lanes of a part, their exact sketch profiles, the mark-record owners
+/// and spans, the `Config-N` class maps, and the walked feature patterns.
+pub(crate) type AssembledLanes = (
+    Vec<FeatureInputLane>,
+    super::profiles::ExactProfiles,
+    crate::rollback::MarkOwners,
+    MarkSpans,
+    ConfigurationMaps,
+    WalkedPatterns,
+);
+
+/// A lane's walked mark records, its `Config-N` class map, and its walked
+/// feature patterns.
+type ArchiveReadings = (
+    Vec<crate::carchive::reader::MarkOwner>,
+    Option<ConfigurationMap>,
+    Vec<crate::carchive::PatternSeeds>,
+);
+
 pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
     lane.id.contains(":config-objects#")
 }
@@ -53,17 +72,7 @@ pub(crate) fn lanes(
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
-) -> Result<
-    (
-        Vec<FeatureInputLane>,
-        super::profiles::ExactProfiles,
-        crate::rollback::MarkOwners,
-        MarkSpans,
-        ConfigurationMaps,
-        WalkedPatterns,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> Result<AssembledLanes, cadmpeg_core::CodecError> {
     let has_explicit_lanes = scan.sections().any(|source| {
         source
             .name()
@@ -144,14 +153,7 @@ fn type_scalars_from_archive(
     lane: &mut FeatureInputLane,
     exact: &mut super::profiles::ExactProfiles,
     losses: &mut Vec<LossNote>,
-) -> Result<
-    (
-        Vec<crate::carchive::reader::MarkOwner>,
-        Option<ConfigurationMap>,
-        Vec<crate::carchive::PatternSeeds>,
-    ),
-    cadmpeg_core::CodecError,
-> {
+) -> Result<ArchiveReadings, cadmpeg_core::CodecError> {
     let Some(config_name) = configuration_name(section) else {
         return Ok((Vec::new(), None, Vec::new()));
     };

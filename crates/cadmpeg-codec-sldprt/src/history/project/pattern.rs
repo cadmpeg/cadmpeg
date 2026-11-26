@@ -2,7 +2,10 @@
 //! Pattern-form projection.
 
 use crate::classification::NativeClassKind;
-use crate::records::{Feature, CIRCULAR_PATTERN_ANGLE_DIMENSION, CIRCULAR_PATTERN_COUNT_DIMENSION};
+use crate::records::{
+    Feature, CIRCULAR_PATTERN_ANGLE_DIMENSION, CIRCULAR_PATTERN_COUNT_DIMENSION,
+    CIRCULAR_PATTERN_SEED_SOURCES,
+};
 use cadmpeg_ir::features::patterns::{PatternKind, PatternSeed, PatternTransform};
 use cadmpeg_ir::features::profiles::PathRef;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
@@ -75,7 +78,11 @@ pub(super) fn project_pattern(
 ) -> FeatureDefinition {
     let form = pattern_form(feature);
     let mut seeds = Vec::new();
-    if let Some(source_seeds) = feature.properties.get("Seeds") {
+    if let Some(source_seeds) = feature
+        .properties
+        .get("Seeds")
+        .or_else(|| feature.properties.get(CIRCULAR_PATTERN_SEED_SOURCES))
+    {
         for source in source_seeds.split(',').map(str::trim) {
             let Some(id) = by_source.get(source) else {
                 seeds.clear();
