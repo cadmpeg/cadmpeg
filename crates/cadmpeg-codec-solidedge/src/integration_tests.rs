@@ -711,10 +711,12 @@ fn invalid_body_resolution_keeps_geometry_and_reports_a_loss() {
         result.ir().tolerances.linear.get(),
         MODELLER_DEFAULT_LINEAR_MM
     );
+    let body = result.ir().geometry.bodies[0].id.as_str();
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::SolidEdgeLossCode::BodyResolutionInvalid
             .note("")
-            .code));
+            .code
+        && loss.message.contains(body)));
     assert_geometry_valid(result.ir());
 }
 

@@ -3148,7 +3148,7 @@ in different partition namespaces do not identify one GROUP.
 
 - Geometric doubles are meters; multiply by 1000 for mm. Applies to point coordinates, radii, offsets, tolerances, chart chords, TRIMMED_CURVE LINE parameters.
 - Do not scale unit axes/directions/normals, `thumb_weight`, angular parameters (radians), UV surface parameters, knot values, or ratios.
-- The part's linear tolerance comes from BODY `res_linear` of its bodies, and its angular tolerance is the Parasolid angular precision ([`parasolid.md`](parasolid.md) §4).
+- The part's linear tolerance comes from BODY `res_linear` of each body that a SHELL names, and its angular tolerance is the Parasolid angular precision ([`parasolid.md`](parasolid.md) §4). The value is read from the BODY node the primary records frame, or from a BODY node past the primary stop offset that reads as a primary record under the field lists declared before that offset. A body for which neither read gives a `res_linear` is charged `body.resolution-unread`, which names the body.
 - `chordal_error` defines the verification tolerance for chart-hosted procedural carriers.
 - Exactness certificates for procedural geometry are floor bounds `max(1e-12, 128·eps·scale)` mm; the relations are zero in exact arithmetic (S0==S1 spine identity, envelope-of-spheres normal).
 

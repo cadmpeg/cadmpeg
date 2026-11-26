@@ -147,7 +147,11 @@ A BODY node stores `res_size` and `res_linear` as f64 BE values in metres.
 `res_linear` are one position. The modeller default is `1.0e-8` m. The angular
 precision of the modeller is `1.0e-11` rad, and no node stores it.
 
-The linear tolerance of a part is the largest positive `res_linear` that its
-bodies store, converted to millimetres. When no body stores a positive value,
-the linear tolerance is the modeller default, `1.0e-5` mm. The angular
-tolerance of a part is the modeller angular precision.
+A `res_linear` states a linear precision when it is finite and positive in
+metres and in millimetres. The linear tolerance of a part is the largest
+`res_linear` that states a linear precision among the bodies whose BODY node
+the decode reads, in every configuration and stored state, converted to
+millimetres. When no such body stores one, the linear tolerance is the
+modeller default, `1.0e-5` mm. The angular tolerance of a part is the
+modeller angular precision. A BODY whose `res_linear` states no linear
+precision is charged `body.resolution-invalid`, which names the body.

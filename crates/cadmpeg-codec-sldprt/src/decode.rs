@@ -2868,6 +2868,36 @@ fn imported_bodies_loss(
     })
 }
 
+/// The `res_linear` values (metres) the decode of `scan` folds into the part's
+/// linear tolerance (`parasolid.md` §4): those of every body it admits, in
+/// every configuration.
+pub(crate) fn stored_linear_resolutions(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Vec<f64>, CodecError> {
+    let placed_virtual = crate::assembly::read(ctx, scan)?
+        .as_ref()
+        .map(crate::assembly::AssemblyProjection::virtual_site_keys)
+        .unwrap_or_default();
+    let streams = active_body_streams(scan);
+    if streams.is_empty() && placed_virtual.is_empty() {
+        return Ok(Vec::new());
+    }
+    let classification = crate::dialect::classify_layers(scan)?;
+    let decoded = try_decode_brep(
+        ctx,
+        scan,
+        &streams,
+        &placed_virtual,
+        &classification,
+        &mut Vec::new(),
+        &mut scan.given_up.clone(),
+    )?;
+    Ok(decoded
+        .map(|(decoded, _)| decoded.brep.body_linear_resolutions)
+        .unwrap_or_default())
+}
+
 /// Decode the available Parasolid body streams into one B-rep. Returns
 /// `Ok(None)` when the streams frame but yield neither geometry nor a valid
 /// empty partition/deltas model, so the caller falls back to metadata. A

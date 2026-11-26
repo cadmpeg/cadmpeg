@@ -5280,7 +5280,18 @@ fn decode_graph_inner(
         }
         admit_brep_entity(ctx)?;
         if let Some(record) = body_record {
-            out.body_linear_resolutions.push(record.linear_resolution);
+            let res_linear = record.linear_resolution;
+            if cadmpeg_parasolid::precision::linear_precision(res_linear).is_some() {
+                out.body_linear_resolutions.push(res_linear);
+            } else {
+                out.losses
+                    .push(crate::loss::SldprtLossCode::BodyResolutionInvalid.note(
+                        cadmpeg_parasolid::precision::unusable_resolution_message(
+                            body_id.as_str(),
+                            Some(res_linear),
+                        ),
+                    ));
+            }
         }
         out.bodies.push(Body {
             id: body_id,

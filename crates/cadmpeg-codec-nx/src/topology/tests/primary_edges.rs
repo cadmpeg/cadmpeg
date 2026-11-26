@@ -578,3 +578,20 @@ fn each_framed_body_keeps_its_stored_linear_resolution() {
         );
     });
 }
+
+#[test]
+fn a_body_past_the_primary_stop_keeps_its_stored_linear_resolution() {
+    with_decode_context(|_ctx| {
+        let stream = crate::test_support::test_streams::primary_stopped_topology_stream(1.0e-6);
+        let graph = parse(&stream);
+        assert!(graph.primary_unread_from().is_some());
+        assert_eq!(
+            graph
+                .body_linear_resolutions()
+                .iter()
+                .map(|(&xmt, &resolution)| (xmt, resolution))
+                .collect::<Vec<_>>(),
+            [(2, 1.0e-6)]
+        );
+    });
+}

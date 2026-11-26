@@ -21,6 +21,7 @@ use cadmpeg_ir::topology::{
     LoopRing, Point, Region, RegionUnstated, Sense, Shell, Unstated, Vertex,
 };
 use cadmpeg_ir::CadIr;
+use cadmpeg_parasolid::precision;
 use cadmpeg_parasolid::records::primary::Node;
 use cadmpeg_parasolid::records::{node_type as kind, PrimaryRecords};
 
@@ -316,16 +317,15 @@ pub(crate) fn project(
         .copied()
         .filter(|node| node.kind() == kind::BODY)
     {
-        if let Some(value) = body
-            .real("res_linear")
-            .filter(|value| PositiveLength::new(value * MM_PER_METRE).is_some())
-        {
-            stored_resolutions.push(value);
-        } else {
-            losses.push(
-                SolidEdgeLossCode::BodyResolutionInvalid
-                    .note("invalid body linear resolution uses the document tolerance"),
-            );
+        let res_linear = body.real("res_linear");
+        match res_linear.filter(|value| precision::linear_precision(*value).is_some()) {
+            Some(value) => stored_resolutions.push(value),
+            None => losses.push(SolidEdgeLossCode::BodyResolutionInvalid.note(
+                precision::unusable_resolution_message(
+                    body_id(stream, body.index()).as_str(),
+                    res_linear,
+                ),
+            )),
         }
         let body_kind = match body.byte("body_type") {
             Some(1) => BodyKind::Solid,

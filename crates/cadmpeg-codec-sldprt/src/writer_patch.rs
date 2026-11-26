@@ -104,12 +104,6 @@ pub(crate) fn patch_partition(
     if !same_graph(ir, &native) {
         return Ok(None);
     }
-    let retained = cadmpeg_parasolid::precision::part_tolerances(
-        native.body_linear_resolutions.iter().copied(),
-    );
-    if retained.linear != ir.tolerances.linear {
-        return Ok(None);
-    }
     validate_changed_annotations(
         ir,
         annotations,

@@ -96,16 +96,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     cadmpeg_core::decode::u64_from_index(candidate.geometry.entity_count()),
                     "admit Solid Edge partition entities",
                 )?;
-                let has_bodies = !candidate.geometry.bodies.is_empty();
                 ir.try_append(
                     candidate.geometry,
                     candidate.model,
                     candidate.native,
                     |_| Ok(Ok::<_, CodecError>(())),
                 )??;
-                if has_bodies {
-                    stored_resolutions.extend(resolutions);
-                }
+                stored_resolutions.extend(resolutions);
                 Ok::<_, CodecError>(())
             })();
             match result {

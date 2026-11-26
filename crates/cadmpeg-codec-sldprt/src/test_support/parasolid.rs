@@ -1489,6 +1489,11 @@ pub(crate) fn typed_single_face_ownership_with_resolution(
 /// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
 /// forming a closed ring, three edge-uses, three vertex-uses, and three points.
 pub(crate) fn triangle_body() -> Vec<u8> {
+    triangle_body_with_resolution(1.0e-8)
+}
+
+/// [`triangle_body`] whose BODY stores `res_linear` `linear_resolution`.
+pub(crate) fn triangle_body_with_resolution(linear_resolution: f64) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend(plane_carrier(
         100,
@@ -1510,7 +1515,12 @@ pub(crate) fn triangle_body() -> Vec<u8> {
     b.extend(world_point(60, [0.0, 0.0, 0.0]));
     b.extend(world_point(61, [1.0, 0.0, 0.0]));
     b.extend(world_point(62, [0.0, 1.0, 0.0]));
-    typed_single_face_ownership(&mut b, 900, 901, 902, 10, 100, 1);
+    typed_single_face_ownership_with_resolution(
+        &mut b,
+        [900, 901, 902, 10, 100],
+        1,
+        linear_resolution,
+    );
     b
 }
 

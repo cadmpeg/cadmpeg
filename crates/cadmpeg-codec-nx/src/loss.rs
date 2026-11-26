@@ -179,6 +179,11 @@ loss_codes! {
     DisplayJtTessellationsDropped => ("carrier.display-jt-tessellations-dropped", Warning, ObjectRecordsUntransferred),
     /// Native object-model attachment failed; none of its records were kept.
     NativeAttachmentFailed => ("native.attachment-failed", Error, DecodeDiagnostic),
+    /// A BODY stores a `res_linear` that states no linear precision
+    /// (`parasolid.md` §4).
+    BodyResolutionInvalid => ("body.resolution-invalid", Warning, SourceTopologyInvalid),
+    /// A BODY's `res_linear` is in a node the primary records do not read.
+    BodyResolutionUnread => ("body.resolution-unread", Warning, DecodeDiagnostic),
 }
 
 impl NxLossCode {
@@ -285,6 +290,8 @@ mod tests {
                 "container.display-jt-arithmetic-lane-bounded",
                 "carrier.display-jt-tessellations-dropped",
                 "native.attachment-failed",
+                "body.resolution-invalid",
+                "body.resolution-unread",
             ]
         );
     }

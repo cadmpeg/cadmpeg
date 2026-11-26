@@ -784,11 +784,6 @@ fn node_prefix(bytes: &[u8], payload: usize) -> Option<(u32, u32, usize)> {
     (attr > 1 && node_id != 0).then_some((attr, node_id, at + 4))
 }
 
-/// Whether a BODY holds `linear` (metres) as its `res_linear`.
-pub(crate) fn holds_linear_resolution(linear: f64) -> bool {
-    (RESOLUTION_LINEAR_MIN..=RESOLUTION_LINEAR_MAX).contains(&linear)
-}
-
 fn valid_resolution(size: f64, linear: f64) -> bool {
     size.is_finite()
         && linear.is_finite()
@@ -1289,7 +1284,13 @@ mod tests {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            decoded.ir(),
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let facts = scan(&body);
 
         assert!(facts.has_valid_ownership(), "{facts:?}");
@@ -1318,7 +1319,13 @@ mod tests {
             .edges
             .iter()
             .any(|edge| edge.curve() == Some(curve)));
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            decoded.ir(),
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let facts = scan(&body);
         let scopes = super::super::topology::topology_scopes(&body, false);
         assert!(

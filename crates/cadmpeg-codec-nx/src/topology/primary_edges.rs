@@ -47,33 +47,49 @@ impl PrimaryFrames {
     }
 }
 
+/// The stored `res_linear` (metres) of each BODY node, by XMT: framed nodes,
+/// and graph BODY nodes past the stop offset that read as primary records.
+fn body_linear_resolutions(primary: &PrimaryRecords<'_>, graph: &Graph) -> BTreeMap<u32, f64> {
+    let mut resolutions = primary
+        .nodes()
+        .filter(|node| node.kind() == node_type::BODY)
+        .filter_map(|node| Some((node.index(), node.real("res_linear")?)))
+        .collect::<BTreeMap<_, _>>();
+    let Some(stop) = primary.stop_offset() else {
+        return resolutions;
+    };
+    for body in graph.of_kind(NodeKind::Body) {
+        if body.pos() < stop || resolutions.contains_key(&body.xmt()) {
+            continue;
+        }
+        let Some(record) = primary.read_at(body.pos()) else {
+            continue;
+        };
+        let node = primary.node(&record);
+        if node.kind() != node_type::BODY || node.index() != body.xmt() {
+            continue;
+        }
+        if let Some(res_linear) = node.real("res_linear") {
+            resolutions.insert(body.xmt(), res_linear);
+        }
+    }
+    resolutions
+}
+
 impl Graph {
     /// Use primary record ownership when the header is supported.
     pub(crate) fn parse_source(stream: &[u8]) -> Result<Self, CodecError> {
-        let (frames, stop, limit_term_use, selection, body_linear_resolutions) = {
-            let Some(primary) = PrimaryRecords::read(stream)? else {
-                return Ok(Self::parse(stream));
-            };
-            let limit_term_use = crate::intersection::limit_term_use(&primary);
-            let body_linear_resolutions = primary
-                .nodes()
-                .filter(|node| node.kind() == node_type::BODY)
-                .filter_map(|node| Some((node.index(), node.real("res_linear")?)))
-                .collect();
-            let frames = PrimaryFrames {
-                edges: primary.edge_frames(),
-                records: primary.records().iter().map(PrimaryRecord::range).collect(),
-                terminated: primary.stop_offset().is_none(),
-            };
-            let selection = frames.terminated.then(|| node_selection(stream, &primary));
-            (
-                frames,
-                primary.stop_offset(),
-                limit_term_use,
-                selection,
-                body_linear_resolutions,
-            )
+        let Some(primary) = PrimaryRecords::read(stream)? else {
+            return Ok(Self::parse(stream));
         };
+        let limit_term_use = crate::intersection::limit_term_use(&primary);
+        let frames = PrimaryFrames {
+            edges: primary.edge_frames(),
+            records: primary.records().iter().map(PrimaryRecord::range).collect(),
+            terminated: primary.stop_offset().is_none(),
+        };
+        let selection = frames.terminated.then(|| node_selection(stream, &primary));
+        let stop = primary.stop_offset();
         let mut graph = match selection {
             Some((selection, supported)) => {
                 let mut graph = selection.materialize(stream);
@@ -114,11 +130,12 @@ impl Graph {
         graph.primary_unread_from = stop.filter(|offset| *offset < stream.len());
         graph.primary_records = frames.terminated_records().map(<[_]>::to_vec);
         graph.primary_limit_term_use = limit_term_use;
-        graph.body_linear_resolutions = body_linear_resolutions;
+        graph.body_linear_resolutions = body_linear_resolutions(&primary, &graph);
         Ok(graph)
     }
 
-    /// The stored `res_linear` (metres) of each framed BODY node, by XMT.
+    /// The stored `res_linear` (metres) of each BODY node the primary
+    /// records read, by XMT.
     pub(crate) fn body_linear_resolutions(&self) -> &BTreeMap<u32, f64> {
         &self.body_linear_resolutions
     }

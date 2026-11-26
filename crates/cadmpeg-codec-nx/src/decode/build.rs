@@ -61,6 +61,7 @@ use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use cadmpeg_parasolid::geometry::Refusal;
+use cadmpeg_parasolid::precision;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn ordered_point_candidates(graph: &Graph) -> Vec<(FinitePoint3, &Node)> {
@@ -173,21 +174,41 @@ pub(super) fn try_decode_geometry(
         .rmfastload_object_id_table()
         .map(|(_, table)| table.object_ids.as_slice())
         .unwrap_or_default();
-    let mut body_linear_resolutions = BTreeMap::new();
+    let mut stored_resolutions = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
             let graph = &parsed.stream(si).graph;
+            let scope = IdScope::stream_from_index(si)?;
+            let named_bodies = graph
+                .of_kind(NodeKind::Shell)
+                .filter_map(|shell| Some(u32::from(shell.shell_fields()?.body?)))
+                .collect::<BTreeSet<_>>();
+            for body_xmt in named_bodies {
+                let res_linear = graph.body_linear_resolutions().get(&body_xmt).copied();
+                if let Some(value) =
+                    res_linear.filter(|value| precision::linear_precision(*value).is_some())
+                {
+                    stored_resolutions.push(value);
+                    continue;
+                }
+                let code = if res_linear.is_some() {
+                    NxLossCode::BodyResolutionInvalid
+                } else {
+                    NxLossCode::BodyResolutionUnread
+                };
+                let body: BodyId =
+                    scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
+                topology_losses.push(code.note(precision::unusable_resolution_message(
+                    body.as_str(),
+                    res_linear,
+                )));
+            }
             for (body, nodes) in topology_body_node_ids(si, graph)? {
                 body_node_ids.insert(body, nodes);
             }
-            let scope = IdScope::stream_from_index(si)?;
-            for (&body_xmt, &resolution) in graph.body_linear_resolutions() {
-                let body: BodyId =
-                    scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
-                body_linear_resolutions.insert(body, resolution);
-            }
         }
     }
+    ir.tolerances = precision::part_tolerances(stored_resolutions);
     let rmfastload_selected = rmfastload_selected_bodies(&body_node_ids, rmfastload_ids);
     let allow_terminal_lineage =
         rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected);
@@ -1481,12 +1502,6 @@ pub(super) fn try_decode_geometry(
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
     classify_body_kinds(&mut ir)?;
-    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances(
-        ir.geometry
-            .bodies
-            .iter()
-            .filter_map(|body| body_linear_resolutions.get(&body.id).copied()),
-    );
     crate::native::attach_annotations(
         ctx,
         &mut ir,
