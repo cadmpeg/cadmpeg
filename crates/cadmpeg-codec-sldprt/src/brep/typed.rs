@@ -25,6 +25,10 @@ const REGION_TAG: [u8; 2] = [0x00, 0x13];
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 const RESOLUTION_SIZE_MIN: f64 = 1.0;
 const RESOLUTION_SIZE_MAX: f64 = 1.0e6;
+/// The `res_linear` magnitudes (metres) that decide between header reference
+/// counts when more than one count reads a complete BODY.
+const RESOLUTION_LINEAR_PLAUSIBLE_MIN: f64 = 1.0e-15;
+const RESOLUTION_LINEAR_PLAUSIBLE_MAX: f64 = 1.0e-2;
 const BODY_HEADER_REF_MAX: usize = 32;
 const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 
@@ -850,19 +854,21 @@ fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<Body
     // BODY is a fixed XT node.  Its fields begin immediately after the
     // attribute/node-id prefix; there is no additional length/index frame.
     // The embedded schema can add or remove leading reference fields, so the
-    // field count is selected only when exactly one complete interpretation
-    // passes the resolution, state, kind, and topology guards.
+    // field count is the one complete interpretation that passes the
+    // resolution, state, kind, and topology guards; among several, the one
+    // with a plausible `res_linear` (`sldprt.md` BODY).
     let (_, _, fields) = node_prefix(bytes, payload)?;
-    let mut candidate = None;
-    for header_ref_count in 0..=BODY_HEADER_REF_MAX {
-        if let Some(body) = parse_body_fields(bytes, offset, payload, fields, header_ref_count) {
-            if candidate.is_some() {
-                return None;
-            }
-            candidate = Some(body);
-        }
+    let mut candidates = (0..=BODY_HEADER_REF_MAX)
+        .filter_map(|count| parse_body_fields(bytes, offset, payload, fields, count))
+        .collect::<Vec<_>>();
+    if candidates.len() > 1 {
+        candidates.retain(|body| {
+            (RESOLUTION_LINEAR_PLAUSIBLE_MIN..=RESOLUTION_LINEAR_PLAUSIBLE_MAX)
+                .contains(&body.linear_resolution.abs())
+        });
     }
-    candidate
+    let candidate = candidates.pop()?;
+    candidates.is_empty().then_some(candidate)
 }
 
 fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyCandidate> {
@@ -1365,12 +1371,21 @@ mod tests {
     }
 
     fn body_fields<const N: usize>(header: [u32; N], body_type: u8, topology: [u32; 7]) -> Vec<u8> {
+        body_fields_with_resolution(header, 1.0e-8, body_type, topology)
+    }
+
+    fn body_fields_with_resolution<const N: usize>(
+        header: [u32; N],
+        res_linear: f64,
+        body_type: u8,
+        topology: [u32; 7],
+    ) -> Vec<u8> {
         let mut bytes = Vec::new();
         for value in header {
             push_ref(&mut bytes, value);
         }
         bytes.extend_from_slice(&1000.0f64.to_be_bytes());
-        bytes.extend_from_slice(&1.0e-8f64.to_be_bytes());
+        bytes.extend_from_slice(&res_linear.to_be_bytes());
         for value in [1, 1, 1] {
             push_ref(&mut bytes, value);
         }
@@ -1598,6 +1613,47 @@ mod tests {
         assert!(!facts.shells.iter().any(|node| node.offset == payload));
         assert_eq!(facts.topology_class_masks().get(&3), Some(&1));
         assert!(facts.topology_owner_attrs().contains(&3));
+    }
+
+    /// A BODY of `header` and `res_linear` after a node prefix, and the offset
+    /// of its fields.
+    fn body_payload<const N: usize>(header: [u32; N], res_linear: f64) -> (Vec<u8>, usize) {
+        let mut bytes = Vec::new();
+        push_ref(&mut bytes, 3);
+        bytes.extend_from_slice(&1006u32.to_be_bytes());
+        let fields = bytes.len();
+        bytes.extend(body_fields_with_resolution(
+            header,
+            res_linear,
+            1,
+            [7, 8, 9, 10, 1, 12, 11],
+        ));
+        (bytes, fields)
+    }
+
+    #[test]
+    fn a_body_that_also_reads_one_reference_short_keeps_its_stored_resolution() {
+        // A last header reference of 16400 has the bytes 0x4010, the high word
+        // of an f64 in `[1, 1e6]`, so the count one short also reads a BODY,
+        // with a subnormal `res_linear`.
+        let (bytes, fields) = body_payload([5, 6, 1, 1, 1, 16400], 1.0e-8);
+        let short = super::parse_body_fields(&bytes, 0, 0, fields, 5).expect("count 5 reads");
+        assert!(short.linear_resolution.abs() < f64::MIN_POSITIVE);
+        assert!(super::parse_body_fields(&bytes, 0, 0, fields, 6).is_some());
+        let body = super::parse_body_layout(&bytes, 0, 0).expect("the body is admitted");
+        assert_eq!(body.linear_resolution.to_bits(), 1.0e-8f64.to_bits());
+        assert_eq!(body.kind, BodyKind::Solid);
+    }
+
+    #[test]
+    fn a_lone_reading_outside_the_plausible_resolution_is_admitted() {
+        let (bytes, fields) = body_payload([5, 6, 1, 1, 1, 1], 0.1);
+        let readings = (0..=super::BODY_HEADER_REF_MAX)
+            .filter(|count| super::parse_body_fields(&bytes, 0, 0, fields, *count).is_some())
+            .count();
+        assert_eq!(readings, 1);
+        let body = super::parse_body_layout(&bytes, 0, 0).expect("the body is admitted");
+        assert_eq!(body.linear_resolution.to_bits(), 0.1f64.to_bits());
     }
 
     #[test]

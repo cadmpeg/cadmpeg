@@ -338,8 +338,8 @@ pub(crate) fn write_semantic_with_records_cached(
     {
         retained_source_baseline(source_baseline, source_context.as_ref())?;
     }
-    // The `res_linear` the bodies of the source store, as the decoder folds
-    // them (`parasolid.md` §4).
+    // The `res_linear` the BODY records of the source store, read once with no
+    // B-rep decode (`parasolid.md` §4).
     let stored_resolutions = match (&source_context, &source_scan) {
         (Some((ctx, _)), Some(scan)) if retained_partition.is_none() => {
             crate::decode::stored_linear_resolutions(ctx, scan)?

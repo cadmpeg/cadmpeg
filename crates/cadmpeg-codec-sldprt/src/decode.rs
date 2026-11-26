@@ -2820,8 +2820,8 @@ fn imported_bodies_loss(
 }
 
 /// The `res_linear` values (metres) the decode of `scan` folds into the part's
-/// linear tolerance (`parasolid.md` §4): those of every body it admits, in
-/// every configuration.
+/// linear tolerance (`parasolid.md` §4): those of the BODY nodes of every
+/// active body stream and of every placed virtual component.
 pub(crate) fn stored_linear_resolutions(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -2830,23 +2830,33 @@ pub(crate) fn stored_linear_resolutions(
         .as_ref()
         .map(crate::assembly::AssemblyProjection::virtual_site_keys)
         .unwrap_or_default();
-    let streams = active_body_streams(scan);
-    if streams.is_empty() && placed_virtual.is_empty() {
-        return Ok(Vec::new());
+    let mut resolutions = site_linear_resolutions(&active_body_streams(scan))?;
+    for section in scan.sections() {
+        if section
+            .name()
+            .and_then(container::virtual_component_key)
+            .is_none()
+            || !placed_virtual.contains(&section.site_key())
+        {
+            continue;
+        }
+        let _depth = ctx.enter_nested("read SolidWorks virtual component resolutions")?;
+        let nested = match container::scan(ctx, View::over_retained(section.payload())) {
+            Ok(nested) => nested,
+            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
+            Err(_) => continue,
+        };
+        resolutions.extend(site_linear_resolutions(&active_body_streams(&nested))?);
     }
-    let classification = crate::dialect::classify_layers(scan)?;
-    let decoded = try_decode_brep(
-        ctx,
-        scan,
-        &streams,
-        &placed_virtual,
-        &classification,
-        &mut Vec::new(),
-        &mut scan.given_up.clone(),
-    )?;
-    Ok(decoded
-        .map(|(decoded, _)| decoded.brep.body_linear_resolutions)
-        .unwrap_or_default())
+    Ok(resolutions)
+}
+
+fn site_linear_resolutions(sites: &[ActiveParasolidSite<'_>]) -> Result<Vec<f64>, CodecError> {
+    let bodies = sites
+        .iter()
+        .map(|site| (site.payload, site.header))
+        .collect::<Vec<_>>();
+    crate::brep::graph::stored_linear_resolutions(&bodies)
 }
 
 /// Decode the available Parasolid body streams into one B-rep. Returns

@@ -2628,6 +2628,37 @@ pub(crate) fn decode(
     )
 }
 
+/// The `res_linear` values (metres) that state a linear precision in the BODY
+/// nodes of `bodies`, read from the typed records the B-rep decode reads, with
+/// no topology or geometry built.
+pub(crate) fn stored_linear_resolutions(
+    bodies: &[(&[u8], &StreamHeader)],
+) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
+    let mut resolutions = Vec::new();
+    for (payload, header) in bodies {
+        let body = header_body(payload, header)?;
+        let prefixed = is_deltas_stream(header);
+        let facts = (!prefixed)
+            .then(|| topology::nodes::sequence(payload))
+            .flatten()
+            .and_then(|records| {
+                topology::nodes::tables(&records, payload, header.body_offset)?;
+                typed::nodes::facts(&records, header.body_offset)
+            })
+            .unwrap_or_else(|| typed::scan_with_payload_exclusions(body, prefixed));
+        resolutions.extend(
+            facts
+                .bodies
+                .iter()
+                .map(|body| body.linear_resolution)
+                .filter(|res_linear| {
+                    cadmpeg_parasolid::precision::linear_precision(*res_linear).is_some()
+                }),
+        );
+    }
+    Ok(resolutions)
+}
+
 pub(super) fn is_deltas_stream(header: &StreamHeader) -> bool {
     header
         .description

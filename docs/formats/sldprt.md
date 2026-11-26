@@ -2687,12 +2687,18 @@ from the embedded schema. The ownership field sequence contains the shell,
 boundary-surface, boundary-curve, boundary-point, region, edge, and vertex
 references plus the index-map fields. The region head is selected by a unique
 FACE → SHELL → REGION → BODY closure; a fixed ordinal or numeric chain is not
-an ownership selector. A BODY is valid only when exactly one schema field
-interpretation satisfies the complete field grammar: `resolution_size` is in
+an ownership selector. A header reference count reads a BODY when the
+complete field grammar holds at that count: `resolution_size` is in
 `[1, 1e6]`, `resolution_linear` is finite and nonzero, `state` is `1`, and
-`body_type` is one of the four defined values. These guards select the header
-reference count. Reference bytes read as an f64 at a wrong count give a value
-near `1e-302`, which the `resolution_size` range rejects.
+`body_type` is one of the four defined values. A count that is too high reads
+reference bytes as `resolution_size`, which gives a value near `1e-302`
+outside its range. A count one reference too low can also read a BODY: where
+the last header reference has the bytes of the high word of an f64 in
+`[1, 1e6]`, `resolution_size` reads in range and `resolution_linear` reads a
+subnormal value. When one count reads a BODY, that count is the layout. When
+more than one count reads a BODY, the layout is the one count whose
+`resolution_linear` magnitude is in `[1e-15, 1e-2]` m. A BODY with no count,
+or with several counts and no such single count, is not valid.
 
 `resolution_size` and `resolution_linear` are the BODY fields `res_size` and
 `res_linear` in metres. `resolution_linear` takes every finite nonzero value.
