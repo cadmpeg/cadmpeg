@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use super::widen;
-use crate::annotations::{AnnotationBuilder, Annotations};
+use crate::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use crate::codec::loss::DecodeLossCode;
 use crate::codec::{DecodeBody, DecodeResult, Decoded, FormatId};
 use crate::document::Topology;
@@ -19,6 +19,8 @@ use crate::source_fidelity::SourceFidelity;
 use crate::topology::PcurveUse;
 use crate::validate::validate_neutral;
 use crate::CadIr;
+
+mod stored_history;
 
 /// The unit cube (side 10, each edge a line ranged from its start corner)
 /// with the point of `corner` moved to `position`.
@@ -118,7 +120,7 @@ fn a_vertex_on_its_edges_ends_keeps_its_tolerance() {
     let mut annotations = Annotations::default();
     assert_eq!(
         widen(&mut ir, &mut annotations, &DecodePolicy::default()),
-        None
+        []
     );
     assert_eq!(ir, unit_cube().unwrap());
     assert_eq!(annotations, Annotations::default());
@@ -133,7 +135,7 @@ fn a_vertex_on_a_carrier_far_from_its_end_keeps_its_tolerance() {
     let mut annotations = Annotations::default();
     assert_eq!(
         widen(&mut ir, &mut annotations, &DecodePolicy::default()),
-        None
+        []
     );
     assert_eq!(ir, before);
 }
@@ -155,7 +157,7 @@ fn a_vertex_whose_point_the_decoder_computed_keeps_its_tolerance() {
     let before = ir.clone();
     assert_eq!(
         widen(&mut ir, &mut annotations, &DecodePolicy::default()),
-        None
+        []
     );
     assert_eq!(ir, before);
 }
@@ -291,7 +293,9 @@ fn a_vertex_off_its_face_surface_states_its_distance_from_the_pcurve_images() {
     // pcurve images are compared.
     let (mut ir, mut annotations) =
         cube_with_face_pcurves(Point3::new(0.0, 0.0, -0.03), Vector3::new(0.0, 0.0, 1.0));
-    let widened = widen(&mut ir, &mut annotations, &DecodePolicy::default()).unwrap();
+    let [widened] = &widen(&mut ir, &mut annotations, &DecodePolicy::default())[..] else {
+        panic!("one loss");
+    };
     assert!(
         widened.message.starts_with("widened 1 vertex tolerance(s)"),
         "{}",
@@ -313,7 +317,7 @@ fn a_vertex_on_its_face_surface_keeps_its_tolerance_against_the_pcurve_images() 
     let before = ir.clone();
     assert_eq!(
         widen(&mut ir, &mut annotations, &DecodePolicy::default()),
-        None
+        []
     );
     assert_eq!(ir, before);
 }
@@ -325,7 +329,9 @@ fn a_session_refusal_widens_nothing_and_is_charged() {
     let mut annotations = Annotations::default();
     let mut policy = DecodePolicy::default();
     policy.limits.max_recursion_depth = 0;
-    let loss = widen(&mut ir, &mut annotations, &policy).unwrap();
+    let [loss] = &widen(&mut ir, &mut annotations, &policy)[..] else {
+        panic!("one loss");
+    };
     assert_eq!(
         loss.code,
         DecodeLossCode::VertexToleranceUnmeasured.note("").code
@@ -355,14 +361,76 @@ fn assert_unwidened(mut ir: CadIr) {
     let mut annotations = Annotations::default();
     assert_eq!(
         widen(&mut ir, &mut annotations, &DecodePolicy::default()),
-        None
+        []
     );
     assert_eq!(ir, before);
     assert_eq!(annotations, Annotations::default());
 }
 
-/// The cube's corner at the origin, moved off the ends of its three edges
-/// by 0.05 along -z.
+/// Leaves `ir` to the pass, asserts that it charges one widening naming
+/// exactly the delta records `keys` (`<holder> <vertex>`) and marks each
+/// widened tolerance derived under its key, and returns the document.
+fn assert_widened_in_deltas(mut ir: CadIr, keys: &[String]) -> CadIr {
+    let mut annotations = Annotations::default();
+    let losses = widen(&mut ir, &mut annotations, &DecodePolicy::default());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        DecodeLossCode::VertexToleranceWidened.note("").code
+    );
+    assert!(
+        loss.message
+            .starts_with(&format!("widened {} vertex tolerance(s)", keys.len()))
+            && loss.message.ends_with(&format!(": {}", keys.join(", "))),
+        "{}",
+        loss.message
+    );
+    let marked = annotations
+        .exactness()
+        .iter()
+        .map(|(key, note)| {
+            assert_eq!(note.entity(), Exactness::ByteExact);
+            assert_eq!(
+                note.fields()
+                    .iter()
+                    .map(|(field, exactness)| (field.as_str(), *exactness))
+                    .collect::<Vec<_>>(),
+                [("tolerance", Exactness::Derived)]
+            );
+            key.as_str().to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(marked, keys);
+    ir
+}
+
+/// The tolerance the delta `delta` states for the cube's vertex `corner`.
+fn delta_vertex_tolerance(delta: &crate::design::evaluation::StateDelta, corner: usize) -> f64 {
+    vertex_tolerance(&delta.records, corner).unwrap()
+}
+
+/// The id of the cube's vertex `corner`.
+fn vertex_id(ir: &CadIr, corner: usize) -> String {
+    let suffix = format!("vertex#{corner}");
+    ir.geometry
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id.as_str().ends_with(&suffix))
+        .unwrap()
+        .id
+        .as_str()
+        .to_owned()
+}
+
+/// The distance of the moved origin corner from the ends of its three edges.
+fn moved_corner_gap() -> f64 {
+    0.02 * 3.0_f64.sqrt()
+}
+
+/// The cube's point at the origin, moved by (-0.02, -0.02, -0.02): off the
+/// ends of its three edges by 0.02·√3 and off their lines by 0.02·√2.
 fn moved_origin_corner(ir: &CadIr) -> crate::topology::Point {
     let mut corner = ir
         .geometry
@@ -371,27 +439,44 @@ fn moved_origin_corner(ir: &CadIr) -> crate::topology::Point {
         .find(|point| point.position().get() == Point3::new(0.0, 0.0, 0.0))
         .unwrap()
         .clone();
-    corner.set_position(FinitePoint3::new(Point3::new(0.0, 0.0, -0.05)).unwrap());
+    corner.set_position(FinitePoint3::new(Point3::new(-0.02, -0.02, -0.02)).unwrap());
     corner
 }
 
+fn assert_close(stated: f64, expected: f64) {
+    assert!(
+        (stated - expected).abs() <= 16.0 * f64::EPSILON * expected,
+        "{stated}"
+    );
+}
+
 #[test]
-fn an_evaluation_vertex_off_an_edge_its_delta_does_not_restate_is_reported_not_widened() {
+fn an_evaluation_vertex_off_an_edge_its_delta_does_not_restate_is_widened_in_its_delta() {
     // The evaluation is stored against the current state, and its delta
-    // restates only the corner's point: the miss is against the current
-    // state's edges. The pass keeps the stored tolerance, and validation
-    // reports the gap on the evaluation.
+    // restates only the corner's point: in the resolved state the corner's
+    // vertex lies off the ends of the current state's three edges. The
+    // delta restates the vertex with that tolerance; the current geometry
+    // keeps its own.
     let mut ir = crate::validate::design::fixture::document();
     let corner = moved_origin_corner(&ir);
     let evaluation = &mut ir.design.evaluations[0];
     let holder = evaluation.id.as_str().to_owned();
     evaluation.content.as_mut().unwrap().delta.records.points = vec![corner];
     assert!(gaps_on(&ir, &holder) > 0);
-    assert_unwidened(ir);
+    let key = format!("{holder} {}", vertex_id(&ir, 0));
+    let ir = assert_widened_in_deltas(ir, &[key]);
+    let delta = &ir.design.evaluations[0].content.as_ref().unwrap().delta;
+    assert_close(delta_vertex_tolerance(delta, 0), moved_corner_gap());
+    assert_eq!(delta.records.vertices.len(), 1);
+    assert_eq!(vertex_tolerance(&ir.geometry, 0), None);
+    assert_eq!(gaps_on(&ir, &holder), 0);
 }
 
 #[test]
-fn a_process_state_vertex_off_its_edges_ends_is_reported_not_widened() {
+fn a_process_state_vertex_off_its_edges_ends_is_widened_in_its_delta() {
+    // The stock's delta moves the corner's point; the state after the mill,
+    // based on the stock with a delta of no topology record, inherits the
+    // widened vertex and restates nothing.
     let mut ir = crate::validate::process::fixture::document();
     let corner = moved_origin_corner(&ir);
     let state = ir
@@ -403,7 +488,236 @@ fn a_process_state_vertex_off_its_edges_ends_is_reported_not_widened() {
     let holder = state.id.as_str().to_owned();
     state.content.as_mut().unwrap().delta.records.points = vec![corner];
     assert!(gaps_on(&ir, &holder) > 0);
-    assert_unwidened(ir);
+    let key = format!("{holder} {}", vertex_id(&ir, 0));
+    let ir = assert_widened_in_deltas(ir, &[key]);
+    for state in &ir.process.states {
+        let delta = &state.content.as_ref().unwrap().delta;
+        if state.id.as_str() == holder {
+            assert_close(delta_vertex_tolerance(delta, 0), moved_corner_gap());
+        } else {
+            assert!(delta.records.vertices.is_empty());
+        }
+    }
+    assert_eq!(gaps_on(&ir, &holder), 0);
+}
+
+/// The line of the cube's edge 0 (corner 0 to corner 1) moved `offset`
+/// along -z.
+fn moved_edge_line(ir: &CadIr, offset: f64) -> crate::geometry::Curve {
+    let mut line = ir
+        .geometry
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str().ends_with("curve#0"))
+        .unwrap()
+        .clone();
+    line.geometry =
+        crate::geometry::CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, -offset),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ));
+    line
+}
+
+#[test]
+fn a_base_vertex_copied_into_a_delta_is_annotated_as_the_base_record_with_a_derived_tolerance() {
+    // As below, with corner 0's vertex annotated as read from offset 11 of
+    // a stream, and a second evaluation, based on the first, that moves the
+    // line 0.08: it copies the vertex from the first evaluation's delta, which
+    // copied it from the current geometry.
+    let mut ir = crate::validate::design::fixture::document();
+    let first = ir.design.evaluations[0].id.clone();
+    let line = moved_edge_line(&ir, 0.05);
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .unwrap()
+        .delta
+        .records
+        .curves = vec![line];
+    let mut chained = ir.design.evaluations[0].clone();
+    chained.id = crate::validate::design::fixture::id("evaluation", "a-chained");
+    let content = chained.content.as_mut().unwrap();
+    content.base = crate::design::evaluation::StateBase::Evaluation(first.clone());
+    content.delta.records.curves = vec![moved_edge_line(&ir, 0.08)];
+    let second = chained.id.clone();
+    ir.design.evaluations.insert(0, chained);
+    let vertex = vertex_id(&ir, 0);
+    let stream = StreamHandle::new(crate::stream_name!("source"));
+    let mut builder = AnnotationBuilder::new();
+    builder.note(&vertex, &stream, 11, None);
+    let mut annotations = builder.build();
+    let read = annotations.provenance[vertex.as_str()].clone();
+    let losses = widen(&mut ir, &mut annotations, &DecodePolicy::default());
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    for holder in [first.as_str(), second.as_str()] {
+        let key = format!("{holder} {vertex}");
+        assert_eq!(annotations.provenance[key.as_str()], read);
+        let note = &annotations.exactness()[key.as_str()];
+        assert_eq!(note.entity(), Exactness::ByteExact);
+        assert_eq!(
+            note.fields()
+                .iter()
+                .map(|(field, exactness)| (field.as_str(), *exactness))
+                .collect::<Vec<_>>(),
+            [("tolerance", Exactness::Derived)]
+        );
+    }
+    let other = format!("{first} {}", vertex_id(&ir, 1));
+    assert!(!annotations.provenance.contains_key(other.as_str()));
+    let [chained, base] = &ir.design.evaluations[..2] else {
+        unreachable!()
+    };
+    assert_close(
+        delta_vertex_tolerance(&chained.content.as_ref().unwrap().delta, 0),
+        0.08,
+    );
+    assert_close(
+        delta_vertex_tolerance(&base.content.as_ref().unwrap().delta, 0),
+        0.05,
+    );
+}
+
+#[test]
+fn a_ceiling_met_in_the_resolved_states_keeps_the_current_widening_and_is_charged() {
+    // Corner 0 of the current geometry lies off its three edges' ends, and
+    // the evaluation's delta moves the line of edge 0. The session admits
+    // the current geometry's measure and refuses the reading of the
+    // references of the resolved states' records.
+    let mut ir = crate::validate::design::fixture::document();
+    let corner = moved_origin_corner(&ir);
+    for point in &mut ir.geometry.points {
+        if point.id == corner.id {
+            *point = corner.clone();
+        }
+    }
+    let line = moved_edge_line(&ir, 0.05);
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .unwrap()
+        .delta
+        .records
+        .curves = vec![line];
+    let before = ir.design.clone();
+    let mut annotations = Annotations::default();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_recursion_depth = 1;
+    let losses = widen(&mut ir, &mut annotations, &policy);
+    let [widened, unmeasured] = &losses[..] else {
+        panic!("two losses: {losses:?}");
+    };
+    assert_eq!(
+        widened.code,
+        DecodeLossCode::VertexToleranceWidened.note("").code
+    );
+    assert!(
+        widened
+            .message
+            .ends_with(&format!(": {}", vertex_id(&ir, 0))),
+        "{}",
+        widened.message
+    );
+    assert_eq!(
+        unmeasured.code,
+        DecodeLossCode::VertexToleranceUnmeasured.note("").code
+    );
+    assert!(
+        unmeasured
+            .message
+            .ends_with(&format!(": {}", ir.design.evaluations[0].id.as_str())),
+        "{}",
+        unmeasured.message
+    );
+    assert_close(
+        vertex_tolerance(&ir.geometry, 0).unwrap(),
+        moved_corner_gap(),
+    );
+    assert_eq!(ir.design, before);
+}
+
+#[test]
+fn a_base_vertex_that_a_delta_moves_an_edge_away_from_is_widened_in_that_delta() {
+    // The current geometry is the cube, whose vertices lie on their edges'
+    // ends. The evaluation's delta restates the line of edge 0 (corner 0 to
+    // corner 1) moved 0.05 along -z: in the resolved state both corners lie
+    // 0.05 from that line's ends, and the delta restates both vertices.
+    let mut ir = crate::validate::design::fixture::document();
+    let mut line = ir
+        .geometry
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str().ends_with("curve#0"))
+        .unwrap()
+        .clone();
+    line.geometry =
+        crate::geometry::CurveGeometry::Solved(crate::geometry::SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, -0.05),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ));
+    let evaluation = &mut ir.design.evaluations[0];
+    let holder = evaluation.id.as_str().to_owned();
+    evaluation.content.as_mut().unwrap().delta.records.curves = vec![line];
+    assert!(gaps_on(&ir, &holder) > 0);
+    let keys = [0, 1].map(|corner| format!("{holder} {}", vertex_id(&ir, corner)));
+    let ir = assert_widened_in_deltas(ir, &keys);
+    let delta = &ir.design.evaluations[0].content.as_ref().unwrap().delta;
+    assert_close(delta_vertex_tolerance(delta, 0), 0.05);
+    assert_close(delta_vertex_tolerance(delta, 1), 0.05);
+    for corner in 0..8 {
+        assert_eq!(vertex_tolerance(&ir.geometry, corner), None);
+    }
+    assert_eq!(gaps_on(&ir, &holder), 0);
+}
+
+#[test]
+fn a_state_measured_after_its_base_restates_no_vertex_its_base_widens() {
+    // The evaluation `after-extrude` moves the corner's point and widens its
+    // vertex. A second evaluation, earlier in id order, is based on it and
+    // restates an unmoved point of another corner: its resolved state holds
+    // the widened vertex, so its delta gains no vertex.
+    let mut ir = crate::validate::design::fixture::document();
+    let corner = moved_origin_corner(&ir);
+    let far = ir
+        .geometry
+        .points
+        .iter()
+        .find(|point| point.position().get() == Point3::new(10.0, 10.0, 10.0))
+        .unwrap()
+        .clone();
+    let base = &mut ir.design.evaluations[0];
+    base.content.as_mut().unwrap().delta.records.points = vec![corner];
+    let holder = base.id.as_str().to_owned();
+    let mut chained = base.clone();
+    chained.id = crate::validate::design::fixture::id("evaluation", "a-chained");
+    let content = chained.content.as_mut().unwrap();
+    content.base = crate::design::evaluation::StateBase::Evaluation(base.id.clone());
+    content.delta.records.points = vec![far];
+    assert!(chained.id < base.id);
+    ir.design.evaluations.insert(0, chained);
+    let key = format!("{holder} {}", vertex_id(&ir, 0));
+    let ir = assert_widened_in_deltas(ir, &[key]);
+    let [chained, base] = &ir.design.evaluations[..2] else {
+        unreachable!()
+    };
+    assert!(chained
+        .content
+        .as_ref()
+        .unwrap()
+        .delta
+        .records
+        .vertices
+        .is_empty());
+    assert_close(
+        delta_vertex_tolerance(&base.content.as_ref().unwrap().delta, 0),
+        moved_corner_gap(),
+    );
 }
 
 #[test]
