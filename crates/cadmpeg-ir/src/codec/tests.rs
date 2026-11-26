@@ -1700,3 +1700,86 @@ fn records_past_the_bound_in_one_walk_are_each_given_up_at_their_place() {
         .any(|procedural| procedural.id.as_str() == "test:model:construction#c"));
     assert_resolves(&result);
 }
+
+/// A decoder that gives up the cube's first point, keeps the vertex that
+/// needs it, and drops two source records that need it in turn, and two
+/// source records whose need it never gives up.
+struct GivenUpPointCodec;
+
+impl CodecBackend for GivenUpPointCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the given-up point test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        use crate::unknown::part::{dropped_with, GivenUpRecord};
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let point = ir.geometry.points.remove(0).id;
+        let mut decoded = decoded(ir);
+        decoded.body.losses.extend([
+            dropped_with("test:file:instance#10", "test:file:instance#9"),
+            dropped_with("test:file:instance#9", point.as_str()),
+            GivenUpRecord::new(point.as_str(), "the point's coordinates do not read").loss(),
+            dropped_with("test:file:instance#6", "test:file:instance#7"),
+            dropped_with("test:file:instance#7", "test:file:instance#8"),
+        ]);
+        Ok(decoded)
+    }
+}
+
+#[test]
+fn the_sealed_wrapper_names_each_record_dropped_with_a_given_up_record_in_its_one_loss() {
+    let result = GivenUpPointCodec
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a given-up point does not refuse the file");
+    let cube = unit_cube().expect("valid unit cube fixture");
+    let point = cube.geometry.points[0].id.as_str();
+    let vertex = cube.geometry.vertices[0].id.as_str();
+    assert!(!result
+        .ir()
+        .geometry
+        .vertices
+        .iter()
+        .any(|kept| kept.id.as_str() == vertex));
+    let unreadable = crate::unknown::part::record_unreadable_kind();
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == unreadable)
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let [given_up, unneeded] = charges.as_slice() else {
+        panic!("one loss for the point and one for the record whose need is kept: {charges:?}");
+    };
+    assert!(given_up.starts_with(&format!("record {point} given up: ")));
+    let dropped = crate::unknown::part::dropped_ids(given_up);
+    for id in ["test:file:instance#10", "test:file:instance#9", vertex] {
+        assert!(dropped.contains(&id), "{given_up}");
+    }
+    assert_eq!(
+        *unneeded,
+        "record test:file:instance#7 given up: it needs test:file:instance#8, which no give-up \
+         of the decode names; dropped=[test:file:instance#6]"
+    );
+    let with = super::loss::DecodeLossCode::RecordDroppedWith.kind();
+    assert!(!result.report().losses.iter().any(|loss| loss.code == with));
+}

@@ -130,6 +130,108 @@ pub fn record_given_up(record: impl std::fmt::Display, why: LossNote) -> [LossNo
     [why, unreadable]
 }
 
+/// The note that a decoder drops `record` only because it needs `needs`,
+/// a record whose give-up a `record.unreadable` names, or a record that one
+/// names as dropped. The decode wrapper names `record` among the records
+/// that give-up drops, and removes the note (CADIR §3.3).
+#[must_use]
+pub fn dropped_with(record: impl std::fmt::Display, needs: impl std::fmt::Display) -> LossNote {
+    crate::codec::loss::DecodeLossCode::RecordDroppedWith
+        .note(format!("record {record} needs {needs}"))
+}
+
+/// The record and the record it needs that a [`dropped_with`] note names.
+pub(crate) fn dropped_with_ids(message: &str) -> Option<(&str, &str)> {
+    let mut words = message.split_whitespace();
+    match (
+        words.next(),
+        words.next(),
+        words.next(),
+        words.next(),
+        words.next(),
+    ) {
+        (Some("record"), Some(record), Some("needs"), Some(needs), None) => Some((record, needs)),
+        _ => None,
+    }
+}
+
+/// The id a `record.unreadable` message names: the record of a record
+/// give-up, or the stub of a part. Ids hold no whitespace (CADIR §2.2).
+pub(crate) fn given_up_id(message: &str) -> Option<&str> {
+    if let Some(rest) = message.strip_prefix("record ") {
+        return rest.split_whitespace().next();
+    }
+    let (_, rest) = message.strip_prefix("part ")?.split_once(" record=")?;
+    rest.split_whitespace().next()?.strip_suffix(':')
+}
+
+/// The ids of the `dropped=[..]` list of a `record.unreadable` message.
+pub(crate) fn dropped_ids(message: &str) -> Vec<&str> {
+    list_at(message, DROPPED).map_or_else(Vec::new, |(start, end)| {
+        message[start..end]
+            .split(", ")
+            .filter(|id| !id.is_empty())
+            .collect()
+    })
+}
+
+const DROPPED: &str = "; dropped=[";
+const MARKED: &str = "; marked=[";
+
+/// The bounds of the list that `field` opens in the tail of `message`.
+fn list_at(message: &str, field: &str) -> Option<(usize, usize)> {
+    let start = message.rfind(field)? + field.len();
+    let end = start + message[start..].find(']')?;
+    Some((start, end))
+}
+
+/// Adds to the tail of the `record.unreadable` message `text` the records
+/// `dropped` and `marked`, and the `stated` outcome of each stored state, in
+/// the order [`message`] writes them.
+pub(crate) fn extend_tail(
+    text: &mut String,
+    dropped: impl IntoIterator<Item = String>,
+    marked: impl IntoIterator<Item = String>,
+    stated: impl IntoIterator<Item = String>,
+) {
+    let mut ids = dropped_ids(text)
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    join_sorted(&mut ids, dropped);
+    let (head, mut rest) = match list_at(text, DROPPED) {
+        Some((start, end)) => (
+            text[..start - DROPPED.len()].to_owned(),
+            text[end + 1..].to_owned(),
+        ),
+        None => (std::mem::take(text), String::new()),
+    };
+    let mut marks = Vec::new();
+    if let Some(list) = rest
+        .strip_prefix(MARKED)
+        .and_then(|list| list.find(']').map(|end| (list, end)))
+        .map(|(list, end)| (list[..end].to_owned(), list[end + 1..].to_owned()))
+    {
+        marks.extend(
+            list.0
+                .split(", ")
+                .filter(|id| !id.is_empty())
+                .map(str::to_owned),
+        );
+        rest = list.1;
+    }
+    join_sorted(&mut marks, marked);
+    let stated = stated.into_iter().collect::<Vec<_>>();
+    let tail = Tail {
+        dropped: ids,
+        marked: (!marks.is_empty()).then_some(marks),
+        stated,
+        lost: Vec::new(),
+    };
+    *text = message(&head, Some(&tail));
+    text.push_str(&rest);
+}
+
 /// One part as its decoder names it before reading it.
 #[derive(Debug, Clone)]
 pub struct Part<'a> {

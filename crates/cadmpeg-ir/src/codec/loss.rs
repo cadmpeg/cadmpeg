@@ -32,6 +32,10 @@ pub(crate) enum DecodeLossCode {
     /// The normalizer gave up records part way, which keep spellings the
     /// decoder stated.
     NormalizeIncomplete,
+    /// A decoder dropped a record only because it needs a given-up record.
+    /// The wrapper names the record in that give-up's `record.unreadable`
+    /// and removes the note.
+    RecordDroppedWith,
 }
 
 impl DecodeLossCode {
@@ -41,6 +45,7 @@ impl DecodeLossCode {
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
             Self::IdRepeated => "id.repeated",
             Self::NormalizeIncomplete => "normalize.incomplete",
+            Self::RecordDroppedWith => "record.dropped-with",
         }
     }
 
@@ -49,6 +54,7 @@ impl DecodeLossCode {
             Self::DepthNotDelivered { .. } => Severity::Error,
             Self::IdRepeated => Severity::Error,
             Self::NormalizeIncomplete => Severity::Warning,
+            Self::RecordDroppedWith => Severity::Info,
         }
     }
 
@@ -61,7 +67,9 @@ impl DecodeLossCode {
             Self::DepthNotDelivered {
                 class: ArenaClass::Design | ArenaClass::Process,
             } => LossTaxonomy::ParametricRecordOmitted,
-            Self::IdRepeated | Self::NormalizeIncomplete => LossTaxonomy::DecodeDiagnostic,
+            Self::IdRepeated | Self::NormalizeIncomplete | Self::RecordDroppedWith => {
+                LossTaxonomy::DecodeDiagnostic
+            }
         }
     }
 
@@ -69,11 +77,13 @@ impl DecodeLossCode {
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::IdRepeated => Some(Severity::Error),
-            Self::DepthNotDelivered { .. } | Self::NormalizeIncomplete => None,
+            Self::DepthNotDelivered { .. }
+            | Self::NormalizeIncomplete
+            | Self::RecordDroppedWith => None,
         }
     }
 
-    fn kind(self) -> LossKind {
+    pub(crate) fn kind(self) -> LossKind {
         NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
             .with_strict_floor(self.strict_floor())
             .into()

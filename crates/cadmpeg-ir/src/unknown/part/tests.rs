@@ -548,3 +548,28 @@ fn a_record_given_up_names_its_span_and_the_sorted_records_dropped_with_it() {
         "record rec:7 given up: carrier unsupported; dropped=[]"
     );
 }
+
+#[test]
+fn a_tail_gains_the_wrapper_s_dropped_and_marked_records_in_order() {
+    let mut text = "part blob \"b\" stream=\"s\" offset=0 length=1 record=t:source:part#a: bad; \
+                    dropped=[t:b#2]; marked=[t:m#1]; lost=[t:x entry 0]"
+        .to_owned();
+    assert_eq!(super::given_up_id(&text), Some("t:source:part#a"));
+    super::extend_tail(
+        &mut text,
+        ["t:b#1".to_owned(), "t:b#2".to_owned()],
+        ["t:m#0".to_owned()],
+        ["delta of s: dropped=[t:d#1]; marked=[]".to_owned()],
+    );
+    assert_eq!(
+        text,
+        "part blob \"b\" stream=\"s\" offset=0 length=1 record=t:source:part#a: bad; \
+         dropped=[t:b#1, t:b#2]; marked=[t:m#0, t:m#1]; delta of s: dropped=[t:d#1]; \
+         marked=[]; lost=[t:x entry 0]"
+    );
+
+    let mut record = "record t:r#1 given up: bad".to_owned();
+    super::extend_tail(&mut record, ["t:b#1".to_owned()], [], []);
+    assert_eq!(record, "record t:r#1 given up: bad; dropped=[t:b#1]");
+    assert_eq!(super::dropped_ids(&record), ["t:b#1"]);
+}
