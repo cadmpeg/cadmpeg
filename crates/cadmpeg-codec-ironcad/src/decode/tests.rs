@@ -101,6 +101,24 @@ fn a_result_record_that_does_not_frame_is_unreadable_and_retained() {
     assert_eq!(count(&losses, IronCadLossCode::BodyUnreadable), 1);
     assert!(bodies.brep.is_none());
     assert_eq!(bodies.retained.len(), 2);
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let decoded = transfer(
+        &ctx,
+        CadIr::empty(),
+        bodies,
+        losses,
+        Sha256Digest::digest(&payload),
+    )
+    .unwrap();
+    assert!(decoded.ir.geometry.bodies.is_empty());
+    let retained = decoded
+        .source_fidelity
+        .retained_record("ironcad:source:kernel-record#1")
+        .unwrap();
+    assert_eq!(retained.data(), Some(broken.as_slice()));
 }
 
 #[test]
@@ -135,4 +153,15 @@ fn a_face_on_an_unrecognized_surface_record_is_charged() {
         1,
         "{codes:?}"
     );
+}
+
+#[test]
+fn bytes_after_the_solved_records_are_charged_and_retained() {
+    let mut body = plane_face_body();
+    body.extend_from_slice(b"tail");
+    let payload = part(&plane_face_body(), &body);
+    let (bodies, losses) = classified(&payload);
+    assert_eq!(count(&losses, IronCadLossCode::BodyPartitionUnread), 1);
+    assert!(bodies.brep.is_some());
+    assert_eq!(bodies.retained.len(), 2);
 }

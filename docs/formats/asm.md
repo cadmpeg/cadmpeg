@@ -116,7 +116,7 @@ SpaceClaim SAB envelopes use separate version-gated record layouts. The byte lay
 
 ### 2.4 Interned ACIS binary streams
 
-An interned ACIS binary stream has the 31-byte ACIS prefix and the string region of §1. A header extension follows the three doubles: the token `0x0A` and one string, or the token `0x0B` alone. The first identifier token after the header extension defines name id 1; this identifies the interned form.
+An interned ACIS binary stream has the 31-byte ACIS prefix and the string region of §1. A header extension follows the three doubles: the token `0x0A` and one string. The first identifier token after the header extension defines name id 1; this identifies the interned form.
 
 Each `0x0D` and `0x0E` payload is the identifier text, the byte `%`, and a little-endian `u32` name id. The 1-byte length counts all three parts. Name ids start at 1 and increase by one in stream order. A token with non-empty text defines the next name id. A token with empty text repeats the text of the name id that it holds. Record names and payload identifiers share one name table. The `End-of-ACIS-data` identifier holds its text only.
 
@@ -124,7 +124,7 @@ RecordTable index 0 is the first record after the header extension. The stream s
 
 A record whose fields 1 and 2 are integers and whose field 3 is a reference has the extended entity prefix of §7.6: the attribute reference, the entity-id integer, the extension integer, and the pattern reference. The shared entity prefix of §§5–6 is this prefix without the extension integer. An attribute record stores the attribute reference, one integer, and its chain references; its field 2 is a reference. A `body` record stores one integer between the pattern reference and the first lump. The fields of §5.2 follow these integers. A `vertex` record stores no endpoint-index integer, and a `coedge` record stores no reserved integer (§7.4).
 
-In `body`, `lump`, `shell`, `face`, `loop`, and `edge` records, further fields follow the fields of §5.2. Each of these tails starts with a boolean and two positions.
+In `body`, `lump`, `shell`, `face`, `loop`, and `edge` records, a tail follows the fields of §5.2. A tail starts with a boolean; when it is `TRUE`, two positions follow. A `face` tail continues with a second boolean; when it is `TRUE`, four doubles follow. A `loop` tail continues with an enumeration value; when it is nonzero, a reference and a boolean follow.
 
 ---
 

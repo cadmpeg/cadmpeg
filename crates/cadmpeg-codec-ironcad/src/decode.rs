@@ -44,7 +44,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         std::collections::BTreeMap::default(),
     ));
     let digest = Sha256Digest::digest(root.window());
-    if bodies.brep.is_none() && bodies.parasolid.is_empty() {
+    if bodies.brep.is_none() && bodies.parasolid.is_empty() && bodies.retained.is_empty() {
         return Ok(Decoded {
             ir,
             body: DecodeBody {
@@ -66,7 +66,8 @@ struct Bodies {
     retained: Vec<UnknownRecord>,
 }
 
-/// Moves the decoded ACIS graph and Parasolid bodies into the document.
+/// Moves the decoded ACIS graph, the decoded Parasolid bodies, and the
+/// retained kernel records into the document.
 fn transfer(
     ctx: &DecodeContext<'_>,
     mut ir: CadIr,
@@ -344,9 +345,9 @@ fn acis_body(
         } else {
             decoded.brep
         };
-        Ok((brep, decoded.reduced_records))
+        Ok((brep, decoded.reduced_records, decoded.unread))
     });
-    let (brep, reduced) = match decoded {
+    let (brep, reduced, unread) = match decoded {
         Ok(decoded) => decoded,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
@@ -358,11 +359,19 @@ fn acis_body(
         Some(merged) => merged.append(brep),
         None => bodies.brep = Some(brep),
     }
+    if let Some(offset) = unread {
+        losses.push(IronCadLossCode::BodyPartitionUnread.note(format!(
+            "{carrier}: the ACIS stream holds bytes after its solved records from offset \
+             {offset}; the kernel record is retained"
+        )));
+    }
     if reduced > 0 {
         losses.push(IronCadLossCode::BodyExtensionsRetained.note(format!(
             "{carrier}: {reduced} ACIS record(s) store an extended entity prefix whose \
              extension integers have no neutral projection; the kernel record is retained"
         )));
+    }
+    if unread.is_some() || reduced > 0 {
         retain(ctx, record, ordinal, bodies)?;
     }
     Ok(())

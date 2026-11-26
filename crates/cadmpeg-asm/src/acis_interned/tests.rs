@@ -103,3 +103,46 @@ fn a_stream_without_the_end_marker_is_refused() {
     let error = with_ctx(&bytes, |ctx| frame(ctx, &bytes, 0, bytes.len(), None)).unwrap_err();
     assert!(format!("{error:?}").contains(END_OF_DATA));
 }
+
+#[test]
+fn a_history_partition_is_reported_unread() {
+    let mut bytes = name(0x0d, "body", 1);
+    bytes.extend(prefix());
+    bytes.extend(long(0));
+    bytes.extend([reference(-1), reference(-1), reference(-1)].concat());
+    bytes.push(0x11);
+    let history = bytes.len();
+    bytes.extend(name(0x0d, "delta_state", 2));
+    bytes.extend(long(0));
+    bytes.push(0x11);
+    let framed = with_ctx(&bytes, |ctx| frame(ctx, &bytes, 0, bytes.len(), None)).unwrap();
+    assert_eq!(framed.records.len(), 1);
+    assert_eq!(framed.unread, Some(history));
+}
+
+#[test]
+fn bytes_after_the_end_marker_are_reported_unread() {
+    let mut bytes = stream();
+    let end = bytes.len();
+    bytes.extend_from_slice(b"tail");
+    let framed = with_ctx(&bytes, |ctx| frame(ctx, &bytes, 0, bytes.len(), None)).unwrap();
+    assert_eq!(framed.unread, Some(end));
+    let complete = stream();
+    let framed = with_ctx(&complete, |ctx| {
+        frame(ctx, &complete, 0, complete.len(), None)
+    })
+    .unwrap();
+    assert_eq!(framed.unread, None);
+}
+
+#[test]
+fn a_record_whose_first_field_is_no_reference_keeps_its_integers() {
+    let mut tokens = vec![
+        Token::Long(-1),
+        Token::Long(-1),
+        Token::Long(-1),
+        Token::Ref(-1),
+    ];
+    assert!(!super::reduce_prefix("lump", &mut tokens));
+    assert_eq!(tokens.len(), 4);
+}

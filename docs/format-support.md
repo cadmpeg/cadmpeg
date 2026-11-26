@@ -755,8 +755,8 @@ contributes a Parasolid dialect layer with its schema token, and each ACIS
 record contributes an ACIS layer from its binary header. The ACIS or
 Parasolid record that follows a part's child node decodes into B-rep topology
 and geometry in the part frame; feature records are retained. Part placements
-and feature history are pending, and each scene stream other than `Brep Data`
-produces a loss. The headline is L0. The codec is read-only.
+and feature history are pending, and each non-empty scene stream other than
+`Brep Data` produces a loss. The headline is L0. The codec is read-only.
 
 See [`formats/ironcad.md`](formats/ironcad.md) and
 [`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).
