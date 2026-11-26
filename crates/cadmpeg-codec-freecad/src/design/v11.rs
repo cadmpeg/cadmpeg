@@ -11,6 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue, PostStep};
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
@@ -22,6 +23,7 @@ use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::operation_settings::FuzzyTolerance as LegacyFuzzyTolerance;
 use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::{
@@ -29,9 +31,13 @@ use cadmpeg_ir::features::{
     FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::units::UnitVector3;
 
+use crate::native::frame::FiniteFrame;
 use crate::native::{ObjectRecord, PropertyRecord};
 
 mod parameters;
@@ -119,7 +125,13 @@ pub(crate) fn project(
             members,
             folders: Vec::new(),
             rollback,
-            placement: None,
+            placement: body
+                .native_ref
+                .as_deref()
+                .and_then(|object| source.placements.get(object))
+                .and_then(|property| crate::placement::placement_matrix_unreported(property))
+                .and_then(placement)
+                .map(Box::new),
         });
     }
     if !grouped.is_empty() {
@@ -277,11 +289,44 @@ fn spanned_definitions<'a>(
     spanned
 }
 
+/// The placement of a container whose source stores frame `frame` (§5.2):
+/// the frame as one fixed step. A frame equal to the identity is no
+/// placement.
+fn placement(frame: FiniteFrame) -> Option<Construction<kinds::Frame>> {
+    let transform = frame.transform();
+    if transform.rows() == Transform::identity().rows() {
+        return None;
+    }
+    let rows = frame.rows();
+    let axis = |column: usize| {
+        UnitVector3::new(Vector3::new(
+            rows[0][column],
+            rows[1][column],
+            rows[2][column],
+        ))
+    };
+    Some(Construction {
+        inputs: Vec::new(),
+        after: vec![PostStep::Fixed(transform)],
+        solution: None,
+        mode: None,
+        resolved: Some(FrameValue {
+            origin: FinitePoint3::new(Point3::new(rows[0][3], rows[1][3], rows[2][3]))?,
+            x_axis: axis(0)?,
+            y_axis: axis(1)?,
+            z_axis: axis(2)?,
+        }),
+        resolved_in: BTreeMap::new(),
+    })
+}
+
 /// What the projection reads from the document's object records beside the
 /// decoded features.
 struct Source<'a> {
     /// The objects `FreeCAD` marks `Touched`, out of date.
     touched: BTreeSet<&'a str>,
+    /// The `Placement` property of each object that stores one.
+    placements: HashMap<&'a str, &'a PropertyRecord>,
     /// The properties each object stores, by object and name.
     stored: BTreeSet<(&'a str, &'a str)>,
     /// The objects a `MultiTransform` lists in `Transformations`.
@@ -299,8 +344,14 @@ impl<'a> Source<'a> {
             .iter()
             .map(|property| (property.owner.as_str(), property.name.as_str()))
             .collect();
+        let placements = properties
+            .iter()
+            .filter(|property| property.name == "Placement")
+            .map(|property| (property.owner.as_str(), property))
+            .collect();
         Self {
             touched,
+            placements,
             stored,
             stages: multi_transform_stages(objects, properties),
         }

@@ -326,6 +326,72 @@ fn a_body_freecad_marks_touched_is_stale() {
 }
 
 #[test]
+fn a_body_placement_is_its_container_placement() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="PartDesign::Body" name="Body" id="1"/>
+ <Object type="Part::Feature" name="First" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Body"><Properties Count="3">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="First"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="First"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="5" Q0="0" Q1="0" Q2="ROTATION" Q3="ROTATION"/></Property>
+ </Properties></Object>
+ <Object name="First"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let body_placement = |ir: &CadIr| {
+        let Some(Container::Ordered { placement, .. }) = ir
+            .design
+            .containers
+            .iter()
+            .find(|container| container.id().as_str() == "fcstd:design:container#Body")
+        else {
+            panic!("{:?}", ir.design.containers);
+        };
+        placement.clone()
+    };
+    // A quarter turn about z: x maps to y, y to -x.
+    let turned = decode(
+        &archive(&document.replace("ROTATION", &std::f64::consts::FRAC_1_SQRT_2.to_string())),
+        DecodeDepth::Design,
+    );
+    let placement = body_placement(&turned).expect("a stored placement");
+    assert!(placement.inputs.is_empty());
+    assert!(matches!(
+        placement.after.as_slice(),
+        [cadmpeg_ir::design::construction::PostStep::Fixed(_)]
+    ));
+    let frame = placement.resolved.as_ref().expect("a resolved frame");
+    let near = |actual: [f64; 3], expected: [f64; 3]| {
+        actual
+            .iter()
+            .zip(expected)
+            .all(|(actual, expected)| (actual - expected).abs() < 1e-9)
+    };
+    let origin = frame.origin.get();
+    assert!(near([origin.x, origin.y, origin.z], [10.0, 0.0, 5.0]));
+    let axis = |axis: cadmpeg_ir::units::UnitVector3| {
+        let axis = cadmpeg_ir::math::Vector3::from(axis);
+        [axis.x, axis.y, axis.z]
+    };
+    assert!(near(axis(frame.x_axis), [0.0, 1.0, 0.0]));
+    assert!(near(axis(frame.y_axis), [-1.0, 0.0, 0.0]));
+    assert!(near(axis(frame.z_axis), [0.0, 0.0, 1.0]));
+    let (written, _) = cadir_round_trip(&turned);
+    assert_eq!(body_placement(&written), Some(placement));
+    let identity = decode(
+        &archive(
+            &document
+                .replace(r#"Q2="ROTATION" Q3="ROTATION""#, r#"Q2="0" Q3="1""#)
+                .replace(r#"Px="10" Py="0" Pz="5""#, r#"Px="0" Py="0" Pz="0""#),
+        ),
+        DecodeDepth::Design,
+    );
+    assert_eq!(body_placement(&identity), None);
+}
+
+#[test]
 fn a_multitransform_stage_is_no_feature() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
