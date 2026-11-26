@@ -414,7 +414,6 @@ fn built_through(id: &ContainerId, members: &[Member], built: usize) -> (Rollbac
     (rollback, at)
 }
 
-/// The root definition: the part file itself, which no occurrence places.
 /// Adds the part's root definition, which owns `bodies`, to the model.
 fn push_root(
     ir: &mut CadIr,
@@ -434,6 +433,7 @@ fn push_root(
     ir.model.product_definitions.push(root);
 }
 
+/// The root definition: the part file itself, which no occurrence places.
 fn root_definition() -> ProductDefinitionId {
     ProductDefinitionId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "model", "product-definition"),
