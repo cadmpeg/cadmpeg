@@ -1,23 +1,51 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::design::construction::{AxisValue, PlaneValue};
+use cadmpeg_ir::design::construction::{
+    AxisValue, FrameValue, InputReference, PlaneValue, Relation, ScalarDimension,
+};
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::datum::DatumElement;
+use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::datums::DatumAxis;
-use cadmpeg_ir::features::geometry::{FeatureDatumPlaneFrame, FeatureDirection3, FinitePoint3};
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation as V10Operation};
+use cadmpeg_ir::features::datums::{DatumAxis, DatumPlaneReference};
+use cadmpeg_ir::features::geometry::{
+    FeatureCoordinateFrame, FeatureDatumPlaneFrame, FeatureDirection3, FinitePoint3,
+};
+use cadmpeg_ir::features::parameters::{
+    ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration,
+};
+use cadmpeg_ir::features::{ConfigurationId, FeatureDefinition, FeatureOperation as V10Operation};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::units::UnitVector3;
 
 use super::{assert_no_design_findings, part_with_history, timeline_feature, typed_timeline};
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
+use crate::records::{CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY};
 
-/// A part whose history holds the user datums `Plane1`, `Axis1` and
-/// `Plane2`: `Plane1` decoded through (0, 0, 5) mm with normal 2·+Z and u
-/// axis +X, `Axis1` decoded through (1, 2, 3) mm along 3·+Y, and `Plane2`
-/// with no decoded geometry.
+/// The decoded plane through (0, 0, `z`) mm with normal 2·+Z and u axis +X.
+fn plane_at(z: f64) -> FeatureDefinition {
+    FeatureDefinition::Operation(V10Operation::DatumPlane {
+        frame: FeatureDatumPlaneFrame::new(
+            Point3::new(0.0, 0.0, z),
+            Vector3::new(0.0, 0.0, 2.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+    })
+}
+
+/// A part whose history holds these user datums:
+/// - `Plane1`, decoded through (0, 0, 5) mm with normal 2·+Z and u axis +X;
+/// - `Axis1`, decoded through (1, 2, 3) mm along 3·+Y;
+/// - `Plane2`, with no decoded geometry;
+/// - `Plane3`, decoded as `Plane1` offset by 10 mm;
+/// - `Point1`, decoded at (1, 1, 1) mm;
+/// - `Csys1`, decoded with origin (4, 5, 6) mm and axes +Y, −X, +Z;
+/// - `Plane4`, decoded as `Plane1` with a constructed u axis;
+/// - `Plane5`, decoded as `Plane1`, whose record states `D1` as 30 degrees.
 fn part() -> (CadIr, SldprtNative) {
     let keywords = br#"<Keywords Name="Datums">
         <Feature Name="Front" id="2"/>
@@ -27,6 +55,13 @@ fn part() -> (CadIr, SldprtNative) {
         <Feature Name="Plane1" Type="RefPlane" id="30"/>
         <Feature Name="Axis1" Type="RefAxis" id="31"/>
         <Feature Name="Plane2" Type="RefPlane" id="32"/>
+        <Feature Name="Plane3" Type="RefPlane" id="33"/>
+        <Feature Name="Point1" Type="RefPoint" id="34"/>
+        <Feature Name="Csys1" Type="CoordSys" id="35"/>
+        <Feature Name="Plane4" Type="RefPlane" id="36"/>
+        <Feature Name="Plane5" Type="RefPlane" id="37">
+            <Dimension Name="D1">30deg</Dimension>
+        </Feature>
     </Keywords>"#;
     let mut ir = part_with_history(
         keywords,
@@ -38,45 +73,89 @@ fn part() -> (CadIr, SldprtNative) {
             ("moRefPlane_c", "Plane1", 30),
             ("moRefAxis_c", "Axis1", 31),
             ("moRefPlane_c", "Plane2", 32),
+            ("moRefPlane_c", "Plane3", 33),
+            ("moRefPoint_c", "Point1", 34),
+            ("moCoordSys_c", "Csys1", 35),
+            ("moRefPlane_c", "Plane4", 36),
+            ("moRefPlane_c", "Plane5", 37),
         ],
     );
     let native =
         SldprtNative::load(ir.native.namespace("sldprt").unwrap(), ir.tolerances.linear).unwrap();
-    let plane = FeatureDefinition::Operation(V10Operation::DatumPlane {
-        frame: FeatureDatumPlaneFrame::new(
-            Point3::new(0.0, 0.0, 5.0),
-            Vector3::new(0.0, 0.0, 2.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        )
-        .unwrap(),
-    });
-    let axis = FeatureDefinition::Operation(V10Operation::DatumAxis {
-        axis: DatumAxis::complete(
-            FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            FeatureDirection3::new(Vector3::new(0.0, 3.0, 0.0)).unwrap(),
-        ),
-    });
+    let plane1 = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Plane1"))
+        .unwrap()
+        .id
+        .clone();
     for feature in &mut ir.model.features {
         let definition = match feature.name.as_deref() {
-            Some("Plane1") => plane.clone(),
-            Some("Axis1") => axis.clone(),
+            Some("Plane1" | "Plane4" | "Plane5") => plane_at(5.0),
+            Some("Axis1") => FeatureDefinition::Operation(V10Operation::DatumAxis {
+                axis: DatumAxis::complete(
+                    FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+                    FeatureDirection3::new(Vector3::new(0.0, 3.0, 0.0)).unwrap(),
+                ),
+            }),
+            Some("Plane3") => FeatureDefinition::Operation(V10Operation::DatumOffsetPlane {
+                reference: Some(DatumPlaneReference::Feature {
+                    feature: plane1.clone(),
+                }),
+                distance: Length::new(10.0).unwrap(),
+            }),
+            Some("Point1") => FeatureDefinition::Operation(V10Operation::DatumPoint {
+                position: FinitePoint3::new(Point3::new(1.0, 1.0, 1.0)).unwrap(),
+                construction: None,
+            }),
+            Some("Csys1") => FeatureDefinition::Operation(V10Operation::DatumCoordinateSystem {
+                frame: FeatureCoordinateFrame::new(
+                    Point3::new(4.0, 5.0, 6.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(-1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+            }),
             _ => continue,
         };
+        if feature.name.as_deref() == Some("Plane4") {
+            feature.source_properties.insert(
+                cadmpeg_core::nonblank_const!(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY),
+                CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.to_owned(),
+            );
+        }
         feature.evaluation.edit(|current, _| *current = definition);
     }
     (ir, native)
+}
+
+/// The datum element of the typed timeline feature `name`.
+fn element<'a>(timeline: &'a super::super::tree::Timeline, name: &str) -> &'a DatumElement {
+    let FeatureOperation::Datum(datum) = &timeline_feature(timeline, name).definition.operation
+    else {
+        panic!("{name} is a typed datum");
+    };
+    &datum.element
+}
+
+/// The note of `code` among the typed datum notes.
+fn note(typed: &super::super::typed::Typed, code: SldprtLossCode) -> String {
+    typed
+        .datums
+        .iter()
+        .find(|note| note.code == code.kind())
+        .unwrap_or_else(|| panic!("a {} note", code.kind()))
+        .message
+        .clone()
 }
 
 #[test]
 fn a_decoded_reference_plane_and_axis_are_typed_datums() {
     let (mut ir, native) = part();
     let (timeline, entries, typed) = typed_timeline(&ir, &native);
-    let FeatureOperation::Datum(plane) =
-        &timeline_feature(&timeline, "Plane1").definition.operation
-    else {
-        panic!("Plane1 is a typed datum");
-    };
-    let DatumElement::Plane(plane) = &plane.element else {
+    let DatumElement::Plane(plane) = element(&timeline, "Plane1") else {
         panic!("a plane datum");
     };
     assert_eq!(
@@ -87,11 +166,7 @@ fn a_decoded_reference_plane_and_axis_are_typed_datums() {
             x_axis: UnitVector3::normalized(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
         })
     );
-    let FeatureOperation::Datum(axis) = &timeline_feature(&timeline, "Axis1").definition.operation
-    else {
-        panic!("Axis1 is a typed datum");
-    };
-    let DatumElement::Axis(axis) = &axis.element else {
+    let DatumElement::Axis(axis) = element(&timeline, "Axis1") else {
         panic!("an axis datum");
     };
     assert_eq!(
@@ -128,6 +203,64 @@ fn a_decoded_reference_plane_and_axis_are_typed_datums() {
 }
 
 #[test]
+fn an_offset_plane_is_offset_from_the_datum_it_names_by_its_distance() {
+    let (ir, native) = part();
+    let (timeline, _, _) = typed_timeline(&ir, &native);
+    let DatumElement::Plane(plane) = element(&timeline, "Plane3") else {
+        panic!("a plane datum");
+    };
+    let [input] = plane.inputs.as_slice() else {
+        panic!("one input: {:?}", plane.inputs);
+    };
+    assert_eq!(input.role.as_ref().unwrap().relation, Relation::Offset);
+    assert_eq!(
+        input.value,
+        Some(ScalarDimension::Length(Dimension::Literal(
+            Length::new(10.0).unwrap()
+        )))
+    );
+    let Some(InputReference::Picks(selection)) = &input.reference else {
+        panic!("a picked reference");
+    };
+    let Picks::Named(picks) = &selection.picks else {
+        panic!("named picks");
+    };
+    let plane1 = &timeline_feature(&timeline, "Plane1").id;
+    assert!(
+        matches!(&picks.as_slice()[0].target, PickTarget::Datum { feature, part: None } if feature == plane1),
+        "{picks:?}"
+    );
+}
+
+#[test]
+fn a_decoded_point_and_coordinate_system_are_typed_datums() {
+    let (ir, native) = part();
+    let (timeline, _, _) = typed_timeline(&ir, &native);
+    let DatumElement::Points(points) = element(&timeline, "Point1") else {
+        panic!("a point datum");
+    };
+    assert_eq!(
+        points
+            .iter()
+            .map(|point| point.resolved)
+            .collect::<Vec<_>>(),
+        vec![Some(FinitePoint3::new(Point3::new(1.0, 1.0, 1.0)).unwrap())]
+    );
+    let DatumElement::Frame(frame) = element(&timeline, "Csys1") else {
+        panic!("a frame datum");
+    };
+    assert_eq!(
+        frame.resolved,
+        Some(FrameValue {
+            origin: FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+            x_axis: UnitVector3::normalized(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+            y_axis: UnitVector3::normalized(Vector3::new(-1.0, 0.0, 0.0)).unwrap(),
+            z_axis: UnitVector3::normalized(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+        })
+    );
+}
+
+#[test]
 fn a_datum_with_no_decoded_geometry_stays_unresolved_and_is_named() {
     let (ir, native) = part();
     let (timeline, _, typed) = typed_timeline(&ir, &native);
@@ -138,14 +271,80 @@ fn a_datum_with_no_decoded_geometry_stays_unresolved_and_is_named() {
             family: OperationFamily::Datum
         }
     );
-    let note = typed
-        .datum_unresolved
-        .expect("the undecoded datum is named");
-    assert_eq!(note.code, SldprtLossCode::DesignDatumUnresolved.kind());
-    assert!(
-        note.message.contains(plane2.id.as_str()),
-        "{}",
-        note.message
-    );
-    assert!(!note.message.contains("\"Plane1\""), "{}", note.message);
+    let message = note(&typed, SldprtLossCode::DesignDatumUnresolved);
+    assert!(message.contains(plane2.id.as_str()), "{message}");
+    assert!(!message.contains("\"Plane1\""), "{message}");
+}
+
+#[test]
+fn a_plane_with_a_constructed_axis_is_typed_and_named() {
+    let (ir, native) = part();
+    let (timeline, _, typed) = typed_timeline(&ir, &native);
+    assert!(matches!(
+        element(&timeline, "Plane4"),
+        DatumElement::Plane(_)
+    ));
+    let message = note(&typed, SldprtLossCode::DesignDatumPlaneAxisConstructed);
+    assert!(message.contains("\"Plane4\""), "{message}");
+    assert!(!message.contains("\"Plane1\""), "{message}");
+}
+
+#[test]
+fn a_plane_with_an_angular_d1_is_typed_and_named() {
+    let (ir, native) = part();
+    let (timeline, _, typed) = typed_timeline(&ir, &native);
+    assert!(matches!(
+        element(&timeline, "Plane5"),
+        DatumElement::Plane(_)
+    ));
+    let message = note(&typed, SldprtLossCode::DesignDatumPlaneAxisAngled);
+    assert!(message.contains("\"Plane5\""), "{message}");
+    assert!(!message.contains("\"Plane1\""), "{message}");
+}
+
+#[test]
+fn a_datum_whose_geometry_differs_in_a_configuration_is_named() {
+    let (mut ir, native) = part();
+    let (_, _, typed) = typed_timeline(&ir, &native);
+    assert!(typed
+        .datums
+        .iter()
+        .all(|note| note.code != SldprtLossCode::DesignDatumConfigurationDropped.kind()));
+    let plane1 = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Plane1"))
+        .unwrap()
+        .id
+        .clone();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("sldprt:model:configuration#9:1").unwrap(),
+        ordinal: 1,
+        active: false,
+        source_index: Some(1),
+        name: None,
+        material: None,
+        properties: Default::default(),
+        parameter_overrides: Default::default(),
+        bodies: None,
+        parameter_values: Default::default(),
+        feature_states: [(
+            plane1,
+            ConfigurationFeatureState {
+                evaluation: ConfigurationEvaluation::Active {
+                    outputs: Default::default(),
+                },
+                dependencies: Default::default(),
+                definition: plane_at(10.0),
+            },
+        )]
+        .into_iter()
+        .collect(),
+        native_ref: None,
+    });
+    let (_, _, typed) = typed_timeline(&ir, &native);
+    let message = note(&typed, SldprtLossCode::DesignDatumConfigurationDropped);
+    assert!(message.contains("\"Plane1\""), "{message}");
+    assert!(!message.contains("\"Plane5\""), "{message}");
 }
