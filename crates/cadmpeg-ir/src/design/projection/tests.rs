@@ -161,7 +161,7 @@ fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
         ParameterField::Name => &[ModelParameterField::Name],
         ParameterField::Kind | ParameterField::Unit => &[ModelParameterField::Properties],
         ParameterField::Definition => &[
-            ModelParameterField::Expression,
+            ModelParameterField::ExpressionText,
             ModelParameterField::Dependencies,
             ModelParameterField::Properties,
         ],

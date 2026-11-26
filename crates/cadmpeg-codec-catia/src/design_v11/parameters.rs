@@ -136,7 +136,7 @@ pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
         ParameterField::Name => &[ModelParameterField::Name],
         ParameterField::Kind => &[ModelParameterField::Properties],
         ParameterField::Definition => &[
-            ModelParameterField::Expression,
+            ModelParameterField::ExpressionText,
             ModelParameterField::Dependencies,
             ModelParameterField::Value,
             ModelParameterField::Properties,

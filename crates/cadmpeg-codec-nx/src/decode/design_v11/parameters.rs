@@ -77,12 +77,12 @@ pub(super) fn inputs(field: ParameterField) -> &'static [ModelParameterField] {
         ParameterField::Name => &[ModelParameterField::Name],
         ParameterField::Kind | ParameterField::Unit => &[ModelParameterField::Properties],
         ParameterField::Definition => &[
-            ModelParameterField::Expression,
+            ModelParameterField::ExpressionText,
             ModelParameterField::Properties,
             ModelParameterField::Owner,
         ],
         ParameterField::Value => &[
-            ModelParameterField::Expression,
+            ModelParameterField::ExpressionText,
             ModelParameterField::Properties,
         ],
         ParameterField::NativeRef => &[ModelParameterField::NativeRef],

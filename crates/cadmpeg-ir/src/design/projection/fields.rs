@@ -164,7 +164,7 @@ model_fields! {
         owner => Owner,
         ordinal => Ordinal,
         name => Name,
-        expression => Expression,
+        expression => ExpressionText,
         display => Display,
         value => Value,
         dependencies => Dependencies,
