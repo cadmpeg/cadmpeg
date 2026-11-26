@@ -647,7 +647,7 @@ pub(super) fn parse_fbb_edge_tables_width(
     let mut rows = Vec::new();
     let mut scopes = Vec::new();
     let mut table_count = 0;
-    let mut delimiter_family = None;
+    let mut expected_delimiter: Option<&[u8]> = None;
     loop {
         if bytes.get(position) != Some(&0x01) {
             return None;
@@ -685,21 +685,23 @@ pub(super) fn parse_fbb_edge_tables_width(
         }
         table_count += 1;
         let delimiter = bytes.get(position..position + EDGE_DELIMITER.len())?;
-        let family = match handle_width {
-            2 if delimiter[0] == 0x10
-                && delimiter[1] >= 0x14
-                && delimiter[1] != 0x24
-                && delimiter[1] & 0x0f == 0x04
-                && delimiter[2..] == EDGE_DELIMITER[2..] =>
-            {
-                delimiter[1] >> 4
+        let valid_delimiter = match handle_width {
+            2 => {
+                delimiter[0] == 0x10
+                    && delimiter[1] >= 0x14
+                    && delimiter[1] != 0x24
+                    && delimiter[1] & 0x0f == 0x04
+                    && delimiter[3..5] == EDGE_DELIMITER[3..5]
             }
-            1 | 3 if delimiter == EDGE_DELIMITER => 0x02,
-            _ => return None,
+            1 | 3 => delimiter == EDGE_DELIMITER,
+            _ => false,
         };
-        if delimiter_family
-            .replace(family)
-            .is_some_and(|value| value != family)
+        if !valid_delimiter {
+            return None;
+        }
+        if expected_delimiter
+            .replace(delimiter)
+            .is_some_and(|previous| previous != delimiter)
         {
             return None;
         }
@@ -828,7 +830,7 @@ pub(super) fn standard_fbb_groups(
 
 /// Grammar of a population's edge tables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum EdgeTableForm {
+pub(crate) enum EdgeTableForm {
     Standard,
     FbbOnly,
 }
@@ -837,11 +839,11 @@ pub(super) enum EdgeTableForm {
 /// endpoint solver. The edge and vertex counts are structural population
 /// keys; they are not body selection by themselves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FbbPopulationLayout {
+pub(crate) struct FbbPopulationLayout {
     pub(super) face_run: FbbFaceRun,
     pub(super) edge_count: usize,
     pub(super) vertex_count: usize,
-    pub(super) edge_table_form: EdgeTableForm,
+    pub(crate) edge_table_form: EdgeTableForm,
 }
 
 fn vertex_table_end(bytes: &[u8], position: usize) -> Option<usize> {
@@ -892,7 +894,7 @@ pub(super) fn population_spine<'a>(
 
 /// Find every FBB face run with a complete local trim, edge-table, and vertex
 /// walk, without requiring endpoint incidence to be solved.
-pub(super) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
+pub(crate) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
     let mut layouts = Vec::new();
     for range in crate::container::fbb_run_ranges(bytes) {
         let Some(face_run) = FbbFaceRun::try_new(range.start, range.len() / fbb_row::LEN) else {

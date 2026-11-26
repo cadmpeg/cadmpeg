@@ -1766,6 +1766,15 @@ fn identify_fbb_variant(
     if crate::families::standard::fbb::fbb_only_edge_count(brep).is_some() {
         return Ok(Variant::FbbOnly);
     }
+    let layouts = crate::families::standard::fbb::fbb_population_layouts(brep);
+    if !layouts.is_empty() {
+        if layouts.iter().any(|layout| {
+            layout.edge_table_form == crate::families::standard::fbb::EdgeTableForm::Standard
+        }) {
+            return Ok(Variant::StandardNested);
+        }
+        return Ok(Variant::FbbOnly);
+    }
     if census.edge_delimiters == 0 && census.vertex_markers > 0 {
         Ok(Variant::FbbOnly)
     } else {
