@@ -107,6 +107,18 @@
             "namespace": "export"
           }
         },
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `entities` whose neutral surface the semantic writer withholds: iges:entity:directory#1",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
         "message": "the IGES write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
         "severity": "warning"
       }

@@ -67,7 +67,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 3 native record(s) of `iges` arena `entities` whose entity the semantic writer does not encode: iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#7",
+        "message": "the IGES write omits 4 native record(s) of `iges` arena `entities`: iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7; that are transformations no written record uses, which the semantic writer does not regenerate: iges:entity:directory#5; whose entity the semantic writer does not encode: iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#7",
         "severity": "warning"
       },
       {
@@ -104,6 +104,18 @@
           }
         },
         "message": "the IGES write omits 1 native record(s) of `iges` arena `solid_assemblies` which the semantic writer does not encode: iges:product:solid-assembly#D7",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `transformations` that are transformations no written record uses, which the semantic writer does not regenerate: iges:native:transformation#D5",
         "severity": "warning"
       }
     ],

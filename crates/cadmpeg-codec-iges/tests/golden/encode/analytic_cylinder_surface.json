@@ -91,7 +91,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 1 native record(s) of `iges` arena `directions` that are directions no written analytic surface references, which the semantic writer does not regenerate: iges:native:direction#D5",
+        "message": "the IGES write omits 2 native record(s) of `iges` arena `directions` that are directions no written analytic surface references, which the semantic writer does not regenerate: iges:native:direction#D3, iges:native:direction#D5",
         "severity": "warning"
       },
       {
@@ -115,7 +115,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 1 native record(s) of `iges` arena `entities` that are directions no written analytic surface references, which the semantic writer does not regenerate: iges:entity:directory#5",
+        "message": "the IGES write omits 4 native record(s) of `iges` arena `entities`: iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7; that are directions no written analytic surface references, which the semantic writer does not regenerate: iges:entity:directory#3, iges:entity:directory#5; that are points that locate only analytic surfaces the semantic writer withholds: iges:entity:directory#1; whose neutral surface the semantic writer withholds: iges:entity:directory#7",
         "severity": "warning"
       },
       {

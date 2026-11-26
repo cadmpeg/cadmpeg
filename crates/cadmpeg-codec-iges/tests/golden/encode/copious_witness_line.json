@@ -55,7 +55,31 @@
             "namespace": "export"
           }
         },
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `copious_data` whose entity has no neutral geometry for the semantic writer to encode: iges:native:copious-data#D1",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
         "message": "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `entities` whose entity has no neutral geometry for the semantic writer to encode: iges:entity:directory#1",
         "severity": "warning"
       },
       {
