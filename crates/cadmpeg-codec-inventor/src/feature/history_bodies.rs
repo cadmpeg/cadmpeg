@@ -324,6 +324,7 @@ fn nest(
             .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
         produced_by,
         consumed_by,
+        state_of: None,
         state: HistoryStateRef {
             ordinal: want.ordinal,
             identifier: want.state_id,
