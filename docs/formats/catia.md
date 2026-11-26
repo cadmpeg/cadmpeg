@@ -1538,6 +1538,8 @@ A plane triangle with three separate degree-one class-`21` boundaries and a comp
 
 The corresponding four-edge cone sector has 23 frames, using one class-`29` carrier and four each of classes `21`, `5e`, `5d`, `05`, and `06`. Its vertex stations use the cone chart in §6.7, including the reference radius and radial-plane generator angle. The carrier class is a geometric choice within the graph, rather than a discriminator of the enclosing storage variant.
 
+When the selection of the object-stream graph passes its work bound and the route states no face, the decoder gives up the object stream as an `object-stream` part. The stub of the part links to the retained payload record, which keeps the payload bytes. The part keeps only the length and digest of those bytes.
+
 ## 7. Outer schema and object records
 
 ### 7.1 Legacy entity identity runs
@@ -2046,6 +2048,8 @@ Each FBB-only edge-row handle is a same-width trim-mesh boundary-vertex handle. 
 For an FBB-bearing nested body, a complete standard edge/vertex walk selects the standard route. Otherwise a complete two-table FBB-only walk establishes a provisional route. A partial spine also establishes that provisional route when its scoped standard-delimiter count is zero and its coordinate-row population is positive. A coherent independently bounded E5 stream then selects E5; otherwise the provisional route is FBB-only. An incomplete delimiter-bearing spine or a vertexless spine leaves the family unresolved. With no FBB-bearing body, coherent E5 can select its route directly. Selection applies to the container's governing logical stream.
 
 The delimiter high nibble identifies a consistent table-delimiter family. Geometry route selection uses the complete structural relations above and the independently bounded E5 witness from §3.3.
+
+When a route refuses records and states no model, the decode continues with the next route, and after the last route with the metadata fallback. Each refused record has one `record.unreadable`. The metadata fallback keeps the payload as one retained record and gives up no other record.
 
 ### 10.2 Subordinate E5 topology populations
 

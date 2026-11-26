@@ -24,7 +24,7 @@ fn encode_step(ir: &cadmpeg_ir::CadIr) -> Vec<u8> {
     plan.write_to(&mut bytes).unwrap();
     bytes
 }
-fn step() -> &'static [u8] {
+pub(crate) fn step() -> &'static [u8] {
     static STEP: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     STEP.get_or_init(|| encode_step(&cadmpeg_ir::examples::unit_cube().unwrap()))
 }

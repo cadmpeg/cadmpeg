@@ -70,21 +70,32 @@ pub struct ReadOptions {
     pub strictness: Strictness,
 }
 
-/// A document read from CADIR text, with its report.
+/// A document read from CADIR text, with its report. The caller takes the
+/// document with [`CadirRead::with_sidecar`], which reconciles a decode
+/// sidecar with the read, or with [`CadirRead::without_sidecar`] where no
+/// sidecar matches the text.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CadirRead {
     /// The document.
-    pub document: CadIr,
+    document: CadIr,
     /// What the read repaired, left out, and gave up.
-    pub report: Vec<LossNote>,
+    report: Vec<LossNote>,
     /// The text of each part the read gave up, retained `untyped` under the
     /// id of its `unknowns` stub (§3.3).
-    pub fidelity: SourceFidelity,
+    fidelity: SourceFidelity,
     /// Each record the read gave up, and each record it dropped with one.
     removed: Removed,
 }
 
 impl CadirRead {
+    /// The document, the read's report, and the source fidelity of the read:
+    /// the text of each part the read gave up, retained `untyped` under the
+    /// id of its `unknowns` stub (§3.3).
+    #[must_use]
+    pub fn without_sidecar(self) -> (CadIr, Vec<LossNote>, SourceFidelity) {
+        (self.document, self.report, self.fidelity)
+    }
+
     /// The document, the read's report, and `sidecar`, the source fidelity
     /// of a decode sidecar that matches the text read, reconciled with the
     /// read (§3.3): without the annotations of each record the read gave up
@@ -400,13 +411,19 @@ impl Reader<'_, '_> {
         }
         let lost = std::mem::take(&mut self.lost);
         let ids: Vec<String> = lost.iter().map(|(id, _)| id.clone()).collect();
-        let released = crate::give_up::release_lost(self.ctx, document, &ids);
-        let releases = released.as_deref().unwrap_or_default();
+        let mut released = Vec::new();
+        let outcome = crate::give_up::release_lost(
+            self.ctx,
+            document,
+            &ids,
+            crate::give_up::Naming::Text,
+            &mut released,
+        );
         self.removed = Removed::of_records(
             ids.iter()
-                .chain(releases.iter().flat_map(|(_, release)| &release.dropped))
+                .chain(released.iter().flat_map(|(_, release)| &release.dropped))
                 .cloned(),
-            releases
+            released
                 .iter()
                 .flat_map(|(_, release)| &release.states)
                 .flat_map(|((_, state), delta)| {
@@ -416,8 +433,8 @@ impl Reader<'_, '_> {
                         .map(|record| (state.clone(), record.clone()))
                 }),
         );
-        let released = match released {
-            Ok(released) => released,
+        match outcome {
+            Ok(()) => {}
             Err(error @ CodecError::ResourceLimit(_)) => return Err(session_failure(&error)),
             Err(other) => {
                 self.report.push(
@@ -433,7 +450,7 @@ impl Reader<'_, '_> {
                 );
                 return Ok(());
             }
-        };
+        }
         let mut released = released.into_iter().peekable();
         for (id, entry) in lost {
             let Some((_, release)) = released.next_if(|(released, _)| *released == id) else {

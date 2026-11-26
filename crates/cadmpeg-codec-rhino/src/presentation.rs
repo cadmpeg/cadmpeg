@@ -12,6 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -19,7 +20,7 @@ use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
+use crate::container::{give_up_table_record, NativeInstall, OpaqueRecord, Record, Scan};
 use crate::instances::hex;
 use crate::loss::RhinoLossCode;
 use crate::objects::{
@@ -4508,21 +4509,14 @@ fn parse_text_style(
     })
 }
 
-/// Results of transferring table-owned presentation records.
-fn retain_unbound_presentation_record(
-    losses: &mut Vec<LossNote>,
-    opaque_records: &mut Vec<OpaqueRecord>,
-    table_typecode: u32,
-    record: &Record,
-    binding: UnitBinding,
-    kind: &str,
-) {
-    push_presentation_loss( losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+/// The codec loss of the presentation record `record` of `kind`, which the
+/// decoder retains because the document has no physical unit `binding`.
+fn unbound_presentation_loss(record: &Record, binding: UnitBinding, kind: &str) -> LossNote {
+    RhinoLossCode::PresentationRecordDropped.note(format_args!(
         "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
         record.range.start,
         binding.label()
-    ));
-    push_opaque_record(opaque_records, table_typecode, record);
+    ))
 }
 
 /// The key of a layer's native record: its UUID where no other layer holds
@@ -4559,6 +4553,7 @@ pub(crate) fn install(
 
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
+    let mut given_up = Vec::new();
     for object in &scan.objects {
         if let Some(identity) = object.identity() {
             if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
@@ -4675,14 +4670,10 @@ pub(crate) fn install(
                 }
             } else if table_type == LIGHT_TABLE {
                 let Some(scale) = physical_scale else {
-                    retain_unbound_presentation_record(
-                        &mut losses,
-                        &mut opaque_records,
-                        table.typecode,
-                        record,
-                        binding,
-                        "light",
-                    );
+                    let loss = unbound_presentation_loss(record, binding, "light");
+                    given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                    losses.push(loss);
+                    push_opaque_record(&mut opaque_records, table.typecode, record);
                     continue;
                 };
                 if let Some(range) =
@@ -4750,10 +4741,12 @@ pub(crate) fn install(
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                            let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
                                 "linetype record at offset {} was retained as complete source: {error}",
                                 record.range.start,
                             ));
+                            given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                            losses.push(loss);
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
@@ -4778,10 +4771,12 @@ pub(crate) fn install(
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                            let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
                                 "hatch pattern record at offset {} was retained as complete source: {error}",
                                 record.range.start,
                             ));
+                            given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                            losses.push(loss);
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
@@ -4789,14 +4784,10 @@ pub(crate) fn install(
                 }
             } else if table_type == DIMSTYLE_TABLE {
                 let Some(scale) = physical_scale else {
-                    retain_unbound_presentation_record(
-                        &mut losses,
-                        &mut opaque_records,
-                        table.typecode,
-                        record,
-                        binding,
-                        "dimension style",
-                    );
+                    let loss = unbound_presentation_loss(record, binding, "dimension style");
+                    given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                    losses.push(loss);
+                    push_opaque_record(&mut opaque_records, table.typecode, record);
                     continue;
                 };
                 if scan.archive.value() < 60 {
@@ -4978,14 +4969,12 @@ pub(crate) fn install(
                 }
             }
             if recognized && !parsed {
-                push_presentation_loss(
-                    &mut losses,
-                    RhinoLossCode::PresentationRecordDropped,
-                    format_args!(
-                        "record at offset {} in table {table_type:#x} could not be transferred",
-                        record.range.start
-                    ),
-                );
+                let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
+                    "record at offset {} in table {table_type:#x} could not be transferred",
+                    record.range.start
+                ));
+                given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                losses.push(loss);
                 push_opaque_record(&mut opaque_records, table.typecode, record);
             }
         }
@@ -5018,22 +5007,34 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        push_presentation_loss(
-                            &mut losses,
-                            RhinoLossCode::PresentationRecordDropped,
+                        let (loss, part) = light_object_given_up(
+                            ctx,
+                            scan.data,
+                            source_order,
+                            &object.range,
                             format_args!(
                                 "light object at offset {} could not be transferred: {error}",
                                 object.range.start
                             ),
-                        );
+                        )?;
+                        losses.push(loss);
+                        given_up.push(part);
                     }
                 }
             } else {
-                push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
-                    "light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
-                    object.range.start,
-                    binding.label()
-                ));
+                let (loss, part) = light_object_given_up(
+                    ctx,
+                    scan.data,
+                    source_order,
+                    &object.range,
+                    format_args!(
+                        "light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+                        object.range.start,
+                        binding.label()
+                    ),
+                )?;
+                losses.push(loss);
+                given_up.push(part);
             }
         }
         if let Some(attributes) = object.attributes.parsed() {
@@ -5197,7 +5198,28 @@ pub(crate) fn install(
     Ok(NativeInstall {
         losses,
         opaque_records,
+        given_up,
     })
+}
+
+/// Gives up the light object at `source_order`, spanning `range`, for the
+/// codec loss with `message`: its codec loss and its given-up part.
+fn light_object_given_up(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    source_order: usize,
+    range: &std::ops::Range<usize>,
+    message: std::fmt::Arguments<'_>,
+) -> Result<(LossNote, GivenUpPart), CodecError> {
+    let loss = RhinoLossCode::PresentationRecordDropped
+        .note(message)
+        .with_provenance(SourceProvenance::root(
+            "rhino",
+            cadmpeg_core::decode::u64_from_index(range.start),
+        ));
+    let part =
+        crate::container::give_up_object_record(ctx, data, source_order, range.clone(), &loss)?;
+    Ok((loss, part))
 }
 
 #[cfg(test)]

@@ -76,6 +76,20 @@ fn parse_with_service(
         .expect("a bounded expansion omits items instead of refusing the decode")
 }
 
+/// The records dropped with the one given-up statement that starts with
+/// `text`.
+fn given_up_with(exchange: &crate::parse::Exchange, source: &str, text: &str) -> Vec<String> {
+    let statements = exchange
+        .given_up()
+        .iter()
+        .filter(|statement| source[statement.span.clone()].starts_with(text))
+        .collect::<Vec<_>>();
+    let [statement] = statements.as_slice() else {
+        panic!("one given-up statement starts with {text}");
+    };
+    statement.dropped.clone()
+}
+
 fn has_diagnostic(
     diagnostics: &[crate::parse::ParseDiagnostic],
     kind: ParseDiagnosticKind,
@@ -597,16 +611,8 @@ fn reference_expansion_limit_omits_the_record_and_its_dependents() {
         ParseDiagnosticKind::ExpansionBounded,
         &format!("instance #1 omitted: {REFERENCE_BOUND}; exact source retained"),
     ));
-    assert!(exchange
-        .omitted_spans()
-        .iter()
-        .any(|span| source[span.clone()].starts_with("#1=ITEM((@10,")));
+    assert_eq!(given_up_with(&exchange, &source, "#1=ITEM((@10,"), ["#3"]);
     assert!(exchange.records().contains_key(&2));
-    assert!(has_diagnostic(
-        &diagnostics,
-        ParseDiagnosticKind::RecordOmitted,
-        "instance #3 omitted: unresolved instance reference #1; exact source retained",
-    ));
     assert!(!exchange.records().contains_key(&3));
 }
 
@@ -624,11 +630,7 @@ fn reference_to_a_bounded_anchor_omits_the_record() {
         ParseDiagnosticKind::ExpansionBounded,
         &format!("anchor <a5> omitted: {ANCHOR_BOUND}; exact source retained"),
     ));
-    assert!(has_diagnostic(
-        &diagnostics,
-        ParseDiagnosticKind::ExpansionBounded,
-        "instance #1 omitted: REFERENCE @10 names anchor <a5>, omitted at its expansion limit; exact source retained",
-    ));
+    assert_eq!(given_up_with(&exchange, &source, "<a5>="), ["#1"]);
     assert!(!exchange.records().contains_key(&1));
     assert!(exchange.records().contains_key(&2));
 }
@@ -647,11 +649,7 @@ fn anchor_naming_a_bounded_instance_is_omitted_not_refused() {
         ParseDiagnosticKind::ExpansionBounded,
         &format!("instance #1 omitted: {ANCHOR_BOUND}; exact source retained"),
     ));
-    assert!(has_diagnostic(
-        &diagnostics,
-        ParseDiagnosticKind::ExpansionBounded,
-        "anchor <b> omitted: depends on instance #1, omitted at its expansion limit; exact source retained",
-    ));
+    assert_eq!(given_up_with(&exchange, &source, "#1="), ["<b>"]);
     assert!(exchange
         .omitted_spans()
         .iter()
@@ -705,9 +703,9 @@ fn assert_payload_bounded(source: &str, allowance: usize, expansion: &str, occur
     }
     let last = format!("#{LARGE_STRING_RECORDS}=ITEM({occurrence});");
     assert!(exchange
-        .omitted_spans()
+        .given_up()
         .iter()
-        .any(|span| source[span.clone()] == last));
+        .any(|statement| source[statement.span.clone()] == last));
 }
 
 #[test]
