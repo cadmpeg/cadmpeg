@@ -163,11 +163,13 @@ fn fixed_reference_planes(
             if classify(feature) != Some(FeatureClass::ReferencePlane) {
                 continue;
             }
-            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let end = starts.get(index + 1).map(|next| next.0);
             declared.entry(feature.id.as_str()).or_default().extend(
                 lane.classes
                     .iter()
-                    .filter(|class| (start..end).contains(&class.offset))
+                    .filter(|class| {
+                        class.offset >= start && end.is_none_or(|end| class.offset < end)
+                    })
                     .map(|class| class.name.as_str())
                     .filter(|name| {
                         name.ends_with("RefPlnData_c") || name.ends_with("RefplaneData_c")
