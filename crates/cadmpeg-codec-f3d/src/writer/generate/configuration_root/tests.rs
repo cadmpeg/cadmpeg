@@ -102,7 +102,7 @@ type Pair = (String, String);
 /// The table id and row id the root record of `ir` names, and the code and
 /// message of each loss.
 fn planned(ir: &CadIr, documents: &[DesignConfiguration]) -> (Option<Pair>, Vec<Pair>) {
-    let plan = plan(ir, documents);
+    let plan = plan(ir, documents).unwrap();
     let losses = plan
         .losses
         .iter()
@@ -200,7 +200,10 @@ fn a_row_id_cut_that_names_another_row_is_written_unique_with_a_charge() {
     assert!(losses[0].1.contains("names another row"));
     assert!(losses[0].1.contains(id(&long).as_str()));
 
-    let written = plan(&ir, &documents).payload(0, &documents[0]).unwrap();
+    let written = plan(&ir, &documents)
+        .unwrap()
+        .payload(0, &documents[0])
+        .unwrap();
     let written = DesignConfiguration::try_new(
         TABLE.into(),
         DesignConfigurationKind::Table,
@@ -274,7 +277,7 @@ fn a_table_id_another_document_holds_is_written_unique_with_a_charge() {
     assert!(losses[0].1.contains(id("large").as_str()));
     assert!(losses[0].1.contains(&documents[1].id()));
 
-    let plan = plan(&ir, &documents);
+    let plan = plan(&ir, &documents).unwrap();
     assert_eq!(table_ids(&written(&plan, 0, &documents[0])), ["1-1"]);
     assert_eq!(table_ids(&written(&plan, 1, &documents[1])), ["1"]);
 }
@@ -295,7 +298,7 @@ fn a_same_document_twin_of_the_table_id_is_not_renamed() {
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert!(losses[0].1.contains(&documents[1].id()));
     assert!(!losses[0].1.contains(&documents[0].id()));
-    let plan = plan(&ir, &documents);
+    let plan = plan(&ir, &documents).unwrap();
     assert_eq!(table_ids(&written(&plan, 0, &documents[0])), ["1-1", "1"]);
 }
 

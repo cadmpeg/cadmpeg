@@ -98,7 +98,7 @@ struct Candidate<'a> {
 /// A design scope's active configuration takes precedence over the row that
 /// the earlier arena states active. A Design stream holds one root record, so
 /// a second active row is written inactive.
-pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
+pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Result<Plan, CodecError> {
     let scoped = target
         .design
         .scopes
@@ -203,15 +203,18 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         "writes these active configurations inactive: the Design stream holds one DesignConfigurationRoot record, which names another row",
         inactive,
     ));
-    let root = first.and_then(|row| root(row, documents, &mut losses));
-    Plan {
+    let root = first
+        .map(|row| root(row, documents, &mut losses))
+        .transpose()?
+        .flatten();
+    Ok(Plan {
         root,
         source: documents
             .iter()
             .find_map(DesignConfiguration::active_row)
             .map(|row| row.record_index),
         losses,
-    }
+    })
 }
 
 /// The root record that names `row`, with its ids fitted to [`TABLE_ID`]
@@ -225,7 +228,7 @@ fn root(
     row: Candidate<'_>,
     documents: &[DesignConfiguration],
     losses: &mut Vec<LossNote>,
-) -> Option<ConfigurationRoot> {
+) -> Result<Option<ConfigurationRoot>, CodecError> {
     let table_id = TABLE_ID.fit(&row.table.id);
     let row_id = ROW_ID.fit(row.row);
     if table_id.text.is_empty() || row_id.text.is_empty() {
@@ -237,7 +240,7 @@ fn root(
                 row.configuration, table_id.stated_units, row_id.stated_units
             )],
         ));
-        return None;
+        return Ok(None);
     }
     let other_tables = || {
         documents
@@ -264,7 +267,7 @@ fn root(
                 &row.table.id,
                 other_tables().count(),
                 |candidate| other_tables().any(|(_, table)| table.id == candidate),
-            );
+            )?;
             losses.extend(value_unwritable(
                 "F3D",
                 "writes the table id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: another configuration table document holds the id, and the record names its table by id alone",
@@ -281,7 +284,7 @@ fn root(
     let written_row_id = if other_rows().any(|other| other.id == row_id.text) {
         let unique = unique(ROW_ID, row.row, other_rows().count(), |candidate| {
             other_rows().any(|other| other.id == candidate)
-        });
+        })?;
         losses.extend(value_unwritable(
             "F3D",
             &format!("writes the row id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: its cut to {ID_WIDTH} UTF-16 units names another row of its table"),
@@ -308,13 +311,13 @@ fn root(
         .into_iter()
         .flatten(),
     ));
-    Some(ConfigurationRoot {
+    Ok(Some(ConfigurationRoot {
         table_id: WrittenId::new(&row.table.id, &written_table_id),
         row_id: WrittenId::new(row.row, &written_row_id),
         configuration: row.configuration,
         document: row.document,
         table: row.table.position,
-    })
+    }))
 }
 
 /// The first id `stated` fitted to `capacity` with the suffix `-n`, for `n`
@@ -324,21 +327,23 @@ fn unique(
     stated: &str,
     others: usize,
     taken: impl Fn(&str) -> bool,
-) -> String {
+) -> Result<String, CodecError> {
     (1..=others + 1)
-        .map(|ordinal| {
+        .map_while(|ordinal| {
             let suffix = format!("-{ordinal}");
-            let width = capacity
-                .width
-                .checked_sub(suffix.len())
-                .expect("an id capacity is wider than a decimal suffix");
-            format!(
+            let width = capacity.width.checked_sub(suffix.len())?;
+            Some(format!(
                 "{}{suffix}",
                 TextCapacity { width, ..capacity }.fit(stated).text
-            )
+            ))
         })
         .find(|candidate| !taken(candidate))
-        .expect("one of `others + 1` distinct suffixed ids is free")
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "{} {stated} has no unique id of {} units",
+                capacity.field, capacity.width
+            ))
+        })
 }
 
 impl Plan {
