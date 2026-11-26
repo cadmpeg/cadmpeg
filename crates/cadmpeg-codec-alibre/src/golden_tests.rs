@@ -51,7 +51,7 @@ fn decode_beside_corpus(bytes: &[u8]) -> Result<DecodeResult, DecodeFailure> {
     let policy = DecodePolicy::default();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
     let ctx = ctx.with_companions(&files);
-    let result = AlibreCodec.decode_with_context(&ctx, root);
+    let result = AlibreCodec.decode_with_context(&ctx, root, &cadmpeg_ir::report::strictness::Strictness::default());
     ctx.finish_session()?;
     result
 }

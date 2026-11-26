@@ -124,7 +124,7 @@ pub(crate) fn decode_with(bytes: &[u8], files: &dyn Companions) -> DecodeResult 
     let policy = DecodePolicy::default();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let ctx = ctx.with_companions(files);
-    let result = AlibreCodec.decode_with_context(&ctx, root).unwrap();
+    let result = AlibreCodec.decode_with_context(&ctx, root, &cadmpeg_ir::report::strictness::Strictness::default()).unwrap();
     ctx.finish_session().unwrap();
     result
 }
