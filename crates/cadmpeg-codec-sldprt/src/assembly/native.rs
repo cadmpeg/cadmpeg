@@ -15,7 +15,7 @@ use cadmpeg_ir::products::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 
 use crate::loss::SldprtLossCode;
 
@@ -55,10 +55,11 @@ impl NativeAssembly {
 
     /// An assembly that transferred no structure from its component tree
     /// sections `trees`, with its blocking loss. Each stream of the sections
-    /// is given up once. The section records retain the bytes.
+    /// is given up once, for `cause`. The section records retain the bytes.
     pub(super) fn structure_given_up(
         ctx: &DecodeContext<'_>,
         trees: &[TreeSection<'_>],
+        cause: Cause,
         message: String,
     ) -> Result<Self, CodecError> {
         let why = SldprtLossCode::AssemblyStructureNotTransferred.note(message);
@@ -73,7 +74,9 @@ impl NativeAssembly {
                 .in_stream(tree.stream.clone())
                 .digest_only();
             let error = CodecError::malformed(format_args!("{}: {}", why.code, why.message));
-            assembly.given_up.push(ctx.give_up_part(part, error)?);
+            assembly
+                .given_up
+                .push(ctx.give_up_part(part, cause, error)?);
         }
         assembly.losses.push(why);
         Ok(assembly)

@@ -46,9 +46,17 @@ fn decode(section: &str, payload: &[u8]) -> Decoded {
     }
 }
 
+/// The one give-up of an unread member: no note stands beside it.
+fn unread(decoded: &Decoded) -> LossNote {
+    assert!(codes(&decoded.losses).is_empty());
+    let [part] = decoded.given_up.as_slice() else {
+        panic!("one give-up: {:?}", decoded.given_up);
+    };
+    part.loss()
+}
+
 fn codes(losses: &[LossNote]) -> Vec<SldprtLossCode> {
     [
-        SldprtLossCode::HistoryUnread,
         SldprtLossCode::HistoryApplicationNotTransferred,
         SldprtLossCode::HistoryApplicationNestingCut,
     ]
@@ -70,8 +78,12 @@ fn history_that_does_not_parse_is_unread_with_the_parser_message() {
     ] {
         let decoded = decode("swXmlContents/KeyWords", text);
         assert!(decoded.histories.is_empty());
-        assert_eq!(codes(&decoded.losses), [SldprtLossCode::HistoryUnread]);
-        let message = &decoded.losses[0].message;
+        let loss = unread(&decoded);
+        assert_eq!(
+            loss.code,
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
+        let message = &loss.message;
         assert!(message.contains("its XML does not parse: "), "{message}");
         assert!(message.contains("swXmlContents/KeyWords"), "{message}");
     }
@@ -87,8 +99,8 @@ fn only_history_member_names_charge_an_unread_history() {
     ] {
         let decoded = decode(name, &[0x84, b'<', 0xff, b'>']);
         assert_eq!(
-            codes(&decoded.losses),
-            [SldprtLossCode::HistoryUnread],
+            unread(&decoded).code,
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
             "{name}"
         );
     }
@@ -99,6 +111,7 @@ fn only_history_member_names_charge_an_unread_history() {
     ] {
         let decoded = decode(name, &[0x84, b'<', 0xff, b'>']);
         assert!(codes(&decoded.losses).is_empty(), "{name}");
+        assert!(decoded.given_up.is_empty(), "{name}");
     }
 }
 
@@ -276,8 +289,12 @@ fn history_member_with_another_root_is_unread() {
         br#"<Other Name="Part"><Feature id="1" Name="Boss"/></Other>"#,
     );
     assert!(decoded.histories.is_empty());
-    assert_eq!(codes(&decoded.losses), [SldprtLossCode::HistoryUnread]);
-    let message = &decoded.losses[0].message;
+    let loss = unread(&decoded);
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    let message = &loss.message;
     assert!(message.contains(r#"its root element "Other""#), "{message}");
 }
 
@@ -291,8 +308,12 @@ fn history_whose_xml_is_refused_is_unread() {
         format!(r#"<Keywords Name="Part"><Feature id="1" Name="Boss"{attributes}/></Keywords>"#);
     let decoded = decode("swXmlContents/KeyWords", text.as_bytes());
     assert!(decoded.histories.is_empty());
-    assert_eq!(codes(&decoded.losses), [SldprtLossCode::HistoryUnread]);
-    let message = &decoded.losses[0].message;
+    let loss = unread(&decoded);
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    let message = &loss.message;
     assert!(message.contains("its XML is refused: "), "{message}");
 }
 
@@ -300,9 +321,7 @@ fn history_whose_xml_is_refused_is_unread() {
 fn history_member_that_is_not_text_is_unread() {
     let decoded = decode("swXmlContents/KeyWords", &[0x84, b'<', 0xff, b'>']);
     assert!(decoded.histories.is_empty());
-    assert_eq!(codes(&decoded.losses), [SldprtLossCode::HistoryUnread]);
-    assert_eq!(decoded.given_up.len(), 1);
-    let charge = decoded.given_up[0].loss();
+    let charge = unread(&decoded);
     assert_eq!(
         charge.code,
         cadmpeg_ir::unknown::part::record_unreadable_kind()
@@ -317,7 +336,7 @@ fn history_member_that_is_not_text_is_unread() {
     assert!(
         charge
             .message
-            .contains("sldprt/history.unread: Keywords member"),
+            .contains(": Keywords member swXmlContents/KeyWords: its bytes are not"),
         "{}",
         charge.message
     );

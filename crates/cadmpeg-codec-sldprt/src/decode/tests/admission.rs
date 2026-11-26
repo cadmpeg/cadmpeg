@@ -394,9 +394,9 @@ fn a_pinned_decode_admits_unrepresentable_geometry_and_records_its_loss_codes() 
 }
 
 #[test]
-fn a_pinned_decode_refuses_a_partition_whose_entity_records_build_no_geometry() {
+fn a_pinned_decode_keeps_a_partition_whose_entity_records_build_no_geometry() {
     use crate::loss::SldprtLossCode;
-    use cadmpeg_ir::unknown::part::record_unreadable_kind;
+    use cadmpeg_ir::unknown::part::{gives_up, record_undecoded_kind};
 
     let mut body = crate::test_support::parasolid::entity51(1, 10, 0, &[]);
     body.extend([0; 8]);
@@ -416,22 +416,25 @@ fn a_pinned_decode_refuses_a_partition_whose_entity_records_build_no_geometry() 
     assert!(losses
         .iter()
         .any(|note| note.code == SldprtLossCode::GeometryParasolidNotTransferred.kind()));
-    let site = losses
+    let [site] = losses
         .iter()
-        .filter(|note| note.code == record_unreadable_kind())
-        .map(|note| note.message.as_str())
-        .find(|message| message.starts_with("part parasolid-site "))
-        .expect("record.unreadable gives up the partition site");
-    assert!(!site.contains("sldprt:file:"));
-
-    let failure = SldprtCodec
-        .decode(&mut Cursor::new(fixture), &strict_options())
-        .expect_err("a pinned decode refuses a given-up partition");
-    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
+        .filter(|note| gives_up(&note.code))
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one give-up names the partition site: {losses:#?}");
     };
-    assert_eq!(rejection.loss().code, record_unreadable_kind());
-    assert_eq!(rejection.loss().message, site);
+    assert_eq!(site.code, record_undecoded_kind());
+    assert!(site.message.starts_with("part parasolid-site "));
+    assert!(!site.message.contains("sldprt:file:"));
+
+    let pinned = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect("a pinned decode keeps a partition it does not build");
+    assert!(pinned
+        .report()
+        .losses
+        .iter()
+        .any(|note| note.code == record_undecoded_kind()));
 }
 
 #[test]

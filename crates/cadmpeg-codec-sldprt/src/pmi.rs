@@ -656,9 +656,8 @@ enum ValueKind<'a> {
 
 /// Extract semantic dimensions from `PMISemanticDataDB` sections.
 ///
-/// Parse failures on GUID-prefixed `MessagePack` maps emit
-/// [`SldprtLossCode::PmiSemanticRecordMalformed`] instead of shrinking the
-/// document silently. Each section spends at most
+/// A GUID-prefixed `MessagePack` map that does not parse gives up its
+/// dimension record instead of shrinking the document silently. Each section spends at most
 /// [`PMI_PARSE_WORK_PER_PAYLOAD_BYTE`] per payload byte; candidates left when
 /// it runs out emit one [`SldprtLossCode::PmiSemanticParseCapped`].
 pub(crate) fn dimensions(
@@ -765,18 +764,26 @@ fn collect_dimensions(
             }
             Ok(None) => {}
             Err(PmiParseError::Malformed(message)) => {
-                losses.extend(cadmpeg_ir::unknown::part::record_given_up(
-                    cadmpeg_ir::ids::Identity::new(format!("sldprt:pmi:dimension#{normalized}"))?,
-                    SldprtLossCode::PmiSemanticRecordMalformed
-                        .note(format!(
+                // The scan finds a candidate map by its keys, outside a
+                // record frame, so it does not tell a defect from a form it
+                // does not read.
+                losses.push(
+                    cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                        cadmpeg_ir::ids::Identity::new(format!(
+                            "sldprt:pmi:dimension#{normalized}"
+                        ))?,
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
+                        format_args!(
                             "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
-                        ))
-                        .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
-                            "sldprt",
-                            stream.clone(),
-                            u64_from_index(offset),
-                        )),
-                ));
+                        ),
+                    )
+                    .at(cadmpeg_ir::SourceProvenance::in_stream(
+                        "sldprt",
+                        stream.clone(),
+                        u64_from_index(offset),
+                    ))
+                    .loss(),
+                );
             }
             Err(PmiParseError::Capped) => {
                 let skipped = candidates.count() + 1;

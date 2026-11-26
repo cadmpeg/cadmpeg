@@ -22,7 +22,7 @@ use cadmpeg_core::decode::{
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 mod configuration_bindings;
@@ -491,7 +491,9 @@ fn walk_native_markers(
             Ok(None) => {}
             Err(error) => {
                 if let Some((_, _, end)) = read_block_frame(bytes, i) {
-                    given_up.push(ctx.give_up_part(native_block_part(bytes, i, end), error)?);
+                    let cause = Cause::Unreadable.of(&error);
+                    let part = native_block_part(bytes, i, end);
+                    given_up.push(ctx.give_up_part(part, cause, error)?);
                     i = end;
                     continue;
                 }
@@ -528,6 +530,7 @@ fn walk_native_markers(
         given_up_end = end;
         given_up.push(ctx.give_up_part(
             native_block_part(bytes, offset, end),
+            Cause::Unreadable,
             CodecError::malformed(
                 "declared native local member failed DEFLATE, size or CRC validation",
             ),
@@ -579,7 +582,8 @@ fn extract_streams_for_owner(
     match ctx.run_part(|| crate::parasolid::extract_streams_in_section(payload, section, ctx))? {
         Ok(streams) => Ok(streams),
         Err(error) => {
-            given_up.push(ctx.give_up_part(part, error)?);
+            let cause = Cause::Unreadable.of(&error);
+            given_up.push(ctx.give_up_part(part, cause, error)?);
             Ok(crate::parasolid::ExtractedStreams {
                 streams: Vec::new(),
                 probe_capped: false,
@@ -711,7 +715,10 @@ fn compound_streams(
                         bytes.len()
                     ));
                 }
-                compound.given_up.push(ctx.give_up_part(part, error)?);
+                let cause = Cause::Unreadable.of(&error);
+                compound
+                    .given_up
+                    .push(ctx.give_up_part(part, cause, error)?);
                 continue;
             }
         };

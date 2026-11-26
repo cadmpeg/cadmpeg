@@ -454,7 +454,10 @@ fn vertexless_ring_edge_without_reciprocal_partner_is_withheld() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code.local_code() == "topology.ring-edge-withheld")
+            .filter(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                    && loss.message.contains("the vertexless ring edge fails")
+            })
             .count(),
         1
     );
@@ -481,7 +484,10 @@ fn a_face_without_a_decoded_loop_is_reported_as_withheld() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == crate::loss::SldprtLossCode::TopologyFaceWithheld.kind())
+            .filter(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                    && loss.message.contains("no loop of the face decodes")
+            })
             .count(),
         1
     );
@@ -511,11 +517,10 @@ fn a_face_that_stores_no_loop_covers_its_sphere() {
         carrier
     };
     let withheld = |result: &cadmpeg_ir::codec::DecodeResult| {
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::SldprtLossCode::TopologyFaceWithheld.kind())
+        result.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss.message.contains("no loop of the face decodes")
+        })
     };
 
     for (bridge_marker, sense) in [(0x2d, Sense::Forward), (0x2b, Sense::Reversed)] {

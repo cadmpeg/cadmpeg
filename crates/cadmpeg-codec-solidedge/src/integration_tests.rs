@@ -309,10 +309,11 @@ fn region_whose_faces_cannot_be_transferred_charges_a_loss() {
     let result = decode_partition(partition);
     let ir = result.ir();
     assert_eq!(ir.geometry.faces.len(), 1);
-    assert!(charged(
-        &result,
-        crate::loss::SolidEdgeLossCode::FaceSenseUnresolved
-    ));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()));
     assert!(charged(
         &result,
         crate::loss::SolidEdgeLossCode::RegionFacesUntransferred
@@ -340,10 +341,6 @@ fn a_pinned_decode_refuses_a_face_that_states_no_orientation() {
     let admitted = SolidEdgeCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
-    assert!(charged(
-        &admitted,
-        crate::loss::SolidEdgeLossCode::FaceSenseUnresolved
-    ));
     let given_up = admitted
         .report()
         .losses
@@ -410,6 +407,13 @@ fn a_face_that_states_no_orientation_drops_its_loops_and_coedges() {
         charge.starts_with("record solidedge:brep:face#"),
         "{charge}"
     );
+    let orientation: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("states no orientation"))
+        .collect();
+    assert_eq!(orientation.len(), 1, "{orientation:?}");
     let dropped = charge
         .split_once("; dropped=[")
         .and_then(|(_, tail)| tail.split_once(']'))
@@ -500,10 +504,13 @@ fn unreadable_partition_preserves_another_partition() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().geometry.bodies.len(), 1);
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::SolidEdgeLossCode::PartitionUnreadable
-            .note("")
-            .code));
+    let header: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("Parasolid text header is incomplete"))
+        .collect();
+    assert_eq!(header.len(), 1, "one loss states the partition's defect");
     let given_up: Vec<_> = result
         .report()
         .losses
@@ -529,6 +536,43 @@ fn unreadable_partition_preserves_another_partition() {
     let mut stream = b"broken".to_vec();
     stream.resize(4096, 0);
     assert_eq!(retained.data(), Some(stream.as_slice()));
+}
+
+#[test]
+fn a_partition_of_an_undecoded_schema_version_gives_up_as_undecoded() {
+    let mut partition = test_support::sphere_partition();
+    let schema = partition
+        .windows(13)
+        .position(|window| window == b"SCH_999_13006")
+        .unwrap();
+    partition[schema + 8..schema + 13].copy_from_slice(b"12006");
+    let bytes = test_support::with_partitions(&[partition, test_support::sphere_partition()]);
+    let result = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    let header: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .contains("unsupported Parasolid partition header")
+        })
+        .collect();
+    let [given_up] = header.as_slice() else {
+        panic!("one loss states the partition: {header:?}");
+    };
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let pinned = SolidEdgeCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect("a pinned decode admits an undecoded partition");
+    assert_eq!(pinned.ir().geometry.bodies.len(), 1);
 }
 
 #[test]
@@ -572,10 +616,11 @@ fn carrier_reference_order_preserves_a_closed_cube() {
     assert_eq!(ir.geometry.vertices.len(), 8);
     assert_eq!(ir.geometry.coedges.len(), 24);
     assert_geometry_valid(ir);
-    assert!(!result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::SolidEdgeLossCode::PartitionUnreadable
-            .note("")
-            .code));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code)));
 }
 
 #[test]
@@ -647,11 +692,7 @@ fn dangling_face_surface_keeps_the_other_faces() {
             .note("")
             .code
     ));
-    assert!(!codes.contains(
-        &crate::loss::SolidEdgeLossCode::PartitionUnreadable
-            .note("")
-            .code
-    ));
+    assert!(!codes.iter().any(cadmpeg_ir::unknown::part::gives_up));
     assert_geometry_valid(ir);
 }
 
@@ -686,7 +727,7 @@ fn edge_naming_a_fin_outside_any_loop_reads_through_its_radial_fin() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == crate::loss::SolidEdgeLossCode::LoopUnreadable.note("").code));
+        .any(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code)));
     assert_geometry_valid(ir);
 }
 

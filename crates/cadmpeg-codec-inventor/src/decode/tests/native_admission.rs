@@ -613,11 +613,19 @@ fn empty_external_identity_does_not_fail_file_decode() {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("invalid external identity must not fail file decode");
     assert_ufrx_issue(decoded.ir(), "ufrx-external-reference-0", "document_id");
-    assert!(decoded
-        .report()
-        .losses
+    let losses = &decoded.report().losses;
+    assert!(!losses
         .iter()
-        .any(|loss| loss.code == crate::loss::InventorLossCode::UfrxTableMalformed.kind()));
+        .any(|loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()));
+    let given_up = losses
+        .iter()
+        .filter(|loss| loss.message.contains("inventor:ufrx:external-reference#0"))
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1);
+    assert_eq!(
+        given_up[0].code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
     let namespace = decoded
         .ir()
         .native
@@ -911,11 +919,18 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
     container.ufrx = UfrxState::Parsed(Box::new(document));
     let decoded = decode_container(&ctx, root, &container)
         .expect("rejected native record must not fail decode");
-    assert!(decoded
-        .body
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::InventorLossCode::UfrxTableMalformed.kind()));
+    assert_eq!(
+        decoded
+            .body
+            .losses
+            .iter()
+            .filter(
+                |loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()
+                    || cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            )
+            .count(),
+        1
+    );
     decoded
 }
 
@@ -1048,9 +1063,7 @@ fn malformed_optional_ufrx_is_a_warning_without_weakening_required_links() {
         |finding| finding.severity == cadmpeg_ir::report::Severity::Error
             && finding.message.contains("missing arenas")
     ));
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == InventorLossCode::UfrxTableMalformed.kind()));
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::unknown::part::record_unreadable_kind()
+        && loss.message.contains("ufrx")));
 }

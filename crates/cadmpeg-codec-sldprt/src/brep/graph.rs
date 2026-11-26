@@ -146,7 +146,9 @@ pub(crate) struct Brep {
 /// A topology record the decode drops (CADIR §3.3).
 #[derive(Debug, Clone)]
 pub(crate) enum DroppedRecord {
-    /// A record given up for its own content, and the records dropped with it.
+    /// A record given up for its own content, and the records dropped with
+    /// it. The record frames, and the builder does not tell a defect from a
+    /// form it does not resolve, so the give-up is `record.undecoded`.
     GivenUp {
         record: String,
         at: Option<cadmpeg_ir::SourceProvenance>,
@@ -190,15 +192,19 @@ impl DroppedRecord {
                 at,
                 error,
                 dropping,
-            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(Identity::new(record)?, error)
-                .at(at)
-                .dropping(
-                    dropping
-                        .into_iter()
-                        .map(Identity::new)
-                        .collect::<Result<Vec<_>, _>>()?,
-                )
-                .loss(),
+            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                Identity::new(record)?,
+                cadmpeg_ir::unknown::part::Cause::Undecoded,
+                error,
+            )
+            .at(at)
+            .dropping(
+                dropping
+                    .into_iter()
+                    .map(Identity::new)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )
+            .loss(),
             Self::With { record, needs } => cadmpeg_ir::unknown::part::dropped_with(
                 Identity::new(record)?,
                 Identity::new(needs)?,
@@ -732,14 +738,13 @@ fn qualified_reference(value: &str, site: &str) -> String {
     }
 }
 
-/// The topology record `record` that the decode gives up for `code`, at
+/// The topology record `record` that the decode gives up for `why`, at
 /// `offset` in `stream` where the record has one. `dropped` names the
 /// records the decode drops with it.
 fn topology_given_up(
     record: impl std::fmt::Display,
     stream: &cadmpeg_ir::StreamName,
     offset: Option<usize>,
-    code: crate::loss::SldprtLossCode,
     why: &str,
     dropped: &[SurfaceId],
 ) -> DroppedRecord {
@@ -752,7 +757,7 @@ fn topology_given_up(
                 u64_from_index(offset),
             )
         }),
-        error: format!("{}: {why}", code.kind()),
+        error: why.to_owned(),
         dropping: dropped
             .iter()
             .map(|surface| surface.as_str().to_owned())
@@ -4019,7 +4024,6 @@ fn decode_graph_inner(
                 id_edge(e),
                 stream,
                 t.edge_uses().get(&e).map(|record| record.offset),
-                crate::loss::SldprtLossCode::TopologyRingEdgeWithheld,
                 "the vertexless ring edge fails reciprocal closed-carrier single-loop admission",
                 &[],
             ));
@@ -4613,7 +4617,6 @@ fn decode_graph_inner(
                 t.bridges()
                     .get(&face.bridge_attr)
                     .map(|record| record.offset),
-                crate::loss::SldprtLossCode::TopologyFaceUnclaimed,
                 "no body record claims the face",
                 &[id_surf(face.bridge_attr)],
             ));
@@ -4685,7 +4688,6 @@ fn decode_graph_inner(
                     id_face(f.bridge_attr),
                     stream,
                     t.bridges().get(&f.bridge_attr).map(|record| record.offset),
-                    crate::loss::SldprtLossCode::TopologyVertexLoopWithheld,
                     "a vertex loop of the face names no resolved vertex",
                     &[id_surf(f.bridge_attr)],
                 ));
@@ -4697,7 +4699,6 @@ fn decode_graph_inner(
                     id_face(f.bridge_attr),
                     stream,
                     t.bridges().get(&f.bridge_attr).map(|record| record.offset),
-                    crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
                     "a loop of the face holds an ambiguous FIN",
                     &[id_surf(f.bridge_attr)],
                 ));
@@ -4709,7 +4710,6 @@ fn decode_graph_inner(
                     id_face(f.bridge_attr),
                     stream,
                     t.bridges().get(&f.bridge_attr).map(|record| record.offset),
-                    crate::loss::SldprtLossCode::TopologyFaceWithheld,
                     "no loop of the face decodes",
                     &[id_surf(f.bridge_attr)],
                 ));

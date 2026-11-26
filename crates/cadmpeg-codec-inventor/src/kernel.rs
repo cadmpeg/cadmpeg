@@ -3,6 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::Cause;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
@@ -74,6 +75,22 @@ pub(crate) enum ActiveCarrierState<'a> {
     },
 }
 
+/// Why a kernel carrier does not decode: the cause of its give-up, and the
+/// error. A carrier whose record stream does not frame breaks the kernel
+/// format; a framed stream that the ACIS decode does not read is a form the
+/// decoder does not decode.
+#[derive(Debug)]
+pub(crate) struct CarrierFailure {
+    pub(crate) cause: Cause,
+    pub(crate) error: CodecError,
+}
+
+impl From<CarrierFailure> for CodecError {
+    fn from(failure: CarrierFailure) -> Self {
+        failure.error
+    }
+}
+
 pub(crate) struct DecodedKernelCarrier {
     pub(crate) header: BinaryHeader,
     pub(crate) brep: AsmBrep,
@@ -99,12 +116,18 @@ pub(crate) fn decode_kernel_carrier(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
     header: &BinaryHeader,
-) -> Result<DecodedKernelCarrier, CodecError> {
+) -> Result<DecodedKernelCarrier, CarrierFailure> {
+    let unreadable = |error: CodecError| CarrierFailure {
+        cause: Cause::Unreadable,
+        error,
+    };
     let bytes = carrier.bytes.window();
     let (start, solved_limit) = match carrier.family {
         KernelFamily::Asm => (
             asm_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
-                CodecError::Malformed("Inventor ASM carrier has no record stream".into())
+                unreadable(CodecError::Malformed(
+                    "Inventor ASM carrier has no record stream".into(),
+                ))
             })?,
             asm_header::solved_record_limit_with_header(bytes, header),
         ),
@@ -115,7 +138,9 @@ pub(crate) fn decode_kernel_carrier(
             // whether the records are read.
             (
                 acis_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
-                    CodecError::Malformed("Inventor ACIS carrier has no record stream".into())
+                    unreadable(CodecError::Malformed(
+                        "Inventor ACIS carrier has no record stream".into(),
+                    ))
                 })?,
                 acis_header::solved_record_limit_with_header(bytes, header),
             )
@@ -133,7 +158,8 @@ pub(crate) fn decode_kernel_carrier(
                 carrier.family.label()
             ))
         })
-    })?;
+    })
+    .map_err(unreadable)?;
     let stream = format!(
         "RSeStorage/B{}:record:{}",
         carrier.segment_token, carrier.record_ordinal
@@ -146,7 +172,11 @@ pub(crate) fn decode_kernel_carrier(
         &stream,
         cadmpeg_asm::asm_format!("inventor"),
         DecodePurpose::Model,
-    )?;
+    )
+    .map_err(|error| CarrierFailure {
+        cause: Cause::Undecoded,
+        error,
+    })?;
     Ok(DecodedKernelCarrier {
         header: header.clone(),
         brep,
@@ -396,7 +426,7 @@ mod tests {
             .header
             .as_ref()
             .map_err(|detail| CodecError::Malformed(detail.clone()))?;
-        decode_kernel_carrier(ctx, carrier, header)
+        Ok(decode_kernel_carrier(ctx, carrier, header)?)
     }
 
     #[test]

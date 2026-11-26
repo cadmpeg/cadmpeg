@@ -416,8 +416,9 @@ fn a_sheet_whose_view_link_is_given_up_is_dropped_with_that_record() -> TestResu
         .insert(("generated".to_owned(), ordinal), given_up.to_owned());
     inventory.refuse_references(&ctx, &sheet, true)?;
     let losses = inventory.losses();
-    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
-    assert!(losses.iter().all(|loss| loss.code != unreadable));
+    assert!(!losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code)));
     assert!(losses.contains(&cadmpeg_ir::unknown::part::dropped_with(
         cadmpeg_ir::ids::Identity::new(&sheet.id)?,
         cadmpeg_ir::ids::Identity::new(given_up)?,
@@ -429,14 +430,15 @@ fn a_sheet_whose_view_link_is_given_up_is_dropped_with_that_record() -> TestResu
 fn a_record_refused_for_its_own_references_is_given_up_by_its_own_id() -> TestResult {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let sheet = record(Family::Sheet, SHEET, sheet(6))?;
-    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    let undecoded = cadmpeg_ir::unknown::part::record_undecoded_kind();
     for links in [false, true] {
         let mut inventory = crate::drawing::Inventory::default();
         inventory.refuse_references(&ctx, &sheet, links)?;
-        let charges = inventory
-            .losses()
+        let losses = inventory.losses();
+        assert_eq!(losses.len(), 1);
+        let charges = losses
             .into_iter()
-            .filter(|loss| loss.code == unreadable)
+            .filter(|loss| loss.code == undecoded)
             .collect::<Vec<_>>();
         assert_eq!(charges.len(), 1);
         assert!(charges[0]

@@ -156,6 +156,19 @@ impl UnresolvedCause {
             Self::Placement => "AmGraphics placement is missing or ambiguous",
         }
     }
+
+    /// The cause of the give-up of an occurrence that this drops: a
+    /// placement that is not affine breaks the format, and a missing or
+    /// ambiguous join is one the decoder does not resolve.
+    pub(crate) const fn give_up_cause(self) -> cadmpeg_ir::unknown::part::Cause {
+        match self {
+            Self::InvalidTransform => cadmpeg_ir::unknown::part::Cause::Unreadable,
+            Self::ExternalReference
+            | Self::OccurrenceRecord
+            | Self::DuplicateOccurrence
+            | Self::Placement => cadmpeg_ir::unknown::part::Cause::Undecoded,
+        }
+    }
 }
 
 /// The design-view and occurrence state records that qualify an occurrence.

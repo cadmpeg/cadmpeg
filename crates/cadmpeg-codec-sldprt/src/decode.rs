@@ -32,7 +32,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, ProductDefinitionId, UnknownId};
 
 use crate::loss::SldprtLossCode;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -2733,7 +2733,6 @@ fn merge_local_bodies(
         u64_from_index(streams.len()),
         "admit SLDPRT imported body streams",
     )?;
-    let mut unreadable = 0;
     for (site, stream) in &streams {
         match ctx.run_part(|| {
             decode_bodies(
@@ -2748,7 +2747,6 @@ fn merge_local_bodies(
                 merge_brep(decoded, bodies)?;
             }
             Err(error) => {
-                unreadable += 1;
                 let part = Part::at(
                     "sldprt",
                     IMPORTED_BODY_PART,
@@ -2759,17 +2757,14 @@ fn merge_local_bodies(
                 .named(stream.header.description.as_str())
                 .in_stream(stream.source_stream().clone())
                 .digest_only();
+                let cause = Cause::Unreadable.of(&error);
                 let error = CodecError::malformed(format_args!(
-                    "{}: {error}",
-                    SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
+                    "an imported body stream does not decode: {error}"
                 ));
-                given_up.push(ctx.give_up_part(part, error)?);
+                given_up.push(ctx.give_up_part(part, cause, error)?);
             }
         }
     }
-    decoded
-        .losses
-        .extend(imported_bodies_loss(unreadable, streams.len()));
     Ok(())
 }
 
@@ -2831,7 +2826,8 @@ fn untaken_local_bodies_losses(
 }
 
 /// Gives up the Parasolid site `part` whose entity records frame and build
-/// no geometry. A site that holds no entity record gives up nothing.
+/// no geometry. The records frame, so the give-up is undecoded. A site that
+/// holds no entity record gives up nothing.
 fn give_up_unbuilt_site(
     ctx: &DecodeContext<'_>,
     part: Part<'_>,
@@ -2842,25 +2838,13 @@ fn give_up_unbuilt_site(
     if records > 0 {
         given_up.push(ctx.give_up_part(
             part,
+            Cause::Undecoded,
             CodecError::malformed(format_args!(
-                "{}: {records} Parasolid entity record(s) frame and build no geometry",
-                SldprtLossCode::GeometryParasolidNotTransferred.kind()
+                "{records} Parasolid entity record(s) frame and build no geometry"
             )),
         )?);
     }
     Ok(())
-}
-
-/// The loss for `unreadable` of `total` imported body streams.
-fn imported_bodies_loss(
-    unreadable: usize,
-    total: usize,
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    (unreadable > 0).then(|| {
-        SldprtLossCode::GeometryImportedBodiesNotTransferred.note(format!(
-            "{unreadable} of {total} imported body stream(s) do not decode."
-        ))
-    })
 }
 
 /// Decode the available Parasolid body streams into one B-rep. Returns
@@ -2891,7 +2875,8 @@ fn try_decode_brep(
         match ctx.run_part(|| decode_bodies(ctx, &bodies, streams[first].source_stream()))? {
             Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
             Err(error) => {
-                given_up.push(ctx.give_up_part(site_part(streams, indices), error)?);
+                let cause = Cause::Unreadable.of(&error);
+                given_up.push(ctx.give_up_part(site_part(streams, indices), cause, error)?);
             }
         }
     }
@@ -5141,30 +5126,6 @@ fn append_topology_record_losses(
             stats.withheld_fin_links,
         )));
     }
-    if stats.withheld_faces > 0 {
-        losses.push(SldprtLossCode::TopologyFaceWithheld.note(format!(
-            "{} face(s) were withheld with their surface because no loop of the face decodes.",
-            stats.withheld_faces,
-        )));
-    }
-    if stats.withheld_vertex_loop_faces > 0 {
-        losses.push(SldprtLossCode::TopologyVertexLoopWithheld.note(format!(
-            "{} face(s) were withheld with their surface because a vertex loop of the face names no resolved vertex.",
-            stats.withheld_vertex_loop_faces,
-        )));
-    }
-    if stats.withheld_ambiguous_fin_faces > 0 {
-        losses.push(SldprtLossCode::TopologyAmbiguousFinFaceWithheld.note(format!(
-            "{} face(s) were withheld with their surface because a loop of the face holds an ambiguous FIN.",
-            stats.withheld_ambiguous_fin_faces,
-        )));
-    }
-    if stats.withheld_ring_edges > 0 {
-        losses.push(SldprtLossCode::TopologyRingEdgeWithheld.note(format!(
-            "{} vertexless ring edge(s) fail reciprocal closed-carrier single-loop admission.",
-            stats.withheld_ring_edges,
-        )));
-    }
 }
 
 fn build_geometry_report(
@@ -5253,12 +5214,6 @@ fn build_geometry_report(
         losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
             "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",
             s.unresolved_face_colors
-        )));
-    }
-    if s.unclaimed_faces > 0 {
-        losses.push(SldprtLossCode::TopologyFaceUnclaimed.note(format!(
-            "{} canonical face(s) are not claimed by an explicit body relation; the decoder withholds them rather than inventing body membership.",
-            s.unclaimed_faces
         )));
     }
     if s.synthetic_body_grouping {

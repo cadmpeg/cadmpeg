@@ -1697,3 +1697,38 @@ Drawing metadata section 7 has 32-byte segment-pair entries. Section 8 has 20-by
 A typed drawing record that does not parse is an `rse-record` part over its payload. When metadata sections 6, 7, and 9 of a segment do not read as reference tables, the reader gives up the reference-tables record of the segment. When the section-8 entries of a segment do not read, the reader gives up section 8 as a `meta-section` part. A record whose operand references do not select their target types is given up by its record id. A sheet whose view list names a given-up record, and a cached view whose segment has given-up reference tables, are dropped with that record. Any other sheet or cached view whose links do not resolve is given up by its record id.
 
 `RSeEmbeddings/ThirdPartyStorages/_DWFSnapshot` contains opaque file bytes.
+
+## 16. Given-up parts and strict floors
+
+The decoder gives up a part or a record (CADIR §3.3) in these cases:
+
+| Part kind or record | Given up when | Cause |
+|---|---|---|
+| `rse-database` | The RSe database stream does not frame. | `record.unreadable` |
+| `rse-database` | The RSe database stream declares a schema that the schema-31 grammar does not frame. | `record.undecoded` |
+| `rse-table` | `RSeStorage/RSeSegInfo` or `RSeStorage/RSeDbRevisionInfo` does not parse. | `record.unreadable` |
+| `rse-metadata` | An RSe metadata stream does not parse under the version-8 grammar (§3). | `record.undecoded` |
+| `rse-bulk` | An RSe bulk stream has an envelope or zlib framing that is not valid (§4). | `record.unreadable` |
+| `rse-record` | A typed assembly, presentation, design, sketch, or feature record does not parse. A pattern feature whose suppression operand does not pass its check is kept. | `record.undecoded` |
+| `rse-record` | The record envelope of the active kernel carrier does not parse (§5). | `record.unreadable` |
+| `kernel-carrier` | The kernel header does not parse, the carrier has no record stream, or the SAB records do not frame (§5). | `record.unreadable` |
+| `kernel-carrier` | The kernel decode does not read the framed records, or the decode passes a resource limit. | `record.undecoded` |
+| `history-chain` | The `delta_state` chain does not close (§13.10). | `record.unreadable` |
+| `history-chain` | The state scan passes its work limit (§13.10). | `record.undecoded` |
+| `property-set` | An OLE property-set stream does not read (§6). | `record.unreadable` |
+| `protein-stream` | The `Protein` stream does not read as a package (§7). | `record.unreadable` |
+| `protein-stream` | The schema catalog of the package does not decode (§7). | `record.undecoded` |
+| Protein record | A Protein native record or asset record does not admit. The record is given up by its id. | `record.undecoded` |
+| `ufrx-stream` | The `UFRxDoc` stream does not read (§8). | `record.unreadable` |
+| `ufrx-stream` | The `UFRxDoc` stream declares a schema that the decoder does not read (§8). | `record.undecoded` |
+| `UFRxDoc` record | A model state, external reference, embedded reference, or occurrence does not admit. The record is given up by its id. | `record.undecoded` |
+| Occurrence | The placement transform of an occurrence is not affine after unit conversion (§9). | `record.unreadable` |
+| Occurrence | The external reference, `AmDc` occurrence, or `AmGraphics` placement of an occurrence is missing or ambiguous, or its occurrence id is duplicated (§9). | `record.undecoded` |
+| `rse-record` | A typed drawing record does not parse (§15). | `record.undecoded` |
+| Drawing reference tables | Metadata sections 6, 7, and 9 of a segment do not read as reference tables (§15). | `record.unreadable` |
+| `meta-section` | The section-8 entries of a drawing segment do not read (§15). | `record.unreadable` |
+| Drawing record | The operand references or links of a drawing record do not select their targets (§15). | `record.undecoded` |
+
+A stream in this table that does not open is given up with no bytes, as `record.unreadable`. When the open passes a resource limit, the cause is `record.undecoded`.
+
+`inventor/container.noncanonical` carries strict floor Warning (CADIR §3.2). It records a compound-file deviation that the reader recovers from: a DIFAT chain that ends with FREESECT (§1), a stream chain that has no ENDOFCHAIN terminator, or a stream chain that is broken. No other Inventor code carries a strict floor.

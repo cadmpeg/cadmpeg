@@ -89,11 +89,12 @@ fn synthetic_scan(
 }
 
 /// The structure loss `message`, and one part for each component tree
-/// stream of `streams` that gives the stream up.
+/// stream of `streams` that gives the stream up as `cause`.
 fn assert_structure_given_up(
     projection: &super::AssemblyProjection,
     message: &str,
     streams: &[&str],
+    cause: cadmpeg_ir::unknown::part::Cause,
 ) {
     let [loss] = projection.losses() else {
         panic!("one structure loss: {:?}", projection.losses());
@@ -106,10 +107,7 @@ fn assert_structure_given_up(
     assert_eq!(projection.given_up().len(), streams.len());
     for (part, stream) in projection.given_up().iter().zip(streams) {
         let given_up = part.loss();
-        assert_eq!(
-            given_up.code,
-            cadmpeg_ir::unknown::part::record_unreadable_kind()
-        );
+        assert_eq!(given_up.code, cause.kind());
         assert!(given_up.message.starts_with(&format!(
             "part component-tree {stream:?} stream={stream:?} offset=0 "
         )));
@@ -307,7 +305,7 @@ fn a_tree_without_one_active_configuration_transfers_nothing() {
                 .kind()
                 .local_code()
                 .to_string(),
-            cadmpeg_ir::unknown::part::record_unreadable_kind()
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
                 .local_code()
                 .to_string(),
         ]
@@ -895,6 +893,7 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         "The `swXmlContents/COMPINSTANCETREE` section root is `notSolidWorks`. No occurrence \
          is transferred.",
         &[stream],
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
     );
 
     let text = tree().replace(
@@ -906,6 +905,7 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         &projection,
         "The component tree names 0 active configurations. No occurrence is transferred.",
         &[stream],
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
     );
 
     let text = tree().replace(
@@ -918,6 +918,7 @@ fn the_component_tree_structure_losses_state_the_exact_message() {
         "The active configuration names model `99`, which the component tree does not define. \
          No occurrence is transferred.",
         &[stream],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
     );
 }
 
@@ -936,6 +937,7 @@ fn a_document_without_a_component_tree_states_the_exact_structure_loss() {
         "The assembly document has no readable `swXmlContents/COMPINSTANCETREE` section. No \
          occurrence, placement, or component reference is transferred.",
         &[stream],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
     );
 }
 
@@ -1086,6 +1088,7 @@ fn a_tree_that_is_not_xml_states_the_exact_structure_loss() {
         "The `swXmlContents/COMPINSTANCETREE` section is not well-formed XML. No occurrence is \
          transferred.",
         &[super::TREE_SECTION],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
     );
 }
 
@@ -1170,6 +1173,7 @@ fn a_document_with_different_trees_states_the_exact_structure_loss() {
         "The document holds different `swXmlContents/COMPINSTANCETREE` sections. No occurrence \
          is transferred.",
         &[super::TREE_SECTION, "swXmlContents/COMPINSTANCETREE__ZLB"],
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
     );
 }
 
@@ -1182,6 +1186,7 @@ fn a_repeated_model_identity_states_the_exact_structure_loss() {
         &projection,
         "The component tree repeats the `swModel` id `8`. No occurrence is transferred.",
         &[super::TREE_SECTION],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
     );
 }
 

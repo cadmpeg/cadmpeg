@@ -147,7 +147,7 @@ fn an_unread_partition_stream_is_not_reported_as_absent() {
 fn an_unterminated_cfb_stream_chain_is_read_and_reported() {
     let mut file = compound_with_partition();
     put_u32(sector_mut(&mut file, 9), 17 * 4, 0xdead_beef);
-    let decoded = decode(file);
+    let decoded = decode(file.clone());
     assert_eq!(
         decoded.ir().geometry,
         decode(compound_with_partition()).ir().geometry
@@ -164,6 +164,13 @@ fn an_unterminated_cfb_stream_chain_is_read_and_reported() {
         panic!("one loss names the stream");
     };
     assert!(loss.message.starts_with(PARTITION));
+    let Err(cadmpeg_ir::DecodeFailure::StrictRejected { rejection }) = SldprtCodec.decode(
+        &mut Cursor::new(file),
+        &crate::test_support::ir::strict_options(),
+    ) else {
+        panic!("a pinned decode refuses the compound deviation");
+    };
+    assert_eq!(rejection.loss().code, noncanonical);
 }
 
 #[test]

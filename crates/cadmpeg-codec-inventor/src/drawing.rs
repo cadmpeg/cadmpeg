@@ -12,7 +12,9 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::{
+    dropped_with, Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::container::InventorContainer;
@@ -156,10 +158,8 @@ impl Inventory {
             ),
             None => GivenUpRecord::new(
                 cadmpeg_ir::ids::Identity::new(&record.id)?,
-                format_args!(
-                    "{}: {detail}",
-                    InventorLossCode::DrawingRecordMalformed.kind()
-                ),
+                Cause::Undecoded,
+                detail,
             )
             .loss(),
         });
@@ -178,12 +178,6 @@ impl Inventory {
             losses.push(InventorLossCode::DrawingNativeOnly.note(format!(
                 "{} drawing segments and {} records remain native; drawing semantics are unresolved",
                 self.segment_count, self.record_count
-            )));
-        }
-        if !self.issues.is_empty() {
-            losses.push(InventorLossCode::DrawingRecordMalformed.note(format!(
-                "{} drawing records retain untyped payloads after a typed-form refusal",
-                self.issues.len()
             )));
         }
         losses.extend(self.refusals.iter().cloned());
@@ -224,10 +218,8 @@ pub(crate) fn inventory(
                     inventory.refusals.push(
                         GivenUpRecord::new(
                             cadmpeg_ir::ids::Identity::new(&id)?,
-                            format_args!(
-                                "{}: {detail}",
-                                InventorLossCode::DrawingRecordMalformed.kind()
-                            ),
+                            Cause::Unreadable,
+                            format_args!("drawing reference tables do not read: {detail}"),
                         )
                         .loss(),
                     );
@@ -323,9 +315,9 @@ pub(crate) fn inventory(
                     );
                     inventory.given_up.push(ctx.give_up_part(
                         part,
+                        Cause::Unreadable,
                         CodecError::malformed(format_args!(
-                            "{}: {detail}",
-                            InventorLossCode::DrawingRecordMalformed.kind()
+                            "drawing metadata references do not read: {detail}"
                         )),
                     )?);
                     let scope = format!("metadata-references-{token}");
@@ -373,9 +365,9 @@ pub(crate) fn inventory(
                     )?;
                     let part = ctx.give_up_part(
                         part,
+                        Cause::Undecoded,
                         CodecError::malformed(format_args!(
-                            "{}: {detail}",
-                            InventorLossCode::DrawingRecordMalformed.kind()
+                            "a typed drawing record does not parse: {detail}"
                         )),
                     )?;
                     inventory

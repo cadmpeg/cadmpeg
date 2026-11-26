@@ -670,15 +670,21 @@ fn history_zlb_stream_that_does_not_inflate_is_unread() {
     .unwrap();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
+    let mut given_up = Vec::new();
     let histories =
-        crate::history::histories(&ctx, &scan, &mut annotations, &mut losses, &mut Vec::new())
+        crate::history::histories(&ctx, &scan, &mut annotations, &mut losses, &mut given_up)
             .unwrap();
     assert!(histories.is_empty());
-    let unread = losses
+    assert!(losses.is_empty());
+    let unread = given_up
         .iter()
-        .filter(|loss| loss.code == crate::loss::SldprtLossCode::HistoryUnread.kind())
+        .map(cadmpeg_ir::unknown::part::GivenUpPart::loss)
         .collect::<Vec<_>>();
     assert_eq!(unread.len(), 1);
+    assert_eq!(
+        unread[0].code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
     assert!(
         unread[0]
             .message

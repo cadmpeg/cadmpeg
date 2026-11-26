@@ -23,7 +23,7 @@ use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::GivenUpPart;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpPart};
 
 use cadmpeg_core::bytes::contains;
 
@@ -248,13 +248,16 @@ pub(crate) fn read(
         Some(Some(_)) if trees_differ => NativeAssembly::structure_given_up(
             ctx,
             &trees,
+            Cause::Undecoded,
             format!(
                 "The document holds different `{TREE_SECTION}` sections. No occurrence is \
                  transferred."
             ),
         )?,
         Some(Some(text)) => native_project(ctx, &text, &trees, &virtual_sections)?,
-        Some(None) => NativeAssembly::structure_given_up(ctx, &trees, unreadable)?,
+        Some(None) => {
+            NativeAssembly::structure_given_up(ctx, &trees, Cause::Unreadable, unreadable)?
+        }
         None => NativeAssembly::structure_lost(unreadable),
     };
     if !embedded.is_empty() {
@@ -342,6 +345,7 @@ fn native_project(
             return NativeAssembly::structure_given_up(
                 ctx,
                 trees,
+                Cause::Unreadable,
                 format!(
                     "The `{TREE_SECTION}` section is not well-formed XML. No occurrence is \
                      transferred."
@@ -354,6 +358,7 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
+            Cause::Undecoded,
             format!(
                 "The `{TREE_SECTION}` section root is `{}`. No occurrence is transferred.",
                 root.tag_name().name()
@@ -405,6 +410,7 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
+            Cause::Unreadable,
             format!(
                 "The component tree repeats the `{element}` id `{id}`. No occurrence is \
                  transferred."
@@ -421,6 +427,7 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
+            Cause::Undecoded,
             format!(
                 "The component tree names {} active configurations. No occurrence is \
                  transferred.",
@@ -433,6 +440,7 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
+            Cause::Unreadable,
             format!(
                 "The active configuration names model `{root_model}`, which the component \
                  tree does not define. No occurrence is transferred."
@@ -474,6 +482,7 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
+            Cause::Undecoded,
             format!(
                 "The active configuration's model `{root_model}` has no valid identity. No \
                  occurrence is transferred."

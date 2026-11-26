@@ -188,15 +188,19 @@ fn a_face_with_a_valid_ring_and_an_ambiguous_vertex_loop_fin_is_withheld() {
     let losses = brep.take_losses().unwrap();
     let [face] = losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
         .collect::<Vec<_>>()[..]
     else {
-        panic!("one record.unreadable gives up the face: {losses:?}");
+        panic!("one give-up gives up the face: {losses:?}");
     };
+    assert_eq!(
+        face.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
     assert!(face.message.starts_with("record sldprt:brep:face#"));
     assert!(face
         .message
-        .contains("given up: sldprt/topology.ambiguous-fin-face-withheld: "));
+        .contains("given up: a loop of the face holds an ambiguous FIN; "));
     assert!(face.message.contains("; dropped=[sldprt:brep:surf#"));
     assert_dependents_reach(&losses, face, "sldprt:brep:loop#");
 }

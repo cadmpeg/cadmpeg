@@ -276,7 +276,10 @@ fn source_body(
     };
     let decoded = match crate::kernel::decode_kernel_carrier(ctx, &carrier, header) {
         Ok(decoded) => decoded,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(crate::kernel::CarrierFailure {
+            error: error @ CodecError::ResourceLimit(_),
+            ..
+        }) => return Err(error),
         Err(_) => return Ok(false),
     };
     Ok(one(decoded

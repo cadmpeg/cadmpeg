@@ -24,6 +24,13 @@ right sibling identifiers, child identifier, first sector, and u64 stream size.
 The sibling trees and storage children form slash-qualified stream paths such
 as `Contents/Config-0-Partition`.
 
+The decoder reads a compound document whose last DIFAT sector links to
+FREESECT, and a stream whose chain has no ENDOFCHAIN terminator. Each such
+deviation is the loss `sldprt/container.noncanonical`. This code carries
+strict floor Warning (CADIR §3.2), so a pinned decode refuses the document. A
+stream whose chain is broken is given up as a `compound-stream` part (§1.5).
+No other SolidWorks code carries a strict floor.
+
 A directory slot whose object-type byte is zero is unallocated. Its name,
 links, color, sector, and size fields are not interpreted, even when those
 fields contain nonzero stale bytes. The slot remains in the directory index so
@@ -354,18 +361,21 @@ directory membership.
 ### 1.5 Parts
 
 Each part below has its own framing, and its end follows from that framing.
-The part kind names the part in a `record.unreadable` loss.
+The part kind names the part in its give-up loss. The loss is
+`record.unreadable` when the bytes break a rule of the format, and
+`record.undecoded` when the bytes obey the format and the decoder has no
+reading for them. A part that a resource limit stops is `record.undecoded`.
 
-| Part kind | Unit | Framing |
-| --- | --- | --- |
-| `compound-stream` | One compound-document stream | Its directory entry: stream size and the sector chain from its first sector (§1) |
-| `native-block` | One native block | The block frame: header, preamble of `pre_sz` bytes, DEFLATE member of `comp_sz` bytes (§1.1) |
-| `parasolid-streams` | The Parasolid streams of one block or compound stream | Direct `PS 00 00` streams, wrapped streams, and chained sections in the section payload (§1, §3.1.1) |
-| `parasolid-site` | The partition and deltas streams of one site | The streams of one block or one compound stream (§3.2) |
-| `feature-input-parasolid-stream` | One Parasolid stream in a `ResolvedFeatures` section | Its stream header and its extent in the section (§3.1, §3.3) |
-| `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) |
-| `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) |
-| `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) |
+| Part kind | Unit | Framing | Loss |
+| --- | --- | --- | --- |
+| `compound-stream` | One compound-document stream | Its directory entry: stream size and the sector chain from its first sector (§1) | `record.unreadable` |
+| `native-block` | One native block | The block frame: header, preamble of `pre_sz` bytes, DEFLATE member of `comp_sz` bytes (§1.1) | `record.unreadable` |
+| `parasolid-streams` | The Parasolid streams of one block or compound stream | Direct `PS 00 00` streams, wrapped streams, and chained sections in the section payload (§1, §3.1.1) | `record.unreadable` |
+| `parasolid-site` | The partition and deltas streams of one site | The streams of one block or one compound stream (§3.2) | `record.unreadable` when the streams do not decode; `record.undecoded` when their entity records build no geometry |
+| `feature-input-parasolid-stream` | One Parasolid stream in a `ResolvedFeatures` section | Its stream header and its extent in the section (§3.1, §3.3) | `record.unreadable` |
+| `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) | `record.unreadable` |
+| `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) | See below |
+| `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) | See below |
 
 A compound stream's bytes are the sectors its chain reaches through the
 sectors its size requires. Two streams whose chains reach one sector are
@@ -375,21 +385,33 @@ bytes of the sectors its chain reached before it stopped. A native block
 that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
 given up; the directory and its other members are read.
 
+A `history-member` part is `record.unreadable` when the member holds no XML
+payload, when its bytes are not text, and when its XML is not well formed. It
+is `record.undecoded` when the XML parser stops at one of its bounds, and when
+the root element is not `Keywords`.
+
 A Parasolid site whose streams frame entity records that build no geometry is
 given up as a `parasolid-site` part. A component tree gives no occurrence
 when its XML does not parse, when it repeats a model or file id, when it
 names no active configuration or more than one, when its active model has no
 valid identity or no definition, and when the document holds two different
 trees. Each tree section is then given up as a `component-tree` part. The
+loss is `record.unreadable` when the tree text has no UTF-16 byte-order mark
+and is not UTF-8, when its XML is not well formed, when it repeats a model or file id, and when its
+active model has no definition. The loss is `record.undecoded` when the
+document holds two different trees, when the root element is not
+`swSolidWorks`, when the tree names no active configuration or more than one,
+and when the active model has no valid identity. The
 section that the decoder reads is also kept whole, so the part keeps only
 the length and digest of its bytes.
 
 A record that the decoder parses and then drops is given up without a part.
-Its `record.unreadable` loss names the record by its id, and gives its stream
+Its `record.undecoded` loss names the record by its id, and gives its stream
 and offset where the decoder holds them. Such records are a B-rep face or
 ring edge that the topology walk withholds, a PMI dimension map that does not
-parse, and a feature-input sketch whose face projects no edge to a sketch
-entity. A record of an alternate configuration is named by its id with the
+parse, a feature-input sketch whose face projects no edge to a sketch entity,
+and a sketch entity whose edge projects to no entity and no profile. The
+loss text tells why the decoder dropped the record. A record of an alternate configuration is named by its id with the
 `@<site>` suffix of that configuration.
 
 A record that the decoder drops only because it needs a given-up record is
@@ -2654,9 +2676,7 @@ record fields determine the framing. Complete analytic carriers, bounded-curve r
 
 The loss `geometry.carrier-approximated` counts intersection chart curves, fitted surface-parameter curves, fitted blend surfaces, inverse NURBS boundary caches, and charts with absent tolerance per decoded stream and kind, and reports the largest fit tolerance or sampled distance in millimetres for each kind, with an unavailable size for charts with absent tolerance. A rolling-ball blend face (§7.4) whose kept cache is approximate adds one `geometry.carrier-approximated` note that names the face, the cache's largest miss, and whether that miss is at a face vertex or at a point sampled along the face's edges. A rolling-ball blend face (§7.4) whose cache does not solve is the loss `geometry.blend-cache-unsolved`, one per face, naming what each of the two fits did.
 
-A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
-A vertex loop decodes to a vertex boundary on its vertex-use. A FACE with a vertex loop whose vertex-use does not resolve is the loss `topology.vertex-loop-withheld`.
-A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.
+A vertex loop decodes to a vertex boundary on its vertex-use. The topology walk withholds a framed FACE record with no decoded loop, a FACE with a vertex loop whose vertex-use does not resolve, and a FACE with a loop whose FIN is ambiguous. Each withheld FACE is given up as a record with the loss `record.undecoded` (§1.5).
 The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. One loss note gives the count for each kind.
 
 ### 4.1 XT ownership nodes
