@@ -1331,9 +1331,7 @@ macro_rules! declare_document_arenas {
                         home: stringify!($home),
                         field: stringify!($field),
                     };
-                    for entity in &self.$home.$field {
-                        references.add(&arena, entity.record_identity(), entity);
-                    }
+                    crate::give_up::add_references!($home, references, &arena, &self.$home.$field);
                 })*
                 if references.naming == crate::give_up::Naming::Text {
                     self.native.add_holders(&mut references);
