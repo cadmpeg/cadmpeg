@@ -144,6 +144,7 @@ pub(super) fn project_input_topology(
         edge_geometry,
         face_owners,
         face_geometry,
+        body_writers: Vec::new(),
         native_ref: Some(native_ref),
     })
 }

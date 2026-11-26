@@ -120,3 +120,28 @@ fn pcurve_many_internal_knots_split_into_one_span_per_knot_interval() {
         [1.0, f64::from(CONTROL_COUNT - 1), 0.0, 0.0]
     );
 }
+
+#[test]
+fn pcurve_spans_of_an_empty_or_reversed_range_are_empty_and_of_an_outside_range_absent() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let knots = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0];
+    let controls = [
+        [1.0, 0.0, 0.5, 0.0],
+        [1.0, 3.0, 0.9, 0.0],
+        [1.0, 3.0, 0.1, 0.0],
+    ];
+    for range in [[0.5, 0.5], [0.75, 0.25]] {
+        assert_eq!(
+            restricted_pcurve_spans(2, &knots, &controls, range, &ctx).unwrap(),
+            Some(Vec::new()),
+            "{range:?}"
+        );
+    }
+    for range in [[-0.5, 0.5], [0.5, 1.5], [1.5, 1.5], [f64::NAN, 0.5]] {
+        assert_eq!(
+            restricted_pcurve_spans(2, &knots, &controls, range, &ctx).unwrap(),
+            None,
+            "{range:?}"
+        );
+    }
+}
