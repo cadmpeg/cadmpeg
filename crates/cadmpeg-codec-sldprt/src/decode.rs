@@ -3335,7 +3335,7 @@ fn ensure_display_appearance(
     );
     crate::annotations::note(
         annotations,
-        id.as_str(),
+        &id,
         &definition.source_name,
         u64_from_index(definition.record_offset),
         kind,
@@ -3620,7 +3620,7 @@ fn push_display_meshes(
             }
             crate::annotations::note(
                 annotations,
-                id.as_str(),
+                crate::annotations::native_key(&id)?,
                 display_stream,
                 u64_from_index(display_face.table.start()),
                 "displaylist_tessellation",
@@ -3674,7 +3674,7 @@ fn push_display_meshes(
         );
         crate::annotations::note(
             annotations,
-            display_id.as_str(),
+            &display_id,
             display_stream,
             0,
             "displaylist_tessellation",
@@ -3753,7 +3753,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -3761,6 +3761,11 @@ fn build_geometry_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
+    crate::resolved_features::walked_patterns::enrich_circular_patterns(
+        &mut histories,
+        &lanes,
+        &walked_patterns,
+    )?;
     let linear = ir.tolerances.linear;
     pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
         ctx, &histories, &mut lanes, linear,
@@ -4337,7 +4342,7 @@ fn build_geometry_ir(
         );
         crate::annotations::note(
             &mut annotations,
-            id.as_str(),
+            &id,
             annotation_source,
             u64_from_index(face_color.offset),
             "00_53_color",
@@ -4404,7 +4409,7 @@ fn build_geometry_ir(
         );
         crate::annotations::note(
             &mut annotations,
-            id.as_str(),
+            &id,
             &definition.source_name,
             u64_from_index(definition.record_offset),
             "moVisualProperties_c",
@@ -4571,10 +4576,10 @@ fn build_geometry_ir(
     }
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in scoped_color_faces {
-        annotation_builder.field_exactness(id.as_str(), "color", Exactness::Derived)?;
+        annotation_builder.field_exactness(&id, "color", Exactness::Derived)?;
     }
     for id in assigned_tessellations {
-        annotation_builder.field_exactness(id.as_str(), "of", Exactness::Derived)?;
+        annotation_builder.field_exactness(&id, "of", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -4760,11 +4765,10 @@ fn project_design(
         retired = projection.retired;
         Ok(())
     })?;
-    retired_states::annotate_state_records(ir, annotations);
+    retired_states::retire(ir, annotations, unknowns, &retired, losses);
     if retired.is_empty() {
         return Ok(());
     }
-    retired_states::retire(ir, annotations, unknowns, &retired, losses);
     stamp_feature_baseline(ctx, ir)
 }
 
@@ -5245,7 +5249,7 @@ fn unprojected_source_meta(
         );
         crate::annotations::note(
             annotations,
-            id.as_str(),
+            &id,
             site.source_stream(),
             0,
             "parasolid_stream",
@@ -5306,7 +5310,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps) =
+    let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
@@ -5314,6 +5318,11 @@ fn build_metadata_ir(
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
+    crate::resolved_features::walked_patterns::enrich_circular_patterns(
+        &mut histories,
+        &lanes,
+        &walked_patterns,
+    )?;
     let linear = ir.tolerances.linear;
     pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
         ctx, &histories, &mut lanes, linear,
@@ -6970,19 +6979,20 @@ fn preserve_source_image(
     annotations: &mut Annotations,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
+    let id = UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
+        cadmpeg_ir::identity_key!("0"),
+    );
     crate::annotations::note(
         annotations,
-        "sldprt:file:source-image#0",
+        &id,
         &cadmpeg_ir::stream_name!("source"),
         0,
         "source_image",
         Exactness::ByteExact,
     )?;
     unknowns.push(UnknownRecord::retained(
-        UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
-            cadmpeg_ir::identity_key!("0"),
-        ),
+        id,
         0,
         retained_copy(ctx, scan.source_image, "retain SLDPRT source image")?,
         Vec::new(),

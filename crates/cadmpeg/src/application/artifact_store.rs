@@ -317,14 +317,13 @@ pub(super) fn write_plan_atomic(
 /// A decoded origin causes a second atomic rename after the CADIR write.
 /// The pair is not transactional; see the module docs. A neutral origin
 /// removes a stale sidecar.
-/// The annotations of the records of the arenas the CADIR wire omits stay
-/// out of the sidecar, since the written document holds none of those
-/// records.
+/// The sidecar holds `annotations`, the plan's annotations of the written
+/// document, and the origin's where the plan states none.
 pub(super) fn persist_decode_sidecar(
     cadir_path: &Path,
     cadir_sha256: &Sha256Digest,
     origin: &LoadOrigin,
-    ir: &cadmpeg_ir::CadIr,
+    annotations: Option<cadmpeg_ir::Annotations>,
 ) -> Result<SidecarPersistOutcome> {
     let Some(path) = decode_sidecar_path(cadir_path) else {
         return Err(anyhow!(
@@ -339,10 +338,9 @@ pub(super) fn persist_decode_sidecar(
         | LoadOrigin::Restored { report, fidelity }
         | LoadOrigin::Read { report, fidelity } => {
             let mut fidelity = fidelity.as_ref().clone();
-            let omitted = ir.model.omitted_record_ids();
-            fidelity
-                .annotations
-                .retain_entities(|id| !omitted.contains(id));
+            if let Some(annotations) = annotations {
+                fidelity.annotations = annotations;
+            }
             let sidecar =
                 DecodeSidecar::bind_sha256(cadir_sha256.clone(), report.clone(), fidelity);
             let mut bytes = sidecar.to_canonical_json()?.into_bytes();
@@ -538,7 +536,7 @@ mod tests {
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
-        let report: DecodeReport = json::from_value(serde_json::json!({
+        let report: DecodeReport = json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "transfer": {"kind": "full", "geometry_transferred": false},
             "coverage": {},

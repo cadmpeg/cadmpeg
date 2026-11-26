@@ -71,7 +71,7 @@ fn scope_binding_reads_the_blob_of_its_edge_recipe_faces() {
             offset: 0,
         }),
     };
-    let operand: DesignEdgeOperand = json::from_value(serde_json::json!({
+    let operand: DesignEdgeOperand = json::from_value(cadmpeg_core::json!({
         "id": format!("{stream}:design-edge-operand#0"),
         "scope_record_index": 100,
         "scope_reference_ordinal": 0,

@@ -56,7 +56,7 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     assert_eq!(wire["samples"]["kind"], "parameterized");
     assert_eq!(
         wire["samples"]["vertices"][0]["parameter"],
-        serde_json::json!(2.0)
+        cadmpeg_core::json!(2.0)
     );
     assert_eq!(
         json::from_value::<PolylineCurve>(wire.clone()).unwrap(),
@@ -65,9 +65,9 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     // A parameter travels in its own sample row, so a parameter list that does
     // not match the sample count has no spelling; a repeated parameter is still
     // refused by the monotonic mint.
-    wire["samples"]["vertices"][1]["parameter"] = serde_json::json!(2.0);
+    wire["samples"]["vertices"][1]["parameter"] = cadmpeg_core::json!(2.0);
     assert!(json::from_value::<PolylineCurve>(wire.clone()).is_err());
-    wire["samples"]["parameters"] = serde_json::json!([1.0, 1.0]);
+    wire["samples"]["parameters"] = cadmpeg_core::json!([1.0, 1.0]);
     assert!(json::from_value::<PolylineCurve>(wire).is_err());
     let mut surface = PolygonalSurface::new(
         vec![
@@ -90,7 +90,7 @@ fn sampled_carriers_admit_finite_numeric_payloads_and_preserve_failed_edits() {
     assert!(surface.set_chordal_deflection(-1.0).is_err());
     assert_eq!(surface, original);
     let mut wire = json::to_value(&surface).unwrap();
-    wire["chordal_deflection"] = serde_json::json!(-1.0);
+    wire["chordal_deflection"] = cadmpeg_core::json!(-1.0);
     assert!(json::from_value::<PolygonalSurface>(wire).is_err());
 }
 #[test]
@@ -178,7 +178,7 @@ fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
         })
         .unwrap();
     let wire = json::to_value(&surface).unwrap();
-    assert_eq!(wire["chordal_deflection"], serde_json::json!(0.5));
+    assert_eq!(wire["chordal_deflection"], cadmpeg_core::json!(0.5));
     assert_eq!(
         wire["vertices"][2],
         json::to_value(FinitePoint3::new(Point3::new(0.0, 1.0, 2.0)).unwrap()).unwrap()
@@ -197,7 +197,7 @@ fn sampled_carriers_hold_their_admitted_chordal_deflection_and_vertices() {
         NonNegativeReal::new(0.125).unwrap()
     );
     let wire = json::to_value(&polyline).unwrap();
-    assert_eq!(wire["chordal_deflection"], serde_json::json!(0.125));
+    assert_eq!(wire["chordal_deflection"], cadmpeg_core::json!(0.125));
     assert_eq!(json::from_value::<PolylineCurve>(wire).unwrap(), polyline);
 }
 

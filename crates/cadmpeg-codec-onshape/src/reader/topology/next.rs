@@ -2,9 +2,10 @@
 //! Exact `UP_TO_NEXT` target proof: the first stored planar input face that every
 //! ray of a closed convex line profile meets. Face footprints are line boundaries;
 //! no sample, area or bounding box decides coverage.
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::document::Model;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::super::{features, number, rows, text, Mapping};
 use super::{cross, sub, unit, vector, State};

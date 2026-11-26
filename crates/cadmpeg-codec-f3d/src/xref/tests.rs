@@ -256,9 +256,9 @@ fn external_reference_admission_and_projection_check_affine_transforms() {
         table.references[0]
     );
     let mut invalid = wire;
-    invalid["transform"][3][0] = serde_json::json!(1.0);
+    invalid["transform"][3][0] = cadmpeg_core::json!(1.0);
     assert!(json::from_value::<crate::records::xref::XrefReference>(invalid).is_err());
-    let reflected = serde_json::json!({
+    let reflected = cadmpeg_core::json!({
         "id": "f3d:xref:reference#0",
         "ordinal": 0,
         "occurrence_ordinal": 0,

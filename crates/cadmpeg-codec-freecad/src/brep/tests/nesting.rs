@@ -300,7 +300,7 @@ fn a_cadir_document_cannot_carry_a_surface_chain_past_the_bound() {
 
     let mut refused = admitted;
     let basis = refused["binary"]["surfaces"][0].take();
-    refused["binary"]["surfaces"][0] = serde_json::json!({
+    refused["binary"]["surfaces"][0] = cadmpeg_core::json!({
         "kind": "offset",
         "distance": 1.0,
         "basis": basis,

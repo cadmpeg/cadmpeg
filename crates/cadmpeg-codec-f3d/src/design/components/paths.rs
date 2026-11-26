@@ -487,7 +487,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(index, (stream, key))| {
-                    json::from_value(serde_json::json!({
+                    json::from_value(cadmpeg_core::json!({
                         "id":format!("f3d:xref:reference#{index}"), "ordinal":index,
                         "from":"root.f3d", "relative_path":"part.f3d",
                         "neutron_role":"same-role", "neutron_data":"",
@@ -540,7 +540,7 @@ mod tests {
             .is_none());
         let key_c = "cccccccc-cccc-cccc-cccc-cccccccccccc";
         let mut table = table;
-        table.references[2] = json::from_value(serde_json::json!({
+        table.references[2] = json::from_value(cadmpeg_core::json!({
             "id":"f3d:xref:reference#2", "ordinal":2,
             "from":"root.f3d", "relative_path":"part.f3d",
             "neutron_role":"same-role", "neutron_data":"",
@@ -585,7 +585,7 @@ mod tests {
             json::from_value(encoded.clone()).unwrap();
         assert_eq!(retained, table.references[0]);
         let mut invalid = encoded;
-        invalid["placement_source"]["occurrence_guid"] = serde_json::json!("part.f3d");
+        invalid["placement_source"]["occurrence_guid"] = cadmpeg_core::json!("part.f3d");
         assert!(json::from_value::<crate::records::xref::XrefReference>(invalid).is_err());
     }
 }

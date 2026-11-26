@@ -3321,7 +3321,7 @@ impl CadIr {
     /// ```compile_fail
     /// use cadmpeg_ir::CadIr;
     /// let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    /// let raw = serde_json::json!({"id": "test:native:unknown#0", "extra": true});
+    /// let raw = cadmpeg_core::json!({"id": "test:native:unknown#0", "extra": true});
     /// CadIr::empty().set_native_unknowns_from(&ctx, "test", [raw]).unwrap();
     /// ```
     pub fn set_native_unknowns_from<T: Borrow<NativeUnknownRecord>, I: IntoIterator<Item = T>>(
@@ -3481,7 +3481,8 @@ impl CadIr {
 
     /// Serialize a finalized, identity-sorted view as pretty JSON.
     ///
-    /// Clones and [`finalize`](Self::finalize)s so callers need not pre-sort.
+    /// Serializes a [`finalize`](Self::finalize)d copy where an arena is out
+    /// of order, so callers need not pre-sort.
     ///
     /// The text is written through the same finite adapter the digest uses, so
     /// a non-finite float is refused rather than written as `null`.
@@ -3497,8 +3498,18 @@ impl CadIr {
     /// float, and [`CanonicalJsonError::PastBound`] for a document nesting
     /// past a bound of §2.5.
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
-        let mut canonical = self.clone();
-        canonical.finalize();
+        let canonical = if self.geometry.is_finalized()
+            && self.model.is_finalized()
+            && self.design.is_finalized()
+            && self.process.is_finalized()
+            && self.native.is_finalized()
+        {
+            std::borrow::Cow::Borrowed(self)
+        } else {
+            let mut sorted = self.clone();
+            sorted.finalize();
+            std::borrow::Cow::Owned(sorted)
+        };
         let (bytes, measured) = crate::hash::measured_canonical_json(&canonical)?;
         let past = measured
             .records

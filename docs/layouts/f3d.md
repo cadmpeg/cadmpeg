@@ -12072,6 +12072,9 @@ Spec §1.2 · layout: byte offsets · size: 57 B
 
 Offsets are relative to the record's indexed header. The LP-UTF16 table id begins at the end of the prefix.
 
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/configuration_root.rs`
+
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 11 | 4 | `zero_u32` | `u32` | little | spec | Its indexed header is followed by a zero u32, the LP-ASCII key `DesignConfigurationRoot` · value `0` |
@@ -12083,6 +12086,10 @@ Offsets are relative to the record's indexed header. The LP-UTF16 table id begin
 Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/records/configuration.rs` — The reader admits a table id and a row id of 1 to 256 UTF-16 code units after the prefix; the writer fits both ids to the same width.
 
 ## `snapshot_body_map_plain_prefix`
 

@@ -394,6 +394,26 @@ pub(crate) const EXTRUSION_DEPTH_PARAMETERS: [&str; 4] = ["D1", "Depth", "D2", "
 /// lane while the projected definition states neither.
 pub(crate) const LINEAR_PATTERN_DIRECTION_PROPERTIES: [&str; 2] = ["Direction", "Direction2"];
 
+/// The record fields of a circular pattern the decoder fills from its walked
+/// object: the axis, the seed's source id, and the names of the dimensions
+/// that hold the count and the angle.
+pub(crate) const CIRCULAR_PATTERN_WALKED_PROPERTIES: [&str; 5] = [
+    "AxisOrigin",
+    "AxisDirection",
+    CIRCULAR_PATTERN_SEED_SOURCES,
+    CIRCULAR_PATTERN_COUNT_DIMENSION,
+    CIRCULAR_PATTERN_ANGLE_DIMENSION,
+];
+
+/// The source ids of a walked circular pattern's seeds.
+pub(crate) const CIRCULAR_PATTERN_SEED_SOURCES: &str = "SeedSources";
+
+/// The name of the dimension that holds a walked circular pattern's count.
+pub(crate) const CIRCULAR_PATTERN_COUNT_DIMENSION: &str = "CountDimension";
+
+/// The name of the dimension that holds a walked circular pattern's angle.
+pub(crate) const CIRCULAR_PATTERN_ANGLE_DIMENSION: &str = "AngleDimension";
+
 /// Record fields the decoder fills from the feature-input lane together, and
 /// only while the record states none of the group's gate. A record that states
 /// a gate key is read for the whole group.
@@ -409,7 +429,7 @@ pub(crate) struct LaneDerivedGroup {
 /// Every lane-derived group. The decoder guards read the gate constants above;
 /// the linear-pattern guard reads the projected definition, whose two
 /// directions come from these two properties.
-pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 7] = [
+pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 8] = [
     LaneDerivedGroup {
         gate: &REVOLUTION_AXIS_PROPERTIES,
         properties: &REVOLUTION_AXIS_DERIVED_PROPERTIES,
@@ -443,6 +463,11 @@ pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 7] = [
     LaneDerivedGroup {
         gate: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
         properties: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &CIRCULAR_PATTERN_WALKED_PROPERTIES,
+        properties: &CIRCULAR_PATTERN_WALKED_PROPERTIES,
         parameters: &[],
     },
 ];
@@ -2543,11 +2568,11 @@ mod tests {
     fn native_operand_wire_rejects_reserved_tags() {
         for tag in [0x0000, 0xffff, 0x80d6, 0x80e1] {
             assert!(json::from_value::<super::FeatureInputOperandKind>(
-                serde_json::json!({"native": tag})
+                cadmpeg_core::json!({"native": tag})
             )
             .is_err());
         }
-        let wire = serde_json::json!({"native": 0x812a});
+        let wire = cadmpeg_core::json!({"native": 0x812a});
         let kind: super::FeatureInputOperandKind = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(kind).unwrap(), wire);
     }
@@ -2560,8 +2585,8 @@ mod tests {
             kind: super::FeatureInputSurfaceSelectionKind,
         }
         for wire in [
-            serde_json::json!({}),
-            serde_json::json!({"endpoint_selector": 0}),
+            cadmpeg_core::json!({}),
+            cadmpeg_core::json!({"endpoint_selector": 0}),
         ] {
             let selection: Selection = json::from_value(wire.clone()).unwrap();
             assert_eq!(
@@ -2582,7 +2607,7 @@ mod tests {
             #[serde(flatten, with = "super::pmi_display_text_wire")]
             value: Option<(String, u64)>,
         }
-        let wire = serde_json::json!({"display_text": "25 mm", "display_text_offset": 17});
+        let wire = cadmpeg_core::json!({"display_text": "25 mm", "display_text_offset": 17});
         let display: Display = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(display).unwrap(), wire);
         for field in ["display_text", "display_text_offset"] {
@@ -2590,8 +2615,8 @@ mod tests {
             split.as_object_mut().unwrap().remove(field);
             assert!(json::from_value::<Display>(split).is_err());
         }
-        let absent: Display = json::from_value(serde_json::json!({})).unwrap();
-        assert_eq!(json::to_value(absent).unwrap(), serde_json::json!({}));
+        let absent: Display = json::from_value(cadmpeg_core::json!({})).unwrap();
+        assert_eq!(json::to_value(absent).unwrap(), cadmpeg_core::json!({}));
     }
 
     #[test]
@@ -2602,13 +2627,13 @@ mod tests {
             value: Option<(String, u64)>,
         }
         for wire in [
-            serde_json::json!({"display_text": null, "display_text_offset": null}),
-            serde_json::json!({"display_text": null, "display_text_offset": 17}),
-            serde_json::json!({"display_text": "25 mm", "display_text_offset": null}),
+            cadmpeg_core::json!({"display_text": null, "display_text_offset": null}),
+            cadmpeg_core::json!({"display_text": null, "display_text_offset": 17}),
+            cadmpeg_core::json!({"display_text": "25 mm", "display_text_offset": null}),
         ] {
             assert!(json::from_value::<Display>(wire.clone()).is_err(), "{wire}");
         }
-        let absent: Display = json::from_value(serde_json::json!({})).unwrap();
+        let absent: Display = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert!(absent.value.is_none());
     }
 
@@ -2620,13 +2645,13 @@ mod tests {
             parent: Option<super::TreeParent>,
         }
         for wire in [
-            serde_json::json!({"tree_parent": null}),
-            serde_json::json!({"parent_source_id": null}),
-            serde_json::json!({"tree_parent": "record", "parent_source_id": null}),
+            cadmpeg_core::json!({"tree_parent": null}),
+            cadmpeg_core::json!({"parent_source_id": null}),
+            cadmpeg_core::json!({"tree_parent": "record", "parent_source_id": null}),
         ] {
             assert!(json::from_value::<Parent>(wire.clone()).is_err(), "{wire}");
         }
-        let absent: Parent = json::from_value(serde_json::json!({})).unwrap();
+        let absent: Parent = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert!(absent.parent.is_none());
     }
 
@@ -2638,9 +2663,10 @@ mod tests {
             kind: super::FeatureInputSurfaceSelectionKind,
         }
         assert!(
-            json::from_value::<Selection>(serde_json::json!({"endpoint_selector": null})).is_err()
+            json::from_value::<Selection>(cadmpeg_core::json!({"endpoint_selector": null}))
+                .is_err()
         );
-        let absent: Selection = json::from_value(serde_json::json!({})).unwrap();
+        let absent: Selection = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert_eq!(
             absent.kind,
             super::FeatureInputSurfaceSelectionKind::Component
@@ -2654,8 +2680,10 @@ mod tests {
             #[serde(flatten, with = "super::scalar_operands_wire")]
             operands: Vec<super::FeatureInputOperand>,
         }
-        assert!(json::from_value::<Operands>(serde_json::json!({"entity_indices": null})).is_err());
-        let absent: Operands = json::from_value(serde_json::json!({})).unwrap();
+        assert!(
+            json::from_value::<Operands>(cadmpeg_core::json!({"entity_indices": null})).is_err()
+        );
+        let absent: Operands = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert!(absent.operands.is_empty());
     }
 
@@ -2667,10 +2695,10 @@ mod tests {
             name: String,
         }
         assert!(json::from_value::<Class>(
-            serde_json::json!({"name": "sgEntHandle", "role": null})
+            cadmpeg_core::json!({"name": "sgEntHandle", "role": null})
         )
         .is_err());
-        let absent: Class = json::from_value(serde_json::json!({"name": "sgEntHandle"})).unwrap();
+        let absent: Class = json::from_value(cadmpeg_core::json!({"name": "sgEntHandle"})).unwrap();
         assert_eq!(absent.name, "sgEntHandle");
     }
 
@@ -2681,17 +2709,17 @@ mod tests {
             #[serde(flatten, with = "super::sketch_input_links_wire")]
             links: Option<super::SketchInputLinks>,
         }
-        assert!(
-            json::from_value::<Links>(serde_json::json!({"links": [], "link_selector": null}))
-                .is_err()
-        );
-        let absent: Links = json::from_value(serde_json::json!({})).unwrap();
+        assert!(json::from_value::<Links>(
+            cadmpeg_core::json!({"links": [], "link_selector": null})
+        )
+        .is_err());
+        let absent: Links = json::from_value(cadmpeg_core::json!({})).unwrap();
         assert!(absent.links.is_none());
     }
 
     #[test]
     fn class_role_wire_is_derived_from_name() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "class", "parent": "lane", "ordinal": 0, "offset": 0,
             "name": "sgEntHandle", "role": "sketch_entity"
         });
@@ -2699,7 +2727,7 @@ mod tests {
         assert_eq!(class.role(), super::FeatureInputClassRole::SketchEntity);
         assert_eq!(json::to_value(class).unwrap(), wire);
         let mut inconsistent = wire;
-        inconsistent["role"] = serde_json::json!("feature");
+        inconsistent["role"] = cadmpeg_core::json!("feature");
         assert!(json::from_value::<super::FeatureInputClass>(inconsistent).is_err());
     }
 
@@ -2710,7 +2738,7 @@ mod tests {
             #[serde(flatten, with = "super::scalar_operands_wire")]
             operands: Vec<super::FeatureInputOperand>,
         }
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "entity_indices": [7],
             "operands": [
                 {"offset": 0, "reference_ref": "a", "kind": "d6", "entity_index": 7},
@@ -2720,10 +2748,10 @@ mod tests {
         let operands: Operands = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(operands).unwrap(), wire);
         let mut inconsistent = wire;
-        inconsistent["entity_indices"] = serde_json::json!([7, 9]);
+        inconsistent["entity_indices"] = cadmpeg_core::json!([7, 9]);
         assert!(json::from_value::<Operands>(inconsistent).is_err());
-        let empty: Operands = json::from_value(serde_json::json!({})).unwrap();
-        assert_eq!(json::to_value(empty).unwrap(), serde_json::json!({}));
+        let empty: Operands = json::from_value(cadmpeg_core::json!({})).unwrap();
+        assert_eq!(json::to_value(empty).unwrap(), cadmpeg_core::json!({}));
     }
 
     #[test]
@@ -2734,10 +2762,10 @@ mod tests {
             parent: Option<super::TreeParent>,
         }
         for wire in [
-            serde_json::json!({}),
-            serde_json::json!({"tree_parent": "record"}),
-            serde_json::json!({"parent_source_id": "7"}),
-            serde_json::json!({"tree_parent": "record", "parent_source_id": "7"}),
+            cadmpeg_core::json!({}),
+            cadmpeg_core::json!({"tree_parent": "record"}),
+            cadmpeg_core::json!({"parent_source_id": "7"}),
+            cadmpeg_core::json!({"tree_parent": "record", "parent_source_id": "7"}),
         ] {
             let parent: Parent = json::from_value(wire.clone()).unwrap();
             assert_eq!(
@@ -2805,10 +2833,10 @@ mod tests {
             assert!(error.to_string().contains("links and link_selector"));
         }
         let mut empty = wire.clone();
-        empty["sketch_entities"][0]["links"] = serde_json::json!([]);
+        empty["sketch_entities"][0]["links"] = cadmpeg_core::json!([]);
         assert!(json::from_value::<FeatureInputLane>(empty).is_err());
         let mut moved = wire.clone();
-        moved["sketch_entities"][0]["offset"] = serde_json::json!(3);
+        moved["sketch_entities"][0]["offset"] = cadmpeg_core::json!(3);
         let error = json::from_value::<FeatureInputLane>(moved).unwrap_err();
         assert!(error
             .to_string()
@@ -2829,7 +2857,7 @@ mod tests {
         );
 
         let mut renamed = wire;
-        renamed["sketch_entities"][0]["local_id"] = serde_json::json!(4_242);
+        renamed["sketch_entities"][0]["local_id"] = cadmpeg_core::json!(4_242);
         let error = json::from_value::<FeatureInputLane>(renamed).unwrap_err();
         assert!(error.to_string().contains("local object id does not match"));
         assert!(SketchInputLinks::new(3, Vec::new()).is_none());
@@ -2871,7 +2899,7 @@ mod tests {
         };
         let mut wire = json::to_value(&lane).expect("native JSON");
         let record = &wire["sketch_entities"][0];
-        assert_eq!(record["coordinates_m"], serde_json::json!([1.25, -2.5]));
+        assert_eq!(record["coordinates_m"], cadmpeg_core::json!([1.25, -2.5]));
         assert_eq!(
             record.to_string(),
             r#"{"coordinates_m":[1.25,-2.5],"id":"marker","kind":"point","offset":0,"ordinal":0,"parent":"lane"}"#
@@ -2879,7 +2907,7 @@ mod tests {
         let restored: FeatureInputLane =
             json::from_value(wire.clone()).expect("native JSON round trip");
         assert_eq!(json::to_value(restored).expect("native JSON"), wire);
-        wire["sketch_entities"][0]["coordinates_m"] = serde_json::json!([1.25, "bad"]);
+        wire["sketch_entities"][0]["coordinates_m"] = cadmpeg_core::json!([1.25, "bad"]);
         let refusal = json::from_value::<FeatureInputLane>(wire)
             .expect_err("invalid coordinate")
             .to_string();
@@ -2899,7 +2927,7 @@ mod tests {
             assert_ne!(geometry, handle);
             assert!(matches!(handle, SketchInputKind::NativeHandle(_)));
             assert_eq!(handle.native_code(), code);
-            let wire = serde_json::json!({"native": code});
+            let wire = cadmpeg_core::json!({"native": code});
             assert_eq!(json::to_value(handle).unwrap(), wire);
             assert_eq!(json::from_value::<SketchInputKind>(wire).unwrap(), handle);
         }
@@ -3057,11 +3085,11 @@ mod tests {
         let decoded: PmiDimension = json::from_value(wire.clone()).unwrap();
         assert_eq!(decoded, dimension);
         let mut explicit = wire.clone();
-        explicit["item_count"] = serde_json::json!(1);
+        explicit["item_count"] = cadmpeg_core::json!(1);
         let decoded: PmiDimension = json::from_value(explicit).unwrap();
         assert_eq!(json::to_value(decoded).unwrap(), wire);
         let mut zero = wire;
-        zero["item_count"] = serde_json::json!(0);
+        zero["item_count"] = cadmpeg_core::json!(0);
         assert!(json::from_value::<PmiDimension>(zero).is_err());
     }
 }

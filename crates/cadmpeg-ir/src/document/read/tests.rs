@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{CadirRead, ReadFailure, ReadOptions};
 use crate::examples::unit_cube;
@@ -230,6 +231,57 @@ fn listed<'m>(message: &'m str, field: &str) -> Vec<&'m str> {
         .and_then(|tail| tail.split(']').next())
         .map(|list| list.split(", ").filter(|id| !id.is_empty()).collect())
         .unwrap_or_default()
+}
+
+/// A sidecar read with the document loses the annotations of each record
+/// the read gives up and of each record it drops with one, keeps those of a
+/// record the read keeps, and gains the retained text of each part the read
+/// gives up (§3.3).
+#[test]
+fn a_given_up_record_takes_the_annotations_of_its_sidecar() {
+    let (ir, mut value) = wire();
+    let point = ir.geometry.points[0].id.as_str().to_owned();
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    let [entry] = read.report.as_slice() else {
+        panic!("one entry: {:?}", read.report);
+    };
+    let dropped = listed(&entry.message, "dropped");
+    let marked = listed(&entry.message, "marked");
+    assert!(dropped.contains(&point.as_str()), "{}", entry.message);
+    let [kept, ..] = marked.as_slice() else {
+        panic!("a marked record: {}", entry.message);
+    };
+    let kept = (*kept).to_owned();
+    let dropped: Vec<String> = dropped.into_iter().map(str::to_owned).collect();
+    let stub = read.document.native_unknowns("cadir").unwrap()[0]
+        .id
+        .clone();
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for id in dropped.iter().chain([&kept]) {
+        annotations.note(id, &stream, 0, None);
+    }
+    let mut sidecar =
+        crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
+    sidecar.annotations = annotations.build();
+
+    let (document, report, fidelity) = read.with_sidecar(sidecar).unwrap();
+
+    let keys: Vec<&str> = fidelity
+        .annotations
+        .provenance
+        .keys()
+        .map(crate::annotations::AnnotationKey::as_str)
+        .collect();
+    assert_eq!(keys, [kept.as_str()]);
+    assert!(fidelity.retained_record(stub.as_str()).is_some());
+    assert_eq!(report.len(), 1);
+    assert!(document
+        .geometry
+        .points
+        .iter()
+        .all(|kept| kept.id.as_str() != point));
 }
 
 /// Each record that needs a given-up record is dropped, transitively, until

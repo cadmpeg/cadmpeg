@@ -380,12 +380,12 @@ fn thread_requires_type_two_lists_and_closed_edge_members() -> TestResult {
         } else {
             "items"
         };
-        wire["kind"][list]["marker"] = serde_json::json!(3);
+        wire["kind"][list]["marker"] = cadmpeg_core::json!(3);
         candidate[position] = json::from_value(wire)?;
         assert!(!admitted(&source, &candidate));
     }
     let mut wire = json::to_value(&source)?;
-    wire["properties"]["marker"] = serde_json::json!(3);
+    wire["properties"]["marker"] = cadmpeg_core::json!(3);
     let wrong_marker = json::from_value(wire)?;
     assert!(!admitted(&wrong_marker, &properties));
     for members in [&[0][..], &[100][..], &[20][..]] {
@@ -593,7 +593,7 @@ fn thread_projects_parsed_metric_and_inch_sizes_with_native_polarities() -> Test
             assert!(extent.is_none());
             assert!(modeled.is_none());
             let mut invalid = json::to_value(&definitions[0])?;
-            invalid["controls"][1] = serde_json::json!(0xffff);
+            invalid["controls"][1] = cadmpeg_core::json!(0xffff);
             let invalid = [json::from_value(invalid)?];
             index.thread_definitions = &invalid;
             let fallback = project_thread(&ctx, &source, &label, &index)

@@ -482,7 +482,7 @@ fn compressed_reserved_fields_use_fixed_directory_right_justification() {
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(
         native.arenas()["entities"][0].fields().unwrap()["reserved"],
-        serde_json::json!(["202020204c454654", "2020205249474854"])
+        cadmpeg_core::json!(["202020204c454654", "2020205249474854"])
     );
 }
 

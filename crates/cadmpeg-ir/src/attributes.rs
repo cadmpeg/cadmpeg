@@ -245,13 +245,14 @@ mod tests {
         let target = AttributeTarget::Configuration(
             crate::features::ConfigurationId::mint("test:design:configuration#large").unwrap(),
         );
-        let wire = serde_json::json!({"kind": "configuration", "value": "test:design:configuration#large"});
+        let wire = cadmpeg_core::json!({"kind": "configuration", "value": "test:design:configuration#large"});
         assert_eq!(json::to_value(&target).unwrap(), wire);
         assert_eq!(json::from_value::<AttributeTarget>(wire).unwrap(), target);
         let value = super::AttributeValue::Parameter(
             crate::features::ParameterId::mint("test:design:parameter#mass").unwrap(),
         );
-        let wire = serde_json::json!({"kind": "parameter", "value": "test:design:parameter#mass"});
+        let wire =
+            cadmpeg_core::json!({"kind": "parameter", "value": "test:design:parameter#mass"});
         assert_eq!(json::to_value(&value).unwrap(), wire);
         assert_eq!(
             json::from_value::<super::AttributeValue>(wire).unwrap(),

@@ -197,7 +197,7 @@ fn continuation_wire_authenticates_every_redundant_word_and_offset() {
         "raw_control",
     ] {
         let mut invalid = wire.clone();
-        invalid[field] = serde_json::json!(0);
+        invalid[field] = cadmpeg_core::json!(0);
         assert!(
             json::from_value::<CatiaRollingBallContinuation>(invalid).is_err(),
             "{field}"
@@ -212,7 +212,7 @@ fn continuation_wire_authenticates_every_redundant_word_and_offset() {
         for slot in 0..2 {
             let mut invalid = wire.clone();
             let actual = invalid[field][slot].as_u64().expect("word");
-            invalid[field][slot] = serde_json::json!(actual ^ 1);
+            invalid[field][slot] = cadmpeg_core::json!(actual ^ 1);
             assert!(json::from_value::<CatiaRollingBallContinuation>(invalid).is_err());
         }
     }
@@ -222,16 +222,16 @@ fn continuation_wire_authenticates_every_redundant_word_and_offset() {
         "second_derivative_bits",
     ] {
         let mut invalid = wire.clone();
-        invalid["scalar_jet"][field][0] = serde_json::json!(0);
+        invalid["scalar_jet"][field][0] = cadmpeg_core::json!(0);
         assert!(json::from_value::<CatiaRollingBallContinuation>(invalid).is_err());
     }
     for field in ["terminal", "kind", "header_token", "payload"] {
         let mut invalid = wire.clone();
         match field {
-            "terminal" => invalid["scalar_jet"][field] = serde_json::json!(0),
-            "kind" => invalid["scalar_jet"] = serde_json::json!({"kind":"absent"}),
-            "header_token" => invalid["frame"][field] = serde_json::json!(256),
-            "payload" => invalid["frame"][field] = serde_json::json!(""),
+            "terminal" => invalid["scalar_jet"][field] = cadmpeg_core::json!(0),
+            "kind" => invalid["scalar_jet"] = cadmpeg_core::json!({"kind":"absent"}),
+            "header_token" => invalid["frame"][field] = cadmpeg_core::json!(256),
+            "payload" => invalid["frame"][field] = cadmpeg_core::json!(""),
             _ => unreachable!(),
         }
         assert!(json::from_value::<CatiaRollingBallContinuation>(invalid).is_err());
@@ -338,7 +338,7 @@ fn continuation_preserves_sheet_tail_fields_without_scalar_interpretation() {
                 if matches!(form, SheetTailForm::Explicit) {
                     let mut changed = json;
                     changed["scalar_jet"]["first_derivative_bits"][0] =
-                        serde_json::json!(1.0_f64.to_bits());
+                        cadmpeg_core::json!(1.0_f64.to_bits());
                     assert!(json::from_value::<CatiaRollingBallContinuation>(changed).is_err());
                 }
             }

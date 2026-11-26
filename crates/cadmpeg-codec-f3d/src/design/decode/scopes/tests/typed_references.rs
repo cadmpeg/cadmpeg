@@ -108,7 +108,7 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
         json::from_value::<DesignExtrudePrologue>(wire.clone()).unwrap(),
         prologue
     );
-    wire["opaque_distance_word"]["value"] = serde_json::json!(0);
+    wire["opaque_distance_word"]["value"] = cadmpeg_core::json!(0);
     assert!(json::from_value::<DesignExtrudePrologue>(wire).is_err());
 
     for (offset, value) in [(26, 2), (30, 1), (35, 0), (36, 1), (option_offset + 4, 1)] {

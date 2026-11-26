@@ -47,7 +47,8 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         Some("fcstd:schema-9")
     );
     assert_eq!(
-        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
+        cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal")["refusal"]
+            ["kind"],
         "unknown_explicit"
     );
 
@@ -69,7 +70,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     };
     assert_eq!(
         json::to_value(refusal).expect("serialize refusal")["refusal"],
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": "default_unavailable",
             "target": "fcstd:schema-4",
             "source": {"kind": "foreign_format", "value": "step"},
@@ -91,7 +92,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     let EncodeError::UnsupportedTarget(refusal) = &replay else {
         panic!("expected a target refusal, got {replay}");
     };
-    let wire = serde_json::to_value(refusal).expect("serialize refusal");
+    let wire = cadmpeg_core::serde_erase::json::to_value(refusal).expect("serialize refusal");
     assert_eq!(
         (
             &wire["refusal"]["kind"],
@@ -99,9 +100,9 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
             &wire["refusal"]["requested"],
         ),
         (
-            &serde_json::json!("explicit_unavailable"),
-            &serde_json::json!("fcstd:schema-2"),
-            &serde_json::json!("fcstd:schema-2"),
+            &cadmpeg_core::json!("explicit_unavailable"),
+            &cadmpeg_core::json!("fcstd:schema-2"),
+            &cadmpeg_core::json!("fcstd:schema-2"),
         )
     );
 }
@@ -630,7 +631,7 @@ fn inherit_writes_a_source_that_records_no_dialect_as_its_declared_dialect() {
         .clone();
     let meta = ir.source.take().expect("the decode records a source");
     ir.source = Some(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": meta.format()},
             "attributes": meta.attributes,
         }))
@@ -908,7 +909,7 @@ fn a_document_whose_held_digest_does_not_compute_reports_the_edit_dropped() {
         .set_arena(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             "unknowns",
-            &[serde_json::json!({"id": unknown, "field": "value"})],
+            &[cadmpeg_core::json!({"id": unknown, "field": "value"})],
         )
         .expect("set the unknowns arena");
     let (report, bytes) = patched(&ir, Some(CORE_DESIGN.source_fidelity()));

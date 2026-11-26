@@ -197,6 +197,7 @@ fn decoded(
 ) -> Result<Decoded, CodecError> {
     let annotations = if ctx.depth() >= DecodeDepth::Geometry {
         let (definition, minted) = design_v11::root_definition(&mut ir)?;
+        let mut builder = AnnotationBuilder::resume(annotations);
         if ctx.depth() >= DecodeDepth::Design {
             cadmpeg_ir::design::projection::project_layer(
                 ctx,
@@ -205,8 +206,12 @@ fn decoded(
                 &mut body.losses,
                 |ir, _| design_v11::project(ir, definition.clone()),
             )?;
+            cadmpeg_ir::design::projection::restate_exactness(
+                &ir,
+                &mut builder,
+                design_v11::RESTATEMENT,
+            )?;
         }
-        let mut builder = AnnotationBuilder::resume(annotations);
         if minted {
             builder.exactness(definition, Exactness::Derived);
         }
@@ -357,12 +362,12 @@ fn build_metadata_ir(
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
             annotations.note(
-                unknown.id().as_str(),
+                unknown.id(),
                 &source_stream,
                 cadmpeg_core::decode::u64_from_index(stream.file_offset),
                 Some(stream.kind().label()),
             );
-            annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+            annotations.exactness(unknown.id(), Exactness::Derived);
             scan.note_untyped(unknown.id(), [ArenaClass::Model]);
             unknowns.push(unknown);
         }

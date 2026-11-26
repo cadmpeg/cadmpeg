@@ -3,10 +3,11 @@
 use crate::test_support::review::{decode, edit, members, parameter, validate, wire};
 use crate::test_support::{codec, fixture};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::CodecBackend;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 fn kind(wire: &Value, ordinal: usize) -> &Value {
     &wire["model"]["features"][ordinal]["definition"]["value"]["kind"]

@@ -7,8 +7,9 @@ use crate::test_support::review::{
     decode, edit, members, parameter, two_body_step, validate, wire,
 };
 use base64::Engine;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io::Write;
 
 fn kind(wire: &Value, ordinal: usize) -> &Value {

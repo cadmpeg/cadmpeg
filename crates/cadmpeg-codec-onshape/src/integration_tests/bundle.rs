@@ -9,8 +9,9 @@ use std::path::Path;
 use super::up_to_next::up_to_next;
 use crate::reader::Model;
 use crate::test_support::*;
+use cadmpeg_core::json;
 use cadmpeg_ir::codec::Codec;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 pub(super) fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
     let mut report = Report::default();

@@ -6,7 +6,7 @@ use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::{give_up, Arena, Seed};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
@@ -43,10 +43,20 @@ fn seed(home: &str, field: &str, id: &str) -> Seed {
 /// Gives up `seed` from `ir` and returns what the give-up did and the
 /// source fidelity that holds its retained record.
 fn run(ir: &mut CadIr, seed: Seed) -> (Outcome, SourceFidelity) {
+    run_annotated(ir, seed, crate::Annotations::default())
+}
+
+/// [`run`] with `annotations` in the source fidelity.
+fn run_annotated(
+    ir: &mut CadIr,
+    seed: Seed,
+    annotations: crate::Annotations,
+) -> (Outcome, SourceFidelity) {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).expect("root");
     let mut fidelity = SourceFidelity::for_root(root);
+    fidelity.annotations = annotations;
     let mut outcome = Outcome::default();
     let losses = give_up(
         &ctx,
@@ -62,9 +72,12 @@ fn run(ir: &mut CadIr, seed: Seed) -> (Outcome, SourceFidelity) {
                 marked: released.marked.clone(),
                 states: released
                     .states
-                    .iter()
-                    .map(|(path, state)| {
-                        (path.clone(), (state.dropped.clone(), state.marked.clone()))
+                    .values()
+                    .map(|state| {
+                        (
+                            state.path.clone(),
+                            (state.dropped.clone(), state.marked.clone()),
+                        )
                     })
                     .collect(),
                 tail: released.tail(&[]),
@@ -1020,6 +1033,48 @@ fn a_carrier_left_with_no_user_is_dropped() {
     assert!(!holds(&ir, face.surface.as_str()));
     let after = findings(&ir, &checks);
     assert!(after.is_empty(), "{after:#?}");
+}
+
+/// A give-up removes the annotations of each record it removes: a
+/// top-level record, and a record of a delta under its qualified key. The
+/// annotations of a record it keeps, and a key that named no record before
+/// it, stay (§3.2, §3.3).
+#[test]
+fn a_given_up_record_and_its_delta_records_take_their_annotations() {
+    use crate::annotations::{AnnotationKey, StreamHandle};
+    let (mut ir, shell, face, own) = stored_state();
+    let evaluation = after_extrude(&ir).id.clone();
+    let dangling = "test:design:face#missing";
+    let qualified = [
+        AnnotationKey::in_delta(&evaluation, &face),
+        AnnotationKey::in_delta(&evaluation, &own),
+    ];
+    let stream = StreamHandle::new(crate::stream_name!("test:source"));
+    let mut builder = crate::AnnotationBuilder::new();
+    for key in [shell.as_str(), face.as_str(), evaluation.as_str(), dangling]
+        .map(str::to_owned)
+        .into_iter()
+        .chain(qualified.iter().map(AnnotationKey::to_string))
+    {
+        builder.note(&key, &stream, 0, None);
+        builder.exactness(&key, crate::provenance::Exactness::Inferred);
+    }
+    let (_, fidelity) = run_annotated(&mut ir, seed("geometry", "shells", &shell), builder.build());
+    let annotations = &fidelity.annotations;
+    assert!(!holds(&ir, &face) && !holds(&ir, &shell));
+    assert!(delta(&ir).records.faces.is_empty());
+    for gone in [&face, &shell]
+        .map(String::as_str)
+        .into_iter()
+        .chain(qualified.iter().map(AnnotationKey::as_str))
+    {
+        assert!(!annotations.provenance.contains_key(gone), "{gone}");
+        assert!(!annotations.exactness().contains_key(gone), "{gone}");
+    }
+    for kept in [evaluation.as_str(), dangling] {
+        assert!(annotations.provenance.contains_key(kept), "{kept}");
+        assert!(annotations.exactness().contains_key(kept), "{kept}");
+    }
 }
 
 /// The path in a loss of the stored state `evaluation`.

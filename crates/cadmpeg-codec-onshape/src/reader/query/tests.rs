@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super as query;
 use crate::test_support::projection::{changed, selected};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::fmt::Write as _;
 
 #[test]
