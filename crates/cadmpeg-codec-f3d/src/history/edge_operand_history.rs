@@ -842,6 +842,74 @@ pub(super) fn common_surface_patch_reference(left: [u32; 2], right: [u32; 2]) ->
         .flatten()
 }
 
+/// The faces of one prefix operand: the exact-selector faces of every Design
+/// reference of its names, or that reference's alternate-selector faces when
+/// its exact set is empty.
+pub(super) fn operand_terminal_faces(
+    lane: &[crate::records::dimensions::DesignRecipeReference],
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    let mut faces = Vec::new();
+    for reference in lane {
+        let reference_faces = if reference.candidate_faces.is_empty() {
+            &reference.alternate_selector_faces
+        } else {
+            &reference.candidate_faces
+        };
+        for face in reference_faces {
+            if !faces.contains(face) {
+                faces.push(face.clone());
+            }
+        }
+    }
+    faces
+}
+
+/// The one candidate-boundary edge that both edge sets of a zero-payload
+/// standard recipe's two first-side ordinals hold.
+pub(super) fn primary_side_shared_edge(
+    structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
+    mut edges: impl FnMut(usize) -> Option<Vec<i64>>,
+    boundary_edges: &[i64],
+) -> Option<i64> {
+    let structure = structure?;
+    if structure.root != 2
+        || structure.sides.len() != 2
+        || structure.sides.iter().any(|side| {
+            side.scalars.len() != 2 || side.payload_prefix != [0] || !side.entries.is_empty()
+        })
+    {
+        return None;
+    }
+    let primary = &structure.sides[0];
+    let mut ordinals = Vec::new();
+    for value in std::iter::once(primary.header_value)
+        .chain(primary.scalars.iter().copied())
+        .filter(|value| *value != 0)
+    {
+        let ordinal = usize::try_from(value).ok()?.checked_sub(1)?;
+        if !ordinals.contains(&ordinal) {
+            ordinals.push(ordinal);
+        }
+    }
+    let [first, second] = ordinals.as_slice() else {
+        return None;
+    };
+    let first = edges(*first)?;
+    let second = edges(*second)?;
+    let mut candidate = None;
+    for edge in first
+        .iter()
+        .copied()
+        .filter(|edge| second.contains(edge) && boundary_edges.contains(edge))
+    {
+        if candidate.is_some_and(|selected| selected != edge) {
+            return None;
+        }
+        candidate = Some(edge);
+    }
+    candidate
+}
+
 pub(super) fn bind_active_edge_operand_candidates<'a>(
     operand: &mut crate::records::topology::edge_identity::DesignEdgeOperand,
     topologies: &[(i64, &'a AsmHistoricalTopology)],
@@ -877,10 +945,27 @@ pub(super) fn bind_active_edge_operand_candidates<'a>(
             collect_reference_edge_sets(&reference_faces, topology, topology_queries);
         let all_reference_edge_sets =
             collect_reference_edge_sets(&all_reference_faces, topology, topology_queries);
-        let edge = crate::design::edge_resolve::resolved_edge_candidate_intersection(
+        let mut edge = crate::design::edge_resolve::resolved_edge_candidate_intersection(
             &selectors,
             reference_edge_sets.iter().map(Vec::as_slice),
         );
+        let reference_primary = primary_side_shared_edge(
+            operand.recipe_structure.as_ref(),
+            |ordinal| all_reference_edge_sets.get(ordinal).cloned(),
+            &boundary_edges,
+        );
+        if edge.is_none() && reference_primary.is_none() {
+            let lanes = crate::records::dimensions::reference_lanes(&operand.recipe_references);
+            edge = primary_side_shared_edge(
+                operand.recipe_structure.as_ref(),
+                |ordinal| {
+                    let faces = operand_terminal_faces(lanes.get(ordinal)?);
+                    let faces = super::selection::faces_in_topology(&faces, topology);
+                    Some(face_boundary_edges(&faces, topology, topology_queries))
+                },
+                &boundary_edges,
+            );
+        }
         if unique.is_some() {
             return Ok(());
         }
