@@ -12,7 +12,8 @@ use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 use crate::SldprtCodec;
 
-/// Plans an inherited write through the sealed encoder and writes its bytes.
+/// Plans a write that names no target, which inherits the dialect of a
+/// same-format source, through the sealed encoder and writes its bytes.
 pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
@@ -22,7 +23,8 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Plans an inherited write whose patch path declines the edited document:
+/// Plans a write that names no target and whose patch path declines the
+/// edited document:
 /// the writer synthesizes it without its `SolidWorks` history (§3.4, Paths).
 /// Checks that the output decodes, and returns the synthesis cause the
 /// report states, which says why the patch declined.
@@ -44,7 +46,7 @@ pub(crate) fn plan_fixture_write_with_native_envelope_declined(
     let mut output = Vec::new();
     let report = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut output)
@@ -230,7 +232,7 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
 ) -> Result<WritePath, EncodeError> {
     let plan = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
@@ -256,7 +258,7 @@ fn write_without_stale_solid(
     let mut output = Vec::new();
     let report = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut output)

@@ -35,7 +35,7 @@ fn decoded_object_names(payload: &[u8], parent: &str) -> Vec<crate::records::Fea
 fn named_invalid(ir: &cadmpeg_ir::CadIr, fidelity: &cadmpeg_ir::SourceFidelity, finding: &str) {
     let report = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(fidelity)),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())
@@ -1726,6 +1726,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         &native.feature_histories,
         std::slice::from_ref(&rename),
         cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
 
@@ -1756,6 +1757,7 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
         &native.feature_histories,
         &[],
         cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
 

@@ -46,6 +46,7 @@ pub(super) fn project(
     let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
     )
     .unwrap();
     let mut timeline = super::super::tree::timeline(&native.feature_histories).unwrap();

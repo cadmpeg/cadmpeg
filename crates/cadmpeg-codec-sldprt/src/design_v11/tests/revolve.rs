@@ -192,6 +192,7 @@ fn part_in_order(
     let native = SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
     )
     .unwrap();
     let id = |name: &str| {

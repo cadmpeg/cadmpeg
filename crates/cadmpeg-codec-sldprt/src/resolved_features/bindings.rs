@@ -38,6 +38,8 @@ use cadmpeg_ir::features::profiles::PathRef;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::units::UnitVector3;
 use std::collections::{HashMap, HashSet};
 
@@ -855,11 +857,16 @@ pub(crate) fn bind_sweep_profile_inputs(model_features: &mut [cadmpeg_ir::featur
     }
 }
 
+/// Binds the scalar operands and relation instances of `lanes` under the
+/// part's linear tolerance `linear`, and returns the loss notes of their
+/// sketch dimensions that form no relation instance.
 pub(crate) fn bind_scalar_operands(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+    linear: PositiveLength,
+) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
+    let mut notes = Vec::new();
     let represented_sketches = represented_sketch_features(histories, lanes);
     let metadata_ids = history_metadata_ids(histories);
     let features_by_id = crate::records::HistoryFeatures::new(histories);
@@ -927,16 +934,20 @@ pub(crate) fn bind_scalar_operands(
                 scalar.feature_ref = Some((*parent_id).to_owned());
             }
         }
-        finalize_lane_bindings(ctx, histories, lane)?;
+        notes.extend(finalize_lane_bindings(ctx, histories, lane, linear)?);
     }
-    Ok(())
+    Ok(notes)
 }
 
+/// Completes the bindings of `lane` under the part's linear tolerance
+/// `linear`, and returns the loss notes of its sketch dimensions that form no
+/// relation instance.
 pub(crate) fn finalize_lane_bindings(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
-) -> Result<(), cadmpeg_core::CodecError> {
+    linear: PositiveLength,
+) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
     normalize_indexed_curve_entities(lane);
     let mut marker_ids = HashMap::<String, HashMap<u32, Vec<(String, bool)>>>::new();
     for entity in &lane.sketch_entities {
@@ -1020,12 +1031,13 @@ pub(crate) fn finalize_lane_bindings(
     }
     let intervals = feature_intervals(histories, lane);
     lane.relation_bindings = relation_bindings(&lane.id, &lane.classes, &lane.scalars, &intervals)?;
-    lane.relation_instances = relation_instances(histories, lane)?;
+    let relations = relation_instances(histories, lane, linear)?;
+    lane.relation_instances = relations.instances;
     lane.body_selections = compact_body_selections(histories, lane)?;
     lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
     lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
     lane.generated_surface_identities = generated_surface_identities(lane)?;
-    Ok(())
+    Ok(relations.notes)
 }
 
 fn represented_sketch_features(
@@ -1066,12 +1078,16 @@ fn represented_sketch_features(
     represented
 }
 
+/// Binds the detached sketch objects of the supplemental lanes in `lanes`
+/// again under the part's linear tolerance `linear`, and returns the loss
+/// notes of their sketch dimensions that form no relation instance.
 pub(crate) fn bind_unresolved_detached_sketch_objects(
     ctx: &DecodeContext<'_>,
     model_features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &mut [FeatureInputLane],
-) -> Result<(), cadmpeg_core::CodecError> {
+    linear: PositiveLength,
+) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
     let mut unresolved = HashSet::new();
     for feature in model_features {
         if matches!(
@@ -1095,14 +1111,15 @@ pub(crate) fn bind_unresolved_detached_sketch_objects(
     {
         represented.insert(feature.id.clone());
     }
+    let mut notes = Vec::new();
     for lane in lanes
         .iter_mut()
         .filter(|lane| is_supplemental_config_lane(lane))
     {
         bind_detached_legacy_sketch_objects(ctx, histories, &represented, lane)?;
-        finalize_lane_bindings(ctx, histories, lane)?;
+        notes.extend(finalize_lane_bindings(ctx, histories, lane, linear)?);
     }
-    Ok(())
+    Ok(notes)
 }
 
 pub(super) fn bind_detached_legacy_sketch_objects(

@@ -8,6 +8,7 @@ pub(crate) fn sldprt_native(ir: &cadmpeg_ir::CadIr) -> crate::native::SldprtNati
             .namespace("sldprt")
             .expect("SLDPRT native namespace"),
         cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
     )
     .unwrap()
 }

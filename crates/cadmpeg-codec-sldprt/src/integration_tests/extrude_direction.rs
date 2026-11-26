@@ -465,7 +465,7 @@ fn edit_and_write(
     write_editable(&decoded)
 }
 
-/// Writes `decoded` through `Inherit` with its sidecar.
+/// Writes `decoded` with a request that names no target, with its sidecar.
 fn write_editable(
     decoded: &cadmpeg_test_support::EditableDecodeResult,
 ) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {

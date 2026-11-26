@@ -69,7 +69,8 @@ pub(crate) fn with_decode_policy<T>(
     f(&ctx)
 }
 
-/// Plans an inherited write through the sealed encoder and writes its bytes.
+/// Plans a write that names no target, which inherits the dialect of a
+/// same-format source, through the sealed encoder and writes its bytes.
 pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
@@ -79,7 +80,8 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Write `ir` under an inherited target, with `fidelity` or source-less, and
+/// Write `ir` under a request that names no target, with `fidelity` or
+/// source-less, and
 /// assert that the file is written, decodes again, and charges a loss whose
 /// code is `code` (`namespace/code`). The loss message or the synthesis cause
 /// holds `fragment`.

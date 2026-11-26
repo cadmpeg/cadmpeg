@@ -261,7 +261,13 @@ fn shaping_edits(
         .ir
         .native
         .namespace("sldprt")
-        .map(|namespace| crate::native::SldprtNative::load_under(namespace, ctx.policy().limits))
+        .map(|namespace| {
+            crate::native::SldprtNative::load_under(
+                namespace,
+                ctx.policy().limits,
+                input.ir.tolerances.linear,
+            )
+        })
         .transpose()
         .map_err(CodecError::from)
     {

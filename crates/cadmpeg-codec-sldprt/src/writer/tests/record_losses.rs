@@ -48,7 +48,7 @@ fn appearance(schema: Option<&str>) -> Appearance {
 fn assert_loss(ir: &CadIr, code: SldprtLossCode, prefix: &str) {
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap();
     let loss = plan
@@ -121,7 +121,7 @@ fn unbound_appearance_without_material_schema_has_counted_export_loss() {
     ir.model.appearances[0].schema = Some("moVisualProperties_c".into());
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap();
     assert!(!plan
@@ -155,7 +155,7 @@ fn tessellation_body_faces_and_deflection_each_have_export_loss() {
     ir.model.tessellations.push(mesh);
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap();
     for field in ["body binding", "face binding", "chordal deflection"] {

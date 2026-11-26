@@ -58,6 +58,7 @@ fn component_reference_curve_is_a_native_sweep_path() {
     let native = crate::native::SldprtNative::load_under(
         decoded.ir().native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
+        decoded.ir().tolerances.linear,
     )
     .unwrap();
     let (lane, class) = native

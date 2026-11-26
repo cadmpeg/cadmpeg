@@ -385,8 +385,12 @@ impl SldprtCodec {
                 .native
                 .namespace("sldprt")
                 .map(|namespace| {
-                    native::SldprtNative::load_under(namespace, ctx.policy().limits)
-                        .map_err(CodecError::from)
+                    native::SldprtNative::load_under(
+                        namespace,
+                        ctx.policy().limits,
+                        ir.tolerances.linear,
+                    )
+                    .map_err(CodecError::from)
                 })
                 .transpose()?,
         };

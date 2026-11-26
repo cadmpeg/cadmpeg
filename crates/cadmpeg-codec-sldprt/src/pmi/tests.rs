@@ -1503,6 +1503,7 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
     if let Err(error) = crate::native::SldprtNative::load_under(
         namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     ) {
         assert!(!matches!(
             cadmpeg_core::CodecError::from(error),

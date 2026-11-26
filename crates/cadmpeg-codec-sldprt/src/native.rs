@@ -340,10 +340,13 @@ impl SldprtNative {
         records.chain(objects)
     }
 
-    /// Loads the records of `namespace` under the caller's `limits`.
+    /// Loads the records of `namespace` under the caller's `limits`; `linear`
+    /// is the linear tolerance of the document that holds it, under which its
+    /// relation instances are derived.
     pub(crate) fn load_under(
         namespace: &cadmpeg_ir::NativeNamespace,
         limits: cadmpeg_core::decode::ResourceLimits,
+        linear: cadmpeg_ir::scalar::PositiveLength,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy { limits };
@@ -355,12 +358,13 @@ impl SldprtNative {
                 )
             })?;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-        Self::load_with_context(&ctx, namespace)
+        Self::load_with_context(&ctx, namespace, linear)
     }
 
     pub(crate) fn load_with_context(
         ctx: &DecodeContext<'_>,
         namespace: &cadmpeg_ir::NativeNamespace,
+        linear: cadmpeg_ir::scalar::PositiveLength,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         macro_rules! read_arena {
             ($name:literal) => {
@@ -833,7 +837,7 @@ impl SldprtNative {
             lane.sketch_entities
                 .sort_by_key(super::records::SketchInputEntity::ordinal);
         }
-        lanes::admit(&native, ctx)?;
+        lanes::admit(&native, ctx, linear)?;
         Ok(native)
     }
 

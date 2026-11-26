@@ -241,10 +241,16 @@ fn native_load_with_context_matches_load() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        crate::native::SldprtNative::load_with_context(&service, namespace).unwrap(),
+        crate::native::SldprtNative::load_with_context(
+            &service,
+            namespace,
+            cadmpeg_ir::units::Tolerances::default().linear
+        )
+        .unwrap(),
         crate::native::SldprtNative::load_under(
             namespace,
-            cadmpeg_core::decode::ResourceLimits::default()
+            cadmpeg_core::decode::ResourceLimits::default(),
+            cadmpeg_ir::units::Tolerances::default().linear
         )
         .unwrap()
     );
@@ -393,6 +399,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let typed = crate::native::SldprtNative::load_under(
         original,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
@@ -406,7 +413,8 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         typed,
         crate::native::SldprtNative::load_under(
             &round_trip,
-            cadmpeg_core::decode::ResourceLimits::default()
+            cadmpeg_core::decode::ResourceLimits::default(),
+            cadmpeg_ir::units::Tolerances::default().linear
         )
         .unwrap()
     );
@@ -599,6 +607,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     let expected = crate::native::lanes::expected_lanes(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &native,
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap()
     .remove(0)
@@ -619,6 +628,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
     let stored = crate::native::SldprtNative::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
     assert_eq!(
@@ -722,6 +732,7 @@ fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
     let error = crate::native::SldprtNative::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
     assert!(error.to_string().contains("relation instance"));
@@ -860,6 +871,7 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
         let error = crate::native::SldprtNative::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
+            cadmpeg_ir::units::Tolerances::default().linear,
         )
         .unwrap_err();
         assert!(error.to_string().contains(message), "{arena}: {error}");
@@ -872,6 +884,7 @@ fn native_load_rejects_fabricated_payload_lane_rows_from_json() {
     let error = crate::native::SldprtNative::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
     assert!(error.to_string().contains("omits marker"), "{error}");
@@ -908,6 +921,7 @@ fn native_load_rejects_edited_object_name_identity_from_json() {
     let error = crate::native::SldprtNative::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
     assert!(
@@ -936,6 +950,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     crate::native::SldprtNative::load_under(
         &control,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .expect("the unedited namespace loads");
 
@@ -958,6 +973,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     let error = crate::native::SldprtNative::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
     assert!(
@@ -974,6 +990,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
     let error = crate::native::SldprtNative::load_under(
         &namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
     assert!(
@@ -991,6 +1008,7 @@ fn native_load_admits_the_unedited_namespace_and_refuses_every_object_name_edit(
         let error = crate::native::SldprtNative::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
+            cadmpeg_ir::units::Tolerances::default().linear,
         )
         .unwrap_err();
         assert!(
@@ -1045,6 +1063,7 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let error = crate::native::SldprtNative::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
+            cadmpeg_ir::units::Tolerances::default().linear,
         )
         .unwrap_err();
         assert!(error.to_string().contains(message), "{field}: {error}");
@@ -1066,6 +1085,7 @@ fn native_load_rejects_invalid_sketch_marker_positions_from_json() {
         let error = crate::native::SldprtNative::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
+            cadmpeg_ir::units::Tolerances::default().linear,
         )
         .unwrap_err();
         assert!(error.to_string().contains(message), "{field}: {error}");
@@ -1098,6 +1118,7 @@ fn native_load_rejects_duplicate_history_ordinals_from_json() {
         let error = crate::native::SldprtNative::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
+            cadmpeg_ir::units::Tolerances::default().linear,
         )
         .unwrap_err();
         assert!(error.to_string().contains(message), "{arena}: {error}");
@@ -1128,6 +1149,7 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
     let mut typed = crate::native::SldprtNative::load_under(
         namespace,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
 
@@ -1147,6 +1169,7 @@ fn native_load_refuses_a_forged_object_name_length_byte_after_a_store() {
     let error = crate::native::SldprtNative::load_under(
         &forged,
         cadmpeg_core::decode::ResourceLimits::default(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
     assert!(
@@ -1201,6 +1224,7 @@ fn native_load_refuses_every_object_name_value_edit_and_leaves_the_scalar_arena_
         let error = crate::native::SldprtNative::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
+            cadmpeg_ir::units::Tolerances::default().linear,
         )
         .unwrap_err();
         assert!(
@@ -1241,6 +1265,7 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
         let error = crate::native::SldprtNative::load_under(
             &namespace,
             cadmpeg_core::decode::ResourceLimits::default(),
+            cadmpeg_ir::units::Tolerances::default().linear,
         )
         .unwrap_err();
         assert!(

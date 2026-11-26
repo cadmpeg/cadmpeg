@@ -193,6 +193,7 @@ fn a_real_feature_rename_replaces_a_patched_member_and_charges_its_metadata() {
         &native.feature_histories,
         &renames,
         cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
     assert_ne!(generated, original);
@@ -582,7 +583,8 @@ fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
                 lane,
                 &native.feature_histories,
                 &[],
-                cadmpeg_core::decode::ResourceLimits::service()
+                cadmpeg_core::decode::ResourceLimits::service(),
+                cadmpeg_ir::units::Tolerances::default().linear
             )
             .unwrap(),
             original
@@ -649,7 +651,8 @@ fn marker_replay_requires_reparsed_membership_identity_and_values() {
                 &changed,
                 &native.feature_histories,
                 &[],
-                cadmpeg_core::decode::ResourceLimits::service()
+                cadmpeg_core::decode::ResourceLimits::service(),
+                cadmpeg_ir::units::Tolerances::default().linear
             )
             .is_err(),
             "mutation {mutation}"

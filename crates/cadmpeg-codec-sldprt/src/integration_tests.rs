@@ -725,7 +725,7 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     let ir = source_less_cube();
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .expect("nothing to inherit, so the catalog default stands in");
     assert!(matches!(
@@ -754,6 +754,8 @@ mod partial_decode;
 mod partition_sketches;
 
 mod configuration_states;
+
+mod dimension_class_loss;
 
 fn face_table_bytes() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());

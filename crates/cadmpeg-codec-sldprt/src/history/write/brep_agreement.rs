@@ -480,7 +480,10 @@ fn native_edits(
     let source_native = source
         .native
         .namespace("sldprt")
-        .map(|namespace| SldprtNative::load_under(namespace, limits).map_err(CodecError::from))
+        .map(|namespace| {
+            SldprtNative::load_under(namespace, limits, source.tolerances.linear)
+                .map_err(CodecError::from)
+        })
         .transpose()?;
     let baseline = source_native
         .iter()

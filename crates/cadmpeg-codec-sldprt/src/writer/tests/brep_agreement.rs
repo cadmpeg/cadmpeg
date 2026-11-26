@@ -45,7 +45,7 @@ fn write(decoded: &EditableDecodeResult) -> (ExportReport, Vec<u8>) {
     let mut output = Vec::new();
     let report = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut output)
@@ -795,7 +795,7 @@ fn a_dependency_its_operands_do_not_state_is_written_and_named() {
     let ir = decoded.ir().clone();
     let report = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(decoded.source_fidelity())),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut Vec::new())

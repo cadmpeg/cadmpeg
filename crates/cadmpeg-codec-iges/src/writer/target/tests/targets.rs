@@ -41,9 +41,9 @@ fn inherit(
 /// The flagship case: `convert in.igs -o out.igs` on a file that is not the
 /// catalog default keeps the file it was handed.
 ///
-/// The command line builds `Inherit` for a same-format conversion, and the
-/// resolved dialect is then the source's by construction, so the replay law
-/// admits byte replay. Under the catalog default this file would have been
+/// The command line names no target for a same-format conversion, so the
+/// request inherits as `Inherit` does, the resolved dialect is the source's
+/// by construction, and the replay law admits byte replay. Under the catalog default this file would have been
 /// silently rewritten as 5.3.
 #[test]
 fn inherit_replays_a_non_default_version_verbatim() {

@@ -1651,7 +1651,12 @@ fn source_less_lanes(
         &arena,
         &cadmpeg_core::decode::DecodePolicy { limits },
     )?;
-    bind_scalar_operands(&ctx, &native.feature_histories, &mut lanes)?;
+    bind_scalar_operands(
+        &ctx,
+        &native.feature_histories,
+        &mut lanes,
+        ir.tolerances.linear,
+    )?;
     Ok(lanes)
 }
 

@@ -195,7 +195,7 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
     let mut encoded = Vec::new();
     let report = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -280,7 +280,7 @@ fn semantic_writer_emits_face_records_deterministically() {
         let mut encoded = Vec::new();
         crate::test_support::plan_fixture_with_native_envelope(
             EncodeInput::new(&ir, None),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut encoded))
         .unwrap();
@@ -667,7 +667,7 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();
@@ -948,7 +948,7 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();

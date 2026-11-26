@@ -206,6 +206,7 @@ fn parameters_with_scalars(
     let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
     )
     .unwrap();
     let mut v10 = ir.model.parameters.clone();
@@ -1398,6 +1399,7 @@ fn parameters_with_manager(
     let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
     )
     .unwrap();
     let position = |feature: &str, name: &str| {

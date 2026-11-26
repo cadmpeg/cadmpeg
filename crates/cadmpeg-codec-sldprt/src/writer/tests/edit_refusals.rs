@@ -940,6 +940,7 @@ fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
         crate::native::SldprtNative::load_under(
             ir.native.namespace("sldprt").unwrap(),
             cadmpeg_core::decode::ResourceLimits::default(),
+            ir.tolerances.linear,
         )
         .unwrap()
         .feature_histories
@@ -1233,6 +1234,7 @@ fn an_unedited_lane_is_written_as_stored() {
         &native.feature_histories,
         &[],
         cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
     assert_eq!(written, lane.native_payload.to_vec());
@@ -1243,6 +1245,7 @@ fn an_unedited_lane_is_written_as_stored() {
         &native.feature_histories,
         &[],
         cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
     assert!(

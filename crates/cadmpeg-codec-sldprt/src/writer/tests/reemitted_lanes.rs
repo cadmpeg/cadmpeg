@@ -53,6 +53,7 @@ fn a_reemitted_lane_keeps_a_reclassified_markers_code() {
         &[],
         &[],
         cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
     assert_eq!(&written[167..171], &1u32.to_le_bytes());
@@ -87,6 +88,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         &[],
         &[],
         cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
     assert_eq!(&written[150 + 48..150 + 170], &payload[150 + 48..150 + 170]);
@@ -100,6 +102,7 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         &[],
         &[],
         cadmpeg_core::decode::ResourceLimits::service(),
+        cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
     assert!(
@@ -126,6 +129,7 @@ fn a_config_objects_lane_is_written_to_its_own_member() {
         let native = crate::native::SldprtNative::load_under(
             decoded.ir().native.namespace("sldprt").unwrap(),
             cadmpeg_core::decode::ResourceLimits::default(),
+            decoded.ir().tolerances.linear,
         )
         .unwrap();
         let mut lanes = native
@@ -175,6 +179,7 @@ fn a_config_objects_lane_without_provenance_is_written_to_its_own_member() {
         let native = crate::native::SldprtNative::load_under(
             decoded.ir().native.namespace("sldprt").unwrap(),
             cadmpeg_core::decode::ResourceLimits::default(),
+            decoded.ir().tolerances.linear,
         )
         .unwrap();
         let mut lanes = native

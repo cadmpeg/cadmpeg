@@ -70,7 +70,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     let mut base_bytes = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&base, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut base_bytes))
     .unwrap();
@@ -93,7 +93,7 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
         let mut bytes = Vec::new();
         crate::test_support::plan_fixture_with_native_envelope(
             EncodeInput::new(&moved, None),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();

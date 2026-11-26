@@ -85,7 +85,7 @@ pub(super) fn export_messages<'r>(
         .collect()
 }
 
-/// Writes `ir` through `Inherit` and decodes the file.
+/// Writes `ir` with a request that names no target and decodes the file.
 pub(super) fn write_and_read_back(
     ir: &cadmpeg_ir::CadIr,
 ) -> (
@@ -169,8 +169,9 @@ fn a_repeated_entry_name_is_written_once_and_reported() {
     );
 }
 
-/// An entry the document no longer holds is left out of the archive, and the
-/// report names the ledger span of its ZIP member.
+/// An entry the document no longer holds is left out of the archive. The
+/// report names each property that names it, and no ledger span of its ZIP
+/// member, since those properties account for the member.
 #[test]
 fn a_removed_entry_is_left_out_and_its_member_is_reported() {
     let decoded = FcstdCodec
@@ -188,14 +189,7 @@ fn a_removed_entry_is_left_out_and_its_member_is_reported() {
     let removed = entries.remove(index);
     let naming = properties_naming(&ir, removed.name());
     replace_arena(&mut ir, "entries", &entries);
-    let payload_spans = native_arena::<crate::native::ArchiveSpan>(&ir, "physical_ledger")
-        .into_iter()
-        .filter(|span| {
-            matches!(&span.role, crate::native::ArchiveSpanRole::CompressedPayload(name)
-                if name == removed.name())
-        })
-        .map(|span| span.id)
-        .collect::<Vec<_>>();
+    let payload_spans = payload_spans(&ir, removed.name());
     assert!(!payload_spans.is_empty());
 
     let (report, bytes, round_trip) = write_and_read_back(&ir);
@@ -203,11 +197,24 @@ fn a_removed_entry_is_left_out_and_its_member_is_reported() {
     let omitted = export_messages(&report, "native.records-omitted");
     for id in &payload_spans {
         assert!(
-            omitted.iter().any(|message| message.contains(id.as_str())),
+            omitted.iter().all(|message| !message.contains(id.as_str())),
             "{id}: {omitted:?}"
         );
     }
     assert_unheld_entry_reported(&report, round_trip.ir(), &naming, removed.name());
+}
+
+/// The ids of the ledger spans that hold the compressed payload of member
+/// `name`.
+pub(super) fn payload_spans(ir: &cadmpeg_ir::CadIr, name: &str) -> Vec<String> {
+    native_arena::<crate::native::ArchiveSpan>(ir, "physical_ledger")
+        .into_iter()
+        .filter(|span| {
+            matches!(&span.role, crate::native::ArchiveSpanRole::CompressedPayload(member)
+                if member == name)
+        })
+        .map(|span| span.id)
+        .collect()
 }
 
 /// The properties of `ir` that name the archive entry `name`.

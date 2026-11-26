@@ -667,6 +667,7 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
     let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
     )
     .unwrap();
     let id = |name: &str| {
@@ -1442,6 +1443,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
         cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
     )
     .unwrap();
     let names = |timeline: &super::tree::Timeline| {

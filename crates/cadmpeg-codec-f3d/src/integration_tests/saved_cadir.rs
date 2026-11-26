@@ -265,7 +265,7 @@ fn a_retained_archive_that_does_not_decode_is_charged_once() {
     let (bytes, report) = write_to(
         &with_d1_edited(&decoded),
         &undecodable(&decoded),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     );
     assert_eq!(
         charged(&report, F3dLossCode::WriterPatchDeclined).len(),
