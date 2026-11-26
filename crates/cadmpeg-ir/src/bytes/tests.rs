@@ -20,7 +20,7 @@ where
     for step in path {
         at = &at[*step];
     }
-    assert_eq!(*at, serde_json::json!("AQID"));
+    assert_eq!(*at, cadmpeg_core::json!("AQID"));
     assert_eq!(json::from_value::<T>(json.clone()).unwrap(), *value);
     let mut at = &mut json;
     for step in path {

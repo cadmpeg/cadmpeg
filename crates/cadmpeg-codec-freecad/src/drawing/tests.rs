@@ -793,7 +793,7 @@ fn decodes_python_page_kind_with_views_and_template() {
 
 #[test]
 fn drawing_wire_rejects_non_page_views() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "view", "object": "view", "kind": "TechDraw::DrawView",
         "views": ["a"], "template": null, "sources": [],
         "relationships": {}, "parameters": {}, "side_entries": []

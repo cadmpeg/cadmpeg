@@ -9,10 +9,11 @@
 //! every other member, and a repeated key. A target the sweep cannot reach
 //! fails the test.
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::from_json_value;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::CadIr;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{collect_documents, golden_files, hand_written_documents, states_native_elision};
 

@@ -276,13 +276,13 @@ The two folder runs list distinct bases, and every listed base is an asset folde
 
 Each listed base resolves to exactly one archive folder: either `<base>` or `<base>[Active]`. That folder contains `Manifest.dat`. A **per-asset manifest** starts with its LP-UTF16 base name, a first asset GUID, a second asset GUID, and an LP-ASCII asset type. A `FusionAssetType` prefix continues with a u32 revision.
 
-Revisions 11, 12, 13, 14, 15, 19, and 20 carry a u32 capability count, repeated nonempty unique LP-ASCII capability names with u32 values, LP-ASCII `Neutron3DAssetType`, u8 zero, and an LP-ASCII subtype. The subtype is empty for the root Design asset and names a derived Fusion asset otherwise.
+Revisions 11, 12, 13, 14, 15, 19, and 20 carry a u32 capability count, repeated nonempty unique LP-ASCII capability names with u32 values, LP-ASCII `Neutron3DAssetType`, u8 zero, and an LP-ASCII subtype. The root Design asset is the unique listed Fusion asset with an empty subtype, or the unique listed Fusion asset with the subtype `PCBAssetSubType` when no listed subtype is empty. A revision-0 or revision-10 manifest stores no subtype field and counts as an empty subtype. Every other Fusion asset is a derived asset, and its subtype names its kind.
 
 Revision 10 carries the same named capability registry and kind token, followed by u8 zero. Each linked document stores u32 `2`, an LP-UTF16 composite locator containing a version URN, and two LP-UTF16 GUIDs. The root tail starts with u32 values `0, root_revision, 1, 0`, or `2, 5, 1, 0`, and continues with two LP-ASCII `Design` tokens. `root_revision` is descriptive metadata and does not change the tail grammar. Revision 0 instead stores u32 values `3, 1`, LP-ASCII `Neutron3DAssetType`, u8 zero, u32 values `0, 6, 1, 0`, and two LP-ASCII `Design` tokens. These revision-0 and revision-10 root tails end the manifest.
 
 The unique listed root `FusionAssetType` folder is the Design asset folder. Folder-run order, archive-entry order, the active-asset GUID, and B-rep presence do not select the Design asset.
 
-After the empty subtype field, a Design per-asset manifest carries a `physicalChangeGuid` and the segment-type registry (`FusionDesignSegmentType`, `FusionACTSegmentType`, `FusionBrowserSegmentType`).
+After the subtype field, a Design per-asset manifest carries a `physicalChangeGuid` and the segment-type registry (`FusionDesignSegmentType`, `FusionACTSegmentType`, `FusionBrowserSegmentType`).
 
 ### 1.4 External references
 
@@ -542,7 +542,7 @@ if cross_document == 1:
             LP-UTF16 version URN    an `urn:adsk.wipprod:fs.file:vf.…?version=n`
 ```
 
-The LP-UTF16 asset GUID in a cross-document reference is the primary GUID of the target document's root Design asset. It is the first GUID after the base name in that asset's per-asset `Manifest.dat`. Select the unique asset listed by the target top-level manifest whose asset type is `FusionAssetType` and whose Fusion subtype is empty. The source top-level manifest labels this value `linkedAssetGUID`. The target top-level active-asset GUID can name an Animation or Simulation Case asset and does not define this reference value. The member-name UUID, document GUID, second per-asset GUID, and Design MetaStream header GUID are separate identities. An absent or ambiguous root Design asset does not establish a reference asset GUID.
+The LP-UTF16 asset GUID in a cross-document reference is the primary GUID of the target document's root Design asset. It is the first GUID after the base name in that asset's per-asset `Manifest.dat`. Select the unique asset listed by the target top-level manifest whose asset type is `FusionAssetType` and whose Fusion subtype is empty or, when no listed subtype is empty, is `PCBAssetSubType`. The source top-level manifest labels this value `linkedAssetGUID`. The target top-level active-asset GUID can name an Animation or Simulation Case asset and does not define this reference value. The member-name UUID, document GUID, second per-asset GUID, and Design MetaStream header GUID are separate identities. An absent or ambiguous root Design asset does not establish a reference asset GUID.
 
 `cross_document`, `different_segment`, `same_document`, and `versioned` are booleans. A cross-document reference does not always end after the link name: `versioned` of `1` appends the property-key GUID that names the version property and the target document's version URN, and the property-key GUID is one value per document. So a null reference is one byte, a same-segment reference is eleven, and a cross-segment reference is fifteen: length arithmetic that uses one reference width fails on a record that reaches another segment. The recurring idiom `0x01`, a u32 record index, and six zero bytes elsewhere in this document is this encoding read with a 32-bit id — the six bytes are the id's high half, which is zero while entity IDs stay small, followed by the two flag bytes.
 
@@ -4408,4 +4408,15 @@ A preset reference is library-qualified: a library identifier paired with the na
 
 ## 4. Strict floors
 
-Each of these codes records a Design record, or the state that depends on it, that the decoder gave up (CADIR §3.3), and carries strict floor Warning (CADIR §3.2): `f3d/design.intent-undecoded`, `f3d/sketch.curve-undecoded`, `f3d/sketch.surface-undecoded`, `f3d/sketch.text-undecoded`, `f3d/sketch.relation-undecoded`, `f3d/sketch.folder-undecoded`, `f3d/sketch.ordinal-collection-undecoded`, `f3d/sketch.container-undecoded`, `f3d/sketch.geometry-group-undecoded`, `f3d/feature.timeline-undecoded`, `f3d/design.primary-record-undecoded`, `f3d/configuration.projection-native`, `f3d/sketch.owner-conflict`, `f3d/sketch.relation-owner-unresolved`, `f3d/configuration.document-undecoded`, `f3d/feature.bend-settings-undecoded`, and `f3d/design.body-bounds-undecoded`.
+Each of these codes records a Design record that the decoder keeps with less content, and carries strict floor Warning (CADIR §3.2):
+
+| Code | Kept record |
+|---|---|
+| `f3d/sketch.curve-undecoded` | The sketch curve keeps its identity without its geometry. |
+| `f3d/sketch.container-undecoded` | The sketch keeps its records without its container row. |
+| `f3d/configuration.projection-native` | The configurations stay as native records with no neutral projection. |
+| `f3d/sketch.owner-conflict` | The sketch record stays with no resolved owner. |
+| `f3d/sketch.relation-owner-unresolved` | The sketch relation stays with no owner entity. |
+| `f3d/design.intent-undecoded` | The document keeps its product and geometry records and one design-intent failure record, and holds none of the records that design-intent decoding makes. When the source holds Design records, the Design class is untyped. |
+
+A code that records only a record that the decoder gives up has no strict floor. The `record.unreadable` loss of that give-up (CADIR §3.3) refuses a pinned decode. A given-up Design record whose frame the decoder holds is a `design-record` part: its offset is the frame start in the Design stream, and the part keeps the frame bytes. A given-up Design record without a frame has the id `f3d:<stream>:design-entity#<record index>`. A given-up archive entry is an `archive-entry` part. Two directory entries that name one stored span give up one part. A given-up parameter frame is a `parameter-frame` part.

@@ -233,7 +233,7 @@ fn diff_reports_design_material_assignment_changes() {
         .get_mut("design_material_assignments")
         .unwrap()[0];
     let mut assignment_fields = assignment.fields().unwrap().clone();
-    assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
+    assignment_fields.insert("entity_suffix".into(), cadmpeg_core::json!(123_456));
     *assignment = cadmpeg_ir::NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(assignment.id()).expect("valid identity"),
         assignment_fields,
@@ -1404,18 +1404,26 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
             && loss.message.contains("T-spline control cage not decoded")));
 }
 
-#[test]
-fn malformed_paramesh_reports_its_entry_and_parser_failure() {
+const MALFORMED_PARAMESH: &str =
+    "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
+
+fn malformed_paramesh_archive() -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
-    let entry = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
-    zip.start_file(entry, stored).unwrap();
+    zip.start_file(MALFORMED_PARAMESH, stored).unwrap();
     zip.write_all(b"not a paramesh container").unwrap();
-    let archive = zip.finish().unwrap().into_inner();
+    zip.finish().unwrap().into_inner()
+}
 
+#[test]
+fn malformed_paramesh_reports_its_entry_and_parser_failure() {
+    let entry = MALFORMED_PARAMESH;
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(malformed_paramesh_archive()),
+            &DecodeOptions::default(),
+        )
         .expect("independent malformed mesh entry must not abort document decode");
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == F3dLossCode::MeshContainerUndecoded.kind()
@@ -1423,6 +1431,48 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
             && loss.message.contains(entry)
             && loss.message.contains("paramesh container has no magic")
     }));
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [unreadable] = unreadable.as_slice() else {
+        panic!("one given-up archive entry for the container: {unreadable:?}");
+    };
+    assert_eq!(unreadable.severity, Severity::Error);
+    assert!(
+        unreadable.message.starts_with(&format!(
+            "part {} {entry:?} stream=\"\" offset=",
+            crate::container::ENTRY_PART
+        )),
+        "{}",
+        unreadable.message
+    );
+}
+
+#[test]
+fn strict_decode_refuses_a_malformed_paramesh_through_record_unreadable() {
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = F3dCodec
+        .decode(&mut Cursor::new(malformed_paramesh_archive()), &options)
+        .expect_err("a pinned decode refuses the given-up mesh container");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        rejection.loss().message.starts_with(&format!(
+            "part {} {MALFORMED_PARAMESH:?} ",
+            crate::container::ENTRY_PART
+        )),
+        "{}",
+        rejection.loss().message
+    );
 }
 
 #[test]

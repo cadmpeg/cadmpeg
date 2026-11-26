@@ -8,8 +8,8 @@ use crate::features::selections::FaceSelection;
 use crate::math::{Point3, Vector3};
 use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::units::UnitVector3;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn partial_curve_driven_preserves_independent_values_through_wire_and_units() {

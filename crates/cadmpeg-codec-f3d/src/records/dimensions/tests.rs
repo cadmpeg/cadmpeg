@@ -325,10 +325,10 @@ fn annotation_frame_absent_metadata_validates_wire_offsets() {
     assert_eq!(frame.annotation_byte_offset(), 170);
     assert_eq!(frame.clone().into_draft(), input);
     let wire = json::to_value(&frame).unwrap();
-    assert_eq!(wire["metadata_absent"], serde_json::json!(true));
+    assert_eq!(wire["metadata_absent"], cadmpeg_core::json!(true));
     assert_eq!(json::from_value::<Frame>(wire.clone()).unwrap(), frame);
     let mut present = wire;
-    present["metadata_absent"] = serde_json::json!(false);
+    present["metadata_absent"] = cadmpeg_core::json!(false);
     assert!(json::from_value::<Frame>(present).is_err());
     let mut genesis = input;
     genesis.entity_genesis = Some(0);
@@ -381,7 +381,7 @@ fn annotation_frame_empty_metadata_validates_wire_offsets_and_operand_shape() {
     assert_eq!(json::from_value::<Frame>(wire.clone()).unwrap(), frame);
     for field in ["annotation_byte_offset", "governing_owner_reference_offset"] {
         let mut wrong = wire.clone();
-        wrong[field] = serde_json::json!(0);
+        wrong[field] = cadmpeg_core::json!(0);
         assert!(json::from_value::<Frame>(wrong).is_err());
     }
     let mut null = wire;

@@ -67,7 +67,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 2 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
+        "message": "the IGES write omits 2 native record(s) of `iges` arena `display_attributes` whose entity the semantic writer does not encode: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
         "severity": "warning"
       },
       {
@@ -92,18 +92,6 @@
           }
         },
         "message": "the IGES write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "native.records-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "export"
-          }
-        },
-        "message": "the IGES write omits 1 native record(s) of `iges` arena `quarantined_parameter_records` which the bounded semantic writer does not regenerate, because a record that failed typing has no fields to write: iges:quarantine:parameter#3",
         "severity": "warning"
       }
     ],

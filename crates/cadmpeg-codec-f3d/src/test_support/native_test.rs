@@ -151,7 +151,7 @@ pub(crate) fn reject_changed_id<T: Serialize + DeserializeOwned + std::fmt::Debu
     assert_eq!(json::to_value(restored).unwrap(), wire);
     for id in alternatives {
         let mut invalid = wire.clone();
-        invalid["id"] = serde_json::json!(id);
+        invalid["id"] = cadmpeg_core::json!(id);
         let error = json::from_value::<T>(invalid).expect_err("invalid id");
         assert!(error.to_string().contains("id"), "{error}");
     }

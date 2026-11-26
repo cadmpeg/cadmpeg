@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-reference curve-data diagnostics and validation.
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::CadIr;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 const OWNER: &str = "synthetic:test:feature#profile";
 const EXTRUDE: &str = "synthetic:test:feature#extrude";

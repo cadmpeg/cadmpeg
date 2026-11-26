@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The semantic writer admits both quarantine arenas as native passthrough.
+//! The semantic writer omits the part stub of a quarantined record and names it.
 #![allow(clippy::unwrap_used)]
 
 use crate::IgesVersion;
@@ -41,18 +41,17 @@ fn quarantined_directory_file() -> Vec<u8> {
 }
 
 #[test]
-fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
+fn a_quarantined_record_stub_is_written_as_an_omitted_native_record() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(quarantined_directory_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(
-        decoded.ir().native.namespace("iges").unwrap().arenas()["quarantined_directory_records"]
-            .len(),
-        1
-    );
+    crate::test_support::given_up_part_bytes(&decoded, ("directory-entry", 3));
+    let stub = decoded.ir().native.namespace("iges").unwrap().arenas()["unknowns"][0]
+        .id()
+        .to_owned();
 
     let plan = IgesCodec
         .plan(
@@ -68,27 +67,31 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
 
-    let quarantined = decoded.ir().native.namespace("iges").unwrap().arenas()
-        ["quarantined_directory_records"][0]
-        .id();
     assert!(
         report.losses.iter().any(
             |loss| loss.code.to_string() == "export/native.records-omitted"
-                && loss
-                    .message
-                    .contains("of `iges` arena `quarantined_directory_records`")
-                && loss.message.ends_with(quarantined)
+                && loss.message.contains("of `iges` arena `cards`")
+                && loss.message.contains("cards of no typed entity")
         ),
         "{:?}",
         report.losses
     );
+    // The decode charged the part, so no write loss names its stub.
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&stub)));
     assert!(!written.is_empty());
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(round_trip.ir().geometry.points.len(), 1);
-    assert!(round_trip.ir().native.namespace("iges").unwrap().arenas()
-        ["quarantined_directory_records"]
-        .is_empty());
+    assert!(!round_trip
+        .ir()
+        .native
+        .namespace("iges")
+        .unwrap()
+        .arenas()
+        .contains_key("unknowns"));
 }

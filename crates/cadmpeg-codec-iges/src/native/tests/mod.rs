@@ -32,7 +32,7 @@ fn native_macro_instance_keeps_parameter_wire_fields() {
     };
     assert_eq!(
         json::to_value(instance).unwrap(),
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "iges:native:macro-instance#D3",
             "source_entity": "iges:entity:directory#3",
             "entity_type": 621,
@@ -63,7 +63,7 @@ fn native_parameter_record_keeps_bytes_tokens_comment_and_line_wire_fields() {
     );
     assert_eq!(
         json::to_value(super::NativeParameterRecordSlot(Some(&record))).unwrap(),
-        serde_json::json!({
+        cadmpeg_core::json!({
             "parameter_line_start": 1,
             "parameter_line_end": 2,
             "parameter_bytes": cadmpeg_ir::native::bytes::NativeBytes::from(b"abc".as_slice()),
@@ -103,7 +103,7 @@ fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
 /// Run the overdeclared-count contract for one defective Directory Entry: the
 /// loss is charged once in both decode modes, it is the entry's only loss when
 /// no projection runs, a full decode also refuses that entry's projection, and
-/// a strict decode refuses the document on the count.
+/// a strict decode refuses the document on the count or on the entry given up.
 fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     let overdeclared = IgesLossCode::ParameterCountOverdeclared.kind();
     for depth in [
@@ -160,7 +160,13 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert!(
                 rejection.loss().code == overdeclared
-                    || rejection.loss().code == IgesLossCode::GeometryNotProjected.kind()
+                    || rejection.loss().code == cadmpeg_ir::unknown::part::record_unreadable_kind(),
+                "{:#?}",
+                rejection.loss()
+            );
+            assert_eq!(
+                code_count(rejection.report(), IgesLossCode::ParameterCountOverdeclared),
+                1
             );
         }
         other => panic!("expected a strict refusal, got {other:?}"),
@@ -312,7 +318,7 @@ fn absent_native_parameter_record_keeps_empty_wire_fields() {
             parameters: super::NativeParameterRecordSlot(None)
         })
         .unwrap(),
-        serde_json::json!({
+        cadmpeg_core::json!({
             "parameter_line_start": null,
             "parameter_line_end": null,
             "parameter_bytes": "",

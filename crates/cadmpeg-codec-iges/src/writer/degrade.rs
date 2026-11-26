@@ -76,17 +76,20 @@ pub(super) fn synthesize_dropping(
 ) -> Result<Synthesis, CodecError> {
     let mut document = Cow::Borrowed(ir);
     let mut dropped = Vec::new();
+    let mut split_bodies = BTreeMap::new();
     loop {
-        if let Some((unjoined, mut notes)) =
+        if let Some((unjoined, mut notes, mut sources)) =
             super::unjoined::unjoined_open_shells(&document, version)
         {
             dropped.append(&mut notes);
+            split_bodies.append(&mut sources);
             document = Cow::Owned(unjoined);
         }
         let unwritten = match super::synthesize(ctx, &document, version) {
             Ok(mut synthesis) => {
                 dropped.append(&mut synthesis.losses);
                 synthesis.losses = dropped;
+                synthesis.split_bodies = split_bodies;
                 return Ok(synthesis);
             }
             Err(unwritten) if ends_the_write(&unwritten.error) => return Err(unwritten.error),

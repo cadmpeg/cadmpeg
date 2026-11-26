@@ -385,7 +385,9 @@ fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch
             Ok(header) => Some(kernel_layer(carrier.family, header)),
             Err(_) => Some(unknown_kernel_layer()),
         },
-        ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => None,
+        ActiveCarrierState::NotApplicable
+        | ActiveCarrierState::Unavailable(_)
+        | ActiveCarrierState::Unreadable { .. } => None,
     }
 }
 

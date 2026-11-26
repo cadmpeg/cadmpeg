@@ -183,15 +183,16 @@ fn cadir_encoder_drops_the_records_its_scope_excludes() {
         attribute(ON_DOCUMENT, AttributeTarget::Document, Vec::new()),
     ]);
     let mut value = json::to_value(&ir).unwrap();
-    value["scope"] = serde_json::json!({"model": true, "design": false, "process": false});
-    let read = CadIr::read(
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
+    let (read, _, _) = CadIr::read(
         value.to_string().as_bytes(),
         &crate::document::read::ReadOptions::default(),
     )
-    .expect("the read keeps the scope as written");
+    .expect("the read keeps the scope as written")
+    .without_sidecar();
 
     let plan = CadirEncoder
-        .plan(EncodeInput::new(&read.document, None))
+        .plan(EncodeInput::new(&read, None))
         .expect("a scope breach does not refuse the write");
     let messages = |code: &str| {
         plan.report()
@@ -323,8 +324,8 @@ fn cadir_encoder_clears_a_native_link_to_an_omitted_record() {
         )
         .unwrap()
     };
-    let annotation = record(ANNOTATION, serde_json::json!({"links": [FEATURE, NOTE]}));
-    let note = record(NOTE, serde_json::json!({}));
+    let annotation = record(ANNOTATION, cadmpeg_core::json!({"links": [FEATURE, NOTE]}));
+    let note = record(NOTE, cadmpeg_core::json!({}));
     ir.native
         .namespace_mut(crate::codec_id!("test"))
         .arenas_mut()
@@ -354,7 +355,7 @@ fn cadir_encoder_clears_a_native_link_to_an_omitted_record() {
     plan.write_to(&mut encoded).unwrap();
     let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
     let records = &written.native.namespace("test").unwrap().arenas()["annotations"];
-    assert_eq!(links(&records[0]), Some(serde_json::json!([NOTE])));
+    assert_eq!(links(&records[0]), Some(cadmpeg_core::json!([NOTE])));
     let errors = |ir: &CadIr| {
         validate_neutral(ir, Vec::new())
             .unwrap()
@@ -508,7 +509,7 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
 fn a_pinned_strictness_writes_a_displaced_target() {
     let mut ir = CadIr::empty();
     ir.source = Some(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -1221,13 +1222,14 @@ fn cadir_encoder_writes_a_name_past_the_document_bound_by_its_native_name() {
     let face = |at: usize| ir.geometry.faces[at].id.as_str().to_owned();
     let (named, unnamed) = (face(0), face(1));
     let deep = (0..crate::bounds::MAX_DOCUMENT_DEPTH / 2).fold(
-        serde_json::json!({"kind": "generated", "value": {"kind": "face", "feature": "test:design:feature#f"}}),
+        cadmpeg_core::json!({"kind": "generated", "value": {"kind": "face", "feature": "test:design:feature#f"}}),
         |from, _| {
-            serde_json::json!({"kind": "modified", "value": {"feature": "test:design:feature#f", "from": from}})
+            cadmpeg_core::json!({"kind": "modified", "value": {"feature": "test:design:feature#f", "from": from}})
         },
     );
-    let native = serde_json::json!({"codec": "test", "value": {"kind": "text", "value": "Face1"}});
-    ir.design.names = json::from_value(serde_json::json!([
+    let native =
+        cadmpeg_core::json!({"codec": "test", "value": {"kind": "text", "value": "Face1"}});
+    ir.design.names = json::from_value(cadmpeg_core::json!([
         [{"kind": "face", "value": named}, {"name": deep, "native": native}],
         [{"kind": "face", "value": unnamed}, {"name": deep}]
     ]))
@@ -1251,7 +1253,7 @@ fn cadir_encoder_writes_a_name_past_the_document_bound_by_its_native_name() {
     let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
     assert_eq!(
         crate::hash::finite_json::to_json_value(&written.design.names).unwrap(),
-        serde_json::json!([[{"kind": "face", "value": named}, {"native": native}]])
+        cadmpeg_core::json!([[{"kind": "face", "value": named}, {"native": native}]])
     );
     assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
 }

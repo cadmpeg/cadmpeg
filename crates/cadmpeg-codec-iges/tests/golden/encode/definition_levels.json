@@ -81,7 +81,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 2 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
+        "message": "the IGES write omits 2 native record(s) of `iges` arena `display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3; that are Directory line font, level, view, or line weight fields the semantic writer writes with its own values: iges:presentation:display-attributes#D3; that are properties of a form the semantic writer does not encode: iges:presentation:display-attributes#D1",
         "severity": "warning"
       },
       {

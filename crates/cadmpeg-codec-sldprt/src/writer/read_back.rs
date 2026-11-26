@@ -363,7 +363,7 @@ fn summary(value: &Value) -> String {
 mod tests {
     use std::collections::HashMap;
 
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     use super::Comparison;
 

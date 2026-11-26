@@ -3,10 +3,11 @@
 use crate::test_support::review::{decode, edit, members, parameter, validate, variable, wire};
 use crate::test_support::{codec, fixture};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io::Cursor;
 
 fn loss(result: &cadmpeg_ir::codec::DecodeResult, code: &str) -> bool {

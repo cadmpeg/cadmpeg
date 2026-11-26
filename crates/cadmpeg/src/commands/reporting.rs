@@ -638,7 +638,6 @@ mod tests {
             cadmpeg_registry::Format::Cadir,
             &crate::application::transcoder::ResolvedDestination::File(destination.clone()),
             &crate::application::document::LoadOrigin::Neutral,
-            &ir,
         )
         .unwrap();
         assert!(!destination.exists());
@@ -694,7 +693,7 @@ mod tests {
         assert!(!diff.is_empty());
         assert_eq!(
             json::to_value(&diff).unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "annotations_changed": false,
                 "retained_records_changed": true,
                 "unrepresented_added": ["design"],
@@ -712,11 +711,11 @@ mod tests {
         );
         assert_eq!(
             json::to_value(FidelitySummary::OnlyLeft).unwrap(),
-            serde_json::json!({ "present": "left_only" })
+            cadmpeg_core::json!({ "present": "left_only" })
         );
         assert_eq!(
             json::to_value(FidelitySummary::OnlyRight).unwrap(),
-            serde_json::json!({ "present": "right_only" })
+            cadmpeg_core::json!({ "present": "right_only" })
         );
         assert_eq!(
             json::to_value(FidelitySummary::Both(FidelityDiff {
@@ -726,7 +725,7 @@ mod tests {
                 unrepresented_removed: BTreeSet::new(),
             }))
             .unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "present": "both",
                 "different": false,
                 "diff": {
@@ -745,7 +744,7 @@ mod tests {
                 unrepresented_removed: BTreeSet::new(),
             }))
             .unwrap(),
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "present": "both",
                 "different": true,
                 "diff": {

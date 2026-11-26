@@ -454,6 +454,45 @@ fn a_global_value_the_output_version_rejects_is_replaced_and_named() {
     );
 }
 
+/// A source Global that states no positive minimum resolution (field 19)
+/// leaves the decoder's default tolerance, and the writer writes its own
+/// resolution. The write charges the change with what the source states and
+/// the written value.
+#[test]
+fn an_unresolved_source_resolution_is_charged_with_the_written_value() {
+    for (global, stated) in [
+        (
+            b"1H,,1H;,,,,,32,38,6,308,15,,1.0,2,2HMM,1,1.0,,0.0,1000.0,,,11,0;".as_slice(),
+            "the invalid value 0",
+        ),
+        (
+            b"1H,,1H;,,,,,32,38,6,308,15,,1.0,2,2HMM,1,1.0,,-1.0,1000.0,,,11,0;",
+            "the invalid value -1.0000000000000000D0",
+        ),
+        (
+            b"1H,,1H;,,,,,32,38,6,308,15,,1.0,2,2HMM,1,1.0,,,1000.0,,,11,0;",
+            "no value: the source omits field 19",
+        ),
+    ] {
+        let ir = decode(&point_file(global));
+        let (bytes, messages) = write(&ir, IgesVersion::V5_3);
+        let written = match &global_fields(&decode(&bytes))[18] {
+            SourceField::Real(value) => value.get(),
+            other => panic!("{other:?}"),
+        };
+        let charges = messages
+            .iter()
+            .filter(|message| message.starts_with("IGES Global minimum resolution "))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            charges,
+            [&format!(
+                "IGES Global minimum resolution changed from {stated} to {written:.17e} mm"
+            )]
+        );
+    }
+}
+
 /// A source field the output version has no place for is charged with its
 /// source value: IGES 4.0 holds no model modification date or application
 /// protocol, and dates with two-digit years only. The fields the output
@@ -566,7 +605,8 @@ fn a_parameter_curve_of_a_written_shell_loop_is_regenerated() {
 /// On the trimmed-sheet path the writer states each face of an open shell as
 /// a trimmed surface and writes no shell, vertex list, or edge list record.
 /// Each line edge is a segment of the written boundary and reads back as the
-/// same line.
+/// same line. The boundary states the edges of a loop as one composite curve,
+/// so a loop of more than one edge drops.
 #[test]
 fn an_open_shell_written_as_trimmed_surfaces_drops_its_shell_and_lists() {
     let ir = decode(EXPLICIT_OPEN_SHELL);
@@ -576,7 +616,7 @@ fn an_open_shell_written_as_trimmed_surfaces_drops_its_shell_and_lists() {
         native.disposition("iges", "entities", &shell),
         NativeDisposition::Dropped
     );
-    for sequence in [7, 9, 11, 13, 19, 21] {
+    for sequence in [7, 9, 11, 13, 21] {
         let id = entity(&ir, sequence);
         assert_eq!(
             native.disposition("iges", "entities", &id),
@@ -592,11 +632,24 @@ fn an_open_shell_written_as_trimmed_surfaces_drops_its_shell_and_lists() {
             "{id}"
         );
     }
+    let loop_ = entity(&ir, 19);
+    assert_eq!(
+        native.disposition("iges", "entities", &loop_),
+        NativeDisposition::Dropped
+    );
     let (_, messages) = write(&ir, IgesVersion::V5_3);
     assert!(
         messages.iter().any(|message| message.contains(&format!(
             "that are shells the semantic writer writes as separate trimmed surfaces with no \
              shell record: {shell}"
+        ))),
+        "{messages:#?}"
+    );
+    assert!(
+        messages.iter().any(|message| message.contains(&format!(
+            "that are loops of more than one edge of shells the semantic writer writes as \
+             trimmed surfaces, whose boundaries state the edges of a loop as one composite \
+             curve: {loop_}"
         ))),
         "{messages:#?}"
     );

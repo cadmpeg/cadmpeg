@@ -40,7 +40,7 @@ def command(arguments: list[str], packages: list[str], *, full: bool = False,
 # parallel jobs. Elsewhere `ci_rustc_lock.py` keeps the build inside RAM.
 BROAD_BUILD_CAP_RAM_GIB = 18
 # RAM left to the OS and the runner when sizing the rustc memory budget.
-RESERVED_RAM_GIB = 2.5 if sys.platform == 'darwin' else 4.5
+RESERVED_RAM_GIB = 2.5 if sys.platform == 'darwin' else 3.25
 
 
 def low_ram_rustc_wrapper() -> Path:

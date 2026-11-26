@@ -56,7 +56,7 @@ fn compound_loft_scales_reject_more_than_the_native_slot_count() {
 #[test]
 fn compound_loft_construction_rejects_an_unknown_key_by_name() {
     let mut wire = json::to_value(compound(2)).unwrap();
-    wire["zz_bogus"] = serde_json::json!(1);
+    wire["zz_bogus"] = cadmpeg_core::json!(1);
     let error = json::from_value::<CompoundLoftConstruction>(wire)
         .expect_err("an unknown key beside scales must be rejected")
         .to_string();

@@ -40,7 +40,7 @@ fn a_native_export_report_states_its_payload_and_names_its_target() {
 
 #[test]
 fn an_export_payload_carries_only_the_target_key_its_own_arm_owns() {
-    let native = serde_json::json!({
+    let native = cadmpeg_core::json!({
         "identity": {"kind": "native", "target": "step:ap242-e3"},
         "census": { "basis": "target_records", "counts": {} },
         "write_path": { "kind": "synthesized", "fidelity": { "kind": "not_provided" } },
@@ -59,8 +59,8 @@ fn an_export_payload_carries_only_the_target_key_its_own_arm_owns() {
     assert!(error.to_string().contains("target"), "{error}");
 
     let mut cadir_with_target = native;
-    cadir_with_target["identity"]["kind"] = serde_json::json!("cadir");
-    cadir_with_target["census"]["basis"] = serde_json::json!("ir_arenas");
+    cadir_with_target["identity"]["kind"] = cadmpeg_core::json!("cadir");
+    cadir_with_target["census"]["basis"] = cadmpeg_core::json!("ir_arenas");
     let error = json::from_value::<ExportReport>(cadir_with_target)
         .expect_err("CADIR has no native dialect target");
     assert!(error.to_string().contains("target"), "{error}");

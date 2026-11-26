@@ -38,7 +38,7 @@ fn tetrahedron() -> CadIr {
 /// design content a part from a history-based system holds beside its shape.
 fn with_design_content(ir: &mut CadIr) {
     ir.model.features.push(
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "cadir:model:feature#boss", "ordinal": 0, "name": "Boss", "suppressed": false,
             "definition": {"kind": "operation", "value": {"kind": "stored_geometry", "value": {}}},
             "outputs": [], "dependencies": [], "source_properties": {},
@@ -130,8 +130,9 @@ fn a_native_record_synthesis_does_not_encode_is_named_not_refused() {
             .losses
             .iter()
             .any(|loss| loss.message.starts_with(&format!(
-                "the IGES write omits {colors} native record(s) of `iges` arena `colors` which \
-                 the semantic writer does not encode:"
+                "the IGES write omits {colors} native record(s) of `iges` arena `colors` that \
+                 are colour definitions whose Directory colour number the semantic writer \
+                 writes as 0:"
             ))),
         "{:?}",
         plan.report().losses

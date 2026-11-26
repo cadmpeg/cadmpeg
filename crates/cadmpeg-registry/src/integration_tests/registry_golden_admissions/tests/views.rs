@@ -3,8 +3,8 @@ use super::{
     assert_rejected, inspect_view, kernel_loss, nx_13006, registry_rows, report_view, sldprt_13006,
     source_view, validate, Admission,
 };
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 use std::path::Path;
 
 #[test]

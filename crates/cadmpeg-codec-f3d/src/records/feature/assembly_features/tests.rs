@@ -119,13 +119,13 @@ fn derived_instance_optional_keys_distinguish_omission_values_and_null() {
     use super::{
         DesignDerivedInstanceReference, DesignDerivedInstanceRelation, DesignDerivedInstanceSource,
     };
-    let reference = serde_json::json!({"target": 7});
-    let mut relation = serde_json::json!({
+    let reference = cadmpeg_core::json!({"target": 7});
+    let mut relation = cadmpeg_core::json!({
         "carrier_reference": {"target": 8},
         "middle_reference": {"target": 9},
         "scope_reference": {"target": 10}
     });
-    let mut source = serde_json::json!({"reference": reference});
+    let mut source = cadmpeg_core::json!({"reference": reference});
     assert!(
         json::from_value::<DesignDerivedInstanceReference>(reference)
             .unwrap()
@@ -145,7 +145,7 @@ fn derived_instance_optional_keys_distinguish_omission_values_and_null() {
             .is_none()
     );
     let typed =
-        serde_json::json!({"target": 7, "type_guid": "11111111-1111-1111-1111-111111111111"});
+        cadmpeg_core::json!({"target": 7, "type_guid": "11111111-1111-1111-1111-111111111111"});
     assert!(json::from_value::<DesignDerivedInstanceReference>(typed)
         .unwrap()
         .type_guid
@@ -163,7 +163,7 @@ fn derived_instance_optional_keys_distinguish_omission_values_and_null() {
         (
             "type_guid",
             json::from_value::<DesignDerivedInstanceReference>(
-                serde_json::json!({"target": 7, "type_guid": null}),
+                cadmpeg_core::json!({"target": 7, "type_guid": null}),
             )
             .unwrap_err(),
         ),
@@ -210,12 +210,12 @@ fn derived_instance_optional_keys_use_canonical_absence() {
         r#"{"carrier_reference":{"target":1},"middle_reference":{"target":2},"scope_reference":{"target":3}}"#,
         r#"{"carrier_reference":{"target":1},"middle_reference":{"target":2},"scope_reference":{"target":3},"carrier":null}"#,
     );
-    let reference = serde_json::json!({
+    let reference = cadmpeg_core::json!({
         "target":7,"type_guid":"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
     });
     let decoded: DesignDerivedInstanceReference = json::from_value(reference.clone()).unwrap();
     assert_eq!(json::to_value(decoded).unwrap(), reference);
-    let relation = serde_json::json!({
+    let relation = cadmpeg_core::json!({
         "carrier_reference":{"target":1},
         "middle_reference":{"target":2},
         "scope_reference":{"target":3},
@@ -228,7 +228,7 @@ fn derived_instance_optional_keys_use_canonical_absence() {
     });
     let decoded: DesignDerivedInstanceRelation = json::from_value(relation.clone()).unwrap();
     assert_eq!(json::to_value(decoded).unwrap(), relation);
-    let source = serde_json::json!({"reference":{"target":7},"relation":relation});
+    let source = cadmpeg_core::json!({"reference":{"target":7},"relation":relation});
     let decoded: DesignDerivedInstanceSource = json::from_value(source.clone()).unwrap();
     assert_eq!(json::to_value(decoded).unwrap(), source);
 }

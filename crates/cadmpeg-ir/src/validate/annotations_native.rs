@@ -20,30 +20,42 @@ enum AnnotatedEntity<'ir> {
     Source(&'ir crate::unknown::UnknownRecord),
 }
 
-macro_rules! define_model_entity_projection {
-    ($( $field:ident: $element:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
-        fn model_entity_projection<'ir>(
+macro_rules! define_entity_projection {
+    ($( $field:ident: $element:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+        /// Adds each record of `ir` that `wanted` names. A design record shares
+        /// the id of the model record it restates, and the CADIR wire leaves
+        /// that model record out, so a record of an arena the wire carries is
+        /// the one added.
+        fn entity_projection<'ir>(
             ctx: &DecodeContext<'_>,
             ir: &'ir CadIr,
             wanted: &BorrowedIdentities<'_, bool>,
             add: &mut dyn FnMut(&'ir str, AnnotatedEntity<'ir>),
         ) -> Result<(), CodecError> {
-            $(for entity in &ir.$home.$field {
-                let id = crate::schema::EntitySchema::identity(entity);
-                if wanted.contains(id) {
-                    let value = match crate::schema::structural::project(ctx, entity, "annotated entity projection") {
-                        Ok(value) => value,
-                        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                        Err(_) => continue,
-                    };
-                    add(id, AnnotatedEntity::Projected(value));
-                }
-            })*
+            let mut projected = BTreeSet::new();
+            for written in [true, false] {
+                $(if written
+                    != crate::document::ArenaName::WIRE_OMITTED
+                        .contains(&crate::document::arena_name!($field, $class, $home))
+                {
+                    for entity in &ir.$home.$field {
+                        let id = crate::schema::ArenaRecord::record_identity(entity);
+                        if wanted.contains(id) && projected.insert(id) {
+                            let value = match crate::schema::structural::project(ctx, entity, "annotated entity projection") {
+                                Ok(value) => value,
+                                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                                Err(_) => continue,
+                            };
+                            add(id, AnnotatedEntity::Projected(value));
+                        }
+                    }
+                })*
+            }
             Ok(())
         }
     };
 }
-crate::document::arena_registry!(define_model_entity_projection);
+crate::document::classified_arena_registry!(define_entity_projection);
 
 /// The records that annotation keys name outside `all_ids`: the records of
 /// the design and process arenas, and the records of the deltas of the
@@ -164,9 +176,9 @@ pub(super) fn check_annotations(
             add(record.id(), value);
         }
     });
-    // Model entities take precedence over native records with the same id.
+    // Neutral records take precedence over native records with the same id.
     // The identity index keeps the last inserted matching value.
-    model_entity_projection(ctx, view.ir, &wanted, &mut add)?;
+    entity_projection(ctx, view.ir, &wanted, &mut add)?;
     let mut unindexed = Unindexed::of(ctx, view.ir, annotations, all_ids)?;
     for key in annotations.provenance.keys() {
         if !unindexed.resolves(key, all_ids) {
@@ -202,8 +214,6 @@ pub(super) fn check_annotations(
         }
         let projected;
         let entity = match key.target() {
-            // Field paths are checked against geometry, model, and native records.
-            AnnotationTarget::Entity(id) if !all_ids.contains(id) => continue,
             AnnotationTarget::Entity(id) => entities.get(id).map(|position| &values[*position]),
             AnnotationTarget::Delta { qualifier, record } => {
                 match unindexed.projected.remove(&(qualifier, record)).flatten() {

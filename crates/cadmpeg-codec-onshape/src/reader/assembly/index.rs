@@ -28,6 +28,7 @@ impl<'a> Index<'a> {
     pub(super) fn build(
         ctx: &DecodeContext<'_>,
         definition: &'a Value,
+        definition_path: &str,
         manifest: &'a Value,
         bundle: &'a Bundle<'_>,
         pinned: &str,
@@ -65,11 +66,14 @@ impl<'a> Index<'a> {
                 })
                 .or_insert(microversion);
         }
-        for row in source_rows(
+        for (position, row) in source_rows(
             definition.get("rootAssembly").unwrap_or(&Value::Null),
             "occurrences",
             report,
-        ) {
+        )
+        .iter()
+        .enumerate()
+        {
             ctx.charge_entities(1, "Onshape occurrence path index")?;
             let path = optional_rows(row, "path").and_then(|rows| {
                 if rows.len() > super::ASSEMBLY_DEPTH {
@@ -86,32 +90,57 @@ impl<'a> Index<'a> {
             });
             match path {
                 Ok(path) => match index.occurrences.entry(path) {
-                    Entry::Occupied(entry) => {
+                    Entry::Occupied(entry) if *entry.get() == row => {
                         report.push_coded(
                             &key(entry.key()),
                             OnshapeLossCode::AssemblyRecordRepeated,
-                            "occurrence path repeats; retained the first placement",
+                            "occurrence path repeats with the same placement; retained the first placement",
+                        );
+                    }
+                    Entry::Occupied(entry) => {
+                        report.give_up_as(
+                            &format!("{definition_path}#/rootAssembly/occurrences/{position}"),
+                            &key(entry.key()),
+                            OnshapeLossCode::AssemblyRecordRepeated,
+                            "occurrence path repeats with a different placement; retained the first placement",
                         );
                     }
                     Entry::Vacant(entry) => {
                         entry.insert(row);
                     }
                 },
-                Err(reason) => report.push_coded(
+                Err(reason)
+                    if row
+                        .get("path")
+                        .and_then(Value::as_array)
+                        .is_some_and(|path| path.len() > super::ASSEMBLY_DEPTH) =>
+                {
+                    report.push_coded(
+                        "occurrence",
+                        OnshapeLossCode::AssemblyRecordUnsupported,
+                        reason,
+                    );
+                }
+                Err(reason) => report.give_up_as(
+                    &format!("{definition_path}#/rootAssembly/occurrences/{position}"),
                     "occurrence",
                     OnshapeLossCode::AssemblyRecordUnsupported,
                     reason,
                 ),
             }
         }
-        for sub in source_rows(definition, "subAssemblies", report) {
+        for (position, sub) in source_rows(definition, "subAssemblies", report)
+            .iter()
+            .enumerate()
+        {
             ctx.charge_entities(1, "Onshape subassembly index")?;
             if !sub
                 .get("elementId")
                 .and_then(Value::as_str)
                 .is_some_and(super::element_id)
             {
-                report.push_coded(
+                report.give_up_as(
+                    &format!("{definition_path}#/subAssemblies/{position}"),
                     "subassembly",
                     OnshapeLossCode::AssemblyRecordUnsupported,
                     "subassembly element id has an invalid folder character",
@@ -129,7 +158,8 @@ impl<'a> Index<'a> {
             match index.subassemblies.entry(definition_key) {
                 Entry::Occupied(entry) => {
                     if !same_content(entry.get(), sub) {
-                        report.push_coded(
+                        report.give_up_as(
+                            &format!("{definition_path}#/subAssemblies/{position}"),
                             "subassembly",
                             OnshapeLossCode::AssemblyRecordRepeated,
                             format!(
@@ -144,14 +174,15 @@ impl<'a> Index<'a> {
                 }
             }
         }
-        for part in source_rows(definition, "parts", report) {
+        for (position, part) in source_rows(definition, "parts", report).iter().enumerate() {
             ctx.charge_entities(1, "Onshape part identity index")?;
             let reference = index.reference(part);
             let studio = index.studio_key(part);
             match index.parts.entry(reference) {
                 Entry::Occupied(entry) => {
                     if !same_content(entry.get(), part) {
-                        report.push_coded(
+                        report.give_up_as(
+                            &format!("{definition_path}#/parts/{position}"),
                             "part",
                             OnshapeLossCode::AssemblyRecordRepeated,
                             format!(

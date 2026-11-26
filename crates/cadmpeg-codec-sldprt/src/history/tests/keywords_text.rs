@@ -19,6 +19,7 @@ use std::io::Cursor;
 struct Decoded {
     histories: Vec<FeatureHistory>,
     losses: Vec<LossNote>,
+    given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
 }
 
 fn decode(section: &str, payload: &[u8]) -> Decoded {
@@ -43,8 +44,14 @@ fn decode_under(
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
-    let histories = crate::history::histories(&ctx, &scan, &mut annotations, &mut losses)?;
-    Ok(Decoded { histories, losses })
+    let mut given_up = Vec::new();
+    let histories =
+        crate::history::histories(&ctx, &scan, &mut annotations, &mut losses, &mut given_up)?;
+    Ok(Decoded {
+        histories,
+        losses,
+        given_up,
+    })
 }
 
 fn codes(losses: &[LossNote]) -> Vec<SldprtLossCode> {
@@ -318,6 +325,26 @@ fn history_member_that_is_not_text_is_unread() {
     let decoded = decode("swXmlContents/KeyWords", &[0x84, b'<', 0xff, b'>']);
     assert!(decoded.histories.is_empty());
     assert_eq!(codes(&decoded.losses), [SldprtLossCode::HistoryUnread]);
+    assert_eq!(decoded.given_up.len(), 1);
+    let charge = decoded.given_up[0].loss();
+    assert_eq!(
+        charge.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        charge
+            .message
+            .starts_with("part history-member \"swXmlContents/KeyWords\" stream="),
+        "{}",
+        charge.message
+    );
+    assert!(
+        charge
+            .message
+            .contains("sldprt/history.unread: Keywords member"),
+        "{}",
+        charge.message
+    );
 }
 
 #[test]

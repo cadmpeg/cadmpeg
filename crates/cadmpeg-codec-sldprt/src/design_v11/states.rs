@@ -117,7 +117,7 @@ pub(super) fn configuration_states(
                 let table = names.entries(&topology, bodies, |feature| depended.contains(feature));
                 records += topology_len(&topology) + table.len();
                 topology_ids(&topology, |id| {
-                    held.entry(id.to_owned())
+                    held.entry(id.as_str().to_owned())
                         .or_insert_with(|| configuration.id.clone());
                 });
                 Some(StateContent {
@@ -178,7 +178,7 @@ pub(super) fn configuration_states(
         Some(reach) if !held.is_empty() => {
             let mut kept = BTreeSet::new();
             topology_ids(&reach.state(ctx, scope.current)?, |id| {
-                kept.insert(id.to_owned());
+                kept.insert(id.as_str().to_owned());
             });
             held.retain(|id, _| !kept.contains(id));
             held
@@ -384,9 +384,9 @@ macro_rules! topology_arenas {
         }
 
         /// Calls `visit` with the id of every record of `topology`.
-        pub(crate) fn topology_ids(topology: &Topology, mut visit: impl FnMut(&str)) {
+        pub(crate) fn topology_ids(topology: &Topology, mut visit: impl FnMut(&Identity)) {
             $(for record in &topology.$field {
-                visit(record.identity());
+                visit(record.id.as_ref());
             })*
         }
 

@@ -11,6 +11,7 @@ use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::edge_ranges::open_edge_ranges;
 use cadmpeg_ir::codec::write::{
     output_empty, record_invalid, ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody,
@@ -28,7 +29,7 @@ use cadmpeg_ir::geometry::sampled::{GeometryLayoutError, PolylineCurve};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{BodyId, CoedgeId, CurveId, PointId, ShellId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{BodyId, CoedgeId, CurveId, FaceId, PointId, ShellId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{
     export::{CensusBasis, EntityCensus},
@@ -194,6 +195,8 @@ fn body(
 /// `WriterFreeGeometryOmitted` account for withheld support geometry, support edges
 /// and free points or vertices, respectively; `procedural_surfaces` is `Reported`
 /// because `ProceduralReduced` accounts for definitions reduced to solved carriers.
+/// `appearances` and `appearance_bindings` are `Reported` because
+/// `WriterAppearanceNotRepresented` names each record the file does not state.
 const SYNTHESIS_COVERAGE: ArenaDispositions = {
     use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     ArenaDispositions {
@@ -235,8 +238,8 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
         tessellations: Omitted,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Omitted,
-        appearance_bindings: Omitted,
+        appearances: Reported,
+        appearance_bindings: Reported,
         attributes: Omitted,
         pmi: Omitted,
         presentation_layers: Omitted,
@@ -277,27 +280,58 @@ struct Synthesis {
     counts: BTreeMap<String, usize>,
     /// The entities the file holds, each with the neutral records it states.
     entities: Vec<Entity>,
+    /// The colour and blank status the Directory entry of each entity that
+    /// carries a body or a face states, by entity index.
+    presented: BTreeMap<usize, dispositions::Presented>,
+    /// The document body that each sheet body the writer splits from it
+    /// restates, by the id of the sheet body.
+    split_bodies: BTreeMap<BodyId, BodyId>,
     losses: Vec<LossNote>,
 }
 
-struct BodyPresentation {
+impl Synthesis {
+    /// The document body that written body `body` states.
+    fn source_body<'a>(&'a self, body: &'a BodyId) -> &'a BodyId {
+        self.split_bodies.get(body).unwrap_or(body)
+    }
+}
+
+/// The Directory display fields of an entity that carries a body or a face.
+struct Presentation {
     label: Option<String>,
     name: Option<String>,
-    color: BodyColor,
+    color: DirectoryColor,
+    /// The text and the restated source of the Type 314 the colour is
+    /// written as, when the colour is a source colour definition.
+    color_definition: Option<ColorDefinition>,
     visible: Option<bool>,
+    /// The body whose colour and blank status the entry states.
+    body: Option<BodyId>,
+    /// The face whose colour the entry states.
+    face: Option<FaceId>,
+}
+
+/// The source Type 314 a colour is bound to.
+struct ColorDefinition {
+    /// The name the written Type 314 states.
+    name: Option<String>,
+    /// The appearance of the source Type 314, when the written Type 314
+    /// states its colour and its name.
+    restates: Option<String>,
 }
 
 #[derive(Clone, Copy)]
-enum BodyColor {
+enum DirectoryColor {
     Standard(i64),
     Custom(Color),
     Definition(usize),
 }
 
 fn body_presentation(
+    ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,
     losses: &mut Vec<LossNote>,
-) -> BodyPresentation {
+) -> Presentation {
     let name = body.name.as_deref().and_then(|name| {
         if !name.is_empty()
             && name
@@ -326,76 +360,204 @@ fn body_presentation(
             None
         }
     });
-    let color = body.color.map_or(BodyColor::Standard(0), |color| {
-        let rgb = (color.r(), color.g(), color.b());
-        let number = match rgb {
-            (0.0, 0.0, 0.0) => 1,
-            (1.0, 0.0, 0.0) => 2,
-            (0.0, 1.0, 0.0) => 3,
-            (0.0, 0.0, 1.0) => 4,
-            (1.0, 1.0, 0.0) => 5,
-            (1.0, 0.0, 1.0) => 6,
-            (0.0, 1.0, 1.0) => 7,
-            (1.0, 1.0, 1.0) => 8,
-            _ => 0,
-        };
-        if color.a() != 1.0 {
-            losses.push(IgesLossCode::WriterBodyOpacityNotRepresented.note(format!(
-                "IGES body {} opacity {} has no Directory representation",
-                body.id,
-                color.a()
-            )));
-        }
-        if number == 0 {
-            BodyColor::Custom(color)
-        } else {
-            BodyColor::Standard(number)
-        }
-    });
-    BodyPresentation {
+    let (color, color_definition) = directory_color(
+        ir,
+        &AppearanceTarget::Body(body.id.clone()),
+        body.color,
+        |alpha| {
+            IgesLossCode::WriterBodyOpacityNotRepresented.note(format!(
+                "IGES body {} opacity {alpha} has no Directory representation",
+                body.id
+            ))
+        },
+        losses,
+    );
+    Presentation {
         label,
         name,
         color,
+        color_definition,
         visible: body.visible,
+        body: Some(body.id.clone()),
+        face: None,
     }
 }
 
+/// The Directory colour of a face, on the Type 510 that writes it.
+fn face_presentation(
+    ir: &CadIr,
+    face: &cadmpeg_ir::topology::Face,
+    losses: &mut Vec<LossNote>,
+) -> Presentation {
+    let (color, color_definition) = directory_color(
+        ir,
+        &AppearanceTarget::Face(face.id.clone()),
+        face.color,
+        |alpha| {
+            IgesLossCode::WriterFaceOpacityNotRepresented.note(format!(
+                "IGES face {} opacity {alpha} has no Directory representation",
+                face.id
+            ))
+        },
+        losses,
+    );
+    Presentation {
+        label: None,
+        name: None,
+        color,
+        color_definition,
+        visible: None,
+        body: None,
+        face: Some(face.id.clone()),
+    }
+}
+
+/// The body presentation of the Type 143 or 144 that writes `face` of
+/// `body`: its one Directory colour states the colour of the face and of the
+/// sheet body that a decode generates for it, so it states the face colour
+/// where the face has one.
+fn trimmed_face_presentation(
+    ir: &CadIr,
+    body: &cadmpeg_ir::topology::Body,
+    face: &cadmpeg_ir::topology::Face,
+    losses: &mut Vec<LossNote>,
+) -> Presentation {
+    let mut presentation = body_presentation(ir, body, losses);
+    if face.color.is_some() {
+        let own = face_presentation(ir, face, losses);
+        presentation.color = own.color;
+        presentation.color_definition = own.color_definition;
+    }
+    presentation.face = Some(face.id.clone());
+    presentation
+}
+
+/// The Directory colour of `color` on the entity that writes `target`: a
+/// standard colour number, or a Type 314 for every other colour and for a
+/// colour that a binding of the whole of `target` names by a source Type 314.
+fn directory_color(
+    ir: &CadIr,
+    target: &AppearanceTarget,
+    color: Option<Color>,
+    opacity_loss: impl FnOnce(f64) -> LossNote,
+    losses: &mut Vec<LossNote>,
+) -> (DirectoryColor, Option<ColorDefinition>) {
+    let Some(color) = color else {
+        return (DirectoryColor::Standard(0), None);
+    };
+    if color.a() != 1.0 {
+        losses.push(opacity_loss(color.a()));
+    }
+    let number = match (color.r(), color.g(), color.b()) {
+        (0.0, 0.0, 0.0) => 1,
+        (1.0, 0.0, 0.0) => 2,
+        (0.0, 1.0, 0.0) => 3,
+        (0.0, 0.0, 1.0) => 4,
+        (1.0, 1.0, 0.0) => 5,
+        (1.0, 0.0, 1.0) => 6,
+        (0.0, 1.0, 1.0) => 7,
+        (1.0, 1.0, 1.0) => 8,
+        _ => 0,
+    };
+    let definition = bound_color_definition(ir, target, color);
+    if number == 0 || definition.is_some() {
+        (DirectoryColor::Custom(color), definition)
+    } else {
+        (DirectoryColor::Standard(number), None)
+    }
+}
+
+/// The appearance that a binding of the whole of `target` names with `color`,
+/// when it is a source Type 314 or has a name that a Type 314 can write. Its
+/// name is written when every byte is printable ASCII, and the written Type
+/// 314 then states the appearance.
+fn bound_color_definition(
+    ir: &CadIr,
+    target: &AppearanceTarget,
+    color: Color,
+) -> Option<ColorDefinition> {
+    let appearance = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| binding.target.path.is_none() && binding.target.entity == *target)
+        .filter_map(|binding| {
+            ir.model
+                .appearances
+                .iter()
+                .find(|appearance| appearance.id == binding.appearance)
+        })
+        .find(|appearance| {
+            appearance.base_color == Some(color)
+                && (dispositions::color_definition_sequence(appearance.id.as_str()).is_some()
+                    || appearance.name.as_deref().is_some_and(writable_name))
+        })?;
+    let name = appearance.name.clone();
+    let writable = name.as_deref().is_none_or(writable_name);
+    Some(ColorDefinition {
+        name: name.filter(|_| writable),
+        restates: writable.then(|| appearance.id.as_str().to_owned()),
+    })
+}
+
+/// Whether the name field of a Type 314 can state `name`.
+fn writable_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+}
+
+/// Writes a Type 314 for each distinct colour definition the presentations
+/// state, and points each presentation at its Type 314.
 fn append_color_definitions(
     entities: &mut Vec<Entity>,
-    presentations: &mut BTreeMap<usize, BodyPresentation>,
+    presentations: &mut BTreeMap<usize, Presentation>,
 ) -> Result<(), CodecError> {
+    let mut written = BTreeMap::<(String, Option<String>), usize>::new();
     for presentation in presentations.values_mut() {
-        let BodyColor::Custom(color) = presentation.color else {
+        let DirectoryColor::Custom(color) = presentation.color else {
             continue;
         };
         let components = [color.r(), color.g(), color.b()]
             .map(|component| finite(component * 100.0, "color percentage"))
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
-        let entity_index = entities.len();
-        entities.push(Entity {
-            type_code: 314,
-            form: 0,
-            label: "COLOR",
-            status: EntityStatus::Definition,
-            parameter_body: format!(
-                "{},{},{},;",
-                number(components[0]),
-                number(components[1]),
-                number(components[2])
-            )
-            .into_bytes(),
-            transform: None,
-            restates: Vec::new(),
-        });
-        presentation.color = BodyColor::Definition(entity_index);
+        let definition = presentation.color_definition.as_ref();
+        let name = definition
+            .and_then(|definition| definition.name.as_deref())
+            .map_or_else(String::new, |name| format!("{}H{name}", name.len()));
+        let parameters = format!(
+            "{},{},{},{name};",
+            number(components[0]),
+            number(components[1]),
+            number(components[2])
+        );
+        let restates = definition.and_then(|definition| definition.restates.clone());
+        let entity_index =
+            *written
+                .entry((parameters, restates))
+                .or_insert_with_key(|(parameters, restates)| {
+                    let index = entities.len();
+                    entities.push(Entity {
+                        type_code: 314,
+                        form: 0,
+                        label: "COLOR",
+                        status: EntityStatus::Definition,
+                        parameter_body: parameters.clone().into_bytes(),
+                        transform: None,
+                        restates: restates.iter().cloned().collect(),
+                    });
+                    index
+                });
+        presentation.color = DirectoryColor::Definition(entity_index);
     }
     Ok(())
 }
 
 fn append_name_properties(
     entities: &mut Vec<Entity>,
-    presentations: &BTreeMap<usize, BodyPresentation>,
+    presentations: &BTreeMap<usize, Presentation>,
 ) -> Result<(), CodecError> {
     if presentations
         .values()
@@ -432,7 +594,11 @@ fn append_name_properties(
         owner
             .parameter_body
             .extend_from_slice(format!(",0,1,{next_sequence};").as_bytes());
-        let restates = owner.restates.clone();
+        let restates = presentation
+            .body
+            .iter()
+            .map(|body| body.as_str().to_owned())
+            .collect();
         entities.push(Entity {
             type_code: 406,
             form: 15,
@@ -559,13 +725,13 @@ fn synthesize(
             )));
         }
     }
-    let mut body_presentations = BTreeMap::new();
+    let mut presentations = BTreeMap::new();
 
     let mut entities = if has_brep_topology(ir) {
         brep_entities(
             ctx,
             validate_brep_topology(ctx, &index, version)?,
-            &mut body_presentations,
+            &mut presentations,
             &mut losses,
         )?
     } else if has_trimmed_sheet_topology(ir) {
@@ -573,7 +739,7 @@ fn synthesize(
             ctx,
             validate_trimmed_sheet_topology(ctx, &index, version)?,
             &seam_cuts,
-            &mut body_presentations,
+            &mut presentations,
             &mut losses,
         )?
     } else {
@@ -677,10 +843,14 @@ fn synthesize(
         }
         entities
     };
-    append_color_definitions(&mut entities, &mut body_presentations)?;
+    let presented = presentations
+        .iter()
+        .map(|(index, presentation)| (*index, dispositions::Presented::of(presentation)))
+        .collect();
+    append_color_definitions(&mut entities, &mut presentations)?;
     ensure_version_support(&entities, version)?;
     resolve_entity_references(&mut entities)?;
-    append_name_properties(&mut entities, &body_presentations)?;
+    append_name_properties(&mut entities, &presentations)?;
     if entities.is_empty() {
         losses.push(output_empty(
             "the written IGES file holds no entity: the document states no geometry this \
@@ -695,7 +865,7 @@ fn synthesize(
     let counts = entity_counts(&entities);
     let bytes = encode_file(
         &entities,
-        &body_presentations,
+        &presentations,
         version,
         minimum_resolution,
         &source_global::GlobalRestatement::of(ir, version),
@@ -705,6 +875,8 @@ fn synthesize(
         bytes,
         counts,
         entities,
+        presented,
+        split_bodies: BTreeMap::new(),
         losses,
     })
 }
@@ -2055,7 +2227,7 @@ fn validate_brep_topology<'a>(
 fn brep_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
-    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    presentations: &mut BTreeMap<usize, Presentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, Unwritten> {
     let index = topology.index;
@@ -2595,6 +2767,7 @@ fn brep_entities(
                     transform: None,
                     restates: vec![face_id.as_str().to_owned()],
                 });
+                presentations.insert(index, face_presentation(ir, face, losses));
                 face_indices.insert(face_id.as_str().to_owned(), index);
             }
 
@@ -2642,7 +2815,7 @@ fn brep_entities(
                     restates: vec![shell.id.as_str().to_owned()],
                 });
                 if body.kind == BodyKind::Sheet {
-                    body_presentations.insert(index, body_presentation(body, losses));
+                    presentations.insert(index, body_presentation(ir, body, losses));
                 }
                 shell_indices.insert(shell.id.as_str(), index);
             }
@@ -2685,7 +2858,7 @@ fn brep_entities(
                     transform,
                     restates: vec![body.id.as_str().to_owned()],
                 });
-                body_presentations.insert(index, body_presentation(body, losses));
+                presentations.insert(index, body_presentation(ir, body, losses));
             }
             Ok(())
         })?;
@@ -3052,7 +3225,7 @@ fn topology_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
     seam_cuts: &rational_support::SeamCuts,
-    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    presentations: &mut BTreeMap<usize, Presentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, Unwritten> {
     let index = topology.index;
@@ -3394,7 +3567,7 @@ fn topology_entities(
                 transform: None,
                 restates: vec![face.id.as_str().to_owned()],
             });
-            body_presentations.insert(index, body_presentation(body, losses));
+            presentations.insert(index, trimmed_face_presentation(ir, body, face, losses));
             Ok(())
         })?;
     }
@@ -5443,8 +5616,19 @@ fn minimum_resolution_for_output(
     Ok(generated.max(index.ir.tolerances.linear.get()))
 }
 
+/// The charge for a written field 19 that does not state the source
+/// resolution. Where the source states no positive resolution and the
+/// document keeps the decoder's default tolerance, the charge names what the
+/// source states.
 fn minimum_resolution_loss(ir: &CadIr, emitted: f64) -> Option<LossNote> {
     ir.source.as_ref()?;
+    if ir.tolerances.linear == cadmpeg_ir::units::Tolerances::default().linear {
+        if let Some(stated) = source_global::unresolved_minimum_resolution(ir) {
+            return Some(IgesLossCode::WriterMinimumResolutionAdjusted.note(format!(
+                "IGES Global minimum resolution changed from {stated} to {emitted:.17e} mm"
+            )));
+        }
+    }
     let declared = ir.tolerances.linear.get();
     if emitted <= declared {
         return None;
@@ -8360,7 +8544,7 @@ fn restate(entities: &mut [Entity], id: &str) {
 
 fn encode_file(
     entities: &[Entity],
-    body_presentations: &BTreeMap<usize, BodyPresentation>,
+    presentations: &BTreeMap<usize, Presentation>,
     version: crate::IgesVersion,
     minimum_resolution: f64,
     restated: &source_global::GlobalRestatement,
@@ -8411,10 +8595,10 @@ fn encode_file(
             let mut entity = entity.clone();
             entity.transform = None;
             expanded_index_by_entity.push(expanded.len());
-            expanded.push((entity, transform_sequence, body_presentations.get(&index)));
+            expanded.push((entity, transform_sequence, presentations.get(&index)));
         } else {
             expanded_index_by_entity.push(expanded.len());
-            expanded.push((entity.clone(), 0, body_presentations.get(&index)));
+            expanded.push((entity.clone(), 0, presentations.get(&index)));
         }
     }
     let mut parameter_sequence = 1_u32;
@@ -8440,14 +8624,14 @@ fn encode_file(
         let parameter_count = u32::try_from(parameter_count)
             .map_err(|_| CodecError::NotImplemented("IGES parameter count overflows".into()))?;
         let color_number = match presentation.map(|presentation| presentation.color) {
-            None | Some(BodyColor::Standard(0)) => 0,
-            Some(BodyColor::Standard(number)) => number,
-            Some(BodyColor::Custom(_)) => {
+            None | Some(DirectoryColor::Standard(0)) => 0,
+            Some(DirectoryColor::Standard(number)) => number,
+            Some(DirectoryColor::Custom(_)) => {
                 return Err(CodecError::NotImplemented(
                     "IGES color definition was not emitted".into(),
                 ));
             }
-            Some(BodyColor::Definition(entity_index)) => {
+            Some(DirectoryColor::Definition(entity_index)) => {
                 let expanded_index =
                     expanded_index_by_entity.get(entity_index).ok_or_else(|| {
                         CodecError::NotImplemented(
@@ -8629,7 +8813,7 @@ fn generated_maximum_coordinate(entities: &[Entity]) -> f64 {
 }
 
 fn generated_entity_coordinate_bound(entity: &Entity) -> Option<f64> {
-    if entity.type_code == 406 {
+    if matches!(entity.type_code, 314 | 406) {
         return Some(0.0);
     }
     if entity.transform.is_some() {

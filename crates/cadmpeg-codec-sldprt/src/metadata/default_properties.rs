@@ -190,7 +190,7 @@ fn project(
             );
             crate::annotations::note(
                 annotations,
-                id.as_str(),
+                &id,
                 owner.source_stream(),
                 0,
                 &tag,

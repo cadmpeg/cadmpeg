@@ -800,7 +800,7 @@ fn malformed_pmi_map_emits_attributed_loss() {
     let mut losses = Vec::new();
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
-    assert_eq!(losses.len(), 1);
+    assert_given_up(&losses, "01234567-89ab-cdef-0123-456789abcdef");
     assert!(
         losses[0]
             .message
@@ -829,10 +829,35 @@ fn malformed_uppercase_pmi_guid_keeps_normalized_loss_text() {
     let mut losses = Vec::new();
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
-    assert_eq!(losses.len(), 1);
+    assert_given_up(&losses, "abcdef01-89ab-cdef-0123-456789abcdef");
     assert!(losses[0]
         .message
         .contains("abcdef01-89ab-cdef-0123-456789abcdef"));
+}
+
+/// `losses` holds one malformed-record loss, then the `record.unreadable`
+/// naming the dimension of `guid`.
+fn assert_given_up(losses: &[cadmpeg_ir::report::loss::LossNote], guid: &str) {
+    let [loss, given_up] = losses else {
+        panic!("one malformed-record loss and its given-up record: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::PmiSemanticRecordMalformed.kind()
+    );
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    let record = format!("sldprt:pmi:dimension#{guid}");
+    assert!(
+        given_up
+            .message
+            .split_whitespace()
+            .any(|token| token == record),
+        "{}",
+        given_up.message
+    );
 }
 
 #[test]
@@ -1576,13 +1601,21 @@ fn pmi_skipped_values_are_validated_but_not_kept() {
     let mut losses = Vec::new();
     let integer_key = record_with_trailing_entry("bulk", &[0x91, 0x81, 0x01, 0x02]);
     assert!(parse_payload(&integer_key, &mut losses).is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one malformed-record loss: {losses:?}");
+    let [loss, given_up] = losses.as_slice() else {
+        panic!("one malformed-record loss and its given-up record: {losses:?}");
     };
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::PmiSemanticRecordMalformed.kind()
     );
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(given_up
+        .message
+        .split_whitespace()
+        .any(|token| token == "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef"));
 }
 
 /// `count` candidate maps whose arrays run to the end of the payload. Each

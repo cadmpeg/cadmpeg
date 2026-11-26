@@ -435,12 +435,12 @@ mod tests {
         for (key, value) in [
             (
                 "object_index_source_offsets",
-                serde_json::json!([107, 109, 110, 114, 116]),
+                cadmpeg_core::json!([107, 109, 110, 114, 116]),
             ),
-            ("source_offset", serde_json::json!(u64::MAX)),
+            ("source_offset", cadmpeg_core::json!(u64::MAX)),
             (
                 "raw_object_indices",
-                serde_json::json!(["20", "ff", "f10208", "f10209", "ff"]),
+                cadmpeg_core::json!(["20", "ff", "f10208", "f10209", "ff"]),
             ),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json)?;
@@ -464,7 +464,7 @@ mod tests {
     {
         let json = r#"{"id":"delete","operation_label":"operation","control":255,"object_indices":[32,null,520,521,null],"raw_object_indices":["f020","ff","f10208","f10209","ff"],"data_blocks":["block-32",null,"block-520",null,null],"source_offset":100,"object_index_source_offsets":[107,109,110,113,116]}"#;
         let mut wire: serde_json::Value = serde_json::from_str(json)?;
-        wire["raw_object_indices"] = serde_json::json!(["20", "ff", "f10208", "f10209", "ff"]);
+        wire["raw_object_indices"] = cadmpeg_core::json!(["20", "ff", "f10208", "f10209", "ff"]);
 
         let error = json::from_value::<FeatureDeleteReferenceField>(wire)
             .err()

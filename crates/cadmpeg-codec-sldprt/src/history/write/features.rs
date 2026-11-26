@@ -1577,7 +1577,7 @@ mod tests {
     fn cleared_extrusion() -> cadmpeg_ir::features::Feature {
         use cadmpeg_ir::features::extents::ExtrudeDirection;
         use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-        let history: crate::records::FeatureHistory = json::from_value(serde_json::json!({
+        let history: crate::records::FeatureHistory = json::from_value(cadmpeg_core::json!({
             "id":"history", "features":[{
                 "id":"native", "parent":"history", "ordinal":0,
                 "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
@@ -1693,7 +1693,7 @@ mod tests {
         ];
         let lane = |id: &str, configuration: Option<&str>| -> crate::records::FeatureInputLane {
             let payload = format!("{}01{}", "00".repeat(REVERSAL), "00".repeat(31 - REVERSAL));
-            let mut value = serde_json::json!({
+            let mut value = cadmpeg_core::json!({
                 "id": id,
                 "native_payload": payload,
                 "classes": [],
