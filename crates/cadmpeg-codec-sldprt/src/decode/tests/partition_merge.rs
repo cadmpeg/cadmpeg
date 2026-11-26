@@ -542,12 +542,12 @@ fn merged_face_color_annotations_retain_site_owners() {
     let provenance = &result.source_fidelity().annotations.provenance;
     let first = provenance
         .iter()
-        .find(|(id, _)| id.starts_with("sldprt:appearance:entity53#900@"))
+        .find(|(id, _)| id.as_str().starts_with("sldprt:appearance:entity53#900@"))
         .expect("first merged face color provenance");
     assert_eq!(first.1.stream(), "Contents/Config-0-Partition");
     let second = provenance
         .iter()
-        .find(|(id, _)| id.starts_with("sldprt:appearance:entity53#901@"))
+        .find(|(id, _)| id.as_str().starts_with("sldprt:appearance:entity53#901@"))
         .expect("second merged face color provenance");
     assert_eq!(second.1.stream(), "Contents/Config-1-Partition");
 }

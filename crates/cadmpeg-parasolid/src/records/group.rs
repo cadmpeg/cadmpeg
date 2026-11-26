@@ -117,31 +117,21 @@ pub fn valid_group_references(references: &[u32; 5]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::GroupSelector;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn group_selector_wire_covers_the_ten_declared_families() {
         for value in 1..=10u8 {
             let selector = GroupSelector::try_from(value).unwrap();
             assert_eq!(u8::from(selector), value);
+            assert_eq!(json::to_value(selector).unwrap(), serde_json::json!(value));
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(selector).unwrap(),
-                serde_json::json!(value)
-            );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::from_value::<GroupSelector>(serde_json::json!(
-                    value
-                ))
-                .unwrap(),
+                json::from_value::<GroupSelector>(serde_json::json!(value)).unwrap(),
                 selector
             );
         }
         for value in [0u8, 11, 255] {
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<GroupSelector>(serde_json::json!(
-                    value
-                ))
-                .is_err()
-            );
+            assert!(json::from_value::<GroupSelector>(serde_json::json!(value)).is_err());
         }
     }
 }

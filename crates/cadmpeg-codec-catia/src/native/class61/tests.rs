@@ -1,5 +1,6 @@
 use super::{records, singleton_face_orientation_bit, CatiaConsolidatedClass61Record};
 use crate::native::CatiaAllocationReferenceEncoding as Encoding;
+use cadmpeg_core::serde_erase::json;
 
 fn framed(payload: &[u8]) -> Vec<u8> {
     let mut bytes = vec![
@@ -203,7 +204,7 @@ fn long_counted_record_has_one_counted_interpretation_and_no_scalar_lane() {
 #[test]
 fn wire_rejects_fields_that_disagree_with_retained_bytes() {
     let rows = decode(&framed(&[0x81, 3, 0x13, 3]));
-    let wire = cadmpeg_core::serde_erase::json::to_value(&rows[0]).expect("roster wire");
+    let wire = json::to_value(&rows[0]).expect("roster wire");
     for field in ["zero_prefix", "roster_control", "value", "orientation_bit"] {
         let mut invalid = wire.clone();
         match field {
@@ -213,14 +214,10 @@ fn wire_rejects_fields_that_disagree_with_retained_bytes() {
             "orientation_bit" => invalid["members"][0][field] = serde_json::json!(false),
             _ => unreachable!(),
         }
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedClass61Record>(invalid)
-                .is_err()
-        );
+        assert!(json::from_value::<CatiaConsolidatedClass61Record>(invalid).is_err());
     }
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedClass61Record>(wire)
-            .expect("checked roster wire"),
+        json::from_value::<CatiaConsolidatedClass61Record>(wire).expect("checked roster wire"),
         rows[0]
     );
 }

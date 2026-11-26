@@ -1,5 +1,6 @@
 use super::super as form_cages;
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn review1368_compatible_partial_preserves_complete_membership() {
@@ -585,7 +586,7 @@ fn form_repeated_and_distinct_lists_keep_direct_inputs_and_each_source_slot() {
     archive.write_all(&bytes).unwrap();
     let archive = archive.finish().unwrap().into_inner();
     let scope = form_scope(201, vec![210, 210, 220]);
-    let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"native_ref":scope.id,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
+    let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"native_ref":scope.id,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             form_cages::FormProjection::new(scan).project(
@@ -659,7 +660,7 @@ fn ordinary_form_list_keeps_valid_positions_around_a_malformed_slot_and_full_nat
         archive.write_all(&bytes).unwrap();
         let archive = archive.finish().unwrap().into_inner();
         let scope = form_scope(2190, vec![2196]);
-        let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"native_ref":scope.id,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
+        let mut rows: Vec<cadmpeg_ir::features::Feature> = vec![json::from_value(serde_json::json!({"id":"f3d:model:feature#form","ordinal":0,"native_ref":scope.id,"definition":{"kind":"operation","value":{"kind":"native","value":{"kind":"Form","parameters":{}}}},"dependencies":[],"source_properties":{},"source_content":[],"outputs":[]})).unwrap()];
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
                 form_cages::FormProjection::new(scan).project(

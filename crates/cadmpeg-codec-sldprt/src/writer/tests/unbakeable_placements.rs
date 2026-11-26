@@ -99,7 +99,7 @@ fn an_unbakeable_placement_drops_only_its_body_and_tessellation() {
     let mut encoded = Vec::new();
     let report = crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .unwrap()
     .write_to(&mut encoded)

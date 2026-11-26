@@ -779,7 +779,7 @@ fn a_synthesized_edit_marks_its_configuration_stale() {
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut output)

@@ -4,6 +4,7 @@
 //! `process` home of a document.
 
 use cadmpeg_core::decode::{ArenaClass, ContentScope};
+use cadmpeg_core::serde_erase::json;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::json;
@@ -56,7 +57,7 @@ fn the_populated_process_root_fills_every_arena() {
 /// §7: the process root's keys, in the order the document states them.
 #[test]
 fn the_process_root_writes_every_arena_in_order() {
-    let text = cadmpeg_core::serde_erase::json::to_string(&Process::default()).unwrap();
+    let text = json::to_string(&Process::default()).unwrap();
     assert_eq!(
         text,
         r#"{"setups":[],"operations":[],"features":[],"groups":[],"tools":[],"presets":[],"machines":[],"programs":[],"parameters":[],"toolpaths":[],"states":[]}"#
@@ -169,18 +170,15 @@ fn reads_strictly<T: DeserializeOwned + std::fmt::Debug>(
 #[test]
 fn a_document_with_a_process_writes_and_reads() {
     let ir = CadIr::empty();
-    let text = cadmpeg_core::serde_erase::json::to_string(&ir).unwrap();
+    let text = json::to_string(&ir).unwrap();
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(value["process"], to_value(&Process::default()));
     let mut full = CadIr::empty();
     full.process = root::processes().remove(1);
-    let text = cadmpeg_core::serde_erase::json::to_string(&full).unwrap();
+    let text = json::to_string(&full).unwrap();
     assert_eq!(CadIr::from_json(&text).unwrap(), full);
     let read: CadIr = read_desktop(&text).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&read).unwrap(),
-        text
-    );
+    assert_eq!(json::to_string(&read).unwrap(), text);
     assert_eq!(
         full.entity_count(),
         root::processes().remove(1).entity_count()
@@ -211,7 +209,7 @@ fn a_process_record_outside_the_scope_is_kept_and_named() {
         arena: ArenaName::parse("process.toolpaths").unwrap(),
     }];
     assert_eq!(ir.scope_violations(), breach);
-    let back = CadIr::from_json(&cadmpeg_core::serde_erase::json::to_string(&ir).unwrap()).unwrap();
+    let back = CadIr::from_json(&json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(back.scope(), ContentScope::design());
     assert_eq!(back.scope_violations(), breach);
 }

@@ -381,7 +381,7 @@ pub(crate) fn dump(
         let plan = encoder
             .plan(
                 cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
-                TargetRequest::Inherit,
+                TargetRequest::Unnamed,
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
         let emission = emit_export_plan(
@@ -613,6 +613,13 @@ pub(crate) fn diff(
         println!("diff {} vs {}", a.path.display(), b.path.display());
         if let Some((before, after)) = &result.tolerance_change {
             println!("  tolerances: {before:?} → {after:?}");
+        }
+        if let Some((before, after)) = result.scope_change {
+            println!(
+                "  scope: {} → {}",
+                reporting::render_scope(before),
+                reporting::render_scope(after)
+            );
         }
         print_source_diff(&result.source)?;
         for arena in &result.per_arena {

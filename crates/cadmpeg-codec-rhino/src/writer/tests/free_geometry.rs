@@ -916,7 +916,7 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         native_ref: None,
     });
     let plan = RhinoCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .expect("synthetic support fixture is admitted");
     let loss = plan
         .report()

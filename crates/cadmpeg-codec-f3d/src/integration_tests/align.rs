@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn align_scopes_retain_typed_prefix_or_emit_exact_refusal_loss() {
     use crate::design::decode::scopes::parameter_scope::{
@@ -26,27 +28,16 @@ fn align_scopes_retain_typed_prefix_or_emit_exact_refusal_loss() {
                 if let Some(envelope) = result.scopes[0].align_envelope() {
                     assert_eq!(envelope.construction.is_none(), constructor_refused);
                 }
-                let wire = cadmpeg_core::serde_erase::json::to_value(&result.scopes[0]).unwrap();
-                let back: DesignParameterScope =
-                    cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+                let wire = json::to_value(&result.scopes[0]).unwrap();
+                let back: DesignParameterScope = json::from_value(wire.clone()).unwrap();
                 assert_eq!(back, result.scopes[0]);
                 if !refused {
                     let mut wrong_kind = wire.clone();
                     wrong_kind["kind"] = "Move".into();
-                    assert!(
-                        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(
-                            wrong_kind
-                        )
-                        .is_err()
-                    );
+                    assert!(json::from_value::<DesignParameterScope>(wrong_kind).is_err());
                     let mut null_construction = wire;
                     null_construction["align_envelope"]["construction"] = serde_json::Value::Null;
-                    assert!(
-                        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(
-                            null_construction
-                        )
-                        .is_err()
-                    );
+                    assert!(json::from_value::<DesignParameterScope>(null_construction).is_err());
                 }
                 assert_eq!(result.losses.len(), 1);
                 assert_eq!(

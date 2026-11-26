@@ -2,6 +2,7 @@
 //! Validation of distance dimensions measured to an axis line.
 
 use super::{empty_data, TestResult};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::report::check::Finding;
 
 const SEGMENT: &str = "generated";
@@ -19,50 +20,46 @@ fn header() -> serde_json::Value {
 }
 
 fn line(ordinal: u32, entity_flags: u32) -> TestResult<crate::sketch::PmDcSketchEntity> {
-    Ok(cadmpeg_core::serde_erase::json::from_value(
-        serde_json::json!({
-            "id": format!("inventor:pmdc:sketch-entity#{SEGMENT}-{ordinal}"),
-            "entity_flags": entity_flags,
-            "header": header(),
-            "kind": {
-                "form": "line", "points": list(), "auxiliary": [],
-                "origin": [0.0, 0.0], "direction": [1.0, 0.0]
-            },
-            "record_ordinal": ordinal,
-            "save_version_major": 19,
-            "segment_token": SEGMENT,
-            "sketch": {"index": 1, "qualified": false},
-            "type_id": "55df52ced011d0d20008ccbc0663dc09"
-        }),
-    )?)
+    Ok(json::from_value(serde_json::json!({
+        "id": format!("inventor:pmdc:sketch-entity#{SEGMENT}-{ordinal}"),
+        "entity_flags": entity_flags,
+        "header": header(),
+        "kind": {
+            "form": "line", "points": list(), "auxiliary": [],
+            "origin": [0.0, 0.0], "direction": [1.0, 0.0]
+        },
+        "record_ordinal": ordinal,
+        "save_version_major": 19,
+        "segment_token": SEGMENT,
+        "sketch": {"index": 1, "qualified": false},
+        "type_id": "55df52ced011d0d20008ccbc0663dc09"
+    }))?)
 }
 
 fn distance(ordinal: u32, operands: [u32; 2]) -> TestResult<crate::sketch::PmDcSketchConstraint> {
     let reference = |index: u32| serde_json::json!({"index": index, "qualified": false});
-    Ok(cadmpeg_core::serde_erase::json::from_value(
-        serde_json::json!({
-            "id": format!("inventor:pmdc:sketch-constraint#{SEGMENT}-{ordinal}"),
-            "header": {
-                "content": header(),
-                "group": reference(0),
-                "parameter": reference(5),
-                "reference_map": {"entries": [], "metadata": null},
-                "scalar_map": {"entries": [], "metadata": null},
-                "state": -1
-            },
-            "kind": {
-                "form": "distance",
-                "first": reference(operands[0]),
-                "second": reference(operands[1]),
-                "value": 0,
-                "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-            },
-            "record_ordinal": ordinal,
-            "save_version_major": 19,
-            "segment_token": SEGMENT,
-            "type_id": "58850511d211e39560000cb38932edb0"
-        }),
-    )?)
+    Ok(json::from_value(serde_json::json!({
+        "id": format!("inventor:pmdc:sketch-constraint#{SEGMENT}-{ordinal}"),
+        "header": {
+            "content": header(),
+            "group": reference(0),
+            "parameter": reference(5),
+            "reference_map": {"entries": [], "metadata": null},
+            "scalar_map": {"entries": [], "metadata": null},
+            "state": -1
+        },
+        "kind": {
+            "form": "distance",
+            "first": reference(operands[0]),
+            "second": reference(operands[1]),
+            "value": 0,
+            "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        },
+        "record_ordinal": ordinal,
+        "save_version_major": 19,
+        "segment_token": SEGMENT,
+        "type_id": "58850511d211e39560000cb38932edb0"
+    }))?)
 }
 
 /// A neutral constraint on the distance record at `ordinal`, in the given
@@ -71,14 +68,12 @@ fn neutral(
     ordinal: u32,
     definition: &serde_json::Value,
 ) -> TestResult<cadmpeg_ir::SketchConstraint> {
-    Ok(cadmpeg_core::serde_erase::json::from_value(
-        serde_json::json!({
-            "id": format!("inventor:design:sketch-constraint#{SEGMENT}-{ordinal}"),
-            "sketch": "inventor:design:sketch#generated-1",
-            "definition": definition,
-            "native_ref": format!("inventor:pmdc:sketch-constraint#{SEGMENT}-{ordinal}")
-        }),
-    )?)
+    Ok(json::from_value(serde_json::json!({
+        "id": format!("inventor:design:sketch-constraint#{SEGMENT}-{ordinal}"),
+        "sketch": "inventor:design:sketch#generated-1",
+        "definition": definition,
+        "native_ref": format!("inventor:pmdc:sketch-constraint#{SEGMENT}-{ordinal}")
+    }))?)
 }
 
 fn entity_id(ordinal: u32) -> String {

@@ -5,6 +5,7 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::ignored_unit_patterns)]
 
+use cadmpeg_core::serde_erase::json;
 use proptest::prelude::{ProptestConfig, Strategy};
 use proptest::string::string_regex;
 use proptest::{prop_assert, prop_assert_eq, proptest};
@@ -188,7 +189,7 @@ proptest! {
         {
             let malformed = strip_one_namespace_component(ir.geometry.points[0].id.as_str());
             prop_assert!(PointId::mint(malformed.clone()).is_err());
-            let wire = cadmpeg_core::serde_erase::json::to_string(&malformed).unwrap();
+            let wire = json::to_string(&malformed).unwrap();
             prop_assert!(serde_json::from_str::<PointId>(&wire).is_err());
         }
 
