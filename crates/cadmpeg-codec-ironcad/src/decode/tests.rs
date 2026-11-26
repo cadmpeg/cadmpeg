@@ -211,3 +211,22 @@ fn a_failed_result_leaves_a_single_decoded_result_unqualified() {
     let ids: Vec<_> = brep.bodies.iter().map(|body| body.id.as_str()).collect();
     assert_eq!(ids, ["ironcad:brep:entity#0"]);
 }
+
+#[test]
+fn a_history_partition_is_charged_and_retained() {
+    let solved = plane_face_body();
+    let end = solved.len() - 18;
+    let mut body = solved[..end].to_vec();
+    body.extend_from_slice(&[0x0d, 16]);
+    body.extend_from_slice(b"delta_state%");
+    body.extend_from_slice(&7_u32.to_le_bytes());
+    body.push(0x04);
+    body.extend_from_slice(&0_i32.to_le_bytes());
+    body.push(0x11);
+    body.extend_from_slice(&solved[end..]);
+    let payload = part(&plane_face_body(), &body);
+    let (bodies, losses) = classified(&payload);
+    assert_eq!(count(&losses, IronCadLossCode::BodyPartitionUnread), 1);
+    assert!(bodies.brep.is_some());
+    assert_eq!(bodies.retained.len(), 2);
+}
