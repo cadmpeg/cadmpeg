@@ -9,7 +9,10 @@ use super::{enrich_circular_patterns, walked_circular, WalkedPatterns};
 use crate::carchive::reader::{ParameterRecord, V};
 use crate::carchive::PatternSeeds;
 use crate::records::{Feature, FeatureHistory, FeatureSource};
-use crate::records::{FeatureInputLane, FeatureInputName, ObjectId};
+use crate::records::{
+    FeatureInputComponentPathEntry, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane,
+    FeatureInputName, ObjectId,
+};
 
 fn parameter(class: &str, name: &str, value: f64) -> ParameterRecord {
     ParameterRecord {
@@ -313,4 +316,56 @@ fn a_carrier_in_the_patterns_lane_interval_leaves_the_record() {
     )
     .unwrap();
     assert_eq!(property(&clear, "SeedSources"), Some("41"));
+}
+
+/// A seed identity record at `offset` whose path opens with a component of
+/// the feature of source `first` and ends at surface 2 of source 41.
+fn identity(offset: u64, first: u32) -> FeatureInputGeneratedSurfaceIdentity {
+    let signature = |source: u32, local: u32| {
+        let mut signature = [0; 12];
+        signature[4..8].copy_from_slice(&source.to_le_bytes());
+        signature[8..12].copy_from_slice(&local.to_le_bytes());
+        signature
+    };
+    FeatureInputGeneratedSurfaceIdentity {
+        id: "identity".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset,
+        type_prefix: [0xc2, 0x83, 0xfb, 0x08].into(),
+        feature_source_id: 41_u32.try_into().unwrap(),
+        local_identity: 2,
+        components: vec![
+            FeatureInputComponentPathEntry {
+                instance: Some(0x8aaa),
+                type_signature: signature(first, 1).into(),
+                local_id: None,
+            },
+            FeatureInputComponentPathEntry {
+                instance: Some(0x89c9),
+                type_signature: signature(41, 2).into(),
+                local_id: Some(2),
+            },
+        ],
+    }
+}
+
+#[test]
+fn a_seed_identity_of_the_pattern_in_its_lane_interval_leaves_the_record() {
+    for (offset, first, kept) in [(150, 86, false), (50, 86, true), (150, 99, true)] {
+        let mut with_identity = lane(b"");
+        with_identity.generated_surface_identities = vec![identity(offset, first)];
+        let mut histories = history();
+        enrich_circular_patterns(
+            &mut histories,
+            &[with_identity],
+            &walked(vec![pattern("CirPattern1", TAU)]),
+        )
+        .unwrap();
+        assert_eq!(
+            property(&histories, "SeedSources").is_some(),
+            kept,
+            "identity at {offset} naming {first}"
+        );
+    }
 }
