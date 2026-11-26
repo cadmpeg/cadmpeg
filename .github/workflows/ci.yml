@@ -315,7 +315,17 @@ jobs:
         shell: bash
         run: |
           (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
-          python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+          python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast --timings
+
+      - name: Upload build timings
+        # Cargo's per-unit compile report: which crates sit on the critical
+        # path and how many units ran at once.
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-timing-linux
+          path: target/cargo-timings/cargo-timing.html
+          if-no-files-found: ignore
 
       - name: Inventor CLI evidence tests
         if: needs.changes.outputs.inventor_cli == 'true'
@@ -556,7 +566,15 @@ jobs:
       # than being cancelled, and the report and cache steps run.
       - name: Build tests
         timeout-minutes: 75
-        run: python3 scripts/ci_cargo.py nextest run --no-run --bins --tests
+        run: python3 scripts/ci_cargo.py nextest run --no-run --bins --tests --timings
+
+      - name: Upload build timings
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cargo-timing-${{ runner.os }}
+          path: target/cargo-timings/cargo-timing.html
+          if-no-files-found: ignore
 
       - name: Unit and integration tests
         timeout-minutes: 40
