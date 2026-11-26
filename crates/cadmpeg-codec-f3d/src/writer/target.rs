@@ -229,5 +229,6 @@ fn body(
             "entity counts are derived from the IR".into(),
         ],
         written_row: None,
+        annotations: None,
     }
 }

@@ -394,6 +394,26 @@ pub(crate) const EXTRUSION_DEPTH_PARAMETERS: [&str; 4] = ["D1", "Depth", "D2", "
 /// lane while the projected definition states neither.
 pub(crate) const LINEAR_PATTERN_DIRECTION_PROPERTIES: [&str; 2] = ["Direction", "Direction2"];
 
+/// The record fields of a circular pattern the decoder fills from its walked
+/// object: the axis, the seed's source id, and the names of the dimensions
+/// that hold the count and the angle.
+pub(crate) const CIRCULAR_PATTERN_WALKED_PROPERTIES: [&str; 5] = [
+    "AxisOrigin",
+    "AxisDirection",
+    CIRCULAR_PATTERN_SEED_SOURCES,
+    CIRCULAR_PATTERN_COUNT_DIMENSION,
+    CIRCULAR_PATTERN_ANGLE_DIMENSION,
+];
+
+/// The source ids of a walked circular pattern's seeds.
+pub(crate) const CIRCULAR_PATTERN_SEED_SOURCES: &str = "SeedSources";
+
+/// The name of the dimension that holds a walked circular pattern's count.
+pub(crate) const CIRCULAR_PATTERN_COUNT_DIMENSION: &str = "CountDimension";
+
+/// The name of the dimension that holds a walked circular pattern's angle.
+pub(crate) const CIRCULAR_PATTERN_ANGLE_DIMENSION: &str = "AngleDimension";
+
 /// Record fields the decoder fills from the feature-input lane together, and
 /// only while the record states none of the group's gate. A record that states
 /// a gate key is read for the whole group.
@@ -409,7 +429,7 @@ pub(crate) struct LaneDerivedGroup {
 /// Every lane-derived group. The decoder guards read the gate constants above;
 /// the linear-pattern guard reads the projected definition, whose two
 /// directions come from these two properties.
-pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 7] = [
+pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 8] = [
     LaneDerivedGroup {
         gate: &REVOLUTION_AXIS_PROPERTIES,
         properties: &REVOLUTION_AXIS_DERIVED_PROPERTIES,
@@ -443,6 +463,11 @@ pub(crate) const LANE_DERIVED_GROUPS: [LaneDerivedGroup; 7] = [
     LaneDerivedGroup {
         gate: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
         properties: &LINEAR_PATTERN_DIRECTION_PROPERTIES,
+        parameters: &[],
+    },
+    LaneDerivedGroup {
+        gate: &CIRCULAR_PATTERN_WALKED_PROPERTIES,
+        properties: &CIRCULAR_PATTERN_WALKED_PROPERTIES,
         parameters: &[],
     },
 ];

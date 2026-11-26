@@ -217,7 +217,6 @@ fn a_retired_record_keeps_its_annotations_under_its_evaluation() {
     builder.exactness(id.as_str(), Exactness::Inferred);
     let mut annotations = builder.build();
 
-    super::annotate_state_records(&ir, &mut annotations);
     let retired = BTreeMap::from([(id.as_str().to_owned(), configuration)]);
     super::retire(
         &mut ir,
@@ -227,7 +226,7 @@ fn a_retired_record_keeps_its_annotations_under_its_evaluation() {
         &mut Vec::new(),
     );
 
-    let key = AnnotationKey::in_evaluation(&evaluation, id.as_str());
+    let key = AnnotationKey::in_delta(&evaluation, id.as_str());
     assert_eq!(
         key.target(),
         AnnotationTarget::Delta {
@@ -236,7 +235,7 @@ fn a_retired_record_keeps_its_annotations_under_its_evaluation() {
         }
     );
     assert_eq!(annotations.provenance[&key].offset, 40);
-    assert!(annotations.exactness().contains_key(&key));
+    assert_eq!(annotations.exactness()[&key].entity(), Exactness::Inferred);
     assert!(!annotations.provenance.contains_key(id.as_str()));
     assert!(!annotations.exactness().contains_key(id.as_str()));
 }

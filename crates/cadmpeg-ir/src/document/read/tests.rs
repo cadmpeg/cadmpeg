@@ -233,6 +233,44 @@ fn listed<'m>(message: &'m str, field: &str) -> Vec<&'m str> {
         .unwrap_or_default()
 }
 
+/// The annotations of a sidecar read with the document leave with each
+/// record the read gives up and each record it drops with one; a record
+/// the read keeps keeps its annotations (§3.3).
+#[test]
+fn a_given_up_record_takes_the_annotations_of_its_sidecar() {
+    let (ir, mut value) = wire();
+    let point = ir.geometry.points[0].id.as_str().to_owned();
+    points(&mut value)[0]["position"] = json!("not a point");
+    let read = read(value.to_string().as_bytes());
+    let [entry] = read.report.as_slice() else {
+        panic!("one entry: {:?}", read.report);
+    };
+    let dropped = listed(&entry.message, "dropped");
+    let marked = listed(&entry.message, "marked");
+    assert!(dropped.contains(&point.as_str()), "{}", entry.message);
+    let [kept, ..] = marked.as_slice() else {
+        panic!("a marked record: {}", entry.message);
+    };
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for id in dropped.iter().chain([kept]) {
+        annotations.note(id, &stream, 0, None);
+    }
+    let mut fidelity =
+        crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
+    fidelity.annotations = annotations.build();
+
+    read.remove_given_up_annotations(&mut fidelity);
+
+    let keys: Vec<&str> = fidelity
+        .annotations
+        .provenance
+        .keys()
+        .map(crate::annotations::AnnotationKey::as_str)
+        .collect();
+    assert_eq!(keys, [*kept]);
+}
+
 /// Each record that needs a given-up record is dropped, transitively, until
 /// no record of the document names a dropped one; each record that holds
 /// one as a member is kept with a mark; and the entry that gives the record

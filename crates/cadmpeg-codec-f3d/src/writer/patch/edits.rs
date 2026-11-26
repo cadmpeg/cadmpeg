@@ -1693,7 +1693,10 @@ pub(super) fn validate_configuration_edits(
         if before != after {
             edits.insert(
                 name.to_owned(),
-                crate::records::configuration::encode_configuration_payload(after)?,
+                crate::records::configuration::encode_configuration_payload(
+                    after.entry_name(),
+                    after.payload(),
+                )?,
             );
         }
     }

@@ -116,7 +116,10 @@ fn configuration_payload_is_retained_and_encoded_verbatim() {
         let admitted: DesignConfiguration = json::from_value(expected.clone()).unwrap();
         assert_eq!(json::to_value(&admitted).unwrap(), expected);
         assert_eq!(
-            json::from_slice::<Value>(&encode_configuration_payload(&admitted).unwrap()).unwrap(),
+            json::from_slice::<Value>(
+                &encode_configuration_payload(admitted.entry_name(), admitted.payload()).unwrap()
+            )
+            .unwrap(),
             payload
         );
     }
