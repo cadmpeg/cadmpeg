@@ -4,6 +4,7 @@
 #![allow(clippy::default_trait_access)]
 
 use crate::test_support::test_prt::prt_with_partition;
+use cadmpeg_core::serde_erase::json;
 
 use crate::container;
 use crate::parasolid::{self, StreamKind};
@@ -82,7 +83,7 @@ fn unresolved_chart_descriptions_preserve_bytes_without_admitting_hvecs() {
                 let decoded =
                     crate::decode::decode(ctx, cadmpeg_core::decode::View::over_retained(&bytes))
                         .unwrap();
-                let ir = cadmpeg_core::serde_erase::json::to_value(&decoded.ir).unwrap();
+                let ir = json::to_value(&decoded.ir).unwrap();
                 assert!(ir["native"]["nx"].is_object());
                 for arena in ["parasolid_chart_records", "parasolid_term_use_records"] {
                     assert!(

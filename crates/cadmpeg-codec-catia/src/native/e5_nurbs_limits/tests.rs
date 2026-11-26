@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 use super::{derive, records, CatiaE5NurbsLimitRecord, LimitProgram};
 use crate::test_support::{test_e5::append_e5_record, with_entity_limit, with_service_context};
+use cadmpeg_core::serde_erase::json;
 
 fn axis(bytes: &mut Vec<u8>) {
     for word in [1_u32, 0, 0, 2, 0] {
@@ -213,15 +214,11 @@ fn stored_limit_programs_round_trip_exact_raw_bits() {
     let mut bytes = frame(0xaa, 7, &curve());
     bytes.extend(frame(0xe7, 7, &surface(1)));
     let expected = with_service_context(|ctx| derive(ctx, &bytes)).unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_vec(&expected).unwrap();
-    let loaded: Vec<CatiaE5NurbsLimitRecord> =
-        cadmpeg_core::serde_erase::json::from_slice(&wire).unwrap();
+    let wire = json::to_vec(&expected).unwrap();
+    let loaded: Vec<CatiaE5NurbsLimitRecord> = json::from_slice(&wire).unwrap();
     assert_eq!(loaded, expected);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&loaded).unwrap(),
-        wire
-    );
-    let mut value = cadmpeg_core::serde_erase::json::to_value(&expected[0]).unwrap();
+    assert_eq!(json::to_vec(&loaded).unwrap(), wire);
+    let mut value = json::to_value(&expected[0]).unwrap();
     value["unexpected"] = true.into();
-    assert!(cadmpeg_core::serde_erase::json::from_value::<CatiaE5NurbsLimitRecord>(value).is_err());
+    assert!(json::from_value::<CatiaE5NurbsLimitRecord>(value).is_err());
 }

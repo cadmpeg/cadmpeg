@@ -1,3 +1,4 @@
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
 use cadmpeg_ir::attributes::AttributeValue;
@@ -314,7 +315,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
     let points = [(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)];
     for (i, (x, y)) in (0..4).zip(points) {
         brep.points.push(
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            json::from_value(serde_json::json!({
                 "id": id(41+i), "position": {"x": x, "y": y, "z": 0.0}
             }))
             .expect("synthetic profile fixture"),
@@ -470,7 +471,7 @@ fn a_loop_inside_another_selected_loop_is_a_hole_of_its_region() {
 /// A raw sketch entity record of `kind` at `ordinal`, in the sketch or block
 /// definition at one-based `sketch`.
 fn raw_entity(ordinal: u32, sketch: u32, kind: &serde_json::Value) -> PmDcSketchEntity {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": format!("inventor:pmdc:sketch-entity#segment-{ordinal}"),
         "type_id": "3bdf52ced011d0d20008ccbc0663dc09",
         "segment_token": "segment",

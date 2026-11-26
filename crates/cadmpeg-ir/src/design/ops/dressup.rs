@@ -38,7 +38,10 @@ mod tests;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub struct Stations<Q> {
     /// The stations, each a position on the chain and the value there.
@@ -69,7 +72,10 @@ pub struct Stations<Q> {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     deny_unknown_fields,
-    bound(serialize = "Q: Serialize", deserialize = "Q: Deserialize<'de>")
+    bound(
+        serialize = "Q: Serialize",
+        deserialize = "Q: ::serde::de::DeserializeOwned"
+    )
 )]
 pub struct ValueStation<Q> {
     /// Where the station lies.

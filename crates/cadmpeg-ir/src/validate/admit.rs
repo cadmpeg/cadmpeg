@@ -9,6 +9,7 @@
 
 pub(crate) mod incremental;
 
+use super::topology::nested::NestRules;
 use crate::annotations::Annotations;
 use crate::document::CadIr;
 use crate::report::{
@@ -19,19 +20,26 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 /// A decoder admission route: the rules whose Error findings refuse a
-/// candidate, and whether the route validates annotations.
+/// candidate, whether the route validates annotations, and the rules it runs
+/// on each history body's nest.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Admission {
     rules: &'static [RuleName],
     annotations: bool,
+    nests: NestRules,
 }
 
 impl Admission {
     /// A route that admits a candidate unless it breaks one of `rules`, and
-    /// validates annotations where `annotations` holds.
+    /// validates annotations where `annotations` holds. It runs every
+    /// topology rule on each history body's nest.
     #[must_use]
     pub const fn new(rules: &'static [RuleName], annotations: bool) -> Self {
-        Self { rules, annotations }
+        Self {
+            rules,
+            annotations,
+            nests: super::ALL_NEST_RULES,
+        }
     }
 
     /// Whether `finding` counts toward this route: its rule is listed, and
@@ -306,6 +314,18 @@ pub const RHINO_INSTANCE: &Admission = DRAFT_CORE;
 /// [`admit_with_additional_native_identities`].
 pub const CATIA_ADMISSION: &Admission = DRAFT_CORE;
 
+/// History-body admission: [`DRAFT_CORE`], with the identity, order,
+/// reference, and typed reference checks and the rules of coedge pairing,
+/// shell connectivity, wire topology, edge ends, and topology tolerances on
+/// each history body's nest. An error of these that [`DRAFT_CORE`] lists
+/// gives up the history body. The other topology rules report on a nest and
+/// give up no history body.
+pub const HISTORY_BODY_ADMISSION: &Admission = &Admission {
+    rules: DRAFT_CORE.rules,
+    annotations: false,
+    nests: NestRules::Admission,
+};
+
 /// Drop the findings whose rule `allowed` does not list.
 fn filter_rules(mut report: ValidationReport, allowed: &Admission) -> ValidationReport {
     report.findings.retain(|finding| allowed.admits(finding));
@@ -320,7 +340,7 @@ pub fn admit(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     Ok(filter_rules(
-        super::validate_model(ctx, ir, losses)?,
+        super::validate_model(ctx, ir, losses, allowed.nests)?,
         allowed,
     ))
 }
@@ -334,7 +354,7 @@ pub fn admit_with_annotations(
     losses: Vec<LossNote>,
 ) -> Result<ValidationReport, CodecError> {
     Ok(filter_rules(
-        super::validate_model_with_annotations(ctx, ir, annotations, losses)?,
+        super::validate_model_with_annotations(ctx, ir, annotations, losses, allowed.nests)?,
         allowed,
     ))
 }
@@ -349,7 +369,7 @@ pub fn admit_with_additional_native_identities<'a>(
 ) -> Result<ValidationReport, CodecError> {
     let index = crate::index::ModelIndex::with_additional_native_identities(ir, additional);
     Ok(filter_rules(
-        super::validate_model_with_index(ctx, ir, losses, &index)?,
+        super::validate_model_with_index(ctx, ir, losses, &index, allowed.nests)?,
         allowed,
     ))
 }
@@ -369,7 +389,7 @@ pub fn admit_with_native_unknowns(
         Err(error) => return Ok(Err(error)),
     };
     let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &positions);
-    let mut report = super::validate_model_with_index(ctx, ir, losses, &index)?;
+    let mut report = super::validate_model_with_index(ctx, ir, losses, &index, allowed.nests)?;
     if let Some(annotations) = annotations {
         super::validate_annotations(
             ctx,
@@ -395,7 +415,7 @@ pub(crate) fn admit_annotation_delta(
         Err(error) => return Ok(Err(error)),
     };
     let index = crate::index::ModelIndex::with_native_unknowns(ir, format, records, &positions);
-    let mut report = super::validate_model_with_index(ctx, ir, Vec::new(), &index)?;
+    let mut report = super::validate_model_with_index(ctx, ir, Vec::new(), &index, allowed.nests)?;
     let mut old = Vec::new();
     super::validate_annotations(
         ctx,

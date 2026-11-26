@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
 use crate::test_support::sheet_metal::Fixture;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::profiles::PlanarProfileRef;
 use cadmpeg_ir::features::selections::GeneratedEdgeRef;
 use cadmpeg_ir::features::FeatureId;
@@ -153,7 +154,7 @@ fn projected_features_each_report_their_retained_controls() {
     ));
     let losses = super::super::retained_control_losses([&plate, &bend]);
     assert_eq!(losses.len(), 3);
-    let text = cadmpeg_core::serde_erase::json::to_string(&losses).expect("losses");
+    let text = json::to_string(&losses).expect("losses");
     assert!(text.contains("feature.sheet-metal-attachment-controls-retained"));
     assert!(text.contains("feature.sheet-metal-bend-controls-retained"));
     assert!(text.contains("slot-10 Boolean"));
@@ -311,7 +312,7 @@ fn a_generated_attachment_requires_a_preceding_projected_result() {
     // The producer fixture shares the plate's source record; the note is for the plate.
     let notes = refusals.losses(&[items[1].feature.clone()]);
     assert_eq!(notes.len(), 1);
-    let wire = cadmpeg_core::serde_erase::json::to_string(&notes).expect("notes");
+    let wire = json::to_string(&notes).expect("notes");
     assert!(wire.contains("feature.sheet-metal-plate-refused"));
     assert!(wire.contains("input-producer"));
     assert!(!items[1].neutral);
@@ -384,7 +385,7 @@ fn plate_and_bend_projection_is_all_or_nothing_in_history_order() {
         let notes = refusals.losses(&items.iter().map(|i| i.feature.clone()).collect::<Vec<_>>());
         assert_eq!(notes.len(), missing);
         if missing == 1 {
-            assert!(cadmpeg_core::serde_erase::json::to_string(&notes)
+            assert!(json::to_string(&notes)
                 .expect("notes")
                 .contains("bend-pair"));
         }
@@ -398,7 +399,7 @@ fn plate_and_bend_projection_is_all_or_nothing_in_history_order() {
             &items.iter().map(|i| i.feature.clone()).collect::<Vec<_>>(),
         );
         assert_eq!(losses.len(), 2);
-        let wire = cadmpeg_core::serde_erase::json::to_string(&losses).expect("losses");
+        let wire = json::to_string(&losses).expect("losses");
         assert!(wire.contains("feature.sheet-metal-attachment-controls-native"));
         assert!(wire.contains("feature.sheet-metal-bend-controls-native"));
     }
@@ -455,7 +456,7 @@ fn the_first_refusal_of_a_plate_is_kept_and_other_operations_have_none() {
     retain_native(&ctx, &mut item, &inventory).expect("native");
     let notes = refusals.losses(&[item.feature.clone(), other]);
     assert_eq!(notes.len(), 1);
-    let wire = cadmpeg_core::serde_erase::json::to_string(&notes).expect("notes");
+    let wire = json::to_string(&notes).expect("notes");
     assert!(wire.contains("feature.sheet-metal-plate-refused"));
     assert!(wire.contains("input-producer"));
     assert!(!wire.contains("bend-pair"));
@@ -476,7 +477,7 @@ fn a_native_plate_reports_the_first_direction_refusal() {
     refusals.insert(fixture.plate.id(), PlateRefusal::FirstDirection);
     let notes = refusals.losses(&[feature]);
     assert_eq!(notes.len(), 1);
-    let wire = cadmpeg_core::serde_erase::json::to_string(&notes).expect("notes");
+    let wire = json::to_string(&notes).expect("notes");
     assert!(wire.contains("feature.sheet-metal-plate-refused"));
     assert!(wire.contains("first-direction"));
 }
@@ -984,10 +985,7 @@ fn a_historical_attachment_requires_preceding_projected_generators() {
         1
     );
     assert!(!rejected[1].neutral);
-    let wire = cadmpeg_core::serde_erase::json::to_string(
-        &refusals.losses(&[rejected[1].feature.clone()]),
-    )
-    .expect("notes");
+    let wire = json::to_string(&refusals.losses(&[rejected[1].feature.clone()])).expect("notes");
     assert!(wire.contains("input-producer"));
     // A generator that names no feature record of the segment leaves it native.
     inventory

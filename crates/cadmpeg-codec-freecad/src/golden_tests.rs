@@ -10,6 +10,7 @@
 //! `tests/golden/decode/` pins the decoded document: the IR, the decode
 //! report's losses, and source fidelity.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::collections::BTreeSet;
@@ -61,8 +62,7 @@ fn branches() -> [Branch; 3] {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match FcstdCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => cadmpeg_core::serde_erase::json::to_value(&summary)
-                .expect("serialize inspect summary"),
+            Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
             Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
@@ -79,15 +79,14 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            let mut ir =
-                cadmpeg_core::serde_erase::json::to_value(result.ir()).expect("serialize ir");
+            let mut ir = json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
                 *native = elided_native(&result.ir().native);
             }
             elide_authoring_paths(&mut ir);
             serde_json::json!({
                 "ir": ir,
-                "report": cadmpeg_core::serde_erase::json::to_value(result.report()).expect("serialize report"),
+                "report": json::to_value(result.report()).expect("serialize report"),
                 "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
             })
         }
@@ -227,7 +226,7 @@ fn encode_snapshot(bytes: &[u8]) -> String {
             );
             serde_json::json!({
                 "entries": archive_entries(&archive),
-                "report": cadmpeg_core::serde_erase::json::to_value(&report).expect("serialize export report"),
+                "report": json::to_value(&report).expect("serialize export report"),
             })
         }
         Err(error) => serde_json::json!({ "encode_error": error }),
@@ -249,7 +248,7 @@ fn encode_once(
     let report = Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut produced))
     .map_err(|error| error.to_string())?;
@@ -337,7 +336,7 @@ fn step_snapshot(bytes: &[u8]) -> String {
     match Encoder::plan(
         &StepCodec::default(),
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut exported))
     {
@@ -511,6 +510,7 @@ mod step_comparison {
 
 mod native_elision {
     use super::elided_native;
+    use cadmpeg_core::serde_erase::json;
 
     /// One record under `id` whose only codec-owned member is `name`.
     fn named_record(id: &str, name: &str) -> cadmpeg_ir::NativeRecord {
@@ -666,8 +666,7 @@ mod native_elision {
             assert_eq!(before["__arena_counts"]["fcstd"][arena], 1);
             assert_eq!(
                 before["__arena_values"]["fcstd"][arena],
-                cadmpeg_core::serde_erase::json::to_value(&native.0["fcstd"].arenas()[arena])
-                    .unwrap()
+                json::to_value(&native.0["fcstd"].arenas()[arena]).unwrap()
             );
             let mut after = before.clone();
             after["__arena_values"]["fcstd"][arena][0][frame_field][0][0] =
