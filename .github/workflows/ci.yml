@@ -42,3 +42,38 @@ jobs:
           t cargo build -v -p cadmpeg --no-default-features --features sldprt
           t cargo test -v -p cadmpeg-ir --features schema-order --lib -- committed_json_schemas
           t cargo check -v -p cadmpeg-core -p cadmpeg-asm --all-targets --features cadmpeg-core/schema,cadmpeg-asm/schema
+
+  lint:
+    name: lab clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/pinned-rust
+        with:
+          components: rustfmt, clippy
+      - id: profiles
+        uses: ./.github/actions/cargo-profile-key
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: clippy
+          prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
+          save-if: false
+      - uses: ./.github/actions/cargo-job-count
+      - name: fmt
+        run: time cargo fmt --all --check
+      - name: clippy timings
+        run: |
+          time cargo clippy -q --workspace --all-targets --timings
+          python3 - <<'PYX'
+          import glob, json, re
+          html = open(sorted(glob.glob('target/cargo-timings/cargo-timing-*.html'))[-1]).read()
+          data = json.loads(re.search(r'const UNIT_DATA = (\[.*?\]);', html, re.S).group(1))
+          data.sort(key=lambda u: -u['duration'])
+          total = sum(u['duration'] for u in data)
+          print('units', len(data), 'total unit seconds', round(total))
+          for u in data[:40]:
+              print(f"{u['duration']:7.1f} start {u['start']:7.1f} {u['name']} {u.get('target','')} {u.get('mode','')}")
+          end = max(u['start'] + u['duration'] for u in data)
+          print('wall', round(end))
+          PYX
