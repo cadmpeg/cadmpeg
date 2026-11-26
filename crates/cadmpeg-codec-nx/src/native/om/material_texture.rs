@@ -215,6 +215,7 @@ pub(in crate::native) fn material_texture_assets(
 mod tests {
     use super::{material_texture_assets, MaterialTextureAsset};
     use crate::container::{Container, DirEntry, DirEntryBody, Region};
+    use cadmpeg_core::serde_erase::json;
     use std::sync::OnceLock;
 
     const TIFF: &[u8] = &[b'I', b'I', 42, 0, 8, 0, 0, 0, 0, 0];
@@ -253,14 +254,10 @@ mod tests {
         let json = r#"{"id":"texture","name":"Steel","byte_order":"little_endian","version":42,"first_ifd_offset":8,"byte_len":10,"sha256":"d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa","source_entry":"/Root/materialsTif/Steel","source_offset":20}"#;
         let value: MaterialTextureAsset = serde_json::from_str(json).unwrap();
         assert_eq!(value.storage_path(), "materialsTif/Steel");
+        assert_eq!(json::to_string(&value).unwrap(), json);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-            json
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&value).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&super::TextureWire::from(value.clone()))
-                .unwrap()
+            json::to_vec(&value).unwrap(),
+            json::to_vec(&super::TextureWire::from(value.clone())).unwrap()
         );
         for (field, invalid) in [
             ("name", serde_json::json!("Other")),
@@ -273,9 +270,7 @@ mod tests {
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = invalid;
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<MaterialTextureAsset>(wire).is_err()
-            );
+            assert!(json::from_value::<MaterialTextureAsset>(wire).is_err());
         }
     }
 
@@ -288,8 +283,7 @@ mod tests {
             "sha256": "d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa",
             "source_entry": "/Root/materialsTif/Steel", "source_offset": 20
         });
-        let value: MaterialTextureAsset =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        let value: MaterialTextureAsset = json::from_value(wire.clone()).unwrap();
         cadmpeg_test_support::native_serialization::assert_native_limit(&value, wire);
     }
 }

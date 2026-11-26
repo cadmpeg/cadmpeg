@@ -213,6 +213,7 @@ fn combine_case(
         construction_recipes: &[],
         persistent_design_links: &[],
         histories: &histories,
+        scope_histories: &std::collections::HashMap::new(),
         bodies: &bodies,
         regions: &[],
         shells: &[],

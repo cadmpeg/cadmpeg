@@ -1048,12 +1048,12 @@ impl TryFrom<SketchGeometryDefinition> for SketchGeometry {
 }
 
 /// Definition admitted by a solved two-dimensional sketch geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 #[serde(bound(
-    deserialize = "P: Deserialize<'de>, L: Deserialize<'de>, R: Deserialize<'de>, W: Deserialize<'de>, D: Deserialize<'de>, M: Deserialize<'de>"
+    deserialize = "P: ::serde::de::DeserializeOwned, L: ::serde::de::DeserializeOwned, R: ::serde::de::DeserializeOwned, W: ::serde::de::DeserializeOwned, D: ::serde::de::DeserializeOwned, M: ::serde::de::DeserializeOwned"
 ))]
 pub enum SketchGeometryDefinition<
     P = Point2,
@@ -1647,7 +1647,7 @@ impl TryFrom<SpatialSketchConstraintDefinitionInput> for SpatialSketchConstraint
 }
 
 /// Neutral geometric relations between model-space sketch entities.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2156,7 +2156,7 @@ impl SpatialSketchGeometryDefinition<FinitePoint3, UnitVector3, PositiveLength> 
 }
 
 /// Definition admitted by model-space spatial-sketch geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

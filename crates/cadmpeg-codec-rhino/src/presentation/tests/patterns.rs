@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::chunks::ArchiveVersion;
@@ -184,7 +185,7 @@ fn absent_component_index_does_not_alias_system_index_minus_one() {
         always_model_distance: false,
     };
     assert_eq!(record.archive_index, None);
-    let json = cadmpeg_core::serde_erase::json::to_value(record).expect("linetype record JSON");
+    let json = json::to_value(record).expect("linetype record JSON");
     assert!(json.get("archive_index").is_none());
 }
 
@@ -517,8 +518,7 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
         );
         match expected_base {
             Some(expected) => {
-                let value = cadmpeg_core::serde_erase::json::to_value(&hatch_patterns[0])
-                    .expect("hatch JSON");
+                let value = json::to_value(&hatch_patterns[0]).expect("hatch JSON");
                 assert_eq!(
                     value["lines"][0]["base_millimeters"],
                     serde_json::json!(expected)
@@ -531,15 +531,13 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
                 .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
                 .expect("complete hatch decode"),
         );
-        let admitted: CadIr = cadmpeg_core::serde_erase::json::from_slice(
-            &cadmpeg_core::serde_erase::json::to_vec(decoded.ir()).expect("complete hatch CADIR"),
-        )
-        .expect("complete hatch CADIR admission");
+        let admitted: CadIr =
+            json::from_slice(&json::to_vec(decoded.ir()).expect("complete hatch CADIR"))
+                .expect("complete hatch CADIR admission");
         let records = &admitted.native.namespace("rhino").unwrap().arenas()["hatch_patterns"];
         assert_eq!(records.len(), usize::from(typed));
         if let Some(expected) = expected_base {
-            let value = cadmpeg_core::serde_erase::json::to_value(&records[0])
-                .expect("admitted hatch JSON");
+            let value = json::to_value(&records[0]).expect("admitted hatch JSON");
             assert_eq!(
                 value["lines"][0]["base_millimeters"],
                 serde_json::json!(expected)
@@ -597,10 +595,7 @@ fn solid_hatch_pattern_needs_no_length_binding() {
                 &[pattern],
             )
             .unwrap();
-        let admitted: CadIr = cadmpeg_core::serde_erase::json::from_slice(
-            &cadmpeg_core::serde_erase::json::to_vec(&ir).unwrap(),
-        )
-        .unwrap();
+        let admitted: CadIr = json::from_slice(&json::to_vec(&ir).unwrap()).unwrap();
         assert_eq!(
             admitted.native.namespace("rhino").unwrap().arenas()["hatch_patterns"].len(),
             1

@@ -3,6 +3,7 @@
 use super::{exact_assembly_operand_path, exact_assembly_operand_path_envelope};
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use cadmpeg_core::serde_erase::json;
 
 const GUID: &str = "11111111-1111-1111-1111-111111111111";
 
@@ -314,16 +315,18 @@ fn occurrence_lists_keep_their_lengths_through_the_wire_form() {
     let path = exact_assembly_operand_path(&bytes, 0, 65, bytes.len(), path_link(), Some(TYPED))
         .unwrap()
         .expect("typed path with two lists");
-    let wire = cadmpeg_core::serde_erase::json::to_value(&path).unwrap();
+    let wire = json::to_value(&path).unwrap();
     assert_eq!(wire["occurrence_list_lengths"], serde_json::json!([2, 3]));
     let mut overflowing = wire.clone();
     overflowing["occurrence_list_lengths"] = serde_json::json!([usize::MAX, 2]);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<
-        crate::records::feature::assembly::DesignAssemblyOperandPath,
-    >(overflowing)
-    .is_err());
+    assert!(
+        json::from_value::<crate::records::feature::assembly::DesignAssemblyOperandPath>(
+            overflowing
+        )
+        .is_err()
+    );
     let read: crate::records::feature::assembly::DesignAssemblyOperandPath =
-        cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        json::from_value(wire).unwrap();
     assert_eq!(read, path);
 }
 
@@ -740,10 +743,8 @@ fn typed_root_operand_path_keeps_two_identities_and_exact_closure() {
         "00000000-0000-0000-0000-000000000000"
     );
     assert_eq!(path.identity_guids().len(), 2);
-    let round_trip: DesignAssemblyOperandPath = cadmpeg_core::serde_erase::json::from_value(
-        cadmpeg_core::serde_erase::json::to_value(&path).unwrap(),
-    )
-    .unwrap();
+    let round_trip: DesignAssemblyOperandPath =
+        json::from_value(json::to_value(&path).unwrap()).unwrap();
     assert_eq!(path, round_trip);
     assert!(read(&bytes, None).is_none());
     for at in [21, 29, 101, 105, 265, 276] {
@@ -906,10 +907,10 @@ fn typed_path_keeps_its_identity_pair_words() {
         );
     }
     let path = read(&with_words(1, 0), Some(TYPED_OCCURRENCE_PATH_TYPE_GUID)).unwrap();
-    let wire = cadmpeg_core::serde_erase::json::to_value(&path).unwrap();
+    let wire = json::to_value(&path).unwrap();
     assert_eq!(wire["identity_pair_words"], serde_json::json!([1, 0]));
     let round: crate::records::feature::assembly::DesignAssemblyOperandPath =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        json::from_value(wire.clone()).unwrap();
     assert_eq!(round, path);
     for (field, value) in [
         ("identity_pair_words", serde_json::json!([2, 0])),
@@ -917,10 +918,12 @@ fn typed_path_keeps_its_identity_pair_words() {
     ] {
         let mut invalid = wire.clone();
         invalid[field] = value;
-        assert!(cadmpeg_core::serde_erase::json::from_value::<
-            crate::records::feature::assembly::DesignAssemblyOperandPath,
-        >(invalid)
-        .is_err());
+        assert!(
+            json::from_value::<crate::records::feature::assembly::DesignAssemblyOperandPath>(
+                invalid
+            )
+            .is_err()
+        );
     }
     for (first, second) in [(2, 0), (0, 2)] {
         assert!(read(

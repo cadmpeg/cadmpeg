@@ -2,6 +2,7 @@
 use crate::repro::*;
 use crate::CadIr;
 use crate::{math::Point3, report::check::Check};
+use cadmpeg_core::serde_erase::json;
 
 fn failing_cube() -> (CadIr, crate::report::check::Finding) {
     let mut document = crate::examples::unit_cube().unwrap();
@@ -34,10 +35,7 @@ fn repro_closes_edge_and_shell_context_and_round_trips_document() {
         .findings
         .iter()
         .any(|finding| finding.check == Check::FragmentSkipped));
-    let parsed: CadIr = cadmpeg_core::serde_erase::json::from_slice(
-        &cadmpeg_core::serde_erase::json::to_vec(&bundle.document).unwrap(),
-    )
-    .unwrap();
+    let parsed: CadIr = json::from_slice(&json::to_vec(&bundle.document).unwrap()).unwrap();
     assert_eq!(parsed, bundle.document);
     assert!(parsed.fragment);
 }
@@ -46,7 +44,7 @@ fn repro_closes_edge_and_shell_context_and_round_trips_document() {
 fn repro_strips_names_paths_ids_and_metadata_and_preserves_context() {
     let (mut document, finding) = failing_cube();
     document.geometry.bodies[0].name = Some("PLANTED_NAME".into());
-    let mut value = cadmpeg_core::serde_erase::json::to_value(&document).unwrap();
+    let mut value = json::to_value(&document).unwrap();
     value["source"] = serde_json::json!({"identity": {"kind":"unclassified","format":"f3d"},
         "attributes": {"PLANTED_METADATA_KEY":"PLANTED_METADATA_VALUE", "file_path":"/PLANTED_FILE/secret-source.f3d", "private-member.f3z":"member-source.f3d"}});
     value["geometry"]["points"][0]["source_object"] = serde_json::json!({"format":"f3d", "object_id":"PLANTED_SOURCE_NAME",
@@ -56,20 +54,17 @@ fn repro_strips_names_paths_ids_and_metadata_and_preserves_context() {
         .as_str()
         .unwrap()
         .to_owned();
-    let text = cadmpeg_core::serde_erase::json::to_string(&value)
+    let text = json::to_string(&value)
         .unwrap()
         .replace(&old, "synthetic:PLANTED_PATH/file.cad:point#1");
     value = serde_json::from_str(&text).unwrap();
-    document = cadmpeg_core::serde_erase::json::from_value(value).unwrap();
+    document = json::from_value(value).unwrap();
     let options = CutOptions {
-        context: cadmpeg_core::serde_erase::json::from_value(
-            serde_json::json!({"operation": ["opaque", 42]}),
-        )
-        .unwrap(),
+        context: json::from_value(serde_json::json!({"operation": ["opaque", 42]})).unwrap(),
         ..CutOptions::default()
     };
     let bundle = cut(&document, &finding, &options).unwrap();
-    let json = cadmpeg_core::serde_erase::json::to_string(&bundle).unwrap();
+    let json = json::to_string(&bundle).unwrap();
     for secret in [
         "PLANTED_NAME",
         "PLANTED_PATH",
@@ -165,9 +160,7 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         message: "native feature is inconsistent".into(),
     };
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
-    assert!(!cadmpeg_core::serde_erase::json::to_string(&bundle)
-        .unwrap()
-        .contains("PLANTED"));
+    assert!(!json::to_string(&bundle).unwrap().contains("PLANTED"));
     let native = bundle.document.native.namespace("synthetic").unwrap();
     for arena in [
         "scopes",
@@ -194,14 +187,12 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
         1
     );
     assert!(model_bundle.document.model.features.is_empty());
-    assert!(!cadmpeg_core::serde_erase::json::to_string(&model_bundle)
-        .unwrap()
-        .contains("PLANTED"));
-    let bytes = cadmpeg_core::serde_erase::json::to_vec(&bundle).unwrap();
-    let parsed: CadIr = cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap();
+    assert!(!json::to_string(&model_bundle).unwrap().contains("PLANTED"));
+    let bytes = json::to_vec(&bundle).unwrap();
+    let parsed: CadIr = json::from_slice(&bytes).unwrap();
     assert!(parsed.fragment);
     assert!(parsed.repro.is_some());
-    let read: Bundle = cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap();
+    let read: Bundle = json::from_slice(&bytes).unwrap();
     assert_eq!(read.context, bundle.context);
 }
 
@@ -346,16 +337,14 @@ fn repro_classified_source_keeps_codec_and_strips_declarations() {
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
     assert_eq!(bundle.document.source.as_ref().unwrap().format(), "f3d");
     assert_eq!(bundle.signature.codec.as_str(), "f3d");
-    assert!(!cadmpeg_core::serde_erase::json::to_string(&bundle)
-        .unwrap()
-        .contains("PLANTED_MEMBER"));
+    assert!(!json::to_string(&bundle).unwrap().contains("PLANTED_MEMBER"));
 }
 
 fn assembly_boundary_document() -> (CadIr, crate::report::check::Finding) {
     let (document, finding) = failing_cube();
-    let mut value = cadmpeg_core::serde_erase::json::to_value(&document).unwrap();
+    let mut value = json::to_value(&document).unwrap();
     let sibling: serde_json::Value = serde_json::from_str(
-        &cadmpeg_core::serde_erase::json::to_string(&document)
+        &json::to_string(&document)
             .unwrap()
             .replace("synthetic:cube:", "synthetic:sibling:"),
     )
@@ -385,10 +374,7 @@ fn assembly_boundary_document() -> (CadIr, crate::report::check::Finding) {
         "format":"f3d", "object_id":"synthetic:assembly:definition#1",
         "instance_path":["synthetic:assembly:definition#2"]
     });
-    (
-        cadmpeg_core::serde_erase::json::from_value(value).unwrap(),
-        finding,
-    )
+    (json::from_value(value).unwrap(), finding)
 }
 
 #[test]
@@ -417,10 +403,7 @@ fn repro_closure_stops_before_sibling_definitions_in_source_instance_paths() {
 #[test]
 fn repro_document_size_does_not_consume_the_closure_limit() {
     let (mut document, finding) = failing_cube();
-    let limit = cadmpeg_core::serde_erase::json::to_vec(&document)
-        .unwrap()
-        .len()
-        + 4096;
+    let limit = json::to_vec(&document).unwrap().len() + 4096;
     let rows = document.entity_count() + 10;
     let point = document.geometry.points[0].clone();
     for ordinal in 0..200 {
@@ -430,12 +413,7 @@ fn repro_document_size_does_not_consume_the_closure_limit() {
         document.geometry.points.push(unrelated);
     }
     document.finalize();
-    assert!(
-        cadmpeg_core::serde_erase::json::to_vec(&document)
-            .unwrap()
-            .len()
-            > limit
-    );
+    assert!(json::to_vec(&document).unwrap().len() > limit);
     let options = CutOptions {
         max_rows: rows,
         max_serialized_bytes: limit,
@@ -461,9 +439,6 @@ fn repro_global_finding_returns_an_explicit_incomplete_bundle() {
     assert!(bundle.document.fragment);
     assert!(bundle.incomplete_reason.is_some());
     assert_eq!(bundle.document.entity_count(), 0);
-    let parsed: Bundle = cadmpeg_core::serde_erase::json::from_value(
-        cadmpeg_core::serde_erase::json::to_value(&bundle).unwrap(),
-    )
-    .unwrap();
+    let parsed: Bundle = json::from_value(json::to_value(&bundle).unwrap()).unwrap();
     assert_eq!(parsed, bundle);
 }

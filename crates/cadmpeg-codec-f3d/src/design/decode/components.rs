@@ -1691,6 +1691,7 @@ mod tests {
 
     use super::{attributed_component_occurrence, root_instance_component};
     use crate::test_support::indexed_header;
+    use cadmpeg_core::serde_erase::json;
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";
     const OCCURRENCE: &str = "f2371d14-7339-4f5c-82a1-50ec8fca5597";
@@ -1770,12 +1771,11 @@ mod tests {
                 .unwrap();
                 assert_eq!(transform.value, expected);
             }
-            let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
+            let wire = json::to_value(&record).unwrap();
             assert_eq!(wire["component_guid_offset"], 52);
             assert_eq!(wire["occurrence_guid_offset"], 128);
             assert_eq!(wire["owner_entity_offset"], if matrix { 351 } else { 223 });
-            let decoded: super::DesignComponentOccurrence =
-                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+            let decoded: super::DesignComponentOccurrence = json::from_value(wire.clone()).unwrap();
             assert_eq!(decoded, record);
             for field in [
                 "component_guid_offset",
@@ -1784,18 +1784,12 @@ mod tests {
             ] {
                 let mut changed = wire.clone();
                 changed[field] = serde_json::json!(wire[field].as_u64().unwrap() + 1);
-                assert!(cadmpeg_core::serde_erase::json::from_value::<
-                    super::DesignComponentOccurrence,
-                >(changed)
-                .is_err());
+                assert!(json::from_value::<super::DesignComponentOccurrence>(changed).is_err());
             }
             if matrix {
                 let mut changed = wire.clone();
                 changed["transform_offset"] = serde_json::json!(214);
-                assert!(cadmpeg_core::serde_erase::json::from_value::<
-                    super::DesignComponentOccurrence,
-                >(changed)
-                .is_err());
+                assert!(json::from_value::<super::DesignComponentOccurrence>(changed).is_err());
             }
             let mut nonzero = frame.clone();
             nonzero[40..44].copy_from_slice(&1_u32.to_le_bytes());
@@ -1825,11 +1819,8 @@ mod tests {
         );
         assert!(loss.message.contains("ordinal 2"));
         assert!(loss.message.contains(&record.id));
-        let wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignComponentOccurrence>(wire)
-                .is_err()
-        );
+        let wire = json::to_value(&record).unwrap();
+        assert!(json::from_value::<super::DesignComponentOccurrence>(wire).is_err());
     }
 
     #[test]
@@ -2080,13 +2071,13 @@ mod tests {
             occurrence.transform().expect("matrix").value.rows()[2][3],
             4.0
         );
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["source_record_index"], 90);
         let round_trip: crate::records::feature::assembly_features::DesignComponentOccurrence =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            json::from_value(wire).unwrap();
         assert_eq!(round_trip, occurrence);
 
-        let plain_wire = cadmpeg_core::serde_erase::json::to_value(
+        let plain_wire = json::to_value(
             attributed_component_occurrence(&plain, 0, "f3d:Design/BulkStream.dat")
                 .expect("occurrence without a source reference"),
         )
@@ -2096,9 +2087,9 @@ mod tests {
             .is_none());
 
         // A serialized zero source target is not a reference.
-        let mut zero = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let mut zero = json::to_value(&occurrence).unwrap();
         zero["attributed"]["source_record_index"] = serde_json::json!(0);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<
+        assert!(json::from_value::<
             crate::records::feature::assembly_features::DesignComponentOccurrence,
         >(zero)
         .is_err());
@@ -2249,12 +2240,12 @@ mod tests {
         assert_eq!(occurrence.owner_entity, 6);
         let transform = occurrence.transform().expect("matrix");
         assert_eq!(transform.value.rows()[2][3], 4.0);
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["key_record_index"], 139);
         assert_eq!(wire["attributed"]["key_segment_index"], 1);
         assert_eq!(wire["attributed"]["attributes"][0]["name"], "GatedByParent");
         let round_trip: crate::records::feature::assembly_features::DesignComponentOccurrence =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            json::from_value(wire).unwrap();
         assert_eq!(round_trip, occurrence);
 
         // A path discriminator is independent of the occurrence ordinal.
@@ -2263,7 +2254,7 @@ mod tests {
         let bytes = attributed("34", 0, 2);
         let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
             .expect("independent path discriminator");
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["path_discriminator"], 0);
         assert_eq!(wire["occurrence_ordinal"], 2);
     }
@@ -2276,7 +2267,7 @@ mod tests {
         );
         let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
             .expect("original attributed occurrence");
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(wire["attributed"]["key_segment_index"], 10);
         assert_eq!(
             wire["attributed"]["attributes"],
@@ -2287,7 +2278,7 @@ mod tests {
             ])
         );
         let decoded: crate::records::feature::assembly_features::DesignComponentOccurrence =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+            json::from_value(wire).unwrap();
         assert_eq!(decoded, occurrence);
     }
 
@@ -2395,13 +2386,13 @@ mod tests {
             assert_eq!(occurrence.component_guid.as_str(), COMPONENT);
             assert_eq!(occurrence.occurrence_guid.as_str(), OCCURRENCE);
             assert_eq!(occurrence.occurrence_ordinal(), 1);
-            let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+            let wire = json::to_value(&occurrence).unwrap();
             assert_eq!(wire["component_guid_offset"], 17 + 88);
             assert_eq!(wire["occurrence_guid_offset"], 17 + 164);
             assert_eq!(wire["owner_entity_offset"], 17 + owner_offset);
             assert_eq!(wire["owner_type_guid"], super::OWNER_TYPE_GUID);
             let restored: crate::records::feature::assembly_features::DesignComponentOccurrence =
-                cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+                json::from_value(wire).unwrap();
             assert_eq!(restored, occurrence);
             if matrix {
                 let transform = occurrence.transform().expect("matrix");
@@ -2515,7 +2506,7 @@ mod tests {
         assert_eq!(occurrence.component_record_index, 187);
         assert_eq!(occurrence.owner_entity, 6);
         assert_eq!(occurrence.occurrence_guid.as_str(), "34");
-        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
+        let wire = json::to_value(&occurrence).unwrap();
         assert_eq!(
             wire["attributed"]["attributes"].as_array().unwrap().len(),
             2
@@ -2741,8 +2732,8 @@ mod tests {
                         .map_or(0, std::num::NonZeroU32::get),
                     discriminator
                 );
-                let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
-                let restored: crate::records::feature::assembly_features::DesignComponentOccurrence = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+                let wire = json::to_value(&occurrence).unwrap();
+                let restored: crate::records::feature::assembly_features::DesignComponentOccurrence = json::from_value(wire).unwrap();
                 assert_eq!(restored, occurrence);
             }
         }

@@ -501,6 +501,7 @@ mod tests {
 
     use super::emit;
     use crate::native::MAX_NATIVE_NESTING_DEPTH;
+    use cadmpeg_core::serde_erase::json;
     use serde_json::Value;
 
     /// Replay one whole native record field.
@@ -534,18 +535,9 @@ mod tests {
             depth: MAX_NATIVE_NESTING_DEPTH,
         };
         let expected = serde_json::from_str::<Value>(TEXT).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&member).unwrap(),
-            expected
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&member).unwrap(),
-            TEXT
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&member).unwrap(),
-            expected
-        );
+        assert_eq!(json::to_value(&member).unwrap(), expected);
+        assert_eq!(json::to_string(&member).unwrap(), TEXT);
+        assert_eq!(json::to_value(&member).unwrap(), expected);
     }
 
     /// One budget spans the whole replay: the parser's own limit restarts per

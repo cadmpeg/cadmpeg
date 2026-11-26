@@ -2,6 +2,7 @@
 //! Synthetic evaluated assembly definitions.
 
 use super::step;
+use cadmpeg_core::serde_erase::json;
 use serde_json::{json, Value};
 use std::io::{Cursor, Read, Write};
 
@@ -50,8 +51,7 @@ pub(crate) fn pack(members: &Value, extra: bool) -> Vec<u8> {
     let options = zip::write::SimpleFileOptions::default();
     for (name, value) in members.as_object().unwrap() {
         zip.start_file(name, options).unwrap();
-        zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(value).unwrap())
-            .unwrap();
+        zip.write_all(&json::to_vec(value).unwrap()).unwrap();
     }
     zip.start_file("partstudios/studio/export.step", options)
         .unwrap();
@@ -76,10 +76,7 @@ pub(crate) fn edited(definition: Value, edit: impl FnOnce(&mut Value)) -> Vec<u8
         {
             let mut bytes = Vec::new();
             member.read_to_end(&mut bytes).unwrap();
-            members.insert(
-                name,
-                cadmpeg_core::serde_erase::json::from_slice(&bytes).unwrap(),
-            );
+            members.insert(name, json::from_slice(&bytes).unwrap());
         }
     }
     let mut members = Value::Object(members);

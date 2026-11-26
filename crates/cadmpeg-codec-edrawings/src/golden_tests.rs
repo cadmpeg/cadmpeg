@@ -8,6 +8,7 @@
 //! `UPDATE_GOLDEN_FIXTURES=1` rewrites the three files and `UPDATE_GOLDEN=1`
 //! rewrites the snapshots their comparison rejects.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 use std::path::PathBuf;
 
@@ -50,9 +51,7 @@ fn branches() -> [Branch; 2] {
 
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match EdrawingsCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()) {
-        Ok(summary) => {
-            cadmpeg_core::serde_erase::json::to_value(summary).expect("serialize inspect summary")
-        }
+        Ok(summary) => json::to_value(summary).expect("serialize inspect summary"),
         Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
     };
     snapshot_text(&value)

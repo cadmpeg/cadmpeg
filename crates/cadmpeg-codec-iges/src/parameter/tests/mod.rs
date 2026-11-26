@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::directory::{DirectoryEntry, SourceStatus};
+use cadmpeg_core::serde_erase::json;
 
 use super::ParameterRecord;
 use super::Token;
@@ -81,7 +82,7 @@ impl From<f64> for TokenValue {
 #[test]
 fn finite_real_token_keeps_native_json_shape() {
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&TokenValue::real(1.5)).expect("token JSON"),
+        json::to_string(&TokenValue::real(1.5)).expect("token JSON"),
         r#"{"kind":"real","value":1.5}"#
     );
 }

@@ -2,6 +2,7 @@
 use super::{read, CLASSES};
 use crate::om::operation_core::{core_for_decode, OperationCore};
 use crate::om::operation_record::OperationPayload;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 fn core() -> Vec<u8> {
@@ -38,13 +39,9 @@ fn curve_mesh_requires_two_nonempty_groups_and_exact_complete_wire() {
     let bytes = core();
     assert_eq!(read(&bytes), Some([1, 2, 3, 4]));
     let value = wire(bytes.clone());
-    let decoded: OperationCore =
-        cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+    let decoded: OperationCore = json::from_value(value.clone()).unwrap();
     assert_eq!(decoded.as_bytes(), bytes);
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(decoded).unwrap(),
-        value
-    );
+    assert_eq!(json::to_value(decoded).unwrap(), value);
     for end in 0..bytes.len() {
         assert!(read(&bytes[..end]).is_none(), "prefix {end}");
     }
@@ -85,7 +82,7 @@ fn curve_mesh_requires_two_nonempty_groups_and_exact_complete_wire() {
     assert!(read(&changed).is_none());
     let mut changed = bytes;
     changed.push(0);
-    assert!(cadmpeg_core::serde_erase::json::from_value::<OperationCore>(wire(changed)).is_err());
+    assert!(json::from_value::<OperationCore>(wire(changed)).is_err());
 }
 #[test]
 fn curve_mesh_requires_owning_profile_refit_and_endpoint_classes() {

@@ -39,15 +39,13 @@ impl From<ControlWord24> for u32 {
 #[cfg(test)]
 mod tests {
     use super::ControlWord24;
+    use cadmpeg_core::serde_erase::json;
     #[test]
     fn control_word_preserves_numeric_wire_and_rejects_overflow() {
         for value in [0, 0x1234, 0x00ff_ffff] {
             let word = ControlWord24::try_from(value).unwrap();
             let json = value.to_string();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&word).unwrap(),
-                json
-            );
+            assert_eq!(json::to_string(&word).unwrap(), json);
             assert_eq!(serde_json::from_str::<ControlWord24>(&json).unwrap(), word);
         }
         assert!(serde_json::from_str::<ControlWord24>("16777216")

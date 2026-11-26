@@ -787,6 +787,7 @@ pub(super) fn patch_sketch_relations(
 mod tests {
     use super::patch_material_assignments;
     use crate::records::references::DesignMaterialAssignment;
+    use cadmpeg_core::serde_erase::json;
 
     const SUFFIX_AT: usize = 0;
     const ENTITY_ID_AT: usize = 8;
@@ -817,17 +818,14 @@ mod tests {
 
     #[test]
     fn every_admitted_material_physical_token_is_patched_into_the_source_bytes() {
-        let error = cadmpeg_core::serde_erase::json::from_value::<DesignMaterialAssignment>(
-            assignment_document(false),
-        )
-        .expect_err("a token the patch cannot write is not admitted")
-        .to_string();
+        let error = json::from_value::<DesignMaterialAssignment>(assignment_document(false))
+            .expect_err("a token the patch cannot write is not admitted")
+            .to_string();
         assert!(error.contains("physical_token"), "{error}");
         assert!(error.contains("physical_token_offset"), "{error}");
 
         let assignment: DesignMaterialAssignment =
-            cadmpeg_core::serde_erase::json::from_value(assignment_document(true))
-                .expect("located material token");
+            json::from_value(assignment_document(true)).expect("located material token");
         let mut bytes = vec![0u8; 128];
         patch_material_assignments(&mut bytes, std::slice::from_ref(&assignment))
             .expect("patch material assignment");

@@ -334,6 +334,7 @@ impl InstancePropertiesEntry {
 #[cfg(test)]
 mod tests {
     use super::{ProteinAssetRecord, ProteinEntryRecord, ProteinRecord, ProteinRejectionRecord};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::native::NativeNamespace;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
     use std::num::NonZeroU32;
@@ -371,8 +372,7 @@ mod tests {
             "asset": { "ordinal": 3, "logical_offset": 0, "schema": "GenericSchema",
                 "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
         });
-        let record: ProteinAssetRecord =
-            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
+        let record: ProteinAssetRecord = json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -383,7 +383,7 @@ mod tests {
             "ordinal": 0, "detail": "unsupported schema"
         });
         let record: ProteinRejectionRecord =
-            cadmpeg_core::serde_erase::json::from_value(expected.clone()).expect("valid fixture");
+            json::from_value(expected.clone()).expect("valid fixture");
         assert_native_limit(&record, expected);
     }
 
@@ -395,60 +395,48 @@ mod tests {
                 "guid": "asset-guid", "base": "", "asset_lib_id": "", "properties": {} }
         });
         let mut admitted: ProteinAssetRecord =
-            cadmpeg_core::serde_erase::json::from_value(asset.clone()).expect("valid asset");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&admitted).expect("valid asset"),
-            asset
-        );
+            json::from_value(asset.clone()).expect("valid asset");
+        assert_eq!(json::to_value(&admitted).expect("valid asset"), asset);
         admitted.asset.ordinal = 4;
         assert_eq!(admitted.ordinal(), 4);
-        let wire = cadmpeg_core::serde_erase::json::to_value(admitted).expect("valid asset");
+        let wire = json::to_value(admitted).expect("valid asset");
         assert_eq!(wire["ordinal"], 4);
         assert_eq!(wire["asset"]["ordinal"], 4);
         let mut inconsistent = asset.clone();
         inconsistent["ordinal"] = serde_json::json!(4);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<ProteinAssetRecord>(inconsistent)
-                .expect_err("inconsistent ordinal")
-                .to_string()
-                .contains("ordinal")
-        );
+        assert!(json::from_value::<ProteinAssetRecord>(inconsistent)
+            .expect_err("inconsistent ordinal")
+            .to_string()
+            .contains("ordinal"));
         let rejection = serde_json::json!({
             "id": "rejection", "entry_name": "InstanceProperties.bin", "ordinal": 0, "detail": "unsupported schema"
         });
         let admitted: ProteinRejectionRecord =
-            cadmpeg_core::serde_erase::json::from_value(rejection.clone())
-                .expect("valid rejection");
+            json::from_value(rejection.clone()).expect("valid rejection");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(admitted).expect("valid rejection"),
+            json::to_value(admitted).expect("valid rejection"),
             rejection
         );
         for entry_name in ["", "InstanceProperties.bin.bak", "instanceproperties.bin"] {
             let mut wire = asset.clone();
             wire["entry_name"] = serde_json::json!(entry_name);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<ProteinAssetRecord>(wire)
-                    .expect_err("invalid entry")
-                    .to_string()
-                    .contains("entry_name")
-            );
+            assert!(json::from_value::<ProteinAssetRecord>(wire)
+                .expect_err("invalid entry")
+                .to_string()
+                .contains("entry_name"));
             let mut wire = rejection.clone();
             wire["entry_name"] = serde_json::json!(entry_name);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<ProteinRejectionRecord>(wire)
-                    .expect_err("invalid entry")
-                    .to_string()
-                    .contains("entry_name")
-            );
+            assert!(json::from_value::<ProteinRejectionRecord>(wire)
+                .expect_err("invalid entry")
+                .to_string()
+                .contains("entry_name"));
         }
         let mut wire = rejection;
         wire["detail"] = serde_json::json!("");
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<ProteinRejectionRecord>(wire)
-                .expect_err("empty detail")
-                .to_string()
-                .contains("detail")
-        );
+        assert!(json::from_value::<ProteinRejectionRecord>(wire)
+            .expect_err("empty detail")
+            .to_string()
+            .contains("detail"));
     }
 
     #[test]
@@ -541,11 +529,10 @@ mod tests {
                 compressed_size: 0,
                 uncompressed_size: 0,
             };
-            let mut wire = cadmpeg_core::serde_erase::json::to_value(&entry)
-                .expect("Protein entry fixture serializes");
+            let mut wire = json::to_value(&entry).expect("Protein entry fixture serializes");
             assert_eq!(wire["compression"], compression.label());
             assert_eq!(
-                cadmpeg_core::serde_erase::json::from_value::<ProteinEntryRecord>(wire.clone())
+                json::from_value::<ProteinEntryRecord>(wire.clone())
                     .expect("Protein entry fixture serializes"),
                 entry
             );

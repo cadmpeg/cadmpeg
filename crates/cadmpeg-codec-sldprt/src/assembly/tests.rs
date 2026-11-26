@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind, Storage};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::StreamName;
@@ -357,8 +358,7 @@ fn an_assembly_with_its_own_parasolid_stream_keeps_the_part_model_losses() {
 }
 
 fn body(id: &str) -> cadmpeg_ir::topology::Body {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({ "id": id, "kind": "solid" }))
-        .expect("a body")
+    json::from_value(serde_json::json!({ "id": id, "kind": "solid" })).expect("a body")
 }
 
 #[test]

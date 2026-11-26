@@ -36,6 +36,7 @@ impl FiniteFrame {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::transform::Transform;
 
     use cadmpeg_ir::units::FiniteVector;
@@ -57,10 +58,7 @@ mod tests {
         let mut matrix = Transform::identity().rows();
         matrix[0][0] = 2.0;
         assert!(FiniteFrame::try_from(matrix).is_err());
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<FiniteFrame>(serde_json::json!(matrix))
-                .is_err()
-        );
+        assert!(json::from_value::<FiniteFrame>(serde_json::json!(matrix)).is_err());
         assert!(FiniteVector::new([-1.0, 0.0, 2.0]).is_some());
     }
 }

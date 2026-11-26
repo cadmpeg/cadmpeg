@@ -10,6 +10,7 @@ use crate::test_support::sketch_region_test::{
     snapshot_map_design, triangle_bodies_smbh, TriangleBody, MODEL_BODY, SKETCH_REGION,
     SKETCH_SURFACE,
 };
+use cadmpeg_core::serde_erase::json;
 
 const BLOB: &str = "BREP.snapshot.smb";
 const EPS_PLANE_HEIGHT_MM: f64 = 1.0e-9;
@@ -29,8 +30,7 @@ fn kept_source_ordinals(result: &EditableDecodeResult) -> Vec<u32> {
         .surfaces
         .iter()
         .map(|surface| {
-            let height = cadmpeg_core::serde_erase::json::to_value(surface).unwrap()["geometry"]
-                ["value"]["origin"]["z"]
+            let height = json::to_value(surface).unwrap()["geometry"]["value"]["origin"]["z"]
                 .as_f64()
                 .unwrap()
                 / 10.0;

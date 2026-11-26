@@ -5,6 +5,7 @@ use crate::design::profile_select::{
     bind_extrude_profile_selections, SketchCurveSelectionResolution,
 };
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use serde_json::json;
@@ -15,7 +16,7 @@ use serde_json::json;
 fn bind(selections: &[DesignProfileCurveSelection]) -> (ProfileRef, usize) {
     let (group, placements, _, curves, entities, sketches) = two_circle_profile_fixture();
     let scope = DesignParameterScope::empty("stream:scope#7", DesignScopePayload::Extrude(None), 7);
-    let mut feature: Feature = cadmpeg_core::serde_erase::json::from_value(json!({
+    let mut feature: Feature = json::from_value(json!({
         "id": "synthetic:test:feature#lost-member", "ordinal": 0, "suppressed": false,
         "native_ref": scope.id,
         "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {

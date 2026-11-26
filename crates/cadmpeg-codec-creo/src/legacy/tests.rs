@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use crate::test_support::build_prt;
@@ -46,7 +47,7 @@ fn serialized_offset_ids_preserve_legacy_wire_text() {
         ),
     ] {
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&id).expect("serialize offset identity"),
+            json::to_string(&id).expect("serialize offset identity"),
             expected
         );
     }
@@ -612,12 +613,12 @@ fn array_completeness_wire_retains_continuation_failures() {
     assert_eq!(persistence.incomplete_string_array_count, 2);
     assert_eq!(persistence.unresolved_string_value_count, 2);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&persistence.string_values[0].payload).unwrap(),
+        json::to_value(&persistence.string_values[0].payload).unwrap(),
         serde_json::json!({"form": "array", "dimensions": [1],
             "values": [{"form": "utf8", "text": "value"}], "complete": false})
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&persistence.string_values[1].payload).unwrap(),
+        json::to_value(&persistence.string_values[1].payload).unwrap(),
         serde_json::json!({"form": "array", "dimensions": [1],
             "values": [], "complete": false})
     );
@@ -626,7 +627,7 @@ fn array_completeness_wire_retains_continuation_failures() {
         elements: vec!["first".into(), "second".into()],
     };
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(payload).unwrap(),
+        json::to_value(payload).unwrap(),
         serde_json::json!({
             "form": "array", "dimensions": [1, 2], "elements": ["first", "second"],
             "complete": true

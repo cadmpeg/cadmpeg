@@ -183,6 +183,7 @@ impl TryFrom<ChartWire> for ParasolidChartRecord {
 #[cfg(test)]
 mod tests {
     use super::super::ParasolidChartRecord;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn chart_fields_keep_wire_order_and_reject_mismatched_layouts() {
@@ -196,22 +197,16 @@ mod tests {
             for identity in [0, 1] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
                 wire["xmt"] = serde_json::json!(identity);
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<ParasolidChartRecord>(wire)
-                        .unwrap_err()
-                        .to_string()
-                        .contains("xmt")
-                );
+                assert!(json::from_value::<ParasolidChartRecord>(wire)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("xmt"));
             }
             let chart: ParasolidChartRecord = serde_json::from_str(&json).unwrap();
+            assert_eq!(json::to_string(&chart).unwrap(), json);
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&chart).unwrap(),
-                json
-            );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&chart).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&super::ChartWire::from(chart.clone()))
-                    .unwrap()
+                json::to_vec(&chart).unwrap(),
+                json::to_vec(&super::ChartWire::from(chart.clone())).unwrap()
             );
             for (field, invalid) in [
                 ("count", serde_json::json!(1)),
@@ -223,9 +218,7 @@ mod tests {
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
                 wire[field] = invalid;
-                let error =
-                    cadmpeg_core::serde_erase::json::from_value::<ParasolidChartRecord>(wire)
-                        .unwrap_err();
+                let error = json::from_value::<ParasolidChartRecord>(wire).unwrap_err();
                 assert!(error.to_string().contains(field), "{error}");
             }
         }

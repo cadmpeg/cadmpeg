@@ -32,20 +32,20 @@ pub(super) fn loss(scope: &str, construction: &DesignThreadConstruction) -> Loss
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn native_thread_detail_has_a_named_loss() {
-        let mut construction: DesignThreadConstruction =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "form": "standard_extended", "designation_offset": 100,
-                "designation": "M10x1.5", "nominal_size_text": "10", "nominal_size": 10.0,
-                "profile": "ISO Metric profile", "major_diameter": 1.0,
-                "minor_diameter": 0.8, "pitch_diameter": 0.9, "pitch": 0.15,
-                "modeled": true, "face_group_record_indices": [10],
-                "extended": {"class": "6H", "external": false,
-                    "full_length": true, "right_handed": false}
-            }))
-            .unwrap();
+        let mut construction: DesignThreadConstruction = json::from_value(serde_json::json!({
+            "form": "standard_extended", "designation_offset": 100,
+            "designation": "M10x1.5", "nominal_size_text": "10", "nominal_size": 10.0,
+            "profile": "ISO Metric profile", "major_diameter": 1.0,
+            "minor_diameter": 0.8, "pitch_diameter": 0.9, "pitch": 0.15,
+            "modeled": true, "face_group_record_indices": [10],
+            "extended": {"class": "6H", "external": false,
+                "full_length": true, "right_handed": false}
+        }))
+        .unwrap();
         let note = loss("scope", &construction);
         assert_eq!(note.code, F3dLossCode::ThreadDetailNative.kind());
         assert!(!note.message.contains("Hand remains native"));

@@ -2142,6 +2142,7 @@ mod tests {
     use crate::container::Container;
     use crate::decode::Scan;
     use crate::parasolid::Stream;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -2219,7 +2220,7 @@ mod tests {
         assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
         assert_eq!(unknown.offset(), 0);
         assert_eq!(unknown.data(), None);
-        let wire = cadmpeg_core::serde_erase::json::to_value(&unknown).unwrap();
+        let wire = json::to_value(&unknown).unwrap();
         assert_eq!(
             wire["retention"]["sha256"],
             cadmpeg_ir::hash::sha256_hex(&stream.inflated)
@@ -2253,8 +2254,8 @@ mod tests {
         let actual = source_meta(&scan, &dialects, Some(&parsed))
             .expect("source metadata reads the existing census");
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(actual).expect("source metadata"),
-            cadmpeg_core::serde_erase::json::to_value(expected).expect("source metadata")
+            json::to_value(actual).expect("source metadata"),
+            json::to_value(expected).expect("source metadata")
         );
     }
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
@@ -419,18 +420,17 @@ fn raw_with_flags(
     flags: u32,
     kind: &serde_json::Value,
 ) -> crate::sketch::PmDcSketchEntity {
-    let mut entity: crate::sketch::PmDcSketchEntity =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": format!("inventor:pmdc:sketch-entity#segment-{ordinal}"),
-            "type_id": "3bdf52ced011d0d20008ccbc0663dc09",
-            "segment_token": "segment", "record_ordinal": ordinal,
-            "save_version_major": 22,
-            "header": {"header_value": 0, "header_id": 0, "flags": 0, "source_index": 0,
-                "next": {"index": 0, "qualified": false},
-                "context": {"index": 0, "qualified": false}},
-            "entity_flags": flags, "sketch": {"index": owner, "qualified": true}, "kind": kind,
-        }))
-        .expect("raw entity");
+    let mut entity: crate::sketch::PmDcSketchEntity = json::from_value(serde_json::json!({
+        "id": format!("inventor:pmdc:sketch-entity#segment-{ordinal}"),
+        "type_id": "3bdf52ced011d0d20008ccbc0663dc09",
+        "segment_token": "segment", "record_ordinal": ordinal,
+        "save_version_major": 22,
+        "header": {"header_value": 0, "header_id": 0, "flags": 0, "source_index": 0,
+            "next": {"index": 0, "qualified": false},
+            "context": {"index": 0, "qualified": false}},
+        "entity_flags": flags, "sketch": {"index": owner, "qualified": true}, "kind": kind,
+    }))
+    .expect("raw entity");
     entity.identity.type_id =
         crate::record_identity::RecordTypeId::from_bytes(entity.kind.record_type_id());
     entity
@@ -768,11 +768,9 @@ fn missing_raw_lines_are_located_before_the_split_gate() {
                 .is_none(),
             blocks
         );
-        let mut construction =
-            cadmpeg_core::serde_erase::json::to_value(&raw_entities[2]).expect("line");
+        let mut construction = json::to_value(&raw_entities[2]).expect("line");
         construction["entity_flags"] = serde_json::json!(0x80000);
-        raw_entities[2] =
-            cadmpeg_core::serde_erase::json::from_value(construction).expect("construction line");
+        raw_entities[2] = json::from_value(construction).expect("construction line");
         let index = ProfileIndex::new(&[], &[], &[], &raw_entities, &entities);
         assert!(!index.incomplete_sketches.contains_key(&("segment", 0)));
         assert!(index

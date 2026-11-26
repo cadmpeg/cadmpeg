@@ -1,4 +1,5 @@
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn compact_version_six_body_preserves_equal_affine_maps_and_source_fields() {
@@ -80,7 +81,7 @@ fn compact_version_six_body_preserves_equal_affine_maps_and_source_fields() {
         let [feature] = features.as_slice() else {
             panic!("one mesh collection");
         };
-        let wire = cadmpeg_core::serde_erase::json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         let row = &wire["bodies"][0];
         assert_eq!(
             row["body_variable_layout"]["presence_offsets"],
@@ -102,8 +103,7 @@ fn compact_version_six_body_preserves_equal_affine_maps_and_source_fields() {
                 [0.0, 0.0, 0.0, 1.0]
             ])
         );
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(
             decoded.bodies()[0]
                 .placement
@@ -204,7 +204,7 @@ fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
         let [feature] = features.as_slice() else {
             panic!("one feature")
         };
-        let wire = cadmpeg_core::serde_erase::json::to_value(feature).unwrap();
+        let wire = json::to_value(feature).unwrap();
         let row = &wire["bodies"][0];
         assert_eq!(row["body_name"], "Axle");
         assert_eq!(feature.scopes().count(), usize::from(!null_scope));
@@ -234,8 +234,7 @@ fn variable_mesh_body_reads_matrix_flags_and_material_lengths() {
             assert_eq!(row["scope_reference_offset"], start + 514);
             assert_eq!(row["scene_node_reference_offset"], start + 559);
         }
-        let decoded: crate::records::mesh::DesignMeshFeature =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        let decoded: crate::records::mesh::DesignMeshFeature = json::from_value(wire).unwrap();
         assert_eq!(
             decoded.bodies()[0]
                 .placement
