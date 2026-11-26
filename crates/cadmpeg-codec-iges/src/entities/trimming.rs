@@ -1526,7 +1526,10 @@ fn restricted_pcurve_spans(
     };
     let mut insertions = 0_usize;
     for &value in &breaks {
-        let Some(total) = insertions.checked_add(degree.saturating_sub(multiplicity(value))) else {
+        let Some(shortfall) = degree.checked_sub(multiplicity(value)) else {
+            continue;
+        };
+        let Some(total) = insertions.checked_add(shortfall) else {
             return Ok(None);
         };
         insertions = total;
