@@ -314,6 +314,7 @@ mod tests {
     use super::{
         DesignBoxPrimitive, DesignCylinderPrimitive, DesignSpherePrimitive, DesignTorusPrimitive,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn native_box_refuses_nonpositive_dimension() {
@@ -325,11 +326,9 @@ mod tests {
             "offset_y": 0.0, "offset_y_record_index": 9, "offset_y_offset": 10,
             "operation": "join", "operation_offset": 11
         });
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignBoxPrimitive>(wire.clone()).is_ok()
-        );
+        assert!(json::from_value::<DesignBoxPrimitive>(wire.clone()).is_ok());
         wire["length"] = serde_json::json!(0.0);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<DesignBoxPrimitive>(wire).is_err());
+        assert!(json::from_value::<DesignBoxPrimitive>(wire).is_err());
     }
 
     #[test]
@@ -339,24 +338,15 @@ mod tests {
             "diameter": 2.0, "diameter_record_index": 3, "diameter_offset": 4,
             "operation": "join", "operation_offset": 5
         });
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignCylinderPrimitive>(wire.clone())
-                .is_ok()
-        );
+        assert!(json::from_value::<DesignCylinderPrimitive>(wire.clone()).is_ok());
         wire["height"] = serde_json::json!(-1.0);
-        let signed =
-            cadmpeg_core::serde_erase::json::from_value::<DesignCylinderPrimitive>(wire.clone())
-                .unwrap();
+        let signed = json::from_value::<DesignCylinderPrimitive>(wire.clone()).unwrap();
         assert_eq!(signed.height.get(), -1.0);
         let mut zero = wire.clone();
         zero["height"] = serde_json::json!(0.0);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignCylinderPrimitive>(zero).is_err()
-        );
+        assert!(json::from_value::<DesignCylinderPrimitive>(zero).is_err());
         wire["diameter"] = serde_json::json!(-1.0);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignCylinderPrimitive>(wire).is_err()
-        );
+        assert!(json::from_value::<DesignCylinderPrimitive>(wire).is_err());
     }
 
     #[test]
@@ -367,14 +357,9 @@ mod tests {
             "diameter": 2.0, "diameter_record_index": 3, "diameter_offset": 4,
             "operation": "join", "operation_offset": 5
         });
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(wire.clone())
-                .is_ok()
-        );
+        assert!(json::from_value::<DesignSpherePrimitive>(wire.clone()).is_ok());
         wire["diameter"] = serde_json::json!(0.0);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(wire).is_err()
-        );
+        assert!(json::from_value::<DesignSpherePrimitive>(wire).is_err());
     }
 
     #[test]
@@ -384,12 +369,10 @@ mod tests {
             "diameter": 2.0, "diameter_record_index": 3, "diameter_offset": 4,
             "operation": "join", "operation_offset": 5
         });
-        let sphere =
-            cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(wire.clone())
-                .unwrap();
+        let sphere = json::from_value::<DesignSpherePrimitive>(wire.clone()).unwrap();
         assert_eq!(sphere.placement_record_index, None);
         assert_eq!(sphere.transform_offset, None);
-        let encoded = cadmpeg_core::serde_erase::json::to_value(sphere).unwrap();
+        let encoded = json::to_value(sphere).unwrap();
         assert!(encoded.get("placement_record_index").is_none());
         assert!(encoded.get("transform_offset").is_none());
         for (key, value) in [
@@ -398,31 +381,21 @@ mod tests {
         ] {
             let mut stated = wire.clone();
             stated[key] = serde_json::json!(value);
-            let sphere = cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(
-                stated.clone(),
-            )
-            .unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(sphere).unwrap()[key],
-                value
-            );
+            let sphere = json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap();
+            assert_eq!(json::to_value(sphere).unwrap()[key], value);
             for invalid in [
                 serde_json::Value::Null,
                 serde_json::json!(-1),
                 serde_json::json!("invalid"),
             ] {
                 stated[key] = invalid;
-                let error = cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(
-                    stated.clone(),
-                )
-                .unwrap_err();
+                let error = json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap_err();
                 assert!(error.to_string().contains(key));
             }
         }
         let mut overflow = wire;
         overflow["placement_record_index"] = serde_json::json!(4_294_967_296u64);
-        let error = cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(overflow)
-            .unwrap_err();
+        let error = json::from_value::<DesignSpherePrimitive>(overflow).unwrap_err();
         assert!(error.to_string().contains("placement_record_index"));
     }
 
@@ -433,24 +406,20 @@ mod tests {
             "diameter": 2.0, "diameter_record_index": 3, "diameter_offset": 4,
             "operation": "join", "operation_offset": 5
         });
-        let sphere =
-            cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(wire.clone())
-                .unwrap();
+        let sphere = json::from_value::<DesignSpherePrimitive>(wire.clone()).unwrap();
         assert_eq!(sphere.support_transform, None);
         assert_eq!(sphere.local_frame_assumption, None);
         assert!(!sphere.prefix_framing_assumed);
-        let encoded = cadmpeg_core::serde_erase::json::to_value(sphere).unwrap();
+        let encoded = json::to_value(sphere).unwrap();
         assert!(encoded.get("support_transform").is_none());
         assert!(encoded.get("local_frame_assumption").is_none());
         assert!(encoded.get("prefix_framing_assumed").is_none());
         let mut assumed_prefix = wire.clone();
         assumed_prefix["prefix_framing_assumed"] = serde_json::json!(true);
-        let sphere =
-            cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(assumed_prefix)
-                .unwrap();
+        let sphere = json::from_value::<DesignSpherePrimitive>(assumed_prefix).unwrap();
         assert!(sphere.prefix_framing_assumed);
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(sphere).unwrap()["prefix_framing_assumed"],
+            json::to_value(sphere).unwrap()["prefix_framing_assumed"],
             true
         );
         for (key, value) in [
@@ -463,33 +432,21 @@ mod tests {
         ] {
             let mut stated = wire.clone();
             stated[key] = value.clone();
-            let sphere = cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(
-                stated.clone(),
-            )
-            .unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(sphere).unwrap()[key],
-                value
-            );
+            let sphere = json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap();
+            assert_eq!(json::to_value(sphere).unwrap()[key], value);
             for invalid in [
                 serde_json::Value::Null,
                 serde_json::json!(7),
                 serde_json::json!("invalid"),
             ] {
                 stated[key] = invalid;
-                let error = cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(
-                    stated.clone(),
-                )
-                .unwrap_err();
+                let error = json::from_value::<DesignSpherePrimitive>(stated.clone()).unwrap_err();
                 assert!(error.to_string().contains(key));
             }
         }
         let mut invalid_frame = wire;
         invalid_frame["support_transform"] = serde_json::json!({"value": [[2.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]], "offset": 10});
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignSpherePrimitive>(invalid_frame)
-                .is_err()
-        );
+        assert!(json::from_value::<DesignSpherePrimitive>(invalid_frame).is_err());
     }
 
     #[test]
@@ -501,12 +458,9 @@ mod tests {
             "minor_diameter": 1.0, "minor_diameter_record_index": 5, "minor_diameter_offset": 6,
             "operation": "join", "operation_offset": 7
         });
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignTorusPrimitive>(wire.clone())
-                .is_ok()
-        );
+        assert!(json::from_value::<DesignTorusPrimitive>(wire.clone()).is_ok());
         wire["minor_diameter"] = serde_json::json!(-1.0);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<DesignTorusPrimitive>(wire).is_err());
+        assert!(json::from_value::<DesignTorusPrimitive>(wire).is_err());
     }
 }
 

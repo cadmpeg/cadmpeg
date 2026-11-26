@@ -2,6 +2,7 @@
 //! Base-feature construction wire and native admission.
 
 use super::{DesignBaseFeatureConstruction, DesignBaseFeatureConstructionWire};
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 
 fn construction_wires() -> Vec<serde_json::Value> {
@@ -74,7 +75,7 @@ fn construction_wires() -> Vec<serde_json::Value> {
 #[test]
 fn a_suffix_result_body_wire_reads_as_its_own_form() {
     let value: DesignBaseFeatureConstruction =
-        cadmpeg_core::serde_erase::json::from_value(construction_wires().remove(5)).unwrap();
+        json::from_value(construction_wires().remove(5)).unwrap();
     assert!(matches!(
         value,
         DesignBaseFeatureConstruction::SuffixResultBodies { .. }
@@ -97,8 +98,7 @@ fn a_suffix_result_body_wire_reads_as_its_own_form() {
         let mut wire = construction_wires().remove(5);
         wire[field] = refused.clone();
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignBaseFeatureConstruction>(wire)
-                .is_err(),
+            json::from_value::<DesignBaseFeatureConstruction>(wire).is_err(),
             "{field} = {refused}"
         );
     }
@@ -114,22 +114,15 @@ fn a_suffix_result_body_wire_reads_as_its_own_form() {
     ] {
         empty[field] = json!([]);
     }
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignBaseFeatureConstruction>(empty)
-            .is_err()
-    );
+    assert!(json::from_value::<DesignBaseFeatureConstruction>(empty).is_err());
 }
 
 #[test]
 fn base_feature_construction_borrowed_wire_matches_owned_wire_bytes() {
     for wire in construction_wires() {
-        let value: DesignBaseFeatureConstruction =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        let value: DesignBaseFeatureConstruction = json::from_value(wire).unwrap();
         let owned = DesignBaseFeatureConstructionWire::from(value.clone());
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&value).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
-        );
+        assert_eq!(json::to_vec(&value).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -141,7 +134,7 @@ fn base_feature_construction_native_retained_limit_refuses_before_clone() {
         value: &'a DesignBaseFeatureConstruction,
     }
     let value: DesignBaseFeatureConstruction =
-        cadmpeg_core::serde_erase::json::from_value(construction_wires().remove(3)).unwrap();
+        json::from_value(construction_wires().remove(3)).unwrap();
     let record = NestedRecord {
         id: "f3d:native:base-feature#0",
         value: &value,
@@ -167,21 +160,12 @@ fn base_feature_native_fixed_body_fields_refuse_nonlocal_flags() {
             for encoding in ["010000000000", "000100000000", "240000000000"] {
                 let mut invalid = wire.clone();
                 invalid[name][0] = json!(encoding);
-                assert!(
-                    cadmpeg_core::serde_erase::json::from_value::<DesignBaseFeatureConstruction>(
-                        invalid
-                    )
-                    .is_err()
-                );
+                assert!(json::from_value::<DesignBaseFeatureConstruction>(invalid).is_err());
             }
             let mut maximum_member = wire.clone();
             maximum_member[name][0] = json!("0000ffffffff");
-            let admitted: DesignBaseFeatureConstruction =
-                cadmpeg_core::serde_erase::json::from_value(maximum_member).unwrap();
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(admitted).unwrap()[name][0],
-                "0000ffffffff"
-            );
+            let admitted: DesignBaseFeatureConstruction = json::from_value(maximum_member).unwrap();
+            assert_eq!(json::to_value(admitted).unwrap()[name][0], "0000ffffffff");
         }
     }
 }

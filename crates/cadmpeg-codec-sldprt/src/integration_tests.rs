@@ -415,7 +415,7 @@ fn a_cadir_read_part_replays_unedited_and_writes_an_edit_as_its_decode_does() {
     let unedited = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&read, Some(result.source_fidelity())),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
         )
         .expect("an unedited read replays");
     assert!(matches!(
@@ -431,7 +431,7 @@ fn a_cadir_read_part_replays_unedited_and_writes_an_edit_as_its_decode_does() {
         SldprtCodec
             .plan(
                 cadmpeg_ir::codec::write::EncodeInput::new(ir, Some(result.source_fidelity())),
-                cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+                cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .map(|_| bytes)
@@ -580,7 +580,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&edited, Some(result.source_fidelity())),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
         )
         .expect("an edited part still preserves its dialect");
     assert!(matches!(
@@ -651,7 +651,7 @@ fn digest_only_source_image_writes_retained_records_in_a_synthesized_envelope() 
     let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
         )
         .expect("the retained records keep the source's swSolidWorks envelope");
     assert!(plan.report().losses.iter().any(|loss| {
@@ -727,7 +727,7 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     let ir = source_less_cube();
     let plan = crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .expect("nothing to inherit, so the catalog default stands in");
     assert!(matches!(
@@ -756,6 +756,8 @@ mod partial_decode;
 mod partition_sketches;
 
 mod configuration_states;
+
+mod dimension_class_loss;
 
 fn face_table_bytes() -> Vec<u8> {
     let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());

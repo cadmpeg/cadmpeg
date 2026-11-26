@@ -15,7 +15,7 @@ fn sketch_data(sketches: &[Sketch]) -> SketchData<'_> {
 }
 
 fn source(kind: &str, value: &Value) -> LegacyOperation {
-    serde_json::from_value(json!({"kind": kind, "value": value}))
+    cadmpeg_core::serde_erase::json::from_value(json!({"kind": kind, "value": value}))
         .expect("synthetic sheet-metal operands")
 }
 
@@ -245,7 +245,7 @@ fn generated_attachments_keep_producer_and_local_name() {
             effect: SheetMetalCornerEffect::Unchanged,
         },
     );
-    let value: EdgeSelection = serde_json::from_value(json!({"kind":"generated","value":{
+    let value: EdgeSelection = cadmpeg_core::serde_erase::json::from_value(json!({"kind":"generated","value":{
         "edges":[{"feature":producer.id,"local_id":"edge-2"},{"feature":producer.id,"local_id":"edge-1"}],
         "native":"inventor:edges#attachment"
     }})).expect("generated edge operands");

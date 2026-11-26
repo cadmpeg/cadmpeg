@@ -506,6 +506,7 @@ fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
         "minimal",
         &synthetic_solidedge_seed()?,
     )?;
+    write_seed("seeds/ironcad_codec", "minimal", &synthetic_ironcad_seed()?)?;
     write_seed("seeds/compound_snapshot", "minimal", &cfb)?;
     write_seed(
         "seeds/inventor_database",
@@ -753,6 +754,80 @@ fn synthetic_solidedge_seed() -> std::io::Result<Vec<u8>> {
                 name,
                 object_type: 2,
                 left: FREE,
+                right,
+                child: FREE,
+                start_sector: END,
+                size: 0,
+            },
+        )?;
+    }
+
+    let fat = sector_mut(&mut file, SECTOR, 1);
+    fat.fill(0xff);
+    put_u32(fat, 0, END);
+    put_u32(fat, slot_offset(1), FAT);
+    Ok(file)
+}
+
+/// A scene compound file: the `Brep Data`, `Shape Data`, and `Document Data`
+/// root streams below a root storage that carries the scene class identifier.
+fn synthetic_ironcad_seed() -> std::io::Result<Vec<u8>> {
+    const SECTOR: usize = 512;
+    const FREE: u32 = 0xffff_ffff;
+    const END: u32 = 0xffff_fffe;
+    const FAT: u32 = 0xffff_fffd;
+    let mut file = vec![0_u8; 1536];
+    file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    put_u16(&mut file, 24, 0x003e);
+    put_u16(&mut file, 26, 3);
+    put_u16(&mut file, 28, 0xfffe);
+    put_u16(&mut file, 30, 9);
+    put_u16(&mut file, 32, 6);
+    put_u32(&mut file, 44, 1);
+    put_u32(&mut file, 48, 0);
+    put_u32(&mut file, 56, 4096);
+    put_u32(&mut file, 60, END);
+    put_u32(&mut file, 68, END);
+    for index in 0..109 {
+        put_u32(&mut file, 76 + index * 4, FREE);
+    }
+    put_u32(&mut file, 76, 1);
+
+    let directory = sector_mut(&mut file, SECTOR, 0);
+    for entry in directory.chunks_exact_mut(128) {
+        entry.fill(0);
+        entry[68..80].fill(0xff);
+    }
+    directory_entry(
+        directory,
+        0,
+        DirectoryEntry {
+            name: "Root Entry",
+            object_type: 5,
+            left: FREE,
+            right: FREE,
+            child: 2,
+            start_sector: END,
+            size: 0,
+        },
+    )?;
+    // Scene root class 0002c52b-0000-0000-c000-000000000046, first three fields little-endian.
+    directory[80..96].copy_from_slice(&[
+        0x2b, 0xc5, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x46,
+    ]);
+    for (index, name, left, right) in [
+        (1, "Brep Data", FREE, FREE),
+        (2, "Shape Data", 1, 3),
+        (3, "Document Data", FREE, FREE),
+    ] {
+        directory_entry(
+            directory,
+            index,
+            DirectoryEntry {
+                name,
+                object_type: 2,
+                left,
                 right,
                 child: FREE,
                 start_sector: END,

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn native_four_reference_payload_is_separate_from_five_reference_geometry() {
     let bytes = [
@@ -7,7 +9,7 @@ fn native_four_reference_payload_is_separate_from_five_reference_geometry() {
     ];
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.consolidated_edge_nodes.len(), 1);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&native).expect("native wire");
+    let wire = json::to_value(&native).expect("native wire");
     let rows = wire["consolidated_four_reference_edges"]
         .as_array()
         .expect("four-reference arena");
@@ -31,7 +33,7 @@ fn native_four_reference_alternate_flag_roundtrips_with_source_identity() {
     );
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("native store");
-    let value = cadmpeg_core::serde_erase::json::to_value(&namespace).expect("namespace wire");
+    let value = json::to_value(&namespace).expect("namespace wire");
     let rows = value["consolidated_four_reference_edges"]
         .as_array()
         .expect("four-reference arena");

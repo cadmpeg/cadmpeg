@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
@@ -1859,7 +1860,7 @@ fn a_record_too_deep_to_normalize_is_kept_as_decoded_with_a_warning() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_recursion_depth = 16;
     let result = decode_deep(policy);
-    let text = cadmpeg_core::serde_erase::json::to_string(result.ir()).unwrap();
+    let text = json::to_string(result.ir()).unwrap();
     assert!(crate::bounds::text_depth(&text) <= crate::bounds::MAX_DOCUMENT_DEPTH);
     let ratio = |value| Some(ScalarDimension::Ratio(Dimension::Literal(real(value))));
     assert_eq!(innermost_value(result.ir(), "shallow"), ratio(1.0));

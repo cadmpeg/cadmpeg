@@ -8,6 +8,7 @@ use crate::records::parameters::{
     DesignParameter, DesignParameterDraft, DesignParameterOwner, DesignParameterOwnerWire,
     DesignParameterSource,
 };
+use cadmpeg_core::serde_erase::json;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 
@@ -225,9 +226,9 @@ fn short_constant_set_requires_its_following_group_and_radius_owner() {
     assert_eq!(set.tangency_weight_owner_record_index, None);
     assert_eq!(set.tangent_chain, None);
     assert_eq!(set.curvature_continuity, None);
-    let stored = cadmpeg_core::serde_erase::json::to_value(&list).unwrap();
+    let stored = json::to_value(&list).unwrap();
     let restored: crate::records::feature::fillet_set::DesignFilletSetList =
-        cadmpeg_core::serde_erase::json::from_value(stored).unwrap();
+        json::from_value(stored).unwrap();
     assert_eq!(restored, list);
     assert!(decode(&fixture, "ChordLen").is_none());
 
@@ -468,7 +469,7 @@ fn empty_or_unpaired_prefix_lists_reject_the_set_list() {
 }
 
 fn group() -> crate::records::topology::construction::DesignConstructionOperandGroup {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    json::from_value(serde_json::json!({
         "id": format!("{STREAM}:group#{GROUP}"),
         "scope_record_index": SCOPE,
         "scope_reference_ordinal": 0,

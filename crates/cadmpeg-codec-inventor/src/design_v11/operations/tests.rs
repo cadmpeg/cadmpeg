@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::ops::{
     body as body_ops, dressup as dressup_ops,
     shared::{Limit, LinearLayout, PatternLayout, Spacing, Span},
@@ -29,7 +30,7 @@ fn legacy(kind: &str, value: Value) -> LegacyOperation {
         ("kind".to_owned(), Value::String(kind.to_owned())),
         ("value".to_owned(), value),
     ]);
-    cadmpeg_core::serde_erase::json::from_value(Value::Object(fields)).expect("synthetic operation")
+    json::from_value(Value::Object(fields)).expect("synthetic operation")
 }
 
 fn project_value(kind: &str, value: Value) -> FeatureOperation {
@@ -40,9 +41,8 @@ fn project_value(kind: &str, value: Value) -> FeatureOperation {
         &[],
     )
     .expect("typed projection");
-    let wire = cadmpeg_core::serde_erase::json::to_value(&operation).expect("v11 wire");
-    let decoded: FeatureOperation =
-        cadmpeg_core::serde_erase::json::from_value(wire).expect("admitted v11 operation");
+    let wire = json::to_value(&operation).expect("v11 wire");
+    let decoded: FeatureOperation = json::from_value(wire).expect("admitted v11 operation");
     assert_eq!(operation, decoded);
     operation
 }

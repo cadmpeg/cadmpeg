@@ -12,6 +12,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::move_face::{
     MoveFaceFixture, MoveFaceFrame, GROUP_GUID, OTHER_GUID, TRANSFORM_GUID, TRANSLATION,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::direct_edit::FaceMotion;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -356,9 +357,9 @@ fn framed_move_face_missing_metadata_and_unknown_prefix_preserve_motion() {
         ] {
             assert!(result.losses.contains(&code.kind()));
         }
-        let native = cadmpeg_core::serde_erase::json::to_value(&result.scope).unwrap();
+        let native = json::to_value(&result.scope).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(native).unwrap(),
+            json::from_value::<DesignParameterScope>(native).unwrap(),
             result.scope
         );
     }
