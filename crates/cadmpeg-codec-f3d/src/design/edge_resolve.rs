@@ -2011,7 +2011,7 @@ fn first_side_pair_edge_candidates(operand: &DesignEdgeOperand) -> Option<Vec<i6
     }
     let mut candidates = Vec::new();
     for (left, right) in [(a, b), (a, c), (b, c)] {
-        for edge in left.iter() {
+        for edge in *left {
             if right.contains(edge) && operand.transition_deleted_edge_slots.contains(edge) {
                 candidates.push(*edge);
             }
