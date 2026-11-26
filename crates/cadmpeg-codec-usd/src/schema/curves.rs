@@ -8,6 +8,8 @@
 //! unrolled into an open curve that repeats its first points; a pinned curve
 //! carries its phantom points.
 
+use cadmpeg_ir::unknown::part::Cause;
+
 use crate::schema::{index, integers, reals, token, vectors3, Issues};
 use crate::stage::Prim;
 
@@ -199,9 +201,10 @@ fn split<'p>(
     )
 }
 
-/// Reads a `BasisCurves` prim.
-pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curves> {
-    let points = vectors3(prim, "points", issues)?;
+/// Reads a `BasisCurves` prim, or returns why it states no curve batch.
+pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Result<Curves, Cause> {
+    let since = issues.malformed.len();
+    let points = vectors3(prim, "points", issues).ok_or_else(|| issues.cause_since(since))?;
     let cubic = match token(prim, "type", issues).as_deref() {
         Some("linear") => None,
         None | Some("cubic") => Some(match token(prim, "basis", issues).as_deref() {
@@ -209,14 +212,14 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
             Some("bspline") => Basis::Bspline,
             Some("catmullRom") => Basis::CatmullRom,
             Some(_) => {
-                return Some(Curves {
+                return Ok(Curves {
                     curves: Vec::new(),
                     rejected: 1,
                 })
             }
         }),
         Some(_) => {
-            return Some(Curves {
+            return Ok(Curves {
                 curves: Vec::new(),
                 rejected: 1,
             })
@@ -227,34 +230,39 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
         Some("periodic") => Wrap::Periodic,
         Some("pinned") => Wrap::Pinned,
         Some(_) => {
-            return Some(Curves {
+            return Ok(Curves {
                 curves: Vec::new(),
                 rejected: 1,
             })
         }
     };
     let mut out = Curves::default();
-    for slice in split(prim, &points, issues)? {
+    let since = issues.malformed.len();
+    let slices = split(prim, &points, issues).ok_or_else(|| issues.cause_since(since))?;
+    for slice in slices {
         match slice.and_then(|points| basis_curve(points, cubic, wrap)) {
             Some(curve) => out.curves.push(curve),
             None => out.rejected += 1,
         }
     }
-    Some(out)
+    Ok(out)
 }
 
-/// Reads a `NurbsCurves` prim.
-pub(crate) fn nurbs_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curves> {
-    let points = vectors3(prim, "points", issues)?;
-    let orders = integers(prim, "order", issues)?;
-    let knots = reals(prim, "knots", 1, issues)?;
+/// Reads a `NurbsCurves` prim, or returns why it states no curve batch.
+pub(crate) fn nurbs_curves(prim: &Prim<'_>, issues: &mut Issues) -> Result<Curves, Cause> {
+    let since = issues.malformed.len();
+    let points = vectors3(prim, "points", issues).ok_or_else(|| issues.cause_since(since))?;
+    let orders = integers(prim, "order", issues).ok_or_else(|| issues.cause_since(since))?;
+    let knots = reals(prim, "knots", 1, issues).ok_or_else(|| issues.cause_since(since))?;
     let ranges = reals(prim, "ranges", 2, issues);
     let weights =
         reals(prim, "pointWeights", 1, issues).filter(|weights| weights.len() == points.len());
     let mut out = Curves::default();
     let mut point_start = 0_usize;
     let mut knot_start = 0_usize;
-    for (curve, slice) in split(prim, &points, issues)?.into_iter().enumerate() {
+    let since = issues.malformed.len();
+    let slices = split(prim, &points, issues).ok_or_else(|| issues.cause_since(since))?;
+    for (curve, slice) in slices.into_iter().enumerate() {
         let Some(slice) = slice else {
             out.rejected += 1;
             continue;
@@ -298,7 +306,7 @@ pub(crate) fn nurbs_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
             None => out.rejected += 1,
         }
     }
-    Some(out)
+    Ok(out)
 }
 
 #[cfg(test)]

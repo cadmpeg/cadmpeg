@@ -6,6 +6,7 @@ use std::ops::Range;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::unknown::part::Cause;
 
 /// The entity or value occurrence class.
 #[derive(Debug, Clone, Copy)]
@@ -26,8 +27,9 @@ pub(crate) struct Token {
 /// Part 21 token categories.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum TokenKind {
-    /// A lexical defect deferred to its containing statement's recovery.
-    InvalidSource(String),
+    /// A lexical defect deferred to its containing statement's recovery,
+    /// with the cause of its give-up.
+    InvalidSource(Cause, String),
     /// Standard keyword or entity name.
     Name(String),
     /// User-defined `!`-prefixed keyword.
@@ -104,12 +106,18 @@ pub(crate) struct LexError {
     offset: usize,
     /// Violated lexical invariant.
     pub(crate) message: String,
+    /// [`Cause::Undecoded`] for a token that the grammar admits and whose
+    /// value the reader holds no form for.
+    cause: Cause,
     resource: Option<CodecError>,
 }
 
 impl LexError {
     pub(crate) fn offset(&self) -> usize {
         self.offset
+    }
+    pub(crate) fn cause(&self) -> Cause {
+        self.cause
     }
     pub(crate) fn into_codec_error(self) -> CodecError {
         match self.resource {
@@ -510,7 +518,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 let value = raw
                     .parse::<u64>()
                     .ok()
-                    .ok_or_else(|| Self::error(start, "instance name is out of range"))?;
+                    .ok_or_else(|| Self::unrepresentable(start, "instance name is out of range"))?;
                 if value == 0 {
                     return Err(Self::error(start, "instance name must not be zero"));
                 }
@@ -588,14 +596,19 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             raw.parse::<f64>()
                 .map_err(|_| Self::error(start, "invalid real"))
                 .and_then(|value| {
-                    FiniteReal::new(value)
-                        .map(TokenKind::Real)
-                        .ok_or_else(|| Self::error(start, "real exceeds finite binary64 range"))
+                    FiniteReal::new(value).map(TokenKind::Real).ok_or_else(|| {
+                        Self::unrepresentable(start, "real exceeds finite binary64 range")
+                    })
                 })
         } else {
-            raw.parse()
-                .map(TokenKind::Integer)
-                .map_err(|_| Self::error(start, "invalid integer"))
+            raw.parse().map(TokenKind::Integer).map_err(
+                |error: std::num::ParseIntError| match error.kind() {
+                    std::num::IntErrorKind::PosOverflow | std::num::IntErrorKind::NegOverflow => {
+                        Self::unrepresentable(start, "integer exceeds the signed 64-bit range")
+                    }
+                    _ => Self::error(start, "invalid integer"),
+                },
+            )
         };
         match (self.literal_admission, admitted) {
             (LiteralAdmission::Metadata, Err(_)) => Ok(TokenKind::UninterpretedLiteral),
@@ -864,7 +877,17 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         LexError {
             offset,
             message: message.into(),
+            cause: Cause::Unreadable,
             resource: None,
+        }
+    }
+
+    /// A token that the grammar admits and whose value the reader holds no
+    /// form for.
+    fn unrepresentable(offset: usize, message: &str) -> LexError {
+        LexError {
+            cause: Cause::Undecoded,
+            ..Self::error(offset, message)
         }
     }
 
@@ -872,6 +895,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         LexError {
             offset,
             message: error.to_string(),
+            cause: Cause::Undecoded,
             resource: Some(error),
         }
     }

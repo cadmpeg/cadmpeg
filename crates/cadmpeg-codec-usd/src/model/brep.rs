@@ -41,8 +41,7 @@ use crate::brep::{
     AnalyticSurface, Brep, Catalog, CurveKind, Frame, PcurveKind, Reference, SurfaceKind,
 };
 use crate::ids::brep as id;
-use crate::loss::UsdLossCode;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpRecord};
 
 /// The entities of one B-rep, in arena order.
 #[derive(Debug, Default)]
@@ -980,12 +979,10 @@ impl super::Builder<'_, '_, '_, '_> {
         let decoded = match decoded(prim, &mut self.issues) {
             Ok(decoded) => decoded,
             Err(reason) => {
-                self.tallies
-                    .rejected_breps
-                    .push(format!("{}: {reason}", prim.path));
                 self.tallies.given_up.push(GivenUpRecord::new(
                     crate::ids::body(key),
-                    format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
+                    Cause::Undecoded,
+                    reason,
                 ));
                 return Ok(Vec::new());
             }
@@ -1012,12 +1009,10 @@ impl super::Builder<'_, '_, '_, '_> {
                     keys.insert(ordinal, body_key);
                 }
                 Err(reason) => {
-                    self.tallies
-                        .rejected_breps
-                        .push(format!("{}: {reason}", prim.path));
                     self.tallies.given_up.push(GivenUpRecord::new(
                         crate::ids::body(&body_key),
-                        format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
+                        Cause::Undecoded,
+                        reason,
                     ));
                 }
             }
@@ -1167,13 +1162,16 @@ impl super::Builder<'_, '_, '_, '_> {
         } else {
             format!("{key}/{}", prim.name)
         };
-        let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
-            self.tallies.rejected_meshes.push(prim.path.clone());
-            self.tallies.given_up.push(GivenUpRecord::new(
-                crate::ids::tessellation(&tessellation_key),
-                UsdLossCode::MeshRejected.kind(),
-            ));
-            return Ok(());
+        let mesh = match crate::schema::mesh::read(self.stage, prim, &mut self.issues) {
+            Ok(mesh) => mesh,
+            Err(cause) => {
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    crate::ids::tessellation(&tessellation_key),
+                    cause,
+                    "the mesh states no points, or no face of three points",
+                ));
+                return Ok(());
+            }
         };
         self.ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(
@@ -1185,12 +1183,10 @@ impl super::Builder<'_, '_, '_, '_> {
         let tessellation = match self.tessellation(&tessellation_key, &mesh) {
             Ok(tessellation) => tessellation,
             Err(reason) => {
-                self.tallies
-                    .rejected_meshes
-                    .push(format!("{}: {reason}", prim.path));
                 self.tallies.given_up.push(GivenUpRecord::new(
                     crate::ids::tessellation(&tessellation_key),
-                    format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
+                    Cause::Undecoded,
+                    reason,
                 ));
                 return Ok(());
             }

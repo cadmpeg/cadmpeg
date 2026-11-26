@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -11,6 +10,7 @@ use cadmpeg_ir::pmi::zones::{ToleranceProjection, ToleranceZone, ToleranceZoneFo
 use cadmpeg_ir::pmi::{PmiDefinition, PmiQuantity, PmiTarget};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::CadIr;
 
 use super::super::geometry::GeometryData;
@@ -112,13 +112,13 @@ pub(super) fn attach(
         if let Some((zone, projection)) = projection(id, record, exchange, geometry, losses, ctx)? {
             projections.entry(zone).or_default().push((id, projection));
         } else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::PmiZoneUnresolved.note(format!(
+                Cause::Unreadable,
+                &StepLossCode::PmiZoneUnresolved.note(format!(
                     "projected tolerance zone #{id} has no complete end, boundary, length, and offset"
                 )),
-            ));
+            );
         }
     }
     for (id, record) in exchange.entities("TOLERANCE_ZONE") {
@@ -142,13 +142,14 @@ pub(super) fn attach(
             .and_then(|(id, form)| NonBlankString::new(form).map(|form| (id, zone_form(&form))));
         let zone_projections = projections.get(&id).map(Vec::as_slice).unwrap_or_default();
         let Some((form_id, form)) = form else {
-            losses.extend(give_up_zone(
+            give_up_zone(
                 exchange,
                 id,
                 zone_projections,
-                StepLossCode::PmiZoneUnresolved
+                Cause::Unreadable,
+                &StepLossCode::PmiZoneUnresolved
                     .note(format!("tolerance zone #{id} has no zone form")),
-            ));
+            );
             continue;
         };
         let Some(owners) = introduced(record, "TOLERANCE_ZONE", 4, 0) else {
@@ -156,15 +157,21 @@ pub(super) fn attach(
         };
         let owners = references(owners, ctx).collect::<Result<Vec<_>, _>>()?;
         if owners.len() != 1 {
-            losses.extend(give_up_zone(
+            let cause = if owners.is_empty() {
+                Cause::Unreadable
+            } else {
+                Cause::Undecoded
+            };
+            give_up_zone(
                 exchange,
                 id,
                 zone_projections,
-                StepLossCode::PmiZoneUnresolved.note(format!(
+                cause,
+                &StepLossCode::PmiZoneUnresolved.note(format!(
                     "tolerance zone #{id} has {} defining tolerances; shared zone ownership is not transferred",
                     owners.len()
                 )),
-            ));
+            );
             continue;
         }
         let mut attached = false;
@@ -203,18 +210,19 @@ pub(super) fn attach(
     Ok(())
 }
 
-/// The losses of tolerance zone `id`, which the reader gives up for `why`
-/// with the projections that define it.
+/// Gives up tolerance zone `id` for `cause` as `why` states, and drops the
+/// projections that define it with the zone.
 fn give_up_zone(
     exchange: &Exchange,
     id: u64,
     projections: &[(u64, ToleranceProjection)],
-    why: LossNote,
-) -> [LossNote; 1] {
+    cause: Cause,
+    why: &LossNote,
+) {
     for (projection, _) in projections {
         exchange.lost().drop_with(*projection, id);
     }
-    give_up_instance(exchange, id, why)
+    exchange.lost().give_up_for(id, cause, why);
 }
 
 fn projection(

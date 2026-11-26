@@ -128,7 +128,7 @@ fn malformed_redirections_are_reported_by_complete_and_container_routes() {
             .report()
             .losses
             .iter()
-            .find(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+            .find(|loss| crate::test_support::xref_table_given_up(loss))
             .expect("malformed Redirections loss");
         assert!(loss.message.contains("RedirectionsStream.dat"), "{loss:?}");
         assert!(loss.message.contains("properties"), "{loss:?}");
@@ -167,7 +167,7 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
                 &DecodeOptions { depth, ..DecodeOptions::default() },
             ).expect("property refusal preserves the source document"));
             let losses = decoded.report().losses.iter()
-                .filter(|loss| loss.code == F3dLossCode::XrefTableUndecoded.kind())
+                .filter(|loss| crate::test_support::xref_table_given_up(loss))
                 .collect::<Vec<_>>();
             assert_eq!(losses.len(), usize::from(!valid), "{label}, container_only={container_only}: {losses:?}");
             for loss in losses {

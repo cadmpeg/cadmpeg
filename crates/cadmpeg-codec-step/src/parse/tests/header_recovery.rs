@@ -155,7 +155,7 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind() }));
+        .any(|loss| { loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind() }));
     assert!(recovered
         .ir()
         .native_unknowns("step")

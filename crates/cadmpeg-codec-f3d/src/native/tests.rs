@@ -1382,12 +1382,11 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("an inconsistent cage must not fail the document decode");
     assert!(result.ir().geometry.subds.is_empty());
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
-            && loss.message.contains("T-spline control cage not decoded")));
+    // TS-07: the cage failure taxonomy is open, so the entry gives up as a
+    // form the decoder has no reading for.
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::unknown::part::record_undecoded_kind()
+        && loss.message.contains("T-spline control cage not decoded")));
 }
 
 const MALFORMED_PARAMESH: &str =
@@ -1411,12 +1410,6 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
             &DecodeOptions::default(),
         )
         .expect("independent malformed mesh entry must not abort document decode");
-    assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == F3dLossCode::MeshContainerUndecoded.kind()
-            && loss.severity == Severity::Error
-            && loss.message.contains(entry)
-            && loss.message.contains("paramesh container has no magic")
-    }));
     let unreadable = decoded
         .report()
         .losses
@@ -1435,6 +1428,19 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
         "{}",
         unreadable.message
     );
+    assert!(
+        unreadable
+            .message
+            .contains("paramesh container has no magic"),
+        "{}",
+        unreadable.message
+    );
+    // §3.3: the given-up container is the one loss of its failure.
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::MeshContainerUndecoded.kind()));
 }
 
 #[test]
@@ -1471,8 +1477,9 @@ fn oversized_zip_entry_declaration_is_given_up_before_allocation() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("a Part refusal refuses no file");
     assert!(decoded.ir().geometry.bodies.is_empty());
+    // §4: a decoder bound refuses the entry, so the give-up is undecoded.
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code.to_string() == "decode/record.unreadable"
+        loss.code.to_string() == "decode/record.undecoded"
             && loss.message.starts_with(
                 "part archive-entry \"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\"",
             )

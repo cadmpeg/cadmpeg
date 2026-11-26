@@ -510,16 +510,16 @@ fn unread_folder_charges_one_loss_for_its_sketches() {
     let (visibilities, losses, given_up) = decode_with_given_up(&bytes, &metadata);
     assert_eq!(visibilities.len(), 1);
     assert_eq!(visibilities[0].1.ordinal_collection, None);
-    assert_eq!(
-        crate::test_support::loss_codes(&losses),
-        [crate::loss::F3dLossCode::SketchFolderUndecoded.kind()]
-    );
-    assert!(losses[0].message.contains("sketch folder 500"));
-    // §3.3: the folder frame is given up as a part.
+    assert!(losses.is_empty(), "{losses:?}");
+    // §3.3: the folder frame is given up as a part, and the give-up names
+    // the folder.
     let [frame] = given_up.as_slice() else {
         panic!("one given-up folder frame: {given_up:?}");
     };
     assert_eq!(frame.span().0, STREAM);
+    let (cause, text) = frame.reason();
+    assert_eq!(cause, cadmpeg_ir::unknown::part::Cause::Undecoded);
+    assert!(text.contains("sketch folder 500"), "{text}");
 }
 
 #[test]
@@ -572,34 +572,31 @@ fn collection_counted_run_requires_complete_plain_local_references() {
     let (valid, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
     let reference_at = valid.len() - 11;
     for end in reference_at..valid.len() {
-        let (rows, losses) = decode_with_losses(&valid[..end], &metadata);
+        let (rows, _, given_up) = decode_with_given_up(&valid[..end], &metadata);
         assert_eq!(rows.len(), 1);
-        assert!(losses
-            .iter()
-            .any(|loss| loss.code
-                == crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind()));
+        assert!(collection_given_up(&given_up), "{given_up:?}");
     }
     let mut null_target = valid.clone();
     null_target[reference_at + 1..reference_at + 9].fill(0);
-    let (rows, losses) = decode_with_losses(&null_target, &metadata);
+    let (rows, _, given_up) = decode_with_given_up(&null_target, &metadata);
     assert_eq!(rows.len(), 1);
-    assert!(
-        losses
-            .iter()
-            .any(|loss| loss.code
-                == crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind())
-    );
+    assert!(collection_given_up(&given_up), "{given_up:?}");
     let mut cross_segment = valid;
     cross_segment[reference_at + 10] = 1;
     cross_segment.extend_from_slice(&1u32.to_le_bytes());
-    let (rows, losses) = decode_with_losses(&cross_segment, &metadata);
+    let (rows, _, given_up) = decode_with_given_up(&cross_segment, &metadata);
     assert_eq!(rows.len(), 1);
-    assert!(
-        losses
-            .iter()
-            .any(|loss| loss.code
-                == crate::loss::F3dLossCode::SketchOrdinalCollectionUndecoded.kind())
-    );
+    assert!(collection_given_up(&given_up), "{given_up:?}");
+}
+
+/// Whether `given_up` holds the ordinal collection, given up as a form the
+/// decoder has no reading for.
+fn collection_given_up(given_up: &[crate::design::decode::record::GivenUpFrame]) -> bool {
+    given_up.iter().any(|frame| {
+        let (cause, text) = frame.reason();
+        cause == cadmpeg_ir::unknown::part::Cause::Undecoded
+            && text.contains("sketch ordinal collection")
+    })
 }
 
 #[test]

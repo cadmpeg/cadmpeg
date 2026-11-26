@@ -65,8 +65,6 @@ pub(crate) enum UsdLossCode {
     /// Mesh faces that are degenerate or index no point were not
     /// transferred.
     MeshFaceRejected,
-    /// A mesh failed tessellation admission and was not transferred.
-    MeshRejected,
     /// Mesh primvars other than normals and display color were not
     /// transferred.
     MeshPrimvarNotTransferred,
@@ -78,8 +76,6 @@ pub(crate) enum UsdLossCode {
     /// A curve batch, or one curve of it, does not satisfy its topology and
     /// was not transferred.
     CurvesRejected,
-    /// A NURBS patch does not satisfy its counts and was not transferred.
-    NurbsPatchRejected,
     /// Trim curves of a NURBS patch were not transferred; the face is bounded
     /// by the sides of its parameter range.
     NurbsTrimNotTransferred,
@@ -99,9 +95,6 @@ pub(crate) enum UsdLossCode {
     /// A texture path names no package member and no companion file; the
     /// texture keeps the path as written.
     TextureUnlocated,
-    /// A `BrepArray` prim, or one B-rep of it, whose arrays do not describe
-    /// a neutral B-rep was not transferred.
-    BrepRejected,
     /// Wire edges and point shells of a `BrepArray` prim were not
     /// transferred.
     BrepElementNotTransferred,
@@ -184,12 +177,10 @@ impl UsdLossCode {
         Self::XformMalformed,
         Self::MeshSubdivisionNotApplied,
         Self::MeshFaceRejected,
-        Self::MeshRejected,
         Self::MeshPrimvarNotTransferred,
         Self::MeshNormalsNotTransferred,
         Self::MeshSubsetNotTransferred,
         Self::CurvesRejected,
-        Self::NurbsPatchRejected,
         Self::NurbsTrimNotTransferred,
         Self::NurbsTrimRegionAssumed,
         Self::NurbsBoundaryNotTransferred,
@@ -197,7 +188,6 @@ impl UsdLossCode {
         Self::DisplayColorNotTransferred,
         Self::MaterialNotTransferred,
         Self::TextureUnlocated,
-        Self::BrepRejected,
         Self::BrepElementNotTransferred,
         Self::BrepSubsetNotTransferred,
         Self::TopologyFaceBoundaryUnstated,
@@ -312,7 +302,6 @@ impl UsdLossCode {
                 ("mesh.subdivision-not-applied", Info, T::SubdOmitted)
             }
             Self::MeshFaceRejected => ("mesh.face-rejected", Warning, T::GeometryNotTransferred),
-            Self::MeshRejected => ("mesh.rejected", Warning, T::GeometryNotTransferred),
             Self::MeshPrimvarNotTransferred => (
                 "mesh.primvar-not-transferred",
                 Info,
@@ -329,9 +318,6 @@ impl UsdLossCode {
                 T::AttributesNotTransferred,
             ),
             Self::CurvesRejected => ("curves.rejected", Warning, T::GeometryNotTransferred),
-            Self::NurbsPatchRejected => {
-                ("nurbs.patch-rejected", Warning, T::GeometryNotTransferred)
-            }
             Self::NurbsTrimNotTransferred => {
                 ("nurbs.trim-not-transferred", Warning, T::PcurveOmitted)
             }
@@ -365,7 +351,6 @@ impl UsdLossCode {
                 Info,
                 T::ReferenceGraphNotClosed,
             ),
-            Self::BrepRejected => ("brep.rejected", Warning, T::TopologyNotTransferred),
             Self::BrepElementNotTransferred => (
                 "brep.element-not-transferred",
                 Info,

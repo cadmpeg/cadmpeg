@@ -496,7 +496,7 @@ fn rejects_wrong_subfigure_definition_pointers_in_v4_and_v5_profiles() {
                     .unwrap();
                 assert!(
                     result.report().losses.iter().any(|loss| {
-                        loss.code == IgesLossCode::EntityNotProjected.kind()
+                        crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
                             && loss.message.contains(message)
                     }),
                     "{version} {definition_type} wrong {pointer_kind}: {:#?}",
@@ -881,9 +881,9 @@ fn decode_omits_occurrences_for_rejected_structure_entities() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
+            .filter(|loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected))
             .count(),
-        4
+        3
     );
 }
 
@@ -1246,7 +1246,7 @@ fn decode_rejects_wrong_typed_network_instance_type_flag() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
+            .any(|loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)),
         "{:#?}",
         result.report().losses
     );
@@ -1264,7 +1264,7 @@ fn decode_rejects_wrong_typed_network_definition_type_flag() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+        .any(|loss| crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)));
 }
 
 #[test]

@@ -86,10 +86,6 @@ fn mesh_losses_are_emitted() {
         UsdLossCode::MeshFaceRejected,
     );
     assert_decode_emits(
-        &mesh("int[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0, 1, 2]"),
-        UsdLossCode::MeshRejected,
-    );
-    assert_decode_emits(
         &mesh(&format!(
             "{TRIANGLE}\ntexCoord2f[] primvars:st = [(0, 0)] (\n    interpolation = \"vertex\"\n)"
         )),
@@ -113,41 +109,86 @@ fn mesh_losses_are_emitted() {
     );
 }
 
-/// A mesh prim with no points is given up: the default decode charges
-/// `mesh.rejected` and the prim's `record.unreadable`, and a pinned decode
-/// refuses on the `record.unreadable`.
-#[test]
-fn a_rejected_mesh_is_given_up_and_refuses_a_pinned_decode() {
+/// A pinned decode of `text`.
+fn decode_pinned(
+    text: &str,
+) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
     use cadmpeg_ir::codec::Codec as _;
-
-    let text = mesh("int[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0, 1, 2]");
-    let message = format!(
-        "record {} given up: usd/mesh.rejected; dropped=[]",
-        crate::ids::tessellation("/M")
-    );
-    let given_up = |loss: &LossNote| {
-        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind() && loss.message == message
-    };
-
-    let result = decode(&text);
-    assert!(result.ir().model.tessellations.is_empty());
-    let losses = &result.report().losses;
-    assert!(emitted(losses, UsdLossCode::MeshRejected), "{losses:#?}");
-    assert_eq!(
-        losses
-            .iter()
-            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
-            .count(),
-        1,
-        "{losses:#?}"
-    );
-    assert!(losses.iter().any(given_up), "{losses:#?}");
 
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();
     options.strictness.pinned = true;
-    match crate::UsdCodec.decode(&mut std::io::Cursor::new(text.as_bytes()), &options) {
+    crate::UsdCodec.decode(&mut std::io::Cursor::new(text.as_bytes()), &options)
+}
+
+/// Asserts that `record` is given up by exactly one loss of `losses`, for
+/// `cause`, with the message `message`.
+fn assert_given_up_once(
+    losses: &[LossNote],
+    record: &str,
+    cause: cadmpeg_ir::unknown::part::Cause,
+    message: &str,
+) {
+    let named = losses
+        .iter()
+        .filter(|loss| loss.message.contains(record))
+        .collect::<Vec<_>>();
+    let [loss] = named.as_slice() else {
+        panic!("one loss names {record}: {losses:#?}");
+    };
+    assert_eq!(loss.code, cause.kind(), "{loss:#?}");
+    assert_eq!(loss.message, message);
+}
+
+/// A mesh prim that states no points is undecoded: one `record.undecoded`
+/// names its tessellation, and a pinned decode accepts it.
+#[test]
+fn a_mesh_with_no_points_is_undecoded() {
+    let text = mesh("int[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0, 1, 2]");
+    let tessellation = crate::ids::tessellation("/M");
+    let message = format!(
+        "record {tessellation} given up: the mesh states no points, or no face of three \
+         points; dropped=[]"
+    );
+
+    let result = decode(&text);
+    assert!(result.ir().model.tessellations.is_empty());
+    assert_given_up_once(
+        &result.report().losses,
+        tessellation.as_str(),
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
+        &message,
+    );
+    let pinned = decode_pinned(&text).expect("a pinned decode accepts an undecoded mesh");
+    assert!(pinned.ir().model.tessellations.is_empty());
+}
+
+/// A mesh prim whose one face indexes a point that it does not hold is
+/// unreadable: one `record.unreadable` names its tessellation, and a pinned
+/// decode refuses it.
+#[test]
+fn a_mesh_whose_faces_index_no_point_is_unreadable() {
+    let text = mesh("int[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0, 1, 5]\npoint3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]");
+    let tessellation = crate::ids::tessellation("/M");
+    let message = format!(
+        "record {tessellation} given up: the mesh states no points, or no face of three \
+         points; dropped=[]"
+    );
+
+    let result = decode(&text);
+    assert!(result.ir().model.tessellations.is_empty());
+    assert_given_up_once(
+        &result.report().losses,
+        tessellation.as_str(),
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
+        &message,
+    );
+    match decode_pinned(&text) {
         Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
-            assert!(given_up(rejection.loss()), "{:#?}", rejection.loss());
+            assert_eq!(
+                rejection.loss().code,
+                cadmpeg_ir::unknown::part::record_unreadable_kind()
+            );
+            assert_eq!(rejection.loss().message, message);
         }
         Ok(_) => panic!("expected a strict refusal"),
         Err(other) => panic!("expected a strict refusal, got {other:?}"),
@@ -161,47 +202,69 @@ fn a_rejected_mesh_drops_its_appearance_binding_with_it() {
     let text = "#usda 1.0\ndef Mesh \"M\"\n{\nint[] faceVertexCounts = [3]\nint[] faceVertexIndices = [0, 1, 2]\nrel material:binding = </Grey>\n}\ndef Material \"Grey\"\n{\ntoken outputs:surface.connect = </Grey/S.outputs:surface>\ndef Shader \"S\"\n{\nuniform token info:id = \"UsdPreviewSurface\"\ncolor3f inputs:diffuseColor = (0.5, 0.5, 0.5)\ntoken outputs:surface\n}\n}\n";
     let result = decode(text);
     assert!(result.ir().model.appearance_bindings.is_empty());
+    let tessellation = crate::ids::tessellation("/M");
     let message = format!(
-        "record {} given up: usd/mesh.rejected; dropped=[{}]",
-        crate::ids::tessellation("/M"),
+        "record {tessellation} given up: the mesh states no points, or no face of three \
+         points; dropped=[{}]",
         crate::ids::appearance_binding("/M")
     );
-    let losses = &result.report().losses;
-    assert!(
-        losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message == message
-        }),
-        "{losses:#?}"
+    assert_given_up_once(
+        &result.report().losses,
+        tessellation.as_str(),
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
+        &message,
     );
 }
 
 /// A `BasisCurves` prim whose cubic basis the reader does not implement
-/// states no curve: the prim is given up, and a pinned decode refuses it on
-/// its `record.unreadable`.
+/// states no curve: one `record.undecoded` names the prim's body, and a
+/// pinned decode accepts it.
 #[test]
-fn a_curve_batch_with_an_unsupported_basis_is_given_up() {
-    use cadmpeg_ir::codec::Codec as _;
-
+fn a_curve_batch_with_an_unsupported_basis_is_undecoded() {
     let text = "#usda 1.0\ndef BasisCurves \"C\"\n{\n    uniform token basis = \"hermite\"\n    int[] curveVertexCounts = [4]\n    point3f[] points = [(0, 0, 0), (1, 0, 0), (2, 0, 0), (3, 0, 0)]\n}\n";
-    let message = format!(
-        "record {} given up: usd/curves.rejected; dropped=[]",
-        crate::ids::body("/C")
-    );
-    let given_up = |loss: &LossNote| {
-        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind() && loss.message == message
-    };
+    let body = crate::ids::body("/C");
+    let message = format!("record {body} given up: no curve of the batch transfers; dropped=[]");
 
     let result = decode(text);
     assert!(result.ir().geometry.edges.is_empty());
     let losses = &result.report().losses;
-    assert!(losses.iter().any(given_up), "{losses:#?}");
+    assert_given_up_once(
+        losses,
+        body.as_str(),
+        cadmpeg_ir::unknown::part::Cause::Undecoded,
+        &message,
+    );
+    assert!(!emitted(losses, UsdLossCode::CurvesRejected), "{losses:#?}");
+    let pinned = decode_pinned(text).expect("a pinned decode accepts an undecoded batch");
+    assert!(pinned.ir().geometry.edges.is_empty());
+}
 
-    let mut options = cadmpeg_ir::codec::DecodeOptions::default();
-    options.strictness.pinned = true;
-    match crate::UsdCodec.decode(&mut std::io::Cursor::new(text.as_bytes()), &options) {
+/// A `NurbsPatch` prim whose vertex counts do not match its points is
+/// unreadable: one `record.unreadable` names the prim's body, and a pinned
+/// decode refuses it.
+#[test]
+fn a_patch_whose_counts_disagree_is_unreadable() {
+    let text = format!(
+        "#usda 1.0\ndef NurbsPatch \"P\"\n{{\n{}\n}}\n",
+        PATCH.replace("int uVertexCount = 2", "int uVertexCount = 3")
+    );
+    let body = crate::ids::body("/P");
+    let message = format!(
+        "record {body} given up: the NURBS patch states no counts, orders, knots, and points \
+         that agree; dropped=[]"
+    );
+
+    let result = decode(&text);
+    assert!(result.ir().geometry.faces.is_empty());
+    assert_given_up_once(
+        &result.report().losses,
+        body.as_str(),
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
+        &message,
+    );
+    match decode_pinned(&text) {
         Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
-            assert!(given_up(rejection.loss()), "{:#?}", rejection.loss());
+            assert_eq!(rejection.loss().message, message);
         }
         Ok(_) => panic!("expected a strict refusal"),
         Err(other) => panic!("expected a strict refusal, got {other:?}"),
@@ -211,15 +274,8 @@ fn a_curve_batch_with_an_unsupported_basis_is_given_up() {
 #[test]
 fn curve_and_patch_losses_are_emitted() {
     assert_decode_emits(
-        "#usda 1.0\ndef BasisCurves \"C\"\n{\n    uniform token basis = \"catmullRom\"\n    int[] curveVertexCounts = [3]\n    point3f[] points = [(0, 0, 0), (1, 0, 0), (2, 0, 0)]\n}\n",
+        "#usda 1.0\ndef BasisCurves \"C\"\n{\n    uniform token type = \"linear\"\n    int[] curveVertexCounts = [2, 1]\n    point3f[] points = [(0, 0, 0), (1, 0, 0), (2, 0, 0)]\n}\n",
         UsdLossCode::CurvesRejected,
-    );
-    assert_decode_emits(
-        &format!(
-            "#usda 1.0\ndef NurbsPatch \"P\"\n{{\n{}\n}}\n",
-            PATCH.replace("int uVertexCount = 2", "int uVertexCount = 3")
-        ),
-        UsdLossCode::NurbsPatchRejected,
     );
     assert_decode_emits(
         &format!("#usda 1.0\ndef NurbsPatch \"P\"\n{{\n{PATCH}\ndouble2 uRange = (0, 2)\n}}\n"),

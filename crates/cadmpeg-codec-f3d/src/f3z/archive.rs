@@ -313,12 +313,27 @@ pub(super) fn classify_members<'a>(
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
                     let message = format!("{error}");
-                    let note = F3dLossCode::XrefMemberUndecoded.note(format!(
-                        "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
-                    ));
-                    losses.push(note);
+                    let why = format!(
+                        "xref {member_path}: member could not be scanned as an F3D document ({message})"
+                    );
+                    // The scan gave up an entry that it did not open.
+                    let mut given = !scan.has_entry(member_path);
                     if opened {
-                        if let Some(part) = scan.give_up_entry(ctx, member_path, error)? {
+                        let cause = crate::design::decode::record::cause_of(
+                            cadmpeg_ir::unknown::part::Cause::Unreadable,
+                            &error,
+                        );
+                        if let Some(part) = scan.give_up_entry(
+                            ctx,
+                            member_path,
+                            cause,
+                            if crate::design::decode::record::is_fatal(&error) {
+                                error
+                            } else {
+                                CodecError::Malformed(why.clone())
+                            },
+                        )? {
+                            given = true;
                             let held = |kept: &GivenUpPart| kept.id() == part.id();
                             // Two directory entries can name one stored span.
                             if !given_up.iter().any(held) && !scan.given_up.iter().any(held) {
@@ -326,6 +341,12 @@ pub(super) fn classify_members<'a>(
                                 given_up.push(part);
                             }
                         }
+                    }
+                    if !given {
+                        losses.push(
+                            F3dLossCode::XrefMemberUndecoded
+                                .note(format!("{why}; its source bytes remain retained")),
+                        );
                     }
                     members.insert(
                         member_path.to_owned(),

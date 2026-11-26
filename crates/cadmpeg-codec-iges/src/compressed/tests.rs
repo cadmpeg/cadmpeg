@@ -566,33 +566,41 @@ fn a_repeated_directory_sequence_keeps_its_first_record() {
         .decode(&mut Cursor::new(repeated), &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().geometry.points.len(), 2);
-    let losses = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == IgesLossCode::DirectoryRecordRepeated.kind())
-        .collect::<Vec<_>>();
-    let [loss] = losses.as_slice() else {
-        panic!("one loss for the one copy: {losses:?}");
-    };
-    let span = format!("bytes {second_end}..{}", second_end + copy.len() - 2);
-    assert!(
-        loss.message.contains("D3") && loss.message.contains(&span),
-        "{}",
-        loss.message
-    );
+    // The copy breaks the format, so its one loss is the part's
+    // `record.unreadable`, whose text names the restated sequence and span.
     let given_up = result
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
         .collect::<Vec<_>>();
     let [given_up] = given_up.as_slice() else {
         panic!("one give-up for the one copy: {given_up:?}");
     };
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
     let part = format!(
         "part compressed-data-record stream=\"\" offset={second_end} length={} ",
         copy.len() - 2
     );
     assert!(given_up.message.starts_with(&part), "{}", given_up.message);
+    let span = format!("bytes {second_end}..{}", second_end + copy.len() - 2);
+    assert!(
+        given_up.message.contains("D3") && given_up.message.contains(&span),
+        "{}",
+        given_up.message
+    );
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.message.contains("restates the Directory sequence"))
+            .count(),
+        1,
+        "{:#?}",
+        result.report().losses
+    );
 }

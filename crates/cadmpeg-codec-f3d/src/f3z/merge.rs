@@ -356,6 +356,7 @@ impl MergeSession<'_, '_> {
                     if let Some(part) = self.scan.give_up_entry(
                         self.ctx,
                         &reference.relative_path,
+                        cadmpeg_ir::unknown::part::Cause::Undecoded,
                         CodecError::malformed("F3Z member is not an F3D document"),
                     )? {
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
@@ -382,7 +383,13 @@ impl MergeSession<'_, '_> {
                 };
                 match member {
                     ClassifiedMember::Scanned { .. } => {}
-                    ClassifiedMember::Unreadable(_) => continue,
+                    ClassifiedMember::Unreadable(reason) => {
+                        super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+                            "xref {label}: member {} could not be scanned as an F3D document ({reason}); the occurrence was not resolved",
+                            reference.relative_path
+                        ));
+                        continue;
+                    }
                 }
                 let component = match self.session.take_member(
                     self.ctx,
@@ -415,6 +422,10 @@ impl MergeSession<'_, '_> {
                         let part = self.scan.give_up_entry(
                             self.ctx,
                             reference.relative_path.as_str(),
+                            crate::design::decode::record::cause_of(
+                                cadmpeg_ir::unknown::part::Cause::Unreadable,
+                                &error,
+                            ),
                             error,
                         )?;
                         parent_report.losses.extend(crate::decode::commit_parts(

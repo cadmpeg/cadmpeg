@@ -137,14 +137,14 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
         assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
         assert_eq!(
             result.report().losses.len(),
-            2,
+            1,
             "{:#?}",
             result.report().losses
         );
-        assert_eq!(
-            result.report().losses[0].code,
-            IgesLossCode::GeometryNotProjected.kind()
-        );
+        assert!(crate::test_support::reports(
+            &result.report().losses[0],
+            IgesLossCode::GeometryNotProjected
+        ));
         assert!(
             result.report().losses[0].message.contains(reason),
             "{}",
@@ -171,7 +171,7 @@ fn decode_skips_a_nurbs_surface_over_its_pole_limit() {
 
     assert!(decoded.ir().geometry.surfaces.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains("surface pole count exceeds 1000000")
     }));
     crate::test_support::assert_gives_up(decoded.report(), &[("entity", 1)]);
@@ -620,7 +620,7 @@ fn ruled_rails_over_the_blend_limit_are_skipped_with_a_loss() {
         .any(|surface| surface.id.as_str() == "iges:model:surface#D5"));
     assert!(
         result.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::GeometryNotProjected.kind()
+            crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
                 && loss.message.contains("MAX_BEZIER_BLENDS")
         }),
         "{:#?}",
@@ -1262,22 +1262,34 @@ fn decode_projects_an_exact_placed_hyperbola_revolution() {
 }
 
 #[test]
-fn nonfinite_placed_carriers_report_a_transform_loss() {
+fn a_nonfinite_placed_carrier_gives_up_undecoded_and_a_pinned_decode_accepts_it() {
     for bytes in [
         crate::test_support::test_tabulated_surfaces::placed_tabulated_nurbs_overflow_file(),
         crate::test_support::test_surface_fixtures::placed_overflow_surface_of_revolution_file(),
     ] {
+        IgesCodec
+            .decode(
+                &mut Cursor::new(bytes.clone()),
+                &crate::test_support::strict_options(),
+            )
+            .unwrap();
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
+        let losses = &result.report().losses;
         assert!(
-            result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| { loss.code == IgesLossCode::NurbsTransformNonFinite.kind() }),
-            "{:#?}",
-            result.report().losses
+            losses.iter().any(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                    && loss.message.contains("non-finite")
+            }),
+            "{losses:#?}"
+        );
+        assert!(
+            !losses.iter().any(|loss| {
+                loss.code == IgesLossCode::GeometryNotProjected.kind()
+                    && loss.message.contains("non-finite")
+            }),
+            "{losses:#?}"
         );
     }
 }
@@ -1313,8 +1325,10 @@ fn reversed_ruled_rail_with_nonfinite_knots_reports_a_transform_loss() {
         .unwrap();
     assert!(
         result.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::NurbsTransformNonFinite.kind()
-                && loss.message == "IGES reversed second rail knots are non-finite"
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss
+                    .message
+                    .contains("reversed second rail knots are non-finite")
         }),
         "{:#?}",
         result.report().losses

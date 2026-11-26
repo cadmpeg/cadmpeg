@@ -6,13 +6,23 @@ use crate::loss::F3dLossCode;
 use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::{SourceProvenance, StreamName};
 
 /// Whether `error` ends the session rather than one record: an I/O error or a
 /// resource refusal.
 pub(crate) fn is_fatal(error: &CodecError) -> bool {
     matches!(error, CodecError::Io(_) | CodecError::ResourceLimit(_))
+}
+
+/// The cause of a give-up that `error` ends: [`Cause::Undecoded`] for a form
+/// the decoder has no reading for or a resource refusal, and `cause` for
+/// every other failure.
+pub(crate) const fn cause_of(cause: Cause, error: &CodecError) -> Cause {
+    match error {
+        CodecError::NotImplemented(_) | CodecError::UnsupportedDialect { .. } => Cause::Undecoded,
+        _ => cause.of(error),
+    }
 }
 
 /// A Design record that a give-up names without its frame in hand: the
@@ -47,25 +57,24 @@ impl<'a> DesignRecord<'a> {
         crate::ids::native_scoped_id(self.stream, "design-entity", self.entity)
     }
 
-    /// The losses of the record given up whole for the codec loss `why`:
-    /// `why` at the record's position, then the `record.unreadable` that
-    /// names the record by its id.
-    pub(crate) fn given_up(&self, why: LossNote) -> Result<[LossNote; 2], CodecError> {
-        let why = with_position(why, self.stream, self.offset);
-        let unreadable =
-            GivenUpRecord::caused_by(cadmpeg_ir::ids::Identity::new(self.id())?, &why).loss();
-        Ok([why, unreadable])
-    }
-}
-
-fn with_position(why: LossNote, stream: &str, offset: Option<usize>) -> LossNote {
-    let provenance = StreamName::try_from(stream.to_owned())
-        .ok()
-        .zip(offset)
-        .map(|(stream, offset)| SourceProvenance::in_stream("f3d", stream, u64_from_index(offset)));
-    match provenance {
-        Some(provenance) => why.with_provenance(provenance),
-        None => why,
+    /// The one loss of the record given up whole for `cause` with the text
+    /// `error`, at the record's position.
+    pub(crate) fn given_up(
+        &self,
+        cause: Cause,
+        error: impl std::fmt::Display,
+    ) -> Result<LossNote, CodecError> {
+        let position = StreamName::try_from(self.stream.to_owned())
+            .ok()
+            .zip(self.offset)
+            .map(|(stream, offset)| {
+                SourceProvenance::in_stream("f3d", stream, u64_from_index(offset))
+            });
+        Ok(
+            GivenUpRecord::new(cadmpeg_ir::ids::Identity::new(self.id())?, cause, error)
+                .at(position)
+                .loss(),
+        )
     }
 }
 
@@ -86,23 +95,21 @@ impl<'a> RecordFrame<'a> {
         Self { stream, start, end }
     }
 
-    /// Gives the record up whole for the codec loss `why`: `why` goes to
-    /// `losses` at the record's position, and the frame goes to `frames`
-    /// for the caller to give up as a part.
+    /// Gives the record up whole for `cause` with the text `error`: the
+    /// frame goes to `frames` for the caller to give up as a part.
     pub(crate) fn give_up(
         self,
-        why: LossNote,
-        losses: &mut Vec<LossNote>,
+        cause: Cause,
+        error: impl std::fmt::Display,
         frames: &mut Vec<GivenUpFrame>,
     ) {
-        let why = with_position(why, self.stream, Some(self.start));
         frames.push(GivenUpFrame {
             stream: self.stream.to_owned(),
             start: self.start,
             end: self.end,
-            error: format!("{}: {}", why.code, why.message),
+            cause,
+            error: error.to_string(),
         });
-        losses.push(why);
     }
 }
 
@@ -113,6 +120,7 @@ pub(crate) struct GivenUpFrame {
     stream: String,
     start: usize,
     end: usize,
+    cause: Cause,
     error: String,
 }
 
@@ -121,6 +129,12 @@ impl GivenUpFrame {
     #[cfg(test)]
     pub(crate) fn span(&self) -> (&str, std::ops::Range<usize>) {
         (&self.stream, self.start..self.end)
+    }
+
+    /// The cause and the text the frame gives up with.
+    #[cfg(test)]
+    pub(crate) fn reason(&self) -> (Cause, &str) {
+        (self.cause, &self.error)
     }
 
     /// Gives the frame up as a `design-record` part that keeps its bytes.
@@ -143,7 +157,7 @@ impl GivenUpFrame {
             [ArenaClass::Design],
         )
         .in_stream(stream);
-        ctx.give_up_part(part, CodecError::Malformed(self.error))
+        ctx.give_up_part(part, self.cause, CodecError::Malformed(self.error))
     }
 }
 
@@ -161,14 +175,14 @@ pub(crate) fn give_up_frames(
 
 /// Contains an error at one record the caller then gives up. An I/O error or
 /// a resource refusal is returned to the caller and ends the session. Every
-/// other error becomes `code`'s loss, whose message describes the record as
-/// `what`, and one `record.unreadable` naming `record` by its id, and the
-/// record stays in the source archive; the caller then decodes the next
+/// other error becomes the one loss of `record` given up for `cause`, as
+/// [`cause_of`] refines it, whose text describes the record as `what`. The
+/// record stays in the source archive, and the caller then decodes the next
 /// record.
 pub(crate) fn recover<T>(
     result: Result<T, CodecError>,
     losses: &mut Vec<LossNote>,
-    code: F3dLossCode,
+    cause: Cause,
     record: DesignRecord<'_>,
     what: impl std::fmt::Display,
 ) -> Result<Option<T>, CodecError> {
@@ -176,7 +190,7 @@ pub(crate) fn recover<T>(
         Ok(record) => Ok(Some(record)),
         Err(error) if is_fatal(&error) => Err(error),
         Err(error) => {
-            losses.extend(record.given_up(failure_note(code, what, &error))?);
+            losses.push(record.given_up(cause_of(cause, &error), failure_text(what, &error))?);
             Ok(None)
         }
     }
@@ -186,9 +200,8 @@ pub(crate) fn recover<T>(
 /// [`recover`] does, and gives the record up with [`RecordFrame::give_up`].
 pub(crate) fn recover_frame<T>(
     result: Result<T, CodecError>,
-    losses: &mut Vec<LossNote>,
     frames: &mut Vec<GivenUpFrame>,
-    code: F3dLossCode,
+    cause: Cause,
     frame: RecordFrame<'_>,
     what: impl std::fmt::Display,
 ) -> Result<Option<T>, CodecError> {
@@ -196,7 +209,7 @@ pub(crate) fn recover_frame<T>(
         Ok(record) => Ok(Some(record)),
         Err(error) if is_fatal(&error) => Err(error),
         Err(error) => {
-            frame.give_up(failure_note(code, what, &error), losses, frames);
+            frame.give_up(cause_of(cause, &error), failure_text(what, &error), frames);
             Ok(None)
         }
     }
@@ -214,16 +227,14 @@ pub(crate) fn recover_partial<T>(
         Ok(record) => Ok(Some(record)),
         Err(error) if is_fatal(&error) => Err(error),
         Err(error) => {
-            losses.push(failure_note(code, what, &error));
+            losses.push(code.note(failure_text(what, &error)));
             Ok(None)
         }
     }
 }
 
-fn failure_note(code: F3dLossCode, what: impl std::fmt::Display, error: &CodecError) -> LossNote {
-    code.note(format!(
-        "{what} remains in the source archive because its decoding failed: {error}"
-    ))
+fn failure_text(what: impl std::fmt::Display, error: &CodecError) -> String {
+    format!("{what} remains in the source archive because its decoding failed: {error}")
 }
 
 #[cfg(test)]
@@ -232,6 +243,8 @@ mod tests {
     use crate::loss::F3dLossCode;
     use cadmpeg_core::decode::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
     use cadmpeg_core::CodecError;
+    use cadmpeg_ir::report::Severity;
+    use cadmpeg_ir::unknown::part::{record_undecoded_kind, record_unreadable_kind, Cause};
 
     const STREAM: &str = "Design/BulkStream.dat";
 
@@ -250,7 +263,7 @@ mod tests {
         let result = recover::<()>(
             Err(CodecError::ResourceLimit(limit)),
             &mut losses,
-            F3dLossCode::SketchPointUndecoded,
+            Cause::Undecoded,
             DesignRecord::entity(STREAM, 42_u64),
             "Sketch point record 42",
         );
@@ -258,56 +271,75 @@ mod tests {
         assert!(losses.is_empty());
     }
 
+    /// CADIR §3.3: a given-up record has one loss, and its text carries the
+    /// cause.
     #[test]
-    fn a_given_up_record_charges_its_code_and_record_unreadable() {
+    fn a_given_up_record_charges_one_loss_that_carries_its_cause() {
         let mut losses = Vec::new();
         let result = recover::<()>(
             Err(CodecError::malformed("synthetic point failure")),
             &mut losses,
-            F3dLossCode::SketchPointUndecoded,
+            Cause::Unreadable,
             DesignRecord::entity(STREAM, 42_u64).at(100),
             "Sketch point record 42 version 11 in Design/BulkStream.dat",
         );
         assert!(matches!(result, Ok(None)));
-        assert_eq!(
-            crate::test_support::loss_codes(&losses),
-            crate::test_support::given_up_codes(F3dLossCode::SketchPointUndecoded)
+        let [loss] = losses.as_slice() else {
+            panic!("one loss: {losses:?}");
+        };
+        assert_eq!(loss.code, record_unreadable_kind());
+        assert_eq!(loss.severity, Severity::Error);
+        assert!(loss.message.starts_with(&format!(
+            "record f3d:{STREAM}:design-entity#42 stream=\"{STREAM}\" offset=100 given up: Sketch point record 42 version 11 in Design/BulkStream.dat remains in the source archive because its decoding failed: "
+        )), "{}", loss.message);
+        assert!(loss.message.contains("synthetic point failure"));
+        assert!(loss.message.ends_with("; dropped=[]"));
+        assert_eq!(loss.provenance.as_ref().map(|at| at.offset), Some(100));
+    }
+
+    /// A form the decoder has no reading for gives up as `record.undecoded`
+    /// whatever the site's cause for a malformed record.
+    #[test]
+    fn an_unimplemented_form_gives_up_as_undecoded() {
+        let mut losses = Vec::new();
+        let result = recover::<()>(
+            Err(CodecError::NotImplemented(
+                "synthetic record version".into(),
+            )),
+            &mut losses,
+            Cause::Unreadable,
+            DesignRecord::entity(STREAM, 42_u64),
+            "Feature timeline record 42",
         );
-        assert!(losses[0].message.contains("synthetic point failure"));
-        assert_eq!(losses[1].severity, cadmpeg_ir::report::Severity::Error);
-        assert!(losses[1].message.starts_with(&format!(
-            "record f3d:{STREAM}:design-entity#42 stream=\"{STREAM}\" offset=100 given up: {}: ",
-            F3dLossCode::SketchPointUndecoded.kind()
-        )));
-        assert!(losses[1].message.ends_with("; dropped=[]"));
-        assert_eq!(losses[0].provenance, losses[1].provenance);
-        assert_eq!(losses[1].provenance.as_ref().map(|at| at.offset), Some(100));
+        assert!(matches!(result, Ok(None)));
+        let [loss] = losses.as_slice() else {
+            panic!("one loss: {losses:?}");
+        };
+        assert_eq!(loss.code, record_undecoded_kind());
+        assert_eq!(loss.severity, Severity::Warning);
     }
 
     /// §3.3: a record whose frame the decoder holds is a part. The site
-    /// charges its code alone and hands the frame to the part helper.
+    /// charges nothing and hands the frame, its cause, and its text to the
+    /// part helper.
     #[test]
-    fn a_framed_record_charges_its_code_and_hands_over_its_frame() {
-        let mut losses = Vec::new();
+    fn a_framed_record_hands_over_its_frame_alone() {
         let mut frames = Vec::new();
         let result = recover_frame::<()>(
             Err(CodecError::malformed("synthetic point failure")),
-            &mut losses,
             &mut frames,
-            F3dLossCode::SketchPointUndecoded,
+            Cause::Undecoded,
             RecordFrame::new(STREAM, 100, 160),
             "Sketch point record 42 version 11 in Design/BulkStream.dat",
         );
         assert!(matches!(result, Ok(None)));
-        assert_eq!(
-            crate::test_support::loss_codes(&losses),
-            [F3dLossCode::SketchPointUndecoded.kind()]
-        );
-        assert_eq!(losses[0].provenance.as_ref().map(|at| at.offset), Some(100));
         let [frame] = frames.as_slice() else {
             panic!("one given-up frame: {frames:?}");
         };
         assert_eq!(frame.span(), (STREAM, 100..160));
+        let (cause, text) = frame.reason();
+        assert_eq!(cause, Cause::Undecoded);
+        assert!(text.contains("synthetic point failure"), "{text}");
     }
 
     #[test]
@@ -332,7 +364,7 @@ mod tests {
         let result = recover::<()>(
             Err(CodecError::Io(std::io::Error::other("read failed"))),
             &mut losses,
-            F3dLossCode::SketchPointUndecoded,
+            Cause::Undecoded,
             DesignRecord::entity(STREAM, 42_u64),
             "Sketch point record 42",
         );

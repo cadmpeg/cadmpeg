@@ -139,10 +139,9 @@ enum GripVertexMarker {
 
 /// Decode every active-asset T-spline control cage in archive order.
 ///
-/// A cage whose program is internally inconsistent degrades to an
-/// error-severity loss note instead of failing the document decode; its
-/// entry bytes remain retained in the container, and the serializer-backed
-/// Form join leaves the affected Form on native retention.
+/// A cage that the decoder does not read is given up as an undecoded part;
+/// its entry bytes remain retained in the container, and the
+/// serializer-backed Form join leaves the affected Form on native retention.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -178,10 +177,14 @@ pub(crate) fn decode(
             }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let note = F3dLossCode::TsplineCageUndecoded
-                    .note(format!("T-spline control cage not decoded: {error}"));
-                losses.push(note);
-                given_up.extend(scan.give_up_entry(ctx, &entry.name, error)?);
+                given_up.extend(scan.give_up_entry(
+                    ctx,
+                    &entry.name,
+                    cadmpeg_ir::unknown::part::Cause::Undecoded,
+                    CodecError::malformed(format_args!(
+                        "T-spline control cage not decoded: {error}"
+                    )),
+                )?);
             }
         }
     }

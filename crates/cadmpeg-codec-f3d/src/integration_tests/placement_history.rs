@@ -554,7 +554,10 @@ fn later_fixed_identity_occurrence_reports_loss_and_stays_out_of_neutral_structu
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved.kind())
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+                && loss.message.contains("identity flag 1")
+        })
         .collect::<Vec<_>>();
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("ordinal 2"));

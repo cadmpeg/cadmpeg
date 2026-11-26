@@ -250,10 +250,8 @@ pub(crate) fn decode_parameter_scopes(
                     let mut frames = Vec::new();
                     crate::design::decode::record::RecordFrame::new(&entry.name, start, end)
                         .give_up(
-                            crate::loss::F3dLossCode::AssemblyRigidGroupFrameUnparsed.note(
-                                format!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
-                            ),
-                            &mut losses,
+                            cadmpeg_ir::unknown::part::Cause::Undecoded,
+                            format_args!("Design rigid-group frame {} in {} at {} has no admitted layout ({tail_length}-byte tail).", header.record_index, entry.name, header.byte_offset),
                             &mut frames,
                         );
                     given_up.extend(crate::design::decode::record::give_up_frames(

@@ -6,9 +6,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::unknown::part::{gives_up, record_undecoded_kind};
 use cadmpeg_ir::CadIr;
 
 use crate::export::Builder;
@@ -330,20 +330,20 @@ fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
 }
 
 #[test]
-fn a_pinned_decode_admits_an_oriented_shell_missing_its_derived_slot() {
+fn a_pinned_decode_refuses_an_oriented_shell_missing_its_derived_slot() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let result = StepCodec::default()
+    let error = StepCodec::default()
         .decode(
             &mut Cursor::new(oriented_closed_shell_source(false)),
             &options,
         )
-        .expect("a noncanonical oriented shell pins no strict floor");
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::OrientedShellOmitsCfsFaces.kind()));
+        .expect_err("a shell that breaks Part 21 meets its strict floor");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }
+            if rejection.loss().code == StepLossCode::OrientedShellOmitsCfsFaces.kind()
+    ));
 }
 
 #[test]
@@ -752,8 +752,8 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
         .expect("decode partial solid witness");
     assert!(solid.ir().geometry.bodies.is_empty());
     assert!(solid.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.contains(" rejected: ")
     }));
     assert!(
         cadmpeg_ir::validate_neutral(solid.ir(), solid.report().losses.clone())
@@ -763,7 +763,7 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
 }
 
 #[test]
-fn rejected_solid_root_reports_an_error_severity_loss() {
+fn rejected_solid_root_reports_its_give_up() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
     )
@@ -775,13 +775,13 @@ fn rejected_solid_root_reports_an_error_severity_loss() {
 
     assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::TopologyRootRejected.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
+            && loss.message.contains(" rejected: ")
     }));
 }
 
 #[test]
-fn strict_decode_refuses_a_destroyed_solid() {
+fn a_pinned_decode_reports_a_solid_root_that_does_not_resolve() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
     )
@@ -798,16 +798,17 @@ fn strict_decode_refuses_a_destroyed_solid() {
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .expect("the default decode admits a document without the rejected solid");
     let losses = &admitted.report().losses;
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
     let charges = losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind() && names_root(&loss.message))
+        .filter(|loss| gives_up(&loss.code) && names_root(&loss.message))
         .collect::<Vec<_>>();
     let [charge] = charges.as_slice() else {
         panic!("one charge names the root");
     };
+    // The reader cannot tell a root that breaks the format from one whose
+    // carriers it holds no reading for, so the root is undecoded.
+    assert_eq!(charge.code, record_undecoded_kind());
+    assert!(charge.message.contains(" rejected: "), "{}", charge.message);
     // The root's shell and its face drop with the root, each named by the id
     // its record takes.
     assert!(
@@ -820,15 +821,14 @@ fn strict_decode_refuses_a_destroyed_solid() {
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let error = StepCodec::default()
+    let pinned = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect_err("a pinned decode refuses the given-up solid");
-    assert!(matches!(
-        error,
-        DecodeFailure::StrictRejected { rejection }
-            if rejection.loss().code == record_unreadable_kind()
-                && names_root(&rejection.loss().message)
-    ));
+        .expect("a pinned decode admits an undecoded root");
+    assert!(pinned
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == record_undecoded_kind() && names_root(&loss.message)));
 }
 
 #[test]
@@ -857,11 +857,12 @@ fn a_rejected_root_drops_its_shells_and_faces_and_keeps_their_supports() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| gives_up(&loss.code))
         .collect::<Vec<_>>();
     let [charge] = charges.as_slice() else {
         panic!("one charge: {charges:#?}");
     };
+    assert_eq!(charge.code, record_undecoded_kind());
     // The oriented shell #33, its base shell #30, and the face #29 drop with
     // the surface model #31, each named by the id its record takes.
     assert!(charge.message.contains(" record="), "{}", charge.message);

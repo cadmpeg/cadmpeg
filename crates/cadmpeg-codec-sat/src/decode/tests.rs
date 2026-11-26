@@ -904,15 +904,15 @@ End-of-ACIS-data\n";
     );
 }
 
-/// The stub of the part of `kind` that `losses` give up over the source
-/// record `record`, whose bytes stand once in `source`, for the codec loss
-/// `code`.
+/// The stub of the part of `kind` that the one loss naming it gives up as
+/// undecoded over the source record `record`, whose bytes stand once in
+/// `source`, for the error that contains `why`.
 fn given_up_part(
     losses: &[cadmpeg_ir::report::loss::LossNote],
     source: &[u8],
     kind: &str,
     record: &[u8],
-    code: SatLossCode,
+    why: &str,
 ) -> Option<String> {
     let offset = source
         .windows(record.len())
@@ -922,14 +922,18 @@ fn given_up_part(
         "part {kind} stream=\"\" offset={offset} length={} record=",
         record.len()
     );
-    let code = code.kind().to_string();
-    losses.iter().find_map(|loss| {
-        if loss.code != cadmpeg_ir::unknown::part::record_unreadable_kind() {
-            return None;
-        }
-        let (stub, error) = loss.message.strip_prefix(&head)?.split_once(": ")?;
-        error.contains(&code).then(|| stub.to_owned())
-    })
+    let named = losses
+        .iter()
+        .filter(|loss| loss.message.starts_with(&head))
+        .collect::<Vec<_>>();
+    let [loss] = named.as_slice() else {
+        return None;
+    };
+    if loss.code != cadmpeg_ir::unknown::part::record_undecoded_kind() {
+        return None;
+    }
+    let (stub, error) = loss.message.strip_prefix(&head)?.split_once(": ")?;
+    error.contains(why).then(|| stub.to_owned())
 }
 
 #[test]
@@ -940,18 +944,13 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\nEnd-of-ACIS-data\n";
     let result = cadmpeg_test_support::EditableDecodeResult::from(decode_bytes(source));
     assert!(result.ir().geometry.faces.is_empty());
     assert!(result.ir().geometry.surfaces.is_empty());
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == SatLossCode::TopologyFaceOwnerUnprojected.kind()));
     let record = b"face $-1 $-1 $-1 $-1 $-1 $1 forward single #";
     let stub = given_up_part(
         &result.report().losses,
         source,
         "face",
         record,
-        SatLossCode::TopologyFaceOwnerUnprojected,
+        "standalone source face has no shell owner",
     )
     .expect("the face is given up as a part");
     let retained = result.source_fidelity().retained_record(&stub).unwrap();
@@ -1030,17 +1029,12 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 0 #\nEnd-of-ACIS-data\n";
             .collect::<Vec<_>>(),
         [geometry.shells[0].id.clone()]
     );
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == SatLossCode::TopologyShellUnprojected.kind()));
     let stub = given_up_part(
         &result.report().losses,
         source,
         "shell",
         b"shell $-1 $3 $-1 $-1 $1 #",
-        SatLossCode::TopologyShellUnprojected,
+        "shell has no admissible members or owner",
     )
     .expect("the shell is given up as a part");
     assert_eq!(

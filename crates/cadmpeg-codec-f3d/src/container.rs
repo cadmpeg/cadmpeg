@@ -24,7 +24,7 @@ use cadmpeg_core::decode::{
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::StreamName;
 use std::sync::Arc;
@@ -370,8 +370,8 @@ impl<'a> ContainerScan<'a> {
     }
 
     /// Gives up the archive entry `name`, whose payload opened and then
-    /// failed to decode with `error`, as an `archive-entry` part holding
-    /// content of the classes its role holds. The source image keeps the
+    /// failed to decode with `error` for `cause`, as an `archive-entry` part
+    /// holding content of the classes its role holds. The source image keeps the
     /// entry's stored bytes, so the part keeps their digest. `None` when the
     /// scan did not open the entry: the scan gave that entry up itself.
     ///
@@ -383,6 +383,7 @@ impl<'a> ContainerScan<'a> {
         &self,
         ctx: &DecodeContext<'_>,
         name: &str,
+        cause: Cause,
         error: CodecError,
     ) -> Result<Option<GivenUpPart>, CodecError> {
         if !self.has_entry(name) {
@@ -410,7 +411,7 @@ impl<'a> ContainerScan<'a> {
         if let Some(stream) = &self.stream {
             part = part.in_stream(stream.clone());
         }
-        ctx.give_up_part(part, error).map(Some)
+        ctx.give_up_part(part, cause, error).map(Some)
     }
 
     pub(crate) fn member_view<'b>(
@@ -672,7 +673,8 @@ fn scan_in<'a>(
                 if let Some(stream) = stream {
                     part = part.in_stream(stream.clone());
                 }
-                let part = ctx.give_up_part(part, error)?;
+                let cause = crate::design::decode::record::cause_of(Cause::Unreadable, &error);
+                let part = ctx.give_up_part(part, cause, error)?;
                 // Two directory entries can name one stored span.
                 if given_up
                     .iter()

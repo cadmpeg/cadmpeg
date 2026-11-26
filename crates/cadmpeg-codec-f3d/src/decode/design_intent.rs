@@ -435,11 +435,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             let lost_edge_references =
                 crate::design::decode::sketch::decode_lost_edge_references(scan)?;
             let mut given_up_frames = Vec::new();
-            let mut relation_losses = Vec::new();
             let sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
                 scan,
                 &prereqs.design_record_headers,
-                &mut relation_losses,
                 &mut given_up_frames,
             )?;
             let mut sketch_losses = Vec::new();
@@ -448,11 +446,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                 &mut sketch_losses,
                 &mut given_up_frames,
             )?;
-            let sketch_texts = crate::design::decode::sketch::decode_sketch_texts(
-                scan,
-                &mut sketch_losses,
-                &mut given_up_frames,
-            )?;
+            let sketch_texts =
+                crate::design::decode::sketch::decode_sketch_texts(scan, &mut given_up_frames)?;
             let mut sketch_curve_identities =
                 crate::design::decode::sketch::decode_sketch_curve_identities(
                     scan,
@@ -478,11 +473,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                 &mut sketch_relations,
                 &mut sketch_losses,
             )?;
-            let mut body_bounds_losses = Vec::new();
             let mut design_body_bounds = crate::design::decode::body::decode_body_bounds(
                 scan,
                 &prereqs.design_entity_headers,
-                &mut body_bounds_losses,
                 &mut given_up_frames,
             )?;
             crate::design::decode::body::bind_body_bounds(
@@ -493,14 +486,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
                 persistent_references,
                 lost_edge_references,
                 sketch_relations,
-                relation_losses,
                 sketch_points,
                 sketch_texts,
                 sketch_curve_identities,
                 sketch_surfaces,
                 sketch_geometry_groups,
                 sketch_losses,
-                (design_body_bounds, body_bounds_losses),
+                design_body_bounds,
                 given_up_frames,
             ))
         });
@@ -535,14 +527,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         persistent_references,
         lost_edge_references,
         sketch_relations,
-        relation_losses,
         sketch_points,
         sketch_texts,
         sketch_curve_identities,
         sketch_surfaces,
         sketch_geometry_groups,
         sketch_losses,
-        (pre_body_bounds, body_bounds_losses),
+        pre_body_bounds,
         given_up_frames,
     ) = pre_sketch_res?;
     let mut given_up = crate::design::decode::record::give_up_frames(ctx, scan, given_up_frames)?;
@@ -558,7 +549,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design.persistent_references = persistent_references;
     design.lost_edge_references = lost_edge_references;
     design.sketch_relations = sketch_relations;
-    losses.extend(relation_losses);
     let RelatedDesignOutcome {
         untyped_tracking_paths,
         losses: profile_losses,
@@ -720,19 +710,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut design.sketch_curve_identities,
     )?;
     design.design_body_bounds = pre_body_bounds;
-    losses.extend(body_bounds_losses);
-    let configurations = crate::design::configurations::decode_configurations(
-        ctx,
-        scan,
-        &mut losses,
-        &mut given_up,
-    )?;
+    let configurations =
+        crate::design::configurations::decode_configurations(ctx, scan, &mut given_up)?;
     design.design_configurations = configurations.documents;
     design.configuration_roots_unbound = configurations.unbound_roots;
     design
         .design_sheet_metal_settings
         .clone_from(&prereqs.design_sheet_metal_settings);
-    losses.extend(prereqs.design_sheet_metal_settings_losses.iter().cloned());
     given_up.extend(crate::design::decode::record::give_up_frames(
         ctx,
         scan,

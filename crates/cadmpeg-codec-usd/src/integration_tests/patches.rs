@@ -505,8 +505,18 @@ fn a_surface_that_is_not_finite_and_ordered_is_rejected() {
     ] {
         let result = decode(&layer(&surface));
         assert!(result.ir().geometry.faces.is_empty(), "{surface}");
-        assert!(
-            has_loss(&result, UsdLossCode::NurbsPatchRejected),
+        let given_up = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+            .collect::<Vec<_>>();
+        let [loss] = given_up.as_slice() else {
+            panic!("one give-up for {surface}: {given_up:#?}");
+        };
+        assert_eq!(
+            loss.code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind(),
             "{surface}"
         );
     }

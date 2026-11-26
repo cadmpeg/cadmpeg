@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::reference::references;
 use super::{named_parameter, RecordExt, ValueExt};
-use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -20,6 +19,7 @@ use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Fraction;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::unknown::part::Cause;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -108,11 +108,11 @@ pub(super) fn decode(
         }
         let Some(items) = named_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
         else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 id,
-                StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
-            ));
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning.note(format!("INVISIBILITY #{id} has no item set")),
+            );
             continue;
         };
         let mut supported = true;
@@ -180,23 +180,23 @@ pub(super) fn decode(
         let Some(assigned_items) =
             named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2).and_then(ValueExt::list)
         else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 layer_id,
-                StepLossCode::DecodeWarning.note(format!(
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning.note(format!(
                     "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no assigned item set"
                 )),
-            ));
+            );
             continue;
         };
         if assigned_items.is_empty() {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 layer_id,
-                StepLossCode::DecodeWarning.note(format!(
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning.note(format!(
                     "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty assigned item set"
                 )),
-            ));
+            );
             continue;
         }
         let Some(name) =
@@ -211,13 +211,13 @@ pub(super) fn decode(
                 )
             })
         else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 layer_id,
-                StepLossCode::DecodeWarning.note(format!(
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning.note(format!(
                     "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
                 )),
-            ));
+            );
             continue;
         };
         let description = named_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
@@ -275,12 +275,12 @@ pub(super) fn decode(
             continue;
         };
         let Some(target_step) = parts.target.reference() else {
-            losses.extend(give_up_instance(
-                exchange,
+            exchange.lost().give_up_for(
                 style_id,
-                StepLossCode::DecodeWarning
+                Cause::Unreadable,
+                &StepLossCode::DecodeWarning
                     .note(format!("STYLED_ITEM #{style_id} has no resolved target")),
-            ));
+            );
             continue;
         };
         if parts.styles.list().is_some_and(<[Value]>::is_empty) {
@@ -314,11 +314,7 @@ pub(super) fn decode(
         }
         if !context_style_ids.is_empty() {
             let message = context_style_message(style_id, &context_style_ids, exchange);
-            losses.extend(give_up_instance(
-                exchange,
-                style_id,
-                StepLossCode::ContextDependentStyleUnresolved.note(message),
-            ));
+            exchange.lost().give_up(style_id, Cause::Undecoded, message);
             continue;
         }
         let color = combine_color_resolutions(style_references.iter().copied().map(|reference| {
@@ -357,25 +353,25 @@ pub(super) fn decode(
         let color = match color {
             Some(ColorResolution::Candidate(candidate)) => candidate,
             Some(ColorResolution::Ambiguous { .. }) => {
-                losses.extend(give_up_instance(
-                    exchange,
+                exchange.lost().give_up_for(
                     style_id,
-                    StepLossCode::ConflictingScalarColors.note(format!(
+                    Cause::Undecoded,
+                    &StepLossCode::ConflictingScalarColors.note(format!(
                         "STYLED_ITEM #{style_id} has distinct equal-precedence colors; no scalar color is selected and the source style graph remains retained"
                     )),
-                ));
+                );
                 continue;
             }
             None => {
                 let mut visited = BTreeSet::new();
                 if !contains_null_style(parts.styles, exchange, &mut visited, ctx)? {
-                    losses.extend(give_up_instance(
-                        exchange,
+                    exchange.lost().give_up_for(
                         style_id,
-                        StepLossCode::DecodeWarning.note(format!(
+                        Cause::Undecoded,
+                        &StepLossCode::DecodeWarning.note(format!(
                             "STYLED_ITEM #{style_id} has no resolved surface color"
                         )),
-                    ));
+                    );
                 }
                 continue;
             }

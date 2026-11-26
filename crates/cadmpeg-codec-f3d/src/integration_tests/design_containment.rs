@@ -80,27 +80,22 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
     assert_valid(&contained);
 }
 
+/// §4: `design.intent-undecoded` records a decoder gap and pins no strict
+/// floor, so a pinned decode keeps the contained document.
 #[test]
-fn strict_mode_refuses_a_contained_design_intent_failure() {
+fn a_pinned_decode_keeps_a_contained_design_intent_failure() {
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
     inject_failure(malformed_design);
 
-    let failure = F3dCodec
+    let contained = F3dCodec
         .decode(&mut Cursor::new(design_archive()), &options)
-        .expect_err("strict mode refuses the design-intent loss");
+        .expect("a pinned decode keeps the design-intent failure");
 
-    let DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
-    };
-    assert_eq!(
-        rejection.loss().code,
-        F3dLossCode::DesignIntentUndecoded.kind()
-    );
-    assert!(rejection
-        .loss()
-        .message
-        .contains("injected design-intent failure"));
+    assert!(contained.report().losses.iter().any(|loss| {
+        loss.code == F3dLossCode::DesignIntentUndecoded.kind()
+            && loss.message.contains("injected design-intent failure")
+    }));
 }
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
@@ -186,6 +181,16 @@ fn a_bodyless_design_intent_failure_keeps_the_xref_product_structure() {
         1
     );
     assert_valid(&contained);
+}
+
+/// The count of `record.unreadable` losses in `result`'s report.
+fn unreadable_records(result: &EditableDecodeResult) -> usize {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .count()
 }
 
 fn native_findings(ir: &cadmpeg_ir::document::CadIr) -> Vec<String> {
@@ -307,13 +312,8 @@ fn an_unread_configuration_keeps_timeline_sketches_and_geometry() {
     assert_eq!(recovered.ir().geometry, full.ir().geometry);
     assert!(f3d_native(recovered.ir()).design_intent_failures.is_empty());
     assert_eq!(
-        recovered
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == F3dLossCode::ConfigurationDocumentUndecoded.kind())
-            .count(),
-        1
+        unreadable_records(&recovered),
+        unreadable_records(&full) + 1
     );
     assert!(recovered
         .report()
@@ -385,13 +385,8 @@ fn an_unread_primary_header_keeps_the_other_design_stream() {
     assert_eq!(recovered.ir().geometry, full.ir().geometry);
     assert!(f3d_native(recovered.ir()).design_intent_failures.is_empty());
     assert_eq!(
-        recovered
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == F3dLossCode::PrimaryRecordUndecoded.kind())
-            .count(),
-        1
+        unreadable_records(&recovered),
+        unreadable_records(&full) + 1
     );
     assert!(recovered
         .report()

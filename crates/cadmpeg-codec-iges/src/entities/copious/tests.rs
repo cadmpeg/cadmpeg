@@ -48,7 +48,7 @@ fn closed_planar_copious_curve_over_the_pair_budget_is_skipped_with_a_loss() {
     assert!(!curve_ids.contains(&"iges:model:curve#D1"), "{curve_ids:?}");
     assert!(curve_ids.contains(&"iges:model:curve#D3"), "{curve_ids:?}");
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains("32770 points")
             && loss.message.contains("MAX_PLANAR_POINT_PAIRS")
     }));
@@ -96,7 +96,7 @@ fn decode_skips_a_copious_tuple_count_over_its_projection_limit() {
 
     assert!(decoded.ir().geometry.curves.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss.message.contains("tuple count exceeds 1000000")
     }));
 }
@@ -126,7 +126,7 @@ fn decode_rejects_presentation_copious_forms_without_annotation_use_flag() {
 
         assert!(result.ir().geometry.curves.is_empty());
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code == IgesLossCode::EntityNotProjected.kind()
+            crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
                 && loss
                     .message
                     .contains("Type 106 presentation forms require Entity Use Flag 01")
@@ -236,7 +236,7 @@ fn v5_one_tuple_linear_path_keeps_the_later_minimum() {
     assert!(result.ir().geometry.points.is_empty());
     assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::GeometryNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)
             && loss
                 .message
                 .contains("linear paths require at least 2 tuple(s)")
@@ -369,7 +369,7 @@ fn decode_rejects_form_63_self_intersections_without_duplicate_points() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
+            .any(|loss| crate::test_support::reports(loss, IgesLossCode::GeometryNotProjected)));
     }
 }
 
@@ -390,13 +390,9 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
                 .contains("interpretation flag disagrees with the entity form")
         })
         .expect("copious-data projection loss");
+    crate::test_support::assert_given_up(loss, ("entity", 1));
     let provenance = loss.provenance.as_ref().expect("Directory provenance");
     assert_eq!(wire::field::<String>(&provenance, "format"), "iges");
-    assert_eq!(
-        wire::field_or_default::<Option<String>>(&provenance, "stream").as_deref(),
-        Some("iges")
-    );
-    assert_eq!(provenance.tag.as_deref(), Some("directory_entry:D1"));
     assert_eq!(
         bytes[usize::try_from(provenance.offset).expect("test offset fits memory") + 72],
         b'D'
@@ -490,7 +486,7 @@ fn strict_decode_refuses_an_unusable_required_copious_geometry_record() {
         .unwrap();
     assert!(result.ir().geometry.curves.is_empty());
     assert_eq!(
-        crate::test_support::code_count(result.report(), IgesLossCode::GeometryNotProjected),
+        crate::test_support::reported_count(result.report(), IgesLossCode::GeometryNotProjected),
         1
     );
     crate::test_support::assert_gives_up(result.report(), &[("entity", 1)]);

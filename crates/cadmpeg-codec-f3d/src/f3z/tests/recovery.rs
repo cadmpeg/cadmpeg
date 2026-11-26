@@ -99,11 +99,22 @@ fn unreadable_unreferenced_document_does_not_hide_a_readable_model_root() {
     .unwrap();
     assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
     assert_eq!(decoded.ir().model, baseline.ir().model);
-    assert!(decoded
-        .report()
-        .losses
+    // §3.3: the given-up member entry is the one loss of the member.
+    let member = format!("part {} \"unused.f3d\" ", crate::container::ENTRY_PART);
+    let losses = &decoded.report().losses;
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| {
+                cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&member)
+            })
+            .count(),
+        1,
+        "{losses:?}"
+    );
+    assert!(!losses
         .iter()
-        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.note("").code));
+        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind()));
 }
 
 #[test]

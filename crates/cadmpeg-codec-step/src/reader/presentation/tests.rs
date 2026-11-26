@@ -694,7 +694,7 @@ fn same_type_surface_colors_do_not_select_by_alpha_or_source_order() {
         let result = decode_inline(input);
         assert!(result.ir().model.appearance_bindings.is_empty());
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code == StepLossCode::ConflictingScalarColors.kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss.message.contains("STYLED_ITEM #8")
                 && loss.message.contains("equal-precedence")
         }));
@@ -739,7 +739,7 @@ fn context_dependent_styles_are_not_flattened_without_context() {
         );
     }
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
             && loss.message.contains("#7 in #5")
             && loss.message.contains("#8 in #6")
     }));
@@ -765,7 +765,7 @@ fn context_dependent_styles_remain_native_for_distinct_contexts() {
             if point.as_str() == "step:data:point#13"
     ));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
             && loss.message.contains("#10 in #5")
             && loss.message.contains("#11 in #7")
     }));
@@ -811,7 +811,7 @@ fn context_style_retention_is_independent_of_style_set_order() {
             )
         }));
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss.message.contains("#10 in #5")
                 && loss.message.contains("#11 in #7")
         }));

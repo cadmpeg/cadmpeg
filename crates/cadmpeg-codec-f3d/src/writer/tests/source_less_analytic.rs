@@ -48,7 +48,7 @@ fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expecte
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == crate::loss::F3dLossCode::ConfigurationDocumentUndecoded.kind())
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
         .collect::<Vec<_>>();
     assert_eq!(undecoded.len(), 1, "{expected}");
     assert!(

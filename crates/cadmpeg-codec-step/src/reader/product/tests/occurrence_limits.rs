@@ -4,9 +4,24 @@
 use std::fmt::Write as _;
 
 use cadmpeg_core::decode::DecodePolicy;
+use cadmpeg_ir::unknown::part::Cause;
 
 use super::super::MAX_OCCURRENCES;
 use crate::loss::StepLossCode;
+use crate::reader::Lost;
+
+/// The instances the decode gave up, each with its cause and error text.
+fn given_up(exchange: &crate::parse::Exchange) -> Vec<(u64, Cause, String)> {
+    exchange
+        .lost()
+        .take()
+        .into_iter()
+        .filter_map(|(id, lost)| match lost {
+            Lost::GivenUp { cause, error } => Some((id, cause, error)),
+            Lost::Dropped { .. } => None,
+        })
+        .collect()
+}
 
 /// Decodes `source` once, then again into the same model with a limit of
 /// the occurrences that the first decode placed.
@@ -39,12 +54,16 @@ fn occurrence_output_truncates(source: &[u8]) {
             limit,
         )
         .expect("the occurrence limit truncates instead of refusing");
-        assert!(outcome.losses.iter().any(|loss| {
+        let stated = format!("limit of {limit} occurrences");
+        // A root definition's occurrence has no source record to give up.
+        let noted = outcome.losses.iter().any(|loss| {
             loss.code == StepLossCode::OccurrenceExpansionOutputTruncated.kind()
-                && loss
-                    .message
-                    .contains(&format!("limit of {limit} occurrences"))
-        }));
+                && loss.message.contains(&stated)
+        });
+        let usage_given_up = given_up(&exchange)
+            .iter()
+            .any(|(_, cause, error)| *cause == Cause::Undecoded && error.contains(&stated));
+        assert!(noted != usage_given_up, "one entry states the truncation");
         assert_eq!(ctx.resource_refusal(), None);
         assert_eq!(ir.model.occurrences.len(), limit);
     });
@@ -162,18 +181,23 @@ fn deep_occurrence_paths_keep_depth_and_cycle_checks() {
         // One occurrence per usage: a definition's children are stated once,
         // however many paths reach it (§8.1). The back usage is checked once.
         assert_eq!(ir.model.occurrences.len(), 100 + 2 * 10);
+        let given_up = given_up(&exchange);
         assert_eq!(
-            outcome
-                .losses
+            given_up
                 .iter()
-                .filter(|loss| loss.message == "NAUO #5 closes an assembly definition cycle")
+                .filter(|(id, cause, error)| *id == 5
+                    && *cause == Cause::Unreadable
+                    && error.ends_with("NAUO #5 closes an assembly definition cycle"))
                 .count(),
             1
         );
+        assert!(!given_up
+            .iter()
+            .any(|(_, _, error)| error.contains("recursion depth limit")));
         assert!(!outcome
             .losses
             .iter()
-            .any(|loss| loss.code == StepLossCode::OccurrenceExpansionDepthTruncated.kind()));
+            .any(|loss| loss.message.contains("closes an assembly definition cycle")));
     });
 }
 
@@ -200,10 +224,16 @@ fn occurrence_paths_stop_at_the_session_depth_with_a_loss() {
         )
         .expect("a deep assembly truncates instead of refusing");
         assert_eq!(ir.model.occurrences.len(), 3);
-        assert!(outcome.losses.iter().any(|loss| {
-            loss.code == StepLossCode::OccurrenceExpansionDepthTruncated.kind()
-                && loss.message.contains("1 usage(s) from NAUO #53")
-        }));
+        let truncated = given_up(&exchange)
+            .into_iter()
+            .filter(|(_, _, error)| error.contains("past the recursion depth limit"))
+            .map(|(id, cause, _)| (id, cause))
+            .collect::<Vec<_>>();
+        assert_eq!(truncated, [(53, Cause::Undecoded)]);
+        assert!(!outcome
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("recursion depth limit")));
         assert_eq!(ctx.resource_refusal(), None);
     });
 }

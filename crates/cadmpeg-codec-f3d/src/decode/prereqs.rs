@@ -79,7 +79,6 @@ pub(super) struct ProductPrereqs {
     /// Sheet-metal settings records, decoded before the scopes that link them.
     pub(super) design_sheet_metal_settings:
         Vec<crate::records::sheet_metal_settings::DesignSheetMetalSettings>,
-    pub(super) design_sheet_metal_settings_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Sheet-metal settings records given up with their frames, which design
     /// intent gives up as parts with their losses.
     pub(super) design_sheet_metal_settings_given_up:
@@ -156,7 +155,6 @@ impl ProductPrereqs {
             design_parameter_scopes,
             design_parameter_scope_losses: _,
             design_sheet_metal_settings: _,
-            design_sheet_metal_settings_losses: _,
             design_sheet_metal_settings_given_up: _,
             design_work_plane_inferred_axes: _,
             design_joint_motions,
@@ -246,11 +244,9 @@ pub(super) fn decode(
         losses: design_component_occurrence_losses,
         paths: design_component_paths,
     } = crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
-    let mut design_sheet_metal_settings_losses = Vec::new();
     let mut design_sheet_metal_settings_given_up = Vec::new();
     let design_sheet_metal_settings = crate::design::decode::sheet_metal_settings::decode_settings(
         scan,
-        &mut design_sheet_metal_settings_losses,
         &mut design_sheet_metal_settings_given_up,
     )?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
@@ -285,8 +281,8 @@ pub(super) fn decode(
         &design_parameter_scopes,
         &design_types,
     )?;
-    let (mut design_record_losses, primary_given_up) =
-        crate::design::decode::meta::decode_primary_frame_losses(scan)?;
+    let primary_given_up = crate::design::decode::meta::primary_frames_given_up(scan)?;
+    let mut design_record_losses = Vec::new();
     given_up.extend(crate::design::decode::record::give_up_frames(
         ctx,
         scan,
@@ -346,7 +342,6 @@ pub(super) fn decode(
         design_parameter_scopes,
         design_parameter_scope_losses,
         design_sheet_metal_settings,
-        design_sheet_metal_settings_losses,
         design_sheet_metal_settings_given_up,
         design_work_plane_inferred_axes,
         design_joint_motions,

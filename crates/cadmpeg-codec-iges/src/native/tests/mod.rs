@@ -87,16 +87,24 @@ mod serialization;
 
 fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
     let tag = format!("directory_entry:D{sequence}");
+    let part = format!("part entity \"D{sequence}\" ");
     report
         .losses
         .iter()
-        .filter(|loss| {
-            loss.provenance
+        .filter_map(|loss| {
+            // The give-up of the entity's part carries the codec code of its
+            // cause in its text.
+            if cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&part) {
+                let (_, text) = loss.message.split_once(": iges/")?;
+                return text.split_once(':').map(|(code, _)| code.to_owned());
+            }
+            (loss
+                .provenance
                 .as_ref()
                 .and_then(|source| source.tag.as_deref())
-                == Some(&tag)
+                == Some(&tag))
+            .then(|| loss.code.local_code().to_owned())
         })
-        .map(|loss| loss.code.local_code().to_owned())
         .collect()
 }
 

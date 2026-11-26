@@ -15,7 +15,7 @@ use cadmpeg_ir::report::{
     loss::LossNote,
     Severity,
 };
-use cadmpeg_ir::unknown::part::Part;
+use cadmpeg_ir::unknown::part::{Cause, Part};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
@@ -417,16 +417,15 @@ impl<'a> PhysicalParse<'a> {
     }
 
     /// The framing recoveries, the give-up by `give_up` of the part of each
-    /// quarantined record in `image`, and the notes of unreadable Parameter
-    /// Data literals.
+    /// quarantined record in `image` with its error text, and the notes of
+    /// unreadable Parameter Data literals.
     fn record_losses(
         &self,
         image: &entities::CardImage<'_>,
-        mut give_up: impl FnMut(Part<'_>, &LossNote) -> Result<LossNote, CodecError>,
+        mut give_up: impl FnMut(Part<'_>, String) -> Result<LossNote, CodecError>,
     ) -> Result<Vec<LossNote>, CodecError> {
         let mut losses = self.framing_recoveries.notes();
         for record in &self.quarantined_directory {
-            let why = record.loss_note();
             let length = record.source_length.ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "IGES Directory Entry D{} has no card span",
@@ -439,8 +438,7 @@ impl<'a> PhysicalParse<'a> {
                 record.source_offset,
                 length,
             )?;
-            let unreadable = give_up(part, &why)?;
-            losses.extend([why, unreadable]);
+            losses.push(give_up(part, record.defect_message())?);
         }
         let mut parameter_parts = BTreeSet::new();
         for record in &self.quarantined_parameters {
@@ -460,8 +458,7 @@ impl<'a> PhysicalParse<'a> {
                 record.source_offset(),
                 record.source_length().unwrap_or(0),
             )?;
-            let unreadable = give_up(part, &why)?;
-            losses.extend([why, unreadable]);
+            losses.push(give_up(part, format!("{}: {}", why.code, why.message))?);
         }
         let mut entries = BTreeMap::new();
         for record in &self.parameters {
@@ -501,8 +498,8 @@ pub(crate) fn inspect(
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
     let image = entities::CardImage::new(window, representation);
-    let record_losses = parse.record_losses(&image, |part, why| {
-        Ok(entities::give_up_part(ctx, part, why)?.loss())
+    let record_losses = parse.record_losses(&image, |part, error| {
+        Ok(entities::give_up_part(ctx, part, Cause::Unreadable, error)?.loss())
     })?;
 
     losses.extend(record_losses);
@@ -631,7 +628,7 @@ fn decode_with_occurrence_limits(
         ),
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
-    entities::give_up_entities(
+    let mut given_up = entities::give_up_entities(
         &mut projection.losses,
         &parse.directory,
         &given_up_ids,
@@ -639,8 +636,12 @@ fn decode_with_occurrence_limits(
         &mut ir,
         &mut source_fidelity,
     )?;
-    let record_losses = parse.record_losses(&image, |part, why| {
-        entities::give_up_part(ctx, part, why)?.commit(ctx, &mut ir, &mut source_fidelity)
+    let record_losses = parse.record_losses(&image, |part, error| {
+        entities::give_up_part(ctx, part, Cause::Unreadable, error)?.commit(
+            ctx,
+            &mut ir,
+            &mut source_fidelity,
+        )
     })?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
@@ -772,7 +773,8 @@ fn decode_with_occurrence_limits(
     };
     if !ctx.container_only() {
         if let Some(table) = global_table {
-            let attributed_before_generic = attributed_sequences(&losses);
+            let mut attributed_before_generic = attributed_sequences(&losses);
+            attributed_before_generic.extend(&given_up);
             append_generic_losses(
                 &mut losses,
                 &parse.directory,
@@ -786,7 +788,9 @@ fn decode_with_occurrence_limits(
     let attributed = if ctx.container_only() {
         BTreeSet::new()
     } else {
-        attributed_sequences(&losses)
+        let mut attributed = attributed_sequences(&losses);
+        attributed.append(&mut given_up);
+        attributed
     };
     let mut transfer_ledger = TransferLedger::default();
     for entry in parse

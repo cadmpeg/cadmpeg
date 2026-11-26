@@ -40,10 +40,6 @@ pub(crate) enum SatLossCode {
     VertexToleranceUnresolved,
     /// Tolerant-edge tolerance cannot enter the positive neutral scalar.
     EdgeToleranceUnresolved,
-    /// A shell has no admissible member or owner.
-    TopologyShellUnprojected,
-    /// A standalone source face has no shell owner required by the IR.
-    TopologyFaceOwnerUnprojected,
     /// A face states no loop on a plane, cylinder, or cone; the face is
     /// stated partial.
     TopologyFaceBoundaryUnstated,
@@ -83,8 +79,6 @@ impl SatLossCode {
         Self::GeometrySupportChartUnresolved,
         Self::VertexToleranceUnresolved,
         Self::EdgeToleranceUnresolved,
-        Self::TopologyShellUnprojected,
-        Self::TopologyFaceOwnerUnprojected,
         Self::TopologyFaceBoundaryUnstated,
         Self::TopologyWireOwnerUnprojected,
         Self::SourceRecordNameUnresolved,
@@ -109,8 +103,6 @@ impl SatLossCode {
             Self::GeometrySupportChartUnresolved => "geometry.support-chart-unresolved",
             Self::VertexToleranceUnresolved => "vertex.tolerance-unresolved",
             Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
-            Self::TopologyShellUnprojected => "topology.shell-unprojected",
-            Self::TopologyFaceOwnerUnprojected => "topology.face-owner-unprojected",
             Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::TopologyWireOwnerUnprojected => "topology.wire-owner-unprojected",
             Self::SourceRecordNameUnresolved => "source.record-name-unresolved",
@@ -136,8 +128,6 @@ impl SatLossCode {
             | Self::GeometrySupportChartUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::VertexToleranceUnresolved
-            | Self::TopologyShellUnprojected
-            | Self::TopologyFaceOwnerUnprojected
             | Self::TopologyFaceBoundaryUnstated
             | Self::TopologyWireOwnerUnprojected
             | Self::SourceRecordNameUnresolved
@@ -162,8 +152,6 @@ impl SatLossCode {
             | Self::GeometrySupportChartUnresolved
             | Self::EdgeToleranceUnresolved
             | Self::VertexToleranceUnresolved
-            | Self::TopologyShellUnprojected
-            | Self::TopologyFaceOwnerUnprojected
             | Self::TopologyWireOwnerUnprojected
             | Self::HeaderLengthUnitUnresolved
             | Self::FramingRecordsUnread
@@ -258,8 +246,6 @@ mod tests {
                 "geometry.support-chart-unresolved",
                 "vertex.tolerance-unresolved",
                 "edge.tolerance-unresolved",
-                "topology.shell-unprojected",
-                "topology.face-owner-unprojected",
                 "topology.face-boundary-unstated",
                 "topology.wire-owner-unprojected",
                 "source.record-name-unresolved",

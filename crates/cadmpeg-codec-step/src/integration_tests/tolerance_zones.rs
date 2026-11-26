@@ -7,6 +7,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::pmi::zones::{ToleranceZone, ToleranceZoneForm};
 use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
+use cadmpeg_ir::unknown::part::{record_undecoded_kind, record_unreadable_kind};
 
 use crate::export::write_step;
 use crate::test_support::exchange::decode_inline;
@@ -145,7 +146,8 @@ fn invalid_projection_is_reported_instead_of_becoming_unprojected() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.code.local_code() == "pmi.zone-unresolved"));
+            .any(|loss| loss.code == record_unreadable_kind()
+                && loss.message.contains("pmi.zone-unresolved")));
     }
 }
 
@@ -221,7 +223,8 @@ fn shared_tolerance_zone_ownership_is_reported_without_independent_zone_clones()
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code.local_code() == "pmi.zone-unresolved"));
+        .any(|loss| loss.code == record_undecoded_kind()
+            && loss.message.contains("pmi.zone-unresolved")));
 }
 
 #[test]
@@ -236,5 +239,6 @@ fn a_projection_boundary_must_reference_a_shape_aspect() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code.local_code() == "pmi.zone-unresolved"));
+        .any(|loss| loss.code == record_unreadable_kind()
+            && loss.message.contains("pmi.zone-unresolved")));
 }

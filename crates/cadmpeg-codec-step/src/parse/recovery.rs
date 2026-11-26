@@ -2,6 +2,7 @@
 //! Bounded exchange statement recovery and DATA dependency closure.
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::Cause;
 
 use super::{
     AnchorEntry, BTreeMap, BTreeSet, BoundedExpansions, DecodeContext, ExpansionOmissions,
@@ -21,6 +22,9 @@ impl Parser<'_, '_, '_> {
             Ok(Ok(value)) => Ok(Ok(value)),
             Ok(Err(error @ ParseError::Syntax { .. })) => {
                 Ok(Err(GiveUpCause::Syntax(error.to_string())))
+            }
+            Ok(Err(error @ ParseError::Unrepresentable { .. })) => {
+                Ok(Err(GiveUpCause::Unrepresentable(error.to_string())))
             }
             Ok(Err(error)) => Err(error),
             Err(CodecError::ResourceLimit(limit)) => Ok(Err(GiveUpCause::Resource(limit))),
@@ -80,20 +84,19 @@ impl Parser<'_, '_, '_> {
     }
 
     /// Gives up the statement at `span`, which reads but whose content
-    /// cannot stand, as one part of `kind` for `message`, with the codec
-    /// diagnostic `kind_of_loss`. Returns the part's index.
+    /// cannot stand, as one part of `kind` for `cause` and `message`.
+    /// Returns the part's index.
     fn give_up_content(
         &mut self,
         kind: &'static str,
         span: Range<usize>,
-        kind_of_loss: ParseDiagnosticKind,
+        cause: Cause,
         message: String,
     ) -> usize {
-        self.diagnostic(span.start, kind_of_loss, format_args!("{message}"));
         self.given_up.push(GivenUpStatement {
             kind,
             span,
-            cause: GiveUpCause::Content(message),
+            cause: GiveUpCause::Content(cause, message),
             dropped: Vec::new(),
             lost: Vec::new(),
         });
@@ -210,12 +213,7 @@ impl Parser<'_, '_, '_> {
                 );
                 omitted.push(span);
             } else {
-                self.give_up_content(
-                    "data_record",
-                    span,
-                    ParseDiagnosticKind::RecordOmitted,
-                    message,
-                );
+                self.give_up_content("data_record", span, Cause::Unreadable, message);
             }
             return Ok(());
         }
@@ -247,7 +245,7 @@ impl Parser<'_, '_, '_> {
                             let part = self.give_up_content(
                                 "anchor_record",
                                 span,
-                                ParseDiagnosticKind::ExpansionBounded,
+                                Cause::Undecoded,
                                 format!("anchor {name} omitted: {bound}; exact source retained"),
                             );
                             self.given_up_anchors.insert(anchor.name.clone(), part);
@@ -270,7 +268,7 @@ impl Parser<'_, '_, '_> {
                     None => self.give_up_content(
                         "data_record",
                         record.span,
-                        ParseDiagnosticKind::ExpansionBounded,
+                        Cause::Undecoded,
                         format!("instance #{id} omitted: {bound}; exact source retained"),
                     ),
                 };
@@ -329,7 +327,7 @@ impl Parser<'_, '_, '_> {
                 let part = self.give_up_content(
                     "data_record",
                     record.span.clone(),
-                    ParseDiagnosticKind::RecordOmitted,
+                    Cause::Unreadable,
                     format!("instance #{id} omitted: unresolved instance reference {prefix}{target}; exact source retained"),
                 );
                 unresolved.push((id, part));

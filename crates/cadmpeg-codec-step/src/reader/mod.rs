@@ -15,7 +15,9 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::{
+    dropped_with, Cause, DecodeParts, GivenUpPart, GivenUpRecord, Part,
+};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
@@ -214,9 +216,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     StepLossCode::ImplementationLevelUnverified,
                     "implementation_level",
                 ),
-                crate::parse::ParseDiagnosticKind::ExpansionBounded => {
-                    (StepLossCode::ParseExpansionBounded, "expansion")
-                }
             };
             let message = diagnostic.message.clone();
             let loss = code.note(message).with_provenance(
@@ -828,7 +827,11 @@ fn give_up_statements(
                 .iter()
                 .map(|(record, entry)| format!("#{record} entry #{entry}")),
         );
-        let part = ctx.give_up_part(part, statement.cause.clone().into_error())?;
+        let part = ctx.give_up_part(
+            part,
+            statement.cause.cause(),
+            statement.cause.clone().into_error(),
+        )?;
         for record in &statement.dropped {
             dependents.push(dropped_with(statement_record(record), part.id().clone()));
         }
@@ -840,8 +843,8 @@ fn give_up_statements(
 /// Why the reader lost a DATA instance.
 #[derive(Debug, Clone, PartialEq)]
 enum Lost {
-    /// The instance is given up for the error text.
-    GivenUp(String),
+    /// The instance is given up for `cause` with the error text.
+    GivenUp { cause: Cause, error: String },
     /// The instance is dropped because it needs instance `needs`, which is
     /// given up or dropped. `record` is the id the document would hold for
     /// the instance.
@@ -872,16 +875,19 @@ impl LostInstances {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    /// Gives up instance `id` for `error`.
-    pub(crate) fn give_up(&self, id: u64, error: impl std::fmt::Display) {
-        self.lock()
-            .entry(id)
-            .or_insert_with(|| Lost::GivenUp(error.to_string()));
+    /// Gives up instance `id` for `cause` with the text `error`. The
+    /// instance's give-up follows the decode as its one loss.
+    pub(crate) fn give_up(&self, id: u64, cause: Cause, error: impl std::fmt::Display) {
+        self.lock().entry(id).or_insert_with(|| Lost::GivenUp {
+            cause,
+            error: error.to_string(),
+        });
     }
 
-    /// Gives up instance `id` for the codec loss `why`.
-    pub(crate) fn give_up_for(&self, id: u64, why: &LossNote) {
-        self.give_up(id, format_args!("{}: {}", why.code, why.message));
+    /// Gives up instance `id` for `cause` as the codec loss `why` states:
+    /// the give-up's text carries `why`'s code and message.
+    pub(crate) fn give_up_for(&self, id: u64, cause: Cause, why: &LossNote) {
+        self.give_up(id, cause, format_args!("{}: {}", why.code, why.message));
     }
 
     /// Drops instance `id`, which the document holds as no record, because
@@ -935,13 +941,6 @@ fn drop_with_lost(exchange: &Exchange, id: u64, needs: impl IntoIterator<Item = 
     lost.is_some()
 }
 
-/// The losses of DATA instance `id`, which the reader gives up for the
-/// codec loss `why`: `why`. The instance's part follows the decode.
-fn give_up_instance(exchange: &Exchange, id: u64, why: LossNote) -> [LossNote; 1] {
-    exchange.lost().give_up_for(id, &why);
-    [why]
-}
-
 /// Gives up each DATA instance the reader gave up as one part, and notes
 /// each instance it dropped with the record it needs (§3.3). An instance
 /// that no pass types keeps its exact source as an opaque record, so its
@@ -958,12 +957,12 @@ fn give_up_instances(
     let mut parts = Vec::new();
     let mut losses = Vec::new();
     let mut stubs = BTreeMap::new();
-    for (&id, cause) in &lost {
-        let Lost::GivenUp(error) = cause else {
+    for (&id, entry) in &lost {
+        let &Lost::GivenUp { cause, ref error } = entry else {
             continue;
         };
         let Some(instance) = exchange.records().get(&id) else {
-            losses.push(GivenUpRecord::new(instance_record(id), error).loss());
+            losses.push(GivenUpRecord::new(instance_record(id), cause, error).loss());
             continue;
         };
         let bytes = input
@@ -979,7 +978,7 @@ fn give_up_instances(
         if !typed.contains(id) {
             part = part.digest_only();
         }
-        let part = ctx.give_up_part(part, CodecError::malformed(error))?;
+        let part = ctx.give_up_part(part, cause, CodecError::malformed(error))?;
         stubs.insert(id, Identity::from(part.id().clone()));
         losses.push(part.loss());
         parts.push(part);
@@ -988,8 +987,8 @@ fn give_up_instances(
         Some(Lost::Dropped { record, .. }) => record.clone(),
         _ => instance_record(id),
     };
-    for (&id, cause) in &lost {
-        let &Lost::Dropped { needs, .. } = cause else {
+    for (&id, entry) in &lost {
+        let &Lost::Dropped { needs, .. } = entry else {
             continue;
         };
         let needs = stubs.get(&needs).cloned().unwrap_or_else(|| {

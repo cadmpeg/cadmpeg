@@ -130,19 +130,13 @@ fn declared_versions_outside_the_verified_set_decode_with_a_dialect_loss() {
             IgesLossCode::SourceDialectUnverified.kind()
         );
 
-        let error = IgesCodec
+        let strict = IgesCodec
             .decode(
                 &mut Cursor::new(bytes),
                 &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
             )
-            .unwrap_err();
-        match error {
-            cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-                rejection.loss().code.to_string(),
-                IgesLossCode::SourceDialectUnverified.kind().to_string()
-            ),
-            other => panic!("expected a shared-gate strict refusal, got {other:?}"),
-        }
+            .unwrap();
+        assert_eq!(dialect_losses(strict.report()), 1);
     }
 }
 
@@ -235,19 +229,13 @@ fn a_malformed_version_flag_clamps_to_the_default_and_charges_the_dialect_loss()
     assert_eq!(dialect_losses(result.report()), 1);
     assert!(result.report().losses[0].message.contains("field 23"));
 
-    let error = IgesCodec
+    let strict = IgesCodec
         .decode(
             &mut Cursor::new(bytes),
             &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
         )
-        .unwrap_err();
-    match error {
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-            rejection.loss().code.to_string(),
-            IgesLossCode::SourceDialectUnverified.kind().to_string()
-        ),
-        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
-    }
+        .unwrap();
+    assert_eq!(dialect_losses(strict.report()), 1);
 }
 
 #[test]

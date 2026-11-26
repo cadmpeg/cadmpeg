@@ -37,15 +37,23 @@ pub(crate) mod sketch_text;
 pub(crate) mod split_face;
 pub(crate) mod verification;
 
-/// The report codes of one record given up under `code`: its own loss, then
-/// `record.unreadable`.
-pub(crate) fn given_up_codes(
-    code: crate::loss::F3dLossCode,
-) -> [cadmpeg_ir::report::loss::LossKind; 2] {
-    [
-        code.kind(),
-        cadmpeg_ir::unknown::part::record_unreadable_kind(),
-    ]
+/// Whether `loss` gives up the external-reference table.
+pub(crate) fn xref_table_given_up(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    cadmpeg_ir::unknown::part::gives_up(&loss.code)
+        && loss.message.contains("F3D external-reference table")
+}
+
+/// Whether `loss` gives up a T-spline control cage.
+pub(crate) fn tspline_cage_given_up(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    cadmpeg_ir::unknown::part::gives_up(&loss.code)
+        && loss.message.contains("T-spline control cage not decoded")
+}
+
+/// Whether `loss` gives up a parameter frame that matches no parameter
+/// grammar.
+pub(crate) fn parameter_frame_given_up(loss: &cadmpeg_ir::report::loss::LossNote) -> bool {
+    cadmpeg_ir::unknown::part::gives_up(&loss.code)
+        && loss.message.contains("matches no parameter grammar")
 }
 
 /// A face of `shell` with no loop, on a surface id the fixture need not hold.

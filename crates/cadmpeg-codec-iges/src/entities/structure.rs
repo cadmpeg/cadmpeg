@@ -24,6 +24,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -2882,6 +2883,7 @@ pub(super) fn project(
                     Err(reason) => super::push_entity_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("{}", reason.non_resource()?),
                     ),
                 }
@@ -2953,6 +2955,7 @@ pub(super) fn project(
                         Err(reason) => super::push_entity_loss(
                             &mut losses,
                             entry,
+                            Cause::Undecoded,
                             format_args!("{}", reason.non_resource()?),
                         ),
                     }
@@ -2960,6 +2963,7 @@ pub(super) fn project(
                 Err(reason) => super::push_entity_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("{}", reason.message()?),
                 ),
             },
@@ -2974,6 +2978,7 @@ pub(super) fn project(
                 Ok(_) => super::push_entity_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!(
                         "negative bounded plane requires an enclosing positive plane face"
                     ),
@@ -2981,6 +2986,7 @@ pub(super) fn project(
                 Err(reason) => super::push_entity_loss(
                     &mut losses,
                     entry,
+                    Cause::Undecoded,
                     format_args!("{}", reason.message()?),
                 ),
             },
@@ -2995,6 +3001,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("legacy single-parent plane hole failed neutral topology validation"),
             );
         }
@@ -3431,6 +3438,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -3448,6 +3456,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("subfigure depth, member count, or member pointer is invalid"),
             );
             continue;
@@ -3473,6 +3482,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -3512,6 +3522,7 @@ pub(super) fn project(
                             .get(target)
                             .is_none_or(|target| target.entity_type == 308)
                 }),
+                Cause::Unreadable,
                 format_args!("subfigure-instance definition pointer is invalid"),
             );
             continue;
@@ -3532,6 +3543,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -3553,6 +3565,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("network definition header or member list is invalid"),
             );
             continue;
@@ -3579,6 +3592,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("network definition connect-point count is invalid"),
             );
             continue;
@@ -3614,6 +3628,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -3678,6 +3693,7 @@ pub(super) fn project(
                         && designator_valid
                         && display_valid
                 }),
+                Cause::Unreadable,
                 format_args!("network instance definition or count is invalid"),
             );
             continue;
@@ -3727,6 +3743,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("subfigure definition fields or nesting depth is invalid"),
             );
         }
@@ -3748,6 +3765,7 @@ pub(super) fn project(
                 instance_fields_valid
                     .contains(sequence)
                     .then_some(*definition_sequence),
+                Cause::Undecoded,
                 format_args!("subfigure-instance placement or decoded definition is invalid"),
             );
         }
@@ -3782,6 +3800,7 @@ pub(super) fn project(
             super::push_entity_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("network definition fields or nesting depth is invalid"),
             );
         }
@@ -3819,6 +3838,7 @@ pub(super) fn project(
                 (network_instance_fields_valid.contains(sequence)
                     && !decoded.contains(&instance.definition))
                 .then_some(instance.definition),
+                Cause::Undecoded,
                 format_args!("network instance placement or connection list is invalid"),
             );
         }

@@ -325,7 +325,7 @@ fn an_absent_maximum_line_width_decodes_in_salvage_and_strict_modes() {
 }
 
 #[test]
-fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
+fn a_malformed_single_precision_significance_decodes_in_salvage_and_strict_modes() {
     for value in ["-3", "1Hx"] {
         let bytes = point_file_with_field(8, value);
 
@@ -349,21 +349,20 @@ fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
             result.report().losses
         );
 
-        let error = IgesCodec
+        let strict = IgesCodec
             .decode(
                 &mut Cursor::new(bytes),
                 &strict_options(cadmpeg_core::decode::DecodeDepth::Full),
             )
-            .unwrap_err();
-        match error {
-            cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-                rejection.loss().code.to_string(),
+            .unwrap();
+        assert_eq!(
+            report_code_count(
+                strict.report(),
                 IgesLossCode::GlobalSemanticContextSubstituted
-                    .kind()
-                    .to_string()
             ),
-            other => panic!("expected a shared-gate strict refusal, got {other:?}"),
-        }
+            1,
+            "{value}"
+        );
     }
 }
 

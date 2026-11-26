@@ -80,20 +80,32 @@ fn invalid_entity_parameters_report_projection_losses() {
         let result = crate::IgesCodec
             .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
             .unwrap();
-        let expected = if matches!(entity_type, 308 | 212) {
+        let code = if matches!(entity_type, 308 | 212) {
             IgesLossCode::EntityNotProjected.kind()
         } else {
             IgesLossCode::GeometryNotProjected.kind()
         };
-        assert!(
-            result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == expected && loss.message.contains(reason)),
-            "{entity_type}: {:#?}",
-            result.report().losses
-        );
+        let named = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.message.contains(reason))
+            .collect::<Vec<_>>();
+        let [loss] = named.as_slice() else {
+            panic!("{entity_type}: one loss names the reason: {named:#?}");
+        };
+        // The projection keeps the native record of a CSG primitive and of
+        // an annotation; it gives up the others, and the one give-up carries
+        // the codec loss's text.
+        if matches!(entity_type, 150 | 212) {
+            assert_eq!(loss.code, code, "{entity_type}");
+        } else {
+            assert!(
+                cadmpeg_ir::unknown::part::gives_up(&loss.code),
+                "{entity_type}: {loss:#?}"
+            );
+            assert!(loss.message.contains(&code.to_string()), "{}", loss.message);
+        }
     }
 }
 
@@ -124,7 +136,7 @@ fn curve_entry(sequence: u32) -> crate::directory::DirectoryEntry {
 
 #[test]
 fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_their_charge() {
-    use cadmpeg_ir::unknown::part::{dropped_with, record_unreadable_kind};
+    use cadmpeg_ir::unknown::part::{dropped_with, gives_up, Cause};
 
     let image = super::CardImage::new(&[], crate::representation::Representation::FixedAscii);
     let ids = super::GivenUpIds::new(&image, &[], &[]).unwrap();
@@ -133,17 +145,17 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
     let note = |sequence| super::geometry_note(entry(sequence), format_args!("D{sequence}"));
     let mut losses = Vec::new();
     // D1 is unreadable. D3 needs D1, and D5 needs D3.
-    super::give_up(&mut losses, entry(1), note(1));
-    super::give_up_needing(&mut losses, entry(3), Some(1), note(3));
-    super::give_up_needing(&mut losses, entry(5), Some(3), note(5));
+    super::give_up(&mut losses, entry(1), Cause::Unreadable, note(1));
+    super::give_up_needing(&mut losses, entry(3), Some(1), Cause::Unreadable, note(3));
+    super::give_up_needing(&mut losses, entry(5), Some(3), Cause::Undecoded, note(5));
     // D7 needs D17, which has no give-up.
-    super::give_up_needing(&mut losses, entry(7), Some(17), note(7));
+    super::give_up_needing(&mut losses, entry(7), Some(17), Cause::Unreadable, note(7));
     // D9 and D11 need each other.
-    super::give_up_needing(&mut losses, entry(9), Some(11), note(9));
-    super::give_up_needing(&mut losses, entry(11), Some(9), note(11));
+    super::give_up_needing(&mut losses, entry(9), Some(11), Cause::Undecoded, note(9));
+    super::give_up_needing(&mut losses, entry(11), Some(9), Cause::Undecoded, note(11));
     // D13 is unreadable and also needs D1.
-    super::give_up_needing(&mut losses, entry(13), Some(1), note(13));
-    super::give_up(&mut losses, entry(13), note(13));
+    super::give_up_needing(&mut losses, entry(13), Some(1), Cause::Undecoded, note(13));
+    super::give_up(&mut losses, entry(13), Cause::Unreadable, note(13));
     let by_sequence = entries
         .iter()
         .map(|entry| (entry.sequence, entry))
@@ -151,12 +163,29 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
 
     super::settle_needs(&mut losses, &by_sequence, &ids).unwrap();
 
+    // An entity given up on its own keeps the cause of its marker.
     let charged = losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| gives_up(&loss.code))
+        .map(|loss| (super::entity_tag(loss).unwrap(), loss.code.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        charged,
+        [
+            (1, Cause::Unreadable.kind()),
+            (7, Cause::Unreadable.kind()),
+            (9, Cause::Undecoded.kind()),
+            (13, Cause::Unreadable.kind()),
+        ]
+    );
+    // Each give-up keeps the `why` that `give_up_entities` folds into it;
+    // the `why` of a dropped entity or of a settled marker goes.
+    let whys = losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::IgesLossCode::GeometryNotProjected.kind())
         .map(|loss| super::entity_tag(loss).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(charged, [1, 7, 9, 13]);
+    assert_eq!(whys, [1, 7, 9, 13]);
     let part = |sequence| ids.entity(entry(sequence)).unwrap();
     let notes = losses
         .iter()

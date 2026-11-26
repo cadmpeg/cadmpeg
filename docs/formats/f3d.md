@@ -139,7 +139,7 @@ The position stream holds one f32 coordinate triple per vertex. Those coordinate
 
 A `Base Mesh Feature` scope is an indexed Design operation. Its owning entity reference identifies the feature object. The mesh-body record carries a marked reference to the scope's record index; that reference is the operation-to-tessellation join. The mesh-body record also references the Design GUID record whose ASCII identity equals the container's `fusion_uuid`, joins its `.paramesh` entry, and stores the affine map that projects its vertices into model millimetres. The neutral feature definition is `MeshImport` and stores the resulting tessellation identities in reference order. A mesh import owns tessellation geometry and has no BREP `Body`; the decoder does not fabricate one.
 
-When a document's mesh-body metadata or referenced `.paramesh` container does not satisfy the mesh-container grammar, the mesh tessellation is omitted with loss code `mesh.container-undecoded` and B-rep evaluation proceeds. A part document whose Design asset stores no binary or text BREP entry and whose mesh bodies yield no tessellation counts its `.paramesh` entries, less the decoded containers that no mesh body joins. When that count is above zero, the document reports loss code `design.mesh-only-untransferred` with the count.
+When a referenced `.paramesh` container does not satisfy the mesh-container grammar, the decoder gives up its entry as an `archive-entry` part, omits its tessellation, and B-rep evaluation proceeds. A mesh body whose container decodes and whose placement fails is a given-up record. When the mesh-body metadata does not satisfy its grammar, the decoder gives up each `.paramesh` entry. A document that stores no `.paramesh` entry reports that failure with loss code `mesh.container-undecoded`. A part document whose Design asset stores no binary or text BREP entry and whose mesh bodies yield no tessellation counts its `.paramesh` entries, less the decoded containers that no mesh body joins. When that count is above zero, the document reports loss code `design.mesh-only-untransferred` with the count.
 
 Registry field 4 declares one channel whose values address vertices or triangle corners, and field 5 declares one channel whose values address triangles. A channel entry holds an optional role in field 2, an optional resource GUID in field 3, one stream entry in field 5, and zero or more face-group records in field 6. The stream entry holds the element code in field 1, the value-stream name in field 2, and the optional index-stream name in field 3. A field-6 face-group record holds its u32 key in field 1 and its GUID in field 2. Channel resource GUIDs are unique within the registry. Face-group keys and GUIDs are unique within their channel.
 
@@ -4408,15 +4408,11 @@ A preset reference is library-qualified: a library identifier paired with the na
 
 ## 4. Strict floors
 
-Each of these codes records a Design record that the decoder keeps with less content, and carries strict floor Warning (CADIR §3.2):
+Each of these codes records recovery from input that breaks the format, with the output kept, and carries strict floor Warning (CADIR §3.2):
 
-| Code | Kept record |
+| Code | Kept output |
 |---|---|
-| `f3d/sketch.curve-undecoded` | The sketch curve keeps its identity without its geometry. |
-| `f3d/sketch.container-undecoded` | The sketch keeps its records without its container row. |
-| `f3d/configuration.projection-native` | The configurations stay as native records with no neutral projection. |
 | `f3d/sketch.owner-conflict` | The sketch record stays with no resolved owner. |
-| `f3d/sketch.relation-owner-unresolved` | The sketch relation stays with no owner entity. |
-| `f3d/design.intent-undecoded` | The document keeps its product and geometry records and one design-intent failure record, and holds none of the records that design-intent decoding makes. When the source holds Design records, the Design class is untyped. |
+| `f3d/geometry.face-surface-dangling` | The body keeps its other faces. The ASM face whose surface reference is null or names no record is omitted. |
 
-A code that records only a record that the decoder gives up has no strict floor. The `record.unreadable` loss of that give-up (CADIR §3.3) refuses a pinned decode. A given-up Design record whose frame the decoder holds is a `design-record` part: its offset is the frame start in the Design stream, and the part keeps the frame bytes. A given-up Design record without a frame has the id `f3d:<stream>:design-entity#<record index>`. A given-up archive entry is an `archive-entry` part. Two directory entries that name one stored span give up one part. A given-up parameter frame is a `parameter-frame` part.
+A record that the decoder gives up has the one loss of its give-up (CADIR §3.3) and no code of its own. The loss is `record.unreadable` when the stored record breaks the format: its framing or grammar fails, a reference names no record, or a value is outside its domain. A pinned decode refuses that loss. The loss is `record.undecoded` when the decoder has no reading for the stored form or a decoder bound refuses it. A pinned decode accepts that loss. A given-up Design record whose frame the decoder holds is a `design-record` part: its offset is the frame start in the Design stream, and the part keeps the frame bytes. A given-up Design record without a frame has the id `f3d:<stream>:design-entity#<record index>`. A given-up archive entry is an `archive-entry` part. Two directory entries that name one stored span give up one part. A given-up parameter frame is a `parameter-frame` part.

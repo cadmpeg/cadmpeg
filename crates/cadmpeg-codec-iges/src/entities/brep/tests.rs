@@ -360,8 +360,9 @@ fn decode_rejects_closed_shell_with_inconsistent_radial_sense() {
         .iter()
         .all(|body| body.id.as_str() != "iges:model:body#D55"));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.message
-            == "IGES entity type 186 form 0 geometry was not projected: closed shell does not use every edge exactly twice with opposite senses"
+        loss.message.contains(
+            "IGES entity type 186 form 0 geometry was not projected: closed shell does not use every edge exactly twice with opposite senses",
+        )
     }));
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas()["entities"].len(),
@@ -505,7 +506,7 @@ fn topology_that_needs_a_quarantined_edge_list_is_dropped_with_its_part() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
         .collect::<Vec<_>>();
     for sequence in &dependents {
         assert!(

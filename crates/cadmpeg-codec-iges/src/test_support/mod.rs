@@ -14,14 +14,10 @@ pub(crate) mod test_solids_and_structure;
 pub(crate) mod test_surface_fixtures;
 pub(crate) mod test_tabulated_surfaces;
 
-/// Asserts that `loss` is the `record.unreadable` that gives up `part`: the
-/// part of kind `part.0` of the record of Directory sequence `part.1`.
+/// Asserts that `loss` is the give-up of `part`: the part of kind `part.0`
+/// of the record of Directory sequence `part.1`.
 pub(crate) fn assert_given_up(loss: &cadmpeg_ir::report::loss::LossNote, part: (&str, u32)) {
-    assert_eq!(
-        loss.code,
-        cadmpeg_ir::unknown::part::record_unreadable_kind(),
-        "{loss:#?}"
-    );
+    assert!(cadmpeg_ir::unknown::part::gives_up(&loss.code), "{loss:#?}");
     let (kind, sequence) = part;
     assert!(
         loss.message
@@ -31,8 +27,7 @@ pub(crate) fn assert_given_up(loss: &cadmpeg_ir::report::loss::LossNote, part: (
     );
 }
 
-/// Asserts that the `record.unreadable` entries of `report` give up `parts`,
-/// in report order.
+/// Asserts that the give-ups of `report` give up `parts`, in report order.
 pub(crate) fn assert_gives_up(
     report: &cadmpeg_ir::report::decode::DecodeReport,
     parts: &[(&str, u32)],
@@ -40,7 +35,7 @@ pub(crate) fn assert_gives_up(
     let given_up = report
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
         .collect::<Vec<_>>();
     assert_eq!(given_up.len(), parts.len(), "{given_up:#?}");
     for (loss, part) in given_up.into_iter().zip(parts) {
@@ -62,8 +57,7 @@ pub(crate) fn given_up_part_bytes(
         .losses
         .iter()
         .find(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message.starts_with(&head)
+            cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&head)
         })
         .unwrap_or_else(|| panic!("no give-up of {head}: {:#?}", result.report().losses));
     let stub = loss
@@ -174,6 +168,29 @@ pub(crate) fn detect_and_decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResu
 }
 
 /// Count of report losses carrying one loss code.
+/// Whether `loss` reports the codec loss `code`: a loss of `code`, or the
+/// give-up that carries the text of a loss of `code`.
+pub(crate) fn reports(
+    loss: &cadmpeg_ir::report::loss::LossNote,
+    code: crate::loss::IgesLossCode,
+) -> bool {
+    loss.code == code.kind()
+        || (cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            && loss.message.contains(&format!("{}: ", code.kind())))
+}
+
+/// The number of losses of `report` that report the codec loss `code`.
+pub(crate) fn reported_count(
+    report: &cadmpeg_ir::report::decode::DecodeReport,
+    code: crate::loss::IgesLossCode,
+) -> usize {
+    report
+        .losses
+        .iter()
+        .filter(|loss| reports(loss, code))
+        .count()
+}
+
 pub(crate) fn code_count(
     report: &cadmpeg_ir::report::decode::DecodeReport,
     code: crate::loss::IgesLossCode,

@@ -64,7 +64,7 @@ fn compact_null_owner_parameter_reports_its_owner_and_trailer_flag() {
         .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterOwnerUnstored.kind()));
     assert!(!losses
         .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+        .any(crate::test_support::parameter_frame_given_up));
 }
 
 /// A discriminated parameter frame that sets the header flag decodes through
@@ -115,7 +115,7 @@ fn a_parameter_with_the_header_flag_decodes_and_reports_the_flag() {
     }));
     assert!(!losses
         .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+        .any(crate::test_support::parameter_frame_given_up));
 }
 
 /// A discriminated parameter frame whose ten-byte trailer sets the second

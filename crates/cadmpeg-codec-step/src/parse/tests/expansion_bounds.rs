@@ -6,7 +6,9 @@ use std::fmt::Write as _;
 use std::ops::RangeInclusive;
 use std::sync::LazyLock;
 
-use crate::parse::{Exchange, ParseDiagnosticKind};
+use cadmpeg_ir::unknown::part::Cause;
+
+use crate::parse::{Exchange, GiveUpCause};
 
 const BOUND: &str = "anchor expansion exceeds 1000000 value nodes";
 
@@ -28,7 +30,7 @@ fn doubling_anchors(last: usize) -> String {
 struct Doubling {
     source: String,
     exchange: Exchange,
-    /// Messages of the `ExpansionBounded` diagnostics.
+    /// Messages of the statements given up as undecoded at the bound.
     bounded: HashSet<String>,
 }
 
@@ -41,13 +43,16 @@ static DOUBLING: LazyLock<Doubling> = LazyLock::new(|| {
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{}ENDSEC;DATA;{data}ENDSEC;END-ISO-10303-21;",
         doubling_anchors(23)
     );
-    let (exchange, diagnostics) =
+    let (exchange, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse)
             .expect("a bounded expansion omits items instead of refusing the decode");
-    let bounded = diagnostics
+    let bounded = exchange
+        .given_up()
         .iter()
-        .filter(|diagnostic| diagnostic.kind == ParseDiagnosticKind::ExpansionBounded)
-        .map(|diagnostic| diagnostic.message.clone())
+        .filter_map(|statement| match &statement.cause {
+            GiveUpCause::Content(Cause::Undecoded, message) => Some(message.clone()),
+            _ => None,
+        })
         .collect();
     Doubling {
         source,

@@ -359,13 +359,13 @@ compartments the decoder cannot order?
 
 **Known.** `crates/cadmpeg-codec-step/src/reader/pmi.rs:175-244` decodes each
 `DATUM_SYSTEM` record. When its datum references do not convert to the
-expected compartment structure, the decoder omits the whole system and reports
-`pmi.datum-system-invalid`. `step.md` §8 defines datum, datum-feature, and
+expected compartment structure, the decoder gives up the whole system with
+`record.unreadable`. `step.md` §8 defines datum, datum-feature, and
 datum-target transfer. The inconsistent-compartment rule and a
 partial-transfer form for valid references are unspecified.
 
 **Need.** The omission discards valid datum references together with the
-invalid structure, with the dropped system recorded in the loss note. The
+invalid structure, with the dropped system recorded in the give-up. The
 answer either defines which compartments are authoritative so the valid
 references transfer, or specifies whole-system omission as the exchange form
 for this malformed case.

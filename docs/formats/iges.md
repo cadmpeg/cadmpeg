@@ -14,7 +14,7 @@ The Fixed ASCII representation is an ordered sequence of physical lines. A canon
 
 The Compressed ASCII representation has one 80-byte flag record before Start, with `C` in byte 73. Start, Global, and Terminate use the Fixed ASCII cards. Directory Entry and Parameter Data are combined into Data records. Each Data record starts with `D` and the unsigned odd sequence of its first Directory Entry card, followed by zero or more `@<field>_<value>` specifiers and the record delimiter. Fields 2, 10, 11, and 20 are omitted because the fixed form derives them from the Parameter Data card sequence, Directory Entry card sequence, repeated entity type, and even Directory Entry sequence. A field value remains in force for later Data records until a new specifier replaces it; the first Data record contains every other Directory Entry field. DE specifier lines are at most 72 bytes, and continuation lines begin with `@` and split only between complete specifiers. The Parameter Data portion begins on the next line. Each Parameter Data line is at most 64 bytes, and the Directory Entry Parameter Line Count gives the number of lines in the record, including comment lines after its record delimiter. A record delimiter inside a Hollerith payload is data. The fixed form of each Data record contains two Directory Entry cards and the declared number of Parameter Data cards. These rules follow [IGES 4.0 §2.3.1](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf) and [IGES 5.3 §2.3.1](https://paulbourke.net/dataformats/iges/IGES.pdf).
 
-CADIR decision: a Compressed ASCII Data record states its own Directory sequence, so a record can restate the sequence of an earlier one. The first record of a sequence is the entity, and every Directory pointer to that sequence names it (CADIR §2.2). Each later record of the sequence is read and not stated: its specifiers still set the field values in force for the records after it, and it is charged one `iges/directory.record-repeated` loss that names the sequence and gives the record's byte span in the source. The decoder gives the copy up as a part of kind `compressed-data-record` (CADIR §3.3): one `unknowns` stub stands for it, the part keeps the digest of its bytes because the source image retains them, and one `record.unreadable` names the part. The repetition gives up no other record and not the file. Any other Data record sequence that is not the next odd Directory sequence refuses the file, as before. The Fixed ASCII and Binary representations take each Directory Entry's sequence from its position (card framing, below), so a sequence cannot repeat there.
+CADIR decision: a Compressed ASCII Data record states its own Directory sequence, so a record can restate the sequence of an earlier one. The first record of a sequence is the entity, and every Directory pointer to that sequence names it (CADIR §2.2). Each later record of the sequence is read and not stated: its specifiers still set the field values in force for the records after it. The decoder gives the copy up as a part of kind `compressed-data-record` (CADIR §3.3): one `unknowns` stub stands for it, and the part keeps the digest of its bytes because the source image retains them. One `record.unreadable` names the part and the sequence and gives the record's byte span in the source. The repetition gives up no other record and not the file. Any other Data record sequence that is not the next odd Directory sequence refuses the file. The Fixed ASCII and Binary representations take each Directory Entry's sequence from its position (card framing, below), so a sequence cannot repeat there.
 
 The Binary representation uses the same five logical sections as Fixed ASCII. Each Binary section starts with its one-byte identifier and a big-endian unsigned 32-bit payload count. The count excludes the five-byte section header and following null padding. The flag displacements count from the identifier of one section to the identifier of the next section, including that section's header, payload, and null padding. The Terminate payload contains five identifier/count pairs for `B`, `S`, `G`, `D`, and `P`; those counts include the identifier and count fields but exclude null padding. Null padding follows every section, and the byte `E` follows the Terminate padding; bytes after `E` are ignored.
 
@@ -77,14 +77,14 @@ Seven loss codes cover the whole matrix. Each code names one consequence class, 
 | Loss code                                         | Taxonomy                   | Severity | Strict consequence                                | Charged for                                                                                                                  |
 | ------------------------------------------------- | -------------------------- | -------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `iges/global.metadata-field-unusable`             | `MetadataNotTransferred`   | Warning  | Tolerated.                                        | An absent or malformed field 3, 4, 5, 6, 7, 8, 10, or 18; a malformed field 12, 20, 21, 22, 24, 25, or 26, and a malformed field 15 when field 14 is not `3` |
-| `iges/global.semantic-context-substituted`        | `NoncanonicalSourceSyntax` | Warning  | Rejected. Strict floor Warning.                   | An absent or malformed field 9, field 11, or field 19                                                         |
+| `iges/global.semantic-context-substituted`        | `NoncanonicalSourceSyntax` | Warning  | Tolerated.                                        | An absent or malformed field 9, field 11, or field 19                                                         |
 | `iges/global.numeric-syntax-recovered`            | `NoncanonicalSourceSyntax` | Warning  | Rejected. Strict floor Warning.                   | A Global real with one trailing `.` after an otherwise valid exponent form; the value is used after bounded recovery |
 | `iges/global.length-unit-unresolved`              | `GeometryNotTransferred`   | Blocking | Rejected. Strict floor Warning.                   | A malformed field 13 or field 14, and an absent or malformed field 15 when field 14 is `3`                                   |
 | `iges/presentation.line-weight-scale-unavailable` | `MaterialNotTransferred`   | Warning  | Tolerated.                                        | A malformed field 16, and an absent or malformed field 17                                                                    |
 | `iges/global.noncanonical-framing`                | `NoncanonicalSourceSyntax` | Warning  | Rejected. Strict floor Warning.                   | A Global record longer than its declared profile permits; or V4.0 physical records after Terminate                         |
-| `iges/source.dialect-unverified`                  | `SourceDialectUnverified`  | Warning  | Rejected. Strict floor Warning.                   | Field 23                                                                                                                     |
+| `iges/source.dialect-unverified`                  | `SourceDialectUnverified`  | Warning  | Tolerated.                                        | Field 23                                                                                                                     |
 
-The metadata code and the presentation code are strict-tolerant because a garbled author name or an absent line width cannot change a coordinate. The semantic-context code and the length-unit code are strict-rejecting because their fallbacks change how the decoder compares and converts coordinates; a strict caller must hear that the tolerance or the unit factor came from this document and not from the file. The numeric-syntax recovery code is strict-rejecting because the source spelling is noncanonical even though its finite value was recovered. Each Global loss message names the field number and the field name; fallback messages identify an absent or malformed field, and recovery messages identify the retained noncanonical spelling.
+The metadata code and the presentation code are strict-tolerant because a garbled author name or an absent line width cannot change a coordinate. The semantic-context code and the dialect code are strict-tolerant because the decoder also charges them for input that conforms to the format: a field 9 or field 11 that the declared version lets the file omit, a supplied zero field 19, and a declared version outside the verified set. The length-unit code is strict-rejecting because its fallback changes how the decoder converts coordinates; a strict caller must hear that the unit factor came from this document. The numeric-syntax recovery code is strict-rejecting because the source spelling is noncanonical even though its finite value was recovered. Each Global loss message names the field number and the field name; fallback messages identify an absent or malformed field, and recovery messages identify the retained noncanonical spelling.
 
 | Field | Name                                             | Spec class                                                                       | Consumers                                                                                                                                                                                                                            | Absent disposition                                                                                                                                                                                    | Malformed disposition                                                                                                                                                                                                                                   | Loss                                                                                                                    |
 | ----- | ------------------------------------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -339,7 +339,7 @@ The V5.0 read profile applies the null-string rule to a one-string General Note:
 
 ## Record quarantine
 
-A defect inside one record does not refuse the file. The decoder separates three tiers of defect. A framing defect that leaves record boundaries or the section census unknown refuses the file. A defect attributable to one Directory Entry record, or to one entity's Parameter Data, quarantines that record. The record has no decoded form, so the decoder gives it up as a part (CADIR §3.3), accounts for it in the transfer ledger, and charges its quarantine code with the `record.unreadable` of that part. An integrity or resource failure refuses the request unchanged. This section is the contract for that separation. It states what the decoder produces for each defect class, and it holds for both container-only and full decodes.
+A defect inside one record does not refuse the file. The decoder separates three tiers of defect. A framing defect that leaves record boundaries or the section census unknown refuses the file. A defect attributable to one Directory Entry record, or to one entity's Parameter Data, quarantines that record. The record has no decoded form, so the decoder gives it up as a part (CADIR §3.3), accounts for it in the transfer ledger, and charges one `record.unreadable` for that part. The message of the `record.unreadable` names the defect. An integrity or resource failure refuses the request unchanged. This section is the contract for that separation. It states what the decoder produces for each defect class, and it holds for both container-only and full decodes.
 
 ### Quarantine parts
 
@@ -348,8 +348,10 @@ The part of a quarantined Directory Entry record has kind `directory-entry`. The
 The part's retained record keeps the part's bytes. The document holds the part's stub in the `unknowns` arena of `native.iges` and holds no other record for the quarantined record. The `record.unreadable` message has this form:
 
 ```text
-part <kind> "D<sequence>" stream="<stream>" offset=<offset> length=<length> record=<stub id>: <quarantine code>: <quarantine message>; dropped=[...]
+part <kind> "D<sequence>" stream="<stream>" offset=<offset> length=<length> record=<stub id>: <defect>; dropped=[...]
 ```
+
+For a `directory-entry` part, `<defect>` is the quarantine message. For a `parameter-data` part, `<defect>` is `iges/parameter.data-quarantined: <quarantine message>`.
 
 Two Parameter Data records whose declared ranges conflict can start at the same card. The record with the lower sequence gives up the part that starts at that card. The other record charges its quarantine code and gives up no second part, because that part holds its cards.
 
@@ -397,7 +399,7 @@ Every quarantined record is accounted in the transfer ledger as retained, with t
 
 ### Pointers into a quarantined record
 
-A Directory Entry pointer or a Parameter Data pointer whose target sequence names a quarantined record has dangling resolution and charges `iges/graph.pointer-unresolved`. The graph indexes the typed list, so a quarantined sequence is absent from the index and the existing dangling path applies. The loss code does not distinguish an absent record from a quarantined one; the quarantine loss names the same sequence. An explicit B-rep entity that the projection drops only because a pointer names a quarantined record gets no `record.unreadable` of its own: the give-up of the quarantine part names it in its `dropped` list (Decode admission).
+A Directory Entry pointer or a Parameter Data pointer whose target sequence names a quarantined record has dangling resolution and charges `iges/graph.pointer-unresolved`. The graph indexes the typed list, so a quarantined sequence is absent from the index and the existing dangling path applies. The loss code does not distinguish an absent record from a quarantined one; the `record.unreadable` of the quarantine part names the same sequence. An explicit B-rep entity that the projection drops only because a pointer names a quarantined record gets no give-up of its own: the `record.unreadable` of the quarantine part names it in its `dropped` list (Decode admission).
 
 ### Pointers out of a quarantined record
 
@@ -420,27 +422,25 @@ Ownership of Parameter Data cards resolves in a fixed order, because the Directo
 
 Throughout these rules, an existing entry is one in the typed list. A back-pointer that is absent, unreadable, zero, even, or names no existing entry does not quarantine anything when rule 1 claims the card; the disagreement charges `iges/card.framing-recovered`. Any use of rule 2, and any disagreement between rule 1 and the back-pointer census, charges the same code. A readable back-pointer that names a different existing entry is a conflict rather than a broken declaration: it quarantines the Parameter Data of both entries, as does a card that two declared ranges claim. A Parameter Data card that no entry claims under either rule, and whose back-pointer names no quarantined Directory Entry record either, is retained in the `cards` arena, belongs to no record, needs no quarantine part and no ledger row, and charges `iges/card.framing-recovered`.
 
-A quarantined Directory Entry record owns no Parameter Data. Its declared range is not typed, so rule 1 cannot run for it, and the cards whose back-pointer names its sequence are unclaimed cards: the `cards` arena retains them, they get no quarantine part and no ledger row of their own, and they charge no framing loss. The record's own `iges/directory.record-quarantined` loss covers them, and the decoder gives up one part per broken source record rather than two.
+A quarantined Directory Entry record owns no Parameter Data. Its declared range is not typed, so rule 1 cannot run for it, and the cards whose back-pointer names its sequence are unclaimed cards: the `cards` arena retains them, they get no quarantine part and no ledger row of their own, and they charge no framing loss. The `record.unreadable` of the record covers them, and the decoder gives up one part per broken source record.
 
 A non-null entity that declares zero Parameter Data cards has no declared range, so rule 2 decides: when a Parameter Data card's back-pointer names it, that contiguous run is its parameter data and the disagreement charges the framing loss; when no card names it, its quarantine part holds no bytes. The zero-length part gives the entity's missing parameter data one identity and one ledger row, on the same terms as every other quarantined record. The part takes the byte offset of its owning Directory Entry's first card, because the record has no first card of its own.
 
 ### Loss codes
 
-Five codes cover both quarantine classes, a repeated Compressed ASCII Directory sequence, unreadable literals, and recovered framing defects. Each names one consequence class, which is what a report consumer acts on.
+Three codes cover Parameter Data quarantine, unreadable literals, and recovered framing defects. Each names one consequence class, which is what a report consumer acts on. A quarantined Directory Entry record and a repeated Compressed ASCII Directory sequence charge only the `record.unreadable` of their part.
 
 | Loss code                           | Taxonomy                   | Severity | Strict consequence                       | Charged for                                                                                                                                                                                                                                                                                                 |
 | ----------------------------------- | -------------------------- | -------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `iges/directory.record-quarantined` | `NoncanonicalSourceSyntax` | Warning  | Rejected through `record.unreadable`.   | One Directory Entry record whose typed fields were not recovered: a non-ASCII field, a field that is not a decimal integer, an invalid status number, a repeated entity type that disagrees, or an unpaired card                                                                                            |
-| `iges/directory.record-repeated` | `NoncanonicalSourceSyntax` | Warning | Rejected through `record.unreadable`.   | One Compressed ASCII Data record that restates the Directory sequence of an earlier record; the earlier record stands and this one is not stated (above) |
-| `iges/parameter.data-quarantined`   | `NoncanonicalSourceSyntax` | Warning  | Rejected through `record.unreadable`.   | One entity's Parameter Data: an unreadable Hollerith count, a Hollerith header that crosses a card, a truncated Hollerith payload, a Hollerith string byte forbidden by the declared dialect, a numeric field or delimiter that crosses a card, a missing delimiter, a first token that disagrees with the entity type, a declared card that does not exist, no owned card, a declared count of zero, or conflicting ownership |
+| `iges/parameter.data-quarantined`   | `NoncanonicalSourceSyntax` | Warning  | Rejected through the `record.unreadable` of its part. | One entity's Parameter Data: an unreadable Hollerith count, a Hollerith header that crosses a card, a truncated Hollerith payload, a Hollerith string byte forbidden by the declared dialect, a numeric field or delimiter that crosses a card, a missing delimiter, a first token that disagrees with the entity type, a declared card that does not exist, no owned card, a declared count of zero, or conflicting ownership |
 | `iges/parameter.literal-unusable` | `NoncanonicalSourceSyntax` | Warning | Rejected. Strict floor Warning.          | One framed numeric field with embedded or trailing blanks, a non-ASCII or nonnumeric literal, or a value outside its readable sender declaration |
 | `iges/card.framing-recovered`       | `NoncanonicalSourceSyntax` | Warning  | Rejected. Strict floor Warning.          | A card boundary, a card sequence, a Parameter Data card owner, a Terminate count, or an absent Terminate card. The boundary, sequence, owner, and count come from the card census when the file's declaration was absent, unreadable, or disagreed. The absent-Terminate note names the section of the last complete card and the byte offset where the file ends; when the final physical line is incomplete, the note also names that line's byte offset and byte length                                                                                                      |
 
-All five use `NoncanonicalSourceSyntax` rather than `RecordNotTyped`. `RecordNotTyped` states that this codec does not type a record, which is a claim about the read envelope; a quarantine states that the file does not hold the record it declares, which is a claim about source syntax. A strict caller must not silently accept a file whose Directory Entry is not a Directory Entry. The two quarantine codes and the repeated-record code are charged only with the `record.unreadable` of the record they give up, which has strict floor Error (CADIR §3.2), so these three codes have no floor of their own. `iges/parameter.literal-unusable` and `iges/card.framing-recovered` keep the record and have strict floor Warning. Severity is Warning, not Blocking, because a quarantined record removes one record and leaves the rest of the document usable, which is the same weight as `iges/global.noncanonical-framing`.
+All three use `NoncanonicalSourceSyntax` rather than `RecordNotTyped`. `RecordNotTyped` states that this codec does not type a record, which is a claim about the read envelope; a quarantine states that the file does not hold the record it declares, which is a claim about source syntax. A strict caller must not silently accept a file whose Directory Entry is not a Directory Entry. The `record.unreadable` of a quarantine part has strict floor Error (CADIR §3.2) and carries the text of `iges/parameter.data-quarantined` in its message. `iges/parameter.data-quarantined` is charged as a loss of its own only for the second of two Parameter Data records whose declared ranges start at one card, and it has no floor. `iges/parameter.literal-unusable` and `iges/card.framing-recovered` keep the record and have strict floor Warning. The severity of `iges/parameter.data-quarantined` is Warning because a quarantined record removes one record and leaves the rest of the document usable, which is the same weight as `iges/global.noncanonical-framing`.
 
 Each message names its record and its defect.
 
-A file that misnumbers every card charges one note, not one note per card: `iges/card.framing-recovered` is charged at most once for each pair of section and defect class, where the defect classes are a recovered card boundary, a recovered sequence, a recovered Parameter Data owner, an unclaimed Parameter Data card, a replaced Terminate count, and an absent Terminate card. The two quarantine codes are charged once per quarantined record.
+A file that misnumbers every card charges one note, not one note per card: `iges/card.framing-recovered` is charged at most once for each pair of section and defect class, where the defect classes are a recovered card boundary, a recovered sequence, a recovered Parameter Data owner, an unclaimed Parameter Data card, a replaced Terminate count, and an absent Terminate card. Each quarantined record charges one `record.unreadable`.
 
 ## Entity graph
 
@@ -824,30 +824,35 @@ same source identity. Salvage mode records every loss in the decode report.
 A full strict decode refuses through the shared decode gate: a loss causes
 refusal when its code carries a strict floor (CADIR §3.2) and the loss
 severity reaches that floor. These codes carry strict floor Warning:
-`iges/graph.pointer-unresolved`, `iges/curve.composite-carrier-degraded`,
-`iges/source.dialect-unverified`,
-`iges/global.semantic-context-substituted`,
+`iges/graph.pointer-unresolved`, `iges/directory.metadata-noncanonical`,
 `iges/global.numeric-syntax-recovered`,
 `iges/global.length-unit-unresolved`,
 `iges/global.noncanonical-framing`, `iges/parameter.literal-unusable`,
 `iges/parameter.count-overdeclared`, and `iges/card.framing-recovered`. Every
-other IGES loss is recorded in the decode report in both modes. An entity of a
-projected type and form that no projection pass states, for its content, its
-placement, or a projection limit, a quarantined record, and a repeated
-Compressed ASCII Data record charge `record.unreadable` (CADIR §3.3), which has
-strict floor Error. Each `record.unreadable` gives up a part and names its
-stub id. An entity that the projection gives up is a part of kind `entity`
+other IGES loss is recorded in the decode report in both modes. A quarantined record
+and a repeated Compressed ASCII Data record charge `record.unreadable` (CADIR
+§3.3), which has strict floor Error. An entity of a projected type and form
+that no projection pass states charges one give-up (CADIR §3.3). The give-up
+is `record.unreadable` when the entity breaks the rules of its type: a pointer
+to a missing or wrong entity, a missing or non-numeric parameter, a count the
+record does not hold, a value out of the range of its field, a non-positive
+weight, or decreasing knots. The give-up is `record.undecoded`, which has no
+strict floor, when the entity conforms and the decoder has no reading for it:
+a form or a placement the projection does not state, a count above a
+projection limit, a carrier that evaluation does not produce, or a check of
+the projection that fails. Each give-up gives up a part and names its stub id
+and, in its message, the projection code and the reason. An entity that the projection gives up is a part of kind `entity`
 named `D<sequence>`. The part is the entity's Directory Entry pair, at the
 offset of its first card, in the stream that the record quarantine section
 states for quarantine parts. The native entity record and the `cards` arena
 keep the bytes of the pair, so the part's retained record keeps only their
-length and digest. The `record.unreadable` names the stub, never
+length and digest. The give-up names the stub, never
 `iges:entity:directory#<sequence>`, because the document keeps that native
 record. A full strict decode therefore refuses a structurally defective file,
 and salvage mode recovers it with the losses the record quarantine section
 states.
 
-The projection charges `record.unreadable` only where it drops an entity that
+The projection charges a give-up only where it drops an entity that
 it would otherwise emit as a neutral record: geometry, explicit topology,
 Type 314 colors, and the subfigure and network definitions and instances of
 Types 308, 320, 408, and 420. A pass that only validates an entity whose
@@ -861,7 +866,7 @@ connect points, and array instances. Each finding of such a pass is an
 floor, so a full strict decode admits the finding.
 
 An entity that the projection drops only because an entity it points to has
-no projected record charges no `record.unreadable` of its own. Examples are an
+no projected record charges no give-up of its own. Examples are an
 offset curve or surface whose base is gone, a ruled or revolved surface whose
 rail, generatrix, or axis is gone, a trimmed surface whose support or boundary
 is gone, a composite curve whose child is gone, an entity whose transformation
@@ -877,13 +882,13 @@ that it needs. After all passes, the projection examines each such entity:
    records the dependent against the `entity` part id of the needed entity, and
    step 1 or step 3 applies to the needed entity.
 3. When no give-up reaches the needed entity, for example because no pass
-   projects its type, the dependent charges its own `record.unreadable`. Of
-   dependents that need each other in a cycle, one charges its own
-   `record.unreadable` and the others are recorded against it.
+   projects its type, the dependent charges its own give-up, with the cause
+   of the pass that dropped it. Of dependents that need each other in a cycle,
+   one charges its own give-up and the others are recorded against it.
 
-An entity that a pass also drops for its own content keeps its own
-`record.unreadable`. The decode names each recorded dependent in the `dropped`
-list of the `record.unreadable` that gives up the part it needs, directly or
+An entity that a pass also drops for its own content keeps its own give-up.
+The decode names each recorded dependent in the `dropped` list of the give-up
+of the part it needs, directly or
 through the dependents between them. For example, an edge list whose Parameter
 Data is quarantined drops the loops that use it, the faces that bound those
 loops, and the shells and solids that use those faces. The give-up of the edge

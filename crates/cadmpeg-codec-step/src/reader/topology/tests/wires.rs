@@ -384,11 +384,15 @@ fn a_wireframe_model_whose_shells_all_fail_drops_them_with_it() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
         .collect::<Vec<_>>();
     let [charge] = charges.as_slice() else {
         panic!("one charge: {charges:#?}");
     };
+    assert_eq!(
+        charge.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
     // The wire shell #33 drops with the model and has no charge of its own.
     assert!(charge.message.starts_with(&head), "{}", charge.message);
     assert!(

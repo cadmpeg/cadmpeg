@@ -125,7 +125,7 @@ fn an_anchor_whose_name_holds_a_space_drops_with_its_bounded_part() {
         .expect("a permissive decode refuses no anchor name");
     assert!(
         decoded.report().losses.iter().any(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss
                     .message
                     .ends_with("; dropped=[step:anchor:name#<y%20z>]")

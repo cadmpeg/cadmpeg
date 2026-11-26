@@ -1420,7 +1420,10 @@ fn invalid_datum_system_records_a_loss_and_preserves_good_annotations() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == StepLossCode::PmiDatumSystemInvalid.kind())
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.contains("DATUM_SYSTEM")
+        })
         .collect::<Vec<_>>();
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("DATUM_SYSTEM #8"));
@@ -1971,7 +1974,7 @@ fn nonfinite_pmi_placement_omits_records_and_retains_source() {
     assert!(result.ir().geometry.points.is_empty());
     assert!(result.ir().model.pmi.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
             && loss.message.contains("finite binary64 range")
     }));
     let retained = result

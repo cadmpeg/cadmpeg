@@ -92,7 +92,7 @@ fn v4_subfigure_definitions_require_line_font_and_independence() {
         )
         .unwrap();
     assert!(v4.report().losses.iter().any(|loss| {
-        loss.code == IgesLossCode::EntityNotProjected.kind()
+        crate::test_support::reports(loss, IgesLossCode::EntityNotProjected)
             && loss
                 .message
                 .contains("network definition fields or nesting depth is invalid")
@@ -108,5 +108,5 @@ fn v4_subfigure_definitions_require_line_font_and_independence() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code == IgesLossCode::EntityNotProjected.kind() }));
+        .any(|loss| { crate::test_support::reports(loss, IgesLossCode::EntityNotProjected) }));
 }

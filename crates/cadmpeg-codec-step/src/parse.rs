@@ -15,6 +15,7 @@ use std::sync::Arc;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::unknown::part::Cause;
 
 use self::implementation_level::{DeclaredImplementationLevel, ImplementationLevel};
 
@@ -600,12 +601,22 @@ pub(crate) enum ParseError {
         /// Violated grammar invariant.
         message: String,
     },
+    /// A token that the grammar admits holds a value the reader has no
+    /// form for.
+    #[error("{message} at byte {offset}")]
+    Unrepresentable {
+        /// Byte offset of the token.
+        offset: usize,
+        /// The value's form.
+        message: String,
+    },
 }
 
 /// A recoverable deviation from canonical Part 21 source syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParseDiagnosticKind {
-    /// A bounded instance or a dependent instance remains source-only.
+    /// A repeated instance name states the same record as the statement
+    /// that stands; the copy remains source-only.
     RecordOmitted,
     /// A bounded noncanonical prefix remains source-only.
     PreambleOmitted,
@@ -629,9 +640,6 @@ pub(crate) enum ParseDiagnosticKind {
     /// `FILE_DESCRIPTION` declares an implementation level whose grammar is
     /// not implemented; parsing continued with the edition-3 class-3 grammar.
     ImplementationLevelUnverified,
-    /// An anchor or REFERENCE expansion passed its value-node limit; the
-    /// binding or instance remains source-only.
-    ExpansionBounded,
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
@@ -668,16 +676,30 @@ pub(crate) struct GivenUpStatement {
 pub(crate) enum GiveUpCause {
     /// The statement violates the exchange grammar.
     Syntax(String),
+    /// The statement holds a token value the reader has no form for.
+    Unrepresentable(String),
     /// The statement exceeded a bound that applies to one part.
     Resource(ResourceLimit),
-    /// The statement reads, but its content cannot stand in the exchange.
-    Content(String),
+    /// The statement reads, but its content cannot stand in the exchange
+    /// for the cause.
+    Content(Cause, String),
 }
 
 impl GiveUpCause {
+    /// The cause of the statement's give-up.
+    pub(crate) const fn cause(&self) -> Cause {
+        match self {
+            Self::Syntax(_) => Cause::Unreadable,
+            Self::Unrepresentable(_) | Self::Resource(_) => Cause::Undecoded,
+            Self::Content(cause, _) => *cause,
+        }
+    }
+
     pub(crate) fn into_error(self) -> CodecError {
         match self {
-            Self::Syntax(message) | Self::Content(message) => CodecError::Malformed(message),
+            Self::Syntax(message) | Self::Unrepresentable(message) | Self::Content(_, message) => {
+                CodecError::Malformed(message)
+            }
             Self::Resource(limit) => limit.into(),
         }
     }
@@ -717,7 +739,9 @@ impl ParseError {
         match self {
             Self::Resource(error) => error,
             Self::Lex(error) => error.into_codec_error(),
-            error @ Self::Syntax { .. } => CodecError::Malformed(error.to_string()),
+            error @ (Self::Syntax { .. } | Self::Unrepresentable { .. }) => {
+                CodecError::Malformed(error.to_string())
+            }
         }
     }
 }
@@ -1669,10 +1693,11 @@ impl Parser<'_, '_, '_> {
         let Some(token) = self.current.take() else {
             return self.err("unexpected end of input");
         };
-        if let TokenKind::InvalidSource(message) = token.kind {
-            return Err(ParseError::Syntax {
-                offset: token.span.start,
-                message,
+        if let TokenKind::InvalidSource(cause, message) = token.kind {
+            let offset = token.span.start;
+            return Err(match cause {
+                Cause::Unreadable => ParseError::Syntax { offset, message },
+                Cause::Undecoded => ParseError::Unrepresentable { offset, message },
             });
         }
         self.last_end = token.span.end;
@@ -1684,12 +1709,13 @@ impl Parser<'_, '_, '_> {
             Ok(token) => token,
             Err(error) if self.defer_lexical_errors => {
                 let offset = error.offset();
+                let cause = error.cause();
                 let message = error.message.clone();
                 if let Some(resource) = error.into_resource_error() {
                     return Err(ParseError::Resource(resource));
                 }
                 Some(Token {
-                    kind: TokenKind::InvalidSource(message),
+                    kind: TokenKind::InvalidSource(cause, message),
                     span: offset..offset,
                 })
             }

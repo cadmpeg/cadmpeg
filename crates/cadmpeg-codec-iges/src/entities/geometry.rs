@@ -24,6 +24,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -814,6 +815,33 @@ impl TransformFailure {
             _ => None,
         }
     }
+
+    /// The cause of the give-up of an entity that this failure keeps from
+    /// its placement. A Type 124 coordinate-system form 10, 11, or 12, the depth cap, and
+    /// a placement that the decoder cannot compute in finite numbers are
+    /// forms the decoder does not decode; the others break the format.
+    pub(crate) fn cause(&self) -> Cause {
+        match self {
+            Self::WrongTypeForm {
+                entity_type: 124,
+                form: 10..=12,
+                ..
+            } => Cause::Undecoded,
+            Self::Depth
+            | Self::FirstAxis(_)
+            | Self::SecondAxis(_)
+            | Self::NonFiniteScaled(_)
+            | Self::NonFiniteComposed(_) => Cause::Undecoded,
+            Self::Literal(_)
+            | Self::MissingEntry(_)
+            | Self::WrongTypeForm { .. }
+            | Self::MissingParameters(_)
+            | Self::NonNumericCoefficient { .. }
+            | Self::NonFiniteCoefficient(_)
+            | Self::NotOrthonormal(_)
+            | Self::WrongDeterminant { .. } => Cause::Unreadable,
+        }
+    }
 }
 
 impl TransformResolutionError {
@@ -1301,7 +1329,7 @@ pub(super) fn admit<T>(
     match result {
         Ok(value) => Some(value),
         Err(message) => {
-            super::push_geometry_loss(losses, entry, format_args!("{message}"));
+            super::push_geometry_loss(losses, entry, Cause::Undecoded, format_args!("{message}"));
             None
         }
     }
@@ -1451,6 +1479,7 @@ pub(crate) fn project_geometry(
             push_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!(
                     "Entity Use Flag {:02} is outside the effective specification family",
                     entry.status.use_flag_code()
@@ -1459,7 +1488,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         if !base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table) {
-            super::push_geometry_loss(&mut losses, entry, format_args!(
+            super::push_geometry_loss(&mut losses, entry, Cause::Unreadable, format_args!(
                     "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
                     entry.status.use_flag_code()
                 ));
@@ -1517,6 +1546,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -1526,6 +1556,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("direction components are not numeric"),
             );
             continue;
@@ -1535,6 +1566,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("direction is zero or non-finite"),
             );
             continue;
@@ -1543,6 +1575,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Direction Entity is not marked physically dependent"),
             );
             continue;
@@ -1564,6 +1597,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -1580,6 +1614,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("arc parameter {index} is not a finite number"),
             );
             continue;
@@ -1601,6 +1636,7 @@ pub(crate) fn project_geometry(
                     &mut losses,
                     entry,
                     message.needs(),
+                    message.cause(),
                     format_args!("{message}"),
                 );
                 continue;
@@ -1613,6 +1649,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite vector"),
             );
             continue;
@@ -1624,6 +1661,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite vector"),
             );
             continue;
@@ -1639,6 +1677,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("affine placement does not preserve circular geometry"),
             );
             continue;
@@ -1648,6 +1687,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -1657,6 +1697,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -1665,6 +1706,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -1680,6 +1722,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("arc start point equals its center"),
             );
             continue;
@@ -1694,6 +1737,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("arc placement collapses its plane"),
             );
             continue;
@@ -1707,6 +1751,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("arc start and terminate points have different radii"),
             );
             continue;
@@ -1718,6 +1763,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("arc terminate point equals its center"),
             );
             continue;
@@ -1814,6 +1860,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -1823,6 +1870,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("X, Y, or Z is not numeric"),
             );
             continue;
@@ -1847,6 +1895,7 @@ pub(crate) fn project_geometry(
                     &mut losses,
                     entry,
                     message.needs(),
+                    message.cause(),
                     format_args!("{message}"),
                 );
                 continue;
@@ -1857,6 +1906,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -1897,6 +1947,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -1906,6 +1957,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("X or Y reference coordinate is not numeric"),
             );
             continue;
@@ -1914,6 +1966,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("X or Y reference coordinate is not finite"),
             );
             continue;
@@ -1922,6 +1975,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("X or Y reference coordinate is not finite"),
             );
             continue;
@@ -1968,6 +2022,7 @@ pub(crate) fn project_geometry(
                     &mut losses,
                     entry,
                     message.needs(),
+                    message.cause(),
                     format_args!("{message}"),
                 );
                 continue;
@@ -1979,6 +2034,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -2019,6 +2075,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -2035,6 +2092,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("endpoint coordinate {index} is not a finite number"),
             );
             continue;
@@ -2056,6 +2114,7 @@ pub(crate) fn project_geometry(
                     &mut losses,
                     entry,
                     message.needs(),
+                    message.cause(),
                     format_args!("{message}"),
                 );
                 continue;
@@ -2067,6 +2126,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -2077,6 +2137,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("placement produces a non-finite point"),
             );
             continue;
@@ -2087,6 +2148,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("transformed endpoints are coincident or non-finite"),
             );
             continue;
@@ -2167,6 +2229,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("Parameter Data record is missing"),
             );
             continue;
@@ -2175,6 +2238,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("upper control-point index K is invalid"),
             );
             continue;
@@ -2186,6 +2250,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("basis degree M is invalid"),
             );
             continue;
@@ -2195,6 +2260,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("control-point count is smaller than degree plus one"),
             );
             continue;
@@ -2217,6 +2283,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("control-point count overflows"),
             );
             continue;
@@ -2225,18 +2292,29 @@ pub(crate) fn project_geometry(
             .checked_add(degree_usize)
             .and_then(|value| value.checked_add(1))
         else {
-            super::push_geometry_loss(&mut losses, entry, format_args!("knot count overflows"));
+            super::push_geometry_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("knot count overflows"),
+            );
             continue;
         };
         let knot_start = 7_usize;
         let Some(weight_start) = knot_start.checked_add(knot_count) else {
-            super::push_geometry_loss(&mut losses, entry, format_args!("weight offset overflows"));
+            super::push_geometry_loss(
+                &mut losses,
+                entry,
+                Cause::Unreadable,
+                format_args!("weight offset overflows"),
+            );
             continue;
         };
         let Some(pole_start) = weight_start.checked_add(control_count) else {
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("control-point offset overflows"),
             );
             continue;
@@ -2245,6 +2323,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("control-point value count overflows"),
             );
             continue;
@@ -2253,6 +2332,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("parameter-range offset overflows"),
             );
             continue;
@@ -2267,6 +2347,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("knot vector is truncated or non-finite"),
             );
             continue;
@@ -2278,6 +2359,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("knot vector is decreasing"),
             );
             continue;
@@ -2286,6 +2368,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("weight vector is truncated or non-finite"),
             );
             continue;
@@ -2298,6 +2381,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("weights are not strictly positive"),
             );
             continue;
@@ -2346,6 +2430,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("control-point vector is truncated or non-finite"),
             );
             continue;
@@ -2354,6 +2439,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("parameter range is missing or non-finite"),
             );
             continue;
@@ -2389,6 +2475,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Unreadable,
                 format_args!("parameter range lies outside the spline knot domain"),
             );
             continue;
@@ -2409,6 +2496,7 @@ pub(crate) fn project_geometry(
                     &mut losses,
                     entry,
                     message.needs(),
+                    message.cause(),
                     format_args!("{message}"),
                 );
                 continue;
@@ -2428,6 +2516,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("transformed control-point vector is non-finite"),
             );
             continue;
@@ -2496,6 +2585,7 @@ pub(crate) fn project_geometry(
                     super::push_geometry_loss(
                         &mut losses,
                         entry,
+                        Cause::Undecoded,
                         format_args!("spline cardinalities are inconsistent: {error}"),
                     );
                     continue;
@@ -2508,6 +2598,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("spline start point cannot be evaluated"),
             );
             continue;
@@ -2519,6 +2610,7 @@ pub(crate) fn project_geometry(
             super::push_geometry_loss(
                 &mut losses,
                 entry,
+                Cause::Undecoded,
                 format_args!("spline end point cannot be evaluated"),
             );
             continue;

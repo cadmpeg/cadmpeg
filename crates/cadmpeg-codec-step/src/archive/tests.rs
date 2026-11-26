@@ -1294,7 +1294,7 @@ fn zip_root_parse_obeys_caller_recursion_ceiling() {
         losses
             .iter()
             .filter(|loss| {
-                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                     && loss.message.contains("RecursionDepth")
             })
             .count()
