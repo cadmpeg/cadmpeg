@@ -92,8 +92,9 @@ pub(crate) fn write_semantic(
             &native.design_configurations,
             &configuration_targets(target, native),
         )? {
-            return Err(CodecError::Malformed(
-                "neutral F3D configurations must equal the projection of native configuration tables"
+            return Err(CodecError::NotImplemented(
+                "the neutral configurations differ from the projection of the configuration \
+                 tables, and the patch carries the configuration tables as stored"
                     .into(),
             ));
         }

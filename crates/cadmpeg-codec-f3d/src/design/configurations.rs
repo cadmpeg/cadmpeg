@@ -420,6 +420,37 @@ fn project_row(
     Ok(configuration)
 }
 
+/// Project the configuration tables of `native` into `model` and reconcile
+/// the active configuration with the features. A row copies the definition
+/// and dependencies of each feature it states, so this runs after every
+/// decode pass that rewrites a feature.
+pub(crate) fn attach(
+    native: &crate::native::F3dNative,
+    model: &mut cadmpeg_ir::document::Model,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let mut configurations = crate::design::decode::record::recover_partial(
+        project(
+            &native.design_configurations,
+            &ConfigurationTargets {
+                parameters: &native.design_parameters,
+                owners: &native.design_parameter_owners,
+                scopes: &native.design_parameter_scopes,
+                neutral_parameters: &model.parameters,
+                neutral_features: &model.features,
+            },
+        )
+        .map(|projection| projection.configurations),
+        losses,
+        crate::loss::F3dLossCode::ConfigurationProjectionNative,
+        "Configuration projection",
+    )?
+    .unwrap_or_default();
+    reconcile_active_configurations(&mut model.features, &mut configurations)?;
+    model.configurations = configurations;
+    Ok(())
+}
+
 /// Make the active configurations and the current feature states agree where
 /// the source leaves one of them silent. A table lists only the features it
 /// toggles, so a suppressed feature with no row keeps that state in the active

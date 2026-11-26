@@ -20,6 +20,10 @@ use crate::F3dCodec;
 
 const ENTRY: &str = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
 
+/// The reason the patch path gives for a document whose configurations
+/// differ from the projection of its configuration tables.
+const DECLINED: &str = "the patch carries the configuration tables as stored";
+
 /// `archive` decoded, with no source and no unknown native records.
 fn source_less(archive: Vec<u8>) -> cadmpeg_ir::CadIr {
     let decoded = EditableDecodeResult::from(
@@ -697,12 +701,53 @@ fn a_suppression_no_column_holds_declines_the_patch_and_is_charged() {
         &ir,
         Some(decoded.source_fidelity()),
         "f3d/writer.patch-declined",
-        "neutral F3D configurations must equal the projection of native configuration tables",
+        DECLINED,
     );
     assert!(
         report.losses.iter().any(|loss| {
             loss.code.to_string() != "f3d/writer.patch-declined"
                 && loss.message.contains(&configuration)
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
+
+/// A configuration that states a definition other than its feature's: the
+/// patch path declines, and the regenerated file charges the configuration.
+#[test]
+fn a_definition_no_column_holds_writes_and_is_charged() {
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(designed()), &DecodeOptions::default())
+            .expect("design decode"),
+    );
+    let mut ir = decoded.ir().clone();
+    let feature = ir.model.features[0].clone();
+    let id = crate::ids::neutral_configuration_id(ENTRY, "b");
+    let mut state = feature.configuration_state();
+    state.definition = cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Native {
+            kind: "Revolve".into(),
+            parameters: std::collections::BTreeMap::new(),
+        },
+    );
+    ir.model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.id == id)
+        .unwrap()
+        .feature_states
+        .insert(feature.id.clone(), state);
+    let report = crate::test_support::assert_written_with_loss(
+        &ir,
+        Some(decoded.source_fidelity()),
+        "f3d/writer.configuration-omitted",
+        id.as_str(),
+    );
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.to_string() == "f3d/writer.patch-declined" && loss.message.contains(DECLINED)
         }),
         "{:#?}",
         report.losses

@@ -263,22 +263,24 @@ fn a_decoded_definition_equal_to_the_feature_s_is_not_charged() {
     assert_eq!(outcome.losses, Vec::new());
 }
 
-/// The undecided feature 0 of [`natives`] (suppression `None`, or a sketch)
-/// and the losses of a write of [`documents`], with row `c1` active in the
-/// source, whose active row suppresses that feature: `tall` made active by
-/// the configurations (`Moved`) or by the design scope (`Scoped`), or `c1`
-/// edited to suppress it (`Edited`).
-fn active_row_suppression(sketch: bool, change: Change) -> (Feature, Vec<(String, String)>) {
+/// Feature 0 of [`natives`] as [`State`] states it, and the losses of a
+/// write of [`documents`], with row `c1` active in the source, whose active
+/// row suppresses that feature: `tall` made active by the configurations
+/// (`Moved`) or by the design scope (`Scoped`), or `c1` edited to suppress
+/// it (`Edited`).
+fn active_row_suppression(state: State, change: Change) -> (Feature, Vec<(String, String)>) {
     let mut natives = natives();
-    if sketch {
-        natives.neutral_features[0].suppressed = Some(false);
-        natives.neutral_features[0]
-            .evaluation
-            .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            }));
-    } else {
-        natives.neutral_features[0].suppressed = None;
+    match state {
+        State::Undecided => natives.neutral_features[0].suppressed = None,
+        State::Sketch => {
+            natives.neutral_features[0].suppressed = Some(false);
+            natives.neutral_features[0]
+                .evaluation
+                .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                }));
+        }
+        State::Decided => natives.neutral_features[0].suppressed = Some(false),
     }
     let feature = natives.neutral_features[0].clone();
     let mut documents = documents();
@@ -330,19 +332,34 @@ enum Change {
     Edited,
 }
 
+/// The current state of the feature of [`active_row_suppression`]: a
+/// suppression of `None`, a Sketch, or a feature that is not suppressed.
+#[derive(Debug, Clone, Copy)]
+enum State {
+    Undecided,
+    Sketch,
+    Decided,
+}
+
 #[test]
 fn a_feature_the_written_active_row_suppresses_is_charged() {
-    for sketch in [false, true] {
+    for state in [State::Undecided, State::Sketch, State::Decided] {
         for change in [Change::Moved, Change::Scoped, Change::Edited] {
-            let (feature, losses) = active_row_suppression(sketch, change);
-            assert_eq!(losses.len(), 1, "{sketch} {change:?}: {losses:#?}");
-            assert_eq!(losses[0].0, "export/value.unwritable");
+            let (feature, losses) = active_row_suppression(state, change);
+            assert_eq!(losses.len(), 1, "{state:?} {change:?}: {losses:#?}");
+            let (code, message) = &losses[0];
+            assert_eq!(code, "export/value.unwritable");
             assert!(
-                losses[0].1.contains(&format!(
+                message.contains(&format!(
                     "{} stated {{\"kind\":\"active\",\"outputs\":[]}}, reads back {{\"kind\":\"suppressed\"}}",
                     feature.id
                 )),
-                "{sketch} {change:?}: {losses:#?}"
+                "{state:?} {change:?}: {losses:#?}"
+            );
+            assert_eq!(
+                message.contains("the active row of the written configuration table states"),
+                matches!(state, State::Decided),
+                "{state:?} {change:?}: {message}"
             );
         }
     }
@@ -953,4 +970,157 @@ fn a_length_is_written_in_the_centimetres_nearest_the_length() {
         evaluated(&parameter, &ParameterValue::Integer(3), &natives.targets()),
         None
     );
+}
+
+/// A part whose two components, named at records 10 and 30, hold Sketch
+/// scopes 20 and 40 that bind one sketch no collection lists, with a table
+/// whose column `F` names scope 40 and whose row `a` is active. The owner
+/// pass keeps that sketch native in the feature of scope 40, and the
+/// decoder's configurations state the definition the pass leaves.
+fn owner_conflict() -> (
+    crate::native::F3dNative,
+    CadIr,
+    Vec<LossNote>,
+    Vec<DesignConfiguration>,
+) {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use crate::records::recipes::DesignComponentNamingSpace;
+    use cadmpeg_ir::features::SketchFeatureBinding;
+
+    let space = |record: u64, uuid: &str| DesignComponentNamingSpace {
+        id: format!("f3d:Design/BulkStream.dat:component-naming-space#{record}"),
+        byte_offset: 0,
+        component_record_index: record,
+        context_uuid: uuid.to_owned().try_into().unwrap(),
+        context_uuid_offset: 0,
+        name: None,
+        name_offset: None,
+    };
+    let mut table = DesignConfiguration::try_new(
+        ENTRY.into(),
+        DesignConfigurationKind::Table,
+        table_document(
+            "1",
+            &[("F", object_target("40", "DcFeature"))],
+            &[
+                ("a", "A", vec![("F", bool_cell(true))]),
+                ("b", "B", vec![("F", bool_cell(false))]),
+            ],
+            &["a", "b"],
+        )
+        .as_object()
+        .unwrap()
+        .clone(),
+    )
+    .unwrap();
+    table
+        .set_active_row(DesignConfigurationActiveRow {
+            record_index: 349,
+            table_id: "1".into(),
+            row_id: "a".into(),
+        })
+        .unwrap();
+    let native = crate::native::F3dNative {
+        design_component_naming_spaces: vec![
+            space(10, "11111111-1111-1111-1111-111111111111"),
+            space(30, "22222222-2222-2222-2222-222222222222"),
+        ],
+        design_parameter_scopes: [20, 40]
+            .into_iter()
+            .map(|record| {
+                DesignParameterScope::empty(
+                    &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{record}"),
+                    DesignFeatureKind::Extrude,
+                    record,
+                )
+            })
+            .collect(),
+        design_configurations: vec![table],
+        ..crate::native::F3dNative::default()
+    };
+    let mut ir = CadIr::empty();
+    for space in &native.design_component_naming_spaces {
+        ir.model.product_definitions.push(
+            cadmpeg_core::serde_erase::json::from_value(json!({
+                "id": crate::ids::neutral_component_id(&space.context_uuid), "kind": "part",
+                "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [],
+                "instance_bodies": [], "representations": [], "bodies": []
+            }))
+            .unwrap(),
+        );
+    }
+    let sketch: cadmpeg_ir::sketches::Sketch = cadmpeg_core::serde_erase::json::from_value(json!({
+        "id": "test:model:sketch#profile",
+        "placement": {"kind": "unresolved"},
+        "profiles": []
+    }))
+    .unwrap();
+    for scope in &native.design_parameter_scopes {
+        let mut feature = neutral_feature(scope, "f3d:model:feature#origin");
+        feature.ordinal = u64::from(scope.record_index);
+        feature.native_ref = Some(scope.id.clone());
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch.id.clone())),
+            }));
+        ir.model.features.push(feature);
+    }
+    ir.model.sketches.push(sketch);
+    let mut losses = Vec::new();
+    let archive = crate::test_support::zip_test::f3d_with_configurations(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        &[],
+    );
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        crate::test_support::with_decode_context(|ctx| {
+            crate::decode::attach_design(ctx, scan, &native, &mut ir, &mut losses)
+        })
+    })
+    .unwrap();
+    let documents = native.design_configurations.clone();
+    (native, ir, losses, documents)
+}
+
+#[test]
+fn configurations_decoded_after_an_owner_conflict_are_written_as_stated() {
+    let (native, ir, losses, documents) = owner_conflict();
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::ScopeSketchOwnerMismatch.kind()),
+        "{losses:#?}"
+    );
+    let conflicted = &ir.model.features[1];
+    assert!(matches!(
+        conflicted.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+        })
+    ));
+    for edited in [false, true] {
+        let mut features = ir.model.features.clone();
+        if edited {
+            features[0].name = Some("Renamed".into());
+        }
+        let natives = Natives {
+            parameters: Vec::new(),
+            owners: Vec::new(),
+            scopes: native.design_parameter_scopes.clone(),
+            neutral_parameters: ir.model.parameters.clone(),
+            neutral_features: features,
+        };
+        assert!(
+            projects(&ir.model.configurations, &documents, &natives.targets()).unwrap(),
+            "edited {edited}: {:#?}",
+            ir.model.configurations
+        );
+        let decoded = reconciled(&natives, &documents);
+        let (written, losses) = write(&documents, &decoded, &ir.model.configurations, &natives);
+        assert!(
+            matches!(written.documents, Cow::Borrowed(_)),
+            "edited {edited}"
+        );
+        assert!(losses.is_empty(), "edited {edited}: {losses:#?}");
+    }
 }
