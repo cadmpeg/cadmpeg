@@ -92,16 +92,13 @@ fn an_error_that_ends_the_session_ends_the_decode() {
     assert!(matches!(error, CodecError::Io(_)));
 }
 
-/// A design record that restates a model feature or parameter under its id
-/// takes the exactness of that model record, with each model field override
-/// moved to the design field that restates it.
-#[test]
-fn restated_exactness_names_the_fields_of_the_design_record() {
+/// The fixture document with a model feature of the id of its design fillet
+/// and a design and a model parameter `width`, each with no exactness.
+fn restated_document() -> CadIr {
     use crate::design::units::{Quantity, ValueKind};
     use crate::features::parameters::DesignParameter as ModelParameter;
     use crate::features::selections::DistinctMembers;
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
-    use crate::provenance::Exactness;
     use crate::validate::design::fixture;
 
     let mut ir = fixture::document();
@@ -139,52 +136,138 @@ fn restated_exactness_names_the_fields_of_the_design_record() {
         pmi: None,
         native_ref: None,
     });
+    ir
+}
+
+const FILLET: &str = "test:design:feature#fillet";
+const WIDTH: &str = "test:design:parameter#width";
+
+/// Restates `marks` (id, field, exactness) over entity exactness `entities`
+/// and returns, for each of `ids`, its entity exactness and field overrides.
+fn restated(
+    entities: &[(&str, crate::provenance::Exactness)],
+    marks: &[(&str, &str, crate::provenance::Exactness)],
+    ids: &[&str],
+) -> Vec<(
+    crate::provenance::Exactness,
+    Vec<(String, crate::provenance::Exactness)>,
+)> {
+    let ir = restated_document();
     let mut annotations = crate::AnnotationBuilder::new();
-    annotations.exactness("test:design:feature#fillet", Exactness::Inferred);
-    annotations.exactness("test:design:parameter#width", Exactness::Derived);
-    for (id, field) in [
-        ("test:design:feature#fillet", "source_content"),
-        ("test:design:feature#fillet", "dependencies"),
-        ("test:design:parameter#width", "owner"),
-        ("test:design:parameter#width", "ordinal"),
-        ("test:design:parameter#width", "properties"),
-        ("test:design:parameter#width", "expression"),
-        ("test:design:feature#extrude", "placement"),
-    ] {
-        annotations.derived(id, field).unwrap();
+    for (id, exactness) in entities {
+        annotations.exactness(id, *exactness);
     }
-
+    for (id, field, exactness) in marks {
+        annotations.field_exactness(id, *field, *exactness).unwrap();
+    }
     super::restate_exactness(&ir, &mut annotations).unwrap();
-
     let annotations = annotations.build();
-    let stated = |id: &str| {
-        let note = &annotations.exactness()[id];
-        let fields = note
-            .fields()
-            .iter()
-            .map(|(field, exactness)| (field.to_string(), *exactness))
-            .collect::<Vec<_>>();
-        (note.entity(), fields)
-    };
-    let derived = |fields: &[&str]| {
-        fields
-            .iter()
-            .map(|field| ((*field).to_owned(), Exactness::Derived))
-            .collect::<Vec<_>>()
-    };
+    ids.iter()
+        .map(|id| {
+            annotations.exactness().get(*id).map_or_else(
+                || (crate::provenance::Exactness::ByteExact, Vec::new()),
+                |note| {
+                    let fields = note
+                        .fields()
+                        .iter()
+                        .map(|(field, exactness)| (field.to_string(), *exactness))
+                        .collect();
+                    (note.entity(), fields)
+                },
+            )
+        })
+        .collect()
+}
+
+fn fields(
+    marks: &[(&str, crate::provenance::Exactness)],
+) -> Vec<(String, crate::provenance::Exactness)> {
+    marks
+        .iter()
+        .map(|(field, exactness)| ((*field).to_owned(), *exactness))
+        .collect()
+}
+
+/// Each model mark moves to the stated design field that restates it. A
+/// model field that no stated design field restates leaves: `owner` (the
+/// design parameter states no owner), `ordinal` and `source_content`.
+#[test]
+fn restated_exactness_names_the_fields_of_the_design_record() {
+    use crate::provenance::Exactness::{ByteExact, Derived, Inferred};
+    let [fillet, width] = <[_; 2]>::try_from(restated(
+        &[(FILLET, Inferred)],
+        &[
+            (FILLET, "source_content", Derived),
+            (WIDTH, "owner", Derived),
+            (WIDTH, "ordinal", Derived),
+            (WIDTH, "properties", Derived),
+            (WIDTH, "value", Derived),
+        ],
+        &[FILLET, WIDTH],
+    ))
+    .unwrap();
+    assert_eq!(fillet, (Inferred, Vec::new()));
     assert_eq!(
-        stated("test:design:feature#fillet"),
-        (Exactness::Inferred, derived(&["definition"]))
-    );
-    assert_eq!(
-        stated("test:design:parameter#width"),
+        width,
         (
-            Exactness::Derived,
-            derived(&["definition", "kind", "scope"])
+            ByteExact,
+            fields(&[("definition", Derived), ("kind", Derived)])
         )
     );
+}
+
+/// A design field restating several model fields takes the least exact of
+/// them, and a model field with no mark of its own counts at the entity
+/// exactness.
+#[test]
+fn a_design_field_takes_the_least_exact_of_the_model_fields_it_restates() {
+    use crate::provenance::Exactness::{ByteExact, Derived, Inferred};
+    let [fillet, width] = <[_; 2]>::try_from(restated(
+        &[(FILLET, Inferred)],
+        &[
+            (FILLET, "dependencies", Derived),
+            (WIDTH, "expression", Derived),
+            (WIDTH, "dependencies", Inferred),
+            (WIDTH, "properties", ByteExact),
+        ],
+        &[FILLET, WIDTH],
+    ))
+    .unwrap();
+    assert_eq!(fillet, (Inferred, Vec::new()), "definition stays inferred");
+    assert_eq!(width, (ByteExact, fields(&[("definition", Inferred)])));
+}
+
+/// A mark already on a design field is kept: on a field that restates no
+/// model field as it is, and on one that does at the least exact of the mark
+/// and the model fields. A design record with no model record keeps its note.
+#[test]
+fn restated_exactness_keeps_the_marks_of_design_fields() {
+    use crate::provenance::Exactness::{Derived, Inferred};
+    let extrude = "test:design:feature#extrude";
+    let [fillet, width, extrude] = <[_; 3]>::try_from(restated(
+        &[],
+        &[
+            (FILLET, "placement", Inferred),
+            (FILLET, "dependencies", Derived),
+            (WIDTH, "scope", Inferred),
+            (WIDTH, "kind", Inferred),
+            (WIDTH, "properties", Derived),
+            (extrude, "placement", Inferred),
+        ],
+        &[FILLET, WIDTH, extrude],
+    ))
+    .unwrap();
     assert_eq!(
-        stated("test:design:feature#extrude").1,
-        derived(&["placement"])
+        fillet.1,
+        fields(&[("definition", Derived), ("placement", Inferred)])
     );
+    assert_eq!(
+        width.1,
+        fields(&[
+            ("definition", Derived),
+            ("kind", Inferred),
+            ("scope", Inferred)
+        ])
+    );
+    assert_eq!(extrude.1, fields(&[("placement", Inferred)]));
 }

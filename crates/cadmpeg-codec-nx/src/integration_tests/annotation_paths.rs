@@ -1,85 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Each exactness field path of a decode names a field of the record with its
-//! id in the written CADIR document (§10).
+//! The exactness of a model feature or parameter that a design record
+//! restates names the fields of the design record (§10).
 
-use std::collections::BTreeMap;
-
-use cadmpeg_core::serde_erase::json;
-use cadmpeg_ir::annotations::AnnotationTarget;
-use serde_json::Value;
+use cadmpeg_ir::Exactness;
+use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::test_om::segment_om_record_area_with_input_store_payload;
 use crate::test_support::test_prt::{composed_feature_history_prt, prt_with_named_payloads};
 
-/// The records of the neutral arenas of a written document, by id.
-fn written_records(document: &Value) -> BTreeMap<&str, &Value> {
-    let mut records = BTreeMap::new();
-    for home in ["geometry", "model", "design", "process"] {
-        let arenas = document[home]
-            .as_object()
-            .into_iter()
-            .flat_map(|home| home.values());
-        for record in arenas.filter_map(Value::as_array).flatten() {
-            if let Some(id) = record.get("id").and_then(Value::as_str) {
-                records.insert(id, record);
-            }
-        }
-    }
-    records
+fn fields(result: &EditableDecodeResult, id: &str) -> (Exactness, Vec<(String, Exactness)>) {
+    let note = &result.source_fidelity().annotations.exactness()[id];
+    let fields = note
+        .fields()
+        .iter()
+        .map(|(field, exactness)| (field.to_string(), *exactness))
+        .collect();
+    (note.entity(), fields)
 }
 
-fn names_a_field(mut value: &Value, path: &str) -> bool {
-    for component in path.split('.') {
-        let next = match value {
-            Value::Object(object) => object.get(component),
-            Value::Array(array) => component
-                .parse::<usize>()
-                .ok()
-                .and_then(|index| array.get(index)),
-            _ => None,
-        };
-        let Some(next) = next else {
-            return false;
-        };
-        value = next;
-    }
-    true
-}
-
+/// A history feature's derived `source_content` has no design field and
+/// leaves; the derived entity exactness stays.
 #[test]
-fn exactness_field_paths_name_fields_of_the_written_records() {
-    let mut checked = Vec::new();
-    for bytes in [
-        composed_feature_history_prt(),
-        prt_with_named_payloads(&[(
-            "/Root/UG_PART/UG_PART",
-            segment_om_record_area_with_input_store_payload(),
-        )]),
-    ] {
-        let result = super::decode(bytes);
-        let document = json::to_value(result.ir()).expect("serialize the document");
-        let records = written_records(&document);
-        for (key, note) in result.source_fidelity().annotations.exactness() {
-            let AnnotationTarget::Entity(id) = key.target() else {
-                continue;
-            };
-            let Some(record) = records.get(id) else {
-                continue;
-            };
-            for path in note.fields().keys() {
-                assert!(
-                    names_a_field(record, path.as_str()),
-                    "{id}: `{path}` names no field of {record}"
-                );
-                checked.push(format!("{id} {path}"));
-            }
-        }
-    }
-    for restated in [
-        "nx:om-entry-0:parameter#399 scope",
-        "nx:om-entry-0:parameter#399 kind",
-        "nx:om-entry-0:parameter#399 value",
-    ] {
-        assert!(checked.iter().any(|path| path == restated), "{checked:?}");
-    }
+fn a_restated_history_feature_keeps_its_entity_exactness() {
+    let result = super::decode(composed_feature_history_prt());
+    assert_eq!(
+        fields(&result, "nx:feature-history:feature#0000000000-0000000014"),
+        (Exactness::Derived, Vec::new())
+    );
+}
+
+/// The expression's derived `owner` and `ordinal` have no stated design
+/// field and leave; `properties` restates as `kind`, `unit` and
+/// `definition`.
+#[test]
+fn a_restated_expression_names_the_fields_of_its_design_parameter() {
+    let result = super::decode(prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        segment_om_record_area_with_input_store_payload(),
+    )]));
+    let derived = ["definition", "kind", "native_ref", "unit", "value"]
+        .map(|field| (field.to_owned(), Exactness::Derived));
+    assert_eq!(
+        fields(&result, "nx:om-entry-0:parameter#399"),
+        (Exactness::ByteExact, derived.to_vec())
+    );
 }
