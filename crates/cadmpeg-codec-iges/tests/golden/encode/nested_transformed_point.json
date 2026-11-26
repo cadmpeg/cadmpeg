@@ -28,6 +28,42 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "writer.global-field-not-restated",
+            "kind": "metadata_not_transferred",
+            "namespace": "iges"
+          }
+        },
+        "message": "IGES Global model space scale (field 13) changed from 5.0000000000000000D-1 to 1.0",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "writer.global-field-not-restated",
+            "kind": "metadata_not_transferred",
+            "namespace": "iges"
+          }
+        },
+        "message": "IGES Global units flag (field 14) changed from 10 to 2",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "writer.global-field-not-restated",
+            "kind": "metadata_not_transferred",
+            "namespace": "iges"
+          }
+        },
+        "message": "IGES Global units name (field 15) changed from 2HCM to 2HMM",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "arena.omitted",
             "kind": "attributes_not_transferred",
             "namespace": "export"
@@ -57,7 +93,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 3 native record(s) of `iges` arena `cards`: iges:physical:card#1, iges:physical:card#2, iges:physical:card#3; that are Global cards whose fields the semantic writer cannot restate: model space scale, units flag, units name: iges:physical:card#2, iges:physical:card#3; that are Start section cards, whose text the semantic writer replaces with its own: iges:physical:card#1",
+        "message": "the IGES write omits 1 native record(s) of `iges` arena `cards` that are Start section cards, whose text the semantic writer replaces with its own: iges:physical:card#1",
         "severity": "warning"
       },
       {

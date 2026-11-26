@@ -137,6 +137,8 @@ loss_codes! {
     EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
     /// The emitted Global minimum resolution exceeds the neutral declaration.
     WriterMinimumResolutionAdjusted => "writer.minimum-resolution-adjusted",
+    /// A source Global field the written Global states with another value.
+    WriterGlobalFieldNotRestated => "writer.global-field-not-restated",
     /// An unowned dependent edge was withheld.
     WriterSupportEdgeNotRepresented => "writer.support-edge-not-represented",
     /// Free-geometry points or vertices have no topology output, or an
@@ -231,6 +233,7 @@ impl IgesLossCode {
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
             | Self::WriterMinimumResolutionAdjusted
+            | Self::WriterGlobalFieldNotRestated
             | Self::WriterSupportGeometryNotRepresented
             | Self::WriterSupportEdgeNotRepresented
             | Self::WriterFreeGeometryOmitted
@@ -312,9 +315,9 @@ impl IgesLossCode {
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
-            Self::WriterMinimumResolutionAdjusted | Self::WriterBodyNameNotRepresented => {
-                LossTaxonomy::MetadataNotTransferred
-            }
+            Self::WriterMinimumResolutionAdjusted
+            | Self::WriterGlobalFieldNotRestated
+            | Self::WriterBodyNameNotRepresented => LossTaxonomy::MetadataNotTransferred,
             Self::WriterBodyColorNotRepresented | Self::WriterBodyOpacityNotRepresented => {
                 LossTaxonomy::MaterialNotTransferred
             }
@@ -427,6 +430,7 @@ mod tests {
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "writer.minimum-resolution-adjusted",
+                "writer.global-field-not-restated",
                 "writer.support-edge-not-represented",
                 "writer.free-geometry-omitted",
                 "writer.duplicate-carrier-omitted",

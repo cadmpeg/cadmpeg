@@ -422,6 +422,7 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
             real(0.001),
             real(1000.0),
             &crate::writer::source_global::GlobalRestatement::default(),
+            &mut Vec::new(),
         );
         let fixture = fixed_ascii_with_global(&global_bytes);
         let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
@@ -986,6 +987,7 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
         IgesVersion::V5_3,
         0.001,
         &crate::writer::source_global::GlobalRestatement::default(),
+        &mut Vec::new(),
     )
     .is_ok());
 }

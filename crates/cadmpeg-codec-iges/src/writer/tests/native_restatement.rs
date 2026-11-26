@@ -316,18 +316,33 @@ fn global_cards(ir: &CadIr) -> Vec<String> {
     cards
 }
 
-/// The loss message that drops the Global cards of `ir` for the named fields.
-fn global_drop(ir: &CadIr, fields: &str) -> String {
-    format!(
-        "that are Global cards whose fields the semantic writer cannot restate: {fields}: {}",
-        global_cards(ir).join(", ")
-    )
+/// The written Global section restates the source Global cards, so a write
+/// of `ir` at `version` declares each of them Regenerated.
+fn assert_global_regenerated(ir: &CadIr, version: IgesVersion) {
+    let native = dispositions(ir, version);
+    for card in global_cards(ir) {
+        assert_eq!(
+            native.disposition("iges", "cards", &card),
+            NativeDisposition::Regenerated,
+            "{card}"
+        );
+    }
+}
+
+/// The loss messages that charge a source Global field the write states
+/// with another value.
+fn global_field_charges(messages: &[String]) -> Vec<&str> {
+    messages
+        .iter()
+        .map(String::as_str)
+        .filter(|message| message.starts_with("IGES Global ") && message.contains(" (field "))
+        .collect()
 }
 
 /// A file at model scale 0.5 in centimetres reads back from the write at the
 /// same millimetre point and line width. The writer states lengths at model
-/// scale 1 in millimetres, so the Global cards that state the source scale
-/// and unit are dropped.
+/// scale 1 in millimetres, and charges each source field that states the
+/// scale and the unit with its source and written values.
 #[test]
 fn a_scaled_source_reads_back_at_the_same_lengths() {
     let ir = decode(NESTED_TRANSFORMED_POINT);
@@ -339,17 +354,14 @@ fn a_scaled_source_reads_back_at_the_same_lengths() {
         &point_positions(&ir).concat(),
     );
     assert_close(&line_widths_mm(&read_back), &line_widths_mm(&ir));
-    let native = dispositions(&ir, IgesVersion::V5_3);
-    for card in global_cards(&ir) {
-        assert_eq!(
-            native.disposition("iges", "cards", &card),
-            NativeDisposition::Dropped
-        );
-    }
-    let reason = global_drop(&ir, "model space scale, units flag, units name");
-    assert!(
-        messages.iter().any(|message| message.contains(&reason)),
-        "{messages:#?}"
+    assert_global_regenerated(&ir, IgesVersion::V5_3);
+    assert_eq!(
+        global_field_charges(&messages),
+        [
+            "IGES Global model space scale (field 13) changed from 5.0000000000000000D-1 to 1.0",
+            "IGES Global units flag (field 14) changed from 10 to 2",
+            "IGES Global units name (field 15) changed from 2HCM to 2HMM",
+        ]
     );
 }
 
@@ -376,22 +388,15 @@ fn the_written_global_restates_the_source_fields() {
     assert_close(&point_positions(&read_back).concat(), &[0.4, 0.8, 1.2]);
     assert_close(&point_positions(&ir).concat(), &[0.4, 0.8, 1.2]);
     assert_close(&line_widths_mm(&read_back), &line_widths_mm(&ir));
-    let native = dispositions(&ir, IgesVersion::V5_3);
-    for card in global_cards(&ir) {
-        assert_eq!(
-            native.disposition("iges", "cards", &card),
-            NativeDisposition::Dropped
-        );
-    }
-    let reason = global_drop(&ir, "model space scale");
-    assert!(
-        messages.iter().any(|message| message.contains(&reason)),
-        "{messages:#?}"
+    assert_global_regenerated(&ir, IgesVersion::V5_3);
+    assert_eq!(
+        global_field_charges(&messages),
+        ["IGES Global model space scale (field 13) changed from 2.5000000000000000D0 to 1.0"]
     );
 }
 
 /// A Global at model scale 1 in millimetres whose every field the writer
-/// restates leaves its Global cards Regenerated.
+/// restates is charged nothing.
 #[test]
 fn a_restated_global_keeps_its_cards() {
     let global = b"1H,,1H;,6Hwidget,5Hw.igs,3Hsys,3H9.9,32,38,6,308,15,3Hrcv,1.0,2,2HMM,4,0.5,\
@@ -399,19 +404,8 @@ fn a_restated_global_keeps_its_cards() {
     let ir = decode(&point_file(global));
     let (bytes, messages) = write(&ir, IgesVersion::V5_3);
     assert_close(&line_widths_mm(&decode(&bytes)), &line_widths_mm(&ir));
-    let native = dispositions(&ir, IgesVersion::V5_3);
-    for card in global_cards(&ir) {
-        assert_eq!(
-            native.disposition("iges", "cards", &card),
-            NativeDisposition::Regenerated
-        );
-    }
-    assert!(
-        messages
-            .iter()
-            .all(|message| !message.contains("Global cards")),
-        "{messages:#?}"
-    );
+    assert_global_regenerated(&ir, IgesVersion::V5_3);
+    assert!(global_field_charges(&messages).is_empty(), "{messages:#?}");
 }
 
 /// A source field-18 date is the date the written Global states.
@@ -426,19 +420,18 @@ fn a_stated_generation_date_is_restated() {
 }
 
 /// A source value the output version does not admit is written as the
-/// writer's value, which the output version admits, and the Global cards are
-/// dropped for that field: a relative line width 0 of an IGES 5.0 source in
-/// an IGES 5.3 write, and 40000 line weight gradations in an IGES 4.0 write.
+/// writer's value, which the output version admits, and the field is charged
+/// with both values: a relative line width 0 of an IGES 5.0 source in an
+/// IGES 5.3 write, and 40000 line weight gradations in an IGES 4.0 write.
 #[test]
 fn a_global_value_the_output_version_rejects_is_replaced_and_named() {
     let relative = b"1H,,1H;,,,,,32,38,6,308,15,,1.0,2,2HMM,4,0.0,,0.001,1000.0,,,9,0;";
     let ir = decode(&point_file(relative));
     let (bytes, messages) = write(&ir, IgesVersion::V5_3);
     line_widths_mm(&decode(&bytes));
-    let reason = global_drop(&ir, "maximum line width");
-    assert!(
-        messages.iter().any(|message| message.contains(&reason)),
-        "{messages:#?}"
+    assert_eq!(
+        global_field_charges(&messages),
+        ["IGES Global maximum line width (field 17) changed from 0 to 1.0"]
     );
 
     let fine = b"1H,,1H;,,,,,32,38,6,308,15,,1.0,2,2HMM,40000,0.5,,0.001,1000.0,,,11,0;";
@@ -446,38 +439,43 @@ fn a_global_value_the_output_version_rejects_is_replaced_and_named() {
     assert_eq!(line_widths_mm(&ir).len(), 40000);
     let (bytes, messages) = write(&ir, IgesVersion::V4_0);
     line_widths_mm(&decode(&bytes));
-    assert!(
-        messages
-            .iter()
-            .any(|message| message.contains("cannot restate: maximum line weight gradations")),
-        "{messages:#?}"
+    assert_eq!(
+        global_field_charges(&messages),
+        ["IGES Global maximum line weight gradations (field 16) changed from 40000 to 1"]
     );
 }
 
-/// A source field the output version has no place for drops the Global cards,
-/// with a reason that names it: IGES 4.0 holds no model modification date or
-/// application protocol, and dates with two-digit years only. The fields the
-/// output holds are restated.
+/// A source field the output version has no place for is charged with its
+/// source value: IGES 4.0 holds no model modification date or application
+/// protocol, and dates with two-digit years only. The fields the output
+/// holds are restated, and the Global cards are Regenerated.
 #[test]
-fn a_global_field_the_output_version_lacks_drops_the_global_cards() {
+fn a_global_field_the_output_version_lacks_is_charged() {
     let ir = decode(&point_file(RESTATED_GLOBAL));
     let (bytes, messages) = write(&ir, IgesVersion::V4_0);
     let written = global_fields(&decode(&bytes));
     assert_eq!(written[20], SourceField::Text(b"Ada".to_vec()));
-    let native = dispositions(&ir, IgesVersion::V4_0);
-    for card in global_cards(&ir) {
-        assert_eq!(
-            native.disposition("iges", "cards", &card),
-            NativeDisposition::Dropped
-        );
-    }
-    let reason = global_drop(
-        &ir,
-        "model space scale, file generation date, model modification date, application protocol",
+    assert_global_regenerated(&ir, IgesVersion::V4_0);
+    let charges = global_field_charges(&messages);
+    assert_eq!(charges.len(), 4, "{charges:#?}");
+    assert_eq!(
+        charges[0],
+        "IGES Global model space scale (field 13) changed from 2.5000000000000000D0 to 1.0"
     );
     assert!(
-        messages.iter().any(|message| message.contains(&reason)),
-        "{messages:#?}"
+        charges[1].starts_with(
+            "IGES Global file generation date (field 18) changed from 15H20250102.030405 to 13H"
+        ),
+        "{charges:#?}"
+    );
+    assert_eq!(
+        charges[2..],
+        [
+            "IGES Global model modification date (field 25) changed from 15H20250607.080910 to \
+             no value: the written Global has no field 25",
+            "IGES Global application protocol (field 26) changed from 5HAP214 to no value: the \
+             written Global has no field 26",
+        ]
     );
 }
 
@@ -557,9 +555,11 @@ fn a_parameter_curve_of_a_written_shell_loop_is_regenerated() {
 }
 
 /// On the trimmed-sheet path the writer states each face of an open shell as
-/// a trimmed surface and writes no shell record.
+/// a trimmed surface and writes no shell, vertex list, or edge list record.
+/// Each line edge is a segment of the written boundary and reads back as the
+/// same line.
 #[test]
-fn an_open_shell_written_as_trimmed_surfaces_drops_its_shell_record() {
+fn an_open_shell_written_as_trimmed_surfaces_drops_its_shell_and_lists() {
     let ir = decode(EXPLICIT_OPEN_SHELL);
     let native = dispositions(&ir, IgesVersion::V5_3);
     let shell = entity(&ir, 23);
@@ -567,11 +567,19 @@ fn an_open_shell_written_as_trimmed_surfaces_drops_its_shell_record() {
         native.disposition("iges", "entities", &shell),
         NativeDisposition::Dropped
     );
-    for sequence in [15, 17, 19, 21] {
+    for sequence in [7, 9, 11, 13, 19, 21] {
         let id = entity(&ir, sequence);
         assert_eq!(
             native.disposition("iges", "entities", &id),
             NativeDisposition::Regenerated,
+            "{id}"
+        );
+    }
+    let lists = [entity(&ir, 15), entity(&ir, 17)];
+    for id in &lists {
+        assert_eq!(
+            native.disposition("iges", "entities", id),
+            NativeDisposition::Dropped,
             "{id}"
         );
     }
@@ -580,6 +588,14 @@ fn an_open_shell_written_as_trimmed_surfaces_drops_its_shell_record() {
         messages.iter().any(|message| message.contains(&format!(
             "that are shells the semantic writer writes as separate trimmed surfaces with no \
              shell record: {shell}"
+        ))),
+        "{messages:#?}"
+    );
+    assert!(
+        messages.iter().any(|message| message.contains(&format!(
+            "that are vertex or edge lists of shells the semantic writer writes as trimmed \
+             surfaces, whose boundaries state no vertex or edge list: {}",
+            lists.join(", ")
         ))),
         "{messages:#?}"
     );

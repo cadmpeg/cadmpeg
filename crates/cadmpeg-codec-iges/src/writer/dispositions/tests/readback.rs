@@ -1,6 +1,6 @@
 //! The facts a decode states, compared without record ids.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::NativeDispositions;
@@ -35,6 +35,22 @@ const NAMED_ARENAS: &[&str] = &[
 /// The relative tolerance of a number that a write and a decode restate.
 const NUMBER_TOLERANCE: f64 = 1e-9;
 
+/// The fields of a geometry record that state a native arena of their own,
+/// with that arena.
+pub(super) const ARENA_FIELDS: &[(&str, &str)] = &[("color", "display_attributes")];
+
+/// The name a write's loss gives each Global text field, by field number.
+const TEXT_FIELDS: &[(usize, &str)] = &[
+    (3, "sending product id"),
+    (4, "file name"),
+    (12, "receiving product id"),
+    (18, "file generation date"),
+    (21, "author"),
+    (22, "organization"),
+    (25, "model modification date"),
+    (26, "application protocol"),
+];
+
 /// A source decode, what its write at IGES 5.3 declares, and the decode of the
 /// written file.
 pub(super) struct Checked {
@@ -42,6 +58,8 @@ pub(super) struct Checked {
     pub(super) native: NativeDispositions,
     pub(super) output: CadIr,
     pub(super) output_global: Option<GlobalFacts>,
+    /// The message of each loss the write charges.
+    pub(super) losses: Vec<String>,
 }
 
 fn decode(file: &[u8]) -> Option<CadIr> {
@@ -68,6 +86,11 @@ pub(super) fn write_and_read_back(file: &[u8]) -> Result<Checked, &'static str> 
         native,
         output,
         output_global,
+        losses: synthesis
+            .losses
+            .into_iter()
+            .map(|loss| loss.message)
+            .collect(),
     })
 }
 
@@ -113,13 +136,26 @@ pub(super) fn without_entity(file: &[u8], sequence: u32) -> Option<Vec<u8>> {
 pub(super) struct Fact {
     arena: String,
     value: Value,
+    /// The id of the record and of each record written in its value.
+    records: BTreeSet<String>,
 }
 
-/// The facts of one decode, by record id.
-pub(super) struct Facts(BTreeMap<String, Fact>);
+impl Fact {
+    /// The id of the record and of each record written in its value.
+    pub(super) fn records(&self) -> impl Iterator<Item = &str> {
+        self.records.iter().map(String::as_str)
+    }
+}
+
+/// The facts of one decode, by record id, without the record fields
+/// `removed`.
+pub(super) struct Facts {
+    facts: BTreeMap<String, Fact>,
+    removed: Vec<&'static str>,
+}
 
 impl Facts {
-    pub(super) fn of(ir: &CadIr) -> Self {
+    pub(super) fn of(ir: &CadIr, removed: &[&'static str]) -> Self {
         let geometry = serde_json::to_value(&ir.geometry).unwrap();
         let mut records = BTreeMap::new();
         for (arena, values) in geometry.as_object().unwrap() {
@@ -132,29 +168,38 @@ impl Facts {
         let mut facts = BTreeMap::new();
         for (id, (arena, record)) in &records {
             if FACT_ARENAS.contains(arena) {
-                let mut named = vec![id.as_str()];
-                let value = stated(record, &records, &mut named);
+                let mut inliner = Inliner {
+                    records: &records,
+                    removed,
+                    named: vec![id.as_str()],
+                    reached: BTreeSet::from([id.clone()]),
+                };
+                let value = inliner.stated(record);
                 facts.insert(
                     id.clone(),
                     Fact {
                         arena: (*arena).to_owned(),
                         value,
+                        records: inliner.reached,
                     },
                 );
             }
         }
-        Self(facts)
+        Self {
+            facts,
+            removed: removed.to_vec(),
+        }
     }
 
     /// The facts of this decode that the decode of `file` does not state
     /// with the same id and value. A file the decoder refuses states none.
     pub(super) fn changed_in(&self, file: &[u8]) -> BTreeMap<String, Fact> {
-        let other = decode(file).map_or_else(|| Self(BTreeMap::new()), |ir| Self::of(&ir));
-        self.0
+        let other =
+            decode(file).map_or_else(BTreeMap::new, |ir| Self::of(&ir, &self.removed).facts);
+        self.facts
             .iter()
             .filter(|(id, fact)| {
                 other
-                    .0
                     .get(*id)
                     .is_none_or(|other| other.arena != fact.arena || other.value != fact.value)
             })
@@ -164,7 +209,7 @@ impl Facts {
 
     /// The number of records of this decode that state `fact`.
     pub(super) fn count(&self, fact: &Fact) -> usize {
-        self.0
+        self.facts
             .values()
             .filter(|own| own.arena == fact.arena && same(&own.value, &fact.value))
             .count()
@@ -177,47 +222,54 @@ impl Facts {
         ids: impl IntoIterator<Item = &'a String>,
     ) -> usize {
         ids.into_iter()
-            .filter_map(|id| self.0.get(id))
+            .filter_map(|id| self.facts.get(id))
             .filter(|own| own.arena == fact.arena && same(&own.value, &fact.value))
             .count()
     }
 }
 
-fn stated<'a>(
-    value: &'a Value,
+/// Writes the records a geometry record names in place of their names.
+struct Inliner<'a> {
     records: &'a BTreeMap<String, (&'a str, &'a Value)>,
-    named: &mut Vec<&'a str>,
-) -> Value {
-    match value {
-        Value::Object(fields) => Value::Object(
-            fields
-                .iter()
-                .filter(|(key, _)| {
-                    !matches!(key.as_str(), "id" | "source_object" | "tolerance" | "color")
-                })
-                .filter(|(key, _)| *key != "parameter_range" || !spans_its_knots(value))
-                .map(|(key, field)| (key.clone(), stated(field, records, named)))
-                .collect(),
-        ),
-        Value::Array(items) => Value::Array(
-            items
-                .iter()
-                .map(|item| stated(item, records, named))
-                .collect(),
-        ),
-        Value::String(text) => match records.get_key_value(text) {
-            Some((id, (arena, record)))
-                if NAMED_ARENAS.contains(arena) && !named.contains(&id.as_str()) =>
-            {
-                named.push(id);
-                let value = stated(record, records, named);
-                named.pop();
-                value
+    removed: &'a [&'a str],
+    /// The records being written, outermost first, which a cycle names.
+    named: Vec<&'a str>,
+    /// Every record written.
+    reached: BTreeSet<String>,
+}
+
+impl<'a> Inliner<'a> {
+    fn stated(&mut self, value: &'a Value) -> Value {
+        match value {
+            Value::Object(fields) => Value::Object(
+                fields
+                    .iter()
+                    .filter(|(key, _)| {
+                        !matches!(key.as_str(), "id" | "source_object" | "tolerance")
+                            && !self.removed.contains(&key.as_str())
+                    })
+                    .filter(|(key, _)| *key != "parameter_range" || !spans_its_knots(value))
+                    .map(|(key, field)| (key.clone(), self.stated(field)))
+                    .collect(),
+            ),
+            Value::Array(items) => {
+                Value::Array(items.iter().map(|item| self.stated(item)).collect())
             }
-            Some((_, (arena, _))) => Value::String(format!("<{arena}>")),
-            None => value.clone(),
-        },
-        Value::Null | Value::Bool(_) | Value::Number(_) => value.clone(),
+            Value::String(text) => match self.records.get_key_value(text) {
+                Some((id, (arena, record)))
+                    if NAMED_ARENAS.contains(arena) && !self.named.contains(&id.as_str()) =>
+                {
+                    self.named.push(id);
+                    self.reached.insert(id.clone());
+                    let value = self.stated(record);
+                    self.named.pop();
+                    value
+                }
+                Some((_, (arena, _))) => Value::String(format!("<{arena}>")),
+                None => value.clone(),
+            },
+            Value::Null | Value::Bool(_) | Value::Number(_) => value.clone(),
+        }
     }
 }
 
@@ -258,8 +310,8 @@ fn same(a: &Value, b: &Value) -> bool {
 }
 
 /// The Global facts a decode states: the text fields by number when stated,
-/// the model scale and unit, the millimetre width of each line weight, and
-/// the drafting standard.
+/// the model scale and unit, the millimetre width of each line weight, the
+/// minimum resolution in millimetres, and the drafting standard.
 #[derive(Debug)]
 pub(super) struct GlobalFacts {
     text: BTreeMap<usize, SourceField>,
@@ -267,6 +319,7 @@ pub(super) struct GlobalFacts {
     units_flag: Option<i64>,
     units_name: Option<String>,
     line_widths_mm: Option<Vec<f64>>,
+    minimum_resolution_mm: Option<f64>,
     drafting_standard: i64,
 }
 
@@ -275,11 +328,11 @@ impl GlobalFacts {
         let bytes = crate::writer::source_global::source_global_bytes(ir)?;
         let fields = crate::global::source_fields(&bytes)?;
         let resolved = crate::global::resolved(&bytes)?;
-        let text = [3, 4, 12, 18, 21, 22, 25, 26]
-            .into_iter()
-            .filter_map(|number| match fields.get(number - 1)? {
+        let text = TEXT_FIELDS
+            .iter()
+            .filter_map(|(number, _)| match fields.get(number - 1)? {
                 SourceField::Omitted => None,
-                field => Some((number, field.clone())),
+                field => Some((*number, field.clone())),
             })
             .collect();
         Some(Self {
@@ -294,31 +347,75 @@ impl GlobalFacts {
                     .map_while(|number| context.line_weight_mm(number))
                     .collect()
             }),
+            minimum_resolution_mm: resolved
+                .length_context()
+                .map(|context| context.minimum_resolution_mm()),
             drafting_standard: resolved.drafting_standard(),
         })
     }
 
-    /// Whether `output` states every fact this source states.
-    pub(super) fn read_back_in(&self, output: &Self) -> bool {
-        let widths = match (&self.line_widths_mm, &output.line_widths_mm) {
+    /// The names of the fields whose source facts `output` does not state.
+    /// A line width names either line-weight field.
+    pub(super) fn unrestated_in(&self, output: &Self) -> Vec<&'static [&'static str]> {
+        let numbers_agree = |source: &[f64], output: &[f64]| {
+            source.len() == output.len()
+                && source.iter().zip(output).all(|(source, output)| {
+                    (source - output).abs()
+                        <= NUMBER_TOLERANCE * source.abs().max(output.abs()).max(1.0)
+                })
+        };
+        let optional_agree = |source: Option<&[f64]>, output: Option<&[f64]>| match (source, output)
+        {
             (None, _) => true,
-            (Some(source), Some(output)) => {
-                source.len() == output.len()
-                    && source.iter().zip(output).all(|(source, output)| {
-                        (source - output).abs()
-                            <= NUMBER_TOLERANCE * source.abs().max(output.abs()).max(1.0)
-                    })
-            }
+            (Some(source), Some(output)) => numbers_agree(source, output),
             (Some(_), None) => false,
         };
-        widths
-            && self
-                .text
-                .iter()
-                .all(|(number, field)| output.text.get(number) == Some(field))
-            && self.model_scale == output.model_scale
-            && self.units_flag == output.units_flag
-            && self.units_name == output.units_name
-            && self.drafting_standard == output.drafting_standard
+        let mut unrestated = TEXT_FIELDS
+            .iter()
+            .filter(|(number, _)| {
+                self.text
+                    .get(number)
+                    .is_some_and(|field| output.text.get(number) != Some(field))
+            })
+            .map(|(_, name)| std::slice::from_ref(name))
+            .collect::<Vec<_>>();
+        let facts: [(bool, &'static [&'static str]); 6] = [
+            (
+                self.model_scale == output.model_scale,
+                &["model space scale"],
+            ),
+            (self.units_flag == output.units_flag, &["units flag"]),
+            (self.units_name == output.units_name, &["units name"]),
+            (
+                optional_agree(
+                    self.line_widths_mm.as_deref(),
+                    output.line_widths_mm.as_deref(),
+                ),
+                &["maximum line width", "maximum line weight gradations"],
+            ),
+            (
+                optional_agree(
+                    self.minimum_resolution_mm
+                        .as_ref()
+                        .map(std::slice::from_ref),
+                    output
+                        .minimum_resolution_mm
+                        .as_ref()
+                        .map(std::slice::from_ref),
+                ),
+                &["minimum resolution"],
+            ),
+            (
+                self.drafting_standard == output.drafting_standard,
+                &["drafting standard"],
+            ),
+        ];
+        unrestated.extend(
+            facts
+                .into_iter()
+                .filter(|(agree, _)| !agree)
+                .map(|(_, names)| names),
+        );
+        unrestated
     }
 }

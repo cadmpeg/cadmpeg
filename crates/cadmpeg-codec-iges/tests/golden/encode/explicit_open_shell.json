@@ -76,7 +76,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 4 native record(s) of `iges` arena `cards`: iges:physical:card#1, iges:physical:card#26, iges:physical:card#27, iges:physical:card#39; that are Start section cards, whose text the semantic writer replaces with its own: iges:physical:card#1; that are shells the semantic writer writes as separate trimmed surfaces with no shell record: iges:physical:card#26, iges:physical:card#27, iges:physical:card#39",
+        "message": "the IGES write omits 10 native record(s) of `iges` arena `cards`: iges:physical:card#1, iges:physical:card#18, iges:physical:card#19, iges:physical:card#20, iges:physical:card#21, iges:physical:card#26, iges:physical:card#27, iges:physical:card#35, iges:physical:card#36, iges:physical:card#39; that are Start section cards, whose text the semantic writer replaces with its own: iges:physical:card#1; that are shells the semantic writer writes as separate trimmed surfaces with no shell record: iges:physical:card#26, iges:physical:card#27, iges:physical:card#39; that are vertex or edge lists of shells the semantic writer writes as trimmed surfaces, whose boundaries state no vertex or edge list: iges:physical:card#18, iges:physical:card#19, iges:physical:card#20, iges:physical:card#21, iges:physical:card#35, iges:physical:card#36",
         "severity": "warning"
       },
       {
@@ -100,7 +100,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 1 native record(s) of `iges` arena `entities` that are shells the semantic writer writes as separate trimmed surfaces with no shell record: iges:entity:directory#23",
+        "message": "the IGES write omits 3 native record(s) of `iges` arena `entities`: iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#23; that are shells the semantic writer writes as separate trimmed surfaces with no shell record: iges:entity:directory#23; that are vertex or edge lists of shells the semantic writer writes as trimmed surfaces, whose boundaries state no vertex or edge list: iges:entity:directory#15, iges:entity:directory#17",
         "severity": "warning"
       },
       {

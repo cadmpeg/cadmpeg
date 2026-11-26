@@ -3,14 +3,16 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::native::bytes::NativeBytes;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 use crate::global::{GlobalTable, SourceField, MAXIMUM_V4_LINE_WEIGHT_GRADATIONS};
+use crate::loss::IgesLossCode;
 
 /// The Global field numbers (IGES 5.3 Table 3, from 1) whose source value
-/// the writer states, with the name a loss reason gives each. Fields 13 to 15
-/// hold the writer's millimetres at model scale 1, the unit of every written
-/// length, and are named when the source states another scale or unit.
+/// the writer states, with the name a loss gives each. Fields 13 to 15 hold
+/// the writer's millimetres at model scale 1, the unit of every written
+/// length, and are charged when the source states another scale or unit.
 const RESTATED_FIELDS: &[(usize, &str)] = &[
     (3, "sending product id"),
     (4, "file name"),
@@ -37,8 +39,16 @@ pub(super) struct GlobalRestatement {
     /// The text of each field the writer takes from the source, by field
     /// number. An empty text is an omitted field.
     fields: BTreeMap<usize, String>,
-    /// The names of the source fields the writer cannot restate.
-    unrestated: Vec<&'static str>,
+    /// The source fields the writer states with its own value.
+    unrestated: Vec<Unrestated>,
+}
+
+/// A source Global field the writer states with its own value.
+struct Unrestated {
+    number: usize,
+    name: &'static str,
+    /// The source value, as Global text.
+    source: String,
 }
 
 impl GlobalRestatement {
@@ -48,15 +58,8 @@ impl GlobalRestatement {
         let Some(bytes) = source_global_bytes(ir) else {
             return Self::default();
         };
-        let (Some(source), Some(resolved)) = (
-            crate::global::source_fields(&bytes),
-            crate::global::resolved(&bytes),
-        ) else {
-            return Self {
-                fields: BTreeMap::new(),
-                unrestated: RESTATED_FIELDS.iter().map(|(_, name)| *name).collect(),
-            };
-        };
+        let source = crate::global::source_fields(&bytes);
+        let resolved = crate::global::resolved(&bytes);
         let table = crate::version::VersionFlag::from_write_version(version).global_table();
         let field_count = match version {
             crate::IgesVersion::V4_0 => 24,
@@ -64,25 +67,34 @@ impl GlobalRestatement {
             crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => 26,
         };
         let length_factor_mm = resolved
-            .length_context()
+            .as_ref()
+            .and_then(crate::global::ResolvedGlobal::length_context)
             .map(|context| context.length_factor_mm());
         let mut restatement = Self::default();
         for &(number, name) in RESTATED_FIELDS {
-            let value = source.get(number - 1).unwrap_or(&SourceField::Omitted);
+            let value = source.as_ref().map_or(&SourceField::Unreadable, |fields| {
+                fields.get(number - 1).unwrap_or(&SourceField::Omitted)
+            });
             let statement = match (number, value) {
                 (13, _) => Statement::writer_value_when(
                     resolved
-                        .model_scale()
+                        .as_ref()
+                        .and_then(crate::global::ResolvedGlobal::model_scale)
                         .is_some_and(|scale| scale.get() == 1.0),
                 ),
                 (14, _) => Statement::writer_value_when(
-                    resolved.units_flag() == Some(super::WRITER_UNITS_FLAG),
-                ),
-                (15, _) => Statement::writer_value_when(
                     resolved
-                        .units_name()
-                        .is_none_or(|units| units == super::WRITER_UNITS_NAME),
+                        .as_ref()
+                        .and_then(crate::global::ResolvedGlobal::units_flag)
+                        == Some(super::WRITER_UNITS_FLAG),
                 ),
+                (15, _) => {
+                    Statement::writer_value_when(resolved.as_ref().is_some_and(|resolved| {
+                        resolved
+                            .units_name()
+                            .is_none_or(|units| units == super::WRITER_UNITS_NAME)
+                    }))
+                }
                 (_, SourceField::Omitted) => match number {
                     3 | 4 | 12 | 21 | 22 | 25 | 26 => Statement::Source(String::new()),
                     _ => Statement::WriterValue,
@@ -110,7 +122,9 @@ impl GlobalRestatement {
                     (Some(width), _)
                         if width == 0.0
                             && table == GlobalTable::V5_0
-                            && resolved.global_table() == GlobalTable::V5_0 =>
+                            && resolved.as_ref().is_some_and(|resolved| {
+                                resolved.global_table() == GlobalTable::V5_0
+                            }) =>
                     {
                         Statement::Source("0".to_owned())
                     }
@@ -129,7 +143,11 @@ impl GlobalRestatement {
                     restatement.fields.insert(number, text);
                 }
                 Statement::WriterValue => {}
-                Statement::Unrestated => restatement.unrestated.push(name),
+                Statement::Unrestated => restatement.unrestated.push(Unrestated {
+                    number,
+                    name,
+                    source: source_text(value),
+                }),
             }
         }
         restatement
@@ -143,14 +161,21 @@ impl GlobalRestatement {
             .map(|(number, text)| (*number, text.as_str()))
     }
 
-    /// The reason the source Global cards are dropped, or `None` when the
-    /// writer restates every field it takes from the source.
-    pub(super) fn drop_reason(&self) -> Option<String> {
-        (!self.unrestated.is_empty()).then(|| {
-            format!(
-                "that are Global cards whose fields the semantic writer cannot restate: {}",
-                self.unrestated.join(", ")
-            )
+    /// A loss for each source field the written Global `fields` states with
+    /// the writer's value, naming both values.
+    pub(super) fn losses<'a>(
+        &'a self,
+        fields: &'a [String],
+    ) -> impl Iterator<Item = LossNote> + 'a {
+        self.unrestated.iter().map(|field| {
+            let written = fields.get(field.number - 1).map_or_else(
+                || format!("no value: the written Global has no field {}", field.number),
+                Clone::clone,
+            );
+            IgesLossCode::WriterGlobalFieldNotRestated.note(format!(
+                "IGES Global {} (field {}) changed from {} to {written}",
+                field.name, field.number, field.source
+            ))
         })
     }
 }
@@ -213,6 +238,17 @@ fn hollerith(text: &[u8]) -> Option<String> {
     text.iter()
         .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
         .then(|| format!("{}H{}", text.len(), String::from_utf8_lossy(text)))
+}
+
+/// `value` as Global text, or a word for a value the source does not state.
+fn source_text(value: &SourceField) -> String {
+    match value {
+        SourceField::Omitted => "an omitted value".to_owned(),
+        SourceField::Unreadable => "an unreadable value".to_owned(),
+        SourceField::Text(text) => format!("{}H{}", text.len(), text.escape_ascii()),
+        SourceField::Integer(value) => value.to_string(),
+        SourceField::Real(value) => super::number(*value),
+    }
 }
 
 fn real(value: &SourceField) -> Option<f64> {

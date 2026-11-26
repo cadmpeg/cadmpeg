@@ -689,14 +689,16 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
         losses.push(loss);
     }
     let counts = entity_counts(&entities);
+    let bytes = encode_file(
+        &entities,
+        &body_presentations,
+        version,
+        minimum_resolution,
+        &source_global::GlobalRestatement::of(ir, version),
+        &mut losses,
+    )?;
     Ok(Synthesis {
-        bytes: encode_file(
-            &entities,
-            &body_presentations,
-            version,
-            minimum_resolution,
-            &source_global::GlobalRestatement::of(ir, version),
-        )?,
+        bytes,
         counts,
         entities,
         losses,
@@ -8283,6 +8285,7 @@ fn encode_file(
     version: crate::IgesVersion,
     minimum_resolution: f64,
     restated: &source_global::GlobalRestatement,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<u8>, CodecError> {
     let generation_timestamp = generation_timestamp(SystemTime::now(), version)?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
@@ -8292,6 +8295,7 @@ fn encode_file(
         finite(minimum_resolution, "Global minimum resolution")?,
         finite(maximum_coordinate, "Global maximum coordinate")?,
         restated,
+        losses,
     );
     let global_cards = crate::global::layout_global_cards(&global)?;
     let global_count = global_cards.len();
@@ -8478,6 +8482,7 @@ fn generated_global(
     minimum_resolution: FiniteReal,
     maximum_coordinate: FiniteReal,
     restated: &source_global::GlobalRestatement,
+    losses: &mut Vec<LossNote>,
 ) -> Vec<u8> {
     let mut fields = vec![
         "1H,".to_owned(),
@@ -8527,6 +8532,7 @@ fn generated_global(
             text.clone_into(field);
         }
     }
+    losses.extend(restated.losses(&fields));
     let mut global = fields.join(",");
     global.push(';');
     global.into_bytes()

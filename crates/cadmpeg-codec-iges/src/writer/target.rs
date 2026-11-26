@@ -109,11 +109,7 @@ pub(super) fn synthesis_and_dispositions(
     version: crate::IgesVersion,
 ) -> Result<(super::Synthesis, NativeDispositions), CodecError> {
     let synthesis = super::degrade::synthesize_dropping(document, version)?;
-    let native = super::dispositions::native_dispositions(
-        document,
-        &synthesis.entities,
-        &super::source_global::GlobalRestatement::of(document, version),
-    );
+    let native = super::dispositions::native_dispositions(document, &synthesis.entities);
     Ok((synthesis, native))
 }
 

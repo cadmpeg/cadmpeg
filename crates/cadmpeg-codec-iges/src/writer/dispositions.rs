@@ -15,7 +15,6 @@ use cadmpeg_ir::native::{NativeNamespace, NativeRecord};
 use cadmpeg_ir::CadIr;
 use serde_json::Value;
 
-use super::source_global::GlobalRestatement;
 use super::Entity;
 use crate::entities::geometry::SourceObjectId;
 
@@ -105,15 +104,14 @@ const NATIVE_TOPOLOGY: &str = "that are native topology, which has no neutral pr
 const WITHHELD_TOPOLOGY: &str = "whose neutral topology the semantic writer withholds";
 const OPEN_SHELL: &str = "that are shells the semantic writer writes as separate trimmed \
                           surfaces with no shell record";
+const SHEET_TOPOLOGY: &str = "that are vertex or edge lists of shells the semantic writer \
+                              writes as trimmed surfaces, whose boundaries state no vertex or \
+                              edge list";
 
 /// What the semantic writer does with each native arena and record, from the
 /// entities it emitted. An arena this declares nothing for is dropped, and
 /// the export wrapper charges every dropped record.
-pub(super) fn native_dispositions(
-    ir: &CadIr,
-    entities: &[Entity],
-    global: &GlobalRestatement,
-) -> NativeDispositions {
+pub(super) fn native_dispositions(ir: &CadIr, entities: &[Entity]) -> NativeDispositions {
     let mut native = NativeDispositions::dropped("which the semantic writer does not encode");
     let Some(namespace) = ir.native.namespace("iges") else {
         return native;
@@ -159,11 +157,7 @@ pub(super) fn native_dispositions(
             }
         }
     }
-    dropped.extend(card_drops(
-        namespace,
-        &drops,
-        global.drop_reason().as_deref(),
-    ));
+    dropped.extend(card_drops(namespace, &drops));
     let mut by_reason = BTreeMap::<String, Vec<String>>::new();
     for (id, reason) in drops
         .into_iter()
@@ -434,9 +428,18 @@ impl Held {
                 .filter_map(|id| sources.resolve(id))
                 .collect::<BTreeSet<_>>()
         };
+        // A vertex or edge list is stated again only by a written list of its
+        // type: a trimmed surface boundary states its curves with no list.
         for (index, entity) in entities.iter().enumerate() {
             for sequence in resolved(entity) {
-                held.entry(sequence).or_default().insert(index);
+                let list = sources
+                    .records
+                    .get(&sequence)
+                    .and_then(|record| entity_type(record))
+                    .filter(|entity_type| matches!(entity_type, 502 | 504));
+                if list.is_none_or(|list| list == i64::from(entity.type_code)) {
+                    held.entry(sequence).or_default().insert(index);
+                }
             }
         }
         // A written analytic surface states its location and directions
@@ -622,6 +625,8 @@ impl Reasons {
                     NATIVE_TOPOLOGY
                 } else if self.shells_as_sheets && matches!(entity_type(record), Some(186 | 514)) {
                     OPEN_SHELL
+                } else if self.shells_as_sheets && matches!(entity_type(record), Some(502 | 504)) {
+                    SHEET_TOPOLOGY
                 } else {
                     WITHHELD_TOPOLOGY
                 }
@@ -632,14 +637,13 @@ impl Reasons {
 }
 
 /// The physical cards the semantic writer does not write, each with its
-/// reason: the Start section, which it writes with its own text; the Global
-/// section when it cannot restate a source field; each Directory and
-/// Parameter card of a dropped or untyped entity; and each line outside the
-/// five sections.
+/// reason: the Start section, which it writes with its own text; each
+/// Directory and Parameter card of a dropped or untyped entity; and each line
+/// outside the five sections. The writer writes the Global section again
+/// from the source fields it restates and charges each field it does not.
 fn card_drops(
     namespace: &NativeNamespace,
     drops: &BTreeMap<String, &'static str>,
-    global: Option<&str>,
 ) -> Vec<(String, String)> {
     let arenas = namespace.arenas();
     let integer =
@@ -673,13 +677,7 @@ fn card_drops(
         let section = card.field("section");
         let sequence = integer(card, "sequence");
         let owner = match (section.as_ref().and_then(|value| value.as_str()), sequence) {
-            (Some("terminate"), _) => continue,
-            (Some("global"), _) => {
-                if let Some(reason) = global {
-                    dropped.push((card.id().to_owned(), reason.to_owned()));
-                }
-                continue;
-            }
+            (Some("terminate" | "global"), _) => continue,
             (Some("start"), _) => {
                 dropped.push((card.id().to_owned(), START_CARD.to_owned()));
                 continue;

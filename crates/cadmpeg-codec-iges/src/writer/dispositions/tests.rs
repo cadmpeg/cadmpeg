@@ -19,26 +19,23 @@ use readback::{Facts, GlobalFacts};
 const EXPECTED_UNSUPPORTED: &[(&str, &str)] = &[];
 
 /// Golden fixtures whose entity facts this test does not compare, with the
-/// reason. Their Global cards, entity views, and cards are checked.
-const UNATTRIBUTED: &[(&str, &str)] = &[
-    (
-        "compressed_ascii_5_3",
-        "Compressed ASCII holds no fixed-column Directory entry to replace by a null entity",
-    ),
-    (
-        "explicit_open_shell",
-        "the trimmed-sheet path writes the face's four line edges as one composite boundary \
-         curve, which a record-by-record comparison does not match to its spans",
-    ),
-];
+/// reason. Their Global facts, entity views, and cards are checked.
+const UNATTRIBUTED: &[(&str, &str)] = &[(
+    "compressed_ascii_5_3",
+    "Compressed ASCII holds no fixed-column Directory entry to replace by a null entity",
+)];
 
 /// Over every golden fixture, the written file is decoded again. Each native
 /// entity the write declares Regenerated reads back with the facts the
 /// decoder derives from it, and each entity it declares Dropped has a fact
 /// that does not read back. The facts of an entity are the geometry and
 /// topology records that change when the entity is replaced by a null
-/// entity. The Global cards are Regenerated exactly when the Global facts
-/// the source states read back equal. Each view of an entity and each of its
+/// entity. A fact that states a record decoded from a Dropped entity is that
+/// entity's loss.
+/// A record field that states a native arena the write declares Dropped is
+/// no fact. The written Global section restates the source Global cards, so
+/// they are Regenerated, and each source Global fact that does not read back
+/// is charged by its field name. Each view of an entity and each of its
 /// Directory and Parameter cards follows the entity.
 #[test]
 fn every_golden_declaration_reads_back_from_the_written_file() {
@@ -67,13 +64,26 @@ fn every_golden_declaration_reads_back_from_the_written_file() {
             native,
             output,
             output_global,
+            losses,
         } = &checked;
         let namespace = source.native.namespace("iges").unwrap();
         let arenas = namespace.arenas();
         let of = |arena: &str, id: &str| native.disposition("iges", arena, id);
-        let source_facts = Facts::of(source);
-        let output_facts = Facts::of(output);
+        let removed = readback::ARENA_FIELDS
+            .iter()
+            .filter(|(_, arena)| {
+                arenas
+                    .get(*arena)
+                    .into_iter()
+                    .flatten()
+                    .all(|record| of(arena, record.id()) == NativeDisposition::Dropped)
+            })
+            .map(|(field, _)| *field)
+            .collect::<Vec<_>>();
+        let source_facts = Facts::of(source, &removed);
+        let output_facts = Facts::of(output, &removed);
         let mut entity_dispositions = BTreeMap::new();
+        let mut dropped_sequences = BTreeSet::new();
         let mut owned = Vec::new();
         for record in arenas.get("entities").into_iter().flatten() {
             let disposition = of("entities", record.id());
@@ -82,6 +92,9 @@ fn every_golden_declaration_reads_back_from_the_written_file() {
                 failures.push(format!("{name} {}: no Directory sequence", record.id()));
                 continue;
             };
+            if disposition != NativeDisposition::Regenerated {
+                dropped_sequences.insert(sequence);
+            }
             if UNATTRIBUTED
                 .iter()
                 .any(|(unattributed, _)| *unattributed == name)
@@ -102,6 +115,11 @@ fn every_golden_declaration_reads_back_from_the_written_file() {
             .filter(|(_, disposition, _)| *disposition == NativeDisposition::Regenerated)
             .flat_map(|(_, _, facts)| facts.keys())
             .collect::<BTreeSet<_>>();
+        let charged = |fact: &readback::Fact| {
+            fact.records()
+                .filter_map(decoded_from)
+                .any(|sequence| dropped_sequences.contains(&sequence))
+        };
         for (id, disposition, facts) in &owned {
             match disposition {
                 NativeDisposition::Regenerated => {
@@ -109,8 +127,9 @@ fn every_golden_declaration_reads_back_from_the_written_file() {
                     let absent = facts
                         .iter()
                         .filter(|(_, fact)| {
-                            output_facts.count(fact)
-                                < source_facts.count_among(fact, claimed.iter().copied())
+                            !charged(fact)
+                                && output_facts.count(fact)
+                                    < source_facts.count_among(fact, claimed.iter().copied())
                         })
                         .map(|(id, _)| id.as_str())
                         .collect::<Vec<_>>();
@@ -145,19 +164,29 @@ fn every_golden_declaration_reads_back_from_the_written_file() {
                 }
             }
         }
-        let global = match (GlobalFacts::of(source), output_global) {
-            (Some(source), Some(output)) if source.read_back_in(output) => {
-                NativeDisposition::Regenerated
+        if let Some(source) = GlobalFacts::of(source) {
+            let Some(output) = output_global else {
+                failures.push(format!(
+                    "{name}: the written Global section does not resolve"
+                ));
+                continue;
+            };
+            for names in source.unrestated_in(output) {
+                let charge = |field: &&str| {
+                    let prefix = format!("IGES Global {field} ");
+                    losses.iter().any(|loss| loss.starts_with(&prefix))
+                };
+                if !names.iter().any(charge) {
+                    failures.push(format!("{name}: Global {names:?} changes uncharged"));
+                }
             }
-            _ => NativeDisposition::Dropped,
-        };
+        }
         for card in arenas.get("cards").into_iter().flatten() {
             let section = card.field("section").unwrap();
             let section = section.as_str().unwrap();
             let sequence = card.field("sequence").and_then(|value| value.as_u64());
             let expected = match (section, sequence) {
-                ("global", _) => global,
-                ("terminate", _) => NativeDisposition::Regenerated,
+                ("global" | "terminate", _) => NativeDisposition::Regenerated,
                 ("directory" | "parameter", Some(sequence)) => {
                     match card_owner(namespace, section, sequence) {
                         Some(owner) => entity_dispositions[&owner],
@@ -188,6 +217,15 @@ fn every_golden_declaration_reads_back_from_the_written_file() {
         "{failures:#?}\nunexpected refusals {unexpected:?}\nlisted refusals that pass {missing:?}"
     );
     assert!(regenerated > 0 && dropped > 0, "{regenerated} {dropped}");
+}
+
+/// The Directory sequence of the entity the decoder derives the geometry
+/// record `id` from: the last `D{n}` piece of its key.
+fn decoded_from(id: &str) -> Option<u32> {
+    id.split_once('#')?
+        .1
+        .rsplit([':', '-'])
+        .find_map(|piece| piece.strip_prefix('D')?.parse().ok())
 }
 
 /// The entity record whose Directory entry or Parameter Data holds the card
