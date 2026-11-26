@@ -28,9 +28,10 @@
 //! An item whose state the walk does not place has no evaluation, and a
 //! loss names it and the assumption that it commits no state. An item whose
 //! state id several histories store, where the walk stands at that state in
-//! one of them, is taken to have stored it there, and the walk stops at it.
-//! The walk also stops where the stored states of the items of one history do not meet,
-//! and a loss names each feature whose state it leaves unstated.
+//! one of them and the next earlier item of that history stores another
+//! state, is taken to have stored it there, and the walk stops at it. The
+//! walk also stops where the stored states of the items of one history do
+//! not meet, and a loss names each feature whose state it leaves unstated.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -225,6 +226,17 @@ fn last_items<'e, H>(
     last
 }
 
+/// An item of `entries` whose state id several histories store, at a history
+/// whose walk stands at that state when the walk passes the item.
+#[derive(Clone, Copy)]
+struct Standing {
+    entry: usize,
+    state: i64,
+    histories: usize,
+    /// The count of planned evaluations when the walk passes the item.
+    planned: usize,
+}
+
 /// The states after `entries`, walking back through the histories named
 /// `names` from the state after the last item of each, or from its head in
 /// `heads` where no item stores one of its states.
@@ -235,6 +247,7 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
         .map(|(last, head)| last.map(|(state, _)| state).or(*head))
         .collect::<Vec<_>>();
     let mut set = vec![0_usize; heads.len()];
+    let mut standing = vec![None::<Standing>; heads.len()];
     let mut planned = Vec::<Planned>::new();
     for (index, entry) in entries.iter().enumerate().rev() {
         let earlier = entries[..index]
@@ -248,23 +261,40 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
                 previous,
             } => {
                 if at[*history] != Some(*state) {
-                    let left = at[*history]
-                        .map_or_else(|| "no state".to_owned(), |state| format!("state {state}"));
+                    let (from, reason) = match standing[*history] {
+                        Some(standing) => (
+                            standing.planned,
+                            format!(
+                                "feature {} stores state {}, which {} ASM histories store, and the items after it leave {} at that state, where feature {} of that history stores state {state}",
+                                entries[standing.entry].feature,
+                                standing.state,
+                                standing.histories,
+                                names[*history],
+                                entry.feature
+                            ),
+                        ),
+                        None => (
+                            set[*history],
+                            format!(
+                                "feature {} stores state {state} of {}, and the items after it leave that history at {}",
+                                entry.feature,
+                                names[*history],
+                                at[*history].map_or_else(
+                                    || "no state".to_owned(),
+                                    |state| format!("state {state}")
+                                )
+                            ),
+                        ),
+                    };
                     let features = planned
-                        .drain(set[*history]..)
+                        .drain(from..)
                         .map(|planned| entries[planned.entry].feature.clone())
                         .chain(entry.evaluated().then(|| entry.feature.clone()))
                         .chain(earlier)
                         .collect();
                     return Plan {
                         planned,
-                        stop: Some(Stop {
-                            reason: format!(
-                                "feature {} stores state {state} of {}, and the items after it leave that history at {left}",
-                                entry.feature, names[*history]
-                            ),
-                            features,
-                        }),
+                        stop: Some(Stop { reason, features }),
                     };
                 }
                 if entry.evaluated() {
@@ -275,25 +305,18 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
                 }
                 at[*history] = *previous;
                 set[*history] = planned.len();
+                standing[*history] = None;
             }
             Kind::Ambiguous { state, stored } if !entry.stateless => {
-                if let Some(history) = stored
-                    .iter()
-                    .copied()
-                    .find(|history| at[*history] == Some(*state))
-                {
-                    return Plan {
-                        planned,
-                        stop: Some(Stop {
-                            reason: format!(
-                                "feature {} stores state {state}, which {} ASM histories store, and the items after it leave {} at that state",
-                                entry.feature,
-                                stored.len(),
-                                names[history]
-                            ),
-                            features: earlier.collect(),
-                        }),
-                    };
+                for history in stored {
+                    if at[*history] == Some(*state) && standing[*history].is_none() {
+                        standing[*history] = Some(Standing {
+                            entry: index,
+                            state: *state,
+                            histories: stored.len(),
+                            planned: planned.len(),
+                        });
+                    }
                 }
             }
             Kind::NoState | Kind::Unresolved(_) | Kind::Ambiguous { .. } => {}
@@ -456,7 +479,8 @@ fn unstated(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Option<L
 /// The walk takes such an item to commit no state, and the check between
 /// the items of each history stops it where their stored states disagree.
 /// An item whose state id several histories store ends the walk where the
-/// walk stands at that state in one of them.
+/// walk stands at that state in one of them and the next earlier item of
+/// that history stores another state.
 fn unresolved(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Vec<LossNote> {
     entries
         .iter()
@@ -467,7 +491,7 @@ fn unresolved(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Vec<Lo
                 entry.feature
             ))),
             Kind::Ambiguous { state, stored } => Some(F3dLossCode::HistoryStateUnread.note(format!(
-                "scope {definition}: the state after feature {} is not stated: {} ASM histories store state {state}, and its parameter scope binds none of them. Where the walk stands at state {state} in one of them, the item is taken to have stored it there, and the walk stops at the item; elsewhere the item is taken to commit no history state, and the states of the other items are their own stored states.",
+                "scope {definition}: the state after feature {} is not stated: {} ASM histories store state {state}, and its parameter scope binds none of them. Where the walk stands at state {state} in one of them and the next earlier item of that history stores another state, the item is taken to have stored it there, and the walk stops at the item; elsewhere the item is taken to commit no history state, and the states of the other items are their own stored states.",
                 entry.feature,
                 stored.len()
             ))),

@@ -815,7 +815,8 @@ fn an_unplaced_item_that_steps_a_history_ends_the_states_before_it() {
 }
 
 #[test]
-fn an_item_whose_state_several_histories_store_ends_the_walk_where_one_of_them_stands_at_it() {
+fn an_item_whose_state_several_histories_store_ends_the_walk_where_the_next_item_of_one_of_them_stores_another(
+) {
     let design = design(&["c", "a", "u", "b", "d"], "d", Vec::new());
     let entries = entries(
         &design,
@@ -839,13 +840,46 @@ fn an_item_whose_state_several_histories_store_ends_the_walk_where_one_of_them_s
         }]
     );
     let stop = stop.expect("a stop");
-    assert_eq!(stop.features, [feature_id("c"), feature_id("a")]);
+    assert_eq!(stop.features, [feature_id("a"), feature_id("c")]);
     assert!(
         stop.reason
             .contains("stores state 3, which 2 ASM histories store")
             && stop.reason.contains("BREP.x"),
         "{}",
         stop.reason
+    );
+}
+
+#[test]
+fn an_item_whose_state_several_histories_store_is_passed_where_the_next_item_of_each_stores_that_state(
+) {
+    let design = design(&["c", "u", "b", "d"], "d", Vec::new());
+    let entries = entries(
+        &design,
+        vec![
+            bound(0, 3, None),
+            Kind::Ambiguous {
+                state: 3,
+                stored: vec![0, 1],
+            },
+            bound(1, 4, Some(2)),
+            bound(0, 5, Some(3)),
+        ],
+    );
+    let Plan { planned, stop } = plan(&entries, &[Some(5), Some(4)], &["BREP.x", "BREP.y"]);
+    assert_eq!(stop, None);
+    assert_eq!(
+        planned,
+        [
+            Planned {
+                entry: 2,
+                targets: vec![Some(3), Some(4)],
+            },
+            Planned {
+                entry: 0,
+                targets: vec![Some(3), Some(2)],
+            },
+        ]
     );
 }
 
