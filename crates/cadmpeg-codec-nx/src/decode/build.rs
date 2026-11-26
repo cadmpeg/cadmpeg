@@ -173,41 +173,13 @@ pub(super) fn try_decode_geometry(
         .rmfastload_object_id_table()
         .map(|(_, table)| table.object_ids.as_slice())
         .unwrap_or_default();
-    let mut stored_resolutions = Vec::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
-            let graph = &parsed.stream(si).graph;
-            let scope = IdScope::stream_from_index(si)?;
-            let named_bodies = graph
-                .of_kind(NodeKind::Shell)
-                .filter_map(|shell| Some(u32::from(shell.shell_fields()?.body?)))
-                .collect::<BTreeSet<_>>();
-            for body_xmt in named_bodies {
-                let res_linear = graph.body_linear_resolutions().get(&body_xmt).copied();
-                if let Some(value) =
-                    res_linear.filter(|value| precision::linear_precision(*value).is_some())
-                {
-                    stored_resolutions.push(value);
-                    continue;
-                }
-                let code = if res_linear.is_some() {
-                    NxLossCode::BodyResolutionInvalid
-                } else {
-                    NxLossCode::BodyResolutionUnread
-                };
-                let body: BodyId =
-                    scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
-                topology_losses.push(code.note(precision::unusable_resolution_message(
-                    body.as_str(),
-                    res_linear,
-                )));
-            }
-            for (body, nodes) in topology_body_node_ids(si, graph)? {
+            for (body, nodes) in topology_body_node_ids(si, &parsed.stream(si).graph)? {
                 body_node_ids.insert(body, nodes);
             }
         }
     }
-    ir.tolerances = precision::part_tolerances(stored_resolutions);
     let rmfastload_selected = rmfastload_selected_bodies(&body_node_ids, rmfastload_ids);
     let allow_terminal_lineage =
         rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected);
@@ -251,16 +223,54 @@ pub(super) fn try_decode_geometry(
         terminal_preselection,
         has_plain_beside_partition_streams(scan.streams.iter().map(crate::parasolid::Stream::kind)),
     );
+    let decoded_stream = |si: usize, stream: &crate::parasolid::Stream| {
+        stream.kind().is_parasolid()
+            && preselection
+                .as_ref()
+                .is_none_or(|(_, selected, _)| selected.contains(&si))
+    };
+    let mut stored_resolutions = Vec::new();
+    // Losses for bodies whose `res_linear` states no linear precision, kept
+    // for the bodies the document holds once inactive bodies are pruned.
+    let mut resolution_losses = Vec::new();
+    for (si, stream) in scan.streams.iter().enumerate() {
+        if !decoded_stream(si, stream) {
+            continue;
+        }
+        let graph = &parsed.stream(si).graph;
+        let scope = IdScope::stream_from_index(si)?;
+        let named_bodies = graph
+            .of_kind(NodeKind::Shell)
+            .filter_map(|shell| Some(u32::from(shell.shell_fields()?.body?)))
+            .collect::<BTreeSet<_>>();
+        for body_xmt in named_bodies {
+            let res_linear = graph.body_linear_resolutions().get(&body_xmt).copied();
+            if let Some(value) =
+                res_linear.filter(|value| precision::linear_precision(*value).is_some())
+            {
+                stored_resolutions.push(value);
+                continue;
+            }
+            let code = if res_linear.is_some() {
+                NxLossCode::BodyResolutionInvalid
+            } else {
+                NxLossCode::BodyResolutionUnread
+            };
+            let body: BodyId =
+                scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
+            let note = code.note(precision::unusable_resolution_message(
+                body.as_str(),
+                res_linear,
+            ));
+            resolution_losses.push((body, note));
+        }
+    }
+    ir.tolerances = precision::part_tolerances(stored_resolutions);
     let (chart_count, geometry_record_count) = scan
         .streams
         .iter()
         .enumerate()
-        .filter(|(si, stream)| {
-            stream.kind().is_parasolid()
-                && preselection
-                    .as_ref()
-                    .is_none_or(|(_, selected, _)| selected.contains(si))
-        })
+        .filter(|(si, stream)| decoded_stream(*si, stream))
         .map(|(si, _)| {
             let view = parsed.stream(si);
             (view.intersections.curves.len(), view.graph.node_count())
@@ -1555,6 +1565,13 @@ pub(super) fn try_decode_geometry(
         partial_face_losses
             .into_iter()
             .filter(|(face, _)| stated_faces.contains(face))
+            .map(|(_, note)| note),
+    );
+    let stated_bodies: BTreeSet<_> = ir.geometry.bodies.iter().map(|body| &body.id).collect();
+    topology_losses.extend(
+        resolution_losses
+            .into_iter()
+            .filter(|(body, _)| stated_bodies.contains(body))
             .map(|(_, note)| note),
     );
     for losses in [carrier_refusals, topology_losses, native_losses] {

@@ -22,7 +22,7 @@ use super::feature_completeness::{
     trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
 };
 use super::pcurves::MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES;
-use super::support_uv::{pcurve_requires_completion, MAX_SUPPORT_UV_LANE_GEOMETRY_WORK};
+use super::support_uv::MAX_SUPPORT_UV_LANE_GEOMETRY_WORK;
 use super::{Counts, Scan};
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
@@ -159,11 +159,7 @@ fn push_bounded_completion_losses(
                 context
                     .sides()
                     .iter()
-                    .filter(|side| {
-                        pcurve_requires_completion(
-                            side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
-                        )
-                    })
+                    .filter(|side| side.pcurve.is_none())
                     .count(),
             )
         })

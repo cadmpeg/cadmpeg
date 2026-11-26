@@ -150,8 +150,9 @@ precision of the modeller is `1.0e-11` rad, and no node stores it.
 A `res_linear` states a linear precision when it is finite and positive in
 metres and in millimetres. The linear tolerance of a part is the largest
 `res_linear` that states a linear precision among the bodies whose BODY node
-the decode reads, in every configuration and stored state, converted to
-millimetres. When no such body stores one, the linear tolerance is the
+the decode reads in the streams whose geometry it keeps, in every
+configuration and stored state, converted to millimetres. When no such body stores one, the linear tolerance is the
 modeller default, `1.0e-5` mm. The angular tolerance of a part is the
-modeller angular precision. A BODY whose `res_linear` states no linear
-precision is charged `body.resolution-invalid`, which names the body.
+modeller angular precision. A BODY of a body that the document holds
+and whose `res_linear` states no linear precision is charged
+`body.resolution-invalid`, which names the body.

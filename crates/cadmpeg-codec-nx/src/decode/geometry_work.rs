@@ -79,7 +79,7 @@ pub(super) struct LaneGeometryWork<'a> {
 }
 
 impl<'a> LaneGeometryWork<'a> {
-    /// No lane budget exceeds `lane_limit` units.
+    /// `lane_limit` is the ceiling of every lane budget.
     pub(super) fn from_context(ctx: &'a DecodeContext<'_>, lane_limit: usize) -> Self {
         Self {
             ctx,
