@@ -968,8 +968,8 @@ fn parse_mesh_collection_record(
         } else {
             owner_at
         };
-        // An empty collection can store a zero u32 before its owner reference.
-        let owner_at = if body_records.is_empty() && View::u32_le_at(record, owner_at) == Some(0) {
+        let counted_entries = flagged && !body_records.is_empty();
+        let owner_at = if !counted_entries && View::u32_le_at(record, owner_at) == Some(0) {
             owner_at.checked_add(4)?
         } else {
             owner_at
@@ -3510,6 +3510,39 @@ mod tests {
             resolve_mesh_bodies(&[design], ENTRY_NAME, FUSION_UUID),
             Some(vec![(0, 0, 0)])
         );
+    }
+
+    #[test]
+    fn nonempty_mesh_collection_with_a_zero_word_before_its_owner_lists_its_bodies() {
+        let parse = |graph: &SyntheticMeshGraph| {
+            let mut no_asset = no_texture_asset;
+            parse_mesh_design_records(
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_asset,
+            )
+        };
+        let mut graph = synthetic_mesh_graph_with_collection(false, 1, CollectionForm::OwnerGap);
+        let design = parse(&graph).expect("mesh graph whose collection stores the zero word");
+        let [feature] = design.as_slice() else {
+            panic!("one mesh feature");
+        };
+        assert_eq!(feature.collection().record().record_index(), 100);
+        assert_eq!(
+            feature
+                .bodies()
+                .iter()
+                .map(|body| body.placement.record().record_index())
+                .collect::<Vec<_>>(),
+            [104]
+        );
+
+        let frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+        assert_eq!(frame.end - frame.start, 77 + 11);
+        let owner_gap = frame.start + 38 + 11 + 9 + 4 + 11;
+        graph.bytes[owner_gap] = 1;
+        assert!(parse(&graph).is_err());
     }
 
     /// An empty collection can store a zero u32 before its owner reference; it is
