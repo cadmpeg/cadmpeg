@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn value_relation_positions_preserve_wire_and_reject_leading_slots() {
     use crate::native::parasolid::{
@@ -8,10 +10,7 @@ fn value_relation_positions_preserve_wire_and_reject_leading_slots() {
 
     fn check<T: serde::Serialize + serde::de::DeserializeOwned>(wire: &str) {
         let relation: T = serde_json::from_str(wire).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&relation).unwrap(),
-            wire
-        );
+        assert_eq!(json::to_string(&relation).unwrap(), wire);
         let invalid = wire.replace("\"reference_ordinal\":5", "\"reference_ordinal\":4");
         assert!(serde_json::from_str::<T>(&invalid).is_err());
         for target in [0, 1] {
@@ -40,16 +39,10 @@ fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
 
     let wire = r#"{"id":"definition","stream_ordinal":0,"xmt":2,"next_definition_xmt":1,"identifier_xmt":3,"identifier_inflated_offset":4,"name":"CLASS","type_id":8000,"action_codes":[0,1,2,3,4,5,6,0],"field_names_xmt":1,"legal_owner_flags":"00000000000000000000000000000000","field_count":2,"field_codes":[0,10],"inflated_offset":8}"#;
     let definition: ParasolidAttributeDefinition = serde_json::from_str(wire).unwrap();
+    assert_eq!(json::to_string(&definition).unwrap(), wire);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_string(&definition).unwrap(),
-        wire
-    );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&definition).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&ParasolidAttributeDefinitionWire::from(
-            definition.clone()
-        ))
-        .unwrap()
+        json::to_vec(&definition).unwrap(),
+        json::to_vec(&ParasolidAttributeDefinitionWire::from(definition.clone())).unwrap()
     );
     for target in [0, 1, 2, u32::MAX] {
         let wire = wire
@@ -64,10 +57,7 @@ fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
         let definition: ParasolidAttributeDefinition = serde_json::from_str(&wire).unwrap();
         assert_eq!(definition.next_definition_xmt.is_none(), target == 1);
         assert_eq!(definition.field_names_xmt.is_none(), target == 1);
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&definition).unwrap(),
-            wire
-        );
+        assert_eq!(json::to_string(&definition).unwrap(), wire);
     }
     for invalid in [
         wire.replace("\"xmt\":2", "\"xmt\":1"),
@@ -100,10 +90,7 @@ fn resolved_class_relations_preserve_non_null_definition_wire() {
     };
     fn check<T: serde::Serialize + serde::de::DeserializeOwned>(wire: &str) {
         let relation: T = serde_json::from_str(wire).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&relation).unwrap(),
-            wire
-        );
+        assert_eq!(json::to_string(&relation).unwrap(), wire);
         for target in [0, 1] {
             let invalid = wire.replace(
                 "\"definition_xmt\":2",
@@ -132,14 +119,8 @@ fn attribute_class_use_borrowed_wire_matches_owned_bytes() {
         attribute_definition: "definition".into(),
         inflated_offset: 8,
     };
-    let old = cadmpeg_core::serde_erase::json::to_vec(&ParasolidAttributeClassUseWire::from(
-        record.clone(),
-    ))
-    .unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-        old
-    );
+    let old = json::to_vec(&ParasolidAttributeClassUseWire::from(record.clone())).unwrap();
+    assert_eq!(json::to_vec(&record).unwrap(), old);
 }
 
 #[test]
@@ -164,9 +145,7 @@ fn attribute_class_use_retained_limit_refuses_borrowed_serialization() {
             .set_arena(service, "a", std::slice::from_ref(&record))
             .unwrap();
     });
-    let needed = cadmpeg_core::serde_erase::json::to_string(&stored.arenas()["a"][0])
-        .unwrap()
-        .len();
+    let needed = json::to_string(&stored.arenas()["a"][0]).unwrap().len();
 
     crate::test_support::with_decode_context_over(
         &[],
@@ -210,14 +189,11 @@ fn topology_attribute_class_use_borrowed_wire_matches_owned_bytes() {
         stream_ordinal: 3,
         inflated_offset: 8,
     };
-    let old = cadmpeg_core::serde_erase::json::to_vec(
-        &ParasolidTopologyAttributeClassUseWire::from(record.clone()),
-    )
+    let old = json::to_vec(&ParasolidTopologyAttributeClassUseWire::from(
+        record.clone(),
+    ))
     .unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-        old
-    );
+    assert_eq!(json::to_vec(&record).unwrap(), old);
 }
 
 #[test]
@@ -239,7 +215,7 @@ fn topology_attribute_class_use_retained_limit_refuses_borrowed_serialization() 
         stream_ordinal: 3,
         inflated_offset: 8,
     };
-    let json = cadmpeg_core::serde_erase::json::to_vec(&record).unwrap();
+    let json = json::to_vec(&record).unwrap();
 
     crate::test_support::with_decode_context_over(
         &[],

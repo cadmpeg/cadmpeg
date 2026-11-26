@@ -22,7 +22,10 @@ use cadmpeg_ir::Annotations;
 use crate::history::write::brep_agreement::{agreement, ShapingEdit, Source};
 use crate::history::write::edits::UnwrittenEdits;
 use crate::loss::SldprtLossCode;
-use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, Written};
+use crate::{
+    source_records, ReplaySkipped, RetainedRecords, SemanticFidelity, SemanticPath, SldprtCodec,
+    SldprtWriteSession, Written,
+};
 
 /// Resolve the request against the source, then plan the export it names.
 ///
@@ -48,7 +51,14 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+    session: &SldprtWriteSession<'_>,
+) -> Result<
+    (
+        ExportBody,
+        Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>,
+    ),
+    CodecError,
+> {
     let of_document;
     let (digests, unverified) = match input.fidelity {
         Some(fidelity) => (&fidelity.codec_digests, false),
@@ -61,7 +71,11 @@ pub(crate) fn plan(
             (&of_document, false)
         }
     };
-    let (written, bytes) = write(input, resolved, digests)?;
+    let (mut written, bytes) = write(input, resolved, digests, session)?;
+    let read_back = match &mut written {
+        Written::Semantic { read_back, .. } => read_back.take(),
+        Written::Replayed | Written::Stored { .. } => None,
+    };
     let mut body = finish(input, &written, bytes, digests);
     if unverified {
         body.losses.push(edit_unverified(
@@ -70,7 +84,7 @@ pub(crate) fn plan(
              hold, so an edit of a neutral record those lanes state is not written",
         ));
     }
-    Ok(body)
+    Ok((body, read_back))
 }
 
 /// Write the file in the first path of §3.4 that writes it: replay, patch,
@@ -88,10 +102,11 @@ fn write(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
+    session: &SldprtWriteSession<'_>,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let target = resolved.target_id();
     let preserves = resolved.preserves_source();
-    let first = write_first(input, resolved, digests);
+    let first = write_first(input, resolved, digests, session);
     let reason = match &first {
         Ok((Written::Semantic { dialect, .. }, _)) if preserves && dialect != target => Some(
             format!("lands on dialect {dialect}, not the source's {target}"),
@@ -215,7 +230,7 @@ fn synthesize(
         &ir,
         &Annotations::default(),
         &CodecDigests::new(),
-        &[],
+        RetainedRecords::default(),
         &shaped,
         fidelity,
         &mut bytes,
@@ -244,11 +259,10 @@ fn shaping_edits(
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
         .and_then(|record| record.data());
-    let native = input
-        .ir
-        .native
-        .namespace("sldprt")
-        .map(crate::native::SldprtNative::load);
+    let native =
+        input.ir.native.namespace("sldprt").map(|namespace| {
+            crate::native::SldprtNative::load(namespace, input.ir.tolerances.linear)
+        });
     let (Some(image), Some(Ok(native))) = (image, native) else {
         return Ok(Vec::new());
     };
@@ -269,19 +283,22 @@ fn write_first(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
+    session: &SldprtWriteSession<'_>,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let replay_eligible = resolved.preserves_source();
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {
             let records = source_records(input.ir, value)?;
-            SldprtCodec::write_preserved_with_annotations(input.ir, value, &records, &mut bytes)?
+            SldprtCodec::write_preserved_with_annotations(
+                input.ir, value, &records, session, &mut bytes,
+            )?
         }
         Some(_) => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
             digests,
-            &[],
+            RetainedRecords::default(),
             &[],
             SemanticFidelity::NotConsumed,
             &mut bytes,
@@ -290,7 +307,7 @@ fn write_first(
             input.ir,
             &Annotations::default(),
             digests,
-            &[],
+            RetainedRecords::default(),
             &[],
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)

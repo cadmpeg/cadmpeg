@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly product, placement and mate admission.
 use crate::test_support::{assembly::*, read_bytes, Report};
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 use std::path::Path;
 
@@ -115,7 +116,7 @@ fn mates_keep_evaluated_frames_and_report_unresolved_limits() {
     ]);
     let (model, report) = read(definition);
     assert_eq!(model.ir.model.assembly_joints.len(), 3);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&model.ir.model.assembly_joints).unwrap();
+    let wire = json::to_value(&model.ir.model.assembly_joints).unwrap();
     let pair = wire
         .as_array()
         .unwrap()
@@ -195,7 +196,7 @@ fn evaluated_supported_mate_families_keep_their_degrees_of_freedom() {
         mate("ball", "BALL")
     ]);
     let (model, _) = read(definition);
-    let joints = cadmpeg_core::serde_erase::json::to_value(model.ir.model.assembly_joints).unwrap();
+    let joints = json::to_value(model.ir.model.assembly_joints).unwrap();
     for expected in ["slider", "cylindrical", "plane_coincidence", "ball"] {
         assert!(joints
             .as_array()
@@ -234,7 +235,7 @@ fn unresolved_mate_quantities_remain_in_the_definition_asset() {
         panic!("definition asset must be embedded");
     };
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_slice::<serde_json::Value>(data.as_bytes()).unwrap(),
+        json::from_slice::<serde_json::Value>(data.as_bytes()).unwrap(),
         definition
     );
 }

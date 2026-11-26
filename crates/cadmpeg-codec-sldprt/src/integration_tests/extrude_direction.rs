@@ -465,14 +465,14 @@ fn edit_and_write(
     write_editable(&decoded)
 }
 
-/// Writes `decoded` through `Inherit` with its sidecar.
+/// Writes `decoded` with a request that names no target, with its sidecar.
 fn write_editable(
     decoded: &cadmpeg_test_support::EditableDecodeResult,
 ) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     let plan = SldprtCodec.plan(
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )?;
     let losses = plan
         .report()

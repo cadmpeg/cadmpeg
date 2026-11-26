@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 
 use super::*;
@@ -6,7 +7,7 @@ use super::*;
 const SKETCH: &str = "creo:model:sketch#917";
 
 fn entity(key: &str, geometry: &serde_json::Value, endpoints: &[u32]) -> LegacyEntity {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "id": format!("creo:model:sketch_entity#917:{key}"),
         "sketch": SKETCH,
         "construction": false,
@@ -24,7 +25,7 @@ fn id(key: &str) -> SketchEntityId {
 }
 
 fn input(definition: serde_json::Value) -> Input {
-    cadmpeg_core::serde_erase::json::from_value(definition).expect("v10 constraint")
+    json::from_value(definition).expect("v10 constraint")
 }
 
 fn parameter(key: &str) -> ParameterId {
@@ -60,7 +61,7 @@ fn section() -> Vec<LegacyEntity> {
 }
 
 fn sketch() -> LegacySketch {
-    cadmpeg_core::serde_erase::json::from_value(json!({
+    json::from_value(json!({
         "id": SKETCH,
         "native_ref": "creo:featdefs:sketch#917",
         "placement": {"kind": "unresolved"},
@@ -270,7 +271,7 @@ fn a_relation_with_no_v11_relation_of_its_meaning_stays_native() {
 #[test]
 fn a_stored_frame_is_the_resolved_plane_and_an_unread_one_states_none() {
     let owner = FeatureId::mint("creo:model:sketch_feature#917").expect("owner");
-    let placed: LegacySketch = cadmpeg_core::serde_erase::json::from_value(json!({
+    let placed: LegacySketch = json::from_value(json!({
         "id": SKETCH,
         "placement": {
             "kind": "resolved",
@@ -291,7 +292,7 @@ fn a_stored_frame_is_the_resolved_plane_and_an_unread_one_states_none() {
     assert_eq!(frame.x_axis, UnitVector3::X_AXIS);
     assert_eq!(frame.y_axis, UnitVector3::Y_AXIS);
     assert_eq!(frame.z_axis, UnitVector3::Z_AXIS);
-    let unplaced: LegacySketch = cadmpeg_core::serde_erase::json::from_value(json!({
+    let unplaced: LegacySketch = json::from_value(json!({
         "id": SKETCH,
         "placement": {"kind": "unresolved"},
         "profiles": [],

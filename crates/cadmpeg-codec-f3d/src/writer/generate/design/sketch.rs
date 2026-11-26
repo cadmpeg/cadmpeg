@@ -27,7 +27,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
+use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 
 use crate::loss::F3dLossCode;
 use dimensions::{Candidate, PlannedDimension, Tolerances};
@@ -388,21 +388,31 @@ impl SketchPlan<'_> {
         self.planes.clear();
     }
 
-    /// Write none of the sketches' dimensions, for `reason`: a failure of
-    /// the design with them. Their parameters stay user parameters.
-    pub(super) fn drop_dimensions(&mut self, reason: &str) {
+    /// Write none of the sketch dimensions that `reason` names a failure
+    /// for. Their parameters stay user parameters.
+    pub(super) fn drop_dimensions(
+        &mut self,
+        reason: impl Fn(&SketchConstraintId) -> Option<String>,
+    ) {
         for item in &mut self.items {
-            let dropped = item
-                .candidates
-                .drain(..)
-                .map(|candidate| candidate.constraint.to_string())
-                .collect::<Vec<_>>();
-            if !dropped.is_empty() {
+            let mut dropped = BTreeMap::<String, Vec<String>>::new();
+            item.candidates
+                .retain(|candidate| match reason(candidate.constraint) {
+                    Some(reason) => {
+                        dropped
+                            .entry(reason)
+                            .or_default()
+                            .push(candidate.constraint.to_string());
+                        false
+                    }
+                    None => true,
+                });
+            for (reason, constraints) in dropped {
                 item.losses
                     .push(F3dLossCode::WriterSketchContentOmitted.note(format!(
-                        "F3D writes sketch {} without {}: the writer failed with the sketch's dimensions ({reason})",
+                        "F3D writes sketch {} without {}: {reason}",
                         item.sketch,
-                        dropped.join(" ")
+                        constraints.join(" ")
                     )));
             }
         }
@@ -484,11 +494,13 @@ impl SketchPlan<'_> {
 /// The plan of the typed sketches among `features`, the root scope's
 /// features in timeline order. `planes` is the failure that dropped the
 /// construction planes, if one did: the sketches off the origin planes are
-/// then not written.
+/// then not written. `dropped` names the sketches the writer drops alone,
+/// each with why.
 pub(super) fn plan<'a>(
     target: &'a CadIr,
     features: &[&'a FeatureId],
     planes: Option<&str>,
+    dropped: &BTreeMap<FeatureId, String>,
 ) -> SketchPlan<'a> {
     let tolerance = target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE);
     let mut out = SketchPlan::default();
@@ -505,6 +517,10 @@ pub(super) fn plan<'a>(
         };
         if matches!(feature.suppressed, Some(Dimension::Literal(true))) {
             out.unwritten.insert(id, "is suppressed".into());
+            continue;
+        }
+        if let Some(reason) = dropped.get(id) {
+            out.unwritten.insert(id, reason.clone());
             continue;
         }
         let (placement, frame) = match placement(target, sketch, tolerance) {

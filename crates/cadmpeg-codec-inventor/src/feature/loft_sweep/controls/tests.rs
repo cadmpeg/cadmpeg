@@ -5,6 +5,7 @@ use crate::feature::tests::{
     raw_parameter, reference, reference_list, test_feature, test_property,
 };
 use crate::record_identity::{Located, RecordTypeId};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::scalar::{Angle, FiniteReal};
 
 struct Fixture {
@@ -237,7 +238,7 @@ fn validator_refuses_each_construction_value_outside_the_positional_form() {
     let f = Fixture::new();
     let definition = positional_definition();
     assert!(matches_definition(&definition));
-    let base = cadmpeg_core::serde_erase::json::to_value(&definition).expect("definition");
+    let base = json::to_value(&definition).expect("definition");
     for (field, value) in [
         ("closed", serde_json::json!(true)),
         ("solid", serde_json::json!(false)),
@@ -249,7 +250,7 @@ fn validator_refuses_each_construction_value_outside_the_positional_form() {
     ] {
         let mut changed = base.clone();
         changed["value"]["value"][field] = value;
-        let changed = cadmpeg_core::serde_erase::json::from_value(changed).expect("changed loft");
+        let changed = json::from_value(changed).expect("changed loft");
         assert!(!matches_definition(&changed));
     }
     assert!(validates(

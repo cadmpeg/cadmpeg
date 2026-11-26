@@ -1230,6 +1230,7 @@ mod tests {
     use crate::test_support::parasolid::triangle_body;
     use crate::test_support::plan_inherited_write;
     use crate::SldprtCodec;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::features::FeatureId;
     use std::io::Cursor;
@@ -1566,16 +1567,15 @@ mod tests {
     fn cleared_extrusion() -> cadmpeg_ir::features::Feature {
         use cadmpeg_ir::features::extents::ExtrudeDirection;
         use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-        let history: crate::records::FeatureHistory =
-            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-                "id":"history", "features":[{
-                    "id":"native", "parent":"history", "ordinal":0,
-                    "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
-                    "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
-                    "properties":{"EndCondition":"Blind", "Operation":"Join", "Reverse":"true"}
-                }]
-            }))
-            .expect("synthetic history");
+        let history: crate::records::FeatureHistory = json::from_value(serde_json::json!({
+            "id":"history", "features":[{
+                "id":"native", "parent":"history", "ordinal":0,
+                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
+                "properties":{"EndCondition":"Blind", "Operation":"Join", "Reverse":"true"}
+            }]
+        }))
+        .expect("synthetic history");
         let mut feature = crate::history::project::project_features(&[history])
             .expect("feature projection")
             .into_iter()
@@ -1692,7 +1692,7 @@ mod tests {
             if let Some(configuration) = configuration {
                 value["configuration"] = configuration.into();
             }
-            cadmpeg_core::serde_erase::json::from_value(value).expect("synthetic lane")
+            json::from_value(value).expect("synthetic lane")
         };
         let anchors = HashMap::from([(
             feature.native_ref.clone().expect("the record"),

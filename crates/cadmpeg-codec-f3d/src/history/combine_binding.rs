@@ -103,7 +103,7 @@ fn bind_historical_combine_operands<'a>(
         scope,
         operation,
         (feature_id, previous_state_id),
-        (inputs.histories, inputs.scopes),
+        (inputs.histories, inputs.scopes, inputs.scope_histories),
         &mut refusals,
     ) == Some(true);
     if shared_body {

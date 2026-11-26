@@ -5022,7 +5022,7 @@ mod native_interval_curve_tests {
             ));
             let mut output = vec![0x93, 0x2a];
             let result = crate::F3dCodec
-                .plan(EncodeInput::new(&target, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&target, None), TargetRequest::Unnamed)
                 .and_then(|plan| plan.write_to(&mut output));
             if representable {
                 result.expect("ordinary circle interval writes");

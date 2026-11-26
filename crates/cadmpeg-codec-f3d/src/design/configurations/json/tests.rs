@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::parse_configuration_payload;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 
 fn refuse(bytes: &[u8], policy: DecodePolicy, dimension: ResourceDimension, operation: &str) {
@@ -60,8 +61,8 @@ fn configuration_json_values_and_diagnostics_match_serde() {
                 let actual = actual.unwrap();
                 assert_eq!(actual, expected, "{text}");
                 assert_eq!(
-                    cadmpeg_core::serde_erase::json::to_vec(&actual).unwrap(),
-                    cadmpeg_core::serde_erase::json::to_vec(&expected).unwrap()
+                    json::to_vec(&actual).unwrap(),
+                    json::to_vec(&expected).unwrap()
                 );
             }
             Err(expected) => assert!(

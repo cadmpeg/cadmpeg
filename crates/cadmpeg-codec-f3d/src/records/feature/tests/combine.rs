@@ -3,6 +3,7 @@
 use crate::records::feature::combine::{
     DesignCombineExternalBodyIdentity, DesignCombineExternalBodyIdentityWire,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn external_wire(version: bool) -> serde_json::Value {
     let mut wire = serde_json::json!({
@@ -29,12 +30,8 @@ fn external_wire(version: bool) -> serde_json::Value {
 fn external_combine_identity_admits_only_complete_offset_chains() {
     for version in [false, true] {
         let wire = external_wire(version);
-        let admitted: DesignCombineExternalBodyIdentity =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(admitted).unwrap(),
-            wire
-        );
+        let admitted: DesignCombineExternalBodyIdentity = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(admitted).unwrap(), wire);
         for field in [
             "selector_asset_id_offset",
             "selector_context_id_offset",
@@ -51,16 +48,13 @@ fn external_combine_identity_admits_only_complete_offset_chains() {
                     let mut invalid = wire.clone();
                     invalid[field] = serde_json::json!(invalid_offset);
                     let raw: DesignCombineExternalBodyIdentityWire =
-                        cadmpeg_core::serde_erase::json::from_value(invalid.clone()).unwrap();
+                        json::from_value(invalid.clone()).unwrap();
                     assert!(
                         DesignCombineExternalBodyIdentity::try_from(raw).is_err(),
                         "{field}"
                     );
                     assert!(
-                        cadmpeg_core::serde_erase::json::from_value::<
-                            DesignCombineExternalBodyIdentity,
-                        >(invalid)
-                        .is_err(),
+                        json::from_value::<DesignCombineExternalBodyIdentity>(invalid).is_err(),
                         "{field}"
                     );
                 }
@@ -69,12 +63,7 @@ fn external_combine_identity_admits_only_complete_offset_chains() {
         for lane in 0..2 {
             let mut invalid = wire.clone();
             invalid["tail_value_offsets"][lane] = serde_json::json!(0);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<DesignCombineExternalBodyIdentity>(
-                    invalid
-                )
-                .is_err()
-            );
+            assert!(json::from_value::<DesignCombineExternalBodyIdentity>(invalid).is_err());
         }
     }
 }
@@ -94,8 +83,7 @@ fn external_combine_identity_rejects_mismatched_assets_and_empty_content() {
         let mut wire = external_wire(true);
         wire[field] = value;
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignCombineExternalBodyIdentity>(wire)
-                .is_err(),
+            json::from_value::<DesignCombineExternalBodyIdentity>(wire).is_err(),
             "{field}"
         );
     }

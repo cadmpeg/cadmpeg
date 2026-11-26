@@ -3,6 +3,7 @@ use crate::features::geometry::FinitePoint3;
 use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
 use crate::math::Point3;
 use crate::scalar::FiniteReal;
+use cadmpeg_core::serde_erase::json;
 
 fn raw(parameters: Option<[f64; 3]>) -> PolylineSamples {
     let points = [
@@ -80,10 +81,8 @@ fn polyline_construction_accepts_both_lanes_and_either_parameter_direction() {
     for parameters in [None, Some([0., 1., 2.]), Some([2., 1., 0.])] {
         let curve = PolylineCurve::new(raw(parameters), 0.25).expect("valid");
         assert_eq!(
-            serde_json::from_str::<PolylineCurve>(
-                &cadmpeg_core::serde_erase::json::to_string(&curve).expect("wire")
-            )
-            .expect("context-free serde"),
+            serde_json::from_str::<PolylineCurve>(&json::to_string(&curve).expect("wire"))
+                .expect("context-free serde"),
             curve
         );
     }

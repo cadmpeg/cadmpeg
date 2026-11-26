@@ -105,7 +105,14 @@ pub enum LegacyExtensionFlags {
 /// Mutually exclusive pre-revision and revision-gated offset layouts.
 // A source states raw scalars; an `OffsetSurfaceConstruction` holds the
 // admitted extension, whose scalars are `FiniteReal` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
@@ -331,6 +338,33 @@ impl SurfaceGeometry {
         match self {
             Self::Procedural { construction, .. } => Some(construction),
             Self::Solved(_) => None,
+        }
+    }
+
+    /// States this carrier in the form that holds only what was read
+    /// (§3.3). `construction` states whether its procedural construction is
+    /// dropped, and `held` whether the geometry it holds besides that
+    /// construction needs a dropped record. A procedural carrier whose
+    /// construction stays loses its cache where the cache needs a dropped
+    /// record. One whose construction is dropped is its cache where the cache
+    /// needs none, and `Unknown` otherwise. A solved carrier that needs a
+    /// dropped record is `Unknown`.
+    pub(crate) fn release(&mut self, construction: bool, held: bool) {
+        let unknown = || Self::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+        match self {
+            Self::Procedural { cache, .. } if !construction => {
+                if held {
+                    *cache = None;
+                }
+            }
+            Self::Procedural { cache, .. } => {
+                *self = cache
+                    .take()
+                    .filter(|_| !held)
+                    .map_or_else(unknown, Self::Solved);
+            }
+            Self::Solved(_) if held => *self = unknown(),
+            Self::Solved(_) => {}
         }
     }
 
@@ -667,6 +701,33 @@ impl CurveGeometry {
         match self {
             Self::Procedural { construction, .. } => Some(construction),
             Self::Solved(_) => None,
+        }
+    }
+
+    /// States this carrier in the form that holds only what was read
+    /// (§3.3). `construction` states whether its procedural construction is
+    /// dropped, and `held` whether the geometry it holds besides that
+    /// construction needs a dropped record. A procedural carrier whose
+    /// construction stays loses its cache where the cache needs a dropped
+    /// record. One whose construction is dropped is its cache where the cache
+    /// needs none, and `Unknown` otherwise. A solved carrier that needs a
+    /// dropped record is `Unknown`.
+    pub(crate) fn release(&mut self, construction: bool, held: bool) {
+        let unknown = || Self::Solved(SolvedCurveGeometry::Unknown { record: None });
+        match self {
+            Self::Procedural { cache, .. } if !construction => {
+                if held {
+                    *cache = None;
+                }
+            }
+            Self::Procedural { cache, .. } => {
+                *self = cache
+                    .take()
+                    .filter(|_| !held)
+                    .map_or_else(unknown, Self::Solved);
+            }
+            Self::Solved(_) if held => *self = unknown(),
+            Self::Solved(_) => {}
         }
     }
 

@@ -5,6 +5,7 @@ use crate::test_support::assembly_test::{
     f3d_with_identity_xrefs, f3d_with_redirections_json, f3d_without_brep,
     f3z_archive_with_design_description, redirections_json,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::products::{ExternalDocument, Storage};
 use std::io::Write;
@@ -66,8 +67,7 @@ fn unreferenced_design_identity_keeps_components_local() {
         let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
         if retain_table {
             zip.start_file("RedirectionsStream.dat", options).unwrap();
-            zip.write_all(&cadmpeg_core::serde_erase::json::to_vec(&table).unwrap())
-                .unwrap();
+            zip.write_all(&json::to_vec(&table).unwrap()).unwrap();
         }
         let mut metadata =
             crate::test_support::streams_test::design_metastream_with_records(&[], &[]);
@@ -125,10 +125,7 @@ fn archive_description_supplies_member_and_unresolved_link_identities() {
         design["lineageUrn"] = "".into();
         design["versionUrn"] = "".into();
     }
-    let root = f3d_with_redirections_json(
-        "assembly-design",
-        &cadmpeg_core::serde_erase::json::to_vec(&table).unwrap(),
-    );
+    let root = f3d_with_redirections_json("assembly-design", &json::to_vec(&table).unwrap());
     let child = include_bytes!("../../tests/golden/fixtures/generated_unit_cube.f3d");
     let objects: Vec<_> = [
         ("root.f3d", "Root"),
@@ -150,7 +147,7 @@ fn archive_description_supplies_member_and_unresolved_link_identities() {
     let bytes = f3z_archive_with_design_description(
         "root.f3d",
         &[("root.f3d", &root), ("child.f3d", child)],
-        &cadmpeg_core::serde_erase::json::to_vec(&description).unwrap(),
+        &json::to_vec(&description).unwrap(),
     );
     let decoded = crate::test_support::archive_session::decode(
         &mut Cursor::new(bytes),
@@ -502,7 +499,7 @@ fn f3z_conflicting_description_identity_keeps_member_geometry_and_identity() {
         "assembly-design",
         "root.f3d",
         &targets,
-        &cadmpeg_core::serde_erase::json::to_vec(&table).unwrap(),
+        &json::to_vec(&table).unwrap(),
     );
     let child = include_bytes!("../../tests/golden/fixtures/generated_unit_cube.f3d");
     let description = serde_json::json!({"designDescription":{"designGraphs":[{"designObjects":[
@@ -514,7 +511,7 @@ fn f3z_conflicting_description_identity_keeps_member_geometry_and_identity() {
     let bytes = f3z_archive_with_design_description(
         "root.f3d",
         &[("root.f3d", &root), ("child.f3d", child)],
-        &cadmpeg_core::serde_erase::json::to_vec(&description).unwrap(),
+        &json::to_vec(&description).unwrap(),
     );
     let decoded = crate::test_support::archive_session::decode(
         &mut Cursor::new(bytes),
