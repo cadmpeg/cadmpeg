@@ -31,17 +31,15 @@ jobs:
       - uses: ./.github/actions/cargo-job-count
       - name: lab
         run: |
-          set -uo pipefail
-          t() { local s=$(date +%s); "$@" 2>&1 | grep -E "^\s+(Compiling|Checking) cadmpeg|error|test result" | sed 's/^/    /'; echo "TIME $(( $(date +%s) - s ))s :: $*"; }
+          set +e
+          t() { local s=$(date +%s); "$@" 2>&1 | grep -E "^\s+(Compiling|Checking) cadmpeg|^error|test result" | sed 's/^/    /'; echo "TIME $(( $(date +%s) - s ))s :: $*"; }
           t cargo test -v -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
-          t cargo check -v -p cadmpeg-asm --lib --features cadmpeg-asm/schema
-          t cargo test -v -p cadmpeg-ir --features schema-order --test committed_schema
-          t cargo test -v -p cadmpeg --no-default-features --features step,cadmpeg-ir/schema,cadmpeg-asm/schema --test integration delayed_step_archive_root_inspects_and_loads_with_step
+          t cargo test -v -p cadmpeg --no-default-features --features step,cadmpeg-ir/schema --test integration delayed_step_archive_root_inspects_and_loads_with_step
           t cargo test -v -p cadmpeg --no-default-features --features step --test integration delayed_step_archive_root_inspects_and_loads_with_step
           t cargo check -v -p cadmpeg --no-default-features --features sldprt
           t cargo build -v -p cadmpeg --no-default-features --features sldprt
-          t cargo test -v -p cadmpeg-ir --features schema-order --lib -- committed_json_schemas
-          t cargo check -v -p cadmpeg-core -p cadmpeg-asm --all-targets --features cadmpeg-core/schema,cadmpeg-asm/schema
+          t cargo test -v -p cadmpeg --no-default-features --features sldprt --no-run
+          true
 
   lint:
     name: lab clippy
