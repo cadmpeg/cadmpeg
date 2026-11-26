@@ -24,273 +24,273 @@
     "geometry": {
       "bodies": [
         {
-          "id": "alibre:xref/m0/brep:entity#0",
+          "id": "alibre:m0@brep:entity#0",
           "kind": "solid"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#0",
+          "id": "alibre:m1/m0@brep:entity#0",
           "kind": "solid"
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:entity#0",
+          "id": "alibre:m1/m1@brep:entity#0",
           "kind": "solid"
         }
       ],
       "coedges": [
         {
-          "edge": "alibre:xref/m0/brep:entity#23",
-          "id": "alibre:xref/m0/brep:entity#15",
-          "owner_loop": "alibre:xref/m0/brep:entity#7",
+          "edge": "alibre:m0@brep:entity#23",
+          "id": "alibre:m0@brep:entity#15",
+          "owner_loop": "alibre:m0@brep:entity#7",
           "pcurves": [],
-          "radial_next": "alibre:xref/m0/brep:entity#21",
+          "radial_next": "alibre:m0@brep:entity#21",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m0/brep:entity#23",
-          "id": "alibre:xref/m0/brep:entity#21",
-          "owner_loop": "alibre:xref/m0/brep:entity#12",
+          "edge": "alibre:m0@brep:entity#23",
+          "id": "alibre:m0@brep:entity#21",
+          "owner_loop": "alibre:m0@brep:entity#12",
           "pcurves": [],
-          "radial_next": "alibre:xref/m0/brep:entity#15",
+          "radial_next": "alibre:m0@brep:entity#15",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m0/brep:entity#27",
-          "id": "alibre:xref/m0/brep:entity#22",
-          "owner_loop": "alibre:xref/m0/brep:entity#14",
+          "edge": "alibre:m0@brep:entity#27",
+          "id": "alibre:m0@brep:entity#22",
+          "owner_loop": "alibre:m0@brep:entity#14",
           "pcurves": [],
-          "radial_next": "alibre:xref/m0/brep:entity#26",
+          "radial_next": "alibre:m0@brep:entity#26",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m0/brep:entity#27",
-          "id": "alibre:xref/m0/brep:entity#26",
-          "owner_loop": "alibre:xref/m0/brep:entity#19",
+          "edge": "alibre:m0@brep:entity#27",
+          "id": "alibre:m0@brep:entity#26",
+          "owner_loop": "alibre:m0@brep:entity#19",
           "pcurves": [],
-          "radial_next": "alibre:xref/m0/brep:entity#22",
+          "radial_next": "alibre:m0@brep:entity#22",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#106",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#105",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#78",
+          "edge": "alibre:m1/m0@brep:entity#106",
+          "id": "alibre:m1/m0@brep:entity#105",
+          "owner_loop": "alibre:m1/m0@brep:entity#78",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#81",
+          "radial_next": "alibre:m1/m0@brep:entity#81",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#25",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#14",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#7",
+          "edge": "alibre:m1/m0@brep:entity#25",
+          "id": "alibre:m1/m0@brep:entity#14",
+          "owner_loop": "alibre:m1/m0@brep:entity#7",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#24",
+          "radial_next": "alibre:m1/m0@brep:entity#24",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#36",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#21",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#12",
+          "edge": "alibre:m1/m0@brep:entity#36",
+          "id": "alibre:m1/m0@brep:entity#21",
+          "owner_loop": "alibre:m1/m0@brep:entity#12",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#35",
+          "radial_next": "alibre:m1/m0@brep:entity#35",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#38",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#22",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#7",
+          "edge": "alibre:m1/m0@brep:entity#38",
+          "id": "alibre:m1/m0@brep:entity#22",
+          "owner_loop": "alibre:m1/m0@brep:entity#7",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#34",
+          "radial_next": "alibre:m1/m0@brep:entity#34",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#40",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#23",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#7",
+          "edge": "alibre:m1/m0@brep:entity#40",
+          "id": "alibre:m1/m0@brep:entity#23",
+          "owner_loop": "alibre:m1/m0@brep:entity#7",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#39",
+          "radial_next": "alibre:m1/m0@brep:entity#39",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#25",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#24",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#42",
+          "edge": "alibre:m1/m0@brep:entity#25",
+          "id": "alibre:m1/m0@brep:entity#24",
+          "owner_loop": "alibre:m1/m0@brep:entity#42",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#14",
+          "radial_next": "alibre:m1/m0@brep:entity#14",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#56",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#32",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#19",
+          "edge": "alibre:m1/m0@brep:entity#56",
+          "id": "alibre:m1/m0@brep:entity#32",
+          "owner_loop": "alibre:m1/m0@brep:entity#19",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#55",
+          "radial_next": "alibre:m1/m0@brep:entity#55",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#58",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#33",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#12",
+          "edge": "alibre:m1/m0@brep:entity#58",
+          "id": "alibre:m1/m0@brep:entity#33",
+          "owner_loop": "alibre:m1/m0@brep:entity#12",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#54",
+          "radial_next": "alibre:m1/m0@brep:entity#54",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#38",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#34",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#12",
+          "edge": "alibre:m1/m0@brep:entity#38",
+          "id": "alibre:m1/m0@brep:entity#34",
+          "owner_loop": "alibre:m1/m0@brep:entity#12",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#22",
+          "radial_next": "alibre:m1/m0@brep:entity#22",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#36",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#35",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#42",
+          "edge": "alibre:m1/m0@brep:entity#36",
+          "id": "alibre:m1/m0@brep:entity#35",
+          "owner_loop": "alibre:m1/m0@brep:entity#42",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#21",
+          "radial_next": "alibre:m1/m0@brep:entity#21",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#63",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#37",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#7",
+          "edge": "alibre:m1/m0@brep:entity#63",
+          "id": "alibre:m1/m0@brep:entity#37",
+          "owner_loop": "alibre:m1/m0@brep:entity#7",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#62",
+          "radial_next": "alibre:m1/m0@brep:entity#62",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#40",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#39",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#30",
+          "edge": "alibre:m1/m0@brep:entity#40",
+          "id": "alibre:m1/m0@brep:entity#39",
+          "owner_loop": "alibre:m1/m0@brep:entity#30",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#23",
+          "radial_next": "alibre:m1/m0@brep:entity#23",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#71",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#41",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#42",
+          "edge": "alibre:m1/m0@brep:entity#71",
+          "id": "alibre:m1/m0@brep:entity#41",
+          "owner_loop": "alibre:m1/m0@brep:entity#42",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#52",
+          "radial_next": "alibre:m1/m0@brep:entity#52",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#71",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#52",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#30",
+          "edge": "alibre:m1/m0@brep:entity#71",
+          "id": "alibre:m1/m0@brep:entity#52",
+          "owner_loop": "alibre:m1/m0@brep:entity#30",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#41",
+          "radial_next": "alibre:m1/m0@brep:entity#41",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#82",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#53",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#19",
+          "edge": "alibre:m1/m0@brep:entity#82",
+          "id": "alibre:m1/m0@brep:entity#53",
+          "owner_loop": "alibre:m1/m0@brep:entity#19",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#80",
+          "radial_next": "alibre:m1/m0@brep:entity#80",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#58",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#54",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#19",
+          "edge": "alibre:m1/m0@brep:entity#58",
+          "id": "alibre:m1/m0@brep:entity#54",
+          "owner_loop": "alibre:m1/m0@brep:entity#19",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#33",
+          "radial_next": "alibre:m1/m0@brep:entity#33",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#56",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#55",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#42",
+          "edge": "alibre:m1/m0@brep:entity#56",
+          "id": "alibre:m1/m0@brep:entity#55",
+          "owner_loop": "alibre:m1/m0@brep:entity#42",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#32",
+          "radial_next": "alibre:m1/m0@brep:entity#32",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#87",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#57",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#12",
+          "edge": "alibre:m1/m0@brep:entity#87",
+          "id": "alibre:m1/m0@brep:entity#57",
+          "owner_loop": "alibre:m1/m0@brep:entity#12",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#86",
+          "radial_next": "alibre:m1/m0@brep:entity#86",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#63",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#62",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#78",
+          "edge": "alibre:m1/m0@brep:entity#63",
+          "id": "alibre:m1/m0@brep:entity#62",
+          "owner_loop": "alibre:m1/m0@brep:entity#78",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#37",
+          "radial_next": "alibre:m1/m0@brep:entity#37",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#98",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#67",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#30",
+          "edge": "alibre:m1/m0@brep:entity#98",
+          "id": "alibre:m1/m0@brep:entity#67",
+          "owner_loop": "alibre:m1/m0@brep:entity#30",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#93",
+          "radial_next": "alibre:m1/m0@brep:entity#93",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#82",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#80",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#30",
+          "edge": "alibre:m1/m0@brep:entity#82",
+          "id": "alibre:m1/m0@brep:entity#80",
+          "owner_loop": "alibre:m1/m0@brep:entity#30",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#53",
+          "radial_next": "alibre:m1/m0@brep:entity#53",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#106",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#81",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#19",
+          "edge": "alibre:m1/m0@brep:entity#106",
+          "id": "alibre:m1/m0@brep:entity#81",
+          "owner_loop": "alibre:m1/m0@brep:entity#19",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#105",
+          "radial_next": "alibre:m1/m0@brep:entity#105",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#87",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#86",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#78",
+          "edge": "alibre:m1/m0@brep:entity#87",
+          "id": "alibre:m1/m0@brep:entity#86",
+          "owner_loop": "alibre:m1/m0@brep:entity#78",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#57",
+          "radial_next": "alibre:m1/m0@brep:entity#57",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m0/brep:entity#98",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#93",
-          "owner_loop": "alibre:xref/m1/xref/m0/brep:entity#78",
+          "edge": "alibre:m1/m0@brep:entity#98",
+          "id": "alibre:m1/m0@brep:entity#93",
+          "owner_loop": "alibre:m1/m0@brep:entity#78",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m0/brep:entity#67",
+          "radial_next": "alibre:m1/m0@brep:entity#67",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m1/brep:entity#23",
-          "id": "alibre:xref/m1/xref/m1/brep:entity#15",
-          "owner_loop": "alibre:xref/m1/xref/m1/brep:entity#7",
+          "edge": "alibre:m1/m1@brep:entity#23",
+          "id": "alibre:m1/m1@brep:entity#15",
+          "owner_loop": "alibre:m1/m1@brep:entity#7",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m1/brep:entity#21",
+          "radial_next": "alibre:m1/m1@brep:entity#21",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m1/brep:entity#23",
-          "id": "alibre:xref/m1/xref/m1/brep:entity#21",
-          "owner_loop": "alibre:xref/m1/xref/m1/brep:entity#12",
+          "edge": "alibre:m1/m1@brep:entity#23",
+          "id": "alibre:m1/m1@brep:entity#21",
+          "owner_loop": "alibre:m1/m1@brep:entity#12",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m1/brep:entity#15",
+          "radial_next": "alibre:m1/m1@brep:entity#15",
           "sense": "reversed"
         },
         {
-          "edge": "alibre:xref/m1/xref/m1/brep:entity#27",
-          "id": "alibre:xref/m1/xref/m1/brep:entity#22",
-          "owner_loop": "alibre:xref/m1/xref/m1/brep:entity#14",
+          "edge": "alibre:m1/m1@brep:entity#27",
+          "id": "alibre:m1/m1@brep:entity#22",
+          "owner_loop": "alibre:m1/m1@brep:entity#14",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m1/brep:entity#26",
+          "radial_next": "alibre:m1/m1@brep:entity#26",
           "sense": "forward"
         },
         {
-          "edge": "alibre:xref/m1/xref/m1/brep:entity#27",
-          "id": "alibre:xref/m1/xref/m1/brep:entity#26",
-          "owner_loop": "alibre:xref/m1/xref/m1/brep:entity#19",
+          "edge": "alibre:m1/m1@brep:entity#27",
+          "id": "alibre:m1/m1@brep:entity#26",
+          "owner_loop": "alibre:m1/m1@brep:entity#19",
           "pcurves": [],
-          "radial_next": "alibre:xref/m1/xref/m1/brep:entity#22",
+          "radial_next": "alibre:m1/m1@brep:entity#22",
           "sense": "reversed"
         }
       ],
@@ -318,7 +318,7 @@
               }
             }
           },
-          "id": "alibre:xref/m0/brep:entity#30"
+          "id": "alibre:m0@brep:entity#30"
         },
         {
           "geometry": {
@@ -343,7 +343,7 @@
               }
             }
           },
-          "id": "alibre:xref/m0/brep:entity#34"
+          "id": "alibre:m0@brep:entity#34"
         },
         {
           "geometry": {
@@ -362,7 +362,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#102"
+          "id": "alibre:m1/m0@brep:entity#102"
         },
         {
           "geometry": {
@@ -381,7 +381,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#109"
+          "id": "alibre:m1/m0@brep:entity#109"
         },
         {
           "geometry": {
@@ -400,7 +400,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#113"
+          "id": "alibre:m1/m0@brep:entity#113"
         },
         {
           "geometry": {
@@ -419,7 +419,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#118"
+          "id": "alibre:m1/m0@brep:entity#118"
         },
         {
           "geometry": {
@@ -438,7 +438,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#122"
+          "id": "alibre:m1/m0@brep:entity#122"
         },
         {
           "geometry": {
@@ -457,7 +457,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#46"
+          "id": "alibre:m1/m0@brep:entity#46"
         },
         {
           "geometry": {
@@ -476,7 +476,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#61"
+          "id": "alibre:m1/m0@brep:entity#61"
         },
         {
           "geometry": {
@@ -495,7 +495,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#66"
+          "id": "alibre:m1/m0@brep:entity#66"
         },
         {
           "geometry": {
@@ -514,7 +514,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#70"
+          "id": "alibre:m1/m0@brep:entity#70"
         },
         {
           "geometry": {
@@ -533,7 +533,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#85"
+          "id": "alibre:m1/m0@brep:entity#85"
         },
         {
           "geometry": {
@@ -552,7 +552,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#90"
+          "id": "alibre:m1/m0@brep:entity#90"
         },
         {
           "geometry": {
@@ -571,7 +571,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#95"
+          "id": "alibre:m1/m0@brep:entity#95"
         },
         {
           "geometry": {
@@ -596,7 +596,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m1/brep:entity#30"
+          "id": "alibre:m1/m1@brep:entity#30"
         },
         {
           "geometry": {
@@ -621,561 +621,561 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m1/brep:entity#34"
+          "id": "alibre:m1/m1@brep:entity#34"
         }
       ],
       "edges": [
         {
           "carrier": {
-            "curve": "alibre:xref/m0/brep:entity#30",
+            "curve": "alibre:m0@brep:entity#30",
             "param_range": [
               0.0,
               6.283185307179586
             ]
           },
           "ends": {
-            "end": "alibre:xref/m0/brep:entity#29",
-            "start": "alibre:xref/m0/brep:entity#29"
+            "end": "alibre:m0@brep:entity#29",
+            "start": "alibre:m0@brep:entity#29"
           },
-          "id": "alibre:xref/m0/brep:entity#23"
+          "id": "alibre:m0@brep:entity#23"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m0/brep:entity#34",
+            "curve": "alibre:m0@brep:entity#34",
             "param_range": [
               0.0,
               6.283185307179586
             ]
           },
           "ends": {
-            "end": "alibre:xref/m0/brep:entity#33",
-            "start": "alibre:xref/m0/brep:entity#33"
+            "end": "alibre:m0@brep:entity#33",
+            "start": "alibre:m0@brep:entity#33"
           },
-          "id": "alibre:xref/m0/brep:entity#27"
+          "id": "alibre:m0@brep:entity#27"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#122",
+            "curve": "alibre:m1/m0@brep:entity#122",
             "param_range": [
               0.0,
               20.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#108",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#89"
+            "end": "alibre:m1/m0@brep:entity#108",
+            "start": "alibre:m1/m0@brep:entity#89"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#106"
+          "id": "alibre:m1/m0@brep:entity#106"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#46",
+            "curve": "alibre:m1/m0@brep:entity#46",
             "param_range": [
               0.0,
               20.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#45",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#44"
+            "end": "alibre:m1/m0@brep:entity#45",
+            "start": "alibre:m1/m0@brep:entity#44"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#25"
+          "id": "alibre:m1/m0@brep:entity#25"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#61",
+            "curve": "alibre:m1/m0@brep:entity#61",
             "param_range": [
               0.0,
               30.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#60",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#45"
+            "end": "alibre:m1/m0@brep:entity#60",
+            "start": "alibre:m1/m0@brep:entity#45"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#36"
+          "id": "alibre:m1/m0@brep:entity#36"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#66",
+            "curve": "alibre:m1/m0@brep:entity#66",
             "param_range": [
               0.0,
               10.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#45",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#65"
+            "end": "alibre:m1/m0@brep:entity#45",
+            "start": "alibre:m1/m0@brep:entity#65"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#38"
+          "id": "alibre:m1/m0@brep:entity#38"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#70",
+            "curve": "alibre:m1/m0@brep:entity#70",
             "param_range": [
               0.0,
               10.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#44",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#69"
+            "end": "alibre:m1/m0@brep:entity#44",
+            "start": "alibre:m1/m0@brep:entity#69"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#40"
+          "id": "alibre:m1/m0@brep:entity#40"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#85",
+            "curve": "alibre:m1/m0@brep:entity#85",
             "param_range": [
               0.0,
               20.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#84",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#60"
+            "end": "alibre:m1/m0@brep:entity#84",
+            "start": "alibre:m1/m0@brep:entity#60"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#56"
+          "id": "alibre:m1/m0@brep:entity#56"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#90",
+            "curve": "alibre:m1/m0@brep:entity#90",
             "param_range": [
               0.0,
               10.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#60",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#89"
+            "end": "alibre:m1/m0@brep:entity#60",
+            "start": "alibre:m1/m0@brep:entity#89"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#58"
+          "id": "alibre:m1/m0@brep:entity#58"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#95",
+            "curve": "alibre:m1/m0@brep:entity#95",
             "param_range": [
               0.0,
               20.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#65",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#69"
+            "end": "alibre:m1/m0@brep:entity#65",
+            "start": "alibre:m1/m0@brep:entity#69"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#63"
+          "id": "alibre:m1/m0@brep:entity#63"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#102",
+            "curve": "alibre:m1/m0@brep:entity#102",
             "param_range": [
               0.0,
               30.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#44",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#84"
+            "end": "alibre:m1/m0@brep:entity#44",
+            "start": "alibre:m1/m0@brep:entity#84"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#71"
+          "id": "alibre:m1/m0@brep:entity#71"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#109",
+            "curve": "alibre:m1/m0@brep:entity#109",
             "param_range": [
               0.0,
               10.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#84",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#108"
+            "end": "alibre:m1/m0@brep:entity#84",
+            "start": "alibre:m1/m0@brep:entity#108"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#82"
+          "id": "alibre:m1/m0@brep:entity#82"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#113",
+            "curve": "alibre:m1/m0@brep:entity#113",
             "param_range": [
               0.0,
               30.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#89",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#65"
+            "end": "alibre:m1/m0@brep:entity#89",
+            "start": "alibre:m1/m0@brep:entity#65"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#87"
+          "id": "alibre:m1/m0@brep:entity#87"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m0/brep:entity#118",
+            "curve": "alibre:m1/m0@brep:entity#118",
             "param_range": [
               0.0,
               30.0
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m0/brep:entity#69",
-            "start": "alibre:xref/m1/xref/m0/brep:entity#108"
+            "end": "alibre:m1/m0@brep:entity#69",
+            "start": "alibre:m1/m0@brep:entity#108"
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#98"
+          "id": "alibre:m1/m0@brep:entity#98"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m1/brep:entity#30",
+            "curve": "alibre:m1/m1@brep:entity#30",
             "param_range": [
               0.0,
               6.283185307179586
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m1/brep:entity#29",
-            "start": "alibre:xref/m1/xref/m1/brep:entity#29"
+            "end": "alibre:m1/m1@brep:entity#29",
+            "start": "alibre:m1/m1@brep:entity#29"
           },
-          "id": "alibre:xref/m1/xref/m1/brep:entity#23"
+          "id": "alibre:m1/m1@brep:entity#23"
         },
         {
           "carrier": {
-            "curve": "alibre:xref/m1/xref/m1/brep:entity#34",
+            "curve": "alibre:m1/m1@brep:entity#34",
             "param_range": [
               0.0,
               6.283185307179586
             ]
           },
           "ends": {
-            "end": "alibre:xref/m1/xref/m1/brep:entity#33",
-            "start": "alibre:xref/m1/xref/m1/brep:entity#33"
+            "end": "alibre:m1/m1@brep:entity#33",
+            "start": "alibre:m1/m1@brep:entity#33"
           },
-          "id": "alibre:xref/m1/xref/m1/brep:entity#27"
+          "id": "alibre:m1/m1@brep:entity#27"
         }
       ],
       "faces": [
         {
-          "id": "alibre:xref/m0/brep:entity#11",
+          "id": "alibre:m0@brep:entity#11",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m0/brep:entity#19"
+              "alibre:m0@brep:entity#19"
             ]
           },
           "sense": "reversed",
-          "shell": "alibre:xref/m0/brep:entity#3",
-          "surface": "alibre:xref/m0/brep:entity#20"
+          "shell": "alibre:m0@brep:entity#3",
+          "surface": "alibre:m0@brep:entity#20"
         },
         {
-          "id": "alibre:xref/m0/brep:entity#4",
+          "id": "alibre:m0@brep:entity#4",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m0/brep:entity#7",
-              "alibre:xref/m0/brep:entity#14"
+              "alibre:m0@brep:entity#7",
+              "alibre:m0@brep:entity#14"
             ]
           },
           "sense": "forward",
-          "shell": "alibre:xref/m0/brep:entity#3",
-          "surface": "alibre:xref/m0/brep:entity#8"
+          "shell": "alibre:m0@brep:entity#3",
+          "surface": "alibre:m0@brep:entity#8"
         },
         {
-          "id": "alibre:xref/m0/brep:entity#6",
+          "id": "alibre:m0@brep:entity#6",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m0/brep:entity#12"
+              "alibre:m0@brep:entity#12"
             ]
           },
           "sense": "forward",
-          "shell": "alibre:xref/m0/brep:entity#3",
-          "surface": "alibre:xref/m0/brep:entity#13"
+          "shell": "alibre:m0@brep:entity#3",
+          "surface": "alibre:m0@brep:entity#13"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#11",
+          "id": "alibre:m1/m0@brep:entity#11",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m1/xref/m0/brep:entity#19"
+              "alibre:m1/m0@brep:entity#19"
             ]
           },
           "sense": "forward",
-          "shell": "alibre:xref/m1/xref/m0/brep:entity#3",
-          "surface": "alibre:xref/m1/xref/m0/brep:entity#20"
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#20"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#18",
+          "id": "alibre:m1/m0@brep:entity#18",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m1/xref/m0/brep:entity#30"
+              "alibre:m1/m0@brep:entity#30"
             ]
           },
           "sense": "forward",
-          "shell": "alibre:xref/m1/xref/m0/brep:entity#3",
-          "surface": "alibre:xref/m1/xref/m0/brep:entity#31"
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#31"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#29",
+          "id": "alibre:m1/m0@brep:entity#29",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m1/xref/m0/brep:entity#42"
+              "alibre:m1/m0@brep:entity#42"
             ]
           },
           "sense": "forward",
-          "shell": "alibre:xref/m1/xref/m0/brep:entity#3",
-          "surface": "alibre:xref/m1/xref/m0/brep:entity#51"
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#51"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#4",
+          "id": "alibre:m1/m0@brep:entity#4",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m1/xref/m0/brep:entity#7"
+              "alibre:m1/m0@brep:entity#7"
             ]
           },
           "sense": "forward",
-          "shell": "alibre:xref/m1/xref/m0/brep:entity#3",
-          "surface": "alibre:xref/m1/xref/m0/brep:entity#8"
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#8"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#50",
+          "id": "alibre:m1/m0@brep:entity#50",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m1/xref/m0/brep:entity#78"
+              "alibre:m1/m0@brep:entity#78"
             ]
           },
           "sense": "reversed",
-          "shell": "alibre:xref/m1/xref/m0/brep:entity#3",
-          "surface": "alibre:xref/m1/xref/m0/brep:entity#79"
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#79"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#6",
+          "id": "alibre:m1/m0@brep:entity#6",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m1/xref/m0/brep:entity#12"
+              "alibre:m1/m0@brep:entity#12"
             ]
           },
           "sense": "forward",
-          "shell": "alibre:xref/m1/xref/m0/brep:entity#3",
-          "surface": "alibre:xref/m1/xref/m0/brep:entity#13"
+          "shell": "alibre:m1/m0@brep:entity#3",
+          "surface": "alibre:m1/m0@brep:entity#13"
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:entity#11",
+          "id": "alibre:m1/m1@brep:entity#11",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m1/xref/m1/brep:entity#19"
+              "alibre:m1/m1@brep:entity#19"
             ]
           },
           "sense": "reversed",
-          "shell": "alibre:xref/m1/xref/m1/brep:entity#3",
-          "surface": "alibre:xref/m1/xref/m1/brep:entity#20"
+          "shell": "alibre:m1/m1@brep:entity#3",
+          "surface": "alibre:m1/m1@brep:entity#20"
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:entity#4",
+          "id": "alibre:m1/m1@brep:entity#4",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m1/xref/m1/brep:entity#7",
-              "alibre:xref/m1/xref/m1/brep:entity#14"
+              "alibre:m1/m1@brep:entity#7",
+              "alibre:m1/m1@brep:entity#14"
             ]
           },
           "sense": "forward",
-          "shell": "alibre:xref/m1/xref/m1/brep:entity#3",
-          "surface": "alibre:xref/m1/xref/m1/brep:entity#8"
+          "shell": "alibre:m1/m1@brep:entity#3",
+          "surface": "alibre:m1/m1@brep:entity#8"
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:entity#6",
+          "id": "alibre:m1/m1@brep:entity#6",
           "loops": {
             "kind": "unspecified",
             "loops": [
-              "alibre:xref/m1/xref/m1/brep:entity#12"
+              "alibre:m1/m1@brep:entity#12"
             ]
           },
           "sense": "forward",
-          "shell": "alibre:xref/m1/xref/m1/brep:entity#3",
-          "surface": "alibre:xref/m1/xref/m1/brep:entity#13"
+          "shell": "alibre:m1/m1@brep:entity#3",
+          "surface": "alibre:m1/m1@brep:entity#13"
         }
       ],
       "loops": [
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m0/brep:entity#21"
+              "alibre:m0@brep:entity#21"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m0/brep:entity#6",
-          "id": "alibre:xref/m0/brep:entity#12"
+          "face": "alibre:m0@brep:entity#6",
+          "id": "alibre:m0@brep:entity#12"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m0/brep:entity#22"
+              "alibre:m0@brep:entity#22"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m0/brep:entity#4",
-          "id": "alibre:xref/m0/brep:entity#14"
+          "face": "alibre:m0@brep:entity#4",
+          "id": "alibre:m0@brep:entity#14"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m0/brep:entity#26"
+              "alibre:m0@brep:entity#26"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m0/brep:entity#11",
-          "id": "alibre:xref/m0/brep:entity#19"
+          "face": "alibre:m0@brep:entity#11",
+          "id": "alibre:m0@brep:entity#19"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m0/brep:entity#15"
+              "alibre:m0@brep:entity#15"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m0/brep:entity#4",
-          "id": "alibre:xref/m0/brep:entity#7"
+          "face": "alibre:m0@brep:entity#4",
+          "id": "alibre:m0@brep:entity#7"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m0/brep:entity#21",
-              "alibre:xref/m1/xref/m0/brep:entity#33",
-              "alibre:xref/m1/xref/m0/brep:entity#57",
-              "alibre:xref/m1/xref/m0/brep:entity#34"
+              "alibre:m1/m0@brep:entity#21",
+              "alibre:m1/m0@brep:entity#33",
+              "alibre:m1/m0@brep:entity#57",
+              "alibre:m1/m0@brep:entity#34"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m0/brep:entity#6",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#12"
+          "face": "alibre:m1/m0@brep:entity#6",
+          "id": "alibre:m1/m0@brep:entity#12"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m0/brep:entity#32",
-              "alibre:xref/m1/xref/m0/brep:entity#53",
-              "alibre:xref/m1/xref/m0/brep:entity#81",
-              "alibre:xref/m1/xref/m0/brep:entity#54"
+              "alibre:m1/m0@brep:entity#32",
+              "alibre:m1/m0@brep:entity#53",
+              "alibre:m1/m0@brep:entity#81",
+              "alibre:m1/m0@brep:entity#54"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m0/brep:entity#11",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#19"
+          "face": "alibre:m1/m0@brep:entity#11",
+          "id": "alibre:m1/m0@brep:entity#19"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m0/brep:entity#52",
-              "alibre:xref/m1/xref/m0/brep:entity#39",
-              "alibre:xref/m1/xref/m0/brep:entity#67",
-              "alibre:xref/m1/xref/m0/brep:entity#80"
+              "alibre:m1/m0@brep:entity#52",
+              "alibre:m1/m0@brep:entity#39",
+              "alibre:m1/m0@brep:entity#67",
+              "alibre:m1/m0@brep:entity#80"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m0/brep:entity#18",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#30"
+          "face": "alibre:m1/m0@brep:entity#18",
+          "id": "alibre:m1/m0@brep:entity#30"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m0/brep:entity#24",
-              "alibre:xref/m1/xref/m0/brep:entity#41",
-              "alibre:xref/m1/xref/m0/brep:entity#55",
-              "alibre:xref/m1/xref/m0/brep:entity#35"
+              "alibre:m1/m0@brep:entity#24",
+              "alibre:m1/m0@brep:entity#41",
+              "alibre:m1/m0@brep:entity#55",
+              "alibre:m1/m0@brep:entity#35"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m0/brep:entity#29",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#42"
+          "face": "alibre:m1/m0@brep:entity#29",
+          "id": "alibre:m1/m0@brep:entity#42"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m0/brep:entity#14",
-              "alibre:xref/m1/xref/m0/brep:entity#22",
-              "alibre:xref/m1/xref/m0/brep:entity#37",
-              "alibre:xref/m1/xref/m0/brep:entity#23"
+              "alibre:m1/m0@brep:entity#14",
+              "alibre:m1/m0@brep:entity#22",
+              "alibre:m1/m0@brep:entity#37",
+              "alibre:m1/m0@brep:entity#23"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m0/brep:entity#4",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#7"
+          "face": "alibre:m1/m0@brep:entity#4",
+          "id": "alibre:m1/m0@brep:entity#7"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m0/brep:entity#93",
-              "alibre:xref/m1/xref/m0/brep:entity#62",
-              "alibre:xref/m1/xref/m0/brep:entity#86",
-              "alibre:xref/m1/xref/m0/brep:entity#105"
+              "alibre:m1/m0@brep:entity#93",
+              "alibre:m1/m0@brep:entity#62",
+              "alibre:m1/m0@brep:entity#86",
+              "alibre:m1/m0@brep:entity#105"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m0/brep:entity#50",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#78"
+          "face": "alibre:m1/m0@brep:entity#50",
+          "id": "alibre:m1/m0@brep:entity#78"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m1/brep:entity#21"
+              "alibre:m1/m1@brep:entity#21"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m1/brep:entity#6",
-          "id": "alibre:xref/m1/xref/m1/brep:entity#12"
+          "face": "alibre:m1/m1@brep:entity#6",
+          "id": "alibre:m1/m1@brep:entity#12"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m1/brep:entity#22"
+              "alibre:m1/m1@brep:entity#22"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m1/brep:entity#4",
-          "id": "alibre:xref/m1/xref/m1/brep:entity#14"
+          "face": "alibre:m1/m1@brep:entity#4",
+          "id": "alibre:m1/m1@brep:entity#14"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m1/brep:entity#26"
+              "alibre:m1/m1@brep:entity#26"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m1/brep:entity#11",
-          "id": "alibre:xref/m1/xref/m1/brep:entity#19"
+          "face": "alibre:m1/m1@brep:entity#11",
+          "id": "alibre:m1/m1@brep:entity#19"
         },
         {
           "boundary": {
             "coedges": [
-              "alibre:xref/m1/xref/m1/brep:entity#15"
+              "alibre:m1/m1@brep:entity#15"
             ],
             "kind": "ring",
             "vertex_uses": []
           },
-          "face": "alibre:xref/m1/xref/m1/brep:entity#4",
-          "id": "alibre:xref/m1/xref/m1/brep:entity#7"
+          "face": "alibre:m1/m1@brep:entity#4",
+          "id": "alibre:m1/m1@brep:entity#7"
         }
       ],
       "pcurves": [],
       "points": [
         {
-          "id": "alibre:xref/m0/brep:entity#36",
+          "id": "alibre:m0@brep:entity#36",
           "position": {
             "x": 10.0,
             "y": 0.0,
@@ -1183,7 +1183,7 @@
           }
         },
         {
-          "id": "alibre:xref/m0/brep:entity#38",
+          "id": "alibre:m0@brep:entity#38",
           "position": {
             "x": 10.0,
             "y": 0.0,
@@ -1191,7 +1191,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#100",
+          "id": "alibre:m1/m0@brep:entity#100",
           "position": {
             "x": -10.0,
             "y": 15.0,
@@ -1199,7 +1199,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#111",
+          "id": "alibre:m1/m0@brep:entity#111",
           "position": {
             "x": -10.0,
             "y": -15.0,
@@ -1207,7 +1207,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#115",
+          "id": "alibre:m1/m0@brep:entity#115",
           "position": {
             "x": 10.0,
             "y": -15.0,
@@ -1215,7 +1215,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#124",
+          "id": "alibre:m1/m0@brep:entity#124",
           "position": {
             "x": -10.0,
             "y": -15.0,
@@ -1223,7 +1223,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#73",
+          "id": "alibre:m1/m0@brep:entity#73",
           "position": {
             "x": -10.0,
             "y": 15.0,
@@ -1231,7 +1231,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#74",
+          "id": "alibre:m1/m0@brep:entity#74",
           "position": {
             "x": 10.0,
             "y": 15.0,
@@ -1239,7 +1239,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#92",
+          "id": "alibre:m1/m0@brep:entity#92",
           "position": {
             "x": 10.0,
             "y": -15.0,
@@ -1247,7 +1247,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#97",
+          "id": "alibre:m1/m0@brep:entity#97",
           "position": {
             "x": 10.0,
             "y": 15.0,
@@ -1255,7 +1255,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:entity#36",
+          "id": "alibre:m1/m1@brep:entity#36",
           "position": {
             "x": 10.0,
             "y": 0.0,
@@ -1263,7 +1263,7 @@
           }
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:entity#38",
+          "id": "alibre:m1/m1@brep:entity#38",
           "position": {
             "x": 10.0,
             "y": 0.0,
@@ -1275,42 +1275,42 @@
       "procedural_surfaces": [],
       "regions": [
         {
-          "body": "alibre:xref/m0/brep:entity#0",
-          "id": "alibre:xref/m0/brep:entity#2",
+          "body": "alibre:m0@brep:entity#0",
+          "id": "alibre:m0@brep:entity#2",
           "shells": [
-            "alibre:xref/m0/brep:entity#3"
+            "alibre:m0@brep:entity#3"
           ]
         },
         {
-          "body": "alibre:xref/m1/xref/m0/brep:entity#0",
-          "id": "alibre:xref/m1/xref/m0/brep:entity#2",
+          "body": "alibre:m1/m0@brep:entity#0",
+          "id": "alibre:m1/m0@brep:entity#2",
           "shells": [
-            "alibre:xref/m1/xref/m0/brep:entity#3"
+            "alibre:m1/m0@brep:entity#3"
           ]
         },
         {
-          "body": "alibre:xref/m1/xref/m1/brep:entity#0",
-          "id": "alibre:xref/m1/xref/m1/brep:entity#2",
+          "body": "alibre:m1/m1@brep:entity#0",
+          "id": "alibre:m1/m1@brep:entity#2",
           "shells": [
-            "alibre:xref/m1/xref/m1/brep:entity#3"
+            "alibre:m1/m1@brep:entity#3"
           ]
         }
       ],
       "shells": [
         {
-          "id": "alibre:xref/m0/brep:entity#3",
+          "id": "alibre:m0@brep:entity#3",
           "members": [],
-          "region": "alibre:xref/m0/brep:entity#2"
+          "region": "alibre:m0@brep:entity#2"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#3",
+          "id": "alibre:m1/m0@brep:entity#3",
           "members": [],
-          "region": "alibre:xref/m1/xref/m0/brep:entity#2"
+          "region": "alibre:m1/m0@brep:entity#2"
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:entity#3",
+          "id": "alibre:m1/m1@brep:entity#3",
           "members": [],
-          "region": "alibre:xref/m1/xref/m1/brep:entity#2"
+          "region": "alibre:m1/m1@brep:entity#2"
         }
       ],
       "subds": [],
@@ -1337,7 +1337,7 @@
               }
             }
           },
-          "id": "alibre:xref/m0/brep:entity#13"
+          "id": "alibre:m0@brep:entity#13"
         },
         {
           "geometry": {
@@ -1361,7 +1361,7 @@
               }
             }
           },
-          "id": "alibre:xref/m0/brep:entity#20"
+          "id": "alibre:m0@brep:entity#20"
         },
         {
           "geometry": {
@@ -1386,7 +1386,7 @@
               }
             }
           },
-          "id": "alibre:xref/m0/brep:entity#8"
+          "id": "alibre:m0@brep:entity#8"
         },
         {
           "geometry": {
@@ -1410,7 +1410,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#13"
+          "id": "alibre:m1/m0@brep:entity#13"
         },
         {
           "geometry": {
@@ -1434,7 +1434,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#20"
+          "id": "alibre:m1/m0@brep:entity#20"
         },
         {
           "geometry": {
@@ -1458,7 +1458,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#31"
+          "id": "alibre:m1/m0@brep:entity#31"
         },
         {
           "geometry": {
@@ -1482,7 +1482,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#51"
+          "id": "alibre:m1/m0@brep:entity#51"
         },
         {
           "geometry": {
@@ -1506,7 +1506,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#79"
+          "id": "alibre:m1/m0@brep:entity#79"
         },
         {
           "geometry": {
@@ -1530,7 +1530,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m0/brep:entity#8"
+          "id": "alibre:m1/m0@brep:entity#8"
         },
         {
           "geometry": {
@@ -1554,7 +1554,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m1/brep:entity#13"
+          "id": "alibre:m1/m1@brep:entity#13"
         },
         {
           "geometry": {
@@ -1578,7 +1578,7 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m1/brep:entity#20"
+          "id": "alibre:m1/m1@brep:entity#20"
         },
         {
           "geometry": {
@@ -1603,57 +1603,57 @@
               }
             }
           },
-          "id": "alibre:xref/m1/xref/m1/brep:entity#8"
+          "id": "alibre:m1/m1@brep:entity#8"
         }
       ],
       "vertices": [
         {
-          "id": "alibre:xref/m0/brep:entity#29",
-          "point": "alibre:xref/m0/brep:entity#36"
+          "id": "alibre:m0@brep:entity#29",
+          "point": "alibre:m0@brep:entity#36"
         },
         {
-          "id": "alibre:xref/m0/brep:entity#33",
-          "point": "alibre:xref/m0/brep:entity#38"
+          "id": "alibre:m0@brep:entity#33",
+          "point": "alibre:m0@brep:entity#38"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#108",
-          "point": "alibre:xref/m1/xref/m0/brep:entity#124"
+          "id": "alibre:m1/m0@brep:entity#108",
+          "point": "alibre:m1/m0@brep:entity#124"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#44",
-          "point": "alibre:xref/m1/xref/m0/brep:entity#73"
+          "id": "alibre:m1/m0@brep:entity#44",
+          "point": "alibre:m1/m0@brep:entity#73"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#45",
-          "point": "alibre:xref/m1/xref/m0/brep:entity#74"
+          "id": "alibre:m1/m0@brep:entity#45",
+          "point": "alibre:m1/m0@brep:entity#74"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#60",
-          "point": "alibre:xref/m1/xref/m0/brep:entity#92"
+          "id": "alibre:m1/m0@brep:entity#60",
+          "point": "alibre:m1/m0@brep:entity#92"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#65",
-          "point": "alibre:xref/m1/xref/m0/brep:entity#97"
+          "id": "alibre:m1/m0@brep:entity#65",
+          "point": "alibre:m1/m0@brep:entity#97"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#69",
-          "point": "alibre:xref/m1/xref/m0/brep:entity#100"
+          "id": "alibre:m1/m0@brep:entity#69",
+          "point": "alibre:m1/m0@brep:entity#100"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#84",
-          "point": "alibre:xref/m1/xref/m0/brep:entity#111"
+          "id": "alibre:m1/m0@brep:entity#84",
+          "point": "alibre:m1/m0@brep:entity#111"
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:entity#89",
-          "point": "alibre:xref/m1/xref/m0/brep:entity#115"
+          "id": "alibre:m1/m0@brep:entity#89",
+          "point": "alibre:m1/m0@brep:entity#115"
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:entity#29",
-          "point": "alibre:xref/m1/xref/m1/brep:entity#36"
+          "id": "alibre:m1/m1@brep:entity#29",
+          "point": "alibre:m1/m1@brep:entity#36"
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:entity#33",
-          "point": "alibre:xref/m1/xref/m1/brep:entity#38"
+          "id": "alibre:m1/m1@brep:entity#33",
+          "point": "alibre:m1/m1@brep:entity#38"
         }
       ]
     },
@@ -1662,59 +1662,15 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [
-        {
-          "drives": [],
-          "id": "alibre:xref/m1/model:joint#104",
-          "operands": {
-            "kind": "grounded",
-            "value": {
-              "connector": {
-                "detached": false,
-                "frame": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "kind": "occurrence",
-                    "occurrence": "alibre:xref/m1/model:occurrence#104",
-                    "occurrence_path": []
-                  },
-                  "object": "asm_box",
-                  "subelements": []
-                }
-              }
-            }
-          },
-          "suppressed": false
-        }
-      ],
       "assets": [],
       "attributes": [
         {
-          "id": "alibre:xref/m0/brep:attribute#1",
+          "id": "alibre:m0@brep:attribute#1",
           "name": "name_attrib-gen-attrib",
           "target": {
             "entity": {
               "kind": "body",
-              "value": "alibre:xref/m0/brep:entity#0"
+              "value": "alibre:m0@brep:entity#0"
             }
           },
           "values": [
@@ -1749,12 +1705,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#10",
+          "id": "alibre:m0@brep:attribute#10",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m0/brep:entity#6"
+              "value": "alibre:m0@brep:entity#6"
             }
           },
           "values": [
@@ -1789,12 +1745,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#16",
+          "id": "alibre:m0@brep:attribute#16",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m0/brep:entity#4"
+              "value": "alibre:m0@brep:entity#4"
             }
           },
           "values": [
@@ -1829,12 +1785,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#17",
+          "id": "alibre:m0@brep:attribute#17",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m0/brep:entity#6"
+              "value": "alibre:m0@brep:entity#6"
             }
           },
           "values": [
@@ -1869,12 +1825,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#18",
+          "id": "alibre:m0@brep:attribute#18",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m0/brep:entity#11"
+              "value": "alibre:m0@brep:entity#11"
             }
           },
           "values": [
@@ -1909,12 +1865,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#24",
+          "id": "alibre:m0@brep:attribute#24",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m0/brep:entity#6"
+              "value": "alibre:m0@brep:entity#6"
             }
           },
           "values": [
@@ -1949,12 +1905,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#25",
+          "id": "alibre:m0@brep:attribute#25",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m0/brep:entity#11"
+              "value": "alibre:m0@brep:entity#11"
             }
           },
           "values": [
@@ -1989,12 +1945,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#28",
+          "id": "alibre:m0@brep:attribute#28",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m0/brep:entity#23"
+              "value": "alibre:m0@brep:entity#23"
             }
           },
           "values": [
@@ -2029,12 +1985,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#31",
+          "id": "alibre:m0@brep:attribute#31",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m0/brep:entity#11"
+              "value": "alibre:m0@brep:entity#11"
             }
           },
           "values": [
@@ -2069,12 +2025,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#32",
+          "id": "alibre:m0@brep:attribute#32",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m0/brep:entity#27"
+              "value": "alibre:m0@brep:entity#27"
             }
           },
           "values": [
@@ -2109,12 +2065,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#35",
+          "id": "alibre:m0@brep:attribute#35",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m0/brep:entity#23"
+              "value": "alibre:m0@brep:entity#23"
             }
           },
           "values": [
@@ -2149,12 +2105,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#37",
+          "id": "alibre:m0@brep:attribute#37",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m0/brep:entity#27"
+              "value": "alibre:m0@brep:entity#27"
             }
           },
           "values": [
@@ -2189,12 +2145,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#5",
+          "id": "alibre:m0@brep:attribute#5",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m0/brep:entity#4"
+              "value": "alibre:m0@brep:entity#4"
             }
           },
           "values": [
@@ -2229,12 +2185,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m0/brep:attribute#9",
+          "id": "alibre:m0@brep:attribute#9",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m0/brep:entity#4"
+              "value": "alibre:m0@brep:entity#4"
             }
           },
           "values": [
@@ -2269,12 +2225,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#1",
+          "id": "alibre:m1/m0@brep:attribute#1",
           "name": "name_attrib-gen-attrib",
           "target": {
             "entity": {
               "kind": "body",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#0"
+              "value": "alibre:m1/m0@brep:entity#0"
             }
           },
           "values": [
@@ -2309,12 +2265,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#10",
+          "id": "alibre:m1/m0@brep:attribute#10",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#6"
+              "value": "alibre:m1/m0@brep:entity#6"
             }
           },
           "values": [
@@ -2349,12 +2305,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#101",
+          "id": "alibre:m1/m0@brep:attribute#101",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#71"
+              "value": "alibre:m1/m0@brep:entity#71"
             }
           },
           "values": [
@@ -2389,12 +2345,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#103",
+          "id": "alibre:m1/m0@brep:attribute#103",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#29"
+              "value": "alibre:m1/m0@brep:entity#29"
             }
           },
           "values": [
@@ -2429,12 +2385,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#104",
+          "id": "alibre:m1/m0@brep:attribute#104",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#50"
+              "value": "alibre:m1/m0@brep:entity#50"
             }
           },
           "values": [
@@ -2469,12 +2425,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#107",
+          "id": "alibre:m1/m0@brep:attribute#107",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#82"
+              "value": "alibre:m1/m0@brep:entity#82"
             }
           },
           "values": [
@@ -2509,12 +2465,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#110",
+          "id": "alibre:m1/m0@brep:attribute#110",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#56"
+              "value": "alibre:m1/m0@brep:entity#56"
             }
           },
           "values": [
@@ -2549,12 +2505,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#112",
+          "id": "alibre:m1/m0@brep:attribute#112",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#87"
+              "value": "alibre:m1/m0@brep:entity#87"
             }
           },
           "values": [
@@ -2589,12 +2545,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#114",
+          "id": "alibre:m1/m0@brep:attribute#114",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#58"
+              "value": "alibre:m1/m0@brep:entity#58"
             }
           },
           "values": [
@@ -2629,12 +2585,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#116",
+          "id": "alibre:m1/m0@brep:attribute#116",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#63"
+              "value": "alibre:m1/m0@brep:entity#63"
             }
           },
           "values": [
@@ -2669,12 +2625,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#117",
+          "id": "alibre:m1/m0@brep:attribute#117",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#98"
+              "value": "alibre:m1/m0@brep:entity#98"
             }
           },
           "values": [
@@ -2709,12 +2665,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#119",
+          "id": "alibre:m1/m0@brep:attribute#119",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#71"
+              "value": "alibre:m1/m0@brep:entity#71"
             }
           },
           "values": [
@@ -2749,12 +2705,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#120",
+          "id": "alibre:m1/m0@brep:attribute#120",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#50"
+              "value": "alibre:m1/m0@brep:entity#50"
             }
           },
           "values": [
@@ -2789,12 +2745,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#121",
+          "id": "alibre:m1/m0@brep:attribute#121",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#106"
+              "value": "alibre:m1/m0@brep:entity#106"
             }
           },
           "values": [
@@ -2829,12 +2785,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#123",
+          "id": "alibre:m1/m0@brep:attribute#123",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#82"
+              "value": "alibre:m1/m0@brep:entity#82"
             }
           },
           "values": [
@@ -2869,12 +2825,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#125",
+          "id": "alibre:m1/m0@brep:attribute#125",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#87"
+              "value": "alibre:m1/m0@brep:entity#87"
             }
           },
           "values": [
@@ -2909,12 +2865,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#126",
+          "id": "alibre:m1/m0@brep:attribute#126",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#98"
+              "value": "alibre:m1/m0@brep:entity#98"
             }
           },
           "values": [
@@ -2949,12 +2905,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#127",
+          "id": "alibre:m1/m0@brep:attribute#127",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#106"
+              "value": "alibre:m1/m0@brep:entity#106"
             }
           },
           "values": [
@@ -2989,12 +2945,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#15",
+          "id": "alibre:m1/m0@brep:attribute#15",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#4"
+              "value": "alibre:m1/m0@brep:entity#4"
             }
           },
           "values": [
@@ -3029,12 +2985,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#16",
+          "id": "alibre:m1/m0@brep:attribute#16",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#6"
+              "value": "alibre:m1/m0@brep:entity#6"
             }
           },
           "values": [
@@ -3069,12 +3025,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#17",
+          "id": "alibre:m1/m0@brep:attribute#17",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#11"
+              "value": "alibre:m1/m0@brep:entity#11"
             }
           },
           "values": [
@@ -3109,12 +3065,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#26",
+          "id": "alibre:m1/m0@brep:attribute#26",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#6"
+              "value": "alibre:m1/m0@brep:entity#6"
             }
           },
           "values": [
@@ -3149,12 +3105,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#27",
+          "id": "alibre:m1/m0@brep:attribute#27",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#11"
+              "value": "alibre:m1/m0@brep:entity#11"
             }
           },
           "values": [
@@ -3189,12 +3145,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#28",
+          "id": "alibre:m1/m0@brep:attribute#28",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#18"
+              "value": "alibre:m1/m0@brep:entity#18"
             }
           },
           "values": [
@@ -3229,12 +3185,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#43",
+          "id": "alibre:m1/m0@brep:attribute#43",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#25"
+              "value": "alibre:m1/m0@brep:entity#25"
             }
           },
           "values": [
@@ -3269,12 +3225,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#47",
+          "id": "alibre:m1/m0@brep:attribute#47",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#11"
+              "value": "alibre:m1/m0@brep:entity#11"
             }
           },
           "values": [
@@ -3309,12 +3265,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#48",
+          "id": "alibre:m1/m0@brep:attribute#48",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#18"
+              "value": "alibre:m1/m0@brep:entity#18"
             }
           },
           "values": [
@@ -3349,12 +3305,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#49",
+          "id": "alibre:m1/m0@brep:attribute#49",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#29"
+              "value": "alibre:m1/m0@brep:entity#29"
             }
           },
           "values": [
@@ -3389,12 +3345,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#5",
+          "id": "alibre:m1/m0@brep:attribute#5",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#4"
+              "value": "alibre:m1/m0@brep:entity#4"
             }
           },
           "values": [
@@ -3429,12 +3385,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#59",
+          "id": "alibre:m1/m0@brep:attribute#59",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#36"
+              "value": "alibre:m1/m0@brep:entity#36"
             }
           },
           "values": [
@@ -3469,12 +3425,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#64",
+          "id": "alibre:m1/m0@brep:attribute#64",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#38"
+              "value": "alibre:m1/m0@brep:entity#38"
             }
           },
           "values": [
@@ -3509,12 +3465,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#68",
+          "id": "alibre:m1/m0@brep:attribute#68",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#40"
+              "value": "alibre:m1/m0@brep:entity#40"
             }
           },
           "values": [
@@ -3549,12 +3505,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#72",
+          "id": "alibre:m1/m0@brep:attribute#72",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#25"
+              "value": "alibre:m1/m0@brep:entity#25"
             }
           },
           "values": [
@@ -3589,12 +3545,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#75",
+          "id": "alibre:m1/m0@brep:attribute#75",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#18"
+              "value": "alibre:m1/m0@brep:entity#18"
             }
           },
           "values": [
@@ -3629,12 +3585,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#76",
+          "id": "alibre:m1/m0@brep:attribute#76",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#29"
+              "value": "alibre:m1/m0@brep:entity#29"
             }
           },
           "values": [
@@ -3669,12 +3625,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#77",
+          "id": "alibre:m1/m0@brep:attribute#77",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#50"
+              "value": "alibre:m1/m0@brep:entity#50"
             }
           },
           "values": [
@@ -3709,12 +3665,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#83",
+          "id": "alibre:m1/m0@brep:attribute#83",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#56"
+              "value": "alibre:m1/m0@brep:entity#56"
             }
           },
           "values": [
@@ -3749,12 +3705,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#88",
+          "id": "alibre:m1/m0@brep:attribute#88",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#58"
+              "value": "alibre:m1/m0@brep:entity#58"
             }
           },
           "values": [
@@ -3789,12 +3745,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#9",
+          "id": "alibre:m1/m0@brep:attribute#9",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#4"
+              "value": "alibre:m1/m0@brep:entity#4"
             }
           },
           "values": [
@@ -3829,12 +3785,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#91",
+          "id": "alibre:m1/m0@brep:attribute#91",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#36"
+              "value": "alibre:m1/m0@brep:entity#36"
             }
           },
           "values": [
@@ -3869,12 +3825,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#94",
+          "id": "alibre:m1/m0@brep:attribute#94",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#63"
+              "value": "alibre:m1/m0@brep:entity#63"
             }
           },
           "values": [
@@ -3909,12 +3865,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#96",
+          "id": "alibre:m1/m0@brep:attribute#96",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#38"
+              "value": "alibre:m1/m0@brep:entity#38"
             }
           },
           "values": [
@@ -3949,12 +3905,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m0/brep:attribute#99",
+          "id": "alibre:m1/m0@brep:attribute#99",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m0/brep:entity#40"
+              "value": "alibre:m1/m0@brep:entity#40"
             }
           },
           "values": [
@@ -3989,12 +3945,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#1",
+          "id": "alibre:m1/m1@brep:attribute#1",
           "name": "name_attrib-gen-attrib",
           "target": {
             "entity": {
               "kind": "body",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#0"
+              "value": "alibre:m1/m1@brep:entity#0"
             }
           },
           "values": [
@@ -4029,12 +3985,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#10",
+          "id": "alibre:m1/m1@brep:attribute#10",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#6"
+              "value": "alibre:m1/m1@brep:entity#6"
             }
           },
           "values": [
@@ -4069,12 +4025,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#16",
+          "id": "alibre:m1/m1@brep:attribute#16",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#4"
+              "value": "alibre:m1/m1@brep:entity#4"
             }
           },
           "values": [
@@ -4109,12 +4065,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#17",
+          "id": "alibre:m1/m1@brep:attribute#17",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#6"
+              "value": "alibre:m1/m1@brep:entity#6"
             }
           },
           "values": [
@@ -4149,12 +4105,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#18",
+          "id": "alibre:m1/m1@brep:attribute#18",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#11"
+              "value": "alibre:m1/m1@brep:entity#11"
             }
           },
           "values": [
@@ -4189,12 +4145,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#24",
+          "id": "alibre:m1/m1@brep:attribute#24",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#6"
+              "value": "alibre:m1/m1@brep:entity#6"
             }
           },
           "values": [
@@ -4229,12 +4185,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#25",
+          "id": "alibre:m1/m1@brep:attribute#25",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#11"
+              "value": "alibre:m1/m1@brep:entity#11"
             }
           },
           "values": [
@@ -4269,12 +4225,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#28",
+          "id": "alibre:m1/m1@brep:attribute#28",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#23"
+              "value": "alibre:m1/m1@brep:entity#23"
             }
           },
           "values": [
@@ -4309,12 +4265,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#31",
+          "id": "alibre:m1/m1@brep:attribute#31",
           "name": "Autograph-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#11"
+              "value": "alibre:m1/m1@brep:entity#11"
             }
           },
           "values": [
@@ -4349,12 +4305,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#32",
+          "id": "alibre:m1/m1@brep:attribute#32",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#27"
+              "value": "alibre:m1/m1@brep:entity#27"
             }
           },
           "values": [
@@ -4389,12 +4345,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#35",
+          "id": "alibre:m1/m1@brep:attribute#35",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#23"
+              "value": "alibre:m1/m1@brep:entity#23"
             }
           },
           "values": [
@@ -4429,12 +4385,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#37",
+          "id": "alibre:m1/m1@brep:attribute#37",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "edge",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#27"
+              "value": "alibre:m1/m1@brep:entity#27"
             }
           },
           "values": [
@@ -4469,12 +4425,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#5",
+          "id": "alibre:m1/m1@brep:attribute#5",
           "name": "TimeStamp-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#4"
+              "value": "alibre:m1/m1@brep:entity#4"
             }
           },
           "values": [
@@ -4509,12 +4465,12 @@
           ]
         },
         {
-          "id": "alibre:xref/m1/xref/m1/brep:attribute#9",
+          "id": "alibre:m1/m1@brep:attribute#9",
           "name": "StateID-Alibre-attrib",
           "target": {
             "entity": {
               "kind": "face",
-              "value": "alibre:xref/m1/xref/m1/brep:entity#4"
+              "value": "alibre:m1/m1@brep:entity#4"
             }
           },
           "values": [
@@ -4550,21 +4506,74 @@
         }
       ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [
+        {
+          "id": "alibre:m1@model:occurrence#104",
+          "name": "asm_box<1>",
+          "native_ref": "alibre:m1@model:inclusion#5D0E9423-DD53-4DC1-A153-05891E5704BF",
+          "overrides": [],
+          "prototype": "alibre:m1@xref:product-definition#m1/m0",
+          "suppressed": false,
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "visible": true
+        },
+        {
+          "id": "alibre:m1@model:occurrence#105",
+          "name": "asm_cylinder<1>",
+          "native_ref": "alibre:m1@model:inclusion#615DEADA-B1A9-4459-9ACB-07C2D227EEEC",
+          "overrides": [],
+          "prototype": "alibre:m1@xref:product-definition#m1/m1",
+          "suppressed": false,
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              40.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ],
+          "visible": true
+        },
         {
           "id": "alibre:model:occurrence#105",
           "name": "asm_cylinder<1>",
           "native_ref": "alibre:model:inclusion#4E2F0B49-450E-4691-A6AB-5B410E3B43B9",
           "overrides": [],
-          "prototype": "alibre:xref/m0/model:product-definition#root",
+          "prototype": "alibre:xref:product-definition#m0",
           "suppressed": false,
           "transform": [
             [
@@ -4593,7 +4602,7 @@
           "name": "asm_two<1>",
           "native_ref": "alibre:model:inclusion#00466848-BF40-4288-8BE7-C5A5DF66FC11",
           "overrides": [],
-          "prototype": "alibre:xref/m1/model:product-definition#root",
+          "prototype": "alibre:xref:product-definition#m1",
           "suppressed": false,
           "transform": [
             [
@@ -4615,67 +4624,8 @@
               50.0
             ]
           ]
-        },
-        {
-          "id": "alibre:xref/m1/model:occurrence#104",
-          "name": "asm_box<1>",
-          "native_ref": "alibre:xref/m1/model:inclusion#5D0E9423-DD53-4DC1-A153-05891E5704BF",
-          "overrides": [],
-          "prototype": "alibre:xref/m1/xref/m0/model:product-definition#root",
-          "suppressed": false,
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
-          "visible": true
-        },
-        {
-          "id": "alibre:xref/m1/model:occurrence#105",
-          "name": "asm_cylinder<1>",
-          "native_ref": "alibre:xref/m1/model:inclusion#615DEADA-B1A9-4459-9ACB-07C2D227EEEC",
-          "overrides": [],
-          "prototype": "alibre:xref/m1/xref/m1/model:product-definition#root",
-          "suppressed": false,
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              40.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
-          "visible": true
         }
       ],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -4684,126 +4634,15 @@
       "presentation_layers": [],
       "product_definitions": [
         {
-          "bodies": [],
-          "bom_properties": {},
-          "id": "alibre:model:product-definition#root",
-          "instance_bodies": [],
-          "kind": "assembly",
-          "occurrences": [
-            "alibre:model:occurrence#105",
-            "alibre:model:occurrence#106"
-          ],
-          "representations": [],
-          "sketches": [],
-          "source_name": "asm_nested",
-          "storage": {
-            "document": {},
-            "kind": "file"
-          }
-        },
-        {
           "bodies": [
-            "alibre:xref/m0/brep:entity#0"
+            "alibre:m1/m0@brep:entity#0"
           ],
           "bom_properties": {},
-          "id": "alibre:xref/m0/model:product-definition#root",
+          "id": "alibre:m1@xref:product-definition#m1/m0",
           "instance_bodies": [],
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
-          "storage": {
-            "document": {
-              "document_id": "DEA42A74-1927-4D4B-AC9C-B067E6F17441",
-              "path": "asm_cylinder.AD_PRT"
-            },
-            "kind": "file",
-            "source": {
-              "attributes": {
-                "acis_save_format_version": "3300",
-                "kernel_family": "acis",
-                "product_family": "Alibre, Inc",
-                "product_version": "ACIS 33.0.1 NT"
-              },
-              "identity": {
-                "dialects": {
-                  "extra": [
-                    {
-                      "admission": {
-                        "kind": "unverified",
-                        "using": "save-format-217"
-                      },
-                      "declared": {
-                        "reference_width": "4",
-                        "save_format_major": "33",
-                        "save_format_minor": "0"
-                      },
-                      "dialect": "acis:save-format-binary-other"
-                    }
-                  ],
-                  "primary": {
-                    "admission": {
-                      "kind": "admitted"
-                    },
-                    "declared": {},
-                    "dialect": "alibre:cfb-acis-binary"
-                  }
-                },
-                "kind": "classified"
-              }
-            }
-          }
-        },
-        {
-          "bodies": [],
-          "bom_properties": {},
-          "id": "alibre:xref/m1/model:product-definition#root",
-          "instance_bodies": [],
-          "kind": "assembly",
-          "occurrences": [
-            "alibre:xref/m1/model:occurrence#104",
-            "alibre:xref/m1/model:occurrence#105"
-          ],
-          "representations": [],
-          "sketches": [],
-          "source_name": "asm_two",
-          "storage": {
-            "document": {
-              "document_id": "66949A14-F5DB-4970-BCD4-C5E4FD3F0BEA",
-              "path": "asm_two.AD_ASM"
-            },
-            "kind": "file",
-            "source": {
-              "attributes": {
-                "product_version": "PRODUCTVERSION 28,1,1,28227"
-              },
-              "identity": {
-                "dialects": {
-                  "extra": [],
-                  "primary": {
-                    "admission": {
-                      "kind": "admitted"
-                    },
-                    "declared": {},
-                    "dialect": "alibre:cfb-assembly"
-                  }
-                },
-                "kind": "classified"
-              }
-            }
-          }
-        },
-        {
-          "bodies": [
-            "alibre:xref/m1/xref/m0/brep:entity#0"
-          ],
-          "bom_properties": {},
-          "id": "alibre:xref/m1/xref/m0/model:product-definition#root",
-          "instance_bodies": [],
-          "kind": "part",
-          "occurrences": [],
-          "representations": [],
-          "sketches": [],
           "storage": {
             "document": {
               "document_id": "58F88938-2D66-43CA-BFF8-892C49CE60A9",
@@ -4848,15 +4687,14 @@
         },
         {
           "bodies": [
-            "alibre:xref/m1/xref/m1/brep:entity#0"
+            "alibre:m1/m1@brep:entity#0"
           ],
           "bom_properties": {},
-          "id": "alibre:xref/m1/xref/m1/model:product-definition#root",
+          "id": "alibre:m1@xref:product-definition#m1/m1",
           "instance_bodies": [],
           "kind": "part",
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {
               "document_id": "DEA42A74-1927-4D4B-AC9C-B067E6F17441",
@@ -4898,18 +4736,118 @@
               }
             }
           }
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "alibre:model:product-definition#root",
+          "instance_bodies": [],
+          "kind": "assembly",
+          "occurrences": [
+            "alibre:model:occurrence#105",
+            "alibre:model:occurrence#106"
+          ],
+          "representations": [],
+          "source_name": "asm_nested",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
+        },
+        {
+          "bodies": [
+            "alibre:m0@brep:entity#0"
+          ],
+          "bom_properties": {},
+          "id": "alibre:xref:product-definition#m0",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "storage": {
+            "document": {
+              "document_id": "DEA42A74-1927-4D4B-AC9C-B067E6F17441",
+              "path": "asm_cylinder.AD_PRT"
+            },
+            "kind": "file",
+            "source": {
+              "attributes": {
+                "acis_save_format_version": "3300",
+                "kernel_family": "acis",
+                "product_family": "Alibre, Inc",
+                "product_version": "ACIS 33.0.1 NT"
+              },
+              "identity": {
+                "dialects": {
+                  "extra": [
+                    {
+                      "admission": {
+                        "kind": "unverified",
+                        "using": "save-format-217"
+                      },
+                      "declared": {
+                        "reference_width": "4",
+                        "save_format_major": "33",
+                        "save_format_minor": "0"
+                      },
+                      "dialect": "acis:save-format-binary-other"
+                    }
+                  ],
+                  "primary": {
+                    "admission": {
+                      "kind": "admitted"
+                    },
+                    "declared": {},
+                    "dialect": "alibre:cfb-acis-binary"
+                  }
+                },
+                "kind": "classified"
+              }
+            }
+          }
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "alibre:xref:product-definition#m1",
+          "instance_bodies": [],
+          "kind": "assembly",
+          "occurrences": [
+            "alibre:m1@model:occurrence#104",
+            "alibre:m1@model:occurrence#105"
+          ],
+          "representations": [],
+          "source_name": "asm_two",
+          "storage": {
+            "document": {
+              "document_id": "66949A14-F5DB-4970-BCD4-C5E4FD3F0BEA",
+              "path": "asm_two.AD_ASM"
+            },
+            "kind": "file",
+            "source": {
+              "attributes": {
+                "product_version": "PRODUCTVERSION 28,1,1,28227"
+              },
+              "identity": {
+                "dialects": {
+                  "extra": [],
+                  "primary": {
+                    "admission": {
+                      "kind": "admitted"
+                    },
+                    "declared": {},
+                    "dialect": "alibre:cfb-assembly"
+                  }
+                },
+                "kind": "classified"
+              }
+            }
+          }
         }
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -4917,23 +4855,23 @@
       "alibre": {
         "body_native_keys": [
           {
-            "body": "alibre:xref/m0/brep:entity#0",
+            "body": "alibre:m0@brep:entity#0",
             "body_ordinal": 0,
-            "id": "alibre:xref/m0/asm:body-native-key#0",
+            "id": "alibre:m0@asm:body-native-key#0",
             "record_index": 0,
             "source_brep": "SAB_DATA"
           },
           {
-            "body": "alibre:xref/m1/xref/m0/brep:entity#0",
+            "body": "alibre:m1/m0@brep:entity#0",
             "body_ordinal": 0,
-            "id": "alibre:xref/m1/xref/m0/asm:body-native-key#0",
+            "id": "alibre:m1/m0@asm:body-native-key#0",
             "record_index": 0,
             "source_brep": "SAB_DATA"
           },
           {
-            "body": "alibre:xref/m1/xref/m1/brep:entity#0",
+            "body": "alibre:m1/m1@brep:entity#0",
             "body_ordinal": 0,
-            "id": "alibre:xref/m1/xref/m1/asm:body-native-key#0",
+            "id": "alibre:m1/m1@asm:body-native-key#0",
             "record_index": 0,
             "source_brep": "SAB_DATA"
           }
@@ -4941,358 +4879,358 @@
         "edge_continuities": [
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m0/brep:entity#23",
-            "id": "alibre:xref/m0/asm:edge-continuity#23",
+            "edge": "alibre:m0@brep:entity#23",
+            "id": "alibre:m0@asm:edge-continuity#23",
             "record_index": 23,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m0/brep:entity#27",
-            "id": "alibre:xref/m0/asm:edge-continuity#27",
+            "edge": "alibre:m0@brep:entity#27",
+            "id": "alibre:m0@asm:edge-continuity#27",
             "record_index": 27,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#106",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#106",
+            "edge": "alibre:m1/m0@brep:entity#106",
+            "id": "alibre:m1/m0@asm:edge-continuity#106",
             "record_index": 106,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#25",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#25",
+            "edge": "alibre:m1/m0@brep:entity#25",
+            "id": "alibre:m1/m0@asm:edge-continuity#25",
             "record_index": 25,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#36",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#36",
+            "edge": "alibre:m1/m0@brep:entity#36",
+            "id": "alibre:m1/m0@asm:edge-continuity#36",
             "record_index": 36,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#38",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#38",
+            "edge": "alibre:m1/m0@brep:entity#38",
+            "id": "alibre:m1/m0@asm:edge-continuity#38",
             "record_index": 38,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#40",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#40",
+            "edge": "alibre:m1/m0@brep:entity#40",
+            "id": "alibre:m1/m0@asm:edge-continuity#40",
             "record_index": 40,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#56",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#56",
+            "edge": "alibre:m1/m0@brep:entity#56",
+            "id": "alibre:m1/m0@asm:edge-continuity#56",
             "record_index": 56,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#58",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#58",
+            "edge": "alibre:m1/m0@brep:entity#58",
+            "id": "alibre:m1/m0@asm:edge-continuity#58",
             "record_index": 58,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#63",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#63",
+            "edge": "alibre:m1/m0@brep:entity#63",
+            "id": "alibre:m1/m0@asm:edge-continuity#63",
             "record_index": 63,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#71",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#71",
+            "edge": "alibre:m1/m0@brep:entity#71",
+            "id": "alibre:m1/m0@asm:edge-continuity#71",
             "record_index": 71,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#82",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#82",
+            "edge": "alibre:m1/m0@brep:entity#82",
+            "id": "alibre:m1/m0@asm:edge-continuity#82",
             "record_index": 82,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#87",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#87",
+            "edge": "alibre:m1/m0@brep:entity#87",
+            "id": "alibre:m1/m0@asm:edge-continuity#87",
             "record_index": 87,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#98",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-continuity#98",
+            "edge": "alibre:m1/m0@brep:entity#98",
+            "id": "alibre:m1/m0@asm:edge-continuity#98",
             "record_index": 98,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m1/brep:entity#23",
-            "id": "alibre:xref/m1/xref/m1/asm:edge-continuity#23",
+            "edge": "alibre:m1/m1@brep:entity#23",
+            "id": "alibre:m1/m1@asm:edge-continuity#23",
             "record_index": 23,
             "sense": "forward"
           },
           {
             "continuity": "unknown",
-            "edge": "alibre:xref/m1/xref/m1/brep:entity#27",
-            "id": "alibre:xref/m1/xref/m1/asm:edge-continuity#27",
+            "edge": "alibre:m1/m1@brep:entity#27",
+            "id": "alibre:m1/m1@asm:edge-continuity#27",
             "record_index": 27,
             "sense": "forward"
           }
         ],
         "edge_ownerships": [
           {
-            "edge": "alibre:xref/m0/brep:entity#23",
-            "id": "alibre:xref/m0/asm:edge-ownership#23",
-            "owner_coedge": "alibre:xref/m0/brep:entity#15",
+            "edge": "alibre:m0@brep:entity#23",
+            "id": "alibre:m0@asm:edge-ownership#23",
+            "owner_coedge": "alibre:m0@brep:entity#15",
             "record_index": 23
           },
           {
-            "edge": "alibre:xref/m0/brep:entity#27",
-            "id": "alibre:xref/m0/asm:edge-ownership#27",
-            "owner_coedge": "alibre:xref/m0/brep:entity#22",
+            "edge": "alibre:m0@brep:entity#27",
+            "id": "alibre:m0@asm:edge-ownership#27",
+            "owner_coedge": "alibre:m0@brep:entity#22",
             "record_index": 27
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#106",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#106",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#81",
+            "edge": "alibre:m1/m0@brep:entity#106",
+            "id": "alibre:m1/m0@asm:edge-ownership#106",
+            "owner_coedge": "alibre:m1/m0@brep:entity#81",
             "record_index": 106
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#25",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#25",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#14",
+            "edge": "alibre:m1/m0@brep:entity#25",
+            "id": "alibre:m1/m0@asm:edge-ownership#25",
+            "owner_coedge": "alibre:m1/m0@brep:entity#14",
             "record_index": 25
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#36",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#36",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#21",
+            "edge": "alibre:m1/m0@brep:entity#36",
+            "id": "alibre:m1/m0@asm:edge-ownership#36",
+            "owner_coedge": "alibre:m1/m0@brep:entity#21",
             "record_index": 36
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#38",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#38",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#34",
+            "edge": "alibre:m1/m0@brep:entity#38",
+            "id": "alibre:m1/m0@asm:edge-ownership#38",
+            "owner_coedge": "alibre:m1/m0@brep:entity#34",
             "record_index": 38
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#40",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#40",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#23",
+            "edge": "alibre:m1/m0@brep:entity#40",
+            "id": "alibre:m1/m0@asm:edge-ownership#40",
+            "owner_coedge": "alibre:m1/m0@brep:entity#23",
             "record_index": 40
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#56",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#56",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#32",
+            "edge": "alibre:m1/m0@brep:entity#56",
+            "id": "alibre:m1/m0@asm:edge-ownership#56",
+            "owner_coedge": "alibre:m1/m0@brep:entity#32",
             "record_index": 56
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#58",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#58",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#54",
+            "edge": "alibre:m1/m0@brep:entity#58",
+            "id": "alibre:m1/m0@asm:edge-ownership#58",
+            "owner_coedge": "alibre:m1/m0@brep:entity#54",
             "record_index": 58
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#63",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#63",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#37",
+            "edge": "alibre:m1/m0@brep:entity#63",
+            "id": "alibre:m1/m0@asm:edge-ownership#63",
+            "owner_coedge": "alibre:m1/m0@brep:entity#37",
             "record_index": 63
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#71",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#71",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#52",
+            "edge": "alibre:m1/m0@brep:entity#71",
+            "id": "alibre:m1/m0@asm:edge-ownership#71",
+            "owner_coedge": "alibre:m1/m0@brep:entity#52",
             "record_index": 71
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#82",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#82",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#80",
+            "edge": "alibre:m1/m0@brep:entity#82",
+            "id": "alibre:m1/m0@asm:edge-ownership#82",
+            "owner_coedge": "alibre:m1/m0@brep:entity#80",
             "record_index": 82
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#87",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#87",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#57",
+            "edge": "alibre:m1/m0@brep:entity#87",
+            "id": "alibre:m1/m0@asm:edge-ownership#87",
+            "owner_coedge": "alibre:m1/m0@brep:entity#57",
             "record_index": 87
           },
           {
-            "edge": "alibre:xref/m1/xref/m0/brep:entity#98",
-            "id": "alibre:xref/m1/xref/m0/asm:edge-ownership#98",
-            "owner_coedge": "alibre:xref/m1/xref/m0/brep:entity#67",
+            "edge": "alibre:m1/m0@brep:entity#98",
+            "id": "alibre:m1/m0@asm:edge-ownership#98",
+            "owner_coedge": "alibre:m1/m0@brep:entity#67",
             "record_index": 98
           },
           {
-            "edge": "alibre:xref/m1/xref/m1/brep:entity#23",
-            "id": "alibre:xref/m1/xref/m1/asm:edge-ownership#23",
-            "owner_coedge": "alibre:xref/m1/xref/m1/brep:entity#15",
+            "edge": "alibre:m1/m1@brep:entity#23",
+            "id": "alibre:m1/m1@asm:edge-ownership#23",
+            "owner_coedge": "alibre:m1/m1@brep:entity#15",
             "record_index": 23
           },
           {
-            "edge": "alibre:xref/m1/xref/m1/brep:entity#27",
-            "id": "alibre:xref/m1/xref/m1/asm:edge-ownership#27",
-            "owner_coedge": "alibre:xref/m1/xref/m1/brep:entity#22",
+            "edge": "alibre:m1/m1@brep:entity#27",
+            "id": "alibre:m1/m1@asm:edge-ownership#27",
+            "owner_coedge": "alibre:m1/m1@brep:entity#22",
             "record_index": 27
           }
         ],
         "face_native_keys": [
           {
-            "face": "alibre:xref/m0/brep:entity#11",
-            "id": "alibre:xref/m0/asm:face-native-key#11",
+            "face": "alibre:m0@brep:entity#11",
+            "id": "alibre:m0@asm:face-native-key#11",
             "record_index": 11
           },
           {
-            "face": "alibre:xref/m0/brep:entity#4",
-            "id": "alibre:xref/m0/asm:face-native-key#4",
+            "face": "alibre:m0@brep:entity#4",
+            "id": "alibre:m0@asm:face-native-key#4",
             "record_index": 4
           },
           {
-            "face": "alibre:xref/m0/brep:entity#6",
-            "id": "alibre:xref/m0/asm:face-native-key#6",
+            "face": "alibre:m0@brep:entity#6",
+            "id": "alibre:m0@asm:face-native-key#6",
             "record_index": 6
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#11",
-            "id": "alibre:xref/m1/xref/m0/asm:face-native-key#11",
+            "face": "alibre:m1/m0@brep:entity#11",
+            "id": "alibre:m1/m0@asm:face-native-key#11",
             "record_index": 11
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#18",
-            "id": "alibre:xref/m1/xref/m0/asm:face-native-key#18",
+            "face": "alibre:m1/m0@brep:entity#18",
+            "id": "alibre:m1/m0@asm:face-native-key#18",
             "record_index": 18
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#29",
-            "id": "alibre:xref/m1/xref/m0/asm:face-native-key#29",
+            "face": "alibre:m1/m0@brep:entity#29",
+            "id": "alibre:m1/m0@asm:face-native-key#29",
             "record_index": 29
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#4",
-            "id": "alibre:xref/m1/xref/m0/asm:face-native-key#4",
+            "face": "alibre:m1/m0@brep:entity#4",
+            "id": "alibre:m1/m0@asm:face-native-key#4",
             "record_index": 4
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#50",
-            "id": "alibre:xref/m1/xref/m0/asm:face-native-key#50",
+            "face": "alibre:m1/m0@brep:entity#50",
+            "id": "alibre:m1/m0@asm:face-native-key#50",
             "record_index": 50
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#6",
-            "id": "alibre:xref/m1/xref/m0/asm:face-native-key#6",
+            "face": "alibre:m1/m0@brep:entity#6",
+            "id": "alibre:m1/m0@asm:face-native-key#6",
             "record_index": 6
           },
           {
-            "face": "alibre:xref/m1/xref/m1/brep:entity#11",
-            "id": "alibre:xref/m1/xref/m1/asm:face-native-key#11",
+            "face": "alibre:m1/m1@brep:entity#11",
+            "id": "alibre:m1/m1@asm:face-native-key#11",
             "record_index": 11
           },
           {
-            "face": "alibre:xref/m1/xref/m1/brep:entity#4",
-            "id": "alibre:xref/m1/xref/m1/asm:face-native-key#4",
+            "face": "alibre:m1/m1@brep:entity#4",
+            "id": "alibre:m1/m1@asm:face-native-key#4",
             "record_index": 4
           },
           {
-            "face": "alibre:xref/m1/xref/m1/brep:entity#6",
-            "id": "alibre:xref/m1/xref/m1/asm:face-native-key#6",
+            "face": "alibre:m1/m1@brep:entity#6",
+            "id": "alibre:m1/m1@asm:face-native-key#6",
             "record_index": 6
           }
         ],
         "face_sidedness": [
           {
-            "face": "alibre:xref/m0/brep:entity#11",
-            "id": "alibre:xref/m0/asm:face-sidedness#11",
+            "face": "alibre:m0@brep:entity#11",
+            "id": "alibre:m0@asm:face-sidedness#11",
             "native_sense": "reversed",
             "normalized_sense": "reversed",
             "record_index": 11
           },
           {
-            "face": "alibre:xref/m0/brep:entity#4",
-            "id": "alibre:xref/m0/asm:face-sidedness#4",
+            "face": "alibre:m0@brep:entity#4",
+            "id": "alibre:m0@asm:face-sidedness#4",
             "native_sense": "forward",
             "normalized_sense": "forward",
             "record_index": 4
           },
           {
-            "face": "alibre:xref/m0/brep:entity#6",
-            "id": "alibre:xref/m0/asm:face-sidedness#6",
+            "face": "alibre:m0@brep:entity#6",
+            "id": "alibre:m0@asm:face-sidedness#6",
             "native_sense": "forward",
             "normalized_sense": "forward",
             "record_index": 6
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#11",
-            "id": "alibre:xref/m1/xref/m0/asm:face-sidedness#11",
+            "face": "alibre:m1/m0@brep:entity#11",
+            "id": "alibre:m1/m0@asm:face-sidedness#11",
             "native_sense": "forward",
             "normalized_sense": "forward",
             "record_index": 11
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#18",
-            "id": "alibre:xref/m1/xref/m0/asm:face-sidedness#18",
+            "face": "alibre:m1/m0@brep:entity#18",
+            "id": "alibre:m1/m0@asm:face-sidedness#18",
             "native_sense": "forward",
             "normalized_sense": "forward",
             "record_index": 18
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#29",
-            "id": "alibre:xref/m1/xref/m0/asm:face-sidedness#29",
+            "face": "alibre:m1/m0@brep:entity#29",
+            "id": "alibre:m1/m0@asm:face-sidedness#29",
             "native_sense": "forward",
             "normalized_sense": "forward",
             "record_index": 29
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#4",
-            "id": "alibre:xref/m1/xref/m0/asm:face-sidedness#4",
+            "face": "alibre:m1/m0@brep:entity#4",
+            "id": "alibre:m1/m0@asm:face-sidedness#4",
             "native_sense": "forward",
             "normalized_sense": "forward",
             "record_index": 4
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#50",
-            "id": "alibre:xref/m1/xref/m0/asm:face-sidedness#50",
+            "face": "alibre:m1/m0@brep:entity#50",
+            "id": "alibre:m1/m0@asm:face-sidedness#50",
             "native_sense": "reversed",
             "normalized_sense": "reversed",
             "record_index": 50
           },
           {
-            "face": "alibre:xref/m1/xref/m0/brep:entity#6",
-            "id": "alibre:xref/m1/xref/m0/asm:face-sidedness#6",
+            "face": "alibre:m1/m0@brep:entity#6",
+            "id": "alibre:m1/m0@asm:face-sidedness#6",
             "native_sense": "forward",
             "normalized_sense": "forward",
             "record_index": 6
           },
           {
-            "face": "alibre:xref/m1/xref/m1/brep:entity#11",
-            "id": "alibre:xref/m1/xref/m1/asm:face-sidedness#11",
+            "face": "alibre:m1/m1@brep:entity#11",
+            "id": "alibre:m1/m1@asm:face-sidedness#11",
             "native_sense": "reversed",
             "normalized_sense": "reversed",
             "record_index": 11
           },
           {
-            "face": "alibre:xref/m1/xref/m1/brep:entity#4",
-            "id": "alibre:xref/m1/xref/m1/asm:face-sidedness#4",
+            "face": "alibre:m1/m1@brep:entity#4",
+            "id": "alibre:m1/m1@asm:face-sidedness#4",
             "native_sense": "forward",
             "normalized_sense": "forward",
             "record_index": 4
           },
           {
-            "face": "alibre:xref/m1/xref/m1/brep:entity#6",
-            "id": "alibre:xref/m1/xref/m1/asm:face-sidedness#6",
+            "face": "alibre:m1/m1@brep:entity#6",
+            "id": "alibre:m1/m1@asm:face-sidedness#6",
             "native_sense": "forward",
             "normalized_sense": "forward",
             "record_index": 6
@@ -5424,8 +5362,7 @@
           "value": {
             "code": "assembly.member-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "alibre",
-            "strict_floor": "warning"
+            "namespace": "alibre"
           }
         },
         "message": "component asm_cylinder: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
@@ -5497,8 +5434,7 @@
           "value": {
             "code": "assembly.member-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "alibre",
-            "strict_floor": "warning"
+            "namespace": "alibre"
           }
         },
         "message": "component asm_two/asm_box: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
@@ -5546,8 +5482,7 @@
           "value": {
             "code": "assembly.member-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "alibre",
-            "strict_floor": "warning"
+            "namespace": "alibre"
           }
         },
         "message": "component asm_two/asm_cylinder: the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
@@ -5578,1250 +5513,1250 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "alibre:xref/m0/brep:entity#13": {
+        "alibre:m0@brep:entity#13": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m0/brep:entity#20": {
+        "alibre:m0@brep:entity#20": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m0/brep:entity#23": {
+        "alibre:m0@brep:entity#23": {
           "fields": {
             "carrier.param_range": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m0/brep:entity#27": {
+        "alibre:m0@brep:entity#27": {
           "fields": {
             "carrier.param_range": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m0/brep:entity#30": {
+        "alibre:m0@brep:entity#30": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m0/brep:entity#34": {
+        "alibre:m0@brep:entity#34": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m0/brep:entity#8": {
+        "alibre:m0@brep:entity#8": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#102": {
+        "alibre:m1/m0@brep:entity#102": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#109": {
+        "alibre:m1/m0@brep:entity#109": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#113": {
+        "alibre:m1/m0@brep:entity#113": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#118": {
+        "alibre:m1/m0@brep:entity#118": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#122": {
+        "alibre:m1/m0@brep:entity#122": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#13": {
+        "alibre:m1/m0@brep:entity#13": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#20": {
+        "alibre:m1/m0@brep:entity#20": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#31": {
+        "alibre:m1/m0@brep:entity#31": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#46": {
+        "alibre:m1/m0@brep:entity#46": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#51": {
+        "alibre:m1/m0@brep:entity#51": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#61": {
+        "alibre:m1/m0@brep:entity#61": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#66": {
+        "alibre:m1/m0@brep:entity#66": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#70": {
+        "alibre:m1/m0@brep:entity#70": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#79": {
+        "alibre:m1/m0@brep:entity#79": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#8": {
+        "alibre:m1/m0@brep:entity#8": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#85": {
+        "alibre:m1/m0@brep:entity#85": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#90": {
+        "alibre:m1/m0@brep:entity#90": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#95": {
+        "alibre:m1/m0@brep:entity#95": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#13": {
+        "alibre:m1/m1@brep:entity#13": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#20": {
+        "alibre:m1/m1@brep:entity#20": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#23": {
+        "alibre:m1/m1@brep:entity#23": {
           "fields": {
             "carrier.param_range": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#27": {
+        "alibre:m1/m1@brep:entity#27": {
           "fields": {
             "carrier.param_range": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#30": {
+        "alibre:m1/m1@brep:entity#30": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#34": {
+        "alibre:m1/m1@brep:entity#34": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#8": {
+        "alibre:m1/m1@brep:entity#8": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         }
       },
       "provenance": {
-        "alibre:xref/m0/brep:attribute#1": {
+        "alibre:m0@brep:attribute#1": {
           "offset": 246,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "name_attrib-gen-attrib"
         },
-        "alibre:xref/m0/brep:attribute#10": {
+        "alibre:m0@brep:attribute#10": {
           "offset": 1070,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#16": {
+        "alibre:m0@brep:attribute#16": {
           "offset": 1623,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#17": {
+        "alibre:m0@brep:attribute#17": {
           "offset": 1690,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#18": {
+        "alibre:m0@brep:attribute#18": {
           "offset": 1747,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#24": {
+        "alibre:m0@brep:attribute#24": {
           "offset": 2273,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#25": {
+        "alibre:m0@brep:attribute#25": {
           "offset": 2331,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#28": {
+        "alibre:m0@brep:attribute#28": {
           "offset": 2574,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#31": {
+        "alibre:m0@brep:attribute#31": {
           "offset": 2808,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#32": {
+        "alibre:m0@brep:attribute#32": {
           "offset": 2866,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#35": {
+        "alibre:m0@brep:attribute#35": {
           "offset": 3082,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#37": {
+        "alibre:m0@brep:attribute#37": {
           "offset": 3197,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#5": {
+        "alibre:m0@brep:attribute#5": {
           "offset": 560,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:attribute#9": {
+        "alibre:m0@brep:attribute#9": {
           "offset": 1006,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m0/brep:entity#0": {
+        "alibre:m0@brep:entity#0": {
           "offset": 193,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "body"
         },
-        "alibre:xref/m0/brep:entity#11": {
+        "alibre:m0@brep:entity#11": {
           "offset": 1127,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m0/brep:entity#12": {
+        "alibre:m0@brep:entity#12": {
           "offset": 1234,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m0/brep:entity#13": {
+        "alibre:m0@brep:entity#13": {
           "offset": 1339,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m0/brep:entity#14": {
+        "alibre:m0@brep:entity#14": {
           "offset": 1459,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m0/brep:entity#15": {
+        "alibre:m0@brep:entity#15": {
           "offset": 1558,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m0/brep:entity#19": {
+        "alibre:m0@brep:entity#19": {
           "offset": 1804,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m0/brep:entity#2": {
+        "alibre:m0@brep:entity#2": {
           "offset": 342,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "lump"
         },
-        "alibre:xref/m0/brep:entity#20": {
+        "alibre:m0@brep:entity#20": {
           "offset": 1909,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m0/brep:entity#21": {
+        "alibre:m0@brep:entity#21": {
           "offset": 2024,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m0/brep:entity#22": {
+        "alibre:m0@brep:entity#22": {
           "offset": 2083,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m0/brep:entity#23": {
+        "alibre:m0@brep:entity#23": {
           "offset": 2142,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m0/brep:entity#26": {
+        "alibre:m0@brep:entity#26": {
           "offset": 2388,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m0/brep:entity#27": {
+        "alibre:m0@brep:entity#27": {
           "offset": 2447,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m0/brep:entity#29": {
+        "alibre:m0@brep:entity#29": {
           "offset": 2631,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m0/brep:entity#3": {
+        "alibre:m0@brep:entity#3": {
           "offset": 390,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "shell"
         },
-        "alibre:xref/m0/brep:entity#30": {
+        "alibre:m0@brep:entity#30": {
           "offset": 2675,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "ellipse-curve"
         },
-        "alibre:xref/m0/brep:entity#33": {
+        "alibre:m0@brep:entity#33": {
           "offset": 2923,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m0/brep:entity#34": {
+        "alibre:m0@brep:entity#34": {
           "offset": 2961,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "ellipse-curve"
         },
-        "alibre:xref/m0/brep:entity#36": {
+        "alibre:m0@brep:entity#36": {
           "offset": 3139,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m0/brep:entity#38": {
+        "alibre:m0@brep:entity#38": {
           "offset": 3254,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m0/brep:entity#4": {
+        "alibre:m0@brep:entity#4": {
           "offset": 449,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m0/brep:entity#6": {
+        "alibre:m0@brep:entity#6": {
           "offset": 632,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m0/brep:entity#7": {
+        "alibre:m0@brep:entity#7": {
           "offset": 739,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m0/brep:entity#8": {
+        "alibre:m0@brep:entity#8": {
           "offset": 842,
-          "stream": "alibre:xref/m0/SAB_DATA",
+          "stream": "alibre:m0@SAB_DATA",
           "tag": "cone-surface"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#1": {
+        "alibre:m1/m0@brep:attribute#1": {
           "offset": 246,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "name_attrib-gen-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#10": {
+        "alibre:m1/m0@brep:attribute#10": {
           "offset": 1033,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#101": {
+        "alibre:m1/m0@brep:attribute#101": {
           "offset": 7915,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#103": {
+        "alibre:m1/m0@brep:attribute#103": {
           "offset": 8068,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#104": {
+        "alibre:m1/m0@brep:attribute#104": {
           "offset": 8126,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#107": {
+        "alibre:m1/m0@brep:attribute#107": {
           "offset": 8369,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#110": {
+        "alibre:m1/m0@brep:attribute#110": {
           "offset": 8560,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#112": {
+        "alibre:m1/m0@brep:attribute#112": {
           "offset": 8670,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#114": {
+        "alibre:m1/m0@brep:attribute#114": {
           "offset": 8823,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#116": {
+        "alibre:m1/m0@brep:attribute#116": {
           "offset": 8933,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#117": {
+        "alibre:m1/m0@brep:attribute#117": {
           "offset": 8990,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#119": {
+        "alibre:m1/m0@brep:attribute#119": {
           "offset": 9143,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#120": {
+        "alibre:m1/m0@brep:attribute#120": {
           "offset": 9200,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#121": {
+        "alibre:m1/m0@brep:attribute#121": {
           "offset": 9258,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#123": {
+        "alibre:m1/m0@brep:attribute#123": {
           "offset": 9411,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#125": {
+        "alibre:m1/m0@brep:attribute#125": {
           "offset": 9521,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#126": {
+        "alibre:m1/m0@brep:attribute#126": {
           "offset": 9578,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#127": {
+        "alibre:m1/m0@brep:attribute#127": {
           "offset": 9635,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#15": {
+        "alibre:m1/m0@brep:attribute#15": {
           "offset": 1476,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#16": {
+        "alibre:m1/m0@brep:attribute#16": {
           "offset": 1543,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#17": {
+        "alibre:m1/m0@brep:attribute#17": {
           "offset": 1600,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#26": {
+        "alibre:m1/m0@brep:attribute#26": {
           "offset": 2345,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#27": {
+        "alibre:m1/m0@brep:attribute#27": {
           "offset": 2403,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#28": {
+        "alibre:m1/m0@brep:attribute#28": {
           "offset": 2460,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#43": {
+        "alibre:m1/m0@brep:attribute#43": {
           "offset": 3737,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#47": {
+        "alibre:m1/m0@brep:attribute#47": {
           "offset": 3985,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#48": {
+        "alibre:m1/m0@brep:attribute#48": {
           "offset": 4043,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#49": {
+        "alibre:m1/m0@brep:attribute#49": {
           "offset": 4100,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#5": {
+        "alibre:m1/m0@brep:attribute#5": {
           "offset": 560,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#59": {
+        "alibre:m1/m0@brep:attribute#59": {
           "offset": 4928,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#64": {
+        "alibre:m1/m0@brep:attribute#64": {
           "offset": 5305,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#68": {
+        "alibre:m1/m0@brep:attribute#68": {
           "offset": 5555,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#72": {
+        "alibre:m1/m0@brep:attribute#72": {
           "offset": 5873,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#75": {
+        "alibre:m1/m0@brep:attribute#75": {
           "offset": 6041,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#76": {
+        "alibre:m1/m0@brep:attribute#76": {
           "offset": 6099,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#77": {
+        "alibre:m1/m0@brep:attribute#77": {
           "offset": 6156,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#83": {
+        "alibre:m1/m0@brep:attribute#83": {
           "offset": 6678,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#88": {
+        "alibre:m1/m0@brep:attribute#88": {
           "offset": 7055,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#9": {
+        "alibre:m1/m0@brep:attribute#9": {
           "offset": 969,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#91": {
+        "alibre:m1/m0@brep:attribute#91": {
           "offset": 7246,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#94": {
+        "alibre:m1/m0@brep:attribute#94": {
           "offset": 7415,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#96": {
+        "alibre:m1/m0@brep:attribute#96": {
           "offset": 7568,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:attribute#99": {
+        "alibre:m1/m0@brep:attribute#99": {
           "offset": 7805,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#0": {
+        "alibre:m1/m0@brep:entity#0": {
           "offset": 193,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "body"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#100": {
+        "alibre:m1/m0@brep:entity#100": {
           "offset": 7862,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#102": {
+        "alibre:m1/m0@brep:entity#102": {
           "offset": 7972,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#105": {
+        "alibre:m1/m0@brep:entity#105": {
           "offset": 8183,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#106": {
+        "alibre:m1/m0@brep:entity#106": {
           "offset": 8242,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#108": {
+        "alibre:m1/m0@brep:entity#108": {
           "offset": 8426,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#109": {
+        "alibre:m1/m0@brep:entity#109": {
           "offset": 8464,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#11": {
+        "alibre:m1/m0@brep:entity#11": {
           "offset": 1090,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#111": {
+        "alibre:m1/m0@brep:entity#111": {
           "offset": 8617,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#113": {
+        "alibre:m1/m0@brep:entity#113": {
           "offset": 8727,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#115": {
+        "alibre:m1/m0@brep:entity#115": {
           "offset": 8880,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#118": {
+        "alibre:m1/m0@brep:entity#118": {
           "offset": 9047,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#12": {
+        "alibre:m1/m0@brep:entity#12": {
           "offset": 1197,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#122": {
+        "alibre:m1/m0@brep:entity#122": {
           "offset": 9315,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#124": {
+        "alibre:m1/m0@brep:entity#124": {
           "offset": 9468,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#13": {
+        "alibre:m1/m0@brep:entity#13": {
           "offset": 1296,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#14": {
+        "alibre:m1/m0@brep:entity#14": {
           "offset": 1411,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#18": {
+        "alibre:m1/m0@brep:entity#18": {
           "offset": 1657,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#19": {
+        "alibre:m1/m0@brep:entity#19": {
           "offset": 1764,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#2": {
+        "alibre:m1/m0@brep:entity#2": {
           "offset": 342,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "lump"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#20": {
+        "alibre:m1/m0@brep:entity#20": {
           "offset": 1863,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#21": {
+        "alibre:m1/m0@brep:entity#21": {
           "offset": 1978,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#22": {
+        "alibre:m1/m0@brep:entity#22": {
           "offset": 2037,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#23": {
+        "alibre:m1/m0@brep:entity#23": {
           "offset": 2096,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#24": {
+        "alibre:m1/m0@brep:entity#24": {
           "offset": 2155,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#25": {
+        "alibre:m1/m0@brep:entity#25": {
           "offset": 2214,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#29": {
+        "alibre:m1/m0@brep:entity#29": {
           "offset": 2517,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#3": {
+        "alibre:m1/m0@brep:entity#3": {
           "offset": 390,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "shell"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#30": {
+        "alibre:m1/m0@brep:entity#30": {
           "offset": 2624,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#31": {
+        "alibre:m1/m0@brep:entity#31": {
           "offset": 2723,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#32": {
+        "alibre:m1/m0@brep:entity#32": {
           "offset": 2838,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#33": {
+        "alibre:m1/m0@brep:entity#33": {
           "offset": 2897,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#34": {
+        "alibre:m1/m0@brep:entity#34": {
           "offset": 2956,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#35": {
+        "alibre:m1/m0@brep:entity#35": {
           "offset": 3015,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#36": {
+        "alibre:m1/m0@brep:entity#36": {
           "offset": 3074,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#37": {
+        "alibre:m1/m0@brep:entity#37": {
           "offset": 3201,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#38": {
+        "alibre:m1/m0@brep:entity#38": {
           "offset": 3260,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#39": {
+        "alibre:m1/m0@brep:entity#39": {
           "offset": 3387,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#4": {
+        "alibre:m1/m0@brep:entity#4": {
           "offset": 449,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#40": {
+        "alibre:m1/m0@brep:entity#40": {
           "offset": 3446,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#41": {
+        "alibre:m1/m0@brep:entity#41": {
           "offset": 3573,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#42": {
+        "alibre:m1/m0@brep:entity#42": {
           "offset": 3632,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#44": {
+        "alibre:m1/m0@brep:entity#44": {
           "offset": 3794,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#45": {
+        "alibre:m1/m0@brep:entity#45": {
           "offset": 3838,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#46": {
+        "alibre:m1/m0@brep:entity#46": {
           "offset": 3876,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#50": {
+        "alibre:m1/m0@brep:entity#50": {
           "offset": 4157,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#51": {
+        "alibre:m1/m0@brep:entity#51": {
           "offset": 4264,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#52": {
+        "alibre:m1/m0@brep:entity#52": {
           "offset": 4379,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#53": {
+        "alibre:m1/m0@brep:entity#53": {
           "offset": 4438,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#54": {
+        "alibre:m1/m0@brep:entity#54": {
           "offset": 4497,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#55": {
+        "alibre:m1/m0@brep:entity#55": {
           "offset": 4556,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#56": {
+        "alibre:m1/m0@brep:entity#56": {
           "offset": 4615,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#57": {
+        "alibre:m1/m0@brep:entity#57": {
           "offset": 4742,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#58": {
+        "alibre:m1/m0@brep:entity#58": {
           "offset": 4801,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#6": {
+        "alibre:m1/m0@brep:entity#6": {
           "offset": 632,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#60": {
+        "alibre:m1/m0@brep:entity#60": {
           "offset": 4985,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#61": {
+        "alibre:m1/m0@brep:entity#61": {
           "offset": 5023,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#62": {
+        "alibre:m1/m0@brep:entity#62": {
           "offset": 5119,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#63": {
+        "alibre:m1/m0@brep:entity#63": {
           "offset": 5178,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#65": {
+        "alibre:m1/m0@brep:entity#65": {
           "offset": 5362,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#66": {
+        "alibre:m1/m0@brep:entity#66": {
           "offset": 5400,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#67": {
+        "alibre:m1/m0@brep:entity#67": {
           "offset": 5496,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#69": {
+        "alibre:m1/m0@brep:entity#69": {
           "offset": 5612,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#7": {
+        "alibre:m1/m0@brep:entity#7": {
           "offset": 739,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#70": {
+        "alibre:m1/m0@brep:entity#70": {
           "offset": 5650,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#71": {
+        "alibre:m1/m0@brep:entity#71": {
           "offset": 5746,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#73": {
+        "alibre:m1/m0@brep:entity#73": {
           "offset": 5930,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#74": {
+        "alibre:m1/m0@brep:entity#74": {
           "offset": 5988,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#78": {
+        "alibre:m1/m0@brep:entity#78": {
           "offset": 6213,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#79": {
+        "alibre:m1/m0@brep:entity#79": {
           "offset": 6318,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#8": {
+        "alibre:m1/m0@brep:entity#8": {
           "offset": 842,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#80": {
+        "alibre:m1/m0@brep:entity#80": {
           "offset": 6433,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#81": {
+        "alibre:m1/m0@brep:entity#81": {
           "offset": 6492,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#82": {
+        "alibre:m1/m0@brep:entity#82": {
           "offset": 6551,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#84": {
+        "alibre:m1/m0@brep:entity#84": {
           "offset": 6735,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#85": {
+        "alibre:m1/m0@brep:entity#85": {
           "offset": 6773,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#86": {
+        "alibre:m1/m0@brep:entity#86": {
           "offset": 6869,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#87": {
+        "alibre:m1/m0@brep:entity#87": {
           "offset": 6928,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#89": {
+        "alibre:m1/m0@brep:entity#89": {
           "offset": 7112,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#90": {
+        "alibre:m1/m0@brep:entity#90": {
           "offset": 7150,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#92": {
+        "alibre:m1/m0@brep:entity#92": {
           "offset": 7303,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#93": {
+        "alibre:m1/m0@brep:entity#93": {
           "offset": 7356,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#95": {
+        "alibre:m1/m0@brep:entity#95": {
           "offset": 7472,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "straight-curve"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#97": {
+        "alibre:m1/m0@brep:entity#97": {
           "offset": 7625,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m0/brep:entity#98": {
+        "alibre:m1/m0@brep:entity#98": {
           "offset": 7678,
-          "stream": "alibre:xref/m1/xref/m0/SAB_DATA",
+          "stream": "alibre:m1/m0@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#1": {
+        "alibre:m1/m1@brep:attribute#1": {
           "offset": 246,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "name_attrib-gen-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#10": {
+        "alibre:m1/m1@brep:attribute#10": {
           "offset": 1070,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#16": {
+        "alibre:m1/m1@brep:attribute#16": {
           "offset": 1623,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#17": {
+        "alibre:m1/m1@brep:attribute#17": {
           "offset": 1690,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#18": {
+        "alibre:m1/m1@brep:attribute#18": {
           "offset": 1747,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#24": {
+        "alibre:m1/m1@brep:attribute#24": {
           "offset": 2273,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#25": {
+        "alibre:m1/m1@brep:attribute#25": {
           "offset": 2331,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#28": {
+        "alibre:m1/m1@brep:attribute#28": {
           "offset": 2574,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#31": {
+        "alibre:m1/m1@brep:attribute#31": {
           "offset": 2808,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "Autograph-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#32": {
+        "alibre:m1/m1@brep:attribute#32": {
           "offset": 2866,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#35": {
+        "alibre:m1/m1@brep:attribute#35": {
           "offset": 3082,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#37": {
+        "alibre:m1/m1@brep:attribute#37": {
           "offset": 3197,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#5": {
+        "alibre:m1/m1@brep:attribute#5": {
           "offset": 560,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "TimeStamp-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:attribute#9": {
+        "alibre:m1/m1@brep:attribute#9": {
           "offset": 1006,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "StateID-Alibre-attrib"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#0": {
+        "alibre:m1/m1@brep:entity#0": {
           "offset": 193,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "body"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#11": {
+        "alibre:m1/m1@brep:entity#11": {
           "offset": 1127,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#12": {
+        "alibre:m1/m1@brep:entity#12": {
           "offset": 1234,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#13": {
+        "alibre:m1/m1@brep:entity#13": {
           "offset": 1339,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#14": {
+        "alibre:m1/m1@brep:entity#14": {
           "offset": 1459,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#15": {
+        "alibre:m1/m1@brep:entity#15": {
           "offset": 1558,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#19": {
+        "alibre:m1/m1@brep:entity#19": {
           "offset": 1804,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#2": {
+        "alibre:m1/m1@brep:entity#2": {
           "offset": 342,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "lump"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#20": {
+        "alibre:m1/m1@brep:entity#20": {
           "offset": 1909,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "plane-surface"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#21": {
+        "alibre:m1/m1@brep:entity#21": {
           "offset": 2024,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#22": {
+        "alibre:m1/m1@brep:entity#22": {
           "offset": 2083,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#23": {
+        "alibre:m1/m1@brep:entity#23": {
           "offset": 2142,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#26": {
+        "alibre:m1/m1@brep:entity#26": {
           "offset": 2388,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "coedge"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#27": {
+        "alibre:m1/m1@brep:entity#27": {
           "offset": 2447,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "edge"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#29": {
+        "alibre:m1/m1@brep:entity#29": {
           "offset": 2631,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#3": {
+        "alibre:m1/m1@brep:entity#3": {
           "offset": 390,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "shell"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#30": {
+        "alibre:m1/m1@brep:entity#30": {
           "offset": 2675,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "ellipse-curve"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#33": {
+        "alibre:m1/m1@brep:entity#33": {
           "offset": 2923,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "vertex"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#34": {
+        "alibre:m1/m1@brep:entity#34": {
           "offset": 2961,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "ellipse-curve"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#36": {
+        "alibre:m1/m1@brep:entity#36": {
           "offset": 3139,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#38": {
+        "alibre:m1/m1@brep:entity#38": {
           "offset": 3254,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "point"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#4": {
+        "alibre:m1/m1@brep:entity#4": {
           "offset": 449,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#6": {
+        "alibre:m1/m1@brep:entity#6": {
           "offset": 632,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "face"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#7": {
+        "alibre:m1/m1@brep:entity#7": {
           "offset": 739,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "loop"
         },
-        "alibre:xref/m1/xref/m1/brep:entity#8": {
+        "alibre:m1/m1@brep:entity#8": {
           "offset": 842,
-          "stream": "alibre:xref/m1/xref/m1/SAB_DATA",
+          "stream": "alibre:m1/m1@SAB_DATA",
           "tag": "cone-surface"
         }
       }
     },
     "codec_digests": {},
-    "content_digest": "5d9a90f6b755afe005ddc0c5265b6e41fea826302431436e411a60cca63d601c",
+    "content_digest": "960808924e55f942d396d10837da44d89e9a073520f3a7274924b82fbdbac6d9",
     "decode_digest": "e71d533bcaf22eefc813ae6348b0723263450dcd4e595a14abbc7f90f244cbcc",
     "file_digests": {},
     "retained_records": {},
