@@ -66,6 +66,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchConstraintId;
 
 use super::presentation::GeneratedDesignRegistry;
+use super::records::ParameterRecords;
 use super::reduce::named_loss;
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
@@ -1122,11 +1123,10 @@ impl NeutralDesign<'_> {
     pub(super) fn records(
         &mut self,
         registry: &mut GeneratedDesignRegistry,
-    ) -> Result<(Vec<u8>, DesignRecords), CodecError> {
-        let (parameter_bytes, records, losses) =
-            self.base_feature.encode(&self.parameters, registry)?;
+    ) -> Result<(ParameterRecords, DesignRecords), CodecError> {
+        let (parameters, records, losses) = self.base_feature.encode(&self.parameters, registry)?;
         self.losses.extend(losses);
-        Ok((parameter_bytes, records))
+        Ok((parameters, records))
     }
 
     /// The members of the design folder of a design that writes a timeline:

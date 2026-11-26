@@ -19,6 +19,8 @@ pub(crate) struct AdmittedTables {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ConfigurationTable {
     pub(crate) id: String,
+    /// The position of the table in the document's `tables` array.
+    pub(crate) position: usize,
     pub(crate) rows: Vec<ConfigurationRow>,
 }
 
@@ -77,9 +79,9 @@ impl AdmittedTables {
                 "asset" => versioned,
                 "tables" if versioned => match value {
                     Value::Array(tables) => {
-                        for value in tables {
+                        for (position, value) in tables.iter().enumerate() {
                             let mut unassigned = 0;
-                            match table(value, &mut unassigned) {
+                            match table(value, position, &mut unassigned) {
                                 Some(table) => {
                                     admitted.tables.push(table);
                                     admitted.unassigned += unassigned;
@@ -171,7 +173,7 @@ fn is_versioned_document(value: &Value) -> bool {
         == Some(1)
 }
 
-fn table(value: &Value, unassigned: &mut usize) -> Option<ConfigurationTable> {
+fn table(value: &Value, position: usize, unassigned: &mut usize) -> Option<ConfigurationTable> {
     let members = value.as_object()?;
     let table_asset = asset(members.get("asset")?, "configurationTable-1.1.0")?;
     let id = attribute(table_asset, "pim:configuration:tableId")?;
@@ -224,8 +226,85 @@ fn table(value: &Value, unassigned: &mut usize) -> Option<ConfigurationTable> {
         .count();
     Some(ConfigurationTable {
         id: id.to_owned(),
+        position,
         rows: ordered,
     })
+}
+
+/// Rewrite the id of the table at `position` of the `tables` array from
+/// `table.0` to `table.1`, and the id of its row `row.0` to `row.1`, at
+/// every position [`AdmittedTables::admit`] reads them: the table's
+/// attribute and definition, and the row's attribute, definition, and
+/// `rowOrder` entry.
+pub(crate) fn rename_ids(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    table: (&str, &str),
+    row: (&str, &str),
+) {
+    let Some(members) = payload
+        .get_mut("tables")
+        .and_then(Value::as_array_mut)
+        .and_then(|tables| tables.get_mut(position))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    if let Some(asset) = members.get_mut("asset") {
+        rename_asset(asset, "pim:configuration:tableId", "tableDefinition", table);
+    }
+    for value in members
+        .get_mut("rows")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(asset) = value.get_mut("asset") {
+            rename_asset(asset, "pim:configuration:rowId", "rowDefinition", row);
+        }
+    }
+    let order = members
+        .get_mut("tableView")
+        .and_then(|view| view.get_mut("asset"))
+        .and_then(|asset| component_mut(asset, "viewData"))
+        .and_then(|view| view.get_mut("rowOrder"))
+        .and_then(|order| order.get_mut("value"))
+        .and_then(Value::as_array_mut);
+    for id in order.into_iter().flatten() {
+        if id.as_str() == Some(row.0) {
+            *id = Value::from(row.1);
+        }
+    }
+}
+
+/// Rewrite the id `id.0` of `asset` to `id.1` in its attribute `attribute`
+/// and in the `id` of its component `definition`.
+fn rename_asset(asset: &mut Value, attribute: &str, definition: &str, id: (&str, &str)) {
+    let Some(stated) = asset
+        .get_mut("attributes")
+        .and_then(|attributes| attributes.get_mut(attribute))
+        .filter(|stated| stated.as_str() == Some(id.0))
+    else {
+        return;
+    };
+    *stated = Value::from(id.1);
+    if let Some(stated) = component_mut(asset, definition)
+        .and_then(|definition| definition.get_mut("id"))
+        .and_then(|typed| typed.get_mut("value"))
+        .filter(|stated| stated.as_str() == Some(id.0))
+    {
+        *stated = Value::from(id.1);
+    }
+}
+
+/// The properties of the first component of `asset` named `name`.
+fn component_mut<'a>(asset: &'a mut Value, name: &str) -> Option<&'a mut Value> {
+    asset
+        .get_mut("components")?
+        .as_array_mut()?
+        .iter_mut()
+        .find(|component| component.get("name").and_then(Value::as_str) == Some(name))?
+        .get_mut("properties")
 }
 
 fn column_target(column: &Map<String, Value>) -> Option<ColumnTarget> {

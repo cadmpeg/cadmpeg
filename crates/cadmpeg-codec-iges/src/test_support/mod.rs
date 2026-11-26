@@ -64,6 +64,24 @@ pub(crate) fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
         .unwrap()
 }
 
+/// The document that the written file `bytes` reads back as. The reader
+/// charges a loss of each code in `expected` and no other loss.
+pub(crate) fn decoded_with(bytes: &[u8], expected: &[&str]) -> cadmpeg_ir::CadIr {
+    let decoded = decode(bytes.to_vec());
+    let losses = &decoded.report().losses;
+    let mut codes = losses
+        .iter()
+        .map(|loss| loss.code.to_string())
+        .collect::<Vec<_>>();
+    codes.sort();
+    codes.dedup();
+    assert_eq!(
+        codes, expected,
+        "the written file reads back with {losses:#?}"
+    );
+    decoded.ir().clone()
+}
+
 /// Decodes a synthesized stream that must also detect at high confidence.
 pub(crate) fn detect_and_decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     use cadmpeg_ir::codec::Codec as _;
