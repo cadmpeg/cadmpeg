@@ -31,8 +31,6 @@ type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
 /// Nesting limit of referenced Part Studios.
 pub(super) const MAX_REFERENCE_DEPTH: usize = 7;
-/// Bytes of captured neutral designs one decode keeps.
-const REFERENCE_BYTES: usize = 256 << 20;
 
 fn text<'a>(row: &'a Value, key: &str) -> Mapping<&'a str> {
     row.get(key)
@@ -443,7 +441,6 @@ pub(super) fn read(
             bundle: &bundle,
             root,
             step_decoder,
-            reference_budget: REFERENCE_BYTES,
             studios: std::collections::BTreeMap::new(),
         };
         read_studio(&mut session, manifest, "", 0, report)?
@@ -462,7 +459,6 @@ struct Session<'s, 'a> {
     bundle: &'s Bundle<'a>,
     root: View<'a>,
     step_decoder: crate::StepDecoder,
-    reference_budget: usize,
     /// The read of each referenced studio by its member folder. A studio that several
     /// derived features name is read once.
     studios: std::collections::BTreeMap<String, Result<std::rc::Rc<Model>, String>>,
@@ -544,7 +540,6 @@ fn studio<'a>(
         bundle,
         root,
         step_decoder,
-        reference_budget: REFERENCE_BYTES,
         studios: std::collections::BTreeMap::new(),
     };
     studio_in(&mut session, mid, eid, "", 0, report)

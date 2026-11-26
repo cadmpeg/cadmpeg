@@ -260,9 +260,6 @@ pub(super) fn map(
     depth: usize,
     report: &mut Report,
 ) -> Result<String, Failure> {
-    if session.reference_budget == 0 {
-        return Err(budget_failure());
-    }
     if feature
         .get("namespace")
         .and_then(Value::as_str)
@@ -436,23 +433,11 @@ pub(super) fn map(
         step,
     })
     .map_err(|e| e.to_string())?;
-    if payload.len() > session.reference_budget {
-        session.reference_budget = 0;
-        return Err(budget_failure());
-    }
     session.ctx.retain_bytes(
         cadmpeg_core::decode::u64_from_index(payload.len()),
         "retain Onshape design reference",
     )?;
-    session.reference_budget -= payload.len();
     Ok(payload)
-}
-
-fn budget_failure() -> Failure {
-    Failure::Local(
-        "the captured neutral designs exceed the 256 MiB reference limit; convert a smaller studio"
-            .into(),
-    )
 }
 
 /// A Boolean whose operands are bodies made by earlier features of a studio with a
