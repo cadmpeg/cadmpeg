@@ -31,7 +31,7 @@ const BODY_HEADER_REF_MAX: usize = 32;
 const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 
 /// A typed BODY node.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct BodyNode {
     /// Stream-local transmit index.
     pub(super) attr: u32,
@@ -45,6 +45,8 @@ pub(super) struct BodyNode {
     pub(super) ownership_refs: Vec<u32>,
     /// Stored Parasolid body kind discriminator.
     pub(super) kind: BodyKind,
+    /// Stored `res_linear`, the body's linear precision in metres.
+    pub(super) linear_resolution: f64,
     /// Byte offset of the node payload.  The first BODY has no repeated tag.
     pub(super) offset: usize,
     /// First byte after the complete node.
@@ -58,6 +60,7 @@ struct BodyCandidate {
     ownership_refs: [u32; 7 + BODY_POST_TOPOLOGY_REF_MAX],
     ownership_len: usize,
     kind: BodyKind,
+    linear_resolution: f64,
     offset: usize,
     end: usize,
 }
@@ -70,6 +73,7 @@ impl BodyCandidate {
             topology_refs: self.topology_refs,
             ownership_refs: self.ownership_refs[..self.ownership_len].to_vec(),
             kind: self.kind,
+            linear_resolution: self.linear_resolution,
             offset: self.offset,
             end: self.end,
         }
@@ -160,7 +164,7 @@ pub(super) struct FaceNode {
 }
 
 /// All typed ownership nodes recovered from one stream.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct Facts {
     pub(super) bodies: Vec<BodyNode>,
     pub(super) shells: Vec<ShellNode>,
@@ -691,7 +695,7 @@ fn region_chain_from_head(
 }
 
 /// One validated typed body hierarchy.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(in crate::brep) struct Hierarchy {
     pub(super) body: BodyNode,
     pub(super) regions: Vec<RegionNode>,
@@ -838,6 +842,7 @@ fn parse_body_fields(
         ownership_refs,
         ownership_len,
         kind,
+        linear_resolution: linear,
         offset,
         end: at,
     })
@@ -1859,6 +1864,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -1915,6 +1921,7 @@ mod tests {
                     topology_refs: [8, 1, 1, 1, 1, 1, 1],
                     ownership_refs: vec![41],
                     kind: BodyKind::Solid,
+                    linear_resolution: 1.0e-8,
                     offset: 1,
                     end: 2,
                 },
@@ -1924,6 +1931,7 @@ mod tests {
                     topology_refs: [999, 1, 1, 1, 1, 1, 1],
                     ownership_refs: vec![900],
                     kind: BodyKind::Solid,
+                    linear_resolution: 1.0e-8,
                     offset: 3,
                     end: 4,
                 },
@@ -1963,6 +1971,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -2018,6 +2027,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -2077,6 +2087,7 @@ mod tests {
                 topology_refs: [8, 1, 1, 1, 1, 1, 1],
                 ownership_refs: vec![41],
                 kind: BodyKind::Solid,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],
@@ -2104,6 +2115,7 @@ mod tests {
             topology_refs: [7, 1, 1, 1, 10, 1, 1],
             ownership_refs: Vec::new(),
             kind: BodyKind::Solid,
+            linear_resolution: 1.0e-8,
             offset: 1,
             end: 2,
         };
@@ -2152,6 +2164,7 @@ mod tests {
                 topology_refs: [1, 1, 1, 1, 1, 1, 1],
                 ownership_refs: Vec::new(),
                 kind: BodyKind::Wire,
+                linear_resolution: 1.0e-8,
                 offset: 1,
                 end: 2,
             }],

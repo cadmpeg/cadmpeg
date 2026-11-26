@@ -623,6 +623,8 @@ pub(crate) struct Graph {
     /// Whether the stream's LIMIT schema carries the inserted `term_use`
     /// field.
     primary_limit_term_use: bool,
+    /// The stored `res_linear` (metres) of each framed BODY node, by XMT.
+    body_linear_resolutions: BTreeMap<u32, f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

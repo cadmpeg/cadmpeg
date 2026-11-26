@@ -2691,6 +2691,11 @@ an ownership selector. A BODY is valid only when exactly one schema field
 interpretation satisfies the complete field grammar, the resolution values
 are finite, and `body_type` is one of the four defined values.
 
+`resolution_size` and `resolution_linear` are the BODY fields `res_size` and
+`res_linear` in metres. The part's linear tolerance comes from
+`resolution_linear` of its bodies, and its angular tolerance is the Parasolid
+angular precision ([`parasolid.md`](parasolid.md) §4).
+
 A SHELL has eight references:
 
 ```

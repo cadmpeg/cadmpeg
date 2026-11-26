@@ -173,10 +173,18 @@ pub(super) fn try_decode_geometry(
         .rmfastload_object_id_table()
         .map(|(_, table)| table.object_ids.as_slice())
         .unwrap_or_default();
+    let mut body_linear_resolutions = BTreeMap::new();
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
-            for (body, nodes) in topology_body_node_ids(si, &parsed.stream(si).graph)? {
+            let graph = &parsed.stream(si).graph;
+            for (body, nodes) in topology_body_node_ids(si, graph)? {
                 body_node_ids.insert(body, nodes);
+            }
+            let scope = IdScope::stream_from_index(si)?;
+            for (&body_xmt, &resolution) in graph.body_linear_resolutions() {
+                let body: BodyId =
+                    scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
+                body_linear_resolutions.insert(body, resolution);
             }
         }
     }
@@ -1473,6 +1481,12 @@ pub(super) fn try_decode_geometry(
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
     classify_body_kinds(&mut ir)?;
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances(
+        ir.geometry
+            .bodies
+            .iter()
+            .filter_map(|body| body_linear_resolutions.get(&body.id).copied()),
+    );
     crate::native::attach_annotations(
         ctx,
         &mut ir,

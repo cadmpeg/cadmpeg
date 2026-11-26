@@ -54,15 +54,23 @@ fn vertex(xmt: u32, node_id: u32) -> Vec<u8> {
 /// A first-use base-schema BODY: `highest_node_id`, then pointers, reals,
 /// and bytes.
 fn body(xmt: u32, highest_node_id: u32) -> Vec<u8> {
+    stored_body(true, xmt, highest_node_id, 1.0e-8)
+}
+
+/// A base-schema BODY that stores `res_linear`; `first` writes the type's
+/// first-use declaration.
+fn stored_body(first: bool, xmt: u32, highest_node_id: u32, res_linear: f64) -> Vec<u8> {
     let mut bytes = u16::from(NodeKind::Body.code()).to_be_bytes().to_vec();
-    bytes.push(255);
+    if first {
+        bytes.push(255);
+    }
     bytes.extend(encoded_xmt(xmt));
     bytes.extend(highest_node_id.to_be_bytes());
     for _ in 0..6 {
         bytes.extend(encoded_xmt(1));
     }
     bytes.extend(1.0e3f64.to_be_bytes());
-    bytes.extend(1.0e-8f64.to_be_bytes());
+    bytes.extend(res_linear.to_be_bytes());
     for _ in 0..3 {
         bytes.extend(encoded_xmt(1));
     }
@@ -550,4 +558,23 @@ fn terminated_query_sense_fin_of_another_form_reports_its_unresolved_projection(
             1
         );
     }
+}
+
+#[test]
+fn each_framed_body_keeps_its_stored_linear_resolution() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, true);
+        bytes.extend(stored_body(true, 3, 40, 1.0e-8));
+        bytes.extend(stored_body(false, 5, 50, 1.0e-6));
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        assert_eq!(
+            graph
+                .body_linear_resolutions()
+                .iter()
+                .map(|(&xmt, &resolution)| (xmt, resolution))
+                .collect::<Vec<_>>(),
+            [(3, 1.0e-8), (5, 1.0e-6)]
+        );
+    });
 }

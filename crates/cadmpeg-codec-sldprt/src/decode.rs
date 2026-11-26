@@ -3313,6 +3313,9 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target
         .native_body_identities
         .append(&mut source.native_body_identities);
+    target
+        .body_linear_resolutions
+        .append(&mut source.body_linear_resolutions);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.losses.append(&mut source.losses);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
@@ -4062,6 +4065,7 @@ fn build_geometry_ir(
     ir.model.sketch_constraints = sketch_constraints;
 
     let brep_entities = brep.neutral_entity_count()?;
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances(brep.body_linear_resolutions);
     ir.geometry.bodies = brep.bodies;
     ir.geometry.regions = brep.regions;
     ir.geometry.shells = brep.shells;
@@ -5309,6 +5313,7 @@ fn build_container_ir(
     classification: &crate::dialect::LayerClassification,
 ) -> Result<(CadIr, Annotations, Vec<UnknownRecord>, retention::Retention), CodecError> {
     let mut ir = CadIr::empty();
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances([]);
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
@@ -5336,6 +5341,7 @@ fn build_metadata_ir(
     let equation_managers = crate::design_v11::equation_managers(scan);
     let length_places = crate::design_v11::length_places(scan);
     let mut ir = CadIr::empty();
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances([]);
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
