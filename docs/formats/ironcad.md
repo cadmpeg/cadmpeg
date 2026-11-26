@@ -75,6 +75,12 @@ The second `u32` of an item selects its kind. The value `0x0009b401` starts a
 kernel record. A node length is less than 2³², so the second `u32` of a node is
 zero.
 
+The payload node is the scene root. A **pair** is a node followed by a kernel
+record. A node below the scene root that holds pairs is an **assembly**: each
+pair that it holds is a part of the assembly, and each assembly node that it
+holds is a member assembly. The pairs that the scene root holds are the parts of
+the scene.
+
 ### 3.1 Parasolid kernel bytes
 
 The kernel bytes are a native binary Parasolid transmit

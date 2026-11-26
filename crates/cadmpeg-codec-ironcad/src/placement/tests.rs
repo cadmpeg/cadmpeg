@@ -97,3 +97,31 @@ fn a_matrix_without_an_affine_column_is_dropped() {
     assert_eq!(found.len(), 1);
     assert!(found[0].transform.is_none());
 }
+
+#[test]
+fn a_property_of_another_value_type_ends_the_read_and_is_named() {
+    let odd_name: Vec<u8> = "Odd\0".encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let mut odd = PROPERTY_MARKER.to_vec();
+    odd.extend_from_slice(&u32::try_from(odd_name.len()).unwrap().to_le_bytes());
+    odd.extend_from_slice(&odd_name);
+    odd.extend_from_slice(&9_u16.to_le_bytes());
+    odd.extend_from_slice(&[0; 8]);
+    let payload = [
+        feature("Block"),
+        name("Part1"),
+        PROPERTY_SET.to_vec(),
+        property("Part Number", "P-1"),
+        odd,
+        property("Description", "after"),
+    ]
+    .concat();
+    let scene = records(&payload);
+    assert_eq!(scene.len(), 1);
+    assert_eq!(scene[0].unread_property.as_deref(), Some("Odd"));
+    let names: Vec<_> = scene[0]
+        .properties
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    assert_eq!(names, ["Part Number"]);
+}

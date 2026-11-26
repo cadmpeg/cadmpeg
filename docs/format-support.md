@@ -755,11 +755,12 @@ contributes a Parasolid dialect layer with its schema token, and each ACIS
 record contributes an ACIS layer from its binary header. The ACIS or
 Parasolid record that follows a part's child node decodes into B-rep topology
 and geometry in the part frame; feature records are retained. Each part is
-placed in the scene by the matrix of its `Public Access` part record, composed
-with the matrix of its assembly, and carries its properties and mass density;
-the scene units come from `Document Data`. The assembly hierarchy and feature
-history are pending, and each non-empty scene stream other than
-`Brep Data` produces a loss. The headline is L0. The codec is read-only.
+placed by the matrix of its `Public Access` part record and carries its
+properties and mass density. Each assembly node of the record tree becomes an
+assembly definition, placed by the matrix of its assembly record, that holds
+its parts and member assemblies. The scene units come from `Document Data`.
+Feature history is pending, and each non-empty scene stream other than
+`Brep Data`, `Public Access`, and `Document Data` produces a loss. The headline is L0. The codec is read-only.
 
 See [`formats/ironcad.md`](formats/ironcad.md) and
 [`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).

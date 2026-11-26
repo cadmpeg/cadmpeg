@@ -31,7 +31,6 @@ use cadmpeg_ir::ids::MassPropertiesId;
 use cadmpeg_ir::physics::{MassProperties, PhysicsTarget};
 use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::transform::Transform;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let snapshot = container::open(ctx, root)?;
@@ -43,8 +42,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let mut bodies = Bodies::default();
     let mut scene = Scene::default();
     if !ctx.container_only() {
-        if let Some(records) = records(ctx, &snapshot, &mut losses)? {
-            bodies = classify(ctx, &records, &mut layers, &mut losses)?;
+        if let Some(tree) = records(ctx, &snapshot, &mut losses)? {
+            bodies = classify(ctx, &tree.records, &mut layers, &mut losses)?;
+            scene.record_assemblies = tree.records.iter().map(|record| record.assembly).collect();
+            scene.assemblies = tree.assemblies;
         }
         scene.records = scene_records(ctx, &snapshot, &mut losses)?;
         scene.units = document_units(ctx, &snapshot, &mut losses)?;
@@ -69,11 +70,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     transfer(ctx, ir, bodies, scene, losses, digest)
 }
 
-/// The part and assembly records and the scene units.
+/// The part and assembly records, the scene units, and the assemblies of the
+/// `Brep Data` tree.
 #[derive(Default)]
 struct Scene {
     records: Option<Vec<SceneRecord>>,
     units: Option<UnitSystem>,
+    /// The assembly nodes of `Brep Data`, in the order they end.
+    assemblies: Vec<tree::Assembly>,
+    /// The assembly that holds each kernel record's pair, by record ordinal.
+    record_assemblies: Vec<Option<usize>>,
 }
 
 /// The decoded ACIS graph, the decoded Parasolid bodies, and the kernel
@@ -201,8 +207,15 @@ fn transfer(
         Some(records) => place(
             ctx,
             &mut ir,
-            results.into_iter().map(|(_, ids)| ids).collect(),
+            results
+                .into_iter()
+                .map(|(ordinal, ids)| {
+                    let assembly = scene.record_assemblies.get(ordinal).copied().flatten();
+                    (assembly, ids)
+                })
+                .collect(),
             records,
+            &scene.assemblies,
             &mut losses,
         )?,
         None => Vec::new(),
@@ -233,7 +246,7 @@ fn records<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
     losses: &mut Vec<LossNote>,
-) -> Result<Option<Vec<KernelRecord<'a>>>, CodecError> {
+) -> Result<Option<tree::Tree<'a>>, CodecError> {
     let Some(entry) = snapshot.stream(BREP_DATA) else {
         losses.push(IronCadLossCode::FrameUnreadable.note("`Brep Data` is not a stream"));
         return Ok(None);
@@ -253,7 +266,7 @@ fn records<'a>(
         }
     };
     match tree::read(payload) {
-        Ok(records) => Ok(Some(records)),
+        Ok(tree) => Ok(Some(tree)),
         Err(error) => {
             losses.push(IronCadLossCode::RecordTreeUnreadable.note(format!(
                 "`Brep Data` record tree could not be read: {}",
@@ -525,7 +538,19 @@ fn scene_records(
         .open(ctx, entry)
         .and_then(|stream| frame::payload(ctx, stream))
     {
-        Ok(payload) => Ok(Some(placement::records(payload.window()))),
+        Ok(payload) => {
+            let records = placement::records(payload.window());
+            for record in &records {
+                if let Some(name) = &record.unread_property {
+                    losses.push(IronCadLossCode::PropertyUnread.note(format!(
+                        "record `{}`: property `{name}` stores a value type that is not read; \
+                         it and the properties after it are not transferred",
+                        record.name
+                    )));
+                }
+            }
+            Ok(Some(records))
+        }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
             losses.push(IronCadLossCode::PlacementUnbound.note(format!(
@@ -536,47 +561,83 @@ fn scene_records(
     }
 }
 
-/// Places each part result in the scene by the matrix of its part record.
+/// Places each part result by the matrix of its part record, and each
+/// assembly of the `Brep Data` tree by the matrix of its assembly record.
 ///
-/// Returns the occurrences that the root definition places.
+/// `results` holds the bodies of each part result record and the assembly
+/// that holds its pair. Returns the occurrences that the root definition
+/// places.
 fn place(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    results: Vec<Vec<BodyId>>,
+    results: Vec<(Option<usize>, Vec<BodyId>)>,
     scene: &[SceneRecord],
+    tree_assemblies: &[tree::Assembly],
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<OccurrenceId>, CodecError> {
-    let part_records = scene.iter().filter(|record| record.is_part()).count();
-    if part_records != results.len() {
+    let parts: Vec<&SceneRecord> = scene.iter().filter(|record| record.is_part()).collect();
+    let assembly_records: Vec<&SceneRecord> =
+        scene.iter().filter(|record| !record.is_part()).collect();
+    if parts.len() != results.len() {
         losses.push(IronCadLossCode::PlacementUnbound.note(format!(
-            "`Public Access` holds {part_records} part record(s) and `Brep Data` holds {} part \
-             result record(s); bodies stay in their part frames",
+            "`Public Access` holds {} part record(s) and `Brep Data` holds {} part result \
+             record(s); bodies stay in their part frames",
+            parts.len(),
             results.len()
         )));
         return Ok(Vec::new());
     }
-    if part_records == 0 {
+    if parts.is_empty() {
         return Ok(Vec::new());
     }
     losses.push(IronCadLossCode::PlacementBoundByOrder.note(
         "each `Public Access` part record is bound to the `Brep Data` part result record of \
-         the same rank, and its matrix places the part frame as a row-vector rotation and a \
-         translation in metres",
+         the same rank, and its matrix places the part frame in its assembly as a row-vector \
+         rotation and a translation in metres",
     ));
-    let assemblies = scene.len() - part_records;
-    if assemblies > 0 {
+    let nested = assembly_records.len() == tree_assemblies.len();
+    if nested && !assembly_records.is_empty() {
+        losses.push(IronCadLossCode::AssemblyBoundByOrder.note(format!(
+            "{} `Public Access` assembly record(s) are bound to the `Brep Data` nodes that \
+             hold pairs, in the order the nodes end",
+            assembly_records.len()
+        )));
+    } else if !nested {
         losses.push(IronCadLossCode::AssemblyFlattened.note(format!(
-            "{assemblies} assembly record(s) are not transferred; each part is placed in the \
-             scene directly"
+            "`Public Access` holds {} assembly record(s) and `Brep Data` holds {} assembly \
+             node(s); the assemblies are not transferred, and each part is placed in the \
+             scene by its own matrix",
+            assembly_records.len(),
+            tree_assemblies.len()
         )));
     }
-    let parts = scene_placements(scene, losses);
+    let assembly_count = if nested { assembly_records.len() } else { 0 };
     ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(2 * parts.len()),
-        "IronCAD part definitions and occurrences",
+        cadmpeg_core::decode::u64_from_index(2 * (parts.len() + assembly_count)),
+        "IronCAD part and assembly definitions and occurrences",
     )?;
+    let mut assemblies = Vec::with_capacity(assembly_count);
+    for (index, record) in assembly_records.iter().take(assembly_count).enumerate() {
+        let key = cadmpeg_core::decode::u64_from_index(index);
+        let definition_id = ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("ironcad", "model", "assembly-definition"),
+            key,
+        );
+        let mut definition = ProductDefinition::new(definition_id, Storage::Embedded);
+        definition.kind = Some(ProductDefinitionKind::Assembly);
+        definition.source_name = Some(record.name.clone());
+        part_properties(record, &mut definition);
+        if let Some(mass) = mass_properties(
+            record,
+            &definition.id,
+            cadmpeg_core::decode::u64_from_index(parts.len() + index),
+        ) {
+            ir.model.mass_properties.push(mass);
+        }
+        assemblies.push(definition);
+    }
     let mut placed = Vec::new();
-    for (rank, ((part, transform), bodies)) in parts.into_iter().zip(results).enumerate() {
+    for (rank, (part, (assembly, bodies))) in parts.into_iter().zip(results).enumerate() {
         let rank = cadmpeg_core::decode::u64_from_index(rank);
         let definition_id = ProductDefinitionId::compose(
             &cadmpeg_ir::identity_namespace!("ironcad", "model", "product-definition"),
@@ -591,7 +652,7 @@ fn place(
             ir.model.mass_properties.push(mass);
         }
         ir.model.product_definitions.push(definition);
-        if transform.is_none() {
+        if part.transform.is_none() {
             losses.push(IronCadLossCode::PlacementUnbound.note(format!(
                 "part record `{}` stores no affine matrix; the part stays in its part frame",
                 part.name
@@ -601,60 +662,40 @@ fn place(
             &cadmpeg_ir::identity_namespace!("ironcad", "model", "occurrence"),
             rank,
         );
-        let mut occurrence = Occurrence::new(occurrence_id.clone(), definition_id, transform);
+        let mut occurrence = Occurrence::new(occurrence_id.clone(), definition_id, part.transform);
         occurrence.name = Some(part.name.clone());
         ir.model.occurrences.push(occurrence);
-        placed.push(occurrence_id);
+        match assembly.and_then(|index| assemblies.get_mut(index)) {
+            Some(owner) => owner.occurrences.push(occurrence_id),
+            None => placed.push(occurrence_id),
+        }
     }
+    for (index, record) in assembly_records.iter().take(assembly_count).enumerate() {
+        if record.transform.is_none() {
+            losses.push(IronCadLossCode::PlacementUnbound.note(format!(
+                "assembly record `{}` stores no affine matrix; the assembly frame is placed \
+                 at its parent origin",
+                record.name
+            )));
+        }
+        let occurrence_id = OccurrenceId::compose(
+            &cadmpeg_ir::identity_namespace!("ironcad", "model", "assembly-occurrence"),
+            cadmpeg_core::decode::u64_from_index(index),
+        );
+        let mut occurrence = Occurrence::new(
+            occurrence_id.clone(),
+            assemblies[index].id.clone(),
+            record.transform,
+        );
+        occurrence.name = Some(record.name.clone());
+        ir.model.occurrences.push(occurrence);
+        match tree_assemblies[index].parent {
+            Some(parent) => assemblies[parent].occurrences.push(occurrence_id),
+            None => placed.push(occurrence_id),
+        }
+    }
+    ir.model.product_definitions.extend(assemblies);
     Ok(placed)
-}
-
-/// The part records of `scene` in stored order, each with its matrix composed
-/// with the matrix of the assembly record that follows it.
-///
-/// An assembly record holds the part records between it and the previous
-/// assembly record.
-fn scene_placements<'a>(
-    scene: &'a [SceneRecord],
-    losses: &mut Vec<LossNote>,
-) -> Vec<(&'a SceneRecord, Option<Transform>)> {
-    let mut parts: Vec<(&SceneRecord, Option<Transform>)> = Vec::new();
-    let mut members = 0;
-    let mut composed = 0;
-    for record in scene {
-        if record.is_part() {
-            parts.push((record, record.transform));
-            members += 1;
-            continue;
-        }
-        let start = parts.len() - members;
-        members = 0;
-        let Some(assembly) = record.transform else {
-            continue;
-        };
-        for (_, transform) in &mut parts[start..] {
-            if let Some(part) = transform {
-                match assembly.compose(*part) {
-                    Ok(placed) => {
-                        *part = placed;
-                        composed += 1;
-                    }
-                    Err(error) => losses.push(IronCadLossCode::PlacementUnbound.note(format!(
-                        "assembly record `{}` does not compose with a member part: {error}; \
-                         the part is placed by its own matrix",
-                        record.name
-                    ))),
-                }
-            }
-        }
-    }
-    if composed > 0 {
-        losses.push(IronCadLossCode::AssemblyMembershipByOrder.note(format!(
-            "{composed} part record(s) are read as members of the next assembly record, and \
-             each part matrix is composed with the matrix of that assembly"
-        )));
-    }
-    parts
 }
 
 /// Properties of a part record that the definition states directly.
@@ -673,6 +714,7 @@ fn part_properties(part: &SceneRecord, definition: &mut ProductDefinition) {
         Some(PropertyValue::Text(text)) => Some(text.clone()),
         _ => None,
     };
+    definition.label = text("PartName");
     definition.part_number = text("Part Number");
     definition.description = text("Description");
     definition.native_ref = text("ModelGUID");
@@ -784,7 +826,10 @@ fn scene_streams(snapshot: &CompoundSnapshot<'_>, losses: &mut Vec<LossNote>) {
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
-        if stream.path().eq_ignore_ascii_case(BREP_DATA) || stream.logical_size() == 0 {
+        let read = [BREP_DATA, PUBLIC_ACCESS, DOCUMENT_DATA]
+            .iter()
+            .any(|name| stream.path().eq_ignore_ascii_case(name));
+        if read || stream.logical_size() == 0 {
             continue;
         }
         losses.push(IronCadLossCode::SceneStreamsPending.note(format!(

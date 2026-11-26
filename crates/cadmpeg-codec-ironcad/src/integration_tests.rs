@@ -258,7 +258,7 @@ fn parasolid_records_rewrite_into_framed_neutral_transmits() {
         let entry = snapshot.stream(crate::container::BREP_DATA).unwrap();
         let stream = snapshot.open(&ctx, entry).unwrap();
         let payload = crate::frame::payload(&ctx, stream).unwrap();
-        let records = crate::tree::read(payload).unwrap();
+        let records = crate::tree::read(payload).unwrap().records;
         for record in records
             .iter()
             .filter(|record| record.kernel == crate::tree::Kernel::Parasolid)
@@ -284,21 +284,24 @@ fn scene_parts_are_placed_by_their_public_access_matrices() {
     let result = decode(SCENE);
     assert_eq!(count(&result, IronCadLossCode::PlacementBoundByOrder), 1);
     assert_eq!(count(&result, IronCadLossCode::PlacementUnbound), 0);
-    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 1);
+    assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
     let model = &result.ir().model;
-    let names: Vec<_> = model
+    let mut names: Vec<_> = model
         .occurrences
         .iter()
         .map(|occurrence| occurrence.name.as_deref().unwrap())
         .collect();
+    names.sort_unstable();
     assert_eq!(
         names,
         [
+            "Assembly",
             "Box_Parasolid",
-            "Cylinder_ACIS",
             "Compound_part",
-            "Part6",
-            "Part4"
+            "Cylinder_ACIS",
+            "Part4",
+            "Part6"
         ]
     );
     let translation = |name: &str| {
@@ -325,7 +328,7 @@ fn scene_parts_are_placed_by_their_public_access_matrices() {
         .iter()
         .find(|definition| definition.is_root())
         .unwrap();
-    assert_eq!(root.occurrences.len(), 5);
+    assert_eq!(root.occurrences.len(), 4);
     assert!(root.bodies.is_empty());
 }
 
@@ -364,7 +367,7 @@ fn part_properties_mass_and_scene_units_are_transferred() {
         .bom_properties
         .keys()
         .any(|key| key.as_str() == "PartMass" || key.as_str() == "MassDensity"));
-    assert_eq!(model.mass_properties.len(), 5);
+    assert_eq!(model.mass_properties.len(), 6);
     let density = model.mass_properties[0].density.unwrap().get();
     assert!((density - 7.8e-6).abs() <= EPS_DENSITY_KG_PER_MM3);
     assert!(model.mass_properties[0].mass.is_none());
@@ -448,13 +451,38 @@ fn a_rotated_block_is_turned_30_degrees_about_z() {
 #[test]
 fn an_assembly_matrix_places_its_member_parts() {
     let result = decode("Assembly_moved.ics");
-    assert_eq!(
-        count(&result, IronCadLossCode::AssemblyMembershipByOrder),
-        1
+    assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
+    assert_placement(
+        placement(&result, "Assembly1"),
+        IDENTITY,
+        [30.0, -20.0, 10.0],
     );
-    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 1);
-    assert_placement(placement(&result, "Part1"), IDENTITY, [30.0, -20.0, 10.0]);
-    assert_placement(placement(&result, "Part2"), IDENTITY, [30.0, -20.0, 35.0]);
+    assert_placement(placement(&result, "Part1"), IDENTITY, [0.0; 3]);
+    assert_placement(placement(&result, "Part2"), IDENTITY, [0.0, 0.0, 25.0]);
+    let model = &result.ir().model;
+    let definition = |name: &str| {
+        model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.source_name.as_deref() == Some(name))
+            .unwrap()
+    };
+    let members: Vec<_> = definition("Assembly1")
+        .occurrences
+        .iter()
+        .map(|id| {
+            let occurrence = model.occurrences.iter().find(|o| &o.id == id).unwrap();
+            occurrence.name.as_deref().unwrap()
+        })
+        .collect();
+    assert_eq!(members, ["Part1", "Part2"]);
+    let root = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap();
+    assert_eq!(root.occurrences.len(), 1);
 }
 
 #[test]

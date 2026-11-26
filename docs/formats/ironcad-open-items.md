@@ -34,13 +34,13 @@ The two ACIS streams of a one-block pair hold the same closed body. The body of 
 
 **Need.** Save the same part from another IronCAD release, and save a part with several bodies, then compare the record headers.
 
-### DR-1067. Assembly membership and part binding
+### DR-1067. Binding of scene records to the record tree
 
-**Question.** Which field states the part records that an assembly record holds, and how does an assembly record nest in another assembly? Which field binds a part record to its kernel records?
+**Question.** Which field binds a part record of `Public Access` to the pair of its kernel records, and an assembly record to its assembly node of `Brep Data` (`ironcad.md` §3)?
 
-**Known.** The part records come in the stored order of the part result records of `Brep Data` (DR-1063). A part record stores the matrix of its part frame in its parent, and an assembly record stores the matrix of the assembly in the scene (`ironcad.md` §5). An assembly record comes after the part records of its parts. An assembly record that follows two part records holds both. An assembly record that follows five part records holds the last two; the first three are parts of the scene. After the matrix, a part record stores the bytes `ff ff ff ff 00 0b 00 00 00` and an assembly record stores `ff ff ff ff 00 02 00 00 00`. The decoder binds each part record to the part result record of the same rank and charges `ironcad.placement.bound-by-order`. It reads the part records between an assembly record and the previous assembly record as the parts of that assembly, composes each part matrix with the assembly matrix, and charges `ironcad.assembly.membership-by-order`. It places each part as an occurrence of the root definition and charges `ironcad.assembly.flattened`.
+**Known.** The part records come in the stored order of the part result records of `Brep Data` (DR-1063). An assembly record comes after the part records of its parts, and an assembly node ends after the pairs of its parts. A part record stores the matrix of its part frame in its parent, and an assembly record stores the matrix of the assembly in its parent (`ironcad.md` §5). After the matrix, a part record stores the bytes `ff ff ff ff 00 0b 00 00 00` and an assembly record stores `ff ff ff ff 00 02 00 00 00`. The decoder binds each part record to the part result record of the same rank and charges `ironcad.placement.bound-by-order`. It binds each assembly record to the assembly node of the same rank in the order the nodes end and charges `ironcad.assembly.bound-by-order`. When the counts of assembly records and assembly nodes differ, it places every part in the scene by its own matrix and charges `ironcad.assembly.flattened`.
 
-**Need.** Save a scene with one part, then an assembly of two parts, then a second part added after the assembly. Then put that assembly inside a second assembly. Compare the record order of `Public Access` and the records of `Public Access Data` to find the field that names the parts of each assembly.
+**Need.** Save a scene with one part, then an assembly of two parts, then a second part added after the assembly. Then put that assembly inside a second assembly, and then reorder two parts in the scene browser. Compare the record order of `Public Access` with the pairs of `Brep Data`, and search both records for a shared identifier.
 
 ### DR-1068. Role of the second length entry of `Document Data`
 

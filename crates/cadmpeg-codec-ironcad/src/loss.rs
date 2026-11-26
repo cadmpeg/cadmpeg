@@ -25,7 +25,8 @@ pub(crate) enum IronCadLossCode {
     PlacementBoundByOrder,
     PlacementUnbound,
     AssemblyFlattened,
-    AssemblyMembershipByOrder,
+    AssemblyBoundByOrder,
+    PropertyUnread,
     UnitsUnrecognized,
     SceneStreamsPending,
 }
@@ -89,10 +90,10 @@ impl IronCadLossCode {
                 LossTaxonomy::AssemblyPlacementsNotTransferred,
             ),
             Self::UnitsUnrecognized => ("units.unrecognized", LossTaxonomy::MetadataNotTransferred),
-            Self::AssemblyMembershipByOrder => (
-                "assembly.membership-by-order",
-                LossTaxonomy::DecodeDiagnostic,
-            ),
+            Self::PropertyUnread => ("property.unread", LossTaxonomy::MetadataNotTransferred),
+            Self::AssemblyBoundByOrder => {
+                ("assembly.bound-by-order", LossTaxonomy::DecodeDiagnostic)
+            }
             Self::SceneStreamsPending => (
                 "scene.decode-pending",
                 LossTaxonomy::ObjectRecordsUntransferred,

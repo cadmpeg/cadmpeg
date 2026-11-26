@@ -19,9 +19,9 @@ fn classified(payload: &[u8]) -> (Bodies<'_>, Vec<LossNote>) {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
-    let records = tree::read(View::over_retained(payload)).unwrap();
+    let tree = tree::read(View::over_retained(payload)).unwrap();
     let mut losses = Vec::new();
-    let bodies = classify(&ctx, &records, &mut dialect::layers(), &mut losses).unwrap();
+    let bodies = classify(&ctx, &tree.records, &mut dialect::layers(), &mut losses).unwrap();
     (bodies, losses)
 }
 
@@ -168,7 +168,15 @@ fn part_records_that_do_not_match_the_part_results_are_unbound() {
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    let placed = super::place(&ctx, &mut ir, vec![Vec::new()], &[], &mut losses).unwrap();
+    let placed = super::place(
+        &ctx,
+        &mut ir,
+        vec![(None, Vec::new())],
+        &[],
+        &[],
+        &mut losses,
+    )
+    .unwrap();
     assert!(placed.is_empty());
     assert_eq!(count(&losses, IronCadLossCode::PlacementUnbound), 1);
     assert!(ir.model.product_definitions.is_empty());
@@ -265,28 +273,69 @@ fn scene_record(name: &str, has_features: bool, z: f64) -> crate::placement::Sce
             [0.0, 0.0, 1.0, z],
         ]),
         properties: Vec::new(),
+        unread_property: None,
     }
 }
 
-#[test]
-fn an_assembly_places_the_part_records_since_the_previous_assembly() {
+/// Places the parts `a` and `b` and the assembly record `asm` with the tree
+/// assemblies `tree_assemblies`; `b` lies in the assembly at index
+/// `b_assembly`.
+fn placed_scene(
+    tree_assemblies: &[crate::tree::Assembly],
+    b_assembly: Option<usize>,
+) -> (CadIr, Vec<cadmpeg_ir::ids::OccurrenceId>, Vec<LossNote>) {
     let scene = [
         scene_record("a", true, 1.0),
-        scene_record("first", false, 10.0),
         scene_record("b", true, 2.0),
-        scene_record("c", true, 3.0),
-        scene_record("second", false, 100.0),
-        scene_record("d", true, 4.0),
+        scene_record("asm", false, 10.0),
     ];
+    let payload = plane_face_body();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    let placed = super::scene_placements(&scene, &mut losses);
-    let heights: Vec<_> = placed
+    let results = vec![(None, Vec::new()), (b_assembly, Vec::new())];
+    let placed =
+        super::place(&ctx, &mut ir, results, &scene, tree_assemblies, &mut losses).unwrap();
+    (ir, placed, losses)
+}
+
+#[test]
+fn an_assembly_of_the_tree_holds_its_parts_and_is_placed_by_its_record() {
+    let tree = [crate::tree::Assembly { parent: None }];
+    let (ir, placed, losses) = placed_scene(&tree, Some(0));
+    assert_eq!(count(&losses, IronCadLossCode::AssemblyBoundByOrder), 1);
+    assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 0);
+    let name = |id: &cadmpeg_ir::ids::OccurrenceId| {
+        let occurrence = ir.model.occurrences.iter().find(|o| &o.id == id).unwrap();
+        let z = occurrence.transform.unwrap().affine_rows()[2][3];
+        (occurrence.name.clone().unwrap(), z)
+    };
+    let root: Vec<_> = placed.iter().map(name).collect();
+    assert_eq!(root, [("a".to_owned(), 1.0), ("asm".to_owned(), 10.0)]);
+    let assembly = ir
+        .model
+        .product_definitions
         .iter()
-        .map(|(_, transform)| transform.unwrap().affine_rows()[2][3])
-        .collect();
-    assert_eq!(heights, [11.0, 102.0, 103.0, 4.0]);
+        .find(|definition| definition.source_name.as_deref() == Some("asm"))
+        .unwrap();
     assert_eq!(
-        count(&losses, IronCadLossCode::AssemblyMembershipByOrder),
-        1
+        assembly.kind,
+        Some(cadmpeg_ir::products::ProductDefinitionKind::Assembly)
     );
+    let members: Vec<_> = assembly.occurrences.iter().map(name).collect();
+    assert_eq!(members, [("b".to_owned(), 2.0)]);
+}
+
+#[test]
+fn assembly_records_that_do_not_match_the_tree_are_flattened() {
+    let (ir, placed, losses) = placed_scene(&[], None);
+    assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 1);
+    assert_eq!(placed.len(), 2);
+    assert!(ir
+        .model
+        .product_definitions
+        .iter()
+        .all(|definition| definition.source_name.as_deref() != Some("asm")));
 }

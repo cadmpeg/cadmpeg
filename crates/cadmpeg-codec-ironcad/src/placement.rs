@@ -44,6 +44,9 @@ pub(crate) struct SceneRecord {
     pub(crate) transform: Option<Transform>,
     /// The set properties, in stored order.
     pub(crate) properties: Vec<(String, PropertyValue)>,
+    /// The name of a property whose value type the reader does not read; the
+    /// properties after it are not read.
+    pub(crate) unread_property: Option<String>,
 }
 
 /// The value of one property.
@@ -90,7 +93,8 @@ pub(crate) fn records(payload: &[u8]) -> Vec<SceneRecord> {
             continue;
         }
         let next = next_name(payload, after).unwrap_or(payload.len());
-        let parsed = payload.get(after..next).map(properties).unwrap_or_default();
+        let (parsed, unread_property) =
+            payload.get(after..next).map(properties).unwrap_or_default();
         let transform = parsed
             .iter()
             .find(|property| property.name == "ModelGUID")
@@ -108,6 +112,7 @@ pub(crate) fn records(payload: &[u8]) -> Vec<SceneRecord> {
             has_features: features,
             transform,
             properties,
+            unread_property,
         });
         features = false;
         at = after;
@@ -159,9 +164,10 @@ struct Property {
 /// Reads the properties of one property set.
 ///
 /// A property is `f4 ff`, a `u32` name length in bytes, the NUL-terminated
-/// UTF-16LE name, a `u16` value type, and the value. Properties of other
-/// value types end the read.
-fn properties(record: &[u8]) -> Vec<Property> {
+/// UTF-16LE name, a `u16` value type, and the value. `ModelGUID` is the last
+/// property read. A property of another value type ends the read, and its
+/// name is returned.
+fn properties(record: &[u8]) -> (Vec<Property>, Option<String>) {
     let mut out = Vec::new();
     let mut at = 0;
     while let Some(found) = find(record, &PROPERTY_MARKER, at) {
@@ -200,12 +206,16 @@ fn properties(record: &[u8]) -> Vec<Property> {
                 };
                 (PropertyValue::Text(text), value_at + 6 + text_bytes)
             }
-            _ => continue,
+            _ => return (out, Some(name)),
         };
+        let last = name == "ModelGUID";
         out.push(Property { name, value, end });
+        if last {
+            break;
+        }
         at = end;
     }
-    out
+    (out, None)
 }
 
 /// The NUL-terminated UTF-16LE text of `length` bytes at `at`, without its
