@@ -330,8 +330,7 @@ fn attempt<W: Write + Seek>(
     let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
     let mut root = None;
     if write_design {
-        let plan = configuration_root::plan(target, &native.design_configurations)
-            .map_err(Failure::design)?;
+        let plan = configuration_root::plan(target, &native.design_configurations);
         let names = configuration_entry_names(&native.design_configurations);
         for (index, (configuration, (name, fault))) in
             native.design_configurations.iter().zip(names).enumerate()
