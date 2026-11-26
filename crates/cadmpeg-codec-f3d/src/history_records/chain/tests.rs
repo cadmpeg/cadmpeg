@@ -179,8 +179,12 @@ fn topology(keys: &[i64], changed: bool) -> AsmHistoricalTopology {
             .map(|&key| AsmHistoricalFaceSample {
                 face: key,
                 surface: cadmpeg_ir::features::evaluation::HistoricalFaceSurface::Plane(
-                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, axis, Vector3::new(1.0, 0.0, 0.0))
-                        .unwrap(),
+                    cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                        origin,
+                        axis,
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
                 ),
                 reversed: changed,
             })
