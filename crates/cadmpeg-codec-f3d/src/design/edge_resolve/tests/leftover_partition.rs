@@ -270,3 +270,26 @@ fn shared_transition_does_not_prove_a_single_member_group_alone() {
         historical(&scope.groups[0].id, &TRANSITION)
     );
 }
+
+#[test]
+fn bounded_face_group_keeps_the_edge_that_an_edge_group_selects() {
+    let mut scope = scope();
+    scope.identities[1].resolved_edge_slots = vec![101, 102, 103];
+    scope.identities[2].resolved_edge_slots = vec![101, 104, 105];
+    let face_group = super::resolved_edge_treatment_group(
+        &scope.groups[1],
+        &scope.groups,
+        &scope.operands,
+        &scope.identities,
+        Some(7),
+        &feature(),
+        Some(RADIUS),
+    )
+    .unwrap();
+    let face_selection = historical(&scope.groups[1].id, &[101, 102, 103, 104, 105]);
+    assert_eq!(face_group, face_selection);
+    let mut selections = [historical(&scope.groups[0].id, &[101]), face_group];
+    let losses = partition(&scope, [Some(RADIUS), Some(RADIUS)], &mut selections);
+    assert_eq!(selections[1], face_selection);
+    assert!(losses.is_empty());
+}
