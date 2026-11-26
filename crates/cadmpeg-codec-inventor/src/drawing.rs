@@ -12,7 +12,7 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, Part};
 use serde::{Deserialize, Serialize};
 
 use crate::container::InventorContainer;
@@ -129,13 +129,15 @@ impl Inventory {
         Ok(())
     }
 
-    /// Refuses `record` for its references. A record that fails only for a
-    /// link to a given-up record is dropped with that record; any other
-    /// record is given up itself.
+    /// Refuses `record`, whose payload starts at `offset` of its expanded
+    /// bulk stream, for its references. A record that fails only for a link
+    /// to a given-up record is dropped with that record; any other record
+    /// gives up its payload as a part that drops the record.
     fn refuse_references(
         &mut self,
         ctx: &DecodeContext<'_>,
         record: &Record,
+        offset: u64,
         links: bool,
     ) -> Result<(), CodecError> {
         ctx.charge_entities(1, "retain Inventor drawing reference refusal")?;
@@ -149,20 +151,27 @@ impl Inventory {
         let need = links
             .then(|| references::refused_link(record, &self.refused, &self.failed_tables))
             .flatten();
-        self.refusals.push(match need {
-            Some(need) => dropped_with(
-                cadmpeg_ir::ids::Identity::new(&record.id)?,
-                cadmpeg_ir::ids::Identity::new(need)?,
-            ),
-            None => GivenUpRecord::new(
-                cadmpeg_ir::ids::Identity::new(&record.id)?,
-                format_args!(
+        let id = cadmpeg_ir::ids::Identity::new(&record.id)?;
+        if let Some(need) = need {
+            self.refusals
+                .push(dropped_with(id, cadmpeg_ir::ids::Identity::new(need)?));
+        } else {
+            let part = crate::rse::bulk_record_part(
+                "rse-record",
+                (record.segment_token.as_str(), record.ordinal),
+                offset,
+                &record.payload,
+                ArenaClass::Model,
+            )?
+            .dropping([id]);
+            self.given_up.push(ctx.give_up_part(
+                part,
+                CodecError::malformed(format_args!(
                     "{}: {detail}",
                     InventorLossCode::DrawingRecordMalformed.kind()
-                ),
-            )
-            .loss(),
-        });
+                )),
+            )?);
+        }
         if !links {
             self.refused.insert(
                 (record.segment_token.as_str().to_owned(), record.ordinal),
@@ -182,7 +191,7 @@ impl Inventory {
         }
         if !self.issues.is_empty() {
             losses.push(InventorLossCode::DrawingRecordMalformed.note(format!(
-                "{} drawing records retain untyped payloads after a typed-form refusal",
+                "{} drawing records and metadata sections fail their typed form",
                 self.issues.len()
             )));
         }
@@ -222,6 +231,7 @@ pub(crate) fn inventory(
     frames: &[crate::native::RseRecordRecord],
 ) -> Result<Inventory, CodecError> {
     let mut inventory = Inventory::default();
+    let mut offsets = BTreeMap::new();
     if !container
         .rse
         .segments
@@ -365,6 +375,10 @@ pub(crate) fn inventory(
             ) {
                 Ok(record) => {
                     ctx.charge_entities(1, "retain Inventor drawing record")?;
+                    offsets.insert(
+                        (record.segment_token.as_str().to_owned(), record.ordinal),
+                        frame.payload_offset,
+                    );
                     inventory.records.push(record);
                 }
                 Err(error) => {
@@ -406,6 +420,17 @@ pub(crate) fn inventory(
                 .iter()
                 .map(|frame| ((frame.token.as_str(), frame.ordinal), frame)),
         );
+        let offset = |record: &Record| {
+            offsets
+                .get(&(record.segment_token.as_str().to_owned(), record.ordinal))
+                .copied()
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "Inventor drawing record {} names no framed RSe record",
+                        record.id
+                    ))
+                })
+        };
         let mut eligible = Vec::new();
         for record in candidates {
             if record.operands_are_valid(|ordinal| {
@@ -416,7 +441,7 @@ pub(crate) fn inventory(
             }) {
                 eligible.push(record);
             } else {
-                inventory.refuse_references(ctx, &record, false)?;
+                inventory.refuse_references(ctx, &record, offset(&record)?, false)?;
             }
         }
         let mut admitted =
@@ -429,7 +454,7 @@ pub(crate) fn inventory(
             if accepted {
                 inventory.records.push(record);
             } else {
-                inventory.refuse_references(ctx, &record, true)?;
+                inventory.refuse_references(ctx, &record, offset(&record)?, true)?;
             }
         }
     }
