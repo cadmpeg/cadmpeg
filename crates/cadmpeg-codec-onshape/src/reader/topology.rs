@@ -64,10 +64,8 @@ pub(crate) enum OperandKind {
 pub(crate) struct State {
     pub row: Value,
     faces: BTreeMap<String, Value>,
-    /// Faces of live solid bodies: not consumed by a composite.
-    solid_faces: BTreeSet<String>,
-    /// Faces of live bodies of any other type, such as sheets.
-    other_faces: BTreeSet<String>,
+    /// Faces of bodies that no composite consumes.
+    live_faces: BTreeSet<String>,
     edges: BTreeMap<String, Value>,
     complete_vertices: bool,
 }
@@ -513,8 +511,7 @@ fn load(
         })?;
     super::microversion(response, "microversionId", mid)?;
     let mut faces = BTreeMap::new();
-    let mut solid_faces = BTreeSet::new();
-    let mut other_faces = BTreeSet::new();
+    let mut live_faces = BTreeSet::new();
     let mut edges = BTreeMap::new();
     let mut bodies = BTreeSet::new();
     let mut vertices = BTreeSet::new();
@@ -525,19 +522,13 @@ fn load(
             return Err("bodydetails repeats a body id".into());
         }
         let consumed = body.get("consumedByComposite").and_then(Value::as_bool) == Some(true);
-        let solid = body.get("type").and_then(Value::as_str) == Some("SOLID");
         for face in optional_rows(body, "faces")? {
             let face_id = text(face, "id")?;
             if faces.insert(face_id.to_owned(), face.clone()).is_some() {
                 return Err("bodydetails repeats a face id".into());
             }
             if !consumed {
-                if solid {
-                    &mut solid_faces
-                } else {
-                    &mut other_faces
-                }
-                .insert(face_id.to_owned());
+                live_faces.insert(face_id.to_owned());
             }
         }
         let mut body_vertices = BTreeSet::new();
@@ -614,8 +605,7 @@ fn load(
     Ok(State {
         row,
         faces,
-        solid_faces,
-        other_faces,
+        live_faces,
         edges,
         complete_vertices,
     })
@@ -897,8 +887,7 @@ impl State {
         Self {
             row: Value::Null,
             faces: BTreeMap::new(),
-            solid_faces: BTreeSet::new(),
-            other_faces: BTreeSet::new(),
+            live_faces: BTreeSet::new(),
             complete_vertices: true,
             edges: edges
                 .into_iter()

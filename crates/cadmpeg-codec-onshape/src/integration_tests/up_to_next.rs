@@ -208,17 +208,15 @@ fn stopped_with(bytes: &[u8], reason: &str) {
 }
 
 #[test]
-fn up_to_next_ends_only_on_live_solid_bodies() {
+fn up_to_next_ends_only_on_live_bodies() {
     let (low, high) = ([0.005, 0.002, 0.0005], [0.008, 0.004, 0.001]);
-    // A live sheet in front of the covering face could block; no stored data decides.
-    stopped_with(
-        &up_to_next_with_body("SHEET", false, low, high),
-        "a live non-solid body face lies before the covering face",
-    );
-    stopped_with(
-        &up_to_next_with_body("SOLID", false, low, high),
-        "exact coverage and first intersection",
-    );
+    // A live body of any type in front of the covering face blocks the travel.
+    for kind in ["SHEET", "SOLID"] {
+        stopped_with(
+            &up_to_next_with_body(kind, false, low, high),
+            "exact coverage and first intersection",
+        );
+    }
     // A body consumed by a composite is not a live part.
     for kind in ["SHEET", "SOLID"] {
         let (model, report) = read(&up_to_next_with_body(kind, true, low, high)).unwrap();

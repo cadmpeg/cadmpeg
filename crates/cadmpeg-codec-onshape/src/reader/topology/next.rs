@@ -652,12 +652,12 @@ fn read_face(
     if charted.is_empty() {
         return Err("the stored target face has no closed boundaries".into());
     }
-    // Admission of the stored loops uses the face chart, valid for every plane.
-    Outline::new(charted)?;
     let bounds = bounds(footprint.iter().flat_map(|(_, ring)| &ring.0));
     let outline = if time.is_some() {
         Some(Outline::new(footprint)?)
     } else {
+        // The face chart admits the loops of a plane parallel to the travel direction.
+        Outline::new(charted)?;
         None
     };
     Ok(Face {
@@ -682,10 +682,8 @@ pub(super) fn prove(
     let tolerance =
         ROUNDOFF_FACTOR * f64::EPSILON * reach.iter().map(|v| v.abs()).fold(1.0_f64, f64::max);
     let mut faces = Vec::new();
-    let mut sheets = Vec::new();
     for (id, face) in &state.faces {
-        let sheet = !state.solid_faces.contains(id);
-        if sheet && !state.other_faces.contains(id) {
+        if !state.live_faces.contains(id) {
             // The body is consumed by a composite and is not a live part.
             continue;
         }
@@ -702,12 +700,7 @@ pub(super) fn prove(
                 continue;
             }
         }
-        if sheet {
-            // The next face ends on a part; a live body of another type is not a part.
-            sheets.push(face);
-        } else {
-            faces.push(face);
-        }
+        faces.push(face);
     }
     charge(
         &mut work,
@@ -731,14 +724,6 @@ pub(super) fn prove(
             }
             None => other.parallel_side[0] < -tolerance && other.parallel_side[1] > tolerance,
         };
-        for other in &sheets {
-            charge(&mut work, Some(1))?;
-            if blocks(other) {
-                return Err(
-                    "a live non-solid body face lies before the covering face on the travel".into(),
-                );
-            }
-        }
         let mut first = true;
         for other in &faces {
             charge(&mut work, Some(1))?;

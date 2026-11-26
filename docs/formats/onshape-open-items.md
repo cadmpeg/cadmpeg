@@ -14,11 +14,11 @@ Note: Unresolved quantities retain their feature as Native with `history.not-sup
 
 ## ONSHAPE-003 — Exact next-face coverage
 
-Question: Which stored data establish the `UP_TO_NEXT` target for a `booleanScope` selection, for a live body of a type other than `SOLID`, and for non-planar or nearly parallel faces?
+Question: Which stored data establish the `UP_TO_NEXT` target for a `booleanScope` selection, and for non-planar or nearly parallel faces?
 
-Known: Planar faces of live `SOLID` bodies with closed line boundaries establish exact first intersection and complete coverage for a closed convex line profile. Each body stores `type` and `consumedByComposite`.
+Known: Planar faces of live bodies with closed line boundaries establish exact first intersection and complete coverage for a closed convex line profile. Each body stores `type` and `consumedByComposite`.
 
-Need: A stored statement of how a `booleanScope` selection limits the next face. A stored rule for a live sheet body face that lies before the covering face. Stored exact intersection data for a non-planar face, a loop that is not one closed chain of line edges, and a plane that is nearly parallel to the travel direction.
+Need: A stored statement of how a `booleanScope` selection limits the next face. Stored exact intersection data for a non-planar face, a loop that is not one closed chain of line edges, and a plane that is nearly parallel to the travel direction.
 
 ## ONSHAPE-004 — Thin sides of mixed curve groups
 
