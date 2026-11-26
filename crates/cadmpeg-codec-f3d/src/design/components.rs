@@ -413,6 +413,9 @@ struct PathPoseOutcome {
     /// Carriers that a component-path record names as its target, whether or
     /// not the record resolves.
     path_targets: BTreeSet<String>,
+    /// Design streams with a component-path record that is not applied as
+    /// one unique pose of one expanded occurrence.
+    blocked_streams: BTreeSet<String>,
 }
 
 /// One expanded local occurrence, for path resolution.
@@ -1175,6 +1178,7 @@ impl<'a> Projector<'a> {
                 .collect::<Vec<_>>();
             let (true, [_], [target]) = (distinct, components.as_slice(), target.as_slice()) else {
                 self.path_poses.unresolved += 1;
+                self.path_poses.blocked_streams.insert(stream.to_owned());
                 continue;
             };
             if let Some(carrier) = carriers.get(&(stream, *target)) {
@@ -1227,7 +1231,10 @@ impl<'a> Projector<'a> {
                 .map(|(ordinal, _)| ordinal)
                 .collect::<Vec<_>>();
             match matching.as_slice() {
-                [] => self.path_poses.unresolved += 1,
+                [] => {
+                    self.path_poses.unresolved += 1;
+                    self.path_poses.blocked_streams.insert(stream.to_owned());
+                }
                 [ordinal] => resolved.entry(*ordinal).or_default().push(path),
                 _ => ambiguous.push((path, matching)),
             }
@@ -1257,6 +1264,9 @@ impl<'a> Projector<'a> {
                 ));
             } else {
                 self.path_poses.disagreeing += 1;
+                self.path_poses
+                    .blocked_streams
+                    .insert(instances[ordinal].stream.clone());
             }
         }
         let mut groups = BTreeMap::<(&str, u64), Vec<(&DesignComponentPath, Vec<usize>)>>::new();
@@ -1291,6 +1301,9 @@ impl<'a> Projector<'a> {
                         self.set_path_pose(key, local);
                     } else {
                         self.path_poses.unresolved += 1;
+                        self.path_poses
+                            .blocked_streams
+                            .insert(instances[ordinal].stream.clone());
                     }
                 }
                 PathJob::Group(index) => {
@@ -1391,6 +1404,10 @@ impl<'a> Projector<'a> {
         ) {
             (false, [assignment]) => {
                 for (&carrier, &ordinal) in order.iter().zip(assignment) {
+                    // An inferred assignment names no one occurrence.
+                    self.path_poses
+                        .blocked_streams
+                        .insert(instances[ordinal].stream.clone());
                     let key = instances[ordinal].key.as_str();
                     if let Some(local) = self.path_local_pose(key, rows_of(carriers[carrier].0))? {
                         self.set_path_pose(key, local);
@@ -1400,7 +1417,16 @@ impl<'a> Projector<'a> {
                 self.path_poses.inferred_instances += assignment.len();
                 self.path_poses.inferred_groups += 1;
             }
-            _ => self.path_poses.unresolved += carriers.len(),
+            _ => {
+                self.path_poses.unresolved += carriers.len();
+                for (_, candidates) in carriers {
+                    for &ordinal in candidates {
+                        self.path_poses
+                            .blocked_streams
+                            .insert(instances[ordinal].stream.clone());
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -1411,13 +1437,12 @@ impl<'a> Projector<'a> {
     /// target. A carrier that no such path poses has then no current pose that
     /// differs from its closing matrix.
     fn closing_matrix_assumed(&self, carrier: &DesignComponentOccurrence) -> bool {
-        self.path_poses.unresolved == 0
-            && self.path_poses.disagreeing == 0
-            && !self.path_poses.path_targets.contains(&carrier.id)
+        !self.path_poses.path_targets.contains(&carrier.id)
             && self
                 .stream_components(carrier)
                 .is_some_and(|(stream, components)| {
                     components.unadmitted_paths == 0
+                        && !self.path_poses.blocked_streams.contains(stream)
                         && self
                             .sources
                             .paths

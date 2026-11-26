@@ -1368,8 +1368,8 @@ pub(crate) struct StreamComponents {
     pub(crate) revised_definitions: usize,
     /// Named empty-path root records without a decoded definition reference.
     pub(crate) unbound_root_instances: usize,
-    /// Component-path records whose elements are all local references and
-    /// that no admitted path form reads.
+    /// Component-path records of the stream that no local path form reads,
+    /// whatever their path elements are.
     pub(crate) unadmitted_paths: usize,
 }
 
@@ -1546,7 +1546,7 @@ pub(crate) fn decode_local_components(
         let meta_name = meta_stream_name(&entry.name);
         let magic = crate::metastream::serializer_magic(scan.entry_bytes(&meta_name)?, &meta_name)?;
         components.unadmitted_paths =
-            crate::xref::unadmitted_local_component_paths(bytes, &meta, Some(magic))?;
+            crate::xref::unread_component_paths(bytes, &meta, Some(magic))?;
         out.insert(scope, components);
     }
     Ok(out)

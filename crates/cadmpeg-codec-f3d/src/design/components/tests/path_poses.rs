@@ -1336,6 +1336,146 @@ fn an_object_snapshot_stays_native_when_a_path_of_its_stream_is_not_read_or_not_
     assert!(unplaced(&project(&carriers, &components, &[])));
 }
 
+fn module_is_unplaced(
+    projection: &super::super::LocalComponentProjection,
+    carriers: &[DesignComponentOccurrence],
+) -> bool {
+    let module = instance(carriers, &[100]);
+    projection
+        .occurrences
+        .iter()
+        .all(|occurrence| occurrence.id != module)
+        && has(projection, F3dLossCode::LocalOccurrenceUnplaced)
+        && !has(projection, F3dLossCode::LocalOccurrenceObjectPreludeAssumed)
+}
+
+#[test]
+fn an_unposed_ancestor_keeps_its_nested_object_snapshot_native() {
+    let (mut carriers, components) = fixture(2);
+    for record in [SUB_MODULE, LEAF] {
+        object_snapshot(
+            carriers
+                .iter_mut()
+                .find(|carrier| u64::from(carrier.record_index) == record)
+                .unwrap(),
+        );
+    }
+    let sub_pose = pose(EYE, [2.0, 0.0, 1.0]);
+    let projection = project(
+        &carriers,
+        &components,
+        &[path(
+            901,
+            &[
+                (SUB_COMPONENT, Kind::Component),
+                (SUB_MODULE, Kind::Occurrence),
+                (100, Kind::Occurrence),
+            ],
+            sub_pose,
+        )],
+    );
+    let sub = u32::try_from(SUB_MODULE).unwrap();
+    let leaf = u32::try_from(LEAF).unwrap();
+    assert_close(
+        world(&projection, &instance(&carriers, &[100, sub])),
+        millimetres(sub_pose),
+    );
+    let present = |chain: &[u32]| {
+        let id = instance(&carriers, chain);
+        projection
+            .occurrences
+            .iter()
+            .any(|occurrence| occurrence.id == id)
+    };
+    // The posed instance keeps its snapshot leaf, placed from its matrix.
+    assert!(present(&[100, sub, leaf]));
+    // The path names the carrier as its target but not this instance, so the
+    // instance and the leaf below it have no proof.
+    assert!(!present(&[400, sub]));
+    assert!(!present(&[400, sub, leaf]));
+    assert!(has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+}
+
+#[test]
+fn a_disagreeing_path_leaves_the_stream_without_an_assumption() {
+    let (original, components) = fixture(1);
+    let mut carriers = original.clone();
+    snapshot_of_the_module(&mut carriers);
+    let mut other = leaf_path();
+    other.id = format!("{STREAM}:design-component-path#903");
+    other.carrier_record_index = 903;
+    other.transform = Some(ComponentPathTransform::try_from(pose(EYE, [9.0, 9.0, 9.0])).unwrap());
+    let projection = project(&carriers, &components, &[leaf_path(), other]);
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseDisagrees
+    ));
+    assert!(module_is_unplaced(&projection, &carriers));
+}
+
+#[test]
+fn a_pose_inferred_among_several_instances_gives_no_assumption() {
+    let (mut carriers, components) = fixture(2);
+    object_snapshot(
+        carriers
+            .iter_mut()
+            .find(|carrier| carrier.record_index == 300)
+            .unwrap(),
+    );
+    let unplaced = project(&carriers, &components, &[]);
+    let first = pose_in(&unplaced, &carriers, &[100], leaf_local());
+    let second = pose_in(&unplaced, &carriers, &[400], leaf_local());
+    let projection = project(
+        &carriers,
+        &components,
+        &[bare(900, 200, second), bare(901, 200, first)],
+    );
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
+    assert!(has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrenceObjectPreludeAssumed
+    ));
+}
+
+#[test]
+fn another_stream_does_not_decide_the_assumption_and_is_not_decided_by_it() {
+    let other = "f3d:Other/BulkStream.dat";
+    let (original, mut components) = fixture(1);
+    let mut carriers = original.clone();
+    snapshot_of_the_module(&mut carriers);
+    let paths = [leaf_path()];
+    // A second stream with a path record that no form reads, and a path that
+    // names nothing, leaves this stream's assumption in place.
+    components.insert(
+        other.to_owned(),
+        StreamComponents {
+            unadmitted_paths: 1,
+            ..StreamComponents::default()
+        },
+    );
+    let mut stray = leaf_path();
+    stray.id = format!("{other}:design-component-path#904");
+    stray.elements[0].record_index = 902;
+    let projection = project(&carriers, &components, &[leaf_path(), stray]);
+    assert!(!has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrenceObjectPreludeAssumed
+    ));
+    // The same stray path in this stream removes the assumption.
+    let mut inside = leaf_path();
+    inside.id = format!("{STREAM}:design-component-path#905");
+    inside.elements[0].record_index = 902;
+    assert!(module_is_unplaced(
+        &project(&carriers, &components, &[paths[0].clone(), inside]),
+        &carriers
+    ));
+}
+
 #[test]
 fn an_object_snapshot_with_an_explicit_source_frame_uses_its_closing_local_pose() {
     let (original, components) = fixture(1);
