@@ -4,7 +4,8 @@
 
 use super::bundle::{changed, kinds, read, timeline};
 use crate::test_support::*;
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 /// A synthetic box body in metres: twelve straight edges and six planar faces whose
 /// `orientation` says whether the outward side follows the stored surface normal.

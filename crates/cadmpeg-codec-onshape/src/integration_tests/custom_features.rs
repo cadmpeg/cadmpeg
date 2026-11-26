@@ -4,7 +4,7 @@
 
 use super::bundle::{changed, read, timeline};
 use crate::test_support::*;
-use serde_json::json;
+use cadmpeg_core::json;
 
 #[test]
 fn custom_features_name_the_missing_frozen_shape_even_with_rollback_details() {
