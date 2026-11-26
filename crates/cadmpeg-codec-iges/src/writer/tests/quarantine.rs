@@ -10,7 +10,6 @@ use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::export::WritePath;
 
-use crate::loss::IgesLossCode;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
@@ -68,14 +67,20 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
 
-    let passthrough = report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == IgesLossCode::PassthroughRecordOmitted.kind())
-        .collect::<Vec<_>>();
-    assert!(passthrough
-        .iter()
-        .any(|loss| loss.message.contains("quarantined_directory_records")));
+    let quarantined = decoded.ir().native.namespace("iges").unwrap().arenas()
+        ["quarantined_directory_records"][0]
+        .id();
+    assert!(
+        report.losses.iter().any(
+            |loss| loss.code.to_string() == "export/native.records-omitted"
+                && loss
+                    .message
+                    .contains("of `iges` arena `quarantined_directory_records`")
+                && loss.message.ends_with(quarantined)
+        ),
+        "{:?}",
+        report.losses
+    );
     assert!(!written.is_empty());
 
     let round_trip = IgesCodec
