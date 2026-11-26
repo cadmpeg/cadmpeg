@@ -177,7 +177,7 @@ pub(crate) fn derived_base_snapshots(
         fill_history(
             ctx,
             bytes,
-            history,
+            (history, None),
             &[Want {
                 origin: &feature,
                 producer: Some(&feature),
