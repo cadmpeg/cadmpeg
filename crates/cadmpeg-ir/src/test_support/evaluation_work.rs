@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A chain of model carriers whose evaluation work doubles at each level.
+//! A chain of model carriers whose evaluation work doubles at each level,
+//! and the work slice of one evaluation of a validation pass.
+
+use std::cell::Cell;
 
 /// A line, then `levels` tolerant intersections. Each intersection reads
 /// two axis revolutions of the curve below, so a point of the top curve
@@ -106,4 +109,23 @@ pub(crate) fn doubling_model(levels: usize) -> (crate::CadIr, crate::ids::CurveI
         below = curve;
     }
     (ir, below)
+}
+
+thread_local! {
+    /// The work slice of one evaluation of each validation pass that this
+    /// thread starts, where a test sets one.
+    pub(crate) static EVALUATION_CAP: Cell<Option<usize>> = const { Cell::new(None) };
+}
+
+/// Runs `run` with `cap` as the work slice of one evaluation of each
+/// validation pass it starts.
+pub(crate) fn with_evaluation_cap<T>(cap: usize, run: impl FnOnce() -> T) -> T {
+    struct Restore(Option<usize>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            EVALUATION_CAP.with(|slot| slot.set(self.0));
+        }
+    }
+    let _restore = Restore(EVALUATION_CAP.with(|slot| slot.replace(Some(cap))));
+    run()
 }

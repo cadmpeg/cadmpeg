@@ -322,6 +322,18 @@ fn session_refusal<R>(context: &DecodeContext<'_>) -> Result<(), EvaluationFailu
         .map_or(Ok(()), |limit| Err(EvaluationFailure::ResourceLimit(limit)))
 }
 
+#[cfg(not(test))]
+const fn evaluation_cap() -> usize {
+    MAX_MODEL_EVALUATION_WORK
+}
+
+#[cfg(test)]
+fn evaluation_cap() -> usize {
+    crate::test_support::evaluation_work::EVALUATION_CAP
+        .with(Cell::get)
+        .unwrap_or(MAX_MODEL_EVALUATION_WORK)
+}
+
 /// The model evaluation work of one validation pass.
 ///
 /// An evaluation that runs out of its slice reports
@@ -339,7 +351,7 @@ pub(crate) struct ModelEvaluationPass {
 
 impl ModelEvaluationPass {
     pub(crate) fn new() -> Self {
-        Self::with_caps(MAX_MODEL_EVALUATION_WORK, MAX_MODEL_PASS_EVALUATION_WORK)
+        Self::with_caps(evaluation_cap(), MAX_MODEL_PASS_EVALUATION_WORK)
     }
 
     fn with_caps(evaluation_cap: usize, pass_cap: usize) -> Self {

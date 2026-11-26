@@ -6,9 +6,7 @@
 //!
 //! A finding is reported once along a chain, against the record whose delta
 //! makes it: a finding that the base state also has is the base's, which the
-//! base record reports, or the current-geometry checks do. Every rule reads a
-//! record and the records it reaches through references, so a finding that
-//! the delta makes is a finding of the records the change reaches.
+//! base record reports, or the current-geometry checks do.
 
 use std::collections::BTreeSet;
 
