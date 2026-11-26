@@ -6052,13 +6052,16 @@ fn card_drops(
     for record in arenas.get("entities").into_iter().flatten() {
         if let Some(sequence) = integer(record, "directory_sequence") {
             directory_owners.insert(sequence, record.id());
-            directory_owners.insert(sequence.saturating_add(1), record.id());
+            if let Some(second) = sequence.checked_add(1) {
+                directory_owners.insert(second, record.id());
+            }
         }
-        if let (Some(start), Some(count)) = (
-            integer(record, "parameter_start"),
-            integer(record, "parameter_line_count"),
-        ) {
-            parameter_owners.insert(start, (start.saturating_add(count), record.id()));
+        if let Some((start, end)) = integer(record, "parameter_start").and_then(|start| {
+            integer(record, "parameter_line_count")
+                .and_then(|count| start.checked_add(count))
+                .map(|end| (start, end))
+        }) {
+            parameter_owners.insert(start, (end, record.id()));
         }
     }
     let parameter_owner = |sequence: u64| {
