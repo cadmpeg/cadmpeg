@@ -137,15 +137,14 @@ fn a_grip_wedge_states_its_kind_and_carries_only_its_own_keys() {
 #[test]
 fn radial_symmetry_keeps_maps_at_the_flat_wire_boundary() {
     let symmetry = SubdSymmetry::new(
-        SubdSymmetryKind::radial(
-            std::num::NonZeroU32::new(4).unwrap(),
-            1.0,
-            vec![SubdRadialSymmetryMap {
+        SubdSymmetryKind::Radial(super::SubdRadialSymmetry {
+            segments: std::num::NonZeroU32::new(4).unwrap(),
+            sweep: FiniteReal::new(1.0).unwrap(),
+            radial_maps: vec![SubdRadialSymmetryMap {
                 selector: SubdRadialMapSelector::Ef,
                 pairs: vec![[1, 2]],
             }],
-        )
-        .unwrap(),
+        }),
         SubdPlaneFrame::new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -342,18 +341,36 @@ fn cage_admission_requires_valid_edge_indices_and_closed_directed_rings() {
 }
 
 #[test]
-fn cage_admission_requires_non_empty_grip_layouts_and_valid_sector_arity() {
-    for wedges in [
-        serde_json::json!([]),
-        serde_json::json!([{
-            "kind": "slot", "edge": 0, "spokes": [null], "sectors": []
-        }]),
-    ] {
-        let mut wire = json::to_value(triangle_cage()).unwrap();
-        wire["vertices"][0]["secondary_grips"] =
-            serde_json::json!({ "direction": "north", "wedges": wedges });
-        assert!(json::from_value::<super::SubdCage>(wire).is_err());
-    }
+fn cage_admission_requires_valid_sector_arity() {
+    let mut wire = json::to_value(triangle_cage()).unwrap();
+    wire["vertices"][0]["secondary_grips"] = serde_json::json!({
+        "direction": "north",
+        "wedges": [{ "kind": "slot", "edge": 0, "spokes": [null], "sectors": [] }]
+    });
+    assert!(json::from_value::<super::SubdCage>(wire).is_err());
+}
+
+/// A vertex with no secondary grips has one form: an absent layout.
+#[test]
+fn an_empty_grip_layout_reads_and_constructs_as_absent() {
+    let mut wire = json::to_value(triangle_cage()).unwrap();
+    wire["vertices"][0]["secondary_grips"] =
+        serde_json::json!({ "direction": "north", "wedges": [] });
+    let cage = json::from_value::<super::SubdCage>(wire).unwrap();
+    assert!(cage.vertices()[0].secondary_grips().is_none());
+    assert_eq!(
+        json::to_value(&cage).unwrap(),
+        json::to_value(triangle_cage()).unwrap()
+    );
+    let empty =
+        super::SubdVertexGripLayout::new(super::SubdGripDirection::North, Vec::new()).unwrap();
+    let vertex = SubdVertex::new(
+        Point3::new(0.0, 0.0, 0.0),
+        SubdVertexTag::Smooth,
+        Some(empty),
+    )
+    .unwrap();
+    assert!(vertex.secondary_grips().is_none());
 }
 
 #[test]
@@ -405,7 +422,12 @@ fn cage_mutation_rejects_invalid_layout_without_changing_the_cage() {
             vertices[0].tag = SubdVertexTag::Corner;
             vertices[1].secondary_grips = Some(super::SubdVertexGripLayout::new(
                 super::SubdGripDirection::North,
-                Vec::new(),
+                vec![SubdGripWedge::Slot {
+                    edge: Some(3),
+                    sector_face: None,
+                    spokes: Vec::new(),
+                    sectors: Vec::new(),
+                }],
             )?);
             Ok(())
         },)
@@ -566,7 +588,6 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
         sectors,
     };
     for wedges in [
-        Vec::new(),
         vec![slot(vec![None], Vec::new())],
         vec![slot(vec![None], vec![None]), SubdGripWedge::Phantom {}],
         vec![
@@ -579,6 +600,7 @@ fn grip_layout_admits_cyclic_arity_before_cage_construction() {
         assert!(json::from_value::<SubdVertexGripLayout>(wire).is_err());
     }
     for wedges in [
+        Vec::new(),
         vec![SubdGripWedge::Phantom {}],
         vec![slot(vec![None], vec![None])],
         vec![
@@ -602,7 +624,7 @@ fn subd_carriers_hold_their_admitted_points_axes_and_weights() {
     use crate::units::UnitVector3;
 
     let point = Point3::new(-1.0, 2.0, 3.0);
-    let vertex = super::SubdVertex::new(point, super::SubdVertexTag::Crease, None).unwrap();
+    let vertex = SubdVertex::new(point, super::SubdVertexTag::Crease, None).unwrap();
     assert_eq!(vertex.point(), FinitePoint3::new(point).unwrap());
     let grip = super::SubdSecondaryGrip::new(4, point, 0.5).unwrap();
     assert_eq!(grip.point, FinitePoint3::new(point).unwrap());

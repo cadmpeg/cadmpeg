@@ -351,6 +351,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-ironcad"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-parasolid",
+ "cadmpeg-test-support",
+ "flate2",
+]
+
+[[package]]
 name = "cadmpeg-codec-nx"
 version = "0.6.12"
 dependencies = [
@@ -608,6 +621,7 @@ dependencies = [
  "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
  "cadmpeg-codec-inventor",
+ "cadmpeg-codec-ironcad",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-onshape",
  "cadmpeg-codec-pvz",

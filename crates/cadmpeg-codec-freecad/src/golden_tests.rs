@@ -248,7 +248,7 @@ fn encode_once(
     let report = Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut produced))
     .map_err(|error| error.to_string())?;
@@ -336,7 +336,7 @@ fn step_snapshot(bytes: &[u8]) -> String {
     match Encoder::plan(
         &StepCodec::default(),
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut exported))
     {

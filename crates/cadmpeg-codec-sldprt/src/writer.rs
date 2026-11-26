@@ -171,7 +171,9 @@ pub(crate) fn write_semantic_with_records_cached(
         let loaded = ir
             .native
             .namespace("sldprt")
-            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .map(|namespace| {
+                SldprtNative::load(namespace, ir.tolerances.linear).map_err(CodecError::from)
+            })
             .transpose()?;
         cache.native = CachedNative::Loaded(loaded);
     }
@@ -350,7 +352,9 @@ pub(crate) fn write_semantic_with_records_cached(
         let input_native = ir
             .native
             .namespace("sldprt")
-            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
+            .map(|namespace| {
+                SldprtNative::load(namespace, ir.tolerances.linear).map_err(CodecError::from)
+            })
             .transpose()?;
         shaping.extend(
             crate::history::write::brep_agreement::agreement(
@@ -662,6 +666,7 @@ pub(crate) fn write_semantic_with_records_cached(
                 source_lanes.get(&lane.id),
                 histories,
                 &feature_input_renames,
+                ir.tolerances.linear,
             )?,
         );
     }
@@ -1970,7 +1975,7 @@ fn opaque_blocks(
             loaded_native = ir
                 .native
                 .namespace("sldprt")
-                .map(SldprtNative::load)
+                .map(|namespace| SldprtNative::load(namespace, ir.tolerances.linear))
                 .transpose()
                 .map_err(CodecError::from)?;
             loaded_native.as_ref()
@@ -2628,13 +2633,14 @@ fn lane_payload(
     stored: Option<&crate::records::FeatureInputLane>,
     histories: &[crate::records::FeatureHistory],
     renames: &[crate::history::write::features::FeatureInputRename],
+    linear: cadmpeg_ir::scalar::PositiveLength,
 ) -> Result<Vec<u8>, CodecError> {
     if stored == Some(lane) {
         let mut payload = lane.native_payload.to_vec();
         splice_renamed_names(lane, &mut payload, renames)?;
         return Ok(payload);
     }
-    resolved_feature_payload(lane, histories, renames)
+    resolved_feature_payload(lane, histories, renames, linear)
 }
 
 /// The bytes written for one feature-input lane.
@@ -2643,11 +2649,12 @@ fn lane_payload(
 /// lane is written as it stands. `renames` carries the write-side object-name
 /// changes that `synchronize_feature_input_names` derived from the neutral
 /// feature names; `splice_renamed_names` writes each one into the emitted
-/// payload.
+/// payload. `linear` is the document's linear tolerance.
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
     histories: &[crate::records::FeatureHistory],
     renames: &[crate::history::write::features::FeatureInputRename],
+    linear: cadmpeg_ir::scalar::PositiveLength,
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -2724,6 +2731,7 @@ fn resolved_feature_payload(
         &ctx,
         histories,
         std::slice::from_mut(&mut expected_lane),
+        linear,
     )?;
     if !crate::resolved_features::scalars::scalar_indices_match(
         &lane.scalars,
@@ -3396,7 +3404,7 @@ fn retained_history_sections(
     let Some(namespace) = baseline.ir.native.namespace("sldprt") else {
         return Ok(Vec::new());
     };
-    let native = SldprtNative::load(namespace)?;
+    let native = SldprtNative::load(namespace, baseline.ir.tolerances.linear)?;
     let annotations = &baseline.source_fidelity.annotations;
     native
         .feature_histories

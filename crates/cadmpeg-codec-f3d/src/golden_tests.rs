@@ -477,7 +477,7 @@ fn replay_outcome(bytes: &[u8]) -> Option<Result<Vec<u8>, String>> {
     let mut out = Vec::new();
     let outcome = match F3dCodec.plan(
         EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     ) {
         Ok(plan) => {
             let path = plan.report().write_path().clone();

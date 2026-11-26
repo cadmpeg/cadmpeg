@@ -1113,6 +1113,52 @@ fn release_states(
     Ok(changed)
 }
 
+/// Drops from the delta of each copy of the stored state `holder` each of
+/// its records of `ids` and each record of the delta that needs one, as §3.3
+/// drops a record, and returns what the deltas dropped and marked, under the
+/// state's path, or `None` where no delta changed.
+///
+/// # Errors
+///
+/// A resource refusal for the walk of the carriers.
+pub(crate) fn drop_state_records(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    holder: &Seed,
+    ids: BTreeSet<String>,
+) -> Result<Option<Released>, CodecError> {
+    let Cascade {
+        references, lazy, ..
+    } = Cascade::new(ctx, ir)?;
+    let naming = lazy.stated.get_or_init(|| states_naming(ir));
+    let elsewhere = |id: &str| {
+        naming
+            .get(id)
+            .is_some_and(|states| states.iter().any(|state| *state != holder.id))
+    };
+    let plan = Withdrawn {
+        gone: BTreeSet::new(),
+        ids,
+        removed: Vec::new(),
+        names: Vec::new(),
+        owners: Vec::new(),
+    };
+    let mut state = Released::new(format!("{}/{}", holder.arena, holder.id));
+    let mut changed = false;
+    for delta in deltas_mut(ir, &holder.arena, &holder.id) {
+        changed |= release_delta(
+            ctx,
+            &references,
+            &lazy,
+            &elsewhere,
+            delta,
+            &plan,
+            &mut state,
+        )?;
+    }
+    Ok(changed.then_some(state))
+}
+
 /// What a stored state withdraws because an owner entry of its delta names
 /// a gone definition: the state holds no body without its owner (§8.1).
 struct Withdrawn {

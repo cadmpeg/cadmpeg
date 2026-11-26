@@ -492,6 +492,28 @@ fn an_id_with_an_invalid_utf8_sequence_is_given_up_and_the_rest_is_read() {
 }
 
 #[test]
+fn an_id_whose_format_is_no_codec_id_is_given_up_and_the_rest_is_read() {
+    for format in ["Step", "st-ep", "st\u{e9}p"] {
+        let (ir, mut value) = wire();
+        let id = ir.geometry.points[0].id.as_str();
+        let (_, rest) = id.split_once(':').unwrap();
+        points(&mut value)[0]["id"] = json!(format!("{format}:{rest}"));
+        let read = read(value.to_string().as_bytes());
+        assert_eq!(
+            read.document.geometry.points[..],
+            ir.geometry.points[1..],
+            "{format}"
+        );
+        assert_eq!(
+            codes(&read.report),
+            ["decode/record.unreadable"],
+            "{format}"
+        );
+        assert_eq!(read.document.native_unknowns("cadir").unwrap().len(), 1);
+    }
+}
+
+#[test]
 fn an_omitted_collection_beside_an_unknown_member_is_given_up() {
     let (ir, mut value) = wire();
     let root = value.as_object_mut().unwrap();

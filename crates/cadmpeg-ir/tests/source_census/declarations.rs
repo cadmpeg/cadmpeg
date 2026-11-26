@@ -207,6 +207,9 @@ pub(crate) struct Declarations {
     resolver: OnceCell<DeclarationResolver>,
     traits: OnceCell<TraitIndex>,
     foreign_sources: OnceCell<Vec<(String, String)>>,
+    /// The `named_optional_field!` shims under `root` and the functions that
+    /// forward to them, per `(file, name)`.
+    null_refusing: OnceCell<BTreeMap<(String, String), String>>,
     /// Cached token scans of foreign files, keyed by repository-relative path.
     foreign_scanned: RefCell<HashMap<String, std::rc::Rc<Option<FileTokens>>>>,
     /// Per trait name, why an impl of it outside the wire crates is unread.
@@ -255,6 +258,7 @@ impl Declarations {
             resolver: OnceCell::new(),
             traits: OnceCell::new(),
             foreign_sources: OnceCell::new(),
+            null_refusing: OnceCell::new(),
             foreign_scanned: RefCell::new(HashMap::new()),
             foreign: RefCell::new(BTreeMap::new()),
             parameter_cache: RefCell::new(BTreeMap::new()),
@@ -279,6 +283,12 @@ impl Declarations {
                 .map(|(relative, file)| (relative, read_source(&file)))
                 .collect()
         })
+    }
+
+    /// [`crate::null_refusing_helpers`] of the tree this index reads.
+    pub(crate) fn null_refusing_helpers(&self) -> &BTreeMap<(String, String), String> {
+        self.null_refusing
+            .get_or_init(|| crate::null_refusing_helpers(&self.root))
     }
 
     fn resolver(&self) -> &DeclarationResolver {

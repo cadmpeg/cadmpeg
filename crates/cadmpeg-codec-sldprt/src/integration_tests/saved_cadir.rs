@@ -63,7 +63,7 @@ fn held(decoded: &DecodeResult) -> CadIr {
 /// The bytes, losses and notes `ir` writes with `fidelity`.
 fn report(ir: &CadIr, fidelity: &SourceFidelity) -> (Vec<u8>, Vec<LossNote>, Vec<String>) {
     let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)
         .expect("plan");
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes).expect("write");
@@ -75,7 +75,7 @@ fn written(ir: &CadIr, decoded: &DecodeResult) -> Result<Vec<u8>, String> {
     let plan = SldprtCodec
         .plan(
             EncodeInput::new(ir, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();

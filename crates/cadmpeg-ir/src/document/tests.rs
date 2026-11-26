@@ -1113,12 +1113,7 @@ fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
     );
     object.insert("kind".into(), serde_json::json!("brep"));
     assert_eq!(
-        json::to_string(
-            &geometry
-                .geometry_snapshot(&model, "brep")
-                .expect("snapshot admission")
-        )
-        .expect("snapshot serializes"),
+        json::to_string(&geometry.geometry_snapshot(&model, "brep")).expect("snapshot serializes"),
         json::to_string(&baseline).expect("baseline serializes"),
     );
 }

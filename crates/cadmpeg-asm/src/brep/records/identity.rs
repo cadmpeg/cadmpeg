@@ -156,7 +156,7 @@ mod tests {
             "sat:asm",
             "f3d:role-part/reference-1/occurrence-0@asm",
             "f3d:role-part/reference-1/occurrence-0/xref/child@asm",
-            "custom-format:native%20scope",
+            "custom:native%20scope",
         ] {
             let id = format!("{namespace}:{kind}#1");
             wire["id"] = id.clone().into();
@@ -187,6 +187,8 @@ mod tests {
             "f3d:bad scope",
             "f3d:bad\u{2003}scope",
             "f3d:bad#scope",
+            "custom-format:asm",
+            "F3d:asm",
         ] {
             wire["id"] = format!("{namespace}:{kind}#1").into();
             let error = json::from_value::<T>(wire.clone())

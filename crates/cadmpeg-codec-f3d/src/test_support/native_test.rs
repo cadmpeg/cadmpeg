@@ -66,7 +66,7 @@ impl TestEncode for F3dCodec {
     {
         self.plan(
             cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )?
         .write_to(output)
     }

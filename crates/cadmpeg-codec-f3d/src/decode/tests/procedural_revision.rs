@@ -386,7 +386,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("selector-zero source-less encode");
     let round_trip = F3dCodec
@@ -772,7 +772,7 @@ fn record_level_surface_bounds_round_trip() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("record-bounds encode");
     let round_trip = F3dCodec
@@ -906,7 +906,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less vertex-blend encode");
         let round_trip = F3dCodec

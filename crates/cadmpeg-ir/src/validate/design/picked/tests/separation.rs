@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The separation of a patch support face from its boundary curve on
-//! cylinders, tori, cones, NURBS surfaces, and nested placed carriers, and
-//! for a face and curve that no body holds. The curve is a top edge of the cube: each of
-//! its points lies between 5 and 50^0.5 from the vertical axis through the
-//! cube's middle, at height 10.
+//! cylinders, tori, cones, NURBS surfaces, and nested placed carriers. The
+//! curve is a top edge of the cube: each of its points lies between 5 and
+//! 50^0.5 from the vertical axis through the cube's middle, at height 10.
 
 use super::{ruled, set_surface, top_on_floor};
 use crate::geometry::analytic::{ConeSurface, CylinderSurface, PlaneSurface, TorusSurface};
@@ -29,7 +28,7 @@ fn off(geometry: SolvedSurfaceGeometry) -> usize {
     ruled(&ir, RULE).len()
 }
 
-fn cylinder(radius: f64) -> SolvedSurfaceGeometry {
+pub(super) fn cylinder(radius: f64) -> SolvedSurfaceGeometry {
     let axis = Point3::new(5.0, 5.0, 0.0);
     SolvedSurfaceGeometry::Cylinder(CylinderSurface::try_new(axis, up(), across(), radius).unwrap())
 }
@@ -42,7 +41,7 @@ fn torus(major: f64, minor: f64) -> SolvedSurfaceGeometry {
 
 /// The cone about the vertical axis through the cube's middle whose section
 /// at height `base` has major radius `radius`.
-fn cone(base: f64, radius: f64, ratio: f64, half_angle: f64) -> SolvedSurfaceGeometry {
+pub(super) fn cone(base: f64, radius: f64, ratio: f64, half_angle: f64) -> SolvedSurfaceGeometry {
     let origin = Point3::new(5.0, 5.0, base);
     let cone = ConeSurface::try_new(origin, up(), across(), radius, ratio, half_angle).unwrap();
     SolvedSurfaceGeometry::Cone(cone)
@@ -75,7 +74,7 @@ fn a_patch_support_on_a_cone_meets_its_boundary_curve() {
 
 /// The bilinear NURBS patch over the cube's square at height `z`, with the
 /// pole weights `weights`.
-fn sheet(z: f64, weights: Option<Vec<Vec<f64>>>) -> SolvedSurfaceGeometry {
+pub(super) fn sheet(z: f64, weights: Option<Vec<Vec<f64>>>) -> SolvedSurfaceGeometry {
     let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
     let poles = vec![
         vec![Point3::new(0.0, 0.0, z), Point3::new(0.0, 10.0, z)],
@@ -119,11 +118,4 @@ fn a_patch_support_on_a_nested_placed_carrier_meets_its_boundary_curve() {
     };
     assert_eq!(off(raised(raised(floor(), 5.0), 5.0)), 0);
     assert_eq!(off(raised(raised(floor(), 5.0), 2.0)), 1);
-}
-
-#[test]
-fn a_patch_support_that_no_body_holds_lies_in_the_document_frame() {
-    let (mut ir, _) = top_on_floor();
-    ir.geometry.bodies.clear();
-    assert_eq!(ruled(&ir, RULE).len(), 1);
 }

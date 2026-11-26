@@ -7,6 +7,7 @@
 //! or an unread one, its pick count is not stated and is not checked.
 
 use crate::report::check::Ruled;
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::construction::{
@@ -28,6 +29,7 @@ use crate::math::{Point3, Vector3};
 use crate::report::check::Finding;
 use crate::units::UnitVector3;
 
+use super::frames::values_frame;
 use super::index::DesignIndex;
 use super::names::derived_kinds;
 use super::records::MemberKey;
@@ -41,8 +43,14 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
         linear: tolerances.linear.get(),
         angular: tolerances.angular.get(),
     };
+    let current = OnceCell::new();
     for record in held {
         let at = record.holder.record();
+        let feature = record.holder.feature();
+        let frame = |configuration: Option<&str>| match feature {
+            Some(feature) => values_frame(&index.records, feature, configuration),
+            None => Some(None),
+        };
         let scope = match record.holder {
             Holder::Record { scope, .. } => scope.map(crate::ids::ProductDefinitionId::as_str),
             Holder::Definition(_) | Holder::Owned { .. } => record
@@ -57,6 +65,8 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
                 &index.records,
                 construction,
                 scope,
+                &frame,
+                &current,
                 at,
                 findings,
             );

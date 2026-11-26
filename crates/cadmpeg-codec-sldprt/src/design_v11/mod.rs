@@ -160,6 +160,7 @@ pub(crate) fn project(
     losses.extend(typed.revolve_boolean_unstated);
     losses.extend(typed.revolve_profile_differs);
     losses.extend(typed.revolve_profile_unchecked);
+    losses.extend(typed.revolve_sense_assumed);
     let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,

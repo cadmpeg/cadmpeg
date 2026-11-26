@@ -24,6 +24,7 @@ use crate::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use crate::validate::validate_neutral;
 
 const SEG: &str = "[a-z][a-z0-9_-]{0,7}";
+const FORMAT: &str = "[a-z][a-z0-9]{0,7}";
 
 fn config() -> ProptestConfig {
     ProptestConfig::with_cases(64)
@@ -31,7 +32,7 @@ fn config() -> ProptestConfig {
 
 fn id_strategy() -> impl Strategy<Value = String> {
     (
-        string_regex(SEG).unwrap(),
+        string_regex(FORMAT).unwrap(),
         string_regex(SEG).unwrap(),
         string_regex(SEG).unwrap(),
         string_regex(SEG).unwrap(),

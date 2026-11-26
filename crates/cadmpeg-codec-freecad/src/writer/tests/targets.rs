@@ -27,9 +27,9 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     let unsupported = FcstdCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit("fcstd:schema-3"),
+            TargetRequest::Explicit("fcstd:schema-9"),
         )
-        .expect_err("unsupported target must fail");
+        .expect_err("a target that names no catalog or replay row is refused");
     let EncodeError::UnsupportedTarget(refusal) = &unsupported else {
         panic!("expected a target refusal, got {unsupported}");
     };
@@ -44,7 +44,11 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
                 .map(str::to_owned)
         })
         .as_deref(),
-        Some("fcstd:schema-3")
+        Some("fcstd:schema-9")
+    );
+    assert_eq!(
+        serde_json::to_value(refusal).expect("serialize refusal")["refusal"]["kind"],
+        "unknown_explicit"
     );
 
     // A STEP document with no retained FCStd graph gives this writer, which
@@ -75,6 +79,31 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
         })
     );
     assert_eq!(refusal.format(), "fcstd");
+
+    // An explicit replay row that the document cannot reach is refused
+    // naming that row.
+    let replay = FcstdCodec
+        .plan(
+            EncodeInput::new(&step_source, None),
+            TargetRequest::Explicit("fcstd:schema-2"),
+        )
+        .expect_err("a replay row with no retained Document.xml is refused");
+    let EncodeError::UnsupportedTarget(refusal) = &replay else {
+        panic!("expected a target refusal, got {replay}");
+    };
+    let wire = serde_json::to_value(refusal).expect("serialize refusal");
+    assert_eq!(
+        (
+            &wire["refusal"]["kind"],
+            &wire["refusal"]["target"],
+            &wire["refusal"]["requested"],
+        ),
+        (
+            &serde_json::json!("explicit_unavailable"),
+            &serde_json::json!("fcstd:schema-2"),
+            &serde_json::json!("fcstd:schema-2"),
+        )
+    );
 }
 
 /// A schema-2 `Document.xml`, in the `Features`/`FeatureData` vocabulary
@@ -433,6 +462,160 @@ fn an_explicit_schema_four_target_writes_a_schema_two_source_as_schema_two() {
     );
 }
 
+/// Writes `ir` for `request` and decodes the file. Returns the dialect the
+/// output reads back as, which the report names as its target, and the
+/// `target.*` losses of the report, as code and message.
+fn write_and_read_dialect(
+    ir: &CadIr,
+    request: TargetRequest<'_>,
+) -> (String, Vec<(String, String)>) {
+    let mut written = Vec::new();
+    let report = Encoder::plan(&FcstdCodec, EncodeInput::new(ir, None), request)
+        .expect("the retained Document.xml is written")
+        .write_to(&mut written)
+        .expect("write");
+    let round_trip = FcstdCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("decode output");
+    let read = round_trip
+        .ir()
+        .source
+        .as_ref()
+        .and_then(|source| source.dialect())
+        .map(cadmpeg_core::dialect::DialectMatch::dialect)
+        .map(ToString::to_string)
+        .expect("the output records its dialect");
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string)
+        .as_deref(),
+        Some(read.as_str()),
+        "the report names the dialect the file reads back as"
+    );
+    let charged = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .map(|loss| (loss.code.local_code().to_owned(), loss.message.clone()))
+        .collect();
+    (read, charged)
+}
+
+/// An explicit replay row names a schema this writer reaches by patching a
+/// retained `Document.xml` that declares it. A source of that schema is
+/// written as it, and the report charges no target loss.
+#[test]
+fn an_explicit_replay_row_writes_a_source_of_that_schema() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(schema_two_archive()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode schema 2");
+    for token in ["fcstd:schema-2", "schema-2"] {
+        assert_eq!(
+            write_and_read_dialect(decoded.ir(), TargetRequest::Explicit(token)),
+            ("fcstd:schema-2".to_owned(), vec![]),
+            "{token}"
+        );
+    }
+}
+
+/// A same-format source asked for a replay row of another schema is written
+/// as the schema its retained `Document.xml` declares, and
+/// `target.request-displaced` names the requested and the written dialect
+/// (§3.4, Refusals).
+#[test]
+fn an_explicit_replay_row_of_another_schema_writes_the_declared_schema() {
+    let (read, charged) =
+        write_and_read_dialect(CORE_DESIGN.ir(), TargetRequest::Explicit("fcstd:schema-3"));
+    assert_eq!(read, "fcstd:schema-4");
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(code, "target.request-displaced");
+    assert!(
+        message.contains("fcstd:schema-3") && message.contains("fcstd:schema-4"),
+        "{message}"
+    );
+}
+
+/// A schema-3 source is written as schema 3, under `Inherit` and under an
+/// explicit `fcstd:schema-3`, and charges no target loss.
+#[test]
+fn a_schema_three_source_is_written_as_schema_three() {
+    let ir = FcstdCodec
+        .decode(
+            &mut Cursor::new(rewrite_schema_version(CORE_DESIGN_PRODUCT, "3")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode schema 3")
+        .ir()
+        .clone();
+    for request in [
+        TargetRequest::Inherit,
+        TargetRequest::Explicit("fcstd:schema-3"),
+    ] {
+        assert_eq!(
+            write_and_read_dialect(&ir, request),
+            ("fcstd:schema-3".to_owned(), vec![])
+        );
+    }
+}
+
+/// A document of another source format, or of none, that holds `fcstd`
+/// archive entries is written under `Inherit` as the schema its retained
+/// `Document.xml` declares. That schema is not the newest row `Inherit`
+/// resolved to, so the one target loss is `target.source-dialect-displaced`
+/// naming both.
+#[test]
+fn inherit_writes_fcstd_entries_under_a_source_of_another_format_as_their_schema() {
+    let mut ir = FcstdCodec
+        .decode(
+            &mut Cursor::new(schema_two_archive()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode schema 2")
+        .ir()
+        .clone();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("step:ap242"),
+        )),
+        std::collections::BTreeMap::new(),
+    ));
+    let (read, charged) = write_and_read_dialect(&ir, TargetRequest::Inherit);
+    assert_eq!(read, "fcstd:schema-2");
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(code, "target.source-dialect-displaced");
+    assert!(
+        message.contains("source is step")
+            && message.contains("resolved to fcstd:schema-4")
+            && message.contains("written as fcstd:schema-2"),
+        "{message}"
+    );
+
+    ir.source = None;
+    let (read, charged) = write_and_read_dialect(&ir, TargetRequest::Inherit);
+    assert_eq!(read, "fcstd:schema-2");
+    let [(code, message)] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:?}");
+    };
+    assert_eq!(code, "target.source-dialect-displaced");
+    assert!(
+        message.contains("records no source")
+            && message.contains("resolved to fcstd:schema-4")
+            && message.contains("written as fcstd:schema-2"),
+        "{message}"
+    );
+}
+
 /// `Inherit` on an `FCStd` source that records no dialect writes the
 /// retained `Document.xml` as the dialect it declares (§3.4, Refusals: a
 /// writer refuses only where it can write no file). The report names that
@@ -709,6 +892,54 @@ fn a_full_document_without_its_digest_is_patched_and_reported_unverified() {
     assert_eq!(
         export_losses(&report),
         [("edit.unverified", cadmpeg_ir::report::Severity::Warning)]
+    );
+}
+
+/// A held uncarried digest that no longer computes shows an edit of a record
+/// it covers, which the writer has no serializer for. The document is
+/// patched, and `export:edit.dropped` at Error names the document and the
+/// record the digest does not read (§3.4, Paths item 4).
+#[test]
+fn a_document_whose_held_digest_does_not_compute_reports_the_edit_dropped() {
+    let mut ir = CORE_DESIGN.ir().clone();
+    let unknown = crate::native::native_id("unknown", "unread");
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("fcstd"))
+        .set_arena(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "unknowns",
+            &[serde_json::json!({"id": unknown, "field": "value"})],
+        )
+        .expect("set the unknowns arena");
+    let (report, bytes) = patched(&ir, Some(CORE_DESIGN.source_fidelity()));
+    assert_eq!(
+        export_losses(&report),
+        [("edit.dropped", cadmpeg_ir::report::Severity::Error)]
+    );
+    let dropped = report
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "edit.dropped")
+        .expect("edit.dropped");
+    assert!(
+        dropped.message.contains(unknown.as_str())
+            && dropped
+                .message
+                .contains(crate::native::native_id("document", "0").as_str()),
+        "{}",
+        dropped.message
+    );
+    let round_trip = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode output");
+    assert_eq!(
+        round_trip
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.dialect())
+            .map(|dialect| dialect.dialect().to_string()),
+        Some("fcstd:schema-4".to_owned())
     );
 }
 
