@@ -1022,6 +1022,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
+        (&design.asm_histories, &scope_histories),
     );
     losses.extend(tool_losses);
     losses.extend(
