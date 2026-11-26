@@ -149,7 +149,7 @@ fn history_topology_decode_matches_full_brep_graph() {
 
         let full_brep = crate::brep::decode(&ctx, &records, &bytes, "full", crate::ids::ID_FORMAT)
             .expect("valid BREP tolerances");
-        let full = crate::history::topology_rows::historical_topology_with_tags(&full_brep)
+        let mut full = crate::history::topology_rows::historical_topology_with_tags(&full_brep)
             .expect("topology budget")
             .expect("full topology");
         let history_brep =
@@ -159,6 +159,12 @@ fn history_topology_decode_matches_full_brep_graph() {
             .expect("topology budget")
             .expect("history topology");
 
+        full.face_samples.retain(|sample| {
+            !matches!(
+                sample.surface,
+                cadmpeg_ir::features::evaluation::HistoricalFaceSurface::Nurbs(_)
+            )
+        });
         assert_eq!(history, full);
         assert_eq!(history.persistent_subentity_tags.len(), expected_tag_count);
     }

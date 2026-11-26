@@ -681,9 +681,10 @@ pub(crate) fn emit_export_plan(
             LoadOrigin::Decoded { .. } | LoadOrigin::Restored { .. } | LoadOrigin::Read { .. }
         );
     if let ResolvedDestination::File(path) = destination {
+        let annotations = plan.annotations().cloned();
         let (report, cadir_sha256, others) = artifact_store::write_plan_atomic(path, plan)?;
         let sidecar = if format == Format::Cadir {
-            artifact_store::persist_decode_sidecar(path, &cadir_sha256, origin, ir)?
+            artifact_store::persist_decode_sidecar(path, &cadir_sha256, origin, ir, annotations)?
         } else {
             SidecarPersistOutcome::Absent
         };

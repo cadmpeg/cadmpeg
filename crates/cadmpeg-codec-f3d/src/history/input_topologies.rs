@@ -129,6 +129,7 @@ pub(super) fn project_input_topology(
     let mut edge_geometry = project_input_edge_geometry(topology, &prefix);
     super::chamfer_supports::attach(feature, &history.id, topology, &prefix, &mut edge_geometry);
     let face_owners = project_input_face_owners(topology, &prefix);
+    let face_geometry = project_input_face_geometry(topology, &prefix);
     let id = crate::ids::history_input_state_id(&prefix);
     let input_of = feature.id.clone();
     let native_ref = state.id.clone();
@@ -142,6 +143,8 @@ pub(super) fn project_input_topology(
         vertices,
         edge_geometry,
         face_owners,
+        face_geometry,
+        body_writers: Vec::new(),
         native_ref: Some(native_ref),
     })
 }
@@ -207,6 +210,71 @@ fn project_input_face_owners(
             },
         )
         .collect()
+}
+
+/// The carrier surface of each face of a state that has a face sample.
+pub(super) fn project_input_face_geometry(
+    topology: &AsmHistoricalTopology,
+    prefix: &cadmpeg_ir::ids::IdentityKey,
+) -> Vec<cadmpeg_ir::features::evaluation::HistoricalFaceGeometry> {
+    if topology.face_samples.is_empty() {
+        return Vec::new();
+    }
+    let samples = topology
+        .face_samples
+        .iter()
+        .map(|sample| (sample.face, sample))
+        .collect::<HashMap<_, _>>();
+    topology
+        .faces
+        .iter()
+        .filter_map(|slot| {
+            let sample = samples.get(slot)?;
+            Some(cadmpeg_ir::features::evaluation::HistoricalFaceGeometry {
+                face: crate::ids::history_input_face_id(prefix, *slot),
+                surface: sample.surface.clone(),
+                reversed: sample.reversed,
+            })
+        })
+        .collect()
+}
+
+/// Keep the carrier surfaces of the faces that some feature definition
+/// selects. A consumer reads them to find a selected face in the bodies it
+/// rebuilds.
+pub(crate) fn retain_selected_face_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    features: &[cadmpeg_ir::features::Feature],
+    input_topologies: &mut [cadmpeg_ir::features::evaluation::FeatureInputTopology],
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+    let sampled = input_topologies
+        .iter()
+        .flat_map(|topology| &topology.face_geometry)
+        .map(|geometry| geometry.face.as_str())
+        .collect::<HashSet<_>>();
+    if sampled.is_empty() {
+        return Ok(());
+    }
+    let mut selected = HashSet::<String>::new();
+    for feature in features {
+        feature
+            .evaluation
+            .definition()
+            .visit_local_members(ctx, &mut |target| {
+                if sampled.contains(target) && !selected.contains(target) {
+                    selected.insert(target.to_owned());
+                }
+                Ok(())
+            })?;
+    }
+    drop(sampled);
+    for topology in input_topologies {
+        topology
+            .face_geometry
+            .retain(|geometry| selected.contains(geometry.face.as_str()));
+    }
+    Ok(())
 }
 
 /// Keep the owners of the faces that some feature definition selects. A

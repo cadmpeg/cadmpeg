@@ -20,6 +20,7 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::Serialize;
 
+use crate::annotations::Removed;
 use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
 use crate::design::refs::{EntityRef, Member, RecordRef};
@@ -351,7 +352,8 @@ pub(crate) fn record_text<T: Serialize>(copies: &[T]) -> String {
 /// Gives up each seed, in order, as a part (§3.3): removes it as
 /// [`drop_records`] does, and adds its `unknowns` stub to `codec`'s
 /// namespace and its canonical JSON to `fidelity` as an `untyped` retained
-/// record. `loss` states the loss of each seed from what its give-up did.
+/// record. The annotations of each record the give-ups remove go with it.
+/// `loss` states the loss of each seed from what its give-up did.
 ///
 /// # Errors
 ///
@@ -365,6 +367,7 @@ pub(crate) fn give_up(
     seeds: Vec<Seed>,
     mut loss: impl FnMut(&Seed, &Released, &Retained) -> LossNote,
 ) -> Result<Vec<LossNote>, CodecError> {
+    let before = (!fidelity.annotations.is_empty()).then(|| Removed::before(ir));
     let mut cascade = Cascade::new(ctx, ir, &BTreeSet::new())?;
     let mut losses = Vec::new();
     for seed in seeds {
@@ -395,6 +398,11 @@ pub(crate) fn give_up(
             note,
         )?;
         losses.push(part.commit(ctx, ir, fidelity)?);
+    }
+    if let Some(before) = before {
+        fidelity
+            .annotations
+            .remove(&before.after(std::iter::empty(), ir));
     }
     Ok(losses)
 }

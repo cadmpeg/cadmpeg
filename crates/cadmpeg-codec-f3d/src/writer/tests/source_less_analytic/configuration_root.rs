@@ -182,7 +182,7 @@ fn the_generated_type_is_charged_again_on_a_rewrite() {
 }
 
 #[test]
-fn a_source_row_no_table_holds_is_charged_and_leaves_the_type_table() {
+fn a_source_row_of_a_table_document_with_no_rows_is_written_as_stated() {
     let payload = serde_json::to_vec(&table_document("1", &[], &[], &[])).unwrap();
     for table_id in ["1", "9"] {
         let ir = source_less(with_root_segment(
@@ -191,28 +191,32 @@ fn a_source_row_no_table_holds_is_charged_and_leaves_the_type_table() {
         ));
         let document = &f3d_native(&ir).design_configurations[0];
         assert_eq!(
-            document.active_row().map(|row| row.table_id.as_str()),
-            Some(table_id)
+            document
+                .active_row()
+                .map(|row| (row.table_id.as_str(), row.row_id.as_str())),
+            Some((table_id, "2"))
         );
         assert!(ir.model.configurations.is_empty());
-        assert!(listed(&ir, ROOT_RECORD));
         let (report, round_trip) = write_and_decode(&ir);
-        let charged = report
-            .losses
-            .iter()
-            .filter(|loss| {
-                loss.code.to_string() == "export/value.unwritable"
-                    && loss.message.contains(document.id().as_str())
-                    && loss
-                        .message
-                        .contains(&format!("table id {table_id} row id 2"))
-            })
-            .count();
-        assert_eq!(charged, 1, "{table_id}: {:#?}", report.losses);
-        assert!(f3d_native(round_trip.ir()).design_configurations[0]
+        assert!(
+            report.losses.iter().all(|loss| {
+                loss.code.to_string() != "export/value.unwritable"
+                    || !loss.message.contains(document.id().as_str())
+            }),
+            "{table_id}: {:#?}",
+            report.losses
+        );
+        let written = &f3d_native(round_trip.ir()).design_configurations[0];
+        let active = written
             .active_row()
-            .is_none());
-        assert!(!listed(round_trip.ir(), ROOT_RECORD));
+            .expect("the written root record names the stated row");
+        assert_eq!(
+            (active.table_id.as_str(), active.row_id.as_str()),
+            (table_id, "2")
+        );
+        assert_eq!(written.payload(), document.payload());
+        assert!(listed(round_trip.ir(), active.record_index));
+        assert!(round_trip.ir().model.configurations.is_empty());
     }
 }
 
@@ -221,13 +225,32 @@ fn a_table_id_another_document_holds_decodes_renamed() {
     const OTHER: &str = "FusionAssetName[Active]/DesignConfigurationTable.456.dsgcfg";
     let mut ir = source_less(rooted());
     crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
-        let other = crate::records::configuration::DesignConfiguration::try_new(
-            OTHER.into(),
-            native.design_configurations[0].kind(),
+        let empty = || {
             table_document("1", &[], &[], &[])
                 .as_object()
                 .unwrap()
-                .clone(),
+                .clone()
+        };
+        let rooted = &native.design_configurations[0];
+        let mut payload = rooted.payload().clone();
+        payload["tables"]
+            .as_array_mut()
+            .unwrap()
+            .push(empty()["tables"][0].clone());
+        let mut twinned = crate::records::configuration::DesignConfiguration::try_new(
+            rooted.entry_name().clone(),
+            rooted.kind(),
+            payload,
+        )
+        .unwrap();
+        twinned
+            .set_active_row(rooted.active_row().unwrap().clone())
+            .unwrap();
+        native.design_configurations[0] = twinned;
+        let other = crate::records::configuration::DesignConfiguration::try_new(
+            OTHER.into(),
+            native.design_configurations[0].kind(),
+            empty(),
         )
         .unwrap();
         native.design_configurations.push(other);
@@ -256,8 +279,15 @@ fn a_table_id_another_document_holds_decodes_renamed() {
         (active.table_id.as_str(), active.row_id.as_str()),
         ("1-1", "large")
     );
-    assert_eq!(document(ENTRY).tables()[0].id, "1-1");
-    assert_eq!(document(OTHER).tables()[0].id, "1");
+    let table_ids = |entry: &str| {
+        document(entry)
+            .tables()
+            .iter()
+            .map(|table| table.id.as_str())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(table_ids(ENTRY), ["1-1", "1"]);
+    assert_eq!(table_ids(OTHER), ["1"]);
     assert!(document(OTHER).active_row().is_none());
     assert!(round_trip
         .ir()

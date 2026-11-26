@@ -68,6 +68,7 @@ pub(crate) fn plan(
         losses,
         notes: outcome.notes,
         written_row: None,
+        annotations: None,
     })
 }
 

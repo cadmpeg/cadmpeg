@@ -1079,7 +1079,7 @@ mod tests {
     fn the_sidecar_reader_round_trips_a_key_qualified_by_an_evaluation() {
         let evaluation =
             crate::design::ids::EvaluationId::mint("synthetic:design:evaluation#1").unwrap();
-        let key = crate::annotations::AnnotationKey::in_evaluation(&evaluation, "synthetic:face#2");
+        let key = crate::annotations::AnnotationKey::in_delta(&evaluation, "synthetic:face#2");
         let mut builder = crate::AnnotationBuilder::new();
         let stream = crate::annotations::StreamHandle::new(crate::stream_name!("source"));
         builder.note(&key, &stream, 5, None);

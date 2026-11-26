@@ -37,7 +37,7 @@ use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::F3dLossCode;
-use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::native_test::{add_empty_f3d_native, f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 const SKETCH: &str = "test:design:feature#sketch";
@@ -616,7 +616,7 @@ fn edited_design_parameters_replace_the_native_records() {
 #[test]
 fn planned_parameters_with_no_native_design_record_are_written_and_listed() {
     let mut ir = scoped_cube();
-    drop(f3d_native_mut(&mut ir));
+    add_empty_f3d_native(&mut ir);
     ir.model
         .parameters
         .push(cadmpeg_ir::features::parameters::DesignParameter {

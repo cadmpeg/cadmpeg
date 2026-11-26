@@ -204,9 +204,9 @@ impl<E: EncoderBackend> Encoder for E {
             limits: input.limits,
         };
         let session = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-        let (report, coverage, outputs, payloads) = if let [_] = outputs.as_slice() {
-            let (report, coverage, bytes) = plan_output(self, &session, unchecked)?;
-            (report, coverage, outputs, vec![bytes])
+        let (report, coverage, outputs, payloads, annotations) = if let [_] = outputs.as_slice() {
+            let (report, coverage, bytes, annotations) = plan_output(self, &session, unchecked)?;
+            (report, coverage, outputs, vec![bytes], annotations)
         } else {
             plan_encode_set(self, &session, unchecked, outputs)?
         };
@@ -216,6 +216,7 @@ impl<E: EncoderBackend> Encoder for E {
             format: E::FORMAT,
             coverage,
             outputs,
+            annotations,
         };
         if let Some(validation) = input.validation {
             plan.charge_carried_errors(input.ir, validation);
@@ -231,13 +232,14 @@ impl<E: EncoderBackend> Encoder for E {
 }
 
 /// Plans the output of one file from `input`'s document, in the encode's
-/// session `ctx`: its report, coverage, and payload. The caller charges
+/// session `ctx`: its report, coverage, payload, and annotations
+/// ([`ExportBody::annotations`]). The caller charges
 /// validation and strictness.
 fn plan_output<E: EncoderBackend>(
     encoder: &E,
     ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
-) -> Result<(ExportReport, ArenaCoverage, Vec<u8>), EncodeError> {
+) -> Result<PlannedOutputBody, EncodeError> {
     let target = E::TARGET
         .resolve(input.ir, input.target, E::FORMAT)
         .map_err(EncodeError::from_backend)?;
@@ -261,6 +263,7 @@ fn plan_output<E: EncoderBackend>(
         mut notes,
         synthesis_cause,
         written_row,
+        annotations,
     } = body;
     let namespace = const {
         match LossNamespace::new(E::FORMAT.as_str()) {
@@ -336,8 +339,16 @@ fn plan_output<E: EncoderBackend>(
         Some(target) => ExportReport::native(target, census, write_path, losses, notes),
     };
     report.synthesis_cause = synthesis_cause;
-    Ok((report, coverage, bytes))
+    Ok((report, coverage, bytes, annotations))
 }
+
+/// The report, coverage, payload, and annotations of one planned output.
+type PlannedOutputBody = (
+    ExportReport,
+    ArenaCoverage,
+    Vec<u8>,
+    Option<crate::annotations::Annotations>,
+);
 
 /// Plans each of `outputs` from the part of `input`'s document that it holds
 /// ([`encode_set::output_document`]), in the encode's session `ctx`, and
@@ -349,7 +360,8 @@ fn plan_output<E: EncoderBackend>(
 /// `export:output.unwritten` naming its definition, while another output is
 /// written. The encode refuses where no output can be written, with the
 /// first output's refusal, and where the session runs out (§3.4, Refusals).
-/// Returns the outputs written with their payloads.
+/// Returns the outputs written with their payloads, and the root output's
+/// annotations.
 fn plan_encode_set<E: EncoderBackend>(
     encoder: &E,
     ctx: &DecodeContext<'_>,
@@ -365,6 +377,7 @@ fn plan_encode_set<E: EncoderBackend>(
     let mut written = Vec::with_capacity(outputs.len());
     let mut payloads = Vec::with_capacity(outputs.len());
     let mut unwritten = Vec::new();
+    let mut root_annotations = None;
     for output in outputs {
         let definition = output.definition.as_ref();
         let planned_output =
@@ -386,7 +399,7 @@ fn plan_encode_set<E: EncoderBackend>(
                         },
                     )
                 });
-        let (report, coverage, bytes) = match planned_output {
+        let (report, coverage, bytes, annotations) = match planned_output {
             Ok(planned_output) => planned_output,
             Err(EncodeError::ResourceLimit(limit)) => {
                 return Err(EncodeError::ResourceLimit(limit))
@@ -405,6 +418,9 @@ fn plan_encode_set<E: EncoderBackend>(
                 planned = Some((report, coverage));
             }
             Some((merged, _)) => merge_output(merged, &output, report)?,
+        }
+        if output.definition == root {
+            root_annotations = annotations;
         }
         written.push(output);
         payloads.push(bytes);
@@ -426,16 +442,17 @@ fn plan_encode_set<E: EncoderBackend>(
             &error.to_string(),
         ));
     }
-    Ok((report, coverage, written, payloads))
+    Ok((report, coverage, written, payloads, root_annotations))
 }
 
 /// The merged report and coverage of an encode set, with the outputs
-/// written and their payloads.
+/// written, their payloads, and the root output's annotations.
 type PlannedSet = (
     ExportReport,
     ArenaCoverage,
     Vec<PlannedOutput>,
     Vec<Vec<u8>>,
+    Option<crate::annotations::Annotations>,
 );
 
 /// The note that names the definition `output` holds and the write path of
@@ -930,6 +947,10 @@ pub struct ExportBody {
     /// The catalog row the payload is, where the writer wrote another row
     /// than the resolution names; `None` for the resolved row.
     pub written_row: Option<target::WrittenRow>,
+    /// The annotations of the input's fidelity less those of each record the
+    /// payload leaves out, where it leaves out a record they name; `None`
+    /// where they describe the payload as given.
+    pub annotations: Option<crate::annotations::Annotations>,
 }
 
 impl ExportBody {
@@ -950,6 +971,7 @@ impl ExportBody {
             notes: Vec::new(),
             synthesis_cause: None,
             written_row: None,
+            annotations: None,
         }
     }
 }
@@ -966,6 +988,7 @@ pub struct ExportPlan {
     /// The payload of each of `outputs`, in its order.
     payloads: Vec<Vec<u8>>,
     outputs: Vec<PlannedOutput>,
+    annotations: Option<crate::annotations::Annotations>,
 }
 
 impl ExportPlan {
@@ -978,6 +1001,14 @@ impl ExportPlan {
     #[must_use]
     pub fn outputs(&self) -> &[PlannedOutput] {
         &self.outputs
+    }
+
+    /// The annotations that describe the root output's payload, where the
+    /// write left out a record the input's annotations name
+    /// ([`ExportBody::annotations`]).
+    #[must_use]
+    pub fn annotations(&self) -> Option<&crate::annotations::Annotations> {
+        self.annotations.as_ref()
     }
 
     /// The error findings of `report` that name something this payload may carry.
@@ -1220,6 +1251,15 @@ impl EncoderBackend for CadirEncoder {
             ArenaCoverage::Declared(coverage::cadir_dispositions()),
         );
         body.losses = losses;
+        body.annotations = input
+            .fidelity
+            .filter(|fidelity| !std::ptr::eq(ir, input.ir) && !fidelity.annotations.is_empty())
+            .and_then(|fidelity| {
+                let removed =
+                    crate::annotations::Removed::before(input.ir).after(std::iter::empty(), ir);
+                let mut annotations = fidelity.annotations.clone();
+                annotations.remove(&removed).then_some(annotations)
+            });
         Ok(body)
     }
 }

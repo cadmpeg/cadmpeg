@@ -226,6 +226,7 @@ pub(crate) fn plan(
         losses,
         notes: vec![format!("3DM archive version {}", version.value())],
         written_row: None,
+        annotations: None,
     })
 }
 
