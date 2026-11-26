@@ -903,15 +903,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.asm_face_boundaries,
         &mut losses,
     );
-    model.feature_input_topologies =
-        crate::history::input_topologies::project_feature_input_topologies(
+    let projected_inputs =
+        crate::history::input_topologies::project_feature_input_topologies_without_geometry(
             &model.features,
             &design.design_parameter_scopes,
             &mut design.asm_histories,
             &design.design_edge_operands,
             &scope_histories,
         );
-    crate::history::clear_chamfer_orientation();
+    model.feature_input_topologies = projected_inputs.topologies;
+    let projected_input_sources = projected_inputs.sources;
     let bound_outputs = crate::history::feature_outputs::bind_feature_outputs(
         &mut model.features,
         &design.design_parameter_scopes,
@@ -1610,21 +1611,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         .cloned()
         .collect::<Vec<_>>();
     crate::design::assembly::bind_assembly_joint_features(&mut model.features, &bound_now);
-    crate::history::input_topologies::retain_selected_edge_geometry(
+    crate::history::input_topologies::populate_selected_input_geometry(
         inputs.ctx,
         &model.features,
+        &mut design.asm_histories,
+        &projected_input_sources,
         &mut model.feature_input_topologies,
     )?;
-    crate::history::input_topologies::retain_selected_face_owners(
-        inputs.ctx,
-        &model.features,
-        &mut model.feature_input_topologies,
-    )?;
-    crate::history::input_topologies::retain_selected_face_geometry(
-        inputs.ctx,
-        &model.features,
-        &mut model.feature_input_topologies,
-    )?;
+    crate::history::clear_chamfer_orientation();
     model.configurations = crate::design::decode::record::recover(
         crate::design::configurations::project_configurations(
             &design.design_configurations,

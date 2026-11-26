@@ -546,8 +546,9 @@ pub(super) fn project_input_topologies_parallel(
     histories_ref: &[AsmHistory],
     jobs: Vec<(usize, usize, (usize, i64))>,
     workers: usize,
+    include_geometry: bool,
 ) -> Vec<(
-    usize,
+    super::input_topologies::ProjectedTopologySource,
     cadmpeg_ir::features::evaluation::FeatureInputTopology,
 )> {
     let chunk_size = jobs.len().div_ceil(workers);
@@ -577,13 +578,24 @@ pub(super) fn project_input_topologies_parallel(
                         let Some(feature) = features.get(feature_position) else {
                             continue;
                         };
-                        if let Some(input) = super::input_topologies::project_input_topology(
-                            feature,
-                            history,
-                            state,
-                            previous_state_id,
-                        ) {
-                            out.push((feature_position, input));
+                        if let Some(input) =
+                            super::input_topologies::project_input_topology_with_geometry(
+                                feature,
+                                history,
+                                state,
+                                previous_state_id,
+                                include_geometry,
+                            )
+                        {
+                            out.push((
+                                super::input_topologies::ProjectedTopologySource {
+                                    feature_position,
+                                    history_index,
+                                    state_index,
+                                    previous_state_id,
+                                },
+                                input,
+                            ));
                         }
                     }
                     out
