@@ -401,6 +401,7 @@ impl SldprtCodec {
             dialect,
             fidelity,
             coverage,
+            history_dropped: None,
             stale_solid,
             unwritten_edits,
             unwritten,
@@ -475,6 +476,11 @@ impl SemanticPath {
     }
 }
 
+/// Why a semantic write takes no record of the `sldprt` namespace.
+struct HistoryDropped {
+    reason: String,
+}
+
 /// One completed write.
 enum Written {
     /// The retained source image, byte for byte. The dialect is the source's
@@ -495,6 +501,9 @@ enum Written {
         dialect: DialectId,
         fidelity: SemanticFidelity,
         coverage: ArenaDispositions,
+        /// Why the write takes no record of the `sldprt` namespace: the
+        /// synthesis after a declined patch writes no `SolidWorks` history.
+        history_dropped: Option<Box<HistoryDropped>>,
         /// One loss per construction edit that shapes the solid: the output
         /// keeps the stored solid, which shows the state before the edit.
         stale_solid: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -532,15 +541,27 @@ impl Written {
 
     /// What the output does with each native arena (§3.4, Rule W3). A replay
     /// holds every record of the source; a semantic write states the records
-    /// of the arenas it loads from neutral and native content. Neither holds a
-    /// record of another format.
+    /// of the arenas it loads from neutral and native content, and the
+    /// synthesis after a declined patch states none. No write holds a record
+    /// of another format.
     fn native(&self) -> NativeDispositions {
         let mut native = NativeDispositions::dropped("which the SLDPRT writer does not write");
         match self {
             Self::Replayed | Self::Stored { .. } => {
                 native.namespace("sldprt", NativeDisposition::Written);
             }
-            Self::Semantic { .. } => {
+            Self::Semantic {
+                history_dropped: Some(dropped),
+                ..
+            } => {
+                for arena in crate::native::SLDPRT_ARENA_NAMES {
+                    native.drop_arena("sldprt", arena, &dropped.reason);
+                }
+            }
+            Self::Semantic {
+                history_dropped: None,
+                ..
+            } => {
                 for arena in crate::native::SLDPRT_ARENA_NAMES {
                     native.arena("sldprt", arena, NativeDisposition::Regenerated);
                 }

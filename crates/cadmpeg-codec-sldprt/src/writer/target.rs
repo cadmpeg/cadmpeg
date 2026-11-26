@@ -7,7 +7,6 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, edit_dropped, edit_dropped_note, edit_unverified,
-    native_records_omitted,
     target::{ResolvedWrite, WrittenRow},
     EncodeInput, ExportBody, WritePath,
 };
@@ -22,7 +21,10 @@ use cadmpeg_ir::Annotations;
 use crate::history::write::brep_agreement::{agreement, ShapingEdit, Source};
 use crate::history::write::edits::UnwrittenEdits;
 use crate::loss::SldprtLossCode;
-use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, Written};
+use crate::{
+    source_records, HistoryDropped, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec,
+    Written,
+};
 
 /// Resolve the request against the source, then plan the export it names.
 ///
@@ -179,11 +181,11 @@ fn stored_losses(ir: &CadIr, image: &[u8], why: &str) -> Vec<LossNote> {
 /// The document synthesized without its `SolidWorks` history: the write
 /// takes no record of the `sldprt` native namespace and no codec digest, so
 /// the history stage drops what it cannot write (§3.4, Content the target
-/// cannot hold). `export:native.records-omitted` names each native record
-/// left out, and why the patch did not write the file. The configuration of
-/// each edit that shapes the solid against the retained source image takes
-/// the stale mark (§3.4, States); `digests` are the codec digests the
-/// decode recorded.
+/// cannot hold). The write declares each arena of the namespace dropped, with
+/// why the patch did not write the file, and the export wrapper names each
+/// record. The configuration of each edit that shapes the solid against the
+/// retained source image takes the stale mark (§3.4, States); `digests` are
+/// the codec digests the decode recorded.
 fn synthesize(
     input: EncodeInput<'_>,
     digests: &CodecDigests,
@@ -192,19 +194,7 @@ fn synthesize(
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let shaped = shaping_edits(input, digests)?;
     let mut ir = input.ir.clone();
-    let omitted = ir
-        .native
-        .0
-        .remove("sldprt")
-        .map(|namespace| {
-            namespace
-                .arenas()
-                .values()
-                .flatten()
-                .map(|record| record.id().to_owned())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    ir.native.0.remove("sldprt");
     let fidelity = if preserves && input.fidelity.is_some() {
         SemanticFidelity::ReplaySkipped(ReplaySkipped::PatchDeclined)
     } else {
@@ -220,15 +210,16 @@ fn synthesize(
         fidelity,
         &mut bytes,
     )?;
-    if let Written::Semantic { losses, .. } = &mut written {
-        losses.extend(native_records_omitted(
-            "SLDPRT",
-            &format!(
+    if let Written::Semantic {
+        history_dropped, ..
+    } = &mut written
+    {
+        *history_dropped = Some(Box::new(HistoryDropped {
+            reason: format!(
                 "because the patch of the document {reason}, and its synthesis writes no \
                  SolidWorks history record"
             ),
-            omitted,
-        ));
+        }));
     }
     Ok((written, bytes))
 }
