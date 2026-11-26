@@ -32,7 +32,7 @@ pub(crate) mod body_selections;
 pub(crate) mod edge_operand_history;
 pub(crate) mod face_boundaries;
 pub(crate) mod face_operand_history;
-mod face_resolution;
+pub(crate) mod face_resolution;
 pub(crate) mod face_selections;
 pub(crate) mod feature_outputs;
 pub(crate) mod hem_gap_forms;

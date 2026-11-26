@@ -387,6 +387,10 @@ pub(crate) struct DesignBodyBinding {
     /// memberships omit its entity and its browser node stores the hidden flag.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) history_only: bool,
+    /// The record indices of the `Combine` and Remove scopes that consume
+    /// the pair's history-only body, ascending.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) consumers: Vec<u64>,
 }
 
 #[cfg(test)]
@@ -412,6 +416,7 @@ impl Clone for DesignBodyBinding {
             component_owner: self.component_owner.clone(),
             component_owner_unresolved: self.component_owner_unresolved,
             history_only: self.history_only,
+            consumers: self.consumers.clone(),
         }
     }
 }
@@ -436,6 +441,8 @@ struct DesignBodyBindingWireRef<'a> {
     component_owner_unresolved: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     history_only: bool,
+    #[serde(skip_serializing_if = "<[u64]>::is_empty")]
+    consumers: &'a [u64],
 }
 
 impl Serialize for DesignBodyBinding {
@@ -455,6 +462,7 @@ impl Serialize for DesignBodyBinding {
             component_owner: self.component_owner.as_ref(),
             component_owner_unresolved: self.component_owner_unresolved,
             history_only: self.history_only,
+            consumers: &self.consumers,
         }
         .serialize(serializer)
     }
@@ -501,6 +509,9 @@ pub(crate) struct DesignBodyBindingWire {
     /// The pair's body is outside the current model.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub(crate) history_only: bool,
+    /// The record indices of the scopes that consume the history-only body.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) consumers: Vec<u64>,
 }
 
 impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
@@ -533,6 +544,12 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
         {
             return Err("a history-only pair must name no solved body and no owner".into());
         }
+        if !wire.consumers.is_empty() && !wire.history_only {
+            return Err("a pair with consumers must be history-only".into());
+        }
+        if wire.consumers.windows(2).any(|pair| pair[0] >= pair[1]) {
+            return Err("consumers must ascend".into());
+        }
         let id =
             NativeRecordId::try_f3d_new(wire.id, "design-body-binding", wire.asm_body_key_offset)?;
         let stream = DesignBulkStreamPath::try_from(wire.stream)?;
@@ -553,6 +570,7 @@ impl TryFrom<DesignBodyBindingWire> for DesignBodyBinding {
             component_owner: wire.component_owner,
             component_owner_unresolved: wire.component_owner_unresolved,
             history_only: wire.history_only,
+            consumers: wire.consumers,
         })
     }
 }
@@ -602,6 +620,7 @@ impl From<DesignBodyBinding> for DesignBodyBindingWire {
             component_owner: value.component_owner,
             component_owner_unresolved: value.component_owner_unresolved,
             history_only: value.history_only,
+            consumers: value.consumers,
         }
     }
 }

@@ -46,7 +46,8 @@ use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
@@ -70,29 +71,40 @@ struct ScopeTail {
     tail_flags: Option<DesignScopeTailFlags>,
 }
 
+/// The sources of the stored states of a single Fusion document.
+pub(crate) struct StoredStates<'a> {
+    /// The archive of the document.
+    pub(crate) scan: &'a ContainerScan<'a>,
+    /// The ASM history of each parameter scope that binds one, by scope id.
+    pub(crate) scope_histories: &'a HashMap<String, String>,
+    /// The retained source records of the document.
+    pub(crate) fidelity: &'a SourceFidelity,
+}
+
 /// Project the design of a decoded Fusion document into `ir.design`, beside
 /// its v10 records, and push what it leaves unstated to `losses`. The root
 /// definition is already stated. The stored states of the root scope's
-/// timeline are read from `scan`, the archive of a single Fusion document.
+/// timeline are read from `sources`. Returns the native records that the
+/// evaluations reference and the document does not hold.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     depth: DecodeDepth,
-    scan: Option<&ContainerScan<'_>>,
+    sources: Option<&StoredStates<'_>>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<UnknownRecord>, CodecError> {
     if depth < DecodeDepth::Design {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let Some(namespace) = ir.native.namespace("f3d") else {
-        return Ok(());
+        return Ok(Vec::new());
     };
     let timelines = namespace.arena_as_for_decode::<DesignFeatureTimeline>(ctx, TIMELINES)?;
     if timelines
         .iter()
         .all(|timeline| timeline.frame().items().is_empty())
     {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let types = namespace.arena_as_for_decode::<SegmentType>(ctx, TYPES)?;
     let stored_histories = namespace
@@ -146,7 +158,11 @@ pub(crate) fn project(
                 key,
                 states::Tail {
                     state: scope.history_state_id(),
+                    previous: scope.previous_history_state_id(),
                     flags: tail_flags.get(&key).copied(),
+                    history: sources
+                        .and_then(|sources| sources.scope_histories.get(&scope.id))
+                        .map(String::as_str),
                 },
             ))
         })
@@ -287,15 +303,16 @@ pub(crate) fn project(
         .extend(scoped_configurations.records);
     sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
-    match (root, scan) {
-        (Some(root), Some(scan)) => {
-            if let Err(error) =
-                ctx.run_part(|| states::project(ctx, ir, scan, &root, &tails, losses))?
-            {
-                losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
-                    "scope {}: the states after its timeline items are not stated: {error}.",
-                    root.definition
-                )));
+    match (root, sources) {
+        (Some(root), Some(sources)) => {
+            match ctx.run_part(|| states::project(ctx, ir, sources, &root, &tails, losses))? {
+                Ok(carried) => return Ok(carried),
+                Err(error) => {
+                    losses.push(F3dLossCode::HistoryStatesUnread.note(format!(
+                        "scope {}: the states after its timeline items are not stated: {error}.",
+                        root.definition
+                    )));
+                }
             }
         }
         (Some(root), None) if stored_histories => {
@@ -306,7 +323,7 @@ pub(crate) fn project(
         }
         _ => {}
     }
-    Ok(())
+    Ok(Vec::new())
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last

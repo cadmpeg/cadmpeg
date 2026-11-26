@@ -60,6 +60,7 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
                 component_owner: None,
                 component_owner_unresolved: false,
                 history_only: false,
+                consumers: Vec::new(),
                 id: binding_id.into(),
                 stream: "Design/BulkStream.dat".into(),
                 pair_count: 1,

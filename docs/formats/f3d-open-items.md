@@ -987,15 +987,15 @@ option `2`, and side extents `[1, 0]`.
 
 **Need.** A Sketch, a new-body `Extrude` of a box, and a join `Extrude` whose profile lies on a face of the box, saved once with every side face of the join outside the box and once with some of its side faces inside the box: the GUID of the join's body entry compared with the GUIDs of the browser nodes and of the body entry of the creating `Extrude`, and the tokens compared with the keys of the side entries of the join's table.
 
-### DR-1064. The history state after a timeline item in a document with several histories
+### DR-1064. The history of an item state that several histories store
 
-**Question.** Where the model blobs of a document hold several `.smbh` histories, which history does the current history-state identity of a timeline item select, and which stored state does each other history hold after the item?
+**Question.** Where several `.smbh` histories of a document store a state whose identity is the current history-state identity of a timeline item, and the item's parameter scope stores no body-map entity suffix, whole-body recipe, or edge-selection recipe that selects one of them, which history holds the state after the item?
 
-**Known.** `f3d.md` §3.1 "**History chain.**" and "**States of a document.**" give the `delta_state` chain of each history. Each history numbers its states on a counter of its own, and two histories of one document store states with equal identities. An item stores one current identity. The current identities of the items that commit a state can decrease from one item to a later one: a timeline stores the current identities `3` and `4` for two items and `3` for a later item, in a document whose two histories store the states `2`, `3`, `4` and `2`, `3`.
+**Known.** `f3d.md` §3.1 "**States of a document.**" gives the state after a timeline item: the stored state with the item's current identity, in the one history that stores it, or in the history that the item's parameter scope selects. Each history numbers its states on a counter of its own, and two histories of one document store states with equal identities. The current identities of the items that commit a state can decrease from one item to a later one when the later item lies in another history: a timeline stores the current identities `3` and `4` for two items and `3` for a later item, in a document whose two histories store the states `2`, `3`, `4` and `2`, `3`.
 
-**Need.** A design with two components, each with a Sketch and a new-body `Extrude`, and a `Combine` whose target body lies in one component and whose tool body lies in the other, saved once. For each timeline item, the current identity compared with the `delta_state` chain and the bodies of each state of both histories.
+**Need.** A design with two components, each with a Sketch and a new-body `Extrude`, and a `Move` of the body of the second component whose parameter scope stores no body-map entity suffix, saved once. For the `Move` item, its current identity compared with the `delta_state` chain of each history, and the history whose state changes the moved body.
 
-**Note.** The decoder states no evaluation of the states of a scope whose model blobs hold several histories, and charges `history.states-unread`.
+**Note.** The decoder states the evaluations of that item and of the items after it, and charges `history.state-unread` for the states of the items before it.
 
 ### DR-1054. Bulletin board of a state that changes an earlier body
 

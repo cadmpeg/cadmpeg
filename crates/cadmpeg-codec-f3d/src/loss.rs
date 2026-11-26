@@ -684,6 +684,13 @@ pub(crate) enum F3dLossCode {
     HistoryStateUnread,
     /// The stored states after the items of a timeline have no evaluations.
     HistoryStatesUnread,
+    /// The evaluations of a timeline's states omit a body of the history
+    /// head that the current geometry omits and that no timeline item
+    /// consumes.
+    HistoryStateBodyOmitted,
+    /// An evaluation keeps the current state's name of an entity whose
+    /// record it changes.
+    HistoryStateNameInherited,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
     /// A coordinate frame transfers without its source construction references and expressions.
@@ -1870,6 +1877,8 @@ impl F3dLossCode {
         Self::HistoryRollbackBoundUnread,
         Self::HistoryStateUnread,
         Self::HistoryStatesUnread,
+        Self::HistoryStateBodyOmitted,
+        Self::HistoryStateNameInherited,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
@@ -2929,6 +2938,8 @@ impl F3dLossCode {
             Self::HistoryRollbackBoundUnread => "history.rollback-bound-unread",
             Self::HistoryStateUnread => "history.state-unread",
             Self::HistoryStatesUnread => "history.states-unread",
+            Self::HistoryStateBodyOmitted => "history.state-body-omitted",
+            Self::HistoryStateNameInherited => "history.state-name-inherited",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
             }
@@ -4016,6 +4027,8 @@ impl F3dLossCode {
             | Self::HistoryRollbackBoundUnread
             | Self::HistoryStateUnread
             | Self::HistoryStatesUnread
+            | Self::HistoryStateBodyOmitted
+            | Self::HistoryStateNameInherited
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4813,6 +4826,8 @@ impl F3dLossCode {
             | Self::HistoryRollbackBoundUnread
             | Self::HistoryStateUnread
             | Self::HistoryStatesUnread
+            | Self::HistoryStateBodyOmitted
+            | Self::HistoryStateNameInherited
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -5770,6 +5785,8 @@ mod tests {
                 "history.rollback-bound-unread",
                 "history.state-unread",
                 "history.states-unread",
+                "history.state-body-omitted",
+                "history.state-name-inherited",
                 "feature.coordinate-system-construction-native",
                 "feature.coordinate-system-construction-dropped",
                 "feature.coordinate-system-frame-unresolved",

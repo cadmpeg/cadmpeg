@@ -5,8 +5,9 @@
 //! The walk from the head undoes the changes of each `delta_state` in turn,
 //! so each visit holds the record table of one stored state. A state's
 //! records are those its table decodes to, as the model blob is decoded,
-//! confined to the bodies of the current geometry and the bodies the head
-//! does not hold that are no sketch region.
+//! confined to the bodies of the current geometry, the bodies the head
+//! does not hold that are no sketch region, and the consumed bodies that
+//! the timeline position of the state keeps (§5.5).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -16,6 +17,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::units::Tolerances;
+use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::Brep;
 
@@ -38,25 +40,46 @@ pub(crate) struct Blob<'a> {
     pub(crate) namespace: Option<&'a str>,
 }
 
+/// One state of a history, with the consumed bodies it keeps.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Want {
+    pub(crate) state: i64,
+    /// The body-map keys of the consumed bodies of the head that the state
+    /// holds.
+    pub(crate) consumed: BTreeSet<u64>,
+}
+
+/// The records of one stored state.
+pub(crate) struct StateRecords {
+    pub(crate) records: Topology,
+    /// The native records of the state that its records leave undecoded.
+    pub(crate) unknowns: Vec<UnknownRecord>,
+}
+
 /// The states of one history that a timeline's states use.
 pub(crate) struct Read {
     /// The state id of the head.
     pub(crate) head: i64,
     /// The records of the head that the current bodies reach.
     pub(crate) head_records: Topology,
+    /// The body of the head that each key of the read's consumed keys
+    /// selects.
+    pub(crate) head_consumed: BTreeMap<u64, BodyId>,
     /// Each wanted state other than the head, newest first, with its records,
     /// or why they are not read.
-    pub(crate) states: Vec<(i64, Result<Topology, String>)>,
+    pub(crate) states: Vec<(Want, Result<StateRecords, String>)>,
 }
 
 /// The states `wanted` of the history of `blob`, whose head holds the
-/// `current` bodies. The outer error is a decode ceiling. The inner error
-/// says why the history gives no states.
+/// `current` bodies and the consumed bodies that `keys` select. The outer
+/// error is a decode ceiling. The inner error says why the history gives no
+/// states.
 pub(crate) fn read(
     ctx: &DecodeContext<'_>,
     blob: &Blob<'_>,
     current: &BTreeSet<BodyId>,
-    wanted: &BTreeSet<i64>,
+    keys: &BTreeSet<u64>,
+    wanted: &BTreeSet<Want>,
     tolerances: &Tolerances,
     work: &WorkBudget,
 ) -> Result<Result<Read, String>, CodecError> {
@@ -93,7 +116,7 @@ pub(crate) fn read(
         tolerances,
         work,
     };
-    let mut head = None::<Result<(i64, BTreeSet<BodyId>, Topology), String>>;
+    let mut head = None::<Result<(i64, Head), String>>;
     let mut read = Vec::new();
     let mut stopped = None::<String>;
     let mut failure = None::<CodecError>;
@@ -107,25 +130,32 @@ pub(crate) fn read(
             }
             let state_id = states[index].state_id;
             let outcome = match &head {
-                None => decoder.head(versions, current).map(|found| {
-                    head = Some(found.map(|(bodies, records)| (state_id, bodies, records)));
+                None => decoder.head(versions, current, keys).map(|found| {
+                    head = Some(found.map(|found| (state_id, found)));
                 }),
                 Some(Err(_)) => Ok(()),
-                Some(Ok(_)) if !wanted.contains(&state_id) => Ok(()),
-                Some(Ok((_, head_bodies, _))) => match &stopped {
-                    Some(reason) => {
-                        read.push((state_id, Err(reason.clone())));
-                        Ok(())
-                    }
-                    None => decoder
-                        .state(versions, current, head_bodies)
-                        .map(|records| {
-                            if let Err(reason) = &records {
-                                stopped = Some(format!("a later state is not read ({reason})"));
+                Some(Ok((_, found))) => {
+                    let mut outcome = Ok(());
+                    for want in wanted.iter().filter(|want| want.state == state_id) {
+                        if let Some(reason) = &stopped {
+                            read.push((want.clone(), Err(reason.clone())));
+                            continue;
+                        }
+                        match decoder.state(versions, current, found, &want.consumed) {
+                            Ok(records) => {
+                                if let Err(reason) = &records {
+                                    stopped = Some(format!("a later state is not read ({reason})"));
+                                }
+                                read.push((want.clone(), records));
                             }
-                            read.push((state_id, records));
-                        }),
-                },
+                            Err(error) => {
+                                outcome = Err(error);
+                                break;
+                            }
+                        }
+                    }
+                    outcome
+                }
             };
             if let Err(error) = outcome {
                 failure = Some(error);
@@ -139,14 +169,24 @@ pub(crate) fn read(
         return Ok(Err("the walk of its states is incomplete".to_owned()));
     }
     match head {
-        Some(Ok((head, _, head_records))) => Ok(Ok(Read {
+        Some(Ok((head, found))) => Ok(Ok(Read {
             head,
-            head_records,
+            head_records: found.records,
+            head_consumed: found.consumed,
             states: read,
         })),
         Some(Err(reason)) => Ok(Err(reason)),
         None => Ok(Err("the history stores no state".to_owned())),
     }
+}
+
+/// The head of a history.
+struct Head {
+    bodies: BTreeSet<BodyId>,
+    /// Its body of each consumed body-map key that selects one.
+    consumed: BTreeMap<u64, BodyId>,
+    /// The records its current bodies reach.
+    records: Topology,
 }
 
 /// What decodes the record table of one state of a history.
@@ -161,13 +201,13 @@ struct StateDecoder<'a, 'c> {
 }
 
 impl StateDecoder<'_, '_> {
-    /// The bodies of the head and the records the `current` bodies reach,
-    /// or why they are not read.
+    /// The head, or why it is not read.
     fn head(
         &self,
         versions: &super::binding::FastMap<i64, i64>,
         current: &BTreeSet<BodyId>,
-    ) -> Result<Result<(BTreeSet<BodyId>, Topology), String>, CodecError> {
+        consumed: &BTreeSet<u64>,
+    ) -> Result<Result<Head, String>, CodecError> {
         let brep = match self.brep(versions)? {
             Ok(brep) => brep,
             Err(reason) => return Ok(Err(format!("its head is not read ({reason})"))),
@@ -181,32 +221,56 @@ impl StateDecoder<'_, '_> {
         if let Some(body) = current.iter().find(|body| !bodies.contains(*body)) {
             return Ok(Err(format!("its head holds no body {body}")));
         }
+        let mut keyed = BTreeMap::new();
+        for key in consumed {
+            match crate::brep::resolve_body_selector(brep.asm.body_native_keys.iter(), *key) {
+                Ok(Some(body)) => {
+                    keyed.insert(*key, body.clone());
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    return Ok(Err(format!("its head does not select key {key}: {error}")))
+                }
+            }
+        }
         Ok(self
             .records(brep, current.iter().cloned().collect())?
-            .map(|records| (bodies, records)))
+            .map(|records| Head {
+                bodies,
+                consumed: keyed,
+                records: records.records,
+            }))
     }
 
     /// The records of one state that is not the head: those its `current`
-    /// bodies reach, and those of each body the head does not hold that is
-    /// no sketch region.
+    /// bodies reach, those of the consumed bodies of `head` that `consumed`
+    /// keys, and those of each body the head does not hold that is no sketch
+    /// region.
     fn state(
         &self,
         versions: &super::binding::FastMap<i64, i64>,
         current: &BTreeSet<BodyId>,
-        head_bodies: &BTreeSet<BodyId>,
-    ) -> Result<Result<Topology, String>, CodecError> {
+        head: &Head,
+        consumed: &BTreeSet<u64>,
+    ) -> Result<Result<StateRecords, String>, CodecError> {
         let brep = match self.brep(versions)? {
             Ok(brep) => brep,
             Err(reason) => return Ok(Err(reason)),
         };
         let regions = brep.sketch_region_bodies();
+        let kept_consumed = consumed
+            .iter()
+            .filter_map(|key| head.consumed.get(key))
+            .collect::<BTreeSet<_>>();
         let kept = brep
             .asm
             .bodies
             .iter()
             .map(|body| &body.id)
             .filter(|body| {
-                current.contains(*body) || !(head_bodies.contains(*body) || regions.contains(*body))
+                current.contains(*body)
+                    || kept_consumed.contains(body)
+                    || !(head.bodies.contains(*body) || regions.contains(*body))
             })
             .cloned()
             .collect();
@@ -244,12 +308,13 @@ impl StateDecoder<'_, '_> {
     }
 
     /// The topology records of `brep` that the bodies `kept` reach, as the
-    /// model geometry admits them.
+    /// model geometry admits them, and the native records they leave
+    /// undecoded.
     fn records(
         &self,
         mut brep: Brep,
         kept: Vec<BodyId>,
-    ) -> Result<Result<Topology, String>, CodecError> {
+    ) -> Result<Result<StateRecords, String>, CodecError> {
         brep.retain_bodies(self.ctx, kept)?;
         let mut scratch = CadIr::empty();
         scratch.tolerances = *self.tolerances;
@@ -266,9 +331,13 @@ impl StateDecoder<'_, '_> {
                 &mut scratch,
                 &mut remainder.annotation_records,
             )
+            .map(|()| remainder.unknowns)
         });
         match admitted {
-            Ok(()) => Ok(Ok(scratch.geometry)),
+            Ok(unknowns) => Ok(Ok(StateRecords {
+                records: scratch.geometry,
+                unknowns,
+            })),
             Err(error @ CodecError::ResourceLimit(_)) => Err(error),
             Err(error) => Ok(Err(format!("its records do not transfer: {error}"))),
         }

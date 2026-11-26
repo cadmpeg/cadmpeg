@@ -1,27 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The change between two stored states of one blob, and the evaluations
-//! and losses of the timeline items of a scope.
+//! The change between two stored states of one blob, the placement of the
+//! state after each timeline item, and the evaluations and losses of the
+//! items of a scope.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::design::configuration::{DesignConfiguration, Overrides};
-use cadmpeg_ir::design::evaluation::{EvaluationStatus, StateDelta};
+use cadmpeg_ir::design::evaluation::{
+    CurrentState, Evaluation, EvaluationStatus, StateBase, StateDelta,
+};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
-use cadmpeg_ir::design::refs::{Evaluated, Member, Position, RecordRef};
+use cadmpeg_ir::design::names::NameEntry;
+use cadmpeg_ir::design::refs::{EntityRef, Evaluated, Member, Position, RecordRef};
+use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
-use cadmpeg_ir::ids::{PointId, ProductDefinitionId, VertexId};
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::hash::digest::Sha256Digest;
+use cadmpeg_ir::ids::{BodyId, PointId, ProductDefinitionId, SurfaceId, UnknownId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::topology::{Point, Vertex};
+use cadmpeg_ir::topology::{Body, BodyKind, Point};
+use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::SourceFidelity;
 
+use crate::history::stored_states::{Blob, Read, StateRecords, Want};
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignScopeTailFlags;
 use crate::test_support::zip_test::f3d_with_smbh;
 
-use super::{dangling, project, step, Scope, Tail, Tails};
+use super::{
+    bind, omitted, plan, project, step, stopped, wants, Chain, Consumed, Entry, History, Kind,
+    Plan, Planned, Reader, Scope, Tail, Tails,
+};
 
 fn point(name: &str, x: f64) -> Point {
     Point::new(
@@ -35,6 +49,19 @@ fn points(points: Vec<Point>) -> Topology {
     Topology {
         points,
         ..Topology::default()
+    }
+}
+
+fn body(name: &str, label: Option<&str>) -> Body {
+    Body {
+        id: BodyId::mint(format!("f3d:brep:entity#{name}")).expect("identity grammar"),
+        kind: BodyKind::Solid,
+        transform: None,
+        name: label.map(str::to_owned),
+        color: None,
+        visible: None,
+        unstated: None,
+        native_ref: None,
     }
 }
 
@@ -58,20 +85,27 @@ fn a_step_between_equal_states_is_empty() {
     assert_eq!(delta, StateDelta::default());
 }
 
-/// The Design stream of the timeline items of [`timeline`].
+/// The Design stream of the timeline items of [`design`].
 const STREAM: &str = "f3d:timeline";
 
 fn feature_id(name: &str) -> FeatureId {
     FeatureId::mint(format!("test:design:feature#{name}")).expect("identity grammar")
 }
 
-/// A root scope whose timeline holds the unresolved extrudes `first` (record
-/// 10) and `second` (record 11), with its current state after `at`.
-fn timeline(at: &str) -> (CadIr, Scope) {
+/// A root scope and its document.
+struct Design {
+    ir: CadIr,
+    scope: Scope,
+}
+
+/// A root scope whose timeline holds the unresolved extrudes `names`, with
+/// scope records 10 onward, whose current state is after the feature `at`
+/// and holds `bodies`.
+fn design(names: &[&str], at: &str, bodies: Vec<Body>) -> Design {
     let mut ir = CadIr::empty();
     let mut members = Vec::new();
     let mut items = BTreeMap::new();
-    for (record, name) in [(10, "first"), (11, "second")] {
+    for (record, name) in (10..).zip(names) {
         let id = feature_id(name);
         ir.design.features.push(Feature {
             id: id.clone(),
@@ -93,15 +127,36 @@ fn timeline(at: &str) -> (CadIr, Scope) {
         members.push(Member::Feature(id.clone()));
         items.insert(id, (STREAM.to_owned(), record));
     }
-    let scope = Scope {
-        definition: ProductDefinitionId::mint("test:design:definition#root")
-            .expect("identity grammar"),
-        at: Position::After(Member::Feature(feature_id(at))),
-        bodies: BTreeSet::new(),
-        members,
-        items,
-    };
-    (ir, scope)
+    let definition =
+        ProductDefinitionId::mint("test:design:definition#root").expect("identity grammar");
+    let at = Position::After(Member::Feature(feature_id(at)));
+    ir.design.scopes.push(DesignScope {
+        definition: definition.clone(),
+        roots: Vec::new(),
+        active_configuration: None,
+        active_arrangements: BTreeSet::new(),
+        occurrences: BTreeMap::new(),
+        current: vec![CurrentState {
+            at: at.clone(),
+            bodies: bodies.iter().map(|body| body.id.clone()).collect(),
+            poses: BTreeMap::new(),
+            status: EvaluationStatus::Current,
+            native_ref: None,
+        }],
+        unproduced: BTreeSet::new(),
+    });
+    let held = bodies.iter().map(|body| body.id.clone()).collect();
+    ir.geometry.bodies = bodies;
+    Design {
+        ir,
+        scope: Scope {
+            definition,
+            at,
+            bodies: held,
+            members,
+            items,
+        },
+    }
 }
 
 /// The tail of the item `record` that stores `state` and the no-result flag
@@ -121,69 +176,75 @@ fn rolled_back(record: u64, state: i64) -> Tails<'static> {
         (STREAM, record),
         Tail {
             state: Some(state),
+            previous: None,
             flags: Some(flags),
+            history: None,
         },
     )])
 }
 
-/// The losses of the states of `scope` in an archive with no model blob,
-/// after the evaluations go to `ir`.
-fn project_without_blobs(ir: &mut CadIr, scope: &Scope, tails: &Tails<'_>) -> Vec<LossNote> {
+/// The losses of the states of `design` in an archive with no model blob,
+/// after the evaluations go to its document.
+fn project_without_blobs(design: &mut Design, tails: &Tails<'_>) -> Vec<LossNote> {
     let bytes = f3d_with_smbh(&[]);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, root) =
         DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("the archive opens");
     let scan = crate::container::scan(&ctx, root).expect("the archive scans");
+    let fidelity = SourceFidelity::new(Sha256Digest::digest(b""));
+    let scope_histories = std::collections::HashMap::new();
+    let sources = super::super::StoredStates {
+        scan: &scan,
+        scope_histories: &scope_histories,
+        fidelity: &fidelity,
+    };
     let mut losses = Vec::new();
-    project(&ctx, ir, &scan, scope, tails, &mut losses).expect("the states project");
+    let carried = project(
+        &ctx,
+        &mut design.ir,
+        &sources,
+        &design.scope,
+        tails,
+        &mut losses,
+    )
+    .expect("the states project");
+    assert!(carried.is_empty());
     losses
 }
 
 #[test]
-fn a_built_item_with_no_state_id_charges_a_loss_and_has_no_evaluation() {
-    let (mut ir, scope) = timeline("second");
-    let losses = project_without_blobs(&mut ir, &scope, &Tails::new());
-    assert!(ir.design.evaluations.is_empty());
-    assert_eq!(losses.len(), 1, "{losses:#?}");
-    assert_eq!(losses[0].code, F3dLossCode::HistoryStateUnread.kind());
-    assert!(
-        losses[0].message.contains(feature_id("first").as_str()),
-        "{}",
-        losses[0].message
+fn a_built_item_with_no_state_id_has_an_evaluation_with_an_empty_delta() {
+    let mut design = design(&["first", "second"], "second", Vec::new());
+    let losses = project_without_blobs(&mut design, &Tails::new());
+    assert!(losses.is_empty(), "{losses:#?}");
+    let [evaluation] = design.ir.design.evaluations.as_slice() else {
+        panic!("one evaluation: {:#?}", design.ir.design.evaluations);
+    };
+    assert_eq!(
+        evaluation.of,
+        Evaluated::State(Position::After(Member::Feature(feature_id("first"))))
     );
+    let content = evaluation.content.as_ref().expect("the state's content");
+    assert_eq!(content.base, StateBase::Current(design.scope.at.clone()));
+    assert_eq!(content.delta, StateDelta::default());
 }
 
 #[test]
-fn a_rolled_back_item_whose_state_is_not_stored_has_a_stale_evaluation_with_no_content() {
-    let (mut ir, scope) = timeline("first");
-    let losses = project_without_blobs(&mut ir, &scope, &rolled_back(11, 7));
-    let [evaluation] = ir.design.evaluations.as_slice() else {
-        panic!("one evaluation: {:#?}", ir.design.evaluations);
-    };
-    assert_eq!(evaluation.status, EvaluationStatus::Stale);
-    assert_eq!(
-        evaluation.of,
-        Evaluated::State(Position::After(Member::Feature(feature_id("second"))))
-    );
-    assert!(evaluation.content.is_none());
-    assert!(evaluation.native_ref.is_none());
-    assert_eq!(evaluation.scope, scope.definition);
-    assert_eq!(losses.len(), 1, "{losses:#?}");
-    assert_eq!(losses[0].code, F3dLossCode::HistoryStateUnread.kind());
-    assert!(
-        losses[0].message.contains(feature_id("second").as_str()),
-        "{}",
-        losses[0].message
-    );
+fn a_rolled_back_item_whose_state_is_not_stored_has_no_evaluation_and_no_loss() {
+    let mut design = design(&["first", "second"], "first", Vec::new());
+    let losses = project_without_blobs(&mut design, &rolled_back(11, 7));
+    assert!(design.ir.design.evaluations.is_empty());
+    assert!(losses.is_empty(), "{losses:#?}");
 }
 
 #[test]
 fn a_scope_with_configurations_and_no_active_one_states_no_evaluation() {
-    let (mut ir, scope) = timeline("first");
-    ir.design.configurations.push(DesignConfiguration {
+    let mut design = design(&["first", "second"], "first", Vec::new());
+    let definition = design.scope.definition.clone();
+    design.ir.design.configurations.push(DesignConfiguration {
         id: ConfigurationId::mint("test:design:configuration#large").expect("identity grammar"),
-        scope: scope.definition.clone(),
+        scope: definition.clone(),
         name: "Large".to_owned(),
         parent: None,
         comment: None,
@@ -192,52 +253,720 @@ fn a_scope_with_configurations_and_no_active_one_states_no_evaluation() {
         materials: Vec::new(),
         native_ref: None,
     });
-    let losses = project_without_blobs(&mut ir, &scope, &rolled_back(11, 7));
-    assert!(ir.design.evaluations.is_empty());
+    let losses = project_without_blobs(&mut design, &rolled_back(11, 7));
+    assert!(design.ir.design.evaluations.is_empty());
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert_eq!(losses[0].code, F3dLossCode::HistoryStatesUnread.kind());
     assert!(
-        losses[0].message.contains(scope.definition.as_str()),
+        losses[0].message.contains(definition.as_str()),
         "{}",
         losses[0].message
     );
 }
 
-#[test]
-fn a_reference_to_a_record_neither_the_state_nor_the_document_holds_dangles() {
+/// One stored history of a fixture: its blob name and stored state ids.
+struct Stored {
+    name: &'static str,
+    states: &'static [i64],
+}
+
+fn histories(stored: &[Stored]) -> Vec<History<'static>> {
+    stored
+        .iter()
+        .map(|stored| History {
+            blob: Blob {
+                bytes: &[],
+                stream: stored.name,
+                width: RefWidth::Eight,
+                namespace: None,
+            },
+            name: stored.name,
+            space: "f3d:brep:".to_owned(),
+            states: stored
+                .states
+                .iter()
+                .map(|state| (*state, format!("f3d:asm:state#{state}")))
+                .collect(),
+        })
+        .collect()
+}
+
+/// A bound item of history `history` whose state is `state` and whose state
+/// before it is `previous`.
+fn bound(history: usize, state: i64, previous: Option<i64>) -> Kind {
+    Kind::Bound {
+        history,
+        state,
+        previous,
+    }
+}
+
+/// The entries of the members of `design`, of kinds `kinds`, the last at
+/// the current position.
+fn entries(design: &Design, kinds: Vec<Kind>) -> Vec<Entry<'_>> {
+    let count = kinds.len();
+    design
+        .scope
+        .members
+        .iter()
+        .zip(kinds)
+        .enumerate()
+        .map(|(position, (member, kind))| {
+            let Member::Feature(feature) = member else {
+                panic!("a feature member");
+            };
+            let (stream, record) = &design.scope.items[feature];
+            Entry {
+                feature,
+                stream,
+                record: *record,
+                position,
+                stateless: false,
+                current: position + 1 == count,
+                kind,
+            }
+        })
+        .collect()
+}
+
+/// A read history whose head `head` holds `records`, with the stored
+/// `states`.
+fn read(head: i64, records: Topology, states: Vec<(Want, Result<StateRecords, String>)>) -> Read {
+    Read {
+        head,
+        head_records: records,
+        head_consumed: BTreeMap::new(),
+        states,
+    }
+}
+
+fn want(state: i64, consumed: &[u64]) -> Want {
+    Want {
+        state,
+        consumed: consumed.iter().copied().collect(),
+    }
+}
+
+fn records(records: Topology) -> StateRecords {
+    StateRecords {
+        records,
+        unknowns: Vec::new(),
+    }
+}
+
+/// What the evaluations of a fixture state.
+struct Outcome {
+    evaluations: Vec<Evaluation>,
+    carried: Vec<UnknownRecord>,
+    losses: Vec<LossNote>,
+}
+
+/// The evaluations of the items of `design`, of kinds `kinds`, from the
+/// `reads` of the histories `stored` with the consumed bodies `consumed`.
+fn run(
+    design: &Design,
+    kinds: Vec<Kind>,
+    stored: &[Stored],
+    reads: &[Result<Read, String>],
+    consumed: &[Consumed],
+    fidelity: &SourceFidelity,
+) -> Outcome {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("a context");
-    let vertex = Vertex {
-        id: VertexId::mint("f3d:brep:entity#2").expect("identity grammar"),
-        point: point("1", 0.0).id,
-        tolerance: None,
-        native_ref: None,
+    let histories = histories(stored);
+    let entries = entries(design, kinds);
+    let heads = histories
+        .iter()
+        .map(|history| history.states.keys().next_back().copied())
+        .collect::<Vec<_>>();
+    let names = stored.iter().map(|stored| stored.name).collect::<Vec<_>>();
+    let Plan { planned, stop } = plan(&entries, &heads, &names);
+    let mut losses = stop
+        .as_ref()
+        .and_then(|stop| stopped(&design.scope.definition, stop))
+        .into_iter()
+        .collect::<Vec<_>>();
+    let wants = wants(&entries, &planned, consumed);
+    let current = design
+        .ir
+        .resolved_current_state(&design.scope.definition, &design.scope.at)
+        .expect("the current state");
+    let held = vec![design.scope.bodies.clone(); histories.len()];
+    let chain = Chain {
+        entries: &entries,
+        planned: &planned,
+        wants: &wants,
+        histories: &histories,
+        heads: &heads,
+        reads,
+        held: &held,
+        current: &current,
     };
-    let records = Topology {
-        vertices: vec![vertex],
+    let tails = Tails::new();
+    let mut evaluations = Vec::new();
+    let mut carried = Vec::new();
+    let mut stops = Vec::new();
+    let mut reader = Reader {
+        ctx: &ctx,
+        ir: &design.ir,
+        fidelity,
+        scope: &design.scope,
+        tails: &tails,
+        losses: &mut losses,
+    };
+    stops.extend(
+        reader
+            .emit(&chain, None, &mut evaluations, &mut carried)
+            .expect("the states emit"),
+    );
+    losses.extend(
+        stops
+            .into_iter()
+            .filter_map(|stop| stopped(&design.scope.definition, &stop)),
+    );
+    Outcome {
+        evaluations,
+        carried,
+        losses,
+    }
+}
+
+fn no_fidelity() -> SourceFidelity {
+    SourceFidelity::new(Sha256Digest::digest(b""))
+}
+
+fn after(name: &str) -> Evaluated {
+    Evaluated::State(Position::After(Member::Feature(feature_id(name))))
+}
+
+fn content(evaluation: &Evaluation) -> (&StateBase, &StateDelta) {
+    let content = evaluation.content.as_ref().expect("the state's content");
+    (&content.base, &content.delta)
+}
+
+#[test]
+fn a_later_feature_that_changes_an_earlier_body_gives_each_earlier_state_its_own_records() {
+    let design = design(&["a", "b", "c"], "c", vec![body("1", None)]);
+    let head = Topology {
+        bodies: vec![body("1", None)],
+        points: vec![point("p", 3.0)],
         ..Topology::default()
     };
-    let outside = HashSet::from(["f3d:brep:entity#1".to_owned()]);
+    let state = |x| Topology {
+        bodies: vec![body("1", None)],
+        points: vec![point("p", x)],
+        ..Topology::default()
+    };
+    let outcome = run(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(0, 2, Some(1)),
+            bound(0, 3, Some(2)),
+        ],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2, 3],
+        }],
+        &[Ok(read(
+            3,
+            head,
+            vec![
+                (want(2, &[]), Ok(records(state(2.0)))),
+                (want(1, &[]), Ok(records(state(1.0)))),
+            ],
+        ))],
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    let [b, a] = outcome.evaluations.as_slice() else {
+        panic!("two evaluations: {:#?}", outcome.evaluations);
+    };
+    assert_eq!(b.of, after("b"));
+    assert_eq!(a.of, after("a"));
+    assert_eq!(b.native_ref.as_deref(), Some("f3d:asm:state#2"));
+    assert_eq!(a.native_ref.as_deref(), Some("f3d:asm:state#1"));
+    let (base, delta) = content(b);
+    assert_eq!(*base, StateBase::Current(design.scope.at.clone()));
+    assert!(delta.records.bodies.is_empty());
+    assert_eq!(delta.records.points, [point("p", 2.0)]);
+    let (base, delta) = content(a);
+    assert_eq!(*base, StateBase::Evaluation(b.id.clone()));
+    assert_eq!(delta.records.points, [point("p", 1.0)]);
+    assert!(delta.removed.is_empty());
+}
+
+#[test]
+fn the_state_before_a_combine_holds_its_tool_body() {
+    let design = design(&["a", "combine", "c"], "c", vec![body("1", None)]);
+    let head = Topology {
+        bodies: vec![body("1", None)],
+        ..Topology::default()
+    };
+    let consumed = Consumed {
+        placed: BTreeMap::from([(77, 1)]),
+        unplaced: BTreeSet::new(),
+    };
+    let outcome = run(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(0, 2, Some(1)),
+            bound(0, 3, Some(2)),
+        ],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2, 3],
+        }],
+        &[Ok(read(
+            3,
+            head.clone(),
+            vec![
+                (want(2, &[]), Ok(records(head.clone()))),
+                (
+                    want(1, &[77]),
+                    Ok(records(Topology {
+                        bodies: vec![body("1", None), body("tool", None)],
+                        ..Topology::default()
+                    })),
+                ),
+            ],
+        ))],
+        &[consumed],
+        &no_fidelity(),
+    );
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    let [combine, a] = outcome.evaluations.as_slice() else {
+        panic!("two evaluations: {:#?}", outcome.evaluations);
+    };
+    assert_eq!(combine.of, after("combine"));
+    assert_eq!(*content(combine).1, StateDelta::default());
+    assert_eq!(a.of, after("a"));
+    assert_eq!(content(a).1.records.bodies, [body("tool", None)]);
+}
+
+#[test]
+fn only_the_states_before_the_first_consumer_of_a_body_want_it() {
+    let design = design(&["a", "b", "c", "d"], "d", Vec::new());
+    let entries = entries(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(0, 2, Some(1)),
+            bound(0, 3, Some(2)),
+            bound(0, 4, Some(3)),
+        ],
+    );
+    let Plan { planned, stop } = plan(&entries, &[Some(4)], &["BREP.x"]);
+    assert_eq!(stop, None);
+    let consumed = Consumed {
+        placed: BTreeMap::from([(5, 1), (6, 2)]),
+        unplaced: BTreeSet::from([7]),
+    };
     assert_eq!(
-        dangling(&ctx, &records, &|_| false, &HashSet::new()).expect("the references"),
-        Some((
-            "f3d:brep:entity#2".to_owned(),
-            "f3d:brep:entity#1".to_owned()
-        ))
+        wants(&entries, &planned, &[consumed]),
+        [
+            vec![Some(want(3, &[]))],
+            vec![Some(want(2, &[6]))],
+            vec![Some(want(1, &[5, 6]))],
+        ]
+    );
+}
+
+#[test]
+fn a_body_of_the_head_that_no_item_consumes_charges_a_loss() {
+    let definition =
+        ProductDefinitionId::mint("test:design:definition#root").expect("identity grammar");
+    let consumed = Consumed {
+        placed: BTreeMap::from([(5, 1)]),
+        unplaced: BTreeSet::from([7, 8]),
+    };
+    let mut head = read(3, Topology::default(), Vec::new());
+    head.head_consumed =
+        BTreeMap::from([(5, body("consumed", None).id), (7, body("hidden", None).id)]);
+    let loss = omitted(&definition, "BREP.x", &consumed, &head).expect("a loss");
+    assert_eq!(loss.code, F3dLossCode::HistoryStateBodyOmitted.kind());
+    assert!(
+        loss.message.contains("f3d:brep:entity#hidden")
+            && !loss.message.contains("f3d:brep:entity#consumed"),
+        "{}",
+        loss.message
+    );
+    head.head_consumed.remove(&7);
+    assert!(omitted(&definition, "BREP.x", &consumed, &head).is_none());
+}
+
+#[test]
+fn each_item_steps_the_history_that_stores_its_state() {
+    let design = design(&["a", "b", "c", "d"], "d", Vec::new());
+    let in_x = |at| points(vec![point("x", at)]);
+    let in_y = |at| points(vec![point("y", at)]);
+    let outcome = run(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(1, 2, None),
+            bound(0, 3, Some(1)),
+            bound(1, 4, Some(2)),
+        ],
+        &[
+            Stored {
+                name: "BREP.x",
+                states: &[1, 3],
+            },
+            Stored {
+                name: "BREP.y",
+                states: &[2, 4],
+            },
+        ],
+        &[
+            Ok(read(
+                3,
+                in_x(3.0),
+                vec![(want(1, &[]), Ok(records(in_x(1.0))))],
+            )),
+            Ok(read(
+                4,
+                in_y(4.0),
+                vec![(want(2, &[]), Ok(records(in_y(2.0))))],
+            )),
+        ],
+        &[Consumed::default(), Consumed::default()],
+        &no_fidelity(),
+    );
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    let [c, b, a] = outcome.evaluations.as_slice() else {
+        panic!("three evaluations: {:#?}", outcome.evaluations);
+    };
+    assert_eq!(
+        [&c.of, &b.of, &a.of],
+        [&after("c"), &after("b"), &after("a")]
+    );
+    assert_eq!(content(c).1.records.points, [point("y", 2.0)]);
+    assert_eq!(content(b).1.records.points, [point("x", 1.0)]);
+    assert!(content(a).1.records.points.is_empty());
+    assert_eq!(content(a).1.removed, [RecordRef::Point(point("y", 0.0).id)]);
+}
+
+#[test]
+fn a_state_that_several_histories_store_lies_in_the_history_its_scope_binds() {
+    let histories = histories(&[
+        Stored {
+            name: "BREP.x",
+            states: &[1, 2, 5],
+        },
+        Stored {
+            name: "BREP.y",
+            states: &[3, 5],
+        },
+    ]);
+    let tail = |history| Tail {
+        state: Some(5),
+        previous: Some(3),
+        flags: None,
+        history,
+    };
+    assert_eq!(
+        bind(&histories, &tail(Some("f3d:Breps/BREP.y:asm-history")), 5),
+        bound(1, 5, Some(3))
     );
     assert_eq!(
-        dangling(&ctx, &records, &|_| false, &outside).expect("the references"),
-        None
+        bind(&histories, &tail(Some("f3d:Breps/BREP.x:asm-history")), 5),
+        bound(0, 5, Some(2))
     );
+    assert!(matches!(
+        bind(&histories, &tail(None), 5),
+        Kind::Unresolved(_)
+    ));
+    assert_eq!(bind(&histories, &tail(None), 2), bound(0, 2, Some(1)));
+    assert!(matches!(
+        bind(&histories, &tail(None), 4),
+        Kind::Unresolved(_)
+    ));
+}
+
+#[test]
+fn an_item_whose_state_is_not_placed_ends_the_states_and_names_each_earlier_feature() {
+    let design = design(&["c", "a", "u", "b", "d"], "d", Vec::new());
+    let entries = entries(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(0, 2, Some(1)),
+            Kind::Unresolved("the file stores no state 9".to_owned()),
+            bound(0, 3, Some(2)),
+            bound(0, 4, Some(3)),
+        ],
+    );
+    let Plan { planned, stop } = plan(&entries, &[Some(4)], &["BREP.x"]);
     assert_eq!(
-        dangling(
-            &ctx,
-            &records,
-            &|id| id == "f3d:brep:entity#1",
-            &HashSet::new()
-        )
-        .expect("the references"),
-        None
+        planned,
+        [
+            Planned {
+                entry: 3,
+                targets: vec![Some(3)],
+            },
+            Planned {
+                entry: 2,
+                targets: vec![Some(2)],
+            },
+        ]
+    );
+    let loss = stopped(&design.scope.definition, &stop.expect("a stop")).expect("a loss");
+    assert_eq!(loss.code, F3dLossCode::HistoryStateUnread.kind());
+    assert!(
+        loss.message.contains(&format!(
+            "features {}, {} are not stated",
+            feature_id("a"),
+            feature_id("c")
+        )),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn an_item_whose_state_does_not_meet_the_later_items_ends_the_states_there() {
+    let design = design(&["a", "b", "c", "d"], "d", Vec::new());
+    let entries = entries(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(1, 5, None),
+            bound(0, 3, Some(2)),
+            bound(0, 4, Some(3)),
+        ],
+    );
+    let Plan { planned, stop } = plan(&entries, &[Some(4), Some(5)], &["BREP.x", "BREP.y"]);
+    assert_eq!(
+        planned,
+        [Planned {
+            entry: 2,
+            targets: vec![Some(3), Some(5)],
+        }]
+    );
+    let stop = stop.expect("a stop");
+    assert_eq!(stop.features, [feature_id("b"), feature_id("a")]);
+}
+
+#[test]
+fn a_stopped_chain_names_every_dropped_feature_in_order() {
+    let design = design(&["c", "a", "b", "d"], "d", Vec::new());
+    let outcome = run(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(0, 2, Some(1)),
+            bound(0, 3, Some(2)),
+            bound(0, 4, Some(3)),
+        ],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2, 3, 4],
+        }],
+        &[Ok(read(
+            4,
+            points(vec![point("p", 4.0)]),
+            vec![(
+                want(3, &[]),
+                Err("its record table is incomplete".to_owned()),
+            )],
+        ))],
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    assert!(outcome.evaluations.is_empty());
+    let [loss] = outcome.losses.as_slice() else {
+        panic!("one loss: {:#?}", outcome.losses);
+    };
+    assert_eq!(loss.code, F3dLossCode::HistoryStateUnread.kind());
+    assert!(
+        loss.message.contains(&format!(
+            "features {}, {}, {} are not stated",
+            feature_id("a"),
+            feature_id("b"),
+            feature_id("c")
+        )),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn an_item_with_no_state_id_shares_the_state_of_the_earlier_item() {
+    let design = design(&["a", "joint", "c"], "c", Vec::new());
+    let outcome = run(
+        &design,
+        vec![bound(0, 1, None), Kind::NoState, bound(0, 2, Some(1))],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2],
+        }],
+        &[Ok(read(
+            2,
+            points(vec![point("p", 2.0)]),
+            vec![(want(1, &[]), Ok(records(points(vec![point("p", 1.0)]))))],
+        ))],
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    let [a, joint] = outcome.evaluations.as_slice() else {
+        panic!("two evaluations: {:#?}", outcome.evaluations);
+    };
+    assert_eq!(a.of, after("a"));
+    assert_eq!(content(a).1.records.points, [point("p", 1.0)]);
+    assert_eq!(joint.of, after("joint"));
+    assert_eq!(
+        content(joint),
+        (&StateBase::Evaluation(a.id.clone()), &StateDelta::default())
+    );
+}
+
+#[test]
+fn a_state_keeps_the_current_name_of_a_changed_entity_and_drops_that_of_a_removed_one() {
+    let mut design = design(&["a", "b", "c"], "c", vec![body("1", None)]);
+    let named = EntityRef::Body(body("1", None).id);
+    let entry = NameEntry {
+        name: None,
+        native: None,
+    };
+    design.ir.design.names = BTreeMap::from([(named.clone(), entry)]).into();
+    let outcome = run(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(0, 2, Some(1)),
+            bound(0, 3, Some(2)),
+        ],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2, 3],
+        }],
+        &[Ok(read(
+            3,
+            Topology {
+                bodies: vec![body("1", None)],
+                ..Topology::default()
+            },
+            vec![
+                (
+                    want(2, &[]),
+                    Ok(records(Topology {
+                        bodies: vec![body("1", Some("earlier"))],
+                        ..Topology::default()
+                    })),
+                ),
+                (want(1, &[]), Ok(records(Topology::default()))),
+            ],
+        ))],
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    let [b, a] = outcome.evaluations.as_slice() else {
+        panic!("two evaluations: {:#?}", outcome.evaluations);
+    };
+    assert!(content(b).1.names.is_empty());
+    assert_eq!(content(a).1.names, BTreeMap::from([(named.clone(), None)]));
+    let [loss] = outcome.losses.as_slice() else {
+        panic!("one loss: {:#?}", outcome.losses);
+    };
+    assert_eq!(loss.code, F3dLossCode::HistoryStateNameInherited.kind());
+    assert!(
+        loss.message.contains(b.id.as_str()) && loss.message.contains(named.id()),
+        "{}",
+        loss.message
+    );
+}
+
+/// A design whose one earlier state holds a surface whose record is the
+/// native record `spline`, which the state holds with `bytes`.
+fn surface_state(bytes: Vec<u8>) -> (Design, Vec<Result<Read, String>>, UnknownRecord) {
+    let design = design(&["a", "c"], "c", Vec::new());
+    let spline = UnknownId::mint("f3d:brep:spline#5").expect("identity grammar");
+    let surface = Surface {
+        id: SurfaceId::mint("f3d:brep:entity#s").expect("identity grammar"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
+            record: Some(spline.clone()),
+        }),
+        source_object: None,
+        native_ref: None,
+    };
+    let unknown = UnknownRecord::retained(spline, 0, bytes, Vec::new());
+    let unreferenced = UnknownRecord::retained(
+        UnknownId::mint("f3d:brep:spline#6").expect("identity grammar"),
+        0,
+        vec![9],
+        Vec::new(),
+    );
+    let reads = vec![Ok(read(
+        2,
+        Topology::default(),
+        vec![(
+            want(1, &[]),
+            Ok(StateRecords {
+                records: Topology {
+                    surfaces: vec![surface],
+                    ..Topology::default()
+                },
+                unknowns: vec![unknown.clone(), unreferenced],
+            }),
+        )],
+    ))];
+    (design, reads, unknown)
+}
+
+#[test]
+fn a_state_carries_the_native_records_its_records_reference() {
+    let (design, reads, unknown) = surface_state(vec![1, 2, 3]);
+    let outcome = run(
+        &design,
+        vec![bound(0, 1, None), bound(0, 2, Some(1))],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2],
+        }],
+        &reads,
+        &[Consumed::default()],
+        &no_fidelity(),
+    );
+    assert!(outcome.losses.is_empty(), "{:#?}", outcome.losses);
+    assert_eq!(outcome.evaluations.len(), 1);
+    assert_eq!(outcome.carried, [unknown]);
+}
+
+#[test]
+fn a_state_whose_native_record_differs_from_the_documents_ends_the_states() {
+    let (design, reads, unknown) = surface_state(vec![1, 2, 3]);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("a context");
+    let mut fidelity = no_fidelity();
+    let document = UnknownRecord::retained(unknown.id().clone(), 0, vec![4], Vec::new());
+    fidelity
+        .attach_native_unknown_records(&mut CadIr::empty(), "f3d", vec![document], &ctx)
+        .expect("the document's record");
+    let outcome = run(
+        &design,
+        vec![bound(0, 1, None), bound(0, 2, Some(1))],
+        &[Stored {
+            name: "BREP.x",
+            states: &[1, 2],
+        }],
+        &reads,
+        &[Consumed::default()],
+        &fidelity,
+    );
+    assert!(outcome.evaluations.is_empty());
+    assert!(outcome.carried.is_empty());
+    let [loss] = outcome.losses.as_slice() else {
+        panic!("one loss: {:#?}", outcome.losses);
+    };
+    assert!(
+        loss.message.contains(unknown.id().as_str()),
+        "{}",
+        loss.message
     );
 }

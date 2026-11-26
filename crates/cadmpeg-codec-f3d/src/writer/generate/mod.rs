@@ -288,6 +288,9 @@ fn attempt<W: Write + Seek>(
             coverage.design.sketch_entities = ArenaDisposition::Reported;
             coverage.design.sketch_constraints = ArenaDisposition::Reported;
         }
+        if design.restates_evaluations() {
+            coverage.design.evaluations = ArenaDisposition::Reported;
+        }
         let mut losses = roster_losses(target, &native);
         losses.extend(design.into_losses());
         losses.extend(history_notes);

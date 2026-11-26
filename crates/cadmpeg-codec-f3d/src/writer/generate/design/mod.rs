@@ -54,7 +54,7 @@ use cadmpeg_ir::codec::write::{
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
-use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::ids::{ContainerId, EvaluationId};
 use cadmpeg_ir::design::parameter::ParameterOwner;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
@@ -531,6 +531,8 @@ pub(super) struct NeutralDesign<'a> {
     /// Whether the timeline marker stands before a feature of the scope:
     /// the history-true form then differs from the geometry-true form.
     rolls_back: bool,
+    /// Whether the insertion history restates an evaluation of the scope.
+    restates: bool,
     losses: Vec<LossNote>,
 }
 
@@ -759,12 +761,17 @@ pub(super) fn plan<'a>(
             }),
     ));
     losses.extend(unwritten_records(target, scope, written_marker));
-    losses.extend(states(target));
     let mut base_feature =
         base_feature::plan(target, sketches.items.len() + sketches.planes.len())?;
     if body_less.is_some() {
         base_feature = base_feature.without_bodies();
     }
+    let restated = if base_feature.has_item() {
+        restated(target, scope, item.items())
+    } else {
+        BTreeSet::new()
+    };
+    losses.extend(states(target, &restated));
     Ok(Some(NeutralDesign {
         parameters,
         sketches,
@@ -774,6 +781,7 @@ pub(super) fn plan<'a>(
         base_feature,
         body_less: body_less.is_some(),
         rolls_back: written_marker.is_some(),
+        restates: !restated.is_empty(),
         losses,
     }))
 }
@@ -1174,6 +1182,11 @@ impl NeutralDesign<'_> {
         Ok(members)
     }
 
+    /// Whether the insertion history restates an evaluation of the scope.
+    pub(super) fn restates_evaluations(&self) -> bool {
+        self.restates
+    }
+
     /// Whether the design writes a `Sketch` item.
     pub(super) fn writes_sketches(&self) -> bool {
         !self.sketches.items.is_empty()
@@ -1258,7 +1271,7 @@ pub(super) fn restated_parameters(target: &CadIr) -> BTreeSet<&str> {
 pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
     let design = &target.design;
     let unwritten = format!("the F3D writer writes no design ({reason})");
-    let mut losses = states(target);
+    let mut losses = states(target, &BTreeSet::new());
     losses.extend(evaluation_missing(
         "F3D",
         &format!("stores no design for these features ({reason})"),
@@ -1295,9 +1308,9 @@ pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
 }
 
 /// The losses of the scopes' states: a current state's `Stale` or `Failed`
-/// status and each pose, which the written bodies do not carry, and every
-/// evaluation, which no written record holds.
-fn states(target: &CadIr) -> Vec<LossNote> {
+/// status and each pose, which the written bodies do not carry, and each
+/// evaluation outside `restated`, which no written history state holds.
+fn states(target: &CadIr, restated: &BTreeSet<&EvaluationId>) -> Vec<LossNote> {
     let mut stale = Vec::new();
     let mut poses = Vec::new();
     let mut evaluations = Vec::new();
@@ -1342,6 +1355,7 @@ fn states(target: &CadIr) -> Vec<LossNote> {
             evaluation.id, evaluation.scope
         );
         match evaluation.status {
+            EvaluationStatus::Current if restated.contains(&evaluation.id) => {}
             EvaluationStatus::Current => evaluations.push(entry),
             EvaluationStatus::Stale => stale.push(format!("{entry} (stale)")),
             EvaluationStatus::Failed => stale.push(format!("{entry} (failed)")),
@@ -1362,10 +1376,63 @@ fn states(target: &CadIr) -> Vec<LossNote> {
     losses.extend(named_loss(
         F3dLossCode::WriterDesignRecordOmitted,
         "evaluation",
-        "the F3D design holds its current bodies alone, with no stored evaluation",
+        "the F3D writer writes no history state with the records of these states",
         evaluations,
     ));
     losses
+}
+
+/// The evaluations of `scope` that the insertion history of `items`
+/// restates. The state after each written item holds the current result
+/// bodies of the items up to it (f3d.md §3.1, "History states"). An
+/// evaluation of that state restates it when it holds those bodies and each
+/// of its records is a current record.
+fn restated<'a>(
+    target: &'a CadIr,
+    scope: &DesignScope,
+    items: &[Item<'_>],
+) -> BTreeSet<&'a EvaluationId> {
+    let mut bodies = BTreeSet::new();
+    let mut written = BTreeMap::new();
+    for item in items {
+        bodies.extend(item.body());
+        written.insert(item.feature(), bodies.clone());
+    }
+    target
+        .design
+        .evaluations
+        .iter()
+        .filter(|evaluation| {
+            evaluation.scope == scope.definition
+                && evaluation.configuration.is_none()
+                && evaluation.status == EvaluationStatus::Current
+        })
+        .filter(|evaluation| {
+            let Evaluated::State(Position::After(Member::Feature(feature))) = &evaluation.of else {
+                return false;
+            };
+            let Some(bodies) = written.get(feature) else {
+                return false;
+            };
+            target
+                .resolved_evaluation_state(&evaluation.id, &ResourceLimits::default())
+                .is_ok_and(|state| {
+                    state.poses().is_empty()
+                        && state
+                            .records()
+                            .bodies
+                            .iter()
+                            .map(|body| &body.id)
+                            .eq(bodies.iter().copied())
+                        && super::reduce::geometry_records_outside(
+                            state.records(),
+                            &target.geometry,
+                        )
+                        .is_empty()
+                })
+        })
+        .map(|evaluation| &evaluation.id)
+        .collect()
 }
 
 fn position(at: &Position) -> String {
