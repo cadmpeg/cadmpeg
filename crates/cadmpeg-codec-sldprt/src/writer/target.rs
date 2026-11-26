@@ -22,7 +22,10 @@ use cadmpeg_ir::Annotations;
 use crate::history::write::brep_agreement::{agreement, ShapingEdit, Source};
 use crate::history::write::edits::UnwrittenEdits;
 use crate::loss::SldprtLossCode;
-use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, Written};
+use crate::{
+    source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, SldprtWriteSession,
+    Written,
+};
 
 /// Resolve the request against the source, then plan the export it names.
 ///
@@ -48,6 +51,7 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
+    session: &SldprtWriteSession<'_>,
 ) -> Result<ExportBody, CodecError> {
     let of_document;
     let (digests, unverified) = match input.fidelity {
@@ -61,7 +65,7 @@ pub(crate) fn plan(
             (&of_document, false)
         }
     };
-    let (written, bytes) = write(input, resolved, digests)?;
+    let (written, bytes) = write(input, resolved, digests, session)?;
     let mut body = finish(input, &written, bytes, digests);
     if unverified {
         body.losses.push(edit_unverified(
@@ -88,10 +92,11 @@ fn write(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
+    session: &SldprtWriteSession<'_>,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let target = resolved.target_id();
     let preserves = resolved.preserves_source();
-    let first = write_first(input, resolved, digests);
+    let first = write_first(input, resolved, digests, session);
     let reason = match &first {
         Ok((Written::Semantic { dialect, .. }, _)) if preserves && dialect != target => Some(
             format!("lands on dialect {dialect}, not the source's {target}"),
@@ -218,6 +223,7 @@ fn synthesize(
         &[],
         &shaped,
         fidelity,
+        None,
         &mut bytes,
     )?;
     if let Written::Semantic { losses, .. } = &mut written {
@@ -269,13 +275,16 @@ fn write_first(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
+    session: &SldprtWriteSession<'_>,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let replay_eligible = resolved.preserves_source();
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {
             let records = source_records(input.ir, value)?;
-            SldprtCodec::write_preserved_with_annotations(input.ir, value, &records, &mut bytes)?
+            SldprtCodec::write_preserved_with_annotations(
+                input.ir, value, &records, session, &mut bytes,
+            )?
         }
         Some(_) => SldprtCodec::write_semantic(
             input.ir,
@@ -284,6 +293,7 @@ fn write_first(
             &[],
             &[],
             SemanticFidelity::NotConsumed,
+            None,
             &mut bytes,
         )?,
         None => SldprtCodec::write_semantic(
@@ -297,6 +307,7 @@ fn write_first(
             } else {
                 SemanticFidelity::NotConsumed
             },
+            None,
             &mut bytes,
         )?,
     };
