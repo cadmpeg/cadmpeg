@@ -394,16 +394,15 @@ jobs:
 
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
-        # No other build compiles the JsonSchema derives. This gate runs the
-        # schema tests, which compare the committed crates/cadmpeg-ir/schema
-        # files with the derives (their text, in declared property order, under
-        # `schema-order`), and checks the core/assembly feature combinations.
+        # No other build compiles the JsonSchema derives. This gate builds the
+        # core, IR and assembly libraries and unit tests with them (core and
+        # assembly have no other targets) and runs those tests, which compare
+        # the committed crates/cadmpeg-ir/schema files with the derives (their
+        # text, in declared property order, under `schema-order`).
         run: |
           set -euo pipefail
           cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
           cargo test -q -p cadmpeg-ir --features schema-order --lib -- committed_json_schemas
-          cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
-            --features cadmpeg-core/schema,cadmpeg-asm/schema
 
       - name: Annex A
         if: needs.changes.outputs.schema == 'true'
