@@ -1389,7 +1389,7 @@ macro_rules! declare_document_arenas {
                 &mut self,
                 arena: &crate::give_up::Arena,
                 id: &str,
-                mut rewrite: impl FnMut(&mut serde_json::Value) -> bool,
+                rewrite: &mut dyn FnMut(&mut serde_json::Value) -> bool,
             ) -> bool {
                 let crate::give_up::Arena::Home { home, field } = arena else {
                     return false;
