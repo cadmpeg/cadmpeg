@@ -39,6 +39,8 @@ pub(crate) enum AlibreLossCode {
     TopologyShellUnprojected,
     /// A standalone source face has no shell owner required by the IR.
     TopologyFaceOwnerUnprojected,
+    /// A face states no loop on an unbounded surface, which no face covers whole.
+    TopologyFaceBoundaryUnstated,
     /// A framed record has no leading source-name component.
     SourceRecordNameUnresolved,
     /// Integers of the extended entity base have no neutral projection.
@@ -97,6 +99,7 @@ impl AlibreLossCode {
         Self::EdgeToleranceUnresolved,
         Self::TopologyShellUnprojected,
         Self::TopologyFaceOwnerUnprojected,
+        Self::TopologyFaceBoundaryUnstated,
         Self::SourceRecordNameUnresolved,
         Self::SourceRecordExtensionsUnprojected,
         Self::SourceDialectUnverified,
@@ -133,6 +136,7 @@ impl AlibreLossCode {
             Self::EdgeToleranceUnresolved => "edge.tolerance-unresolved",
             Self::TopologyShellUnprojected => "topology.shell-unprojected",
             Self::TopologyFaceOwnerUnprojected => "topology.face-owner-unprojected",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::SourceRecordNameUnresolved => "source.record-name-unresolved",
             Self::SourceRecordExtensionsUnprojected => "source.record-extensions-unprojected",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
@@ -169,6 +173,7 @@ impl AlibreLossCode {
             | Self::EdgeToleranceUnresolved
             | Self::TopologyShellUnprojected
             | Self::TopologyFaceOwnerUnprojected
+            | Self::TopologyFaceBoundaryUnstated
             | Self::SourceRecordNameUnresolved
             | Self::SourceRecordExtensionsUnprojected
             | Self::SourceDialectUnverified
@@ -207,6 +212,7 @@ impl AlibreLossCode {
             Self::SourceDialectUnverified | Self::AssemblyMemberDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
+            Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::ContainerNoncanonical | Self::SourceRecordNameUnresolved => {
                 LossTaxonomy::NoncanonicalSourceSyntax
             }

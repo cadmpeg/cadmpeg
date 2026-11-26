@@ -14,7 +14,7 @@
 use cadmpeg_asm::acis_header;
 use cadmpeg_asm::dialect::KernelHeaderRef;
 use cadmpeg_asm::kernel_header::BinaryHeader;
-use cadmpeg_core::dialect::{DialectId, DialectLayerError, DialectLayers, DialectMatch};
+use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -83,14 +83,7 @@ impl Classification {
             Some(kernel) => layers.with(kernel),
             None => Ok(layers),
         }
-        .map_err(|rejected| match rejected {
-            DialectLayerError::Duplicate(layer) => {
-                CodecError::malformed(format_args!("Alibre repeated dialect layer key: {layer:?}"))
-            }
-            DialectLayerError::MissingInstance(layer) => CodecError::malformed(format_args!(
-                "Alibre extra dialect layer in the primary format needs an instance: {layer:?}"
-            )),
-        })
+        .map_err(CodecError::from)
     }
 }
 
