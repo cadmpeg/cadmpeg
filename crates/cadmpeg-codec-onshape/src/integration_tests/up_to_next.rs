@@ -85,7 +85,8 @@ pub(super) fn up_to_next(operation: &str, extra: Option<([f64; 3], [f64; 3])>) -
 fn up_to_next_ends_on_the_first_face_every_profile_ray_meets() {
     for (bytes, typed) in [
         (up_to_next("REMOVE", None), true),
-        (up_to_next("NEW", None), false),
+        (up_to_next("NEW", None), true),
+        (up_to_next("INTERSECT", None), true),
         (
             up_to_next(
                 "REMOVE",
@@ -231,12 +232,8 @@ fn up_to_next_ends_only_on_live_solid_bodies() {
 }
 
 #[test]
-fn up_to_next_intersect_and_scoped_forms_stay_native() {
-    stopped_with(
-        &up_to_next("INTERSECT", None),
-        "the stored operation does not select an existing target body",
-    );
-    for operation in ["ADD", "REMOVE"] {
+fn up_to_next_scoped_forms_stay_native() {
+    for operation in ["NEW", "ADD", "REMOVE", "INTERSECT"] {
         let bytes = changed(&up_to_next(operation, None), |path, value| {
             if path.ends_with("features.json") {
                 value["features"][2]["parameters"].as_array_mut().unwrap().push(

@@ -675,12 +675,6 @@ pub(super) fn prove(
     profile: &Value,
     model: &Model,
 ) -> Mapping<Value> {
-    if !matches!(
-        features::value(feature, "operationType"),
-        Some("ADD" | "REMOVE")
-    ) {
-        return Err("the stored operation does not select an existing target body".into());
-    }
     let mut work = WORK_LIMIT;
     let profile = read_profile(feature, profile, model, &mut work)?;
     convex(&profile.corners, &profile.ends, profile.normal)?;

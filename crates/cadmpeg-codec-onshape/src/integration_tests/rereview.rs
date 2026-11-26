@@ -507,8 +507,6 @@ fn stored_next_target() -> Vec<u8> {
     edit(&separated("face"), |path, response| {
         if path.ends_with("features.json") {
             parameter(&mut response["features"][3], "endBound")["value"] = json!("UP_TO_NEXT");
-            // A new body has no existing body to end on.
-            parameter(&mut response["features"][3], "operationType")["value"] = json!("REMOVE");
         }
     })
 }

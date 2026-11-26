@@ -178,8 +178,7 @@ is directed along its stored direction. The direction of a line with
 feature to its Part Studio model.
 
 `UP_TO_NEXT` ends on the first stored planar face that every ray of the profile
-meets. The operation is `ADD` or `REMOVE`; `NEW` has no target body. The
-profile is a closed convex line boundary. The rollback state lists the faces
+meets. The profile is a closed convex line boundary. The rollback state lists the faces
 of every body before the feature. Each body stores a `type` and a
 `consumedByComposite` flag. A live body is a body that no composite consumes.
 Candidate faces and blocking faces belong to live bodies of type `SOLID`.
