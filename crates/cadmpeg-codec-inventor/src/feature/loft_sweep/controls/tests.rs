@@ -565,7 +565,7 @@ fn surface_definition_is_the_unguided_new_body_sheet_loft() {
     assert!(!matches_surface_definition(&solid));
     let mut base = serde_json::to_value(&solid).expect("definition");
     base["value"]["value"]["solid"] = serde_json::json!(false);
-    let surface: FeatureDefinition = serde_json::from_value(base.clone()).expect("surface loft");
+    let surface: FeatureDefinition = json::from_value(base.clone()).expect("surface loft");
     assert!(matches_surface_definition(&surface));
     assert!(!matches_definition(&surface));
     for (field, value) in [
@@ -577,7 +577,7 @@ fn surface_definition_is_the_unguided_new_body_sheet_loft() {
     ] {
         let mut changed = base.clone();
         changed["value"]["value"][field] = value;
-        let changed = serde_json::from_value(changed).expect("changed loft");
+        let changed = json::from_value(changed).expect("changed loft");
         assert!(!matches_surface_definition(&changed));
     }
 }
@@ -631,7 +631,7 @@ fn only_a_surface_loft_with_a_native_section_counts_as_unresolved() {
     use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
     let mut base = serde_json::to_value(positional_definition()).expect("definition");
     base["value"]["value"]["solid"] = serde_json::json!(false);
-    let surface: FeatureDefinition = serde_json::from_value(base.clone()).expect("surface loft");
+    let surface: FeatureDefinition = json::from_value(base.clone()).expect("surface loft");
     let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) = &surface else {
         panic!("loft");
     };
@@ -643,11 +643,11 @@ fn only_a_surface_loft_with_a_native_section_counts_as_unresolved() {
     )));
     let mut with_native = base.clone();
     with_native["value"]["value"]["sections"] = serde_json::to_value(&native).expect("sections");
-    let with_native: FeatureDefinition = serde_json::from_value(with_native).expect("loft");
+    let with_native: FeatureDefinition = json::from_value(with_native).expect("loft");
     assert!(has_native_section(&with_native));
     // The solid loft keeps its own accounting.
     let mut solid = serde_json::to_value(&with_native).expect("definition");
     solid["value"]["value"]["solid"] = serde_json::json!(true);
-    let solid: FeatureDefinition = serde_json::from_value(solid).expect("solid loft");
+    let solid: FeatureDefinition = json::from_value(solid).expect("solid loft");
     assert!(!has_native_section(&solid));
 }
