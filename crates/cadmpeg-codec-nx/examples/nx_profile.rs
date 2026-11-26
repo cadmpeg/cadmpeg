@@ -1435,7 +1435,7 @@ mod boundary_wire_tests {
 
     #[test]
     fn worker_boundary_requires_a_feature_for_unsupported_reasons() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "feature": null, "feature_name": null, "feature_family": null,
             "feature_ordinal": null, "reason": "incomplete_feature_definition"
         });

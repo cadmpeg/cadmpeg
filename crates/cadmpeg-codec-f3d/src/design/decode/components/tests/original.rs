@@ -125,7 +125,7 @@ fn empty_attributed_occurrence_keeps_its_prefix_key_namespace_and_matrix() {
         matrix
     );
     let wire = json::to_value(&occurrence).unwrap();
-    assert_eq!(wire["attributed"]["attributes"], serde_json::json!([]));
+    assert_eq!(wire["attributed"]["attributes"], cadmpeg_core::json!([]));
     assert_eq!(wire["attributed"]["ordinal_prefix"], 2);
     assert_eq!(wire["attributed"]["path_discriminator"], 7);
     assert_eq!(wire["attributed"]["key_record_index"], 24);

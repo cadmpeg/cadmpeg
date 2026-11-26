@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use crate::annotations::{AnnotationBuilder, ExactnessNote};
+use crate::annotations::{AnnotationBuilder, AnnotationKey, ExactnessNote};
 use crate::document::CadIr;
 use crate::provenance::Exactness;
 use crate::report::loss::LossNote;
@@ -189,7 +189,7 @@ pub fn restate_exactness(
         ) {
             let overrides =
                 restated_fields(note, FeatureField::stated(feature), restatement.feature);
-            restated.push((feature.id.as_str(), note.entity(), overrides));
+            restated.push((AnnotationKey::from(&feature.id), note.entity(), overrides));
         }
     }
     for parameter in &ir.design.parameters {
@@ -202,15 +202,18 @@ pub fn restate_exactness(
                 ParameterField::stated(parameter),
                 restatement.parameter,
             );
-            restated.push((parameter.id.as_str(), note.entity(), overrides));
+            restated.push((AnnotationKey::from(&parameter.id), note.entity(), overrides));
         }
     }
-    let ids = restated.iter().map(|(id, ..)| *id).collect::<BTreeSet<_>>();
-    annotations.retain_exactness(|owner| !ids.contains(owner));
-    for (id, entity, overrides) in restated {
-        annotations.exactness(id, entity);
+    let keys = restated
+        .iter()
+        .map(|(key, ..)| key.as_str())
+        .collect::<BTreeSet<_>>();
+    annotations.retain_exactness(|owner| !keys.contains(owner));
+    for (key, entity, overrides) in restated {
+        annotations.exactness(&key, entity);
         for (field, exactness) in overrides {
-            annotations.field_exactness(id, field, exactness)?;
+            annotations.field_exactness(&key, field, exactness)?;
         }
     }
     Ok(())

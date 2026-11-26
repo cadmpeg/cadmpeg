@@ -208,10 +208,10 @@ fn wire_rejects_fields_that_disagree_with_retained_bytes() {
     for field in ["zero_prefix", "roster_control", "value", "orientation_bit"] {
         let mut invalid = wire.clone();
         match field {
-            "zero_prefix" => invalid[field] = serde_json::json!(true),
-            "roster_control" => invalid[field] = serde_json::json!(1),
-            "value" => invalid["members"][0][field] = serde_json::json!(1),
-            "orientation_bit" => invalid["members"][0][field] = serde_json::json!(false),
+            "zero_prefix" => invalid[field] = cadmpeg_core::json!(true),
+            "roster_control" => invalid[field] = cadmpeg_core::json!(1),
+            "value" => invalid["members"][0][field] = cadmpeg_core::json!(1),
+            "orientation_bit" => invalid["members"][0][field] = cadmpeg_core::json!(false),
             _ => unreachable!(),
         }
         assert!(json::from_value::<CatiaConsolidatedClass61Record>(invalid).is_err());

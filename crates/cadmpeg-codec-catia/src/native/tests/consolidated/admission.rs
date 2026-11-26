@@ -20,10 +20,10 @@ fn consolidated_cylinder_deserialization_admits_each_layout_chart() {
             *cylinder
         );
         for (field, value) in [
-            ("axis", serde_json::json!([1.0, 0.0, 0.0])),
-            ("reference_direction", serde_json::json!([1.0, 0.0, 0.0])),
-            ("frame_token", serde_json::json!(255)),
-            ("range_origin", serde_json::json!(0.0)),
+            ("axis", cadmpeg_core::json!([1.0, 0.0, 0.0])),
+            ("reference_direction", cadmpeg_core::json!([1.0, 0.0, 0.0])),
+            ("frame_token", cadmpeg_core::json!(255)),
+            ("range_origin", cadmpeg_core::json!(0.0)),
         ] {
             if valid["payload"].get(field).is_none() {
                 continue;
@@ -40,7 +40,7 @@ fn consolidated_cylinder_deserialization_admits_each_layout_chart() {
             );
         }
         let mut invalid = valid;
-        invalid["u_range"] = serde_json::json!([0.0, 0.1]);
+        invalid["u_range"] = cadmpeg_core::json!([0.0, 0.1]);
         // A partial interval is valid only for the range-origin layout, whose redundant origin must also match.
         assert!(json::from_value::<crate::native::CatiaConsolidatedCylinder>(invalid).is_err());
     }
@@ -58,10 +58,10 @@ fn wide_cylinder_deserialization_uses_the_layout_5a_admission() {
             *cylinder
         );
         for (field, value) in [
-            ("frame_token", serde_json::json!(255)),
-            ("axis", serde_json::json!([0.0, 0.0, 1.0])),
-            ("reference_direction", serde_json::json!([1.0, 0.0, 0.0])),
-            ("u_range", serde_json::json!([0.0, 0.1])),
+            ("frame_token", cadmpeg_core::json!(255)),
+            ("axis", cadmpeg_core::json!([0.0, 0.0, 1.0])),
+            ("reference_direction", cadmpeg_core::json!([1.0, 0.0, 0.0])),
+            ("u_range", cadmpeg_core::json!([0.0, 0.1])),
         ] {
             let mut invalid = valid.clone();
             if field == "u_range" {
@@ -117,7 +117,7 @@ fn fixed_nine_wire_rejects_nested_metadata_instead_of_dropping_it() {
 fn counted_owner_tail_deserialization_rejects_empty_and_retains_arbitrary_nonempty_bytes() {
     use crate::families::b2::counted_owner_tail::CountedOwnerTail;
     assert!(CountedOwnerTail::new(vec![]).is_none());
-    assert!(json::from_value::<CountedOwnerTail>(serde_json::json!("")).is_err());
+    assert!(json::from_value::<CountedOwnerTail>(cadmpeg_core::json!("")).is_err());
     for bytes in [vec![0], vec![3], vec![0x83, 0x41, 0x92, 0, 1]] {
         let tail = CountedOwnerTail::new(bytes.clone()).expect("nonempty class-0x62 tail");
         let wire = json::to_value(&tail).expect("tail wire");

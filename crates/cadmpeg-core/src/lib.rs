@@ -12,6 +12,7 @@ pub mod error;
 pub mod finite_json;
 pub mod io;
 pub mod iter_wire;
+mod json_macro;
 pub mod parallelism;
 pub mod printable;
 pub mod read_session;
@@ -30,3 +31,5 @@ pub use container::ContainerEntry;
 pub use error::CodecError;
 pub use io::ReadSeek;
 pub use parallelism::parallelism;
+#[doc(hidden)]
+pub use serde_json as __serde_json;

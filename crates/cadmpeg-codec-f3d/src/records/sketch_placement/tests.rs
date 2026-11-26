@@ -35,10 +35,10 @@ fn null_reference_head_wire_preserves_its_matrix_and_extent() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let mut wire = json::to_value(placement(true)).unwrap();
-    wire["frame_length"] = serde_json::json!(152);
-    wire["transform"] = serde_json::json!(transform);
-    wire["transform_offset"] = serde_json::json!(122);
-    wire["paired_byte_offset"] = serde_json::json!(50);
+    wire["frame_length"] = cadmpeg_core::json!(152);
+    wire["transform"] = cadmpeg_core::json!(transform);
+    wire["transform_offset"] = cadmpeg_core::json!(122);
+    wire["paired_byte_offset"] = cadmpeg_core::json!(50);
     let record: DesignSketchPlacement = json::from_value(wire.clone()).unwrap();
     assert_eq!(record.frame_length(), 152);
     assert_eq!(*record.transform(), transform);
@@ -80,7 +80,7 @@ fn sketch_visibility_collection_wire_requires_omission_or_a_positive_identity() 
         .unwrap()
         .ordinal_collection
         .is_none());
-    for invalid in [serde_json::Value::Null, serde_json::json!(0)] {
+    for invalid in [serde_json::Value::Null, cadmpeg_core::json!(0)] {
         let mut invalid_wire = wire.clone();
         invalid_wire["ordinal_collection"] = invalid;
         assert!(json::from_value::<super::DesignSketchVisibility>(invalid_wire).is_err());
@@ -101,7 +101,7 @@ fn sketch_visibility_sketch_flag_wire_reads_back() {
     );
     visibility.sketch_flag = true;
     let wire = json::to_value(visibility).unwrap();
-    assert_eq!(wire["sketch_flag"], serde_json::json!(true));
+    assert_eq!(wire["sketch_flag"], cadmpeg_core::json!(true));
     let read = json::from_value::<super::DesignSketchVisibility>(wire).unwrap();
     assert!(read.sketch_flag);
     assert_eq!(read, visibility);
@@ -121,7 +121,7 @@ fn sketch_placement_display_name_wire_validates_non_blank_non_control_bounds() {
     );
     for bad in ["", "   ", "Bad\nName", &"x".repeat(257)] {
         let mut invalid = valid.clone();
-        invalid["display_name"] = serde_json::json!(bad);
+        invalid["display_name"] = cadmpeg_core::json!(bad);
         assert!(json::from_value::<DesignSketchPlacement>(invalid).is_err());
     }
 }

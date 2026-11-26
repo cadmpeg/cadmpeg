@@ -385,7 +385,7 @@ mod tests {
             bytes[at..at + 2].copy_from_slice(&unit.to_le_bytes());
         }
         reference(&mut bytes, 305, 10);
-        let scope = json::from_value(serde_json::json!({
+        let scope = json::from_value(cadmpeg_core::json!({
             "id": "f3d:Design/BulkStream.dat:scope#30",
             "byte_offset": 284,
             "class_tag": "303",
@@ -479,12 +479,12 @@ mod tests {
             let mut scope_wire = json::to_value(&scope).unwrap();
             for (field, value) in scope_wire.as_object_mut().unwrap() {
                 if field.ends_with("_offset") && value.is_u64() {
-                    *value = serde_json::json!(
+                    *value = cadmpeg_core::json!(
                         value.as_u64().unwrap() + u64::try_from(scope_at).unwrap() - 284
                     );
                 } else if field == "reference_member_offsets" {
                     for offset in value.as_array_mut().unwrap() {
-                        *offset = serde_json::json!(
+                        *offset = cadmpeg_core::json!(
                             offset.as_u64().unwrap() + u64::try_from(scope_at).unwrap() - 284
                         );
                     }
@@ -509,7 +509,7 @@ mod tests {
                 json::from_value(wire.clone()).unwrap();
             assert_eq!(image, roundtrip);
             let mut inconsistent = wire;
-            inconsistent["geometry_frame_length"] = serde_json::json!(paired + 1);
+            inconsistent["geometry_frame_length"] = cadmpeg_core::json!(paired + 1);
             assert!(
                 json::from_value::<crate::records::canvas::DesignCanvasImage>(inconsistent)
                     .is_err()

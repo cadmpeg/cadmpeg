@@ -31,7 +31,7 @@ where
         record
     );
     let mut invalid = wire;
-    invalid[field] = serde_json::json!(0.0);
+    invalid[field] = cadmpeg_core::json!(0.0);
     let error = json::from_value::<T>(invalid)
         .expect_err("zero is refused")
         .to_string();
@@ -137,7 +137,7 @@ fn surface_offset_boundary_carrier_refuses_a_nonpositive_tolerance() {
         support
     );
     let mut invalid = wire;
-    invalid["value"]["tolerance"] = serde_json::json!(0.0);
+    invalid["value"]["tolerance"] = cadmpeg_core::json!(0.0);
     let error = json::from_value::<DesignSurfaceOffsetSupport>(invalid)
         .expect_err("zero is refused")
         .to_string();
@@ -188,7 +188,7 @@ fn edge_treatment_radius_candidate_refuses_a_nonpositive_radius() {
 
 #[test]
 fn circular_pattern_construction_refuses_zero_count() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "count": 0, "count_record_index": 1, "count_offset": 2,
         "angle": 1.0, "angle_record_index": 3, "angle_offset": 4,
         "axis": {"kind":"inline", "origin":[0.0,0.0,0.0], "origin_offset":5,
@@ -204,7 +204,7 @@ fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
     let wire = r#"{"count":2,"count_record_index":11,"count_offset":0,"stitch_tolerance":0.001,"stitch_tolerance_offset":51,"stitch_tolerance_record_index":12,"seed_group_record_index":20,"plane_group_record_index":30,"plane_origin":[0.0,0.0,0.0]}"#;
     let mut value: serde_json::Value = serde_json::from_str(wire).unwrap();
     for normal in [[0.0, 0.0, 0.0], [0.0, 0.0, 2.0]] {
-        value["plane_normal"] = serde_json::json!(normal);
+        value["plane_normal"] = cadmpeg_core::json!(normal);
         let error = json::from_value::<DesignMirrorConstruction>(value.clone()).unwrap_err();
         assert!(error
             .to_string()
@@ -227,7 +227,7 @@ fn mirror_native_plane_refuses_zero_and_nonunit_normals() {
 
 #[test]
 fn scale_axis_factors_round_trip_and_reject_partial_or_mixed_forms() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "body_group_record_index": 102,
         "center_record_index": 105,
         "axis_factors": [1.0, 2.0, 3.0],
@@ -243,11 +243,11 @@ fn scale_axis_factors_round_trip_and_reject_partial_or_mixed_forms() {
     }
     for factors in [[0.0, 2.0, 3.0], [1.0, -2.0, 3.0]] {
         let mut invalid = wire.clone();
-        invalid["axis_factors"] = serde_json::json!(factors);
+        invalid["axis_factors"] = cadmpeg_core::json!(factors);
         assert!(json::from_value::<DesignScaleOperation>(invalid).is_err());
     }
     let mut mixed = wire;
-    mixed["uniform_factor"] = serde_json::json!(2.0);
-    mixed["uniform_factor_offset"] = serde_json::json!(25);
+    mixed["uniform_factor"] = cadmpeg_core::json!(2.0);
+    mixed["uniform_factor_offset"] = cadmpeg_core::json!(25);
     assert!(json::from_value::<DesignScaleOperation>(mixed).is_err());
 }

@@ -10,7 +10,10 @@ mod parameter_ranges;
 fn b5_derived_field_records_exactness() {
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     annotations
-        .derived("catia:b5:vertex#0", "point")
+        .derived(
+            cadmpeg_ir::ids::Identity::new("catia:b5:vertex#0").expect("identity grammar"),
+            "point",
+        )
         .expect("record the derived field note");
     let annotations = annotations.build();
     assert!(annotations.exactness().contains_key("catia:b5:vertex#0"));

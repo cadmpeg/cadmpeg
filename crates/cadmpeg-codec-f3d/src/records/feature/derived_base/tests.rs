@@ -184,7 +184,7 @@ fn a_derived_base_owner_survives_cadir_and_must_sit_in_its_frame() {
     assert_eq!(read.derived_base_owner, scope.derived_base_owner);
 
     let mut moved = wire.clone();
-    moved["derived_base_owner"]["repeat_offset"] = serde_json::json!(0);
+    moved["derived_base_owner"]["repeat_offset"] = cadmpeg_core::json!(0);
     assert!(json::from_value::<DesignParameterScope>(moved).is_err());
 
     let extrude = scope_with_owner_on_extrude();

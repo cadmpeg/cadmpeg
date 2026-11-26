@@ -8,19 +8,19 @@ use cadmpeg_ir::report::check::Finding;
 const SEGMENT: &str = "generated";
 
 fn list() -> serde_json::Value {
-    serde_json::json!({"marker": 2, "metadata": null, "references": []})
+    cadmpeg_core::json!({"marker": 2, "metadata": null, "references": []})
 }
 
 fn header() -> serde_json::Value {
-    let reference = serde_json::json!({"index": 3, "qualified": true});
-    serde_json::json!({
+    let reference = cadmpeg_core::json!({"index": 3, "qualified": true});
+    cadmpeg_core::json!({
         "header_value": 0, "header_id": 0, "next": reference, "flags": 0,
         "context": reference, "source_index": 0
     })
 }
 
 fn line(ordinal: u32, entity_flags: u32) -> TestResult<crate::sketch::PmDcSketchEntity> {
-    Ok(json::from_value(serde_json::json!({
+    Ok(json::from_value(cadmpeg_core::json!({
         "id": format!("inventor:pmdc:sketch-entity#{SEGMENT}-{ordinal}"),
         "entity_flags": entity_flags,
         "header": header(),
@@ -37,8 +37,8 @@ fn line(ordinal: u32, entity_flags: u32) -> TestResult<crate::sketch::PmDcSketch
 }
 
 fn distance(ordinal: u32, operands: [u32; 2]) -> TestResult<crate::sketch::PmDcSketchConstraint> {
-    let reference = |index: u32| serde_json::json!({"index": index, "qualified": false});
-    Ok(json::from_value(serde_json::json!({
+    let reference = |index: u32| cadmpeg_core::json!({"index": index, "qualified": false});
+    Ok(json::from_value(cadmpeg_core::json!({
         "id": format!("inventor:pmdc:sketch-constraint#{SEGMENT}-{ordinal}"),
         "header": {
             "content": header(),
@@ -68,7 +68,7 @@ fn neutral(
     ordinal: u32,
     definition: &serde_json::Value,
 ) -> TestResult<cadmpeg_ir::SketchConstraint> {
-    Ok(json::from_value(serde_json::json!({
+    Ok(json::from_value(cadmpeg_core::json!({
         "id": format!("inventor:design:sketch-constraint#{SEGMENT}-{ordinal}"),
         "sketch": "inventor:design:sketch#generated-1",
         "definition": definition,
@@ -99,7 +99,7 @@ fn findings(
 }
 
 fn loci(first: u32, second: u32) -> serde_json::Value {
-    serde_json::json!({
+    cadmpeg_core::json!({
         "kind": "distance_loci",
         "first": {"kind": "entity", "value": entity_id(first)},
         "second": {"kind": "entity", "value": entity_id(second)},
@@ -108,7 +108,7 @@ fn loci(first: u32, second: u32) -> serde_json::Value {
 }
 
 fn native(first: u32, second: u32) -> serde_json::Value {
-    serde_json::json!({
+    cadmpeg_core::json!({
         "kind": "native",
         "native_kind": "axis_distance_dimension",
         "native_properties": {},

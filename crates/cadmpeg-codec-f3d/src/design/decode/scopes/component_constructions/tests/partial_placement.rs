@@ -177,7 +177,7 @@ fn partial_insert_payload_cannot_coexist_with_a_complete_or_other_family_payload
         payload.unresolved_placement = Some(value);
     }
     let mut encoded = json::to_value(&scope).unwrap();
-    encoded["component_insert_construction"] = serde_json::json!({
+    encoded["component_insert_construction"] = cadmpeg_core::json!({
         "relation_record_index":20,
         "carrier_record_index":10,
         "neutron_role":"11111111-2222-3333-4444-555555555555",
@@ -185,7 +185,7 @@ fn partial_insert_payload_cannot_coexist_with_a_complete_or_other_family_payload
     });
     assert!(json::from_value::<DesignParameterScope>(encoded).is_err());
     let mut encoded = json::to_value(scope).unwrap();
-    encoded["kind"] = serde_json::json!("WorkPoint");
+    encoded["kind"] = cadmpeg_core::json!("WorkPoint");
     assert!(json::from_value::<DesignParameterScope>(encoded).is_err());
 }
 
