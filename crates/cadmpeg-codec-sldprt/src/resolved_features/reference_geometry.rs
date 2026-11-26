@@ -1922,7 +1922,10 @@ pub(crate) fn enrich_history_reference_axes(
             for class in &lane.classes {
                 if matches!(
                     class.name.as_str(),
-                    "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
+                    "moLineAxisData_c"
+                        | "moPlaneInterAxisData_c"
+                        | "moSurfaceAxisData_c"
+                        | "moTwoPtsAxisData_c"
                 ) && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
                 {
                     axis_data_classes.push(class);

@@ -478,6 +478,86 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
 }
 
 #[test]
+fn line_axis_data_frame_is_anchored_after_class_name() {
+    let class_name = "moLineAxisData_c";
+    let mut payload = vec![0; 16];
+    let class_offset = payload.len();
+    payload.extend(CLASS_MARKER);
+    payload.extend(u16::try_from(class_name.len()).unwrap().to_le_bytes());
+    payload.extend(class_name.as_bytes());
+    for value in [
+        0.0_f64, 0.35, 0.055, 0.0, 0.35, 0.045, -0.0, 0.01, 0.0, 0.0, -1.0, 0.0, 0.35, 0.055,
+    ] {
+        payload.extend(value.to_le_bytes());
+    }
+    let axis = |properties| Feature {
+        id: "axis".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(2080),
+        ordinal: 0,
+        name: "Axis1".into(),
+        kind: String::new(),
+        input_class: Some("moRefAxis_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties,
+        text: None,
+        content: Vec::new(),
+    };
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![axis(BTreeMap::new())],
+    }];
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.into(),
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: cadmpeg_core::decode::u64_from_index(class_offset),
+            name: class_name.to_owned(),
+        }],
+        names: vec![FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: ObjectId::from_value(2080),
+            value: "Axis1".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    super::enrich_history_reference_axes(&mut histories, &[lane]);
+
+    assert_eq!(
+        histories[0].features[0].properties.get("Origin"),
+        Some(&"0mm,350mm,0mm".to_string())
+    );
+    assert_eq!(
+        histories[0].features[0].properties.get("Direction"),
+        Some(&"0,0,-1".to_string())
+    );
+}
+
+#[test]
 fn intersecting_reference_axis_pair_completes_legacy_triad() {
     let frames = [
         Some((Point3::new(0.0, 85.0, 0.0), Vector3::new(1.0, 0.0, 0.0))),
