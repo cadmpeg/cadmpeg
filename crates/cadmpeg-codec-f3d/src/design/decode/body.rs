@@ -769,12 +769,7 @@ fn parse_snapshot_body_map_frame(
     Ok(None)
 }
 
-/// Parse every exactly indexed BREP body-map record in a Design `BulkStream`.
-///
-/// The type GUID names a family with more than one record frame. The
-/// `MetaStream` entity list and primary record index select exact candidate
-/// extents. A candidate is a body map only when one supported reserved-zero
-/// width makes its count, pair run, tail, and basename consume that extent.
+/// The body maps of a Design `BulkStream`: [`BodyMapCarriers::maps`].
 fn body_map_records(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
@@ -792,6 +787,12 @@ struct BodyMapCarriers {
     zero_pair_named: Vec<BodyMapRecord>,
 }
 
+/// Parse every exactly indexed BREP body-map carrier in a Design `BulkStream`.
+///
+/// The type GUID names a family with more than one record frame. The
+/// `MetaStream` entity list and primary record index select exact candidate
+/// extents. A candidate is a carrier only when one supported reserved-zero
+/// width makes its count, pair run, tail, and basename consume that extent.
 fn body_map_carriers(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
