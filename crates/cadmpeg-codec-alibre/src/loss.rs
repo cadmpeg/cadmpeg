@@ -273,6 +273,7 @@ mod tests {
                 "edge.tolerance-unresolved",
                 "topology.shell-unprojected",
                 "topology.face-owner-unprojected",
+                "topology.face-boundary-unstated",
                 "source.record-name-unresolved",
                 "source.record-extensions-unprojected",
                 "source.kernel-dialect-unverified",
