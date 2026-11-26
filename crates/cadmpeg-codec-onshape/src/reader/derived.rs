@@ -288,6 +288,9 @@ pub(super) fn map(
     if manifest.get("consistent").and_then(Value::as_bool) == Some(false) {
         return Err("the referenced Part Studio is marked inconsistent: its files do not reflect one microversion; fetch a new bundle".into());
     }
+    for key in ["sourceMicroversion", "microversionId"] {
+        super::microversion(manifest, key, text(document, "microversion")?)?;
+    }
     // The checks that need only the host rollback states and the final parts of the
     // referenced studio run before the referenced studio is read.
     let (before, after) = inputs.solid_parts_across(ordinal)?;
