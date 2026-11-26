@@ -69,7 +69,7 @@ mod tests {
         }
 
         let sha256 = Sha256Digest::digest(&[]);
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "nx:hash:digest#1", "sha256": sha256.as_str()
         });
         let row = Row {
@@ -94,7 +94,7 @@ mod tests {
         };
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &row,
-            serde_json::json!({"id": row.id, "toggle": value}),
+            cadmpeg_core::json!({"id": row.id, "toggle": value}),
         );
     }
 
@@ -103,9 +103,9 @@ mod tests {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let expected = "0123456789abcdef0123456789abcdef";
         let identity = ToggleId::try_from(expected.to_owned())?;
-        assert_eq!(json::to_value(&identity)?, serde_json::json!(expected));
+        assert_eq!(json::to_value(&identity)?, cadmpeg_core::json!(expected));
         assert_eq!(
-            json::from_value::<ToggleId>(serde_json::json!(expected))?,
+            json::from_value::<ToggleId>(cadmpeg_core::json!(expected))?,
             identity
         );
         for invalid in [
@@ -116,7 +116,7 @@ mod tests {
             "é".repeat(16),
         ] {
             assert!(ToggleId::try_from(invalid.clone()).is_err());
-            assert!(json::from_value::<ToggleId>(serde_json::json!(invalid)).is_err());
+            assert!(json::from_value::<ToggleId>(cadmpeg_core::json!(invalid)).is_err());
         }
         Ok(())
     }

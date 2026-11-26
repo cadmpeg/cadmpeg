@@ -204,7 +204,7 @@ fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
             super::MapModeIndex::try_from(expected.as_str()).expect("text index"),
             mode
         );
-        let wire = serde_json::json!(expected);
+        let wire = cadmpeg_core::json!(expected);
         assert_eq!(json::to_value(mode).expect("serialize index"), wire);
         assert_eq!(
             json::from_value::<super::MapModeIndex>(wire).expect("deserialize index"),
@@ -233,7 +233,7 @@ fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
     ] {
         assert!(super::MapModeIndex::try_from(value.as_str()).is_err());
         let mut invalid = wire.clone();
-        invalid["map_mode"] = serde_json::json!(value);
+        invalid["map_mode"] = cadmpeg_core::json!(value);
         let error = json::from_value::<crate::native::AttachmentRecord>(invalid)
             .expect_err("invalid map mode at the record wire boundary");
         assert!(error.to_string().contains("map_mode"));

@@ -15,7 +15,8 @@ mod sweep;
 mod thin;
 pub(super) mod topology;
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
@@ -1029,12 +1030,12 @@ fn annotate(
             continue;
         }
         let sketch_id = id("sketch", native);
-        if model
+        if let Some(sketch) = model
             .ir
             .model
             .sketches
             .iter()
-            .any(|s| s.id.as_str() == sketch_id)
+            .find(|s| s.id.as_str() == sketch_id)
         {
             let queries = features::queries(source, "sketchPlane").unwrap_or(&[]);
             let inferred = queries.iter().all(|q| {
@@ -1050,7 +1051,7 @@ fn annotate(
             });
             annotations
                 .field_exactness(
-                    &sketch_id,
+                    &sketch.id,
                     "placement",
                     if inferred {
                         Exactness::Inferred
@@ -1065,10 +1066,9 @@ fn annotate(
     // The side is marked on the restated note, so the rest of the design
     // `definition` keeps its mark.
     for feature in &model.ir.design.features {
-        let id = feature.id.as_str();
-        if assumed_sides.contains(id) {
+        if assumed_sides.contains(feature.id.as_str()) {
             annotations
-                .field_exactness(id, thin::SIDE, Exactness::Inferred)
+                .field_exactness(&feature.id, thin::SIDE, Exactness::Inferred)
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }

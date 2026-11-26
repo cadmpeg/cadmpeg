@@ -139,7 +139,7 @@ mod tests {
             let decoded = json::from_value::<super::DatumCsysSlot>(value.into());
             assert_eq!(decoded.is_ok(), value < 8);
             if let Ok(slot) = decoded {
-                assert_eq!(json::to_value(slot).unwrap(), serde_json::json!(value));
+                assert_eq!(json::to_value(slot).unwrap(), cadmpeg_core::json!(value));
             }
         }
     }

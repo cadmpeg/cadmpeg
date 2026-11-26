@@ -1673,6 +1673,14 @@ SECOND_DESERIALIZER = re.compile(
     r"|\bserde_json\s*::\s*\{[^}]*\bfrom_(?:value|slice)\b"
     r"|\bDeserializer\s*::\s*from_slice\b"
 )
+# `serde_json::json!` and `serde_json::to_value` write a typed value through
+# `serde_json`'s `Value` serializer, which compiles the type's whole write tree
+# once more. `cadmpeg_core::json!` and `cadmpeg_core::serde_erase::json`
+# write it through `SerAdapter`.
+SECOND_SERIALIZER = re.compile(
+    r"\bserde_json\s*::\s*(?:json\s*!|to_value\b)"
+    r"|\bserde_json\s*::\s*\{[^}]*\b(?:json|to_value)\b[^}]*\}"
+)
 # The wire types whose read tree is the IR's own: reading one through a
 # `serde_json::Value` (or any deserializer but the one its reader is given)
 # compiles that tree again.
@@ -1710,6 +1718,24 @@ def scan_json_reads(sources: dict[Path, str]) -> list[Finding]:
                     "Read typed JSON with serde_json::from_str or cadmpeg_core::serde_erase::json "
                     "(from_value, from_slice); another deserializer type compiles the type's read tree again.",
                 ))
+    return findings
+
+
+def scan_json_writes(sources: dict[Path, str]) -> list[Finding]:
+    """Report a typed JSON value write through `serde_json`'s `Value` serializer."""
+    findings: list[Finding] = []
+    for path, source in sources.items():
+        if "serde_json" not in source or relative_path(path).startswith("crates/cadmpeg-derive/"):
+            continue
+        code = mask_rust_non_code(source)
+        for match in SECOND_SERIALIZER.finditer(code):
+            findings.append(Finding(
+                "json_second_serializer",
+                relative_path(path),
+                code.count("\n", 0, match.start()) + 1,
+                "Build JSON with cadmpeg_core::json! and cadmpeg_core::serde_erase::json::to_value; "
+                "serde_json's Value serializer compiles the type's write tree again.",
+            ))
     return findings
 
 
@@ -2476,6 +2502,7 @@ SOURCE_SCANS = {
     "measurement_dependency": lambda sources: scan_measurement_dependency(),
     "script_tests": lambda sources: scan_script_tests(),
     "json_reads": lambda sources: scan_json_reads(sources),
+    "json_writes": lambda sources: scan_json_writes(sources),
 }
 _TASK_SOURCES: dict[Path, str] = {}
 

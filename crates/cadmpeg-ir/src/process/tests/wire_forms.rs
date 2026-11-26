@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The §2.5 wire forms of the process types.
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 use super::fixtures::{self, constant, parameter, text, uuid};
 use super::{read_desktop, refuses, to_value};

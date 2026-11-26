@@ -11,7 +11,7 @@ use cadmpeg_core::serde_erase::json;
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
 
 fn group(scope_record_index: u32, record_index: u32) -> DesignConstructionOperandGroup {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("{STREAM}:group#{scope_record_index}-{record_index}"),
         "scope_record_index": scope_record_index,
         "scope_reference_ordinal": 0,

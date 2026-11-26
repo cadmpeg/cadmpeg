@@ -422,7 +422,7 @@ fn a_nurbs_surface_states_its_pole_counts_in_its_control_grid() {
     );
 
     let mut restated = wire.clone();
-    restated["u_count"] = serde_json::json!(2);
+    restated["u_count"] = cadmpeg_core::json!(2);
     let error = json::from_value::<NurbsSurface>(restated)
         .unwrap_err()
         .to_string();
@@ -430,7 +430,7 @@ fn a_nurbs_surface_states_its_pole_counts_in_its_control_grid() {
 
     let mut ragged = wire;
     ragged["poles"]["rows"][1] =
-        serde_json::json!([{"point": {"x": 0.0, "y": 0.0, "z": 0.0}, "weight": 1.0}]);
+        cadmpeg_core::json!([{"point": {"x": 0.0, "y": 0.0, "z": 0.0}, "weight": 1.0}]);
     let error = json::from_value::<NurbsSurface>(ragged)
         .unwrap_err()
         .to_string();
@@ -526,7 +526,7 @@ fn bspline_surface_numeric_admission_and_transactional_edit() {
         .is_err());
     assert_eq!(surface, original);
     let mut wire = json::to_value(&surface).unwrap();
-    wire["u_knots"] = serde_json::json!([0.0, 1.0, 0.0, 1.0]);
+    wire["u_knots"] = cadmpeg_core::json!([0.0, 1.0, 0.0, 1.0]);
     assert!(json::from_value::<BsplineSurface>(wire).is_err());
     surface
         .try_map_control_points(|_, point| {
@@ -756,8 +756,8 @@ fn a_bspline_surface_holds_its_admitted_knots_and_poles() {
         FinitePoint3::new(Point3::new(1.0, 1.0, 2.0)).unwrap()
     );
     let wire = json::to_value(&surface).unwrap();
-    assert_eq!(wire["u_knots"], serde_json::json!(knots));
-    assert_eq!(wire["control_points"], serde_json::json!(points));
+    assert_eq!(wire["u_knots"], cadmpeg_core::json!(knots));
+    assert_eq!(wire["control_points"], cadmpeg_core::json!(points));
     assert_eq!(json::from_value::<BsplineSurface>(wire).unwrap(), surface);
 }
 
@@ -1200,7 +1200,7 @@ fn surface_cache_fit_round_trips_and_rejects_invalid_values() {
         json::from_value::<NurbsSurface>(wire.clone()).expect("surface"),
         surface
     );
-    for invalid in [serde_json::Value::Null, serde_json::json!(-1.0)] {
+    for invalid in [serde_json::Value::Null, cadmpeg_core::json!(-1.0)] {
         let mut wire = wire.clone();
         wire["cache_fit_tolerance"] = invalid;
         assert!(json::from_value::<NurbsSurface>(wire).is_err());

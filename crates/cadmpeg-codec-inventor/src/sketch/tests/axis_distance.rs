@@ -15,14 +15,14 @@ use cadmpeg_core::serde_erase::json;
 /// reference 5.
 fn as_distance(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
     let mut wire = json::to_value(relation).expect("relation wire");
-    wire["kind"] = serde_json::json!({
+    wire["kind"] = cadmpeg_core::json!({
         "form": "distance",
         "first": wire["kind"]["first"].clone(),
         "second": wire["kind"]["second"].clone(),
         "value": 0,
         "values": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     });
-    wire["header"]["parameter"] = serde_json::json!({"index": 5, "qualified": true});
+    wire["header"]["parameter"] = cadmpeg_core::json!({"index": 5, "qualified": true});
     json::from_value(wire).expect("distance wire")
 }
 

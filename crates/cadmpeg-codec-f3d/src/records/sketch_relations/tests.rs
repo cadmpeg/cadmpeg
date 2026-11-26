@@ -7,7 +7,7 @@ use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn native_rectangular_pattern_refuses_nonunit_direction() {
-    let value = serde_json::json!({
+    let value = cadmpeg_core::json!({
         "evaluated_count": 2,
         "count_parameter": 3,
         "direction": [2.0, 0.0, 0.0],
@@ -79,7 +79,7 @@ fn sketch_relation_runs_preserve_wire_and_reject_conflicting_resolved_indices() 
     for field in ["resolved_members", "resolved_return_members"] {
         let value: serde_json::Value = serde_json::from_str(&resolved).unwrap();
         let mut mismatch = value.clone();
-        mismatch[field][0]["record_index"] = serde_json::json!(3);
+        mismatch[field][0]["record_index"] = cadmpeg_core::json!(3);
         assert!(json::from_value::<SketchRelation>(mismatch)
             .unwrap_err()
             .to_string()
@@ -126,12 +126,12 @@ fn sketch_relation_admission_bounds_every_reference_and_preserves_failed_edits()
         for offset in [77_u32, u32::MAX] {
             let mut wire = json::to_value(&relation).unwrap();
             if field == "owner_reference_offset" {
-                wire[field] = serde_json::json!(offset);
+                wire[field] = cadmpeg_core::json!(offset);
             } else if field == "auxiliary_reference_offsets" {
-                wire["auxiliary_references"] = serde_json::json!([1]);
-                wire[field] = serde_json::json!([offset]);
+                wire["auxiliary_references"] = cadmpeg_core::json!([1]);
+                wire[field] = cadmpeg_core::json!([offset]);
             } else {
-                wire[field][0] = serde_json::json!(offset);
+                wire[field][0] = cadmpeg_core::json!(offset);
             }
             assert!(json::from_value::<SketchRelation>(wire)
                 .unwrap_err()

@@ -369,21 +369,21 @@ mod tests {
         let frame: FeatureOperationCommonFrame = serde_json::from_str(COMMON).unwrap();
         assert_eq!(json::to_string(&frame).unwrap(), COMMON);
         for (field, value) in [
-            ("indices", serde_json::json!([0, 4098, 0])),
-            ("marker", serde_json::json!("010101")),
-            ("legacy_inactive_modules", serde_json::json!(true)),
-            ("modifies_parasolid_data", serde_json::json!(false)),
-            ("split_tracking_data", serde_json::json!("0000")),
-            ("group_count", serde_json::json!(8)),
-            ("raw_local_ordinal", serde_json::json!("8001")),
-            ("raw_object_index", serde_json::json!("00")),
-            ("byte_len", serde_json::json!(21)),
-            ("index_source_offsets", serde_json::json!([100, 102, 103])),
-            ("state_source_offset", serde_json::json!(109)),
-            ("local_ordinal_source_offset", serde_json::json!(117)),
-            ("object_index_source_offset", serde_json::json!(119)),
-            ("source_offset", serde_json::json!(u64::MAX)),
-            ("data_block", serde_json::json!("block")),
+            ("indices", cadmpeg_core::json!([0, 4098, 0])),
+            ("marker", cadmpeg_core::json!("010101")),
+            ("legacy_inactive_modules", cadmpeg_core::json!(true)),
+            ("modifies_parasolid_data", cadmpeg_core::json!(false)),
+            ("split_tracking_data", cadmpeg_core::json!("0000")),
+            ("group_count", cadmpeg_core::json!(8)),
+            ("raw_local_ordinal", cadmpeg_core::json!("8001")),
+            ("raw_object_index", cadmpeg_core::json!("00")),
+            ("byte_len", cadmpeg_core::json!(21)),
+            ("index_source_offsets", cadmpeg_core::json!([100, 102, 103])),
+            ("state_source_offset", cadmpeg_core::json!(109)),
+            ("local_ordinal_source_offset", cadmpeg_core::json!(117)),
+            ("object_index_source_offset", cadmpeg_core::json!(119)),
+            ("source_offset", cadmpeg_core::json!(u64::MAX)),
+            ("data_block", cadmpeg_core::json!("block")),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(COMMON).unwrap();
             wire[field] = value;
@@ -400,26 +400,26 @@ mod tests {
     #[test]
     fn common_frame_preserves_delete_prefix_unknown_flags_and_resolved_target() {
         let mut wire: serde_json::Value = serde_json::from_str(COMMON).unwrap();
-        wire["indices"] = serde_json::json!([0, 0, 0]);
-        wire["raw_indices"] = serde_json::json!(["00", "00", "00"]);
-        wire["marker"] = serde_json::json!("010101");
-        wire["byte_len"] = serde_json::json!(18);
-        wire["index_source_offsets"] = serde_json::json!([100, 101, 102]);
-        wire["state_source_offset"] = serde_json::json!(106);
-        wire["local_ordinal_source_offset"] = serde_json::json!(114);
-        wire["object_index_source_offset"] = serde_json::json!(116);
-        wire["state"] = serde_json::json!("0000000203050609");
+        wire["indices"] = cadmpeg_core::json!([0, 0, 0]);
+        wire["raw_indices"] = cadmpeg_core::json!(["00", "00", "00"]);
+        wire["marker"] = cadmpeg_core::json!("010101");
+        wire["byte_len"] = cadmpeg_core::json!(18);
+        wire["index_source_offsets"] = cadmpeg_core::json!([100, 101, 102]);
+        wire["state_source_offset"] = cadmpeg_core::json!(106);
+        wire["local_ordinal_source_offset"] = cadmpeg_core::json!(114);
+        wire["object_index_source_offset"] = cadmpeg_core::json!(116);
+        wire["state"] = cadmpeg_core::json!("0000000203050609");
         wire.as_object_mut()
             .unwrap()
             .remove("legacy_inactive_modules");
         wire.as_object_mut()
             .unwrap()
             .remove("modifies_parasolid_data");
-        wire["split_tracking_data"] = serde_json::json!("0506");
-        wire["group_count"] = serde_json::json!(9);
-        wire["object_index"] = serde_json::json!(0);
-        wire["raw_object_index"] = serde_json::json!("00");
-        wire["data_block"] = serde_json::json!("block");
+        wire["split_tracking_data"] = cadmpeg_core::json!("0506");
+        wire["group_count"] = cadmpeg_core::json!(9);
+        wire["object_index"] = cadmpeg_core::json!(0);
+        wire["raw_object_index"] = cadmpeg_core::json!("00");
+        wire["data_block"] = cadmpeg_core::json!("block");
         let frame: FeatureOperationCommonFrame = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(&frame).unwrap(), wire);
     }
@@ -433,7 +433,7 @@ mod tests {
             let frame: FeatureOperationTerminalFrame = serde_json::from_str(&wire).unwrap();
             assert_eq!(json::to_string(&frame).unwrap(), wire);
             let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
-            invalid["object_index_source_offset"] = serde_json::json!(103);
+            invalid["object_index_source_offset"] = cadmpeg_core::json!(103);
             assert!(json::from_value::<FeatureOperationTerminalFrame>(invalid)
                 .unwrap_err()
                 .to_string()

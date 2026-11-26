@@ -3,7 +3,8 @@
 use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Write};
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use super::projection::{face_sketch_bundle, kinds, read};
 

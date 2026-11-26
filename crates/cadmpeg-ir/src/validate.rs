@@ -800,7 +800,7 @@ mod tests {
             assert_eq!(json::from_value::<SplitBodyTool>(wire).expect("tool"), tool);
         }
         assert!(json::from_value::<SplitBodyTool>(
-            serde_json::json!({"kind": "planes", "value": []})
+            cadmpeg_core::json!({"kind": "planes", "value": []})
         )
         .is_err());
     }

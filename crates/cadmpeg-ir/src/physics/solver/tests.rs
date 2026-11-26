@@ -58,11 +58,11 @@ fn solver_settings_round_trip_through_json() {
     assert_eq!(json["target"]["entity"]["kind"], "joint");
     assert_eq!(
         json["values"]["physxJoint:armature"]["dimension"],
-        serde_json::json!({"length": 2, "mass": 1, "angle": 0, "time": 0})
+        cadmpeg_core::json!({"length": 2, "mass": 1, "angle": 0, "time": 0})
     );
     assert_eq!(
         json["values"]["physxJoint:jointFriction"]["dimension"],
-        serde_json::json!({"length": 0, "mass": 0, "angle": 0, "time": 0})
+        cadmpeg_core::json!({"length": 0, "mass": 0, "angle": 0, "time": 0})
     );
     assert_eq!(json::from_value::<SolverSettings>(json).unwrap(), record);
 }

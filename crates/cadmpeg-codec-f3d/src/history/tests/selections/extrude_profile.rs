@@ -19,7 +19,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         let member_offsets = (0..members.len())
             .map(|index| u64_from_index(index) * 11)
             .collect::<Vec<_>>();
-        json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+        json::from_value::<DesignConstructionOperandGroup>(cadmpeg_core::json!({
             "id": format!(
                 "f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"
             ),
@@ -66,7 +66,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         prefix
     };
     let face_operand = |record_index, group_record_index, scope_reference_ordinal| {
-        let mut operand = json::from_value::<DesignFaceOperand>(serde_json::json!({
+        let mut operand = json::from_value::<DesignFaceOperand>(cadmpeg_core::json!({
             "id": format!("f3d:Design/BulkStream.dat:design-face-operand#{record_index}"),
             "scope_record_index": 42,
             "scope_reference_ordinal": scope_reference_ordinal,

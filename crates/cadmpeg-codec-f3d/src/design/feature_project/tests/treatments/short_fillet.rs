@@ -117,7 +117,7 @@ fn short_fillet_pairs_unclaimed_scope_tangency_weight() {
 
 #[test]
 fn short_fillet_resolves_edges_from_its_constant_radius() {
-    let identity = json::from_value(serde_json::json!({
+    let identity = json::from_value(cadmpeg_core::json!({
         "id": "f3d:native/BulkStream.dat:edge-identity#200",
         "scope_record_index": 12,
         "group_record_index": 100,
