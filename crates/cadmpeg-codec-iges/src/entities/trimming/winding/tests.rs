@@ -822,11 +822,12 @@ fn sampled_v_extremes(shape: &(PcurveGeometry, [f64; 2])) -> [f64; 2] {
     })
 }
 
-/// For each row of [`knot_shapes`], without and with weights, each of the
-/// two intervals of the stated extremes on `v` contains the lowest and the
-/// highest evaluated point of the curve over its range. Both ends of each
-/// interval are checked, as `strip_windings` reads both. Where the degree
-/// is two or less both ends are the exact extreme.
+/// For each row of [`knot_shapes`], without and with weights, the stated
+/// interval of the lowest `v` contains the lowest evaluated point of the
+/// curve over its range, and the stated interval of the highest `v` the
+/// highest. Both ends of each interval are checked, as `strip_windings`
+/// reads both. Where the degree is two or less both ends are the exact
+/// extreme.
 #[test]
 fn the_extremes_of_each_knot_shape_with_and_without_weights_contain_the_curve() {
     for (name, degree, knots, v, weights, range) in knot_shapes() {
