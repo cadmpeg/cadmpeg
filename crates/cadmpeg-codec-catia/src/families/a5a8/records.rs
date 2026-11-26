@@ -1923,9 +1923,22 @@ fn a5_surface(
         v_distinct[0],
         v_distinct[v_distinct.len() - 1],
     ];
-    if !tail.fixed_suffix
-        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
-    {
+    let u_last_span = u_distinct[u_distinct.len() - 1] - u_distinct[u_distinct.len() - 2];
+    let v_last_span = v_distinct[v_distinct.len() - 1] - v_distinct[v_distinct.len() - 2];
+    let u_scale = 1.0_f64
+        .max(u_distinct[u_distinct.len() - 1].abs())
+        .max(u_distinct[u_distinct.len() - 2].abs());
+    let v_scale = 1.0_f64
+        .max(v_distinct[v_distinct.len() - 1].abs())
+        .max(v_distinct[v_distinct.len() - 2].abs());
+    const TERMINAL_SPAN_DOMAIN_TOLERANCE: f64 = 1.0e-6;
+    let matches_terminal_span = parameters[0] == 0.0
+        && (parameters[1] - u_last_span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * u_scale
+        && parameters[2] == 0.0
+        && (parameters[3] - v_last_span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * v_scale;
+    let identity_chart = (parameters[..4] == full_limits || matches_terminal_span)
+        && parameters[4..] == [1.0, 0.0, 1.0, 0.0];
+    if !tail.fixed_suffix && !identity_chart {
         return Ok(None);
     }
     let control_points = grid_rows(control_points, v_count)?;
@@ -1950,9 +1963,7 @@ fn a5_surface(
             bytes: frame_bytes,
         },
     );
-    if geometry.is_some()
-        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
-    {
+    if geometry.is_some() && !identity_chart {
         refusal.push_surface_parameters_not_transferred(pos, parameters);
     }
     let extrapolation = tail.descriptors.filter(|descriptors| {
