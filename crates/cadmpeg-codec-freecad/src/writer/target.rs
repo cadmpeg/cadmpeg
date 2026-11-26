@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
@@ -54,7 +54,6 @@ pub(super) struct Resolution<'a> {
     /// Names of the archive members `omitted` already names by their entry
     /// record.
     omitted_members: HashSet<String>,
-    limits: ResourceLimits,
 }
 
 impl<'a> Resolution<'a> {
@@ -80,10 +79,6 @@ impl<'a> Resolution<'a> {
 
     pub(super) const fn target(&self) -> &DialectId {
         &self.target
-    }
-
-    pub(super) const fn limits(&self) -> ResourceLimits {
-        self.limits
     }
 
     pub(super) fn document_xml(&self) -> &str {
@@ -320,8 +315,7 @@ pub(super) fn retained_baseline<'a>(
     let Some(document_xml) = document_xml else {
         return Ok(None);
     };
-    let Some((document, schema_version, vocabulary)) =
-        read_declaration(document_xml.data(), ctx.policy())?
+    let Some((document, schema_version, vocabulary)) = read_declaration(ctx, document_xml.data())?
     else {
         return Ok(None);
     };
@@ -339,7 +333,6 @@ pub(super) fn retained_baseline<'a>(
         entries,
         omitted,
         omitted_members,
-        limits: ctx.policy().limits,
     }))
 }
 
@@ -370,16 +363,18 @@ fn entry_names(
 /// The document facts, `SchemaVersion`, and vocabulary that `bytes` declare,
 /// or `None` where they do not read as a `Document.xml` the decoder admits.
 fn read_declaration(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    policy: &DecodePolicy,
 ) -> Result<Option<(DocumentFacts, String, Vocabulary)>, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, policy)?;
-    let declared = crate::container::admit_document(&ctx, bytes).and_then(|xml| {
-        let (document, schema_version) = crate::container::parse_document(&xml, &mut Vec::new())?;
-        let vocabulary = Vocabulary::from_declaration(&schema_version)?;
-        Ok((document, schema_version, vocabulary))
-    });
+    let declared = std::str::from_utf8(bytes)
+        .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))
+        .and_then(|text| super::parse_retained(ctx, text, super::DOCUMENT_XML))
+        .and_then(|xml| {
+            let (document, schema_version) =
+                crate::container::parse_document(&xml, &mut Vec::new())?;
+            let vocabulary = Vocabulary::from_declaration(&schema_version)?;
+            Ok((document, schema_version, vocabulary))
+        });
     match declared {
         Ok(declared) => Ok(Some(declared)),
         Err(error) => recover(error).map(|()| None),

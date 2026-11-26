@@ -12,7 +12,7 @@ pub(crate) mod target;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{Seek, Write};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, evaluation_stale, native_records_omitted};
 use cadmpeg_ir::native::NativeNamespace;
@@ -304,10 +304,10 @@ fn written_document(
         kept.extend(patch.unwritten);
         let emptied = emptied_owners(properties, &unheld, &kept);
         let (marked, stale) = marked_objects(resolution, objects, &patch.changed_inputs, &emptied);
-        let Some(xml) = with_touches(resolution, patch.xml, &marked)? else {
+        let Some(xml) = with_touches(ctx, resolution, patch.xml, &marked)? else {
             break;
         };
-        let Some(graph) = read_back(&xml, resolution, true)? else {
+        let Some(graph) = read_back(ctx, &xml, resolution, true)? else {
             break;
         };
         let differing = differing_properties(properties, &graph, &kept, &patch.edited, &held);
@@ -352,7 +352,7 @@ fn stored_document(
 ) -> Result<WrittenDocument, CodecError> {
     let (objects, extensions, properties) = expected;
     let source = resolution.document_xml();
-    if let Some(stored) = read_back(source, resolution, false)? {
+    if let Some(stored) = read_back(ctx, source, resolution, false)? {
         let (stored_properties, unheld) = without_entries(&stored.properties, removed);
         let kept = stored_properties
             .iter()
@@ -363,8 +363,8 @@ fn stored_document(
         let emptied = emptied_owners(&stored_properties, &unheld, &patch.unwritten);
         let (stored_marked, _) =
             marked_objects(resolution, &stored.objects, &HashSet::new(), &emptied);
-        if let Some(xml) = with_touches(resolution, patch.xml, &stored_marked)? {
-            if let Some(graph) = read_back(&xml, resolution, true)? {
+        if let Some(xml) = with_touches(ctx, resolution, patch.xml, &stored_marked)? {
+            if let Some(graph) = read_back(ctx, &xml, resolution, true)? {
                 let (marked, stale) =
                     marked_objects(resolution, objects, &HashSet::new(), &emptied);
                 let unheld = unheld.difference(&patch.unwritten).cloned().collect();
@@ -431,6 +431,7 @@ fn marked_objects(
 /// `xml` with the `Touched` marks of `marked` written, where the schema has
 /// the mark.
 fn with_touches(
+    ctx: &DecodeContext<'_>,
     resolution: &Resolution<'_>,
     xml: String,
     marked: &[ObjectRecord],
@@ -438,7 +439,7 @@ fn with_touches(
     if resolution.vocabulary() == Vocabulary::Features {
         Ok(Some(xml))
     } else {
-        patch_object_touches(&xml, marked, resolution.limits())
+        patch_object_touches(ctx, &xml, marked)
     }
 }
 
@@ -484,16 +485,12 @@ fn without_entries(
 /// not read. With `resolve`, each property's archive entries are resolved
 /// against the entries the output holds.
 fn read_back(
+    ctx: &DecodeContext<'_>,
     xml: &str,
     resolution: &Resolution<'_>,
     resolve: bool,
 ) -> Result<Option<Graph>, CodecError> {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy {
-        limits: resolution.limits(),
-    };
-    let (ctx, _) = DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)?;
-    let graph = crate::container::admit_document(&ctx, xml.as_bytes()).and_then(|admitted| {
+    let graph = parse_retained(ctx, xml, DOCUMENT_XML).and_then(|admitted| {
         let mut graph = crate::persistence::parse_document(&admitted, resolution.vocabulary())?;
         if !resolve {
             return Ok(graph);
@@ -510,7 +507,7 @@ fn read_back(
             );
         }
         crate::persistence::resolve_side_entries(
-            &ctx,
+            ctx,
             &mut graph.properties,
             &views,
             &mut graph.losses,
@@ -695,14 +692,11 @@ fn same_property_semantics(left: &PropertyRecord, right: &PropertyRecord) -> boo
 }
 
 fn patch_object_touches(
+    ctx: &DecodeContext<'_>,
     source: &str,
     objects: &[ObjectRecord],
-    limits: ResourceLimits,
 ) -> Result<Option<String>, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy { limits })?;
-    let xml = match ctx.parse_xml(source, "FreeCAD object declarations") {
+    let xml = match parse_retained(ctx, source, "FreeCAD object declarations") {
         Ok(xml) => xml,
         Err(error) => return recover(error).map(|()| None),
     };
@@ -807,16 +801,18 @@ fn retained_span(source: &str, property: &PropertyRecord, cursor: usize) -> Opti
     (start >= cursor && source.get(start..end) == Some(property.xml.text())).then_some((start, end))
 }
 
+const DOCUMENT_XML: &str = "FreeCAD document XML tree";
 const RETAINED_PROPERTY: &str = "FreeCAD retained property XML";
 const RETAINED_VALUE: &str = "FreeCAD retained property value XML";
 
-/// Parse retained XML under the write session's limits.
+/// Parse XML the write holds as input of the write's session, so that every
+/// ceiling of the caller's limits refuses it with `ResourceLimit`.
 fn parse_retained<'input>(
     ctx: &DecodeContext<'_>,
-    wrapped: &'input str,
+    text: &'input str,
     operation: &'static str,
 ) -> Result<roxmltree::Document<'input>, CodecError> {
-    ctx.parse_xml(wrapped, operation)
+    ctx.parse_input_xml(text, operation)
         .map_err(|error| match error {
             CodecError::Malformed(error) => {
                 CodecError::malformed(format_args!("invalid {operation}: {error}"))

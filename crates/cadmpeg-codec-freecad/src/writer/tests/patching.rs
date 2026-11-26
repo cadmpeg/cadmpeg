@@ -363,19 +363,19 @@ fn xml_serialization_preserves_normalized_whitespace() {
     assert_eq!(serialized.matches("&#13;").count(), 2);
 }
 
-/// The retained property XML parses in the encode session, so the caller's
-/// depth ceiling refuses a value nested past it. Under the default ceiling the
-/// same document writes.
-#[test]
-fn the_caller_depth_limit_governs_retained_value_xml() {
-    const CEILING: u64 = 64;
-    let decoded = FcstdCodec
+fn decoded_product() -> cadmpeg_ir::DecodeResult {
+    FcstdCodec
         .decode(
             &mut Cursor::new(CORE_DESIGN_PRODUCT),
             &DecodeOptions::default(),
         )
-        .expect("decode source");
-    let mut edited = decoded.ir().clone();
+        .expect("decode source")
+}
+
+/// The decoded product with the retained XML of its document `Label` value
+/// replaced by `raw_xml`.
+fn with_label_value(raw_xml: String) -> cadmpeg_ir::CadIr {
+    let mut edited = decoded_product().ir().clone();
     let mut properties = native_arena::<PropertyRecord>(&edited, "properties");
     let label = properties
         .iter_mut()
@@ -386,13 +386,38 @@ fn the_caller_depth_limit_governs_retained_value_xml() {
     let crate::native::PropertyBody::Persisted { values, .. } = &mut label.body else {
         panic!("the document Label persists its value");
     };
+    values[0].raw_xml = raw_xml;
+    replace_arena(&mut edited, "properties", &properties);
+    edited
+}
+
+/// The resource refusal of a write of `ir` under `limits`.
+fn write_refusal(
+    ir: &cadmpeg_ir::CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> cadmpeg_core::decode::ResourceLimit {
+    let refused = FcstdCodec
+        .plan(EncodeInput::new(ir, None).with_limits(limits))
+        .and_then(|plan| plan.write_to(&mut Vec::new()));
+    let Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)) = refused else {
+        panic!("a ceiling refuses the write: {refused:?}");
+    };
+    assert_eq!(limit.scope, cadmpeg_core::decode::LimitScope::Session);
+    limit
+}
+
+/// The retained property XML parses in the encode session, so the caller's
+/// depth ceiling refuses a value nested past it. Under the default ceiling the
+/// same document writes.
+#[test]
+fn the_caller_depth_limit_governs_retained_value_xml() {
+    const CEILING: u64 = 64;
     let nesting = usize::try_from(2 * CEILING).expect("nesting fits usize");
-    values[0].raw_xml = format!(
+    let edited = with_label_value(format!(
         r#"<String value="nested">{}{}</String>"#,
         "<Level>".repeat(nesting),
         "</Level>".repeat(nesting)
-    );
-    replace_arena(&mut edited, "properties", &properties);
+    ));
 
     let mut bytes = Vec::new();
     FcstdCodec
@@ -402,18 +427,57 @@ fn the_caller_depth_limit_governs_retained_value_xml() {
 
     let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
     limits.max_recursion_depth = CEILING;
-    let refused = FcstdCodec
-        .plan(EncodeInput::new(&edited, None).with_limits(limits))
-        .and_then(|plan| plan.write_to(&mut Vec::new()));
-    let Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)) = refused else {
-        panic!("the caller ceiling refuses the nested value: {refused:?}");
-    };
+    let limit = write_refusal(&edited, limits);
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::RecursionDepth
     );
     assert_eq!(limit.limit, CEILING);
     assert_eq!(limit.operation, "FreeCAD retained property value XML");
+}
+
+/// A tag with more attributes than the per-expansion admission bounds is a
+/// ceiling of the write's session, not a malformed value: the write refuses.
+#[test]
+fn a_retained_value_tag_past_the_attribute_bound_refuses_the_write() {
+    use std::fmt::Write as _;
+    let attributes = (0..=256).fold(String::new(), |mut tag, index| {
+        write!(tag, r#" a{index}="""#).expect("write attribute");
+        tag
+    });
+    let edited = with_label_value(format!(r#"<String value="wide"{attributes}/>"#));
+    let limit = write_refusal(&edited, cadmpeg_core::decode::ResourceLimits::desktop());
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::DecompressedBytes
+    );
+    assert_eq!(limit.additional, u64::MAX);
+    assert_eq!(limit.operation, "FreeCAD retained property value XML");
+}
+
+/// Each parse of retained XML charges its text to the input of the write's
+/// one session. A ceiling of the stored `Document.xml`'s length admits the
+/// declaration read, and the first property parse after it passes the
+/// ceiling: the write refuses although no single text exceeds it.
+#[test]
+fn the_input_ceiling_bounds_every_parse_of_one_write() {
+    let decoded = decoded_product();
+    let document_xml = native_arena::<crate::native::EntryRecord>(decoded.ir(), "entries")
+        .into_iter()
+        .find(|entry| entry.name() == "Document.xml")
+        .expect("the retained Document.xml")
+        .data()
+        .len();
+    let document_xml = u64::try_from(document_xml).expect("length fits u64");
+    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+    limits.max_input_bytes = document_xml;
+    let limit = write_refusal(decoded.ir(), limits);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::InputBytes
+    );
+    assert_eq!((limit.limit, limit.used), (document_xml, document_xml));
+    assert_eq!(limit.operation, "FreeCAD retained property XML");
 }
 
 #[test]
