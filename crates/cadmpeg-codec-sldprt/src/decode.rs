@@ -3800,6 +3800,10 @@ fn build_geometry_ir(
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    crate::resolved_features::walked_patterns::enrich_circular_patterns(
+        &mut histories,
+        &walked_patterns,
+    );
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
         .transpose()?;
@@ -3820,7 +3824,6 @@ fn build_geometry_ir(
         DesignHistoryInput {
             histories: &histories,
             lanes: &lanes,
-            walked_patterns: &walked_patterns,
             pmi_dimensions: &pmi_dimensions,
         },
         scan,
@@ -3978,11 +3981,10 @@ fn build_geometry_ir(
         &sketches,
         &brep.surfaces,
     );
-    crate::resolved_features::bindings::bind_pattern_inputs_walked(
+    crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &histories,
         lanes,
-        &walked_patterns,
     )?;
     crate::resolved_features::bindings::bind_sweep_profile_inputs(&mut ir.model.features);
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
@@ -5345,6 +5347,10 @@ fn build_metadata_ir(
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    crate::resolved_features::walked_patterns::enrich_circular_patterns(
+        &mut histories,
+        &walked_patterns,
+    );
     let rollback = part
         .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
         .transpose()?;
@@ -5403,7 +5409,6 @@ fn build_metadata_ir(
         DesignHistoryInput {
             histories: &histories,
             lanes: &lanes,
-            walked_patterns: &walked_patterns,
             pmi_dimensions: &pmi_dimensions,
         },
         scan,
@@ -5546,11 +5551,10 @@ fn build_metadata_ir(
         &ir.model.sketches,
         &ir.geometry.surfaces,
     );
-    crate::resolved_features::bindings::bind_pattern_inputs_walked(
+    crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &histories,
         lanes,
-        &walked_patterns,
     )?;
     crate::resolved_features::bindings::bind_sweep_profile_inputs(&mut ir.model.features);
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
@@ -5878,7 +5882,6 @@ fn build_metadata_ir(
 struct DesignHistoryInput<'a> {
     histories: &'a [crate::records::FeatureHistory],
     lanes: &'a [crate::records::FeatureInputLane],
-    walked_patterns: &'a crate::resolved_features::walked_patterns::WalkedPatterns,
     pmi_dimensions: &'a [crate::records::PmiDimension],
 }
 
@@ -5893,7 +5896,6 @@ fn project_design_history(
     let DesignHistoryInput {
         histories,
         lanes,
-        walked_patterns,
         pmi_dimensions,
     } = input;
     let length_unit = crate::design_v11::length_unit(scan);
@@ -5912,11 +5914,10 @@ fn project_design_history(
         crate::history::project::project_semantic_notes(&semantic_projection)?;
     crate::history::project::project_feature_model(&semantic_projection)?
         .install(&mut ir.model, losses)?;
-    crate::resolved_features::bindings::bind_pattern_inputs_walked(
+    crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,
         &semantic_projection,
         lanes,
-        walked_patterns,
     )?;
     crate::history::configuration::project_compact_and_generated(
         ctx,

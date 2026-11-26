@@ -1,4 +1,4 @@
-use super::{axistail, is_turn_block, turn_block_after_zeros};
+use super::{axistail, is_turn_block, turn_block_after_zeros, M12345};
 use crate::carchive::reader::Reader;
 use crate::carchive::reader::V;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -98,4 +98,34 @@ fn a_version_15000_axis_tail_holds_seven_f64_after_twenty_zero_bytes() {
         DecodeContext::from_root_bytes(&other, &arena, &DecodePolicy::desktop()).expect("context");
     let mut reader = Reader::new(&ctx, &other, start, HashMap::new(), 0, None);
     assert!(axistail(&mut reader).is_err());
+}
+
+#[test]
+fn a_full_handle_block_tail_after_a_version_and_zeros_is_read_whole() {
+    let mut bytes = 15000u32.to_le_bytes().to_vec();
+    bytes.extend([0; 20]);
+    let start = bytes.len();
+    bytes.extend([0, 0, 1, 0, 0, 0, 0, 0, 0, 0]);
+    bytes.extend(127u32.to_le_bytes());
+    bytes.extend([0; 12]);
+    bytes.extend(M12345);
+    bytes.extend([0; 4]);
+    bytes.extend(15000u32.to_le_bytes());
+    bytes.extend([0; 20]);
+    let tail = [0.005, 0.0375, 0.0025, 0.0, 0.0, -1.0, 0.0];
+    for value in tail {
+        bytes.extend(f64::to_le_bytes(value));
+    }
+    bytes.push(0);
+    let end = bytes.len();
+    bytes.extend([0xaa; 4]);
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::desktop()).expect("context");
+    let mut reader = Reader::new(&ctx, &bytes, start, HashMap::new(), 0, None);
+    assert_eq!(
+        axistail(&mut reader),
+        Ok(V::List(tail.map(V::from).to_vec()))
+    );
+    assert_eq!(reader.p, end);
 }

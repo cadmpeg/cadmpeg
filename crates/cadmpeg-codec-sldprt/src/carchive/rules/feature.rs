@@ -90,9 +90,12 @@ pub(crate) const M12345: [u8; 12] = [
     0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
 ];
 
-/// The handle-block version whose axis tail writes twenty zero bytes before
-/// its seven f64 (sldprt.md §2.3).
+/// The handle-block version word whose axis tail writes twenty zero bytes
+/// before its seven f64 (sldprt.md §2.3).
 const SW_VERSION_15000: u32 = 15000;
+
+/// How far an axis tail's direction may lie from unit length.
+const EPS_AXIS_TAIL_UNIT: f64 = 1e-9;
 
 /// The shared rule state.
 #[derive(Debug, Clone)]
@@ -498,6 +501,8 @@ pub(crate) fn axistail(r: &mut Reader<'_>) -> Res<V> {
         && r.pu32(r.p - 24)
             .is_ok_and(|version| version == SW_VERSION_15000)
         && r.zeros(r.p - 20, 20)
+        && unit_direction_at(r, r.p + 32)
+        && r.eq(r.p + 56, &[0])
     {
         let mut ax = Vec::new();
         for _ in 0..7 {
@@ -541,6 +546,18 @@ pub(crate) fn axistail(r: &mut Reader<'_>) -> Res<V> {
     }
     r.expect_bytes(&[0], "axis u8 0")?;
     Ok(V::List(ax))
+}
+
+/// Whether the three f64 at `at` are a unit direction.
+fn unit_direction_at(r: &Reader<'_>, at: usize) -> bool {
+    let mut square = 0.0;
+    for index in 0..3 {
+        let Ok(value) = r.pf64(at + 8 * index) else {
+            return false;
+        };
+        square += value * value;
+    }
+    (square - 1.0).abs() <= EPS_AXIS_TAIL_UNIT
 }
 
 /// `refblock`: a reference's handle block.
@@ -1606,9 +1623,17 @@ fn units_after_head(r: &mut Reader<'_>, hd: &V) -> Res<()> {
 /// objects the pattern holds noted with its seed list.
 pub(crate) fn featpattern(reader: &mut Reader<'_>) -> Res<V> {
     let from = reader.parameters.len();
-    let value = featpattern_body(reader)?;
-    reader.note_pattern_parameters(from);
-    Ok(value)
+    let lists = reader.pattern_seeds.len();
+    match featpattern_body(reader) {
+        Ok(value) => {
+            reader.note_pattern_parameters(from);
+            Ok(value)
+        }
+        Err(stop) => {
+            reader.pattern_seeds.truncate(lists);
+            Err(stop)
+        }
+    }
 }
 
 /// The body of [`featpattern`].
