@@ -752,7 +752,7 @@ mod tests {
             "rhino:archive_80",
             "rhino:-archive-80",
         ] {
-            serde_json::from_value::<DialectId>(serde_json::json!(id))
+            crate::serde_erase::json::from_value::<DialectId>(serde_json::json!(id))
                 .expect_err("a malformed dialect id must be rejected");
         }
     }
@@ -798,7 +798,7 @@ mod tests {
             "admission": {"kind": "admitted"},
         });
 
-        let error = serde_json::from_value::<DialectMatch>(restated)
+        let error = crate::serde_erase::json::from_value::<DialectMatch>(restated)
             .expect_err("the format is read from the dialect, so the wire carries no format key");
         assert!(
             error.to_string().contains("unknown field `format`"),
@@ -857,7 +857,7 @@ mod tests {
             "declared": {},
             "admission": { "kind": "unverified", "using": "unknown" },
         });
-        let matched = serde_json::from_value::<DialectMatch>(self_named)
+        let matched = crate::serde_erase::json::from_value::<DialectMatch>(self_named)
             .expect("core does not infer grammar semantics from an opaque dialect name");
         assert_eq!(
             matched.admission(),
@@ -874,7 +874,7 @@ mod tests {
             "declared": {},
             "admission": { "kind": "unverified", "using": "step:ap242-e3" },
         });
-        let error = serde_json::from_value::<DialectMatch>(malformed)
+        let error = crate::serde_erase::json::from_value::<DialectMatch>(malformed)
             .expect_err("a grammar substitute belongs to the classified format layer");
         assert!(
             error
@@ -929,7 +929,7 @@ mod tests {
 
         let serialized = serde_json::to_value(&layers).unwrap();
         assert_eq!(
-            serde_json::from_value::<DialectLayers>(serialized).unwrap(),
+            crate::serde_erase::json::from_value::<DialectLayers>(serialized).unwrap(),
             layers
         );
         assert_eq!(layers.extra, [member]);
@@ -998,7 +998,7 @@ mod tests {
             "extra": [layer("acis"), DialectMatch::residual(crate::dialect_id!("acis:other"))],
         });
 
-        let error = serde_json::from_value::<DialectLayers>(serialized)
+        let error = crate::serde_erase::json::from_value::<DialectLayers>(serialized)
             .expect_err("a repeated extra layer key is a read error");
         assert!(
             error.to_string().contains("duplicate dialect layer key"),
@@ -1013,7 +1013,7 @@ mod tests {
             "extra": [DialectMatch::residual(crate::dialect_id!("rhino:other"))],
         });
 
-        let error = serde_json::from_value::<DialectLayers>(serialized)
+        let error = crate::serde_erase::json::from_value::<DialectLayers>(serialized)
             .expect_err("an extra layer on the primary key is a read error");
         assert!(
             error.to_string().contains("duplicate dialect layer key"),
@@ -1038,7 +1038,7 @@ mod tests {
         assert_eq!(layer("rhino").with_instance(" \t").instance(), None);
         let mut wire = serde_json::to_value(layer("rhino").with_instance("root")).unwrap();
         wire["instance"] = serde_json::json!(" ");
-        assert!(serde_json::from_value::<DialectMatch>(wire).is_err());
+        assert!(crate::serde_erase::json::from_value::<DialectMatch>(wire).is_err());
     }
 
     #[test]
@@ -1048,7 +1048,7 @@ mod tests {
             "extra": [layer("rhino")],
         });
 
-        let layers = serde_json::from_value::<DialectLayers>(serialized.clone())
+        let layers = crate::serde_erase::json::from_value::<DialectLayers>(serialized.clone())
             .expect("an untagged extra beside a tagged primary reads");
         assert_eq!(serde_json::to_value(&layers).unwrap(), serialized);
     }
@@ -1068,7 +1068,7 @@ mod tests {
             })
         );
         assert_eq!(
-            serde_json::from_value::<DialectLayers>(serialized).unwrap(),
+            crate::serde_erase::json::from_value::<DialectLayers>(serialized).unwrap(),
             layers
         );
         assert_eq!(
@@ -1081,7 +1081,7 @@ mod tests {
     fn an_unclassified_format_is_a_codec_id() {
         type Identity = super::FormatIdentity<DialectLayers>;
         let read = |format: &str| {
-            serde_json::from_value::<Identity>(
+            crate::serde_erase::json::from_value::<Identity>(
                 serde_json::json!({"kind": "unclassified", "format": format}),
             )
         };

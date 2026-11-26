@@ -749,7 +749,8 @@ fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, Worke
             path.display()
         )));
     }
-    serde_json::from_slice(&output.stdout).map_err(|error| WorkerFailure::Failed(error.to_string()))
+    cadmpeg_core::serde_erase::json::from_slice(&output.stdout)
+        .map_err(|error| WorkerFailure::Failed(error.to_string()))
 }
 
 fn wait_for_worker(mut worker: Child) -> Result<Output, WorkerFailure> {
@@ -1437,9 +1438,11 @@ mod boundary_wire_tests {
             "feature": null, "feature_name": null, "feature_family": null,
             "feature_ordinal": null, "reason": "incomplete_feature_definition"
         });
-        assert!(serde_json::from_value::<RederivationBoundary>(wire)
-            .expect_err("unsupported boundaries require a feature")
-            .to_string()
-            .contains("feature"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<RederivationBoundary>(wire)
+                .expect_err("unsupported boundaries require a feature")
+                .to_string()
+                .contains("feature")
+        );
     }
 }

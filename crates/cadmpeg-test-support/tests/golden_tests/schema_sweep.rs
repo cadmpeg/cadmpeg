@@ -9,8 +9,8 @@
 //! every other member, and a repeated key. A target the sweep cannot reach
 //! fails the test.
 
+use cadmpeg_core::serde_erase::from_json_value;
 use cadmpeg_ir::CadIr;
-use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{collect_documents, golden_files, hand_written_documents, states_native_elision};
@@ -102,7 +102,7 @@ fn documents() -> Vec<Value> {
     );
     documents.extend(hand_written_documents().into_iter().map(|(_, ir)| ir));
     for (name, seed) in seed_documents() {
-        if let Err(error) = CadIr::deserialize(&seed) {
+        if let Err(error) = from_json_value::<CadIr>(&seed) {
             panic!("the {name} seed does not read back: {error}");
         }
         documents.push(seed);

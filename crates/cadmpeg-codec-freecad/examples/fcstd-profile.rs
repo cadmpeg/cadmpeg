@@ -202,7 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let native_report = env::var_os("CADMPEG_FCSTD_NATIVE_REPORT")
         .map(fs::read)
         .transpose()?
-        .map(|bytes| serde_json::from_slice::<Value>(&bytes))
+        .map(|bytes| cadmpeg_core::serde_erase::json::from_slice::<Value>(&bytes))
         .transpose()?;
     let mut fixtures = Vec::new();
     let mut observed = Observed::default();
@@ -1697,7 +1697,7 @@ mod tests {
         let mut native_only = decoded.ir().clone();
         for feature in &mut native_only.model.features {
             feature.evaluation.set_definition(
-                serde_json::from_value(serde_json::json!({
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                     "kind": "operation",
                     "value": {"kind": "native", "value": {"kind": "retained_operation", "parameters": {}}}
                 }))
