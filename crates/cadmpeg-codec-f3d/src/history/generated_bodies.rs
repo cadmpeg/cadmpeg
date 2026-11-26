@@ -636,7 +636,7 @@ fn combine_side_binding(
 
 /// The body slots that a transition after the result state of `scope`
 /// updates or deletes in `history`.
-fn later_body_changes(
+pub(super) fn later_body_changes(
     history: &AsmHistory,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Option<HashSet<i64>> {
