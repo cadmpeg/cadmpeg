@@ -2536,6 +2536,29 @@ pub(crate) mod revolution_line_reference_record_tail {
     pub(crate) const ZERO_VALUE: [u8; 1] = [0x00];
 }
 
+/// Byte offsets for the `axis_tail_version_15000_prefix` record.
+///
+/// Spec §Extrusion feature objects. Record length 24 B.
+///
+/// ```text
+/// Offsets begin at the handle block's version word; the seven f64 of the tail follow at +24.
+/// ```
+pub(crate) mod axis_tail_version_15000_prefix {
+    /// Record length in bytes. Spec §Extrusion feature objects.
+    pub(crate) const LEN: usize = 24;
+    /// Offset of `version` (`u32`, little-endian). Spec §Extrusion feature objects.
+    pub(crate) const VERSION: usize = 0;
+    /// Stated value of `version` (`u32`). Spec §Extrusion feature objects.
+    pub(crate) const VERSION_VALUE: u32 = 0x0000_3a98;
+    /// Offset of `zeros` (`bytes[20]`). Spec §Extrusion feature objects.
+    pub(crate) const ZEROS: usize = 4;
+    /// Stated value of `zeros` (`bytes[20]`). Spec §Extrusion feature objects.
+    pub(crate) const ZEROS_VALUE: [u8; 20] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+}
+
 /// Byte offsets for the `revolution_line_reference_nested_end` record.
 ///
 /// Spec §2. Record length 6 B.
