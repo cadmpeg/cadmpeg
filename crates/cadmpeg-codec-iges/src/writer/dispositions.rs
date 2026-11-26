@@ -138,7 +138,7 @@ impl Presented {
 
 /// The colour a Directory entry states for `color`: its red, green, and blue,
 /// with no opacity.
-fn opaque(color: Color) -> Option<Color> {
+pub(super) fn opaque(color: Color) -> Option<Color> {
     Color::new(color.r(), color.g(), color.b(), 1.0)
 }
 
@@ -723,7 +723,6 @@ struct Written<'a> {
 }
 
 /// The display fields the writer writes in a Directory entry.
-#[derive(PartialEq)]
 struct Display {
     line_font: i64,
     color: Option<Color>,
@@ -745,11 +744,12 @@ impl Written<'_> {
 
 /// The display attribute records the writer does not write: each of an
 /// entity it drops, with the entity's reason, and each whose fields an
-/// emitted entity that states the entity writes with other values. A Type
-/// 124 is written as a transformation of its own with no colour, a visible
-/// status, and the line font of a Type 124. A Type 314 is written with
-/// Directory colour number 0, and its colour number is also the fallback
-/// colour of its colour definition record, so one charge names both records.
+/// emitted entity that states the entity writes with other values, with a
+/// reason that names each field group that changes. A Type 124 is written as
+/// a transformation of its own with no colour, a visible status, and the line
+/// font of a Type 124. The Directory colour number of a Type 314 is also the
+/// fallback colour of its colour definition record, so a charge of that
+/// number names both records.
 fn display_drops(
     namespace: &NativeNamespace,
     sources: &Sources<'_>,
@@ -772,7 +772,6 @@ fn display_drops(
         })
         .collect::<BTreeMap<_, _>>();
     let mut dropped = Vec::new();
-    let mut fallbacks = Vec::new();
     for record in namespace
         .arenas()
         .get("display_attributes")
@@ -792,14 +791,6 @@ fn display_drops(
             dropped.push((record.id().to_owned(), reason.to_owned()));
             continue;
         };
-        let definition = source.and_then(|source| definitions.get(source));
-        let color_number = record
-            .field("color_number")
-            .and_then(|value| value.as_i64());
-        if let Some(definition) = definition.filter(|_| color_number.is_some_and(|n| n != 0)) {
-            fallbacks.push((record.id().to_owned(), *definition));
-            continue;
-        }
         let source_type = sources
             .records
             .get(&sequence)
@@ -828,58 +819,64 @@ fn display_drops(
                 written.display(*index)
             }
         };
-        let reason = match stated {
-            Some(stated) if !holders.is_empty() => holders.into_iter().find_map(|index| {
-                let display = writes(index)?;
-                if display.line_font != stated.line_font {
-                    Some(DISPLAY_FIELDS)
-                } else if display.color != stated.color {
-                    Some(DISPLAY_COLOR)
-                } else if display.visible != stated.visible {
-                    Some(DISPLAY_VISIBILITY)
-                } else {
-                    None
-                }
-            }),
-            _ => Some(DISPLAY_FIELDS),
-        };
-        if let Some(reason) = reason {
-            dropped.push((record.id().to_owned(), reason.to_owned()));
+        let displays = holders.into_iter().filter_map(writes).collect::<Vec<_>>();
+        if displays.is_empty() {
+            dropped.push((record.id().to_owned(), DISPLAY_FIELDS.to_owned()));
+            continue;
         }
-    }
-    if !fallbacks.is_empty() {
-        let reason = format!(
-            "that are Directory colour numbers of colour definitions, which colour definition \
-             records {} state as their fallback colour, and which the semantic writer writes as 0",
-            fallbacks
-                .iter()
-                .map(|(_, definition)| *definition)
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        dropped.extend(fallbacks.into_iter().map(|(id, _)| (id, reason.clone())));
+        let changes = |same: &dyn Fn(&Display) -> bool| !displays.iter().all(same);
+        let mut reasons = Vec::new();
+        if changes(&|display| stated.fields == Some(display.line_font)) {
+            reasons.push(DISPLAY_FIELDS.to_owned());
+        }
+        if changes(&|display| stated.color == StatedColor::Writable(display.color)) {
+            reasons.push(match source.and_then(|source| definitions.get(source)) {
+                Some(definition) => format!(
+                    "that are Directory colour numbers of colour definitions, which colour \
+                         definition record {definition} states as its fallback colour, and \
+                         which the semantic writer writes as 0"
+                ),
+                None => DISPLAY_COLOR.to_owned(),
+            });
+        }
+        if changes(&|display| stated.visible == Some(display.visible)) {
+            reasons.push(DISPLAY_VISIBILITY.to_owned());
+        }
+        if !reasons.is_empty() {
+            dropped.push((record.id().to_owned(), reasons.join(", and ")));
+        }
     }
     dropped
 }
 
-/// The display fields a source display attribute record states, when the
-/// writer can write each: a line font number, level 0, view 0, line weight
-/// 0, and a colour that is none, a standard colour, or a colour definition.
-fn source_display(
-    record: &NativeRecord,
-    colors: &BTreeMap<&str, &NativeRecord>,
-) -> Option<Display> {
+/// The Directory display fields of a source display attribute record, each
+/// `None` where the writer cannot write it.
+struct Stated {
+    /// The line font number, when the level, the view, and the line weight
+    /// are 0.
+    fields: Option<i64>,
+    color: StatedColor,
+    visible: Option<bool>,
+}
+
+/// The Directory colour of a source display attribute record.
+#[derive(PartialEq)]
+enum StatedColor {
+    /// No colour, a standard colour, or the colour of a colour definition.
+    Writable(Option<Color>),
+    Unwritable,
+}
+
+fn source_display(record: &NativeRecord, colors: &BTreeMap<&str, &NativeRecord>) -> Stated {
     let number = |field: &str| record.field(field).and_then(|value| value.as_i64());
-    if number("level_number") != Some(0)
-        || number("view") != Some(0)
-        || number("line_weight_number") != Some(0)
-    {
-        return None;
-    }
-    let line_font = number("line_font_number").filter(|number| *number >= 0)?;
-    let color = match number("color_number")? {
-        0 => None,
-        standard @ 1.. => Some(crate::entities::presentation::standard_color(standard)?),
+    let fields = (number("level_number") == Some(0)
+        && number("view") == Some(0)
+        && number("line_weight_number") == Some(0))
+    .then(|| number("line_font_number").filter(|number| *number >= 0))
+    .flatten();
+    let color = number("color_number").and_then(|color| match color {
+        0 => Some(None),
+        standard @ 1.. => crate::entities::presentation::standard_color(standard).map(Some),
         _ => {
             let definition = record.field("color_definition");
             let definition = colors.get(definition.as_ref()?.as_str()?)?;
@@ -889,19 +886,20 @@ fn source_display(
                     .and_then(|value| value.as_f64())
                     .map(|percent| percent / 100.0)
             };
-            Some(Color::new(
+            Color::new(
                 percent("red_percent")?,
                 percent("green_percent")?,
                 percent("blue_percent")?,
                 1.0,
-            )?)
+            )
+            .map(Some)
         }
-    };
-    Some(Display {
-        line_font,
-        color,
-        visible: record.field("visible").and_then(|value| value.as_bool())?,
-    })
+    });
+    Stated {
+        fields,
+        color: color.map_or(StatedColor::Unwritable, StatedColor::Writable),
+        visible: record.field("visible").and_then(|value| value.as_bool()),
+    }
 }
 
 /// The physical cards the semantic writer does not write, each with its

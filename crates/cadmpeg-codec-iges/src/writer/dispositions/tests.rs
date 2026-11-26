@@ -503,65 +503,192 @@ fn a_named_body_colour_and_a_body_name_read_back() {
     );
 }
 
-/// The Directory colour number of a Type 314 is one fact that its display
-/// attribute record and its colour definition record both state. The write
-/// states the Type 314 with colour number 0, so one loss charges the number
-/// and names both records, and the colour definition record, whose colour and
-/// name read back, follows its entity.
+/// [`NAMED_BODY`] with the Directory colour number of its Type 314 set to
+/// standard colour 3 and its level set to `level`.
+fn numbered_color(level: u32) -> String {
+    NAMED_BODY
+        .replace(
+            "     314       0       0       1       0 ",
+            "     314       0       3       1       0 ",
+        )
+        .replace(
+            "     314       7       0       0       0 ",
+            &format!("     314       7       0       0{level:>8} "),
+        )
+}
+
+/// The decode of `file` with the colour of its Type 314 changed after the
+/// decode on the appearance and on the body and the face it colours.
+fn recolored(file: &str) -> cadmpeg_ir::CadIr {
+    let mut ir = IgesCodec
+        .decode(&mut Cursor::new(file.as_bytes()), &DecodeOptions::default())
+        .unwrap()
+        .ir()
+        .clone();
+    let edited = cadmpeg_ir::topology::Color::new(0.3, 0.4, 0.6, 1.0);
+    let appearance = &mut ir.model.appearances[0];
+    let source = appearance.base_color;
+    appearance.base_color = edited;
+    for body in &mut ir.geometry.bodies {
+        if body.color == source {
+            body.color = edited;
+        }
+    }
+    for face in &mut ir.geometry.faces {
+        if face.color == source {
+            face.color = edited;
+        }
+    }
+    ir
+}
+
+/// The messages that name `id` as a whole token.
+fn naming<'a>(messages: impl IntoIterator<Item = &'a String>, id: &str) -> Vec<String> {
+    messages
+        .into_iter()
+        .filter(|message| {
+            message
+                .split_whitespace()
+                .any(|token| token.trim_end_matches([',', ':', ';']) == id)
+        })
+        .cloned()
+        .collect()
+}
+
+/// The file `ir` is written as at IGES 5.3, its declarations, the messages
+/// of its losses, and those of them that name `id`.
+fn charges_naming(
+    ir: &cadmpeg_ir::CadIr,
+    id: &str,
+) -> (
+    Vec<u8>,
+    cadmpeg_ir::codec::write::NativeDispositions,
+    Vec<String>,
+    Vec<String>,
+) {
+    let (_, native) =
+        crate::writer::target::synthesis_and_dispositions(ir, crate::IgesVersion::V5_3)
+            .ok()
+            .unwrap();
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(ir, None),
+            TargetRequest::Explicit(crate::IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .unwrap();
+    let messages = plan
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    let charges = naming(&messages, id);
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    (bytes, native, messages, charges)
+}
+
+/// The fallback colour number of each colour definition record of `ir`.
+fn fallback_numbers(ir: &cadmpeg_ir::CadIr) -> Vec<Option<i64>> {
+    ir.native
+        .namespace("iges")
+        .and_then(|namespace| namespace.arenas().get("colors"))
+        .into_iter()
+        .flatten()
+        .map(|record| {
+            record
+                .field("fallback_color_number")
+                .and_then(|value| value.as_i64())
+        })
+        .collect()
+}
+
+/// The Directory colour number of a Type 314 is the standard colour a
+/// receiver uses in place of the definition, and its colour definition
+/// record states it as its fallback colour. The written Type 314 restates the
+/// source Type 314 with the source red, green, and blue, so it states the
+/// source colour number, and both records are Regenerated and read back.
 #[test]
-fn a_colour_definition_colour_number_is_charged_once_naming_both_records() {
-    let file = NAMED_BODY.replace(
-        "     314       0       0       1       0 ",
-        "     314       0       3       1       0 ",
-    );
+fn a_source_colour_number_is_written_on_the_restated_colour_definition() {
+    let file = numbered_color(0);
     let mut failures = Vec::new();
     check("numbered_color", file.as_bytes(), &mut failures).unwrap();
     assert!(failures.is_empty(), "{failures:#?}");
     let checked = readback::write_and_read_back(file.as_bytes()).ok().unwrap();
-    for (arena, id, disposition) in [
-        (
-            "entities",
-            "iges:entity:directory#13",
-            NativeDisposition::Regenerated,
-        ),
-        (
-            "colors",
-            "iges:presentation:color#D13",
-            NativeDisposition::Regenerated,
-        ),
+    for (arena, id) in [
+        ("colors", "iges:presentation:color#D13"),
         (
             "display_attributes",
             "iges:presentation:display-attributes#D13",
-            NativeDisposition::Dropped,
         ),
     ] {
         assert_eq!(
             checked.native.disposition("iges", arena, id),
-            disposition,
+            NativeDisposition::Regenerated,
             "{id}"
         );
+        assert!(
+            naming(&checked.losses, id).is_empty(),
+            "{:#?}",
+            checked.losses
+        );
     }
-    let plan = IgesCodec
-        .plan(
-            EncodeInput::new(&checked.source, None),
-            TargetRequest::Explicit(crate::IgesVersion::V5_3.descriptor().id.as_str()),
-        )
-        .unwrap();
-    let naming = |id: &str| {
-        plan.report()
-            .losses
-            .iter()
-            .filter(|loss| {
-                loss.message
-                    .split_whitespace()
-                    .any(|token| token.trim_end_matches([',', ':', ';']) == id)
-            })
-            .map(|loss| loss.message.as_str())
-            .collect::<Vec<_>>()
-    };
-    let charges = naming("iges:presentation:display-attributes#D13");
-    assert_eq!(charges.len(), 1, "{:#?}", plan.report().losses);
-    assert_eq!(naming("iges:presentation:color#D13"), charges);
+    assert_eq!(fallback_numbers(&checked.output), [Some(3)]);
+}
+
+/// Where the colour was changed after the decode, the written Type 314 states
+/// another red, green, and blue than its source colour definition record, so
+/// the writer writes colour number 0 there, and one charge names the display
+/// attribute record and the colour definition record.
+#[test]
+fn an_edited_colour_definition_is_charged_for_its_colour_number() {
+    let ir = recolored(&numbered_color(0));
+    let (bytes, native, messages, charges) =
+        charges_naming(&ir, "iges:presentation:display-attributes#D13");
+    assert_eq!(
+        native.disposition(
+            "iges",
+            "display_attributes",
+            "iges:presentation:display-attributes#D13"
+        ),
+        NativeDisposition::Dropped
+    );
+    assert_eq!(charges.len(), 1, "{messages:#?}");
+    assert!(
+        charges[0].contains("Directory colour numbers of colour definitions")
+            && charges[0].contains("iges:presentation:color#D13 "),
+        "{charges:#?}"
+    );
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+        .ir()
+        .clone();
+    assert_eq!(fallback_numbers(&output), [Some(0)]);
+}
+
+/// A Type 314 states a level that the writer writes as 0. The one charge of
+/// its display attribute record names the level field group, with the colour
+/// number where the writer writes 0 in place of it.
+#[test]
+fn a_colour_definition_level_is_charged_whatever_its_colour_number() {
+    let file = numbered_color(5);
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(file.as_bytes()), &DecodeOptions::default())
+        .unwrap()
+        .ir()
+        .clone();
+    for (ir, colour_number) in [(decoded, false), (recolored(&file), true)] {
+        let (_, _, messages, charges) =
+            charges_naming(&ir, "iges:presentation:display-attributes#D13");
+        assert_eq!(charges.len(), 1, "{messages:#?}");
+        assert!(charges[0].contains(super::DISPLAY_FIELDS), "{charges:#?}");
+        assert_eq!(
+            charges[0].contains("Directory colour numbers of colour definitions"),
+            colour_number,
+            "{charges:#?}"
+        );
+    }
 }
 
 /// A trimmed surface whose one Directory colour field states standard colour
@@ -652,7 +779,12 @@ fn a_curve_colour_is_charged_with_its_appearance() {
         .model
         .appearance_bindings
         .iter()
-        .map(|binding| (binding.id.as_str().to_owned(), appearances::BINDING_TARGET))
+        .map(|binding| {
+            (
+                binding.id.as_str().to_owned(),
+                appearances::BINDING_TARGET.to_owned(),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     assert_eq!(bindings.len(), 1);
     assert_eq!(checked.appearances.bindings, bindings);
@@ -660,7 +792,7 @@ fn a_curve_colour_is_charged_with_its_appearance() {
         checked.appearances.appearances,
         BTreeMap::from([(
             "iges:appearance:standard#2".to_owned(),
-            appearances::APPEARANCE_UNUSED
+            appearances::APPEARANCE_UNUSED.to_owned()
         )])
     );
 }

@@ -257,6 +257,70 @@ fn a_translucent_appearance_is_charged_for_its_opacity() {
     );
 }
 
+/// Before IGES 5.3 each face of an open sheet is written as a trimmed
+/// surface whose one Directory colour field states the face colour. Where
+/// every face has the translucent colour of the body, the entities state
+/// the red, green, and blue of the body colour and no opacity, so the body
+/// opacity is charged once, by the body. Where a face has another colour,
+/// the one charge of the body colour names that face and the opacity.
+#[test]
+fn a_body_opacity_that_face_colours_restate_is_charged_once() {
+    let translucent = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
+    let mut ir = open_cylinder(isoparametric_side());
+    ir.geometry.bodies[0].color = translucent;
+    for face in &mut ir.geometry.faces {
+        face.color = translucent;
+    }
+    let body = ir.geometry.bodies[0].id.clone();
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    let charges = charged(&losses, "iges/writer.body-opacity-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains(&format!("body {body} ")),
+        "{charges:#?}"
+    );
+    assert!(
+        charged(&losses, "iges/writer.body-color-not-represented").is_empty(),
+        "{losses:#?}"
+    );
+
+    ir.geometry.faces[0].color = cadmpeg_ir::topology::Color::new(0.9, 0.1, 0.1, 1.0);
+    let face = ir.geometry.faces[0].id.clone();
+    let (losses, _) = written(&ir, IgesVersion::V5_0);
+    assert!(
+        charged(&losses, "iges/writer.body-opacity-not-represented").is_empty(),
+        "{losses:#?}"
+    );
+    let charges = charged(&losses, "iges/writer.body-color-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains(&format!("body {body} "))
+            && charges[0].contains(face.as_str())
+            && charges[0].contains("opacity 0.5"),
+        "{charges:#?}"
+    );
+}
+
+/// An appearance that loses its opacity and its name is charged once with
+/// both reasons.
+#[test]
+fn a_translucent_appearance_with_a_name_is_charged_for_both() {
+    let mut ir = open_cylinder(isoparametric_side());
+    let translucent = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.5);
+    ir.geometry.bodies[0].color = translucent;
+    bind_the_body(&mut ir, translucent, None);
+    ir.model.appearances[0].name = Some("Caf\u{e9}".to_owned());
+    let (losses, _) = written(&ir, IgesVersion::V5_3);
+    let charges = charged(&losses, "iges/writer.appearance-not-represented");
+    assert_eq!(charges.len(), 1, "{losses:#?}");
+    assert!(
+        charges[0].contains("whose colour states an opacity")
+            && charges[0].contains("whose name no written colour definition states")
+            && charges[0].ends_with(": test:model:appearance#red"),
+        "{charges:#?}"
+    );
+}
+
 /// A body whose id ends as the id of a piece of a split body does, and which
 /// the writer does not split, is the target of its own binding.
 #[test]

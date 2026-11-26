@@ -280,7 +280,8 @@ struct Synthesis {
     /// The entities the file holds, each with the neutral records it states.
     entities: Vec<Entity>,
     /// The colour and blank status the Directory entry of each entity that
-    /// carries a body or a face states, by entity index.
+    /// carries a body or a face, or of a Type 314 that states a source
+    /// colour number, states, by entity index.
     presented: BTreeMap<usize, dispositions::Presented>,
     /// The document body that each sheet body the writer splits from it
     /// restates, by the id of the sheet body.
@@ -317,6 +318,8 @@ struct ColorDefinition {
     /// The appearance of the source Type 314, when the written Type 314
     /// states its colour and its name.
     restates: Option<String>,
+    /// The Directory colour number of the restated source Type 314.
+    number: Option<i64>,
 }
 
 #[derive(Clone, Copy)]
@@ -436,7 +439,44 @@ fn bound_color_definition(
     Some(ColorDefinition {
         name: name.filter(|_| writable),
         restates: writable.then(|| appearance.id.as_str().to_owned()),
+        number: writable
+            .then(|| source_color_number(ir, appearance.id.as_str(), color))
+            .flatten(),
     })
+}
+
+/// The standard Directory colour number of the source Type 314 whose
+/// appearance is `appearance`, when its colour definition record states the
+/// red, green, and blue of `color`.
+fn source_color_number(ir: &CadIr, appearance: &str, color: Color) -> Option<i64> {
+    let sequence = dispositions::color_definition_sequence(appearance)?;
+    let id = format!("iges:presentation:color#D{sequence}");
+    let record = ir
+        .native
+        .namespace("iges")?
+        .arenas()
+        .get("colors")?
+        .iter()
+        .find(|record| record.id() == id)?;
+    let percent = |field: &str| {
+        record
+            .field(field)
+            .and_then(|value| value.as_f64())
+            .map(|percent| percent / 100.0)
+    };
+    let stated = Color::new(
+        percent("red_percent")?,
+        percent("green_percent")?,
+        percent("blue_percent")?,
+        1.0,
+    )?;
+    if Some(stated) != dispositions::opaque(color) {
+        return None;
+    }
+    record
+        .field("fallback_color_number")?
+        .as_i64()
+        .filter(|number| (1..=8).contains(number))
 }
 
 /// Whether the name field of a Type 314 can state `name`.
@@ -448,12 +488,15 @@ fn writable_name(name: &str) -> bool {
 }
 
 /// Writes a Type 314 for each distinct colour definition the presentations
-/// state, and points each presentation at its Type 314.
+/// state, and points each presentation at its Type 314. A Type 314 that
+/// restates a source Type 314 states its Directory colour number, and its
+/// index is returned.
 fn append_color_definitions(
     entities: &mut Vec<Entity>,
     presentations: &mut BTreeMap<usize, Presentation>,
-) -> Result<(), CodecError> {
+) -> Result<Vec<usize>, CodecError> {
     let mut written = BTreeMap::<(String, Option<String>), usize>::new();
+    let mut numbered = BTreeMap::new();
     for presentation in presentations.values_mut() {
         let DirectoryColor::Custom(color) = presentation.color else {
             continue;
@@ -489,9 +532,26 @@ fn append_color_definitions(
                     });
                     index
                 });
+        if let Some(number) = definition.and_then(|definition| definition.number) {
+            numbered.insert(entity_index, number);
+        }
         presentation.color = DirectoryColor::Definition(entity_index);
     }
-    Ok(())
+    for (index, number) in &numbered {
+        presentations.insert(
+            *index,
+            Presentation {
+                label: None,
+                name: None,
+                color: DirectoryColor::Standard(*number),
+                color_definition: None,
+                visible: None,
+                body: None,
+                face: None,
+            },
+        );
+    }
+    Ok(numbered.into_keys().collect())
 }
 
 fn append_name_properties(
@@ -779,11 +839,15 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
         }
         entities
     };
-    let presented = presentations
+    let mut presented = presentations
         .iter()
         .map(|(index, presentation)| (*index, dispositions::Presented::of(presentation)))
-        .collect();
-    append_color_definitions(&mut entities, &mut presentations)?;
+        .collect::<BTreeMap<_, _>>();
+    for index in append_color_definitions(&mut entities, &mut presentations)? {
+        if let Some(presentation) = presentations.get(&index) {
+            presented.insert(index, dispositions::Presented::of(presentation));
+        }
+    }
     ensure_version_support(&entities, version)?;
     resolve_entity_references(&mut entities)?;
     append_name_properties(&mut entities, &presentations)?;

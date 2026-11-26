@@ -421,8 +421,7 @@ pub(super) fn display_values(ir: &CadIr) -> BTreeMap<String, Value> {
 }
 
 /// The value of each colour definition record of a decode, by id, with no
-/// ids and no fallback colour number: that number is the Directory colour
-/// number of the Type 314, which its display attribute record states.
+/// ids.
 pub(super) fn color_values(ir: &CadIr) -> BTreeMap<String, Value> {
     ir.native
         .namespace("iges")
@@ -433,9 +432,8 @@ pub(super) fn color_values(ir: &CadIr) -> BTreeMap<String, Value> {
         .flatten()
         .map(|record| {
             let mut fields = record.fields().unwrap();
-            for key in ["id", "source_entity", "fallback_color_number"] {
-                fields.remove(key);
-            }
+            fields.remove("id");
+            fields.remove("source_entity");
             (record.id().to_owned(), Value::Object(fields))
         })
         .collect()
