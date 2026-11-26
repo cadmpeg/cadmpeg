@@ -285,7 +285,7 @@ pub(crate) fn encode_decode_result(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::codec:
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut encoded))
     .unwrap();

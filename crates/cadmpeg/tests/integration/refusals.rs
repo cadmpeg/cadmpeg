@@ -651,6 +651,66 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .stderr(predicate::str::contains("invalid value"));
 }
 
+/// A `convert` that names no target takes the catalog default where the
+/// document's source is of another format or absent. That loses nothing, so
+/// `--reject-lossy` at floor Warning writes the file, and the report charges
+/// no `target.source-dialect-displaced`.
+#[cfg(feature = "step")]
+#[test]
+fn a_cross_format_convert_that_names_no_target_is_not_refused() {
+    let dir = tempdir().unwrap();
+    let foreign = {
+        let mut cube = unit_cube().expect("unit cube fixture is admitted");
+        cadmpeg_ir::examples::add_document_root(&mut cube);
+        cube.source = Some(cadmpeg_ir::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "iges:5.3-fixed-ascii"
+                )),
+            ),
+            std::collections::BTreeMap::new(),
+        ));
+        cube
+    };
+    let source_less = {
+        let mut cube = unit_cube().expect("unit cube fixture is admitted");
+        cadmpeg_ir::examples::add_document_root(&mut cube);
+        cube.source = None;
+        cube
+    };
+    for (name, ir) in [("foreign", foreign), ("source-less", source_less)] {
+        let input = fixture(dir.path(), &format!("{name}.cadir.json"), &ir);
+        let output = dir.path().join(format!("{name}.step"));
+        let report = dir.path().join(format!("{name}.json"));
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                input.to_str().unwrap(),
+                "-o",
+                output.to_str().unwrap(),
+                "--reject-lossy=export",
+                "--reject-lossy-floor=warning",
+                "--report",
+                report.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+        assert_eq!(
+            report["export"]["identity"]["target"], "step:ap214",
+            "{name}"
+        );
+        let losses = report["export"]["losses"].as_array().unwrap();
+        assert!(
+            losses
+                .iter()
+                .all(|loss| loss["code"]["value"]["code"] != "target.source-dialect-displaced"),
+            "{name}: {losses:?}"
+        );
+    }
+}
+
 #[test]
 fn json_on_artifact_commands_is_a_teaching_error() {
     let dir = tempdir().unwrap();

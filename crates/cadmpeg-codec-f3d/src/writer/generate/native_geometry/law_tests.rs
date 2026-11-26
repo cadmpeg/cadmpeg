@@ -86,7 +86,7 @@ fn text(value: &str) -> LawExpression {
 fn assert_round_trip(ir: &CadIr) {
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("representable law construction writes");
     let decoded = F3dCodec

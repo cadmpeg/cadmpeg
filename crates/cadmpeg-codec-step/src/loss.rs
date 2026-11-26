@@ -81,6 +81,9 @@ pub(crate) enum StepLossCode {
     TopologyRootRejected,
     /// A topology root does not resolve to a complete connected graph.
     TopologyRootIncomplete,
+    /// An alias topology root's name differs from the name its shared body
+    /// takes, so the alias name is not kept.
+    TopologyAliasRootNameDropped,
     /// An oriented shell omits the derived `cfs_faces` slot.
     OrientedShellOmitsCfsFaces,
     /// A `SEAM_EDGE` has no decoded pcurve on its edge curve and face surface.
@@ -468,6 +471,7 @@ impl StepLossCode {
         Self::LineParameterScaleUnresolved,
         Self::TopologyRootRejected,
         Self::TopologyRootIncomplete,
+        Self::TopologyAliasRootNameDropped,
         Self::OrientedShellOmitsCfsFaces,
         Self::SeamEdgePcurveUnresolved,
         Self::EdgeNoSurfaceOrCurveForPcurve,
@@ -665,6 +669,7 @@ impl StepLossCode {
             Self::LineParameterScaleUnresolved => "geometry.line-parameter-scale-unresolved",
             Self::TopologyRootRejected => "topology.root-rejected",
             Self::TopologyRootIncomplete => "topology.root-incomplete",
+            Self::TopologyAliasRootNameDropped => "topology.alias-root-name-dropped",
             Self::OrientedShellOmitsCfsFaces => "topology.oriented-shell-omits-cfs-faces",
             Self::SeamEdgePcurveUnresolved => "topology.seam-edge-pcurve-unresolved",
             Self::EdgeNoSurfaceOrCurveForPcurve => "topology.edge-no-surface-or-curve-for-pcurve",
@@ -939,6 +944,7 @@ impl StepLossCode {
             | Self::SourceDialectUnverified
             | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
             Self::MetadataStringInvalid
+            | Self::TopologyAliasRootNameDropped
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
             | Self::PresentationAnnotationPlacementAmbiguous
@@ -1182,6 +1188,7 @@ mod tests {
                 "geometry.line-parameter-scale-unresolved",
                 "topology.root-rejected",
                 "topology.root-incomplete",
+                "topology.alias-root-name-dropped",
                 "topology.oriented-shell-omits-cfs-faces",
                 "topology.seam-edge-pcurve-unresolved",
                 "topology.edge-no-surface-or-curve-for-pcurve",

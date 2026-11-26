@@ -267,3 +267,38 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
     assert_eq!(all_cages.len(), 4);
     assert_eq!(foreign_sources.len(), 2);
 }
+
+/// A radial map is the source's native map, so a map that repeats a source
+/// decodes with the cage and is kept whole.
+#[test]
+fn a_radial_map_that_repeats_a_source_decodes_and_keeps_the_map() {
+    let mut program = crate::test_support::zip_test::generated_form_tsm();
+    program.extend_from_slice(
+        b"105sym 1\n105plane 0.5 0.5 0 1 1 0 0 0 0 1 0 0\n\
+          105r segments 4\n105r sweep 1\n105r ef 0 1 0 2\n105r er 1 0\n\
+          105r ff 0 0\n105r fr 0 0\n105r vf 0 1\n105r vr 1 0\n",
+    );
+    let decoded = super::decode(crate::test_support::zip_test::f3d_with_form_body_resource(
+        &program,
+    ));
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::TsplineCageUndecoded.kind()));
+    let [subd] = decoded.ir().geometry.subds.as_slice() else {
+        panic!("one cage");
+    };
+    let [symmetry] = subd.cage.symmetries() else {
+        panic!("one symmetry");
+    };
+    let cadmpeg_ir::SubdSymmetryKind::Radial(radial) = symmetry.kind() else {
+        panic!("radial symmetry");
+    };
+    let ef = radial
+        .radial_maps
+        .iter()
+        .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
+        .expect("ef map");
+    assert_eq!(ef.pairs, vec![[0, 1], [0, 2]]);
+}

@@ -183,7 +183,7 @@ fn run(
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .and_then(|plan| plan.write_to(&mut output))
         .map_err(|error| format!("{label}: refused: {error}"))?;

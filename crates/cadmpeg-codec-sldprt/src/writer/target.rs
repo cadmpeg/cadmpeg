@@ -229,11 +229,10 @@ fn shaping_edits(
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
         .and_then(|record| record.data());
-    let native = input
-        .ir
-        .native
-        .namespace("sldprt")
-        .map(crate::native::SldprtNative::load);
+    let native =
+        input.ir.native.namespace("sldprt").map(|namespace| {
+            crate::native::SldprtNative::load(namespace, input.ir.tolerances.linear)
+        });
     let (Some(image), Some(Ok(native))) = (image, native) else {
         return Ok(Vec::new());
     };
