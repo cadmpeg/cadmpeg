@@ -293,16 +293,6 @@ jobs:
       - name: Match cargo's job count to the runner
         uses: ./.github/actions/cargo-job-count
 
-      - name: Limit broad test builds
-        # A one-codec build peaks near 10 GB at four jobs. Broader builds
-        # swap at three or four jobs on the 16 GB runner, so they keep two.
-        shell: bash
-        run: |
-          codecs="$(python3 -c 'import json, os; print(len(json.loads(os.environ["CI_CODEC_FEATURES"])))')"
-          if [ "$CI_FULL" = true ] || [ "$codecs" -ne 1 ]; then
-            echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
-          fi
-
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2.90.5
         with:
@@ -314,7 +304,7 @@ jobs:
         # memory line every 30 seconds stays in the log if the runner stops.
         shell: bash
         run: |
-          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
+          (while sleep 30; do free -m | awk 'NR==2 {m=$3} NR==3 {print "memory used " m " MiB, swap used " $3 " MiB"}'; done) &
           python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast --timings
 
       - name: Upload build timings
