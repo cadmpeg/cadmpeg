@@ -22,6 +22,20 @@ const XML: &[u8] = br#"<document><model><tool id="t1"/><section type="setup" nam
 const MEMBER: &str = "Toolpath/Iron.Document/synthetic.irondoc";
 
 #[test]
+fn cam_tool_overall_length_comes_from_overall_length_not_body_length() {
+    let xml = br#"<document><model><tool id="t1" type="flat end mill" unit="millimeters"><body diameter="6" flute-length="15" body-length="25" overall-length="50"/></tool><object id="s" displayName="Setup11" strategy="setup"><Parameters/></object></model></document>"#;
+    let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, xml);
+    let result = F3dCodec
+        .decode(&mut Cursor::new(part), &DecodeOptions::default())
+        .unwrap();
+    let process = &result.ir().process;
+    let cutter = serde_json::to_value(&process.tools[0].cutter).unwrap();
+    assert_eq!(cutter["overall_length"]["value"], 50.0);
+    assert_eq!(cutter["flute_length"]["value"], 15.0);
+    assert_eq!(process.setups[0].name.as_deref(), Some("Setup11"));
+}
+
+#[test]
 fn cam_bracketed_workspace_reads_flat_objects_and_attribute_tools() {
     let xml = br#"<document xmlns="urn:synthetic:document"><model>
       <tool-table xmlns="urn:synthetic:tools"><tool id="cutter" type="flat end mill" unit="millimeters">

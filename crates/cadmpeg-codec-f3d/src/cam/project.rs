@@ -329,7 +329,10 @@ fn project(ir: &mut CadIr, cam: &Manufacturing) -> Result<(), CodecError> {
             (["tool_diameter", "body.diameter"], "diameter"),
             (["tool_cornerRadius", "body.corner-radius"], "corner_radius"),
             (["tool_fluteLength", "body.flute-length"], "flute_length"),
-            (["tool_overallLength", "body.body-length"], "overall_length"),
+            (
+                ["tool_overallLength", "body.overall-length"],
+                "overall_length",
+            ),
         ] {
             if let Some(value) = number(&tool.parameters, &names) {
                 let converted = value * tool_scale;

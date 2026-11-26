@@ -4437,7 +4437,8 @@ The tool table uses the `http://www.hsmworks.com/xml/2004/cnc/tool-library`
 namespace. A `tool` record's `id` is the operation's `toolId` reference.
 The tool's `type` and `unit` attributes identify its cutter type and units.
 `nc` attributes hold the tool number and post settings. `body` attributes
-hold cutter dimensions and flute count. `motion` attributes hold feed and
+hold cutter dimensions and flute count; `overall-length` is the cutter's
+overall length and `body-length` is a separate dimension. `motion` attributes hold feed and
 spindle settings.
 
 An operation object's `valid` Boolean states computed-path validity.
