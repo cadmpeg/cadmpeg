@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 
 use super::OutputNames;
 use crate::document::CadIr;
+use crate::features::FeatureId;
 use crate::give_up::{Arena, Seed};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::products::{ExternalDocument, ProductDefinition, Storage};
@@ -23,15 +24,18 @@ use crate::tessellation::Meshed;
 /// no definition lists. Each other definition that an occurrence of the
 /// output places stays as a link: a `File` definition becomes an `External`
 /// one named by its output's name. The output of a definition other than the
-/// root holds that definition as its root, with the definition's own source
-/// and no native records.
+/// root holds that definition as its root, with the definition's own source.
 ///
 /// The records of each definition the output does not hold belong to that
 /// definition's own output, so this one drops them: the definition's
-/// features, parameters, sketches, history bodies, meshes, and design scope
-/// with the records of the scope, and each record that needs a record left
-/// out, such as the tessellation of a body or an annotation on a face
-/// (§3.3).
+/// features, parameters, sketches, history bodies, meshes, point clouds,
+/// and design scope with the records of the scope, and each record that
+/// needs a record left out, such as the tessellation of a body or an
+/// annotation on a face (§3.3). A native record belongs to the output of
+/// the definition whose key qualifies its scope, and to the root output
+/// where its scope is unqualified (§2.2). A record that no definition owns belongs to
+/// the root output; the output of another definition holds it only where a
+/// record that output holds names it.
 ///
 /// # Errors
 ///
@@ -154,16 +158,10 @@ pub(super) fn output_document(
             .map(|id| (*id).to_owned())
             .collect()
     };
-    let others: BTreeSet<&ProductDefinitionId> = definitions
-        .keys()
-        .copied()
-        .filter(|id| !held.contains(*id))
-        .collect();
-    let seeds = others_records(ir, &others);
-    if !gone.is_empty() || !seeds.is_empty() {
-        crate::give_up::drop_records_needing(ctx, &mut out, gone, seeds)?;
-    }
-    if !is_root {
+    let (others, mut unowned) = unheld_records(ir, &definitions, root, &held);
+    if is_root {
+        unowned.clear();
+    } else {
         let own = definition.and_then(|definition| {
             out.model
                 .product_definitions
@@ -173,7 +171,9 @@ pub(super) fn output_document(
         if let Some(Storage::File { source, .. }) = own.map(|own| &mut own.storage) {
             out.source = source.take();
         }
-        out.native = crate::native::Native::default();
+    }
+    if !gone.is_empty() || !others.is_empty() || !unowned.is_empty() {
+        crate::give_up::drop_records_needing(ctx, &mut out, gone, others, unowned)?;
     }
     Ok(out)
 }
@@ -198,83 +198,160 @@ fn identities(ir: &CadIr) -> BTreeSet<&str> {
         .collect()
 }
 
-/// The records of `ir` that belong to a definition of `others`: its
-/// features with their parameters and history bodies, its own parameters,
-/// the sketches it lists, its meshes, and its design scope.
-fn others_records(ir: &CadIr, others: &BTreeSet<&ProductDefinitionId>) -> Vec<Seed> {
-    let of_other = |definition: Option<&ProductDefinitionId>| {
-        definition.is_some_and(|definition| others.contains(definition))
+/// Which output holds a record.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reach {
+    /// The output whose definitions a stated owner names.
+    Held,
+    /// The output of another definition.
+    Other,
+    /// No definition owns the record.
+    Unowned,
+}
+
+/// The records of `ir` that the output of the definitions `held` leaves
+/// out: those another definition of `definitions` owns, then those no
+/// definition owns. A feature is owned by its product definition; a
+/// parameter by its product definition and by its owner feature; a history
+/// body by the feature that produced it; a sketch by each definition that
+/// lists it; a mesh of a definition, a point cloud, and a design scope by
+/// their definition.
+fn unheld_records(
+    ir: &CadIr,
+    definitions: &BTreeMap<&ProductDefinitionId, &ProductDefinition>,
+    root: Option<&ProductDefinitionId>,
+    held: &BTreeSet<ProductDefinitionId>,
+) -> (Vec<Seed>, Vec<Seed>) {
+    let of = |definition: Option<&ProductDefinitionId>| match definition {
+        Some(definition) if held.contains(definition) => Reach::Held,
+        Some(definition) if definitions.contains_key(definition) => Reach::Other,
+        Some(_) | None => Reach::Unowned,
     };
     let model = &ir.model;
-    let features: BTreeSet<&str> = model
+    let features: BTreeMap<&str, Reach> = model
         .features
         .iter()
-        .filter(|feature| of_other(feature.product_definition.as_ref()))
-        .map(|feature| feature.id.as_str())
+        .map(|feature| (feature.id.as_str(), of(feature.product_definition.as_ref())))
         .collect();
-    let seeds = |home: &'static str, field: &'static str, ids: Vec<&str>| {
-        let arena = Arena::home(home, field);
-        ids.into_iter()
-            .filter_map(move |id| {
-                Some(Seed {
-                    arena: arena.clone()?,
-                    id: id.to_owned(),
-                })
-            })
-            .collect::<Vec<_>>()
+    let feature = |id: Option<&str>| {
+        id.and_then(|id| features.get(id).copied())
+            .unwrap_or(Reach::Unowned)
     };
-    let parameters = model
-        .parameters
-        .iter()
-        .filter(|parameter| {
-            of_other(parameter.product_definition.as_ref())
-                || parameter
-                    .owner
-                    .as_ref()
-                    .is_some_and(|owner| features.contains(owner.as_str()))
-        })
-        .map(|parameter| parameter.id.as_str())
-        .collect();
-    let history_bodies = model
-        .history_bodies
-        .iter()
-        .filter(|body| {
-            body.produced_by
-                .as_ref()
-                .is_some_and(|feature| features.contains(feature.as_str()))
-        })
-        .map(|body| body.id.as_str())
-        .collect();
-    let sketches = model
+    let parameters = model.parameters.iter().map(|parameter| {
+        let owner = feature(parameter.owner.as_ref().map(FeatureId::as_str));
+        let reach = match of(parameter.product_definition.as_ref()) {
+            Reach::Other => Reach::Other,
+            Reach::Held if owner == Reach::Other => Reach::Other,
+            Reach::Held => Reach::Held,
+            Reach::Unowned => owner,
+        };
+        (parameter.id.as_str(), reach)
+    });
+    let history_bodies = model.history_bodies.iter().map(|body| {
+        (
+            body.id.as_str(),
+            feature(body.produced_by.as_ref().map(FeatureId::as_str)),
+        )
+    });
+    let listing: BTreeMap<&str, Reach> = model
         .product_definitions
         .iter()
-        .filter(|definition| others.contains(&definition.id))
-        .flat_map(|definition| &definition.sketches)
-        .map(crate::sketches::SketchId::as_str)
-        .collect();
-    let tessellations = model
-        .tessellations
-        .iter()
-        .filter(|tessellation| match &tessellation.of {
-            Meshed::Display { definition } | Meshed::Definition { definition, .. } => {
-                others.contains(definition)
-            }
-            Meshed::Body { .. } | Meshed::Pmi { .. } | Meshed::Unresolved => false,
+        .flat_map(|definition| {
+            let reach = of(Some(&definition.id));
+            definition
+                .sketches
+                .iter()
+                .map(move |sketch| (sketch.as_str(), reach))
         })
-        .map(|tessellation| tessellation.id.as_str())
-        .collect();
+        .fold(BTreeMap::new(), |mut listing, (sketch, reach)| {
+            let entry = listing.entry(sketch).or_insert(reach);
+            if reach == Reach::Held {
+                *entry = Reach::Held;
+            }
+            listing
+        });
+    let sketches = model.sketches.iter().map(|sketch| {
+        let id = sketch.id.as_str();
+        (id, listing.get(id).copied().unwrap_or(Reach::Unowned))
+    });
+    let tessellations = model.tessellations.iter().filter_map(|tessellation| {
+        let reach = match &tessellation.of {
+            Meshed::Display { definition } | Meshed::Definition { definition, .. } => {
+                of(Some(definition))
+            }
+            Meshed::Unresolved => Reach::Unowned,
+            Meshed::Body { .. } | Meshed::Pmi { .. } => return None,
+        };
+        Some((tessellation.id.as_str(), reach))
+    });
+    let point_clouds = model
+        .point_clouds
+        .iter()
+        .map(|cloud| (cloud.id.as_str(), of(Some(&cloud.definition))));
     let scopes = ir
         .design
         .scopes
         .iter()
-        .filter(|scope| others.contains(&scope.definition))
-        .map(|scope| scope.definition.as_str())
+        .map(|scope| (scope.definition.as_str(), of(Some(&scope.definition))));
+    let mut others = Vec::new();
+    let mut unowned = Vec::new();
+    let mut sort = |home: &'static str,
+                    field: &'static str,
+                    records: &mut dyn Iterator<Item = (&str, Reach)>| {
+        let Some(arena) = Arena::home(home, field) else {
+            return;
+        };
+        for (id, reach) in records {
+            let seed = Seed {
+                arena: arena.clone(),
+                id: id.to_owned(),
+            };
+            match reach {
+                Reach::Held => {}
+                Reach::Other => others.push(seed),
+                Reach::Unowned => unowned.push(seed),
+            }
+        }
+    };
+    sort(
+        "model",
+        "features",
+        &mut features.iter().map(|(id, reach)| (*id, *reach)),
+    );
+    sort("model", "parameters", &mut { parameters });
+    sort("model", "history_bodies", &mut { history_bodies });
+    sort("model", "sketches", &mut { sketches });
+    sort("model", "tessellations", &mut { tessellations });
+    sort("model", "point_clouds", &mut { point_clouds });
+    sort("design", "scopes", &mut { scopes });
+    let files: BTreeMap<&str, &ProductDefinitionId> = definitions
+        .iter()
+        .filter(|(_, definition)| matches!(definition.storage, Storage::File { .. }))
+        .filter_map(|(id, _)| Some((id.as_str().split_once('#')?.1, *id)))
         .collect();
-    let mut all = seeds("model", "features", features.into_iter().collect());
-    all.extend(seeds("model", "parameters", parameters));
-    all.extend(seeds("model", "history_bodies", history_bodies));
-    all.extend(seeds("model", "sketches", sketches));
-    all.extend(seeds("model", "tessellations", tessellations));
-    all.extend(seeds("design", "scopes", scopes));
-    all
+    for (codec, namespace) in &ir.native.0 {
+        for (arena, records) in namespace.arenas() {
+            for record in records {
+                let id = record.id();
+                let scope = id.split(':').nth(1).unwrap_or_default();
+                let reach = match scope.split_once('@') {
+                    Some((key, _)) => of(files.get(key).copied()),
+                    None => of(root),
+                };
+                let seed = Seed {
+                    arena: Arena::Native {
+                        codec: codec.as_str().to_owned(),
+                        arena: arena.as_str().to_owned(),
+                    },
+                    id: id.to_owned(),
+                };
+                match reach {
+                    Reach::Held => {}
+                    Reach::Other => others.push(seed),
+                    Reach::Unowned => unowned.push(seed),
+                }
+            }
+        }
+    }
+    (others, unowned)
 }

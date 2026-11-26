@@ -13,6 +13,7 @@ mod design_parameters;
 mod design_v11;
 mod document_identity;
 mod emboss_operands;
+mod encode_sets;
 mod external_placement;
 mod f30_placements;
 mod fillet_projection;

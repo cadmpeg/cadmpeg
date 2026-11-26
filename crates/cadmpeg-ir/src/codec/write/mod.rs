@@ -105,8 +105,9 @@ pub trait EncoderBackend {
     const TARGET: Self::Target;
 
     /// Plans a write from the request resolved by [`Encoder::plan`], in the
-    /// encode's session `ctx`: every ceiling of the caller's limits is
-    /// charged to it, so that the cumulative ceilings hold per encode.
+    /// encode's session `ctx`, which holds the caller's limits. The
+    /// cumulative ceilings hold per session: a decode session that the
+    /// writer opens of its own starts its totals at zero.
     fn plan_resolved(
         &self,
         ctx: &DecodeContext<'_>,
@@ -212,13 +213,22 @@ impl<E: EncoderBackend> Encoder for E {
         let session = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
         let (report, coverage, outputs, payloads, annotations) = if let [_] = outputs.as_slice() {
             let (report, coverage, bytes, annotations) = plan_output(self, &session, unchecked)?;
-            (report, coverage, outputs, vec![bytes], annotations)
+            let census = report.census.clone();
+            (
+                report,
+                coverage,
+                outputs,
+                vec![(bytes, census)],
+                annotations,
+            )
         } else {
             plan_encode_set(self, &session, unchecked, outputs)?
         };
+        let (payloads, censuses) = payloads.into_iter().unzip();
         let mut plan = ExportPlan {
             report,
             payloads,
+            censuses,
             format: E::FORMAT,
             coverage,
             outputs,
@@ -328,7 +338,9 @@ fn plan_output<E: EncoderBackend>(
     let synthesis_cause = match &write_path {
         WritePath::Synthesized { consumption } if E::REUSES_SOURCE && same_format => {
             Some(synthesis_cause.unwrap_or_else(|| {
-                if displaced {
+                let degraded =
+                    matches!(consumption, Consumption::Degraded { .. }) && input.fidelity.is_some();
+                if displaced && !degraded {
                     SynthesisCause::PatchDeclined {
                         reason: "the write target displaces the source dialect".to_owned(),
                     }
@@ -340,6 +352,16 @@ fn plan_output<E: EncoderBackend>(
         WritePath::Synthesized { .. } | WritePath::Patched { .. } | WritePath::VerbatimReplay => {
             None
         }
+    };
+    let write_path = match write_path {
+        WritePath::Synthesized {
+            consumption: Consumption::Degraded { .. },
+        } if synthesis_cause.is_some() => WritePath::Synthesized {
+            consumption: Consumption::Degraded {
+                reason: "the synthesis cause states the reason".to_owned(),
+            },
+        },
+        write_path => write_path,
     };
     let write_path = write_path.into_report(input.fidelity.is_some());
     let mut report = match identity {
@@ -368,8 +390,8 @@ type PlannedOutputBody = (
 /// `export:output.unwritten` naming its definition, while another output is
 /// written. The encode refuses where no output can be written, with the
 /// first output's refusal, and where the session runs out (§3.4, Refusals).
-/// Returns the outputs written with their payloads, and the root output's
-/// annotations.
+/// Returns the outputs written with the payload and census of each, and the
+/// root output's annotations.
 fn plan_encode_set<E: EncoderBackend>(
     encoder: &E,
     ctx: &DecodeContext<'_>,
@@ -417,6 +439,7 @@ fn plan_encode_set<E: EncoderBackend>(
                 continue;
             }
         };
+        let census = report.census.clone();
         match &mut planned {
             None => {
                 let mut report = report;
@@ -431,7 +454,7 @@ fn plan_encode_set<E: EncoderBackend>(
             root_annotations = annotations;
         }
         written.push(output);
-        payloads.push(bytes);
+        payloads.push((bytes, census));
     }
     let Some((mut report, coverage)) = planned else {
         return Err(unwritten.into_iter().next().map_or_else(
@@ -454,12 +477,13 @@ fn plan_encode_set<E: EncoderBackend>(
 }
 
 /// The merged report and coverage of an encode set, with the outputs
-/// written, their payloads, and the root output's annotations.
+/// written, the payload and census of each, and the root output's
+/// annotations.
 type PlannedSet = (
     ExportReport,
     ArenaCoverage,
     Vec<PlannedOutput>,
-    Vec<Vec<u8>>,
+    Vec<(Vec<u8>, EntityCensus)>,
     Option<crate::annotations::Annotations>,
 );
 
@@ -513,25 +537,40 @@ fn merge_output(
 }
 
 /// `export:definition.placed` for a payload that carries bodies and no
-/// product definition: it writes the bodies of each definition that no
+/// product definition: it writes the contents of each definition that no
 /// occurrence places at the top of the output, and names each such
-/// definition that holds a body (§3.4, Encode sets).
+/// definition that holds a body, an occurrence, or a mesh the payload
+/// carries (§3.4, Encode sets).
 fn placed_definition_loss(ir: &CadIr, coverage: &ArenaCoverage, format: &str) -> Option<LossNote> {
     use crate::schema::EntityKind;
+    use crate::tessellation::Meshed;
     if coverage.carries(EntityKind::ProductDefinition) || !coverage.carries(EntityKind::Body) {
         return None;
     }
+    let meshes = coverage.carries(EntityKind::Tessellation);
+    let meshed = |id: &ProductDefinitionId| {
+        meshes
+            && ir.model.tessellations.iter().any(|tessellation| {
+                matches!(
+                    &tessellation.of,
+                    Meshed::Display { definition } | Meshed::Definition { definition, .. }
+                        if definition == id
+                )
+            })
+    };
     definition_placed(
         format,
-        "holds no product definition and writes the bodies of each definition that no \
+        "holds no product definition and writes the contents of each definition that no \
          occurrence places at the top of the output",
         crate::products::unplaced_definitions(&ir.model)
             .filter(|definition| {
                 !definition.bodies.is_empty()
+                    || !definition.occurrences.is_empty()
                     || definition
                         .instance_bodies
                         .iter()
                         .any(|instance| !instance.bodies.is_empty())
+                    || meshed(&definition.id)
             })
             .map(|definition| definition.id.as_str().to_owned()),
     )
@@ -831,8 +870,8 @@ impl Consumption {
     /// reason fidelity was not consumed.
     fn patch_declined(&self, fidelity: Option<&SourceFidelity>) -> SynthesisCause {
         let reason = match (self, fidelity) {
-            (Self::Degraded { reason }, _) => reason.clone(),
-            (Self::NotConsumed, None) => "the encode holds no source fidelity".to_owned(),
+            (_, None) => "the encode holds no source fidelity".to_owned(),
+            (Self::Degraded { reason }, Some(_)) => reason.clone(),
             (Self::NotConsumed, Some(_)) => {
                 "the writer wrote the file from the document without its source".to_owned()
             }
@@ -1004,6 +1043,8 @@ pub struct ExportPlan {
     report: ExportReport,
     /// The payload of each of `outputs`, in its order.
     payloads: Vec<Vec<u8>>,
+    /// The census of each of `outputs`, in its order.
+    censuses: Vec<EntityCensus>,
     outputs: Vec<PlannedOutput>,
     annotations: Option<crate::annotations::Annotations>,
 }
@@ -1018,6 +1059,14 @@ impl ExportPlan {
     #[must_use]
     pub fn outputs(&self) -> &[PlannedOutput] {
         &self.outputs
+    }
+
+    /// The census of each output, in the order of [`Self::outputs`]. The
+    /// report's census is the sum of the outputs' censuses that count on its
+    /// basis.
+    #[must_use]
+    pub fn censuses(&self) -> &[EntityCensus] {
+        &self.censuses
     }
 
     /// The annotations that describe the root output's payload, where the

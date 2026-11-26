@@ -322,6 +322,38 @@ impl References {
         })
     }
 
+    /// The seeds of `candidates` that no record names other than one of
+    /// `dropped` or of these seeds: a candidate that another record names
+    /// is kept, and so is each candidate that a kept one names.
+    fn unnamed(&self, candidates: Vec<Seed>, dropped: &[Seed]) -> Vec<Seed> {
+        let dropped: BTreeSet<&str> = dropped.iter().map(|seed| seed.id.as_str()).collect();
+        let mut left: BTreeSet<String> = candidates.iter().map(|seed| seed.id.clone()).collect();
+        loop {
+            let named: Vec<String> = left
+                .iter()
+                .filter(|id| {
+                    self.named_by.get(id.as_str()).is_some_and(|slots| {
+                        slots.iter().any(|slot| {
+                            let holder = self.holders[*slot].1.as_str();
+                            !dropped.contains(holder) && !left.contains(holder)
+                        })
+                    })
+                })
+                .cloned()
+                .collect();
+            if named.is_empty() {
+                break;
+            }
+            for id in named {
+                left.remove(&id);
+            }
+        }
+        candidates
+            .into_iter()
+            .filter(|seed| left.contains(&seed.id))
+            .collect()
+    }
+
     /// Each record that names an id of `gone`, once.
     fn naming(&self, gone: &BTreeSet<String>) -> BTreeSet<&(Arena, String)> {
         gone.iter()
@@ -434,7 +466,9 @@ pub(crate) fn drop_records(
 /// Removes from `ir` each record that needs an id of `gone`, which `ir` no
 /// longer holds, and each record that needs one of those, transitively, as
 /// [`drop_records`] removes the records that need a seed; then removes each
-/// seed as [`drop_records`] does.
+/// seed as [`drop_records`] does, and each record of `unnamed` that no
+/// record outside `seeds` and `unnamed` names, directly or through records
+/// of `unnamed` it keeps.
 ///
 /// # Errors
 ///
@@ -445,8 +479,10 @@ pub(crate) fn drop_records_needing(
     ir: &mut CadIr,
     gone: BTreeSet<String>,
     seeds: Vec<Seed>,
+    unnamed: Vec<Seed>,
 ) -> Result<(), CodecError> {
     let mut cascade = Cascade::new(ctx, ir, &gone)?;
+    let unnamed = cascade.references.unnamed(unnamed, &seeds);
     let mut released = Released::new(String::new());
     release(
         ctx,
@@ -457,7 +493,7 @@ pub(crate) fn drop_records_needing(
         Vec::new(),
         &mut released,
     )?;
-    for seed in seeds {
+    for seed in seeds.into_iter().chain(unnamed) {
         remove(ctx, ir, &mut cascade, &seed)?;
     }
     Ok(())

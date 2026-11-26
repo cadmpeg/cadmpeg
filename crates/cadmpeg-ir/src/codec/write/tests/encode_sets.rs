@@ -243,6 +243,64 @@ fn a_per_file_encode_writes_one_output_per_file_definition() {
 }
 
 #[test]
+fn an_unplaced_definition_with_occurrences_or_meshes_is_named_as_placed() {
+    use crate::math::Point3;
+    use crate::products::{Occurrence, ProductDefinition, Storage};
+    use crate::tessellation::{Meshed, Tessellation, TessellationMesh};
+    let mut ir = two_file_document();
+    let leaf_body = bare_body("leaf");
+    let mut leaf = ProductDefinition::new(definition_id("leaf"), Storage::Embedded);
+    leaf.bodies.push(leaf_body.id.clone());
+    let occurrence =
+        crate::ids::OccurrenceId::try_from("test:model:occurrence#leaf".to_owned()).unwrap();
+    let mut group = ProductDefinition::new(definition_id("group"), Storage::Embedded);
+    group.occurrences.push(occurrence.clone());
+    let meshed = ProductDefinition::new(definition_id("meshed"), Storage::Embedded);
+    let empty = ProductDefinition::new(definition_id("empty"), Storage::Embedded);
+    ir.model
+        .product_definitions
+        .extend([leaf, group, meshed, empty]);
+    ir.model
+        .occurrences
+        .push(Occurrence::new(occurrence, definition_id("leaf"), None));
+    ir.geometry.bodies.push(leaf_body);
+    let mut mesh = Tessellation::new(
+        "test:model:tessellation#meshed".try_into().unwrap(),
+        TessellationMesh::List {
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        },
+        Vec::new(),
+    )
+    .unwrap();
+    mesh.of = Meshed::Display {
+        definition: definition_id("meshed"),
+    };
+    ir.model.tessellations.push(mesh);
+    let named = |coverage: ArenaDisposition| {
+        let coverage = ArenaCoverage::Declared(ArenaDispositions {
+            product_definitions: ArenaDisposition::Omitted,
+            tessellations: coverage,
+            ..uniform_dispositions(ArenaDisposition::Written)
+        });
+        let loss = crate::codec::write::placed_definition_loss(&ir, &coverage, "test").unwrap();
+        ["loose", "group", "meshed", "leaf", "part", "empty"]
+            .into_iter()
+            .filter(|key| loss.message.contains(definition_id(key).as_str()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        named(ArenaDisposition::Written),
+        ["loose", "group", "meshed"]
+    );
+    assert_eq!(named(ArenaDisposition::Omitted), ["loose", "group"]);
+}
+
+#[test]
 fn a_per_file_encode_that_names_only_the_root_is_refused_before_planning() {
     let ir = two_file_document();
     let error = PerFileEncoder
@@ -453,4 +511,133 @@ fn an_output_that_cannot_be_written_leaves_the_others_written() {
     .plan(input)
     .unwrap_err();
     assert!(matches!(error, EncodeError::Backend(_)), "got {error:?}");
+}
+
+/// A writer of a format that stores one definition per file. It keeps the
+/// document of each output it plans.
+#[derive(Default)]
+struct DocumentRecorder(std::sync::Mutex<Vec<CadIr>>);
+
+impl EncoderBackend for DocumentRecorder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
+    const DEFINITION_PER_FILE: bool = true;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        self.0.lock().unwrap().push(input.ir.clone());
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            crate::codec::write::NativeDispositions::written(),
+        ))
+    }
+}
+
+/// [`two_file_document_with_records`] with a feature, a parameter, and a
+/// sketch that no definition owns, and a feature that no definition owns
+/// and that the part's feature depends on.
+fn document_with_unowned_records() -> CadIr {
+    let mut ir = two_file_document_with_records();
+    let mut loose = ir.model.features[0].clone();
+    loose.product_definition = None;
+    loose.id = "test:model:feature#loose".try_into().unwrap();
+    let mut shared = loose.clone();
+    shared.id = "test:model:feature#shared".try_into().unwrap();
+    let part = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id.as_str() == "test:model:feature#part")
+        .unwrap();
+    part.dependencies = std::iter::once(shared.id.clone()).collect();
+    ir.model.features.extend([loose, shared]);
+    ir.model
+        .parameters
+        .push(crate::features::parameters::DesignParameter {
+            product_definition: None,
+            id: crate::features::ParameterId::mint("test:model:parameter#loose").unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "1mm".into(),
+            display: None,
+            value: None,
+            dependencies: crate::features::selections::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+    ir.model.sketches.push(crate::sketches::Sketch {
+        id: "test:model:sketch#loose".try_into().unwrap(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: crate::sketches::SketchPlacement::Unresolved {},
+        profiles: crate::sketches::SketchProfiles::default(),
+        native_ref: None,
+    });
+    ir
+}
+
+#[test]
+fn a_record_no_definition_owns_is_held_by_the_root_output_and_where_it_is_named() {
+    let ir = document_with_unowned_records();
+    let names = OutputNames::from([
+        (definition_id("root"), output_name("assembly.out")),
+        (definition_id("part"), output_name("part.out")),
+    ]);
+    let recorder = DocumentRecorder::default();
+    let plan = recorder
+        .plan(EncodeInput::new(&ir, None).with_outputs(Outputs::Named(&names)))
+        .unwrap();
+    assert_eq!(plan.outputs().len(), 2);
+    let documents = recorder.0.into_inner().unwrap();
+    let held = |document: &CadIr| {
+        let model = &document.model;
+        model
+            .features
+            .iter()
+            .map(|feature| feature.id.as_str().to_owned())
+            .chain(
+                model
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.id.as_str().to_owned()),
+            )
+            .chain(
+                model
+                    .sketches
+                    .iter()
+                    .map(|sketch| sketch.id.as_str().to_owned()),
+            )
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(
+        held(&documents[0]),
+        [
+            "test:model:feature#loose",
+            "test:model:feature#root",
+            "test:model:feature#shared",
+            "test:model:parameter#loose",
+            "test:model:sketch#loose",
+        ]
+        .map(str::to_owned)
+        .into()
+    );
+    assert_eq!(
+        held(&documents[1]),
+        ["test:model:feature#part", "test:model:feature#shared"]
+            .map(str::to_owned)
+            .into()
+    );
 }
