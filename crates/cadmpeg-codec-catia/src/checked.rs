@@ -356,8 +356,18 @@ mod tests {
         let value = [0.0, 0.0, (1.0_f64 + 5.0e-10).sqrt()];
         assert!(RelaxedUnitVector3::new(value).is_some());
         assert!(ExactUnitVector3::new(value).is_none());
-        assert!(serde_json::from_value::<ExactUnitVector3>(serde_json::json!(value)).is_err());
-        assert!(serde_json::from_value::<RelaxedUnitVector3>(serde_json::json!(value)).is_ok());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<ExactUnitVector3>(serde_json::json!(
+                value
+            ))
+            .is_err()
+        );
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<RelaxedUnitVector3>(serde_json::json!(
+                value
+            ))
+            .is_ok()
+        );
     }
 
     #[test]
@@ -395,9 +405,10 @@ mod tests {
         let component = 1.0 + 6.0e-10;
         let pair = RelaxedUnitVector2::from_hypot([component, 0.0]).expect("pair inside the band");
         for placed in placements(pair) {
-            let wire = serde_json::to_value(placed).expect("serialize placed direction");
+            let wire = cadmpeg_core::serde_erase::json::to_value(placed)
+                .expect("serialize placed direction");
             assert_eq!(
-                serde_json::from_value::<RelaxedHypotUnitVector3>(wire)
+                cadmpeg_core::serde_erase::json::from_value::<RelaxedHypotUnitVector3>(wire)
                     .expect("a placed direction deserializes wherever its pair was admitted"),
                 placed
             );

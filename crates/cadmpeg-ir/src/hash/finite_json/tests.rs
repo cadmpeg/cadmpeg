@@ -69,7 +69,7 @@ fn assert_value<T: Serialize>(value: &T, expected: &Value) {
 
 #[test]
 fn to_json_value_matches_serde_json_on_scalars_and_keys_with_one_zero() {
-    let mut expected = serde_json::to_value(scalars()).unwrap();
+    let mut expected = cadmpeg_core::serde_erase::json::to_value(scalars()).unwrap();
     assert!(expected["negative_zero"]
         .as_f64()
         .unwrap()
@@ -82,7 +82,10 @@ fn to_json_value_matches_serde_json_on_scalars_and_keys_with_one_zero() {
 #[test]
 fn to_json_value_matches_serde_json_on_a_document() {
     let document = crate::examples::unit_cube().unwrap();
-    assert_value(&document, &serde_json::to_value(&document).unwrap());
+    assert_value(
+        &document,
+        &cadmpeg_core::serde_erase::json::to_value(&document).unwrap(),
+    );
 }
 
 #[test]
@@ -104,7 +107,7 @@ fn every_writer_writes_negative_zero_as_zero() {
 #[test]
 fn to_json_value_refuses_a_key_that_is_not_a_string() {
     let map = BTreeMap::from([((1u8, 2u8), 3u8)]);
-    let expected = serde_json::to_value(&map).unwrap_err();
+    let expected = cadmpeg_core::serde_erase::json::to_value(&map).unwrap_err();
     let actual = to_json_value(&map).unwrap_err();
     assert_eq!(actual.to_string(), expected.to_string());
 }
@@ -128,7 +131,7 @@ fn compact_canonical_text_is_the_compact_serde_text() {
     });
     assert_eq!(
         to_compact_canonical_json_string(&value).unwrap(),
-        serde_json::to_string(&value).unwrap()
+        cadmpeg_core::serde_erase::json::to_string(&value).unwrap()
     );
     assert!(matches!(
         to_compact_canonical_json_string(&f64::NAN),

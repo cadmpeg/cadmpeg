@@ -111,13 +111,14 @@ fn class25_samples_keep_pairing_and_do_not_require_endpoint_samples() {
             let Class25SourceRelation::Sampled { samples, .. } = map.source else {
                 panic!("sampled map")
             };
-            let wire = serde_json::to_value(&samples).expect("sample arrays");
+            let wire = cadmpeg_core::serde_erase::json::to_value(&samples).expect("sample arrays");
             assert_eq!(wire["target"].as_array().expect("target array").len(), n);
             assert_eq!(wire["target"][0], 1.0);
             assert_eq!(wire["target"][n - 1], 9.0);
             assert_eq!(wire["source"][0], if decreasing { 4.0 } else { 1.0 });
             assert_eq!(
-                serde_json::from_value::<Class25SamplePairs>(wire).expect("load paired arrays"),
+                cadmpeg_core::serde_erase::json::from_value::<Class25SamplePairs>(wire)
+                    .expect("load paired arrays"),
                 *samples
             );
         }
@@ -128,7 +129,7 @@ fn class25_samples_keep_pairing_and_do_not_require_endpoint_samples() {
         serde_json::json!({"target":[2.0,1.0],"source":[1.0,2.0]}),
         serde_json::json!({"target":[1.0,2.0,3.0],"source":[1.0,3.0,2.0]}),
     ] {
-        assert!(serde_json::from_value::<Class25SamplePairs>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Class25SamplePairs>(wire).is_err());
     }
 }
 
@@ -142,7 +143,7 @@ fn a_family_class25_admits_seventeen_sample_pairs() {
         panic!("sampled map");
     };
     assert_eq!(
-        serde_json::to_value(samples).expect("sample pairs")["target"]
+        cadmpeg_core::serde_erase::json::to_value(samples).expect("sample pairs")["target"]
             .as_array()
             .expect("target array")
             .len(),
@@ -209,7 +210,7 @@ fn class25_named_sampled_witness_retains_two_arrays() {
         panic!("sampled map")
     };
     assert_eq!(
-        serde_json::to_value(samples).expect("paired sample arrays"),
+        cadmpeg_core::serde_erase::json::to_value(samples).expect("paired sample arrays"),
         serde_json::json!({"target":[0.0,18.232_007_915_496_25], "source":[0.0,18.232_007_915_496_25]})
     );
 }

@@ -754,7 +754,8 @@ fn external_definition(
     externals: &mut BTreeMap<String, ProductDefinition>,
     document: ExternalDocument,
 ) -> Result<ProductDefinitionId, CodecError> {
-    let key = serde_json::to_string(&document).map_err(CodecError::malformed)?;
+    let key =
+        cadmpeg_core::serde_erase::json::to_string(&document).map_err(CodecError::malformed)?;
     if let Some(definition) = externals.get(&key) {
         return Ok(definition.id.clone());
     }

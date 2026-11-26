@@ -163,7 +163,9 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
     assert!(arenas
         .get("feature_body_write_group_partition_uses")
         .is_none_or(Vec::is_empty));
-    let integers = serde_json::to_value(&arenas["parasolid_entity_52_integer_records"]).unwrap();
+    let integers =
+        cadmpeg_core::serde_erase::json::to_value(&arenas["parasolid_entity_52_integer_records"])
+            .unwrap();
     for key in [709, 624, 464, 565] {
         assert!(integers
             .as_array()
@@ -171,7 +173,8 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
             .iter()
             .any(|record| record["values"] == serde_json::json!([key])));
     }
-    let entities = serde_json::to_value(&arenas["parasolid_entity_51_records"]).unwrap();
+    let entities =
+        cadmpeg_core::serde_erase::json::to_value(&arenas["parasolid_entity_51_records"]).unwrap();
     assert!(entities
         .as_array()
         .unwrap()

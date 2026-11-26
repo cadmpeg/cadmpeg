@@ -465,7 +465,7 @@ fn draft_payload_route_admits_fixture() {
 fn draft_graph_references() -> Vec<FeatureDraftConstructionReference> {
     (0..4).map(|ordinal| {
         let index = if ordinal == 0 { 1 } else { 2 };
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": format!("nx:feature-history:draft-construction-reference#0-0000000000-{ordinal:010}"),
             "operation_label": "nx:feature-history:operation-label#0-0000000000",
             "ordinal": ordinal,

@@ -58,11 +58,11 @@ pub(super) fn project(
         for (name, text) in [
             (
                 cadmpeg_ir::codec_name!("inventor:properties"),
-                serde_json::to_string(native_properties),
+                cadmpeg_core::serde_erase::json::to_string(native_properties),
             ),
             (
                 cadmpeg_ir::codec_name!("inventor:operands"),
-                serde_json::to_string(operands),
+                cadmpeg_core::serde_erase::json::to_string(operands),
             ),
         ] {
             let text =

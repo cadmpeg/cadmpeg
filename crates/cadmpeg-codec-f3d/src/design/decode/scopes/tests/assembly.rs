@@ -1120,9 +1120,9 @@ fn as_built_378_alignment_reads_wide_locators() {
         assert_eq!(alignment.angle(), 0.25);
         assert_eq!(alignment.offset(), [1.0, 2.0, 3.0]);
         assert_eq!(alignment.owners.len(), 4);
-        let serialized = serde_json::to_value(&alignment).unwrap();
+        let serialized = cadmpeg_core::serde_erase::json::to_value(&alignment).unwrap();
         let restored: crate::records::feature::assembly::DesignAssemblyAlignment =
-            serde_json::from_value(serialized).unwrap();
+            cadmpeg_core::serde_erase::json::from_value(serialized).unwrap();
         assert_eq!(restored, alignment);
         let frames = alignment.operand_frames().expect("wide locator frames");
         assert!(frames

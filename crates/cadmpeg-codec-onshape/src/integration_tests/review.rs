@@ -508,7 +508,7 @@ fn stale_unused_and_optional_responses_are_omitted_at_geometry_and_design_depth(
             let bytes = members(&fixture("plate-fillet"), |members| {
                 members.insert(
                     path.into(),
-                    serde_json::to_vec(
+                    cadmpeg_core::serde_erase::json::to_vec(
                         &json!({"microversionId":{"theId":"another-snapshot"},"bodies":[]}),
                     )
                     .unwrap(),

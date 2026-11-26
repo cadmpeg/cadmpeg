@@ -308,8 +308,12 @@ mod tests {
                 "index_source_offsets": [13, 14, 15, 16] },
             "source_entry": "entry", "source_offset": 5
         });
-        let row: RmCreationDisplayDataRelation = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(row).unwrap(), wire);
+        let row: RmCreationDisplayDataRelation =
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(row).unwrap(),
+            wire
+        );
         for (field, value) in [
             ("class_name", serde_json::json!("other")),
             ("target_object_id", serde_json::json!("object")),
@@ -319,20 +323,24 @@ mod tests {
             let mut invalid = wire.clone();
             invalid[field] = value;
             assert!(
-                serde_json::from_value::<RmCreationDisplayDataRelation>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
+                cadmpeg_core::serde_erase::json::from_value::<RmCreationDisplayDataRelation>(
+                    invalid
+                )
+                .unwrap_err()
+                .to_string()
+                .contains(field)
             );
         }
         for index in 0..4 {
             let mut invalid = wire.clone();
             invalid["encoding"]["index_source_offsets"][index] = 99.into();
             assert!(
-                serde_json::from_value::<RmCreationDisplayDataRelation>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("index_source_offsets")
+                cadmpeg_core::serde_erase::json::from_value::<RmCreationDisplayDataRelation>(
+                    invalid
+                )
+                .unwrap_err()
+                .to_string()
+                .contains("index_source_offsets")
             );
         }
     }
@@ -353,10 +361,15 @@ mod tests {
                 r#"{{"id":"relation","ordinal":0{first},"class_name":"UGS::RM_creation_display_data","class_definition":"definition","encoding":{encoding},"source_entry":"entry","source_offset":5}}"#
             );
             let relation: RmCreationDisplayDataRelation = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&relation).unwrap(), json);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&relation).unwrap(),
+                json
+            );
             let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
             wire["encoding"]["raw_indices"][0] = serde_json::json!("ff");
-            let error = serde_json::from_value::<RmCreationDisplayDataRelation>(wire).unwrap_err();
+            let error =
+                cadmpeg_core::serde_erase::json::from_value::<RmCreationDisplayDataRelation>(wire)
+                    .unwrap_err();
             assert!(error.to_string().contains("raw_indices"), "{error}");
         }
     }

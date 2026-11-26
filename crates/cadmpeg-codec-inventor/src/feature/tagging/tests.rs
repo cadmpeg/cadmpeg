@@ -20,7 +20,7 @@ fn list(marker: u16, refs: &[u32]) -> PmDcReferenceList {
 }
 
 fn feature() -> PmDcFeature {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": "inventor:pmdc:feature#generated-0",
         "segment_token": "generated", "record_ordinal": 0,
         "type_id": "914d8790d011f8d10008cabc0663dc09", "save_version_major": 19,
@@ -41,7 +41,7 @@ fn properties() -> Vec<PmDcFeatureProperty> {
             "form": "surface_body", "body": {"index": 1, "qualified": false}
         })),
     ].into_iter().map(|(ordinal, type_id, kind)| {
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": format!("inventor:pmdc:feature-property#generated-{ordinal}"),
             "segment_token": "generated", "record_ordinal": ordinal,
             "type_id": type_id, "save_version_major": 19,
@@ -67,7 +67,7 @@ fn inventory(derived: bool) -> FeatureInventory {
         ..FeatureInventory::default()
     };
     let label = |ordinal: u32, class: super::ClassId| {
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("inventor:pmdc:feature-label#generated-{ordinal}"),
         "segment_token": "generated", "record_ordinal": ordinal,
         "type_id": "2ba4482bd2115864600074b79b49ebb0", "save_version_major": 19,
@@ -172,7 +172,7 @@ fn tagging_reports_each_collection_and_member_refusal() {
         "save_version_major",
         "type_id",
     ] {
-        let mut wire = serde_json::to_value(&p[0]).expect("wire");
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&p[0]).expect("wire");
         wire[field] = match field {
             "record_ordinal" => 4.into(),
             "save_version_major" => 20.into(),
@@ -180,16 +180,18 @@ fn tagging_reports_each_collection_and_member_refusal() {
             _ => "other".into(),
         };
         sync_property_id(&mut wire);
-        let changed = serde_json::from_value(wire).expect("changed collection");
+        let changed =
+            cadmpeg_core::serde_erase::json::from_value(wire).expect("changed collection");
         assert_eq!(
             refusal(&f, |_| Some(&changed)),
             "slot 0 requires the same-segment object-collection type and version"
         );
     }
     let replace = |kind| {
-        let mut wire = serde_json::to_value(&p[0]).expect("wire");
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&p[0]).expect("wire");
         wire["kind"] = kind;
-        serde_json::from_value::<PmDcFeatureProperty>(wire).expect("collection")
+        cadmpeg_core::serde_erase::json::from_value::<PmDcFeatureProperty>(wire)
+            .expect("collection")
     };
     let changed = replace(
         serde_json::json!({"form": "surface_body", "body": {"index": 1, "qualified": false}}),
@@ -277,7 +279,7 @@ fn tagging_reports_each_body_wrapper_identity_type_and_form_refusal() {
         "type_id",
         "kind",
     ] {
-        let mut wire = serde_json::to_value(&p[1]).expect("wire");
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&p[1]).expect("wire");
         wire[field] = match field {
             "record_ordinal" => 4.into(),
             "save_version_major" => 20.into(),
@@ -288,7 +290,7 @@ fn tagging_reports_each_body_wrapper_identity_type_and_form_refusal() {
             _ => "other".into(),
         };
         sync_property_id(&mut wire);
-        let changed = serde_json::from_value(wire).expect("changed body");
+        let changed = cadmpeg_core::serde_erase::json::from_value(wire).expect("changed body");
         assert_eq!(
             refusal(&f, |ordinal| Some(if ordinal == 1 {
                 &p[0]

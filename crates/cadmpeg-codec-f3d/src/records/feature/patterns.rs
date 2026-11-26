@@ -1407,8 +1407,8 @@ mod tests {
         for axis in [inline, circular_axis(false), circular_axis(true)] {
             let owned = DesignCircularPatternAxisWire::from(axis.clone());
             assert_eq!(
-                serde_json::to_vec(&axis).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(&axis).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -1436,8 +1436,8 @@ mod tests {
         ] {
             let owned = DesignRectangularPatternInstancesWire::from(instances.clone());
             assert_eq!(
-                serde_json::to_vec(&instances).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(&instances).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -1462,8 +1462,8 @@ mod tests {
         for record in [construction(None), construction(Some(components()))] {
             let owned = DesignRectangularPatternConstructionWire::from(record.clone());
             assert_eq!(
-                serde_json::to_vec(&record).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -1485,10 +1485,11 @@ mod tests {
 
     #[test]
     fn historical_pattern_axis_refuses_empty_wrapper_arrays() {
-        let mut wire = serde_json::to_value(circular_axis(false)).unwrap();
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(circular_axis(false)).unwrap();
         wire["wrapper_record_indices"] = serde_json::json!([]);
         wire["identity_offsets"] = serde_json::json!([]);
-        let error = serde_json::from_value::<DesignCircularPatternAxis>(wire).unwrap_err();
+        let error = cadmpeg_core::serde_erase::json::from_value::<DesignCircularPatternAxis>(wire)
+            .unwrap_err();
         assert!(error.to_string().contains("wrappers must be nonempty"));
     }
 
@@ -1496,18 +1497,24 @@ mod tests {
     fn rectangular_pattern_instances_validate_scalar_count_and_active_axis() {
         for count in [0, 1, 3] {
             let mut record = construction(Some(components()));
-            let previous = serde_json::to_vec(&record).unwrap();
+            let previous = cadmpeg_core::serde_erase::json::to_vec(&record).unwrap();
             let frames = (0..count).map(frame).collect();
             assert!(record
                 .try_set_instances(Some(DesignRectangularPatternInstances::Bodies(frames)))
                 .is_err());
-            assert_eq!(serde_json::to_vec(&record).unwrap(), previous);
-            let mut wire = serde_json::to_value(&record).unwrap();
-            wire["instances"] = serde_json::to_value(DesignRectangularPatternInstances::Bodies(
-                (0..count).map(frame).collect(),
-            ))
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+                previous
+            );
+            let mut wire = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
+            wire["instances"] = cadmpeg_core::serde_erase::json::to_value(
+                DesignRectangularPatternInstances::Bodies((0..count).map(frame).collect()),
+            )
             .unwrap();
-            assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(wire).is_err());
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
+                DesignRectangularPatternConstruction,
+            >(wire)
+            .is_err());
         }
         let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
         wire.v_count = 2;
@@ -1577,9 +1584,12 @@ mod tests {
         });
         let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
         assert_eq!(record.distribution(), wire.distribution.as_ref());
-        let json = serde_json::to_value(&record).unwrap();
+        let json = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
         assert_eq!(
-            serde_json::from_value::<DesignRectangularPatternConstruction>(json).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<DesignRectangularPatternConstruction>(
+                json
+            )
+            .unwrap(),
             record
         );
     }
@@ -1587,7 +1597,7 @@ mod tests {
     #[test]
     fn rectangular_pattern_capped_instance_search_round_trips_without_instances() {
         let uncapped = construction(None);
-        assert!(serde_json::to_value(&uncapped)
+        assert!(cadmpeg_core::serde_erase::json::to_value(&uncapped)
             .unwrap()
             .get("instance_search_cap")
             .is_none());
@@ -1598,10 +1608,13 @@ mod tests {
             record.instance_search_cap(),
             Some(RectangularPatternSearchCap::ScannedBytes)
         );
-        let value = serde_json::to_value(&record).unwrap();
+        let value = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
         assert_eq!(value["instance_search_cap"], "scanned-bytes");
         assert_eq!(
-            serde_json::from_value::<DesignRectangularPatternConstruction>(value).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<DesignRectangularPatternConstruction>(
+                value
+            )
+            .unwrap(),
             record
         );
         wire.instances = Some(components());
@@ -1697,7 +1710,7 @@ mod tests {
             offset: 63,
         });
         let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
-        let encoded = serde_json::to_value(&record).unwrap();
+        let encoded = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
         for (field, value) in [
             ("distance_type", 6),
             ("selection_kind", 9),
@@ -1705,21 +1718,37 @@ mod tests {
         ] {
             let mut corrupt = encoded.clone();
             corrupt["directions"][0][field] = value.into();
-            assert!(
-                serde_json::from_value::<DesignRectangularPatternConstruction>(corrupt).is_err()
-            );
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
+                DesignRectangularPatternConstruction,
+            >(corrupt)
+            .is_err());
         }
         let mut span = encoded.clone();
         span["directions"][0]["distance_type"] = 8.into();
         span["directions"][0]["selection_kind"] = 16.into();
         span["directions"][0]["displacement"] = serde_json::json!([0.0, 0.0, 1.0]);
-        assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(span).is_ok());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignRectangularPatternConstruction>(
+                span
+            )
+            .is_ok()
+        );
         let mut zero = encoded.clone();
         zero["secondary_direction"]["value"] = serde_json::json!([0.0, 0.0, 0.0]);
-        assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(zero).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignRectangularPatternConstruction>(
+                zero
+            )
+            .is_err()
+        );
         let mut missing = encoded;
         missing["directions"] = serde_json::json!([]);
-        assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(missing).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignRectangularPatternConstruction>(
+                missing
+            )
+            .is_err()
+        );
         let mut inactive_one = wire.clone();
         inactive_one.u_extent = 0.0;
         let record = DesignRectangularPatternConstruction::try_from(inactive_one).unwrap();
@@ -1727,8 +1756,8 @@ mod tests {
         assert_eq!(record.directions().len(), 1);
         assert!(record.secondary_direction().is_some());
         assert!(
-            serde_json::from_value::<DesignRectangularPatternConstruction>(
-                serde_json::to_value(&record).unwrap()
+            cadmpeg_core::serde_erase::json::from_value::<DesignRectangularPatternConstruction>(
+                cadmpeg_core::serde_erase::json::to_value(&record).unwrap()
             )
             .is_ok()
         );

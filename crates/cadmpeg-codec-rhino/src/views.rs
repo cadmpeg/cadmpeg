@@ -2142,7 +2142,7 @@ mod tests {
         assert_eq!(value.top.get(), 0.0);
         assert_eq!(value.bottom.get(), 1.0);
         assert_eq!(value.floating_viewport, 3);
-        let json = serde_json::to_value(&value).expect("window position JSON");
+        let json = cadmpeg_core::serde_erase::json::to_value(&value).expect("window position JSON");
         assert_eq!(json["left"], 0.1);
         assert_eq!(json["right"], 0.9);
     }

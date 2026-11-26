@@ -73,11 +73,16 @@ mod tests {
             r#"{"id":"nx:feature:body-reference-lane#1","operation_label":"operation","body_reference_ordinal":0,"body_object_index":110,"branch":17,"encoding":"payload_object_index","object_indices":[1,256],"raw_object_indices":["f001","f10100"],"data_blocks":[null,"block"],"source_offsets":[111,113]}"#,
         ] {
             let record: FeatureOperationBodyReferenceLane = serde_json::from_str(json).unwrap();
-            assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
             assert_eq!(
-                serde_json::to_vec(&record).unwrap(),
-                serde_json::to_vec(&FeatureOperationBodyReferenceLaneWire::from(record.clone()))
-                    .unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+                json.as_bytes()
+            );
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(
+                    &FeatureOperationBodyReferenceLaneWire::from(record.clone())
+                )
+                .unwrap()
             );
             cadmpeg_test_support::native_serialization::assert_native_limit(
                 &record,

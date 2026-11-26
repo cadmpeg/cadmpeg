@@ -9,11 +9,14 @@ pub(super) fn rejects_changed_fields<T: DeserializeOwned + Serialize>(
     wire: Value,
     fields: &[&str],
 ) {
-    let admitted: T = serde_json::from_value(wire).unwrap();
-    let wire = serde_json::to_value(admitted).unwrap();
+    let admitted: T = cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(admitted).unwrap();
     for field in fields {
         let mut invalid = wire.clone();
         invalid[field] = (wire[field].as_u64().unwrap() + 1).into();
-        assert!(serde_json::from_value::<T>(invalid).is_err(), "{field}");
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<T>(invalid).is_err(),
+            "{field}"
+        );
     }
 }

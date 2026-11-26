@@ -147,8 +147,10 @@ mod tests {
         let json =
             super::super::tests::WIRE.replace("\"id\":\"g\"", "\"id\":\"nx:feature:thru-curve#0\"");
         let group: FeatureThruCurveConstructionBranchGroup = serde_json::from_str(&json).unwrap();
-        let borrowed = serde_json::to_vec(&group).unwrap();
-        let owned = serde_json::to_vec(&super::super::GroupWire::from(group.clone())).unwrap();
+        let borrowed = cadmpeg_core::serde_erase::json::to_vec(&group).unwrap();
+        let owned =
+            cadmpeg_core::serde_erase::json::to_vec(&super::super::GroupWire::from(group.clone()))
+                .unwrap();
         assert_eq!(borrowed, owned);
         assert_eq!(borrowed, json.as_bytes());
         assert_native_limit(

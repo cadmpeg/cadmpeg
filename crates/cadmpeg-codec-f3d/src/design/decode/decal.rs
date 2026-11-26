@@ -1105,7 +1105,7 @@ mod tests {
             assert_eq!(image.asset.name(), "mark.png");
             assert_eq!(image.target_group_record_index, 24);
             assert_eq!(image.asset.primary_frame_length(), asset_frame_length);
-            let wire = serde_json::to_value(&image).unwrap();
+            let wire = cadmpeg_core::serde_erase::json::to_value(&image).unwrap();
             let offset = |relative: usize| serde_json::json!(scope_at + relative);
             assert_eq!(wire["asset_reference_offset"], offset(asset_reference + 1));
             assert_eq!(wire["scope_code_offset"], offset(scope_code));
@@ -1113,7 +1113,8 @@ mod tests {
                 wire["target_group_reference_offset"],
                 offset(target_reference + 1)
             );
-            let decoded: DesignDecalImage = serde_json::from_value(wire).unwrap();
+            let decoded: DesignDecalImage =
+                cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
             assert_eq!(decoded, image);
         }
     }

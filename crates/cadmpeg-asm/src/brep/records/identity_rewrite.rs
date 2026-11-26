@@ -86,7 +86,7 @@ mod tests {
     use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
     fn record() -> super::super::EdgeContinuity {
-        serde_json::from_value(serde_json::json!({"id":"f3d:asm:edge-continuity#1","record_index":1,"edge":"f3d:brep:entity#1","sense":"forward","continuity":"tangent"})).unwrap()
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"id":"f3d:asm:edge-continuity#1","record_index":1,"edge":"f3d:brep:entity#1","sense":"forward","continuity":"tangent"})).unwrap()
     }
 
     #[test]
@@ -102,7 +102,7 @@ mod tests {
         });
         let value = record().rewrite_identities(&ctx, &mut map).unwrap();
         assert_eq!(
-            serde_json::to_value(value).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(value).unwrap(),
             serde_json::json!({"id":"f3d:brep/source/asm:edge-continuity#1","record_index":1,"edge":"f3d:brep/source/brep:entity#1","sense":"forward","continuity":"tangent"})
         );
         drop(map);

@@ -12,6 +12,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::serde_erase::json as json_wire;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
@@ -49,7 +50,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     native.design_face_operands.push(
-        serde_json::from_value(serde_json::json!({
+        json_wire::from_value(serde_json::json!({
             "id": "f3d:test:face-operand#200",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -104,7 +105,7 @@ fn sketch_geometry_flag_is_retained_with_a_loss_note() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     native.design_sketch_placements.push(
-        serde_json::from_value(serde_json::json!({
+        json_wire::from_value(serde_json::json!({
             "id": "f3d:native:sketch-placement#0",
             "entity_id": "0_35",
             "byte_offset": 100,
@@ -201,7 +202,7 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
     let ir = cadmpeg_ir::document::CadIr::empty();
     let mut native = F3dNative::default();
     let mut operand: crate::records::topology::face::DesignFaceOperand =
-        serde_json::from_value(serde_json::json!({
+        json_wire::from_value(serde_json::json!({
             "id": "f3d:test:face-operand#200",
             "scope_record_index": 100,
             "scope_reference_ordinal": 0,
@@ -556,7 +557,7 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
     let extrude = |profile: serde_json::Value,
                    start: serde_json::Value,
                    termination: serde_json::Value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": profile,
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": profile,
                 "direction": {"kind": "profile_normal"},
                 "start": start,
                 "extent": {
@@ -599,7 +600,7 @@ fn extrude_completeness_requires_resolved_profile_start_and_termination() {
 #[test]
 fn hole_completeness_requires_support_placement_size_and_extent() {
     let complete: cadmpeg_ir::features::FeatureDefinition =
-        serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "hole", "value": {"face": {"kind": "faces", "value": ["test:model:face#support"]},
+        json_wire::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "hole", "value": {"face": {"kind": "faces", "value": ["test:model:face#support"]},
             "placements": [{
                 "kind": "directed",
                 "position": {"x": 1.0, "y": 2.0, "z": 3.0},
@@ -726,7 +727,7 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
 #[test]
 fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("sheet-metal definition")
     };
     let base_flange = |profile| {
@@ -780,7 +781,7 @@ fn sheet_metal_completeness_requires_neutral_profiles_and_edges() {
 #[test]
 fn selected_face_and_edge_features_require_neutral_operands() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("selected feature definition")
     };
     let fillet = |edges| {
@@ -819,7 +820,7 @@ fn selected_face_and_edge_features_require_neutral_operands() {
 #[test]
 fn form_and_primitive_completeness_requires_construction_payloads() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("construction definition")
     };
 
@@ -865,7 +866,7 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
 #[test]
 fn profile_and_boolean_features_require_resolved_operation_inputs() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("profile or Boolean definition")
     };
 
@@ -968,7 +969,7 @@ fn datum_point_completeness_requires_a_resolved_construction_rule() {
                 .expect("DatumPoint object")
                 .insert("construction".into(), construction);
         }
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("DatumPoint definition")
     };
 
@@ -991,7 +992,7 @@ fn datum_point_completeness_requires_a_resolved_construction_rule() {
 #[test]
 fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     let definition = |value| {
-        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+        json_wire::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("datum-plane definition")
     };
 
@@ -1142,7 +1143,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 #[test]
 fn draft_completeness_requires_material_side() {
     let complete: cadmpeg_ir::features::FeatureDefinition =
-        serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "draft", "value": {"faces": {"kind": "faces", "value": ["test:model:face#drafted"]},
+        json_wire::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "draft", "value": {"faces": {"kind": "faces", "value": ["test:model:face#drafted"]},
             "anchor": {
                 "kind": "neutral_plane",
                 "plane": {"kind": "faces", "value": ["test:model:face#neutral"]}
@@ -1165,7 +1166,7 @@ fn draft_completeness_requires_material_side() {
 
 #[test]
 fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
-    let resolved: FeatureDefinition = serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "loft", "value": {"sections": [
+    let resolved: FeatureDefinition = json_wire::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "loft", "value": {"sections": [
             {"kind": "profile", "value": {
                 "kind": "spatial_sketch_profiles",
                 "value": {"sketch": "test:model:spatial-sketch#1", "profiles": [2, 3]}
@@ -1184,7 +1185,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
     .expect("resolved Loft definition");
     assert!(!feature_definition_is_incomplete(&resolved));
 
-    let unresolved: FeatureDefinition = serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "loft", "value": {"sections": [
+    let unresolved: FeatureDefinition = json_wire::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "loft", "value": {"sections": [
             {"kind": "profile", "value": {"kind": "planar", "value": {"kind": "native", "value": "native:profile"}}},
             {"kind": "profile", "value": {
                 "kind": "spatial_sketch_profiles",
@@ -1540,7 +1541,7 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
             draft.payload = crate::records::feature::scope::DesignScopePayload::Emboss(Some(
-                serde_json::from_value(serde_json::json!({
+                json_wire::from_value(serde_json::json!({
                     "control_words": [7, 9], "native_pair": [17, 23],
                     "depth_owner": {"value": 60, "offset": 29},
                     "auxiliary_group": {"value": 72, "offset": 40},
@@ -1670,7 +1671,7 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
 #[test]
 fn typed_profile_ambiguous_selection_retains_profile_loss() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let definition = serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": "synthetic:profile"}},
+    let definition = json_wire::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": "synthetic:profile"}},
         "direction": {"kind": "profile_normal"},
         "start": {"kind": "profile_plane"},
         "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 7.0}}},
@@ -1807,7 +1808,7 @@ fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
 #[test]
 fn counted_partial_profile_selection_reports_one_loss() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let definition = serde_json::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch_selection", "value": {
+    let definition = json_wire::from_value(serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch_selection", "value": {
             "sketch": "synthetic:test:sketch#42", "selections": ["f3d:Design/BulkStream.dat:scope#10"]
         }}},
         "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
@@ -1892,7 +1893,7 @@ fn native_mesh_face_group_sources_remain_incomplete() {
         serde_json::json!({"kind": "mesh_generate_face_groups", "value": {"source":{"kind":"native","value":{"native":"mesh"}}, "settings":{"method":"fast", "angle_threshold":0.73,"minimum_area_fraction":0.17}}}),
         serde_json::json!({"kind": "mesh_combine_face_groups", "value": {"source":{"kind":"native","value":{"native":"mesh", "members":["first", "second"]}}}}),
     ] {
-        let operation: FeatureOperation = serde_json::from_value(definition).unwrap();
+        let operation: FeatureOperation = json_wire::from_value(definition).unwrap();
         assert!(feature_definition_is_incomplete(
             &FeatureDefinition::Operation(operation)
         ));

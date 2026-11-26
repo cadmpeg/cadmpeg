@@ -86,17 +86,19 @@ fn chain_pins_are_two_axes_of_a_seed() {
     assert_finding(&with(chain(native(&["b"]))), off);
 }
 
+/// §5.8: an `InContext` target runs from the assembly, and `own` is the
+/// owner's place in it, so a seed's path from the owner lies under `own`.
 #[test]
-fn an_in_context_pin_is_judged_by_its_target_path() {
+fn an_in_context_pin_is_judged_through_its_own_place_in_the_assembly() {
     let off = "picks geometry of no seed";
-    let in_context = |keys: &[&str]| {
+    let in_context = |own: Option<&[&str]>, keys: &[&str]| {
         let mut picked = entity(NameKind::Edge, 1);
         picked.context = Some(PickContext::InContext {
             assembly: DefinitionRef {
                 definition: id("definition", "assembly"),
                 configuration: None,
             },
-            own: None,
+            own: own.map(path),
             target: Some(path(keys)),
         });
         through(picked)
@@ -106,6 +108,12 @@ fn an_in_context_pin_is_judged_by_its_target_path() {
             pins: [pin(&["a"]), second],
         }])
     };
-    assert_no_finding_containing(&with(chain(links(in_context(&["a", "c"])))), off);
-    assert_finding(&with(chain(links(in_context(&["b"])))), off);
+    let placed: Option<&[&str]> = Some(&["p"]);
+    assert_no_finding_containing(
+        &with(chain(links(in_context(placed, &["p", "a", "c"])))),
+        off,
+    );
+    assert_finding(&with(chain(links(in_context(placed, &["p", "b"])))), off);
+    assert_finding(&with(chain(links(in_context(placed, &["a", "c"])))), off);
+    assert_no_finding_containing(&with(chain(links(in_context(None, &["b"])))), off);
 }

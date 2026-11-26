@@ -43,7 +43,10 @@ mod tests {
             (StructuredValueKind::Tags, "\"tags\""),
             (StructuredValueKind::Unicode, "\"unicode\""),
         ] {
-            assert_eq!(serde_json::to_string(&kind).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&kind).unwrap(),
+                wire
+            );
             assert_eq!(
                 serde_json::from_str::<StructuredValueKind>(wire).unwrap(),
                 kind

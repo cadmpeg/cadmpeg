@@ -45,7 +45,7 @@ fn archive_session_member_result_outlives_source_and_releases_archive_ownership(
     assert!(member.decoded().unwrap().is_ok());
     let decoded = member.decoded().unwrap().unwrap();
     let body = &decoded.body;
-    let payload = serde_json::to_vec(&(
+    let payload = cadmpeg_core::serde_erase::json::to_vec(&(
         &decoded.ir,
         (
             &body.transfer,

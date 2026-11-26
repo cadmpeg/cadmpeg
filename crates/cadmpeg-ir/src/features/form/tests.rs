@@ -57,7 +57,7 @@ fn partial() -> FormConstruction {
 }
 
 fn no_inputs() -> serde_json::Value {
-    serde_json::to_value(FormInputs::default()).unwrap()
+    cadmpeg_core::serde_erase::json::to_value(FormInputs::default()).unwrap()
 }
 
 fn form_operation_wire(
@@ -80,11 +80,17 @@ fn complete_form_arrays_retain_their_v10_values() {
         serde_json::json!(["test:model:subd#1", "test:model:subd#2"]),
     ] {
         let value = form_operation_wire("complete", cages, no_inputs());
-        let operation: FeatureOperation = serde_json::from_value(value.clone()).unwrap();
-        assert_eq!(serde_json::to_value(operation).unwrap(), value);
+        let operation: FeatureOperation =
+            cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(operation).unwrap(),
+            value
+        );
     }
-    let unknown =
-        serde_json::to_value(FeatureOperation::Form(FormConstruction::default())).unwrap();
+    let unknown = cadmpeg_core::serde_erase::json::to_value(FeatureOperation::Form(
+        FormConstruction::default(),
+    ))
+    .unwrap();
     let cages = &unknown["value"]["cages"];
     assert_eq!(cages["kind"], "retained");
     assert_eq!(cages["value"]["membership"]["kind"], "partial");
@@ -94,9 +100,11 @@ fn complete_form_arrays_retain_their_v10_values() {
 #[test]
 fn partial_and_complete_forms_retain_inputs_candidates_and_certainty() {
     let construction = partial();
-    let value = serde_json::to_value(FeatureOperation::Form(construction.clone())).unwrap();
+    let value =
+        cadmpeg_core::serde_erase::json::to_value(FeatureOperation::Form(construction.clone()))
+            .unwrap();
     assert_eq!(
-        serde_json::from_value::<FeatureOperation>(value).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(value).unwrap(),
         FeatureOperation::Form(construction.clone())
     );
     let complete = FormConstruction::try_new(
@@ -109,19 +117,20 @@ fn partial_and_complete_forms_retain_inputs_candidates_and_certainty() {
         },
     )
     .unwrap();
-    let value = serde_json::to_value(FeatureOperation::Form(complete.clone())).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(FeatureOperation::Form(complete.clone()))
+        .unwrap();
     assert_eq!(
         value["value"]["cages"],
         serde_json::json!({"kind": "complete", "value": ["test:model:subd#1"]})
     );
     assert!(value["value"]["cage_inputs"].is_object());
     assert_eq!(
-        serde_json::from_value::<FeatureOperation>(value.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(value.clone()).unwrap(),
         FeatureOperation::Form(complete)
     );
     let mut conflicting = value;
     conflicting["value"]["cages"]["value"] = serde_json::json!([]);
-    assert!(serde_json::from_value::<FeatureOperation>(conflicting).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(conflicting).is_err());
     assert_eq!(construction.referenced_cages().count(), 2);
     assert_eq!(construction.committed_cages().count(), 1);
 }
@@ -296,7 +305,8 @@ fn form_schema_covers_legacy_arrays_and_retained_construction() {
             _ => false,
         }
     }
-    let schema = serde_json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
     let text = schema.to_string();
     assert!(text.contains("FormCagesWire"));
     assert!(text.contains("FormCageObservation"));
@@ -411,9 +421,9 @@ fn foreign_form_reference_round_trips_and_rewrites_only_typed_local_identities()
         membership.clone(),
     )
     .unwrap();
-    let encoded = serde_json::to_value(&construction).unwrap();
+    let encoded = cadmpeg_core::serde_erase::json::to_value(&construction).unwrap();
     assert_eq!(
-        serde_json::from_value::<FormConstruction>(encoded).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(encoded).unwrap(),
         construction
     );
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
@@ -577,7 +587,7 @@ fn known_bindings_can_have_unknown_membership_and_inactive_resources_cannot_be_m
         serde_json::json!(["test:model:subd#1", "test:model:subd#1"]),
     ] {
         assert!(
-            serde_json::from_value::<FeatureOperation>(form_operation_wire(
+            cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(form_operation_wire(
                 "complete",
                 cages,
                 no_inputs()
@@ -599,25 +609,27 @@ fn form_candidate_and_native_references_require_checked_identities() {
         ),
         form_operation_wire("complete", serde_json::json!([]), invalid_reference),
     ] {
-        assert!(serde_json::from_value::<FeatureOperation>(value).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(value).is_err());
     }
 }
 
 #[test]
 fn complete_form_rejects_contradictory_supplemental_membership_claims() {
-    let mut valid = serde_json::to_value(
+    let mut valid = cadmpeg_core::serde_erase::json::to_value(
         FormConstruction::complete(vec![SubdId::mint("test:model:subd#1").unwrap()]).unwrap(),
     )
     .unwrap();
     valid["inputs"]["cardinality_evidence"] = serde_json::json!([1]);
     valid["inputs"]["position_evidence"] = serde_json::json!([{"observation": 0, "ordinal": 0}]);
-    assert!(serde_json::from_value::<FormConstruction>(valid.clone()).is_ok());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(valid.clone()).is_ok());
     let mut wrong_count = valid.clone();
     wrong_count["inputs"]["cardinality_evidence"] = serde_json::json!([2]);
-    assert!(serde_json::from_value::<FormConstruction>(wrong_count).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(wrong_count).is_err());
     let mut wrong_position = valid;
     wrong_position["inputs"]["position_evidence"][0]["ordinal"] = serde_json::json!(1);
-    assert!(serde_json::from_value::<FormConstruction>(wrong_position).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(wrong_position).is_err()
+    );
 
     let construction = partial();
     let mut inputs = construction.inputs().clone();
@@ -675,18 +687,24 @@ fn form_wire_rejects_duplicate_evidence_and_invalid_type_claims() {
         serde_json::json!({"cages":{"kind":"complete","value":cages},"inputs":inputs})
     };
     for value in bad.into_iter().map(wire) {
-        assert!(serde_json::from_value::<FormConstruction>(value).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(value).is_err());
     }
     for namespace in ["null", "unreadable", "unvisited"] {
         let value = wire(
             serde_json::json!({"cages":[],"inputs":{"reference_evidence":[{"source":"test:stream:record#1","role":"body","ordinal":0,"target":{"kind":namespace}}]}}),
         );
-        let parsed: FormConstruction = serde_json::from_value(value.clone()).unwrap();
-        assert_eq!(serde_json::to_value(parsed).unwrap(), value);
+        let parsed: FormConstruction =
+            cadmpeg_core::serde_erase::json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(parsed).unwrap(),
+            value
+        );
         let mut unexpected = value;
         unexpected["inputs"]["reference_evidence"][0]["target"]["unexpected"] =
             serde_json::json!(true);
-        assert!(serde_json::from_value::<FormConstruction>(unexpected).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(unexpected).is_err()
+        );
     }
 }
 
@@ -696,9 +714,13 @@ fn form_reference_group_wire_rejects_null_old_names_and_out_of_range_values() {
         "source": "test:stream:record#1", "role": "body", "ordinal": 0,
         "target": {"kind": "unreadable"}
     });
-    let absent: FormNativeReference = serde_json::from_value(plain.clone()).unwrap();
+    let absent: FormNativeReference =
+        cadmpeg_core::serde_erase::json::from_value(plain.clone()).unwrap();
     assert_eq!(absent.group, None);
-    assert_eq!(serde_json::to_value(absent.clone()).unwrap(), plain);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(absent.clone()).unwrap(),
+        plain
+    );
     for value in [
         serde_json::Value::Null,
         serde_json::json!(-1),
@@ -706,16 +728,17 @@ fn form_reference_group_wire_rejects_null_old_names_and_out_of_range_values() {
     ] {
         let mut bad = plain.clone();
         bad["group"] = value;
-        assert!(serde_json::from_value::<FormNativeReference>(bad).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<FormNativeReference>(bad).is_err());
     }
     let too_large = r#"{"source":"test:stream:record#1","role":"body","ordinal":0,"group":18446744073709551616,"target":{"kind":"unreadable"}}"#;
     assert!(serde_json::from_str::<FormNativeReference>(too_large).is_err());
     let mut old = plain.clone();
     old["run"] = serde_json::json!(12);
-    assert!(serde_json::from_value::<FormNativeReference>(old).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FormNativeReference>(old).is_err());
     let mut maximum = plain;
     maximum["group"] = serde_json::json!(u64::MAX);
-    let maximum: FormNativeReference = serde_json::from_value(maximum).unwrap();
+    let maximum: FormNativeReference =
+        cadmpeg_core::serde_erase::json::from_value(maximum).unwrap();
     assert_eq!(
         maximum.group,
         Some(FormReferenceGroup::from_label(u64::MAX))
@@ -1001,13 +1024,14 @@ fn membership_checks_order_and_complete_closure_evidence() {
 #[test]
 fn resource_associations_are_checked_and_round_trip() {
     let empty = FormConstruction::complete(Vec::new()).unwrap();
-    let explicit_empty = serde_json::to_value(&empty).unwrap();
+    let explicit_empty = cadmpeg_core::serde_erase::json::to_value(&empty).unwrap();
     assert_eq!(
         explicit_empty["inputs"]["resource_associations"],
         serde_json::json!([])
     );
     assert_eq!(
-        serde_json::from_value::<FormConstruction>(explicit_empty.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(explicit_empty.clone())
+            .unwrap(),
         empty
     );
     let mut omitted = explicit_empty.clone();
@@ -1015,10 +1039,10 @@ fn resource_associations_are_checked_and_round_trip() {
         .as_object_mut()
         .unwrap()
         .remove("resource_associations");
-    assert!(serde_json::from_value::<FormConstruction>(omitted).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(omitted).is_err());
     let mut null = explicit_empty;
     null["inputs"]["resource_associations"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<FormConstruction>(null).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(null).is_err());
     let cage = SubdId::mint("test:model:subd#a").unwrap();
     let other = SubdId::mint("test:model:subd#b").unwrap();
     let primary = FormResource {
@@ -1051,30 +1075,35 @@ fn resource_associations_are_checked_and_round_trip() {
     };
     let valid =
         FormConstruction::try_new(inputs.clone(), observations.clone(), complete.clone()).unwrap();
-    let wire = serde_json::to_value(&valid).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&valid).unwrap();
     assert_eq!(
-        serde_json::from_value::<FormConstruction>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(wire.clone()).unwrap(),
         valid
     );
     let mut duplicate = wire.clone();
     duplicate["inputs"]["resource_associations"]
         .as_array_mut()
         .unwrap()
-        .push(serde_json::to_value(&association).unwrap());
-    assert!(serde_json::from_value::<FormConstruction>(duplicate).is_err());
+        .push(cadmpeg_core::serde_erase::json::to_value(&association).unwrap());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(duplicate).is_err());
     let mut unknown_cage = wire.clone();
     unknown_cage["inputs"]["resource_associations"][0]["cage"] = serde_json::json!(other.as_str());
-    assert!(serde_json::from_value::<FormConstruction>(unknown_cage).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(unknown_cage).is_err());
     let mut duplicate_binding_wire = wire.clone();
     duplicate_binding_wire["inputs"]["resource_associations"][0]["resource"] =
-        serde_json::to_value(&primary).unwrap();
-    assert!(serde_json::from_value::<FormConstruction>(duplicate_binding_wire).is_err());
+        cadmpeg_core::serde_erase::json::to_value(&primary).unwrap();
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(duplicate_binding_wire)
+            .is_err()
+    );
     let mut conflicting_wire = wire;
     conflicting_wire["inputs"]["resource_state_evidence"] = serde_json::json!([{
         "resource": {"source": "test:stream:record#t", "entry": "asset/t.tsm"},
         "availability": "inactive"
     }]);
-    assert!(serde_json::from_value::<FormConstruction>(conflicting_wire).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<FormConstruction>(conflicting_wire).is_err()
+    );
     let mut duplicate_binding = inputs.clone();
     duplicate_binding.resource_associations[0].resource = primary;
     assert!(
@@ -1228,7 +1257,8 @@ fn resource_association_identities_rewrite_and_entry_stays_literal() {
 #[cfg(feature = "schema")]
 #[test]
 fn resource_association_schema_requires_unique_items() {
-    let schema = serde_json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
     assert_eq!(
         schema["$defs"]["FormInputs"]["properties"]["resource_associations"]["uniqueItems"],
         true
@@ -1247,7 +1277,8 @@ fn resource_association_schema_requires_unique_items() {
 #[cfg(feature = "schema")]
 #[test]
 fn form_reference_schema_retains_run_bounds_and_exact_guid_lengths() {
-    let schema = serde_json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(FormConstruction)).unwrap();
     let runs = &schema["$defs"]["FormInputs"]["properties"]["reference_runs"];
     assert_eq!(runs["type"], "array");
     assert_eq!(runs["uniqueItems"], true);
@@ -1279,7 +1310,7 @@ fn form_reference_schema_retains_run_bounds_and_exact_guid_lengths() {
         inputs["reference_runs"] = value;
         let form = form_operation_wire("complete", serde_json::json!([]), inputs);
         assert_eq!(
-            serde_json::from_value::<FeatureOperation>(form).is_ok(),
+            cadmpeg_core::serde_erase::json::from_value::<FeatureOperation>(form).is_ok(),
             valid
         );
     }
