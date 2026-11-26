@@ -65,6 +65,10 @@ pub(in crate::families) fn recover_missing_plane_normals(
         .into_iter()
         .map(|carrier| (carrier.pos, carrier))
         .collect();
+    let b2_offsets: HashMap<_, _> = b2_offset_supports_from_records(data, records)
+        .into_iter()
+        .map(|offset| (offset.pos, offset))
+        .collect();
 
     let mut all_bounds_min = [f64::INFINITY; 3];
     let mut all_bounds_max = [f64::NEG_INFINITY; 3];
@@ -103,15 +107,15 @@ pub(in crate::families) fn recover_missing_plane_normals(
             bounds.sphere_center[2].get(),
         );
         if let Some(Some((_, carrier))) = face_carriers.get(&u64::from(prefix.target)) {
-            if carrier.family() == ConsolidatedFamily::B && carrier.class() == 0x27 {
-                if let Some(plane) = decode_b2_plane(data, carrier, &b2_planes) {
-                    let axis = *plane.frame().axis().as_raw();
-                    let offset = center.vector_from(plane.origin().get()).dot(axis).abs();
-                    if offset <= PLANE_BOUNDS_TOLERANCE_MM {
-                        if let Some(vector) = FiniteVector::new([axis.x, axis.y, axis.z]) {
-                            normals.insert(prefix.target, vector);
-                            continue;
-                        }
+            if let Some(plane) =
+                resolve_b2_plane(data, &journal, carrier, &b2_planes, &b2_offsets, 0)
+            {
+                let axis = *plane.frame().axis().as_raw();
+                let offset = center.vector_from(plane.origin().get()).dot(axis).abs();
+                if offset <= PLANE_BOUNDS_TOLERANCE_MM {
+                    if let Some(vector) = FiniteVector::new([axis.x, axis.y, axis.z]) {
+                        normals.insert(prefix.target, vector);
+                        continue;
                     }
                 }
             }
@@ -374,15 +378,7 @@ impl<'a> CarrierResolver<'a> {
                 )?;
                 Some(SolvedSurfaceGeometry::Nurbs(fitted))
             }
-            SolvedSurfaceGeometry::Plane(plane) => {
-                let axis = *plane.frame().axis().as_raw();
-                let origin = FinitePoint3::new(plane.origin().get().translated(axis, distance))?;
-                Some(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
-                    origin,
-                    *plane.frame(),
-                )))
-            }
-            _ => None,
+            other => offset_analytic_surface(&other, distance),
         }
     }
 
@@ -749,7 +745,142 @@ pub(in crate::families) fn decode_u32_jet_pcurve(
 
 /// Decode a consolidated `b2 03 27` plane carrier across all observed bitmask
 /// layouts (both bounded `0x84..=0xf4` and unbounded `0x08` frames).
-pub(in crate::families) fn decode_b2_plane(
+pub(in crate::families) fn offset_analytic_surface(
+    base: &SolvedSurfaceGeometry,
+    distance: f64,
+) -> Option<SolvedSurfaceGeometry> {
+    if !distance.is_finite() {
+        return None;
+    }
+    match base {
+        SolvedSurfaceGeometry::Plane(plane) => {
+            let axis = *plane.frame().axis().as_raw();
+            let origin = FinitePoint3::new(plane.origin().get().translated(axis, distance))?;
+            Some(SolvedSurfaceGeometry::Plane(PlaneSurface::new(
+                origin,
+                *plane.frame(),
+            )))
+        }
+        SolvedSurfaceGeometry::Cylinder(cylinder) => {
+            let radius =
+                cadmpeg_ir::scalar::PositiveLength::new(cylinder.radius().get() + distance)?;
+            Some(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::new(
+                    cylinder.origin(),
+                    *cylinder.frame(),
+                    radius,
+                ),
+            ))
+        }
+        SolvedSurfaceGeometry::Sphere(sphere) => {
+            if sphere.radius().get() <= 0.0 {
+                return None;
+            }
+            let radius = cadmpeg_ir::scalar::PositiveLength::new(sphere.radius().get() + distance)?;
+            Some(SolvedSurfaceGeometry::Sphere(
+                cadmpeg_ir::geometry::analytic::SphereSurface::new(
+                    sphere.center(),
+                    *sphere.frame(),
+                    cadmpeg_ir::scalar::NonZeroLength::from(radius),
+                ),
+            ))
+        }
+        SolvedSurfaceGeometry::Torus(torus) => {
+            if torus.minor_radius().get() <= 0.0 {
+                return None;
+            }
+            let minor =
+                cadmpeg_ir::scalar::PositiveLength::new(torus.minor_radius().get() + distance)?;
+            Some(SolvedSurfaceGeometry::Torus(
+                cadmpeg_ir::geometry::analytic::TorusSurface::new(
+                    torus.center(),
+                    *torus.frame(),
+                    torus.major_radius(),
+                    cadmpeg_ir::scalar::NonZeroLength::from(minor),
+                ),
+            ))
+        }
+        SolvedSurfaceGeometry::Cone(cone) => {
+            const CONE_OFFSET_EXACT_TOLERANCE: f64 = 1.0e-12;
+            if (cone.ratio().get() - 1.0).abs() > CONE_OFFSET_EXACT_TOLERANCE {
+                return None;
+            }
+            let sin_half = cone.half_angle().get().sin();
+            if !sin_half.is_finite() || sin_half.abs() <= CONE_OFFSET_EXACT_TOLERANCE {
+                return None;
+            }
+            let shift = -distance / sin_half;
+            let axis = *cone.frame().axis().as_raw();
+            let origin = FinitePoint3::new(cone.origin().get().translated(axis, shift))?;
+            Some(SolvedSurfaceGeometry::Cone(
+                cadmpeg_ir::geometry::analytic::ConeSurface::new(
+                    origin,
+                    *cone.frame(),
+                    cone.radius(),
+                    cone.ratio(),
+                    cone.half_angle(),
+                ),
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn resolve_b2_plane<'a>(
+    data: &'a [u8],
+    journal: &AllocationJournal<'a>,
+    carrier: &'a ConsolidatedRecord,
+    b2_planes: &HashMap<usize, crate::families::b2::records::B2PlaneCarrier>,
+    b2_offsets: &HashMap<usize, crate::families::b2::records::B2OffsetSupport>,
+    depth: usize,
+) -> Option<PlaneSurface> {
+    if depth > MAX_ALIAS_DEPTH {
+        return None;
+    }
+    match (carrier.family(), carrier.class()) {
+        (ConsolidatedFamily::B, 0x27) => decode_b2_plane(data, carrier, b2_planes),
+        (ConsolidatedFamily::B, 0x2e) => {
+            let carrier_index =
+                journal.index(carrier.source_index(), carrier.source_range().start)?;
+            let payload = carrier.payload().and_then(|range| data.get(range))?;
+            let mut at = usize::from(payload.first() == Some(&0x81));
+            let inner_ref = allocation_reference(payload, &mut at)?;
+            let inner = resolve_ref(journal, carrier_index, inner_ref)?;
+            resolve_b2_plane(data, journal, inner, b2_planes, b2_offsets, depth + 1)
+        }
+        (ConsolidatedFamily::B, 0x30 | 0x31) => {
+            let carrier_index =
+                journal.index(carrier.source_index(), carrier.source_range().start)?;
+            let payload = carrier.payload().and_then(|range| data.get(range))?;
+            let mut at = 0;
+            let base_ref = allocation_reference(payload, &mut at)?;
+            let base = resolve_ref(journal, carrier_index, base_ref)?;
+            let distance = if let Some(parsed) = b2_offsets.get(&carrier.byte_offset()) {
+                parsed.distance.get()
+            } else {
+                let mut view = View::over_retained(payload.get(at..)?);
+                let d = view.f64_le()?;
+                let u0 = view.f64_le()?;
+                let v0 = view.f64_le()?;
+                let u1 = view.f64_le()?;
+                let v1 = view.f64_le()?;
+                if !d.is_finite() || !view.is_empty() {
+                    return None;
+                }
+                IncreasingParameterInterval::new([u0, u1])?;
+                IncreasingParameterInterval::new([v0, v1])?;
+                d
+            };
+            let plane = resolve_b2_plane(data, journal, base, b2_planes, b2_offsets, depth + 1)?;
+            let axis = *plane.frame().axis().as_raw();
+            let origin = FinitePoint3::new(plane.origin().get().translated(axis, distance))?;
+            Some(PlaneSurface::new(origin, *plane.frame()))
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn decode_b2_plane(
     data: &[u8],
     record: &ConsolidatedRecord,
     b2_planes: &HashMap<usize, crate::families::b2::records::B2PlaneCarrier>,
@@ -989,5 +1120,76 @@ mod tests {
         assert_eq!(nurbs.control_points().len(), 6);
         assert!((range[0] - 0.0).abs() < TEST_TOLERANCE);
         assert!((range[1] - 2.0).abs() < TEST_TOLERANCE);
+    }
+
+    #[test]
+    fn offset_analytic_surface_shifts_along_exact_unit_normal() {
+        use cadmpeg_ir::geometry::analytic::{
+            ConeSurface, CylinderSurface, PlaneSurface, SphereSurface, TorusSurface,
+        };
+        use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+        use cadmpeg_ir::math::Vector3;
+
+        const TOL: f64 = 1.0e-9;
+        let dist = 2.5;
+        let origin = Point3::new(1.0, -2.0, 3.0);
+        let z = Vector3::new(0.0, 0.0, 1.0);
+        let x = Vector3::new(1.0, 0.0, 0.0);
+
+        let plane =
+            SolvedSurfaceGeometry::Plane(PlaneSurface::try_new(origin, z, x).expect("plane"));
+        let Some(SolvedSurfaceGeometry::Plane(off_plane)) =
+            super::offset_analytic_surface(&plane, dist)
+        else {
+            panic!("plane offset");
+        };
+        assert!((off_plane.origin().get().z - (origin.z + dist)).abs() < TOL);
+
+        let cyl = SolvedSurfaceGeometry::Cylinder(
+            CylinderSurface::try_new(origin, z, x, 10.0).expect("cylinder"),
+        );
+        let Some(SolvedSurfaceGeometry::Cylinder(off_cyl)) =
+            super::offset_analytic_surface(&cyl, dist)
+        else {
+            panic!("cylinder offset");
+        };
+        assert!((off_cyl.radius().get() - 12.5).abs() < TOL);
+
+        let sph = SolvedSurfaceGeometry::Sphere(
+            SphereSurface::try_new(origin, z, x, 10.0).expect("sphere"),
+        );
+        let Some(SolvedSurfaceGeometry::Sphere(off_sph)) =
+            super::offset_analytic_surface(&sph, -dist)
+        else {
+            panic!("sphere offset");
+        };
+        assert!((off_sph.radius().get() - 7.5).abs() < TOL);
+
+        let tor = SolvedSurfaceGeometry::Torus(
+            TorusSurface::try_new(origin, z, x, 20.0, 5.0).expect("torus"),
+        );
+        let Some(SolvedSurfaceGeometry::Torus(off_tor)) =
+            super::offset_analytic_surface(&tor, dist)
+        else {
+            panic!("torus offset");
+        };
+        assert!((off_tor.major_radius().get() - 20.0).abs() < TOL);
+        assert!((off_tor.minor_radius().get() - 7.5).abs() < TOL);
+
+        let half = std::f64::consts::FRAC_PI_6;
+        let cone = SolvedSurfaceGeometry::Cone(
+            ConeSurface::try_new(origin, z, x, 4.0, 1.0, half).expect("cone"),
+        );
+        let Some(SolvedSurfaceGeometry::Cone(off_cone)) =
+            super::offset_analytic_surface(&cone, dist)
+        else {
+            panic!("cone offset");
+        };
+        assert!((off_cone.origin().get().z - (origin.z - dist / half.sin())).abs() < TOL);
+
+        let ell_cone = SolvedSurfaceGeometry::Cone(
+            ConeSurface::try_new(origin, z, x, 4.0, 1.5, half).expect("elliptical cone"),
+        );
+        assert!(super::offset_analytic_surface(&ell_cone, dist).is_none());
     }
 }
