@@ -121,6 +121,12 @@ fn mapping_loss_code(
         OnshapeLossCode::SweepNotSupported
     } else if feature.get("featureType").and_then(Value::as_str) == Some("cPlane") {
         planes::loss_code(feature, reason)
+    } else if valid_suppression
+        && feature.get("featureType").and_then(Value::as_str) == Some("shell")
+        && features::shell_record_valid(feature)
+        && reason.starts_with(features::SHELL_REFUSAL)
+    {
+        OnshapeLossCode::ShellNotSupported
     } else {
         OnshapeLossCode::HistoryNotSupported
     }
