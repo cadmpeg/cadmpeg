@@ -1048,6 +1048,157 @@ fn the_txt_tag_anchor_run_widens_with_the_class_version() {
     }
 }
 
+/// One curve of a `txt_tag` glyph outline: two zero bytes, the degree, the fit
+/// tolerance, the knot, weight, and control-point arrays, an f64, two Boolean
+/// bytes, and the parameter interval.
+fn txt_tag_outline_curve(degree: u32, knots: &[f64], points: &[[f64; 3]]) -> Vec<u8> {
+    let mut bytes = vec![0; 2];
+    bytes.extend_from_slice(&degree.to_le_bytes());
+    bytes.extend_from_slice(&1.0e-9f64.to_le_bytes());
+    let push_header = |bytes: &mut Vec<u8>, count: usize| {
+        let count = u32::try_from(count).expect("fixture value fits u32");
+        bytes.extend_from_slice(&count.to_le_bytes());
+        bytes.extend_from_slice(&count.to_le_bytes());
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+    };
+    push_header(&mut bytes, knots.len());
+    for knot in knots {
+        bytes.extend_from_slice(&knot.to_le_bytes());
+    }
+    push_header(&mut bytes, 0);
+    push_header(&mut bytes, points.len());
+    for coordinate in points.iter().flatten() {
+        bytes.extend_from_slice(&coordinate.to_le_bytes());
+    }
+    bytes.extend_from_slice(&1.0e-12f64.to_le_bytes());
+    bytes.extend_from_slice(&[1, 1]);
+    bytes.extend_from_slice(&knots[0].to_le_bytes());
+    bytes.extend_from_slice(&knots[knots.len() - 1].to_le_bytes());
+    bytes
+}
+
+/// A `txt_tag` glyph outline: the counted curve blocks and `lines` counted
+/// 48-byte lines.
+fn txt_tag_outline(curves: &[Vec<u8>], lines: u32) -> Vec<u8> {
+    let mut bytes = u32::try_from(curves.len())
+        .expect("fixture value fits u32")
+        .to_le_bytes()
+        .to_vec();
+    for curve in curves {
+        bytes.extend_from_slice(curve);
+    }
+    bytes.extend_from_slice(&lines.to_le_bytes());
+    for line in 0..lines {
+        for value in [f64::from(line), 0.5, 0.0, 0.25, 0.0, 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+/// A `txt_tag` record below class version 4 with `outline` stored after the
+/// eight-byte lane that follows its anchor.
+fn txt_tag_sketch_text_record_with_outline(outline: &[u8]) -> Vec<u8> {
+    let mut bytes =
+        txt_tag_sketch_text_record_at(&[("txt_tag_base", 300)], &[261], &[261], (0.25, -1.5), 3);
+    let mut text = Vec::new();
+    lp_utf16(&mut text, "sketch text");
+    let text_at = bytes
+        .windows(text.len())
+        .position(|window| window == text)
+        .expect("fixture text string");
+    bytes.splice(text_at - 2..text_at - 2, outline.iter().copied());
+    bytes
+}
+
+const OUTLINE_KNOTS: [f64; 8] = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0];
+const OUTLINE_POINTS: [[f64; 3]; 4] = [
+    [0.0, 0.0, 0.0],
+    [0.1, 0.2, 0.0],
+    [0.3, 0.2, 0.0],
+    [0.4, 0.0, 0.0],
+];
+
+#[test]
+fn a_class_version_two_txt_tag_record_stores_its_glyph_outline_ahead_of_the_text() {
+    let curve = txt_tag_outline_curve(3, &OUTLINE_KNOTS, &OUTLINE_POINTS);
+    for outline in [
+        txt_tag_outline(&[curve.clone(), curve.clone()], 3),
+        txt_tag_outline(&[curve.clone()], 0),
+        txt_tag_outline(&[], 2),
+        txt_tag_outline(&[], 0),
+    ] {
+        let bytes = txt_tag_sketch_text_record_with_outline(&outline);
+        let text = decode_sketch_text_at(&bytes, 2).expect("class-version-2 sketch text");
+        assert_eq!(text.class_version, 2);
+        assert_eq!(text.persistent_id, None);
+        assert_eq!(text.base_id, Some(300));
+        assert_eq!(text.text, "sketch text");
+        assert_eq!(text.font_family, "Arial");
+        assert_eq!(text.font_weight, 400);
+        assert_eq!(text.owner_reference, 201);
+        assert_eq!(
+            text.placement().map(|placement| placement.anchor.get()),
+            Some(cadmpeg_ir::math::Point2::new(2.5, -15.0))
+        );
+        assert!(decode_sketch_text_at(&bytes, 3).is_none());
+    }
+}
+
+#[test]
+fn a_class_version_two_txt_tag_record_requires_its_outline_counts() {
+    let plain =
+        txt_tag_sketch_text_record_at(&[("txt_tag_base", 300)], &[261], &[261], (0.25, -1.5), 3);
+    assert!(decode_sketch_text_at(&plain, 3).is_some());
+    assert!(decode_sketch_text_at(&plain, 2).is_none());
+}
+
+#[test]
+fn a_txt_tag_outline_curve_outside_its_block_form_is_refused() {
+    let curve = txt_tag_outline_curve(3, &OUTLINE_KNOTS, &OUTLINE_POINTS);
+    let decodes = |curve: &[u8], lines: u32| {
+        let outline = txt_tag_outline(&[curve.to_vec()], lines);
+        decode_sketch_text_at(&txt_tag_sketch_text_record_with_outline(&outline), 2).is_some()
+    };
+    assert!(decodes(&curve, 1));
+
+    let mut prefixed = curve.clone();
+    prefixed[1] = 1;
+    assert!(!decodes(&prefixed, 1));
+
+    // Knot-array element size at offset 22: head 14, count 4, capacity 4.
+    let mut element_size = curve.clone();
+    element_size[22] = 4;
+    assert!(!decodes(&element_size, 1));
+
+    let mut capacity = curve.clone();
+    capacity[18..22].copy_from_slice(&7u32.to_le_bytes());
+    assert!(!decodes(&capacity, 1));
+
+    assert!(!decodes(
+        &txt_tag_outline_curve(2, &OUTLINE_KNOTS, &OUTLINE_POINTS),
+        1
+    ));
+    assert!(!decodes(
+        &txt_tag_outline_curve(3, &OUTLINE_KNOTS[1..], &OUTLINE_POINTS),
+        1
+    ));
+
+    let mut flag = curve.clone();
+    let flag_at = flag.len() - 18;
+    flag[flag_at] = 2;
+    assert!(!decodes(&flag, 1));
+
+    // A curve count one above the stored blocks reads the line count as a curve.
+    let mut outline = txt_tag_outline(std::slice::from_ref(&curve), 1);
+    outline[0] = 2;
+    assert!(decode_sketch_text_at(&txt_tag_sketch_text_record_with_outline(&outline), 2).is_none());
+    let mut outline = txt_tag_outline(std::slice::from_ref(&curve), 1);
+    let line_count_at = 4 + curve.len();
+    outline[line_count_at] = 2;
+    assert!(decode_sketch_text_at(&txt_tag_sketch_text_record_with_outline(&outline), 2).is_none());
+}
+
 /// Build one sketch-text record: `properties` are the property-block keys in
 /// stream order, `slots` says whether each parameter-reference member is
 /// written, and `frame` gives the anchor in centimetres and the rotation in
