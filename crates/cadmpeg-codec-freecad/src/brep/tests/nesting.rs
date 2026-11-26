@@ -291,9 +291,10 @@ fn a_cadir_document_cannot_carry_a_surface_chain_past_the_bound() {
         },
     };
 
-    let admitted = serde_json::to_value(&record).expect("a retained payload serializes");
+    let admitted =
+        cadmpeg_core::serde_erase::json::to_value(&record).expect("a retained payload serializes");
     assert_eq!(
-        serde_json::from_value::<ShapePayloadRecord>(admitted.clone())
+        cadmpeg_core::serde_erase::json::from_value::<ShapePayloadRecord>(admitted.clone())
             .expect("the bound round-trips"),
         record
     );
@@ -305,7 +306,7 @@ fn a_cadir_document_cannot_carry_a_surface_chain_past_the_bound() {
         "distance": 1.0,
         "basis": basis,
     });
-    let error = serde_json::from_value::<ShapePayloadRecord>(refused)
+    let error = cadmpeg_core::serde_erase::json::from_value::<ShapePayloadRecord>(refused)
         .expect_err("one record past the bound is refused");
     assert!(
         error.to_string().contains("surface nesting exceeds 64"),

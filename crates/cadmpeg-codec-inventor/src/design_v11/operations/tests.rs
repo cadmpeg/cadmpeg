@@ -29,13 +29,15 @@ fn legacy(kind: &str, value: Value) -> LegacyOperation {
         ("kind".to_owned(), Value::String(kind.to_owned())),
         ("value".to_owned(), value),
     ]);
-    serde_json::from_value(Value::Object(fields)).expect("synthetic operation")
+    cadmpeg_core::serde_erase::json::from_value(Value::Object(fields)).expect("synthetic operation")
 }
 
 fn project_value(kind: &str, value: Value) -> FeatureOperation {
-    let operation = typed(&legacy(kind, value), &[], &[]).expect("typed projection");
-    let wire = serde_json::to_value(&operation).expect("v11 wire");
-    let decoded: FeatureOperation = serde_json::from_value(wire).expect("admitted v11 operation");
+    let operation = typed(&legacy(kind, value), selections::SketchData::default(), &[])
+        .expect("typed projection");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&operation).expect("v11 wire");
+    let decoded: FeatureOperation =
+        cadmpeg_core::serde_erase::json::from_value(wire).expect("admitted v11 operation");
     assert_eq!(operation, decoded);
     operation
 }
@@ -62,7 +64,9 @@ fn extrude() -> LegacyOperation {
 
 #[test]
 fn extrude_keeps_direction_sides_and_output() {
-    let FeatureOperation::Extrude(value) = typed(&extrude(), &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&extrude(), selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     assert_eq!(value.output.body, Some(BodyForm::Solid));
@@ -101,7 +105,9 @@ fn symmetric_extrude_keeps_total_travel() {
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     assert_eq!(
@@ -635,7 +641,7 @@ fn unresolved_and_reversing_operands_take_the_native_gate() {
 fn split_face_and_surface_trim_keep_every_selection() {
     let FeatureOperation::Split(value) = project_value(
         "split_face",
-        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}},"method":serde_json::to_value(cadmpeg_ir::features::surfaces::SplitFaceMethod::default()).expect("method")}),
+        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}},"method":cadmpeg_core::serde_erase::json::to_value(cadmpeg_ir::features::surfaces::SplitFaceMethod::default()).expect("method")}),
     ) else {
         panic!("split face");
     };
@@ -858,9 +864,16 @@ fn whole_profile_regions_keep_outer_and_hole_members() {
         )
         .expect("regions"),
     );
-    let FeatureOperation::Extrude(value) =
-        typed(&operation, &[source], &[]).expect("profile projection")
-    else {
+    let FeatureOperation::Extrude(value) = typed(
+        &operation,
+        selections::SketchData {
+            sketches: &[source],
+            entities: &[],
+            arrangements: None,
+        },
+        &[],
+    )
+    .expect("profile projection") else {
         panic!("extrude");
     };
     let cadmpeg_ir::design::selection::Picks::Named(picks) = value.profile.picks else {
@@ -1068,7 +1081,9 @@ fn extrude_plane_targets_keep_frames_native_names_and_source_modes() {
             draft: None,
         },
     };
-    let FeatureOperation::Extrude(value) = typed(&operation, &[], &[]).expect("extrude") else {
+    let FeatureOperation::Extrude(value) =
+        typed(&operation, selections::SketchData::default(), &[]).expect("extrude")
+    else {
         panic!("extrude");
     };
     let Some(cadmpeg_ir::design::ops::swept::ExtrudeOrigin::Plane(start)) = value.origin else {

@@ -524,7 +524,8 @@ fn unstate(ir: &mut crate::document::CadIr, field: &str) -> Result<(), cadmpeg_c
             parent.remove(key);
         }
     }
-    let decoded = serde_json::from_value(document).map_err(|error| malformed(error.to_string()))?;
+    let decoded = cadmpeg_core::serde_erase::from_json_value(&document)
+        .map_err(|error| malformed(error.to_string()))?;
     let original = std::mem::replace(ir, decoded);
     ir.model.adopt_omitted_arenas(&original.model);
     Ok(())

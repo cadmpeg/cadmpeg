@@ -46,14 +46,16 @@ fn cage_validation_keeps_a_gripped_cage_and_names_a_missing_face_edge() {
             .collect(),
     )
     .unwrap();
-    let wire = serde_json::to_value(&cage).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&cage).unwrap();
     let error = SubdCage::new(cage.vertices, cage.edges, cage.faces, cage.symmetries).unwrap_err();
     assert_eq!(
         error.to_string(),
         "faces[0].edges references a missing edge"
     );
-    assert!(serde_json::from_value::<SubdCage>(wire)
-        .unwrap_err()
-        .to_string()
-        .contains("faces[0].edges references a missing edge"));
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<SubdCage>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("faces[0].edges references a missing edge")
+    );
 }

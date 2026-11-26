@@ -312,7 +312,7 @@ fn state(configuration: Option<&str>, at: Position) -> StateRef {
 /// ratios; combined fit designations; and `Other` texts that name arms.
 fn document() -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
-    ir.set_scope(ContentScope::full()).unwrap();
+    ir.set_scope(ContentScope::full());
     let design = &mut ir.design;
     design.scopes.push(DesignScope {
         definition: id("definition", "part"),
@@ -1859,7 +1859,7 @@ fn a_record_too_deep_to_normalize_is_kept_as_decoded_with_a_warning() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_recursion_depth = 16;
     let result = decode_deep(policy);
-    let text = serde_json::to_string(result.ir()).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(result.ir()).unwrap();
     assert!(crate::bounds::text_depth(&text) <= crate::bounds::MAX_DOCUMENT_DEPTH);
     let ratio = |value| Some(ScalarDimension::Ratio(Dimension::Literal(real(value))));
     assert_eq!(innermost_value(result.ir(), "shallow"), ratio(1.0));

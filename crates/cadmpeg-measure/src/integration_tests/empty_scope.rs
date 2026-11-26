@@ -18,8 +18,7 @@ fn scope_without_model() -> CadIr {
         model: false,
         design: false,
         process: false,
-    })
-    .expect("an empty document holds no class");
+    });
     ir
 }
 

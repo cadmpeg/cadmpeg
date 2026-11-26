@@ -580,7 +580,8 @@ mod tests {
             .iter()
             .map(|point| point.position().get())
             .collect::<Vec<_>>();
-        let before_subd = serde_json::to_value(&body.subds[0].cage).expect("serialize source cage");
+        let before_subd = cadmpeg_core::serde_erase::json::to_value(&body.subds[0].cage)
+            .expect("serialize source cage");
         let pcurve: cadmpeg_ir::ids::PcurveId = "test:model:pcurve#witness"
             .try_into()
             .expect("test pcurve identity");
@@ -707,7 +708,8 @@ mod tests {
             [2.0, 3.0]
         );
         assert_eq!(pcurve.metadata.wrapper_reversed(), Some(false));
-        let after_subd = serde_json::to_value(&body.subds[0].cage).expect("serialize scaled cage");
+        let after_subd = cadmpeg_core::serde_erase::json::to_value(&body.subds[0].cage)
+            .expect("serialize scaled cage");
         for (before, after) in before_subd["vertices"]
             .as_array()
             .expect("source cage vertices")

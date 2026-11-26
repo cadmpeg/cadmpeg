@@ -8,11 +8,17 @@ fn expression_names_preserve_spelling_and_wire_field_order() {
     let declaration: ExpressionDeclaration = serde_json::from_str(DECLARATION).unwrap();
     assert_eq!(declaration.name.index(), 8);
     assert_eq!(declaration.name.qualifier(), Some("radius"));
-    assert_eq!(serde_json::to_string(&declaration).unwrap(), DECLARATION);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&declaration).unwrap(),
+        DECLARATION
+    );
     let expression: ParameterFormula = serde_json::from_str(EXPRESSION).unwrap();
     assert_eq!(expression.name.index(), Some(8));
     assert_eq!(expression.name.qualifier(), Some("radius"));
-    assert_eq!(serde_json::to_string(&expression).unwrap(), EXPRESSION);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&expression).unwrap(),
+        EXPRESSION
+    );
 }
 
 #[test]
@@ -25,11 +31,11 @@ fn expression_names_reject_conflicting_derived_wire_fields() {
             let mut wire: serde_json::Value = serde_json::from_str(wire).unwrap();
             wire[field] = value.clone();
             let error = if wire["id"] == "declaration" {
-                serde_json::from_value::<ExpressionDeclaration>(wire)
+                cadmpeg_core::serde_erase::json::from_value::<ExpressionDeclaration>(wire)
                     .unwrap_err()
                     .to_string()
             } else {
-                serde_json::from_value::<ParameterFormula>(wire)
+                cadmpeg_core::serde_erase::json::from_value::<ParameterFormula>(wire)
                     .unwrap_err()
                     .to_string()
             };
@@ -43,33 +49,43 @@ fn expression_owner_requires_record_for_persistent_identity() {
     for field in ["record", "object_id"] {
         let mut wire: serde_json::Value = serde_json::from_str(EXPRESSION).unwrap();
         wire[field] = serde_json::Value::Null;
-        let error = serde_json::from_value::<ParameterFormula>(wire.clone()).unwrap_err();
+        let error = cadmpeg_core::serde_erase::json::from_value::<ParameterFormula>(wire.clone())
+            .unwrap_err();
         assert!(error.to_string().contains("object_id and record"));
         wire.as_object_mut().unwrap().remove(field);
-        let error = serde_json::from_value::<ParameterFormula>(wire).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<ParameterFormula>(wire).unwrap_err();
         assert!(error.to_string().contains("object_id and record"));
     }
     let mut wire: serde_json::Value = serde_json::from_str(EXPRESSION).unwrap();
     wire["record"] = serde_json::Value::Null;
     wire["object_id"] = serde_json::Value::Null;
-    let expression = serde_json::from_value::<ParameterFormula>(wire.clone()).unwrap();
+    let expression =
+        cadmpeg_core::serde_erase::json::from_value::<ParameterFormula>(wire.clone()).unwrap();
     assert!(expression.owner.is_none());
-    assert_eq!(serde_json::to_value(expression).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(expression).unwrap(),
+        wire
+    );
 }
 
 #[test]
 fn expression_requires_nonempty_source_table() {
     let mut wire: serde_json::Value = serde_json::from_str(EXPRESSION).unwrap();
     wire["source_table"] = "".into();
-    assert!(serde_json::from_value::<ParameterFormula>(wire.clone())
-        .unwrap_err()
-        .to_string()
-        .contains("source_table"));
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<ParameterFormula>(wire.clone())
+            .unwrap_err()
+            .to_string()
+            .contains("source_table")
+    );
     wire.as_object_mut().unwrap().remove("source_table");
-    assert!(serde_json::from_value::<ParameterFormula>(wire)
-        .unwrap_err()
-        .to_string()
-        .contains("source_table"));
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<ParameterFormula>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("source_table")
+    );
 }
 
 #[test]
@@ -89,6 +105,6 @@ fn expression_wire_rejects_nonfinite_rust_values() {
         (-0.0_f64).to_bits()
     );
     expression.value = Some(cadmpeg_ir::scalar::FiniteReal::try_from(-1.0).unwrap());
-    let wire = serde_json::to_value(expression).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(expression).unwrap();
     assert_eq!(wire["value"], serde_json::json!(-1.0));
 }

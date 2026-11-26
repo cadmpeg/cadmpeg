@@ -34,13 +34,13 @@ fn committed_json_schemas_equal_the_derived_schemas() {
         if !cfg!(feature = "schema-order") {
             let committed: Value = serde_json::from_str(committed).unwrap();
             assert!(
-                committed == serde_json::to_value(&derived).unwrap(),
+                committed == cadmpeg_core::serde_erase::json::to_value(&derived).unwrap(),
                 "{} differs from the derived schema. Run `{REGENERATE}` and commit the file.",
                 path.display()
             );
             continue;
         }
-        let derived = serde_json::to_string_pretty(&derived).unwrap() + "\n";
+        let derived = cadmpeg_core::serde_erase::json::to_string_pretty(&derived).unwrap() + "\n";
         if update {
             std::fs::write(&path, &derived).unwrap();
             continue;
@@ -336,11 +336,14 @@ fn the_null_walk_finds_an_option_outside_an_element() {
 /// committed schema at its position.
 #[test]
 fn a_null_optional_member_fails_the_schema_and_the_reader() {
-    let mut document =
-        serde_json::to_value(crate::examples::unit_cube().expect("the example builds")).unwrap();
+    let mut document = cadmpeg_core::serde_erase::json::to_value(
+        crate::examples::unit_cube().expect("the example builds"),
+    )
+    .unwrap();
     let vertex = &mut document["geometry"]["vertices"][0];
     vertex["tolerance"] = Value::Null;
-    let refusal = serde_json::from_value::<crate::CadIr>(document).unwrap_err();
+    let refusal =
+        cadmpeg_core::serde_erase::json::from_value::<crate::CadIr>(document).unwrap_err();
     assert!(
         refusal.to_string().contains("it does not state null"),
         "{refusal}"
@@ -383,11 +386,17 @@ fn a_procedural_carrier_cache_is_a_member_of_its_schema() {
         construction: ProceduralCurveId::mint("test:model:construction#curve").unwrap(),
         cache: Some(SolvedCurveGeometry::Unknown { record: None }),
     };
-    let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
+    let schema = cadmpeg_core::serde_erase::json::to_value(crate::cadir_json_schema()).unwrap();
     let defs = schema["$defs"].as_object().unwrap();
     for (name, written) in [
-        ("SurfaceGeometry", serde_json::to_value(surface).unwrap()),
-        ("CurveGeometry", serde_json::to_value(curve).unwrap()),
+        (
+            "SurfaceGeometry",
+            cadmpeg_core::serde_erase::json::to_value(surface).unwrap(),
+        ),
+        (
+            "CurveGeometry",
+            cadmpeg_core::serde_erase::json::to_value(curve).unwrap(),
+        ),
     ] {
         assert_eq!(written["kind"], "procedural");
         let arm = defs[name]["oneOf"]
@@ -432,9 +441,9 @@ fn a_null_pair_key_is_written_read_and_admitted() {
             },
         )]),
     };
-    let written = serde_json::to_value(&context).unwrap();
+    let written = cadmpeg_core::serde_erase::json::to_value(&context).unwrap();
     assert_eq!(written["participants"][0][0], Value::Null, "{written}");
-    let read: AssemblyContext = serde_json::from_value(written).unwrap();
+    let read: AssemblyContext = cadmpeg_core::serde_erase::json::from_value(written).unwrap();
     assert_eq!(read, context);
 
     let schema: Value = serde_json::from_str(crate::CADIR_JSON_SCHEMA).unwrap();

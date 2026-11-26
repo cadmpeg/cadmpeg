@@ -28,7 +28,7 @@ fn spellings() -> Spellings {
 /// The bytes `serde_json` writes for `value`, with negative zero written as
 /// zero (§2.5).
 fn one_zero_bytes(value: &Spellings) -> Vec<u8> {
-    serde_json::to_string(value)
+    cadmpeg_core::serde_erase::json::to_string(value)
         .unwrap()
         .replace("-0.0", "0.0")
         .into_bytes()
@@ -38,7 +38,10 @@ fn one_zero_bytes(value: &Spellings) -> Vec<u8> {
 fn compact_projection_writes_the_bytes_serde_json_writes() {
     let value = spellings();
     let expected = one_zero_bytes(&value);
-    assert_ne!(expected, serde_json::to_vec(&value).unwrap());
+    assert_ne!(
+        expected,
+        cadmpeg_core::serde_erase::json::to_vec(&value).unwrap()
+    );
     assert_eq!(compact_json(&value, usize::MAX).unwrap(), expected);
 }
 
@@ -140,7 +143,7 @@ fn bundle_metadata_context_refuses_a_key_stated_twice() {
         manifest: Vec::new(),
         incomplete_reason: None,
     };
-    let wire = serde_json::to_string(&metadata).expect("metadata writes");
+    let wire = cadmpeg_core::serde_erase::json::to_string(&metadata).expect("metadata writes");
     let read: BundleMetadata = serde_json::from_str(&wire).expect("distinct keys read");
     assert_eq!(read, metadata);
     let tool = r#"{"tool":{"kind":"string","value":"cli"}}"#;
@@ -182,11 +185,11 @@ fn bundle_metadata_reads_an_open_check_name_and_refuses_a_blank_reason() {
         manifest: Vec::new(),
         incomplete_reason: NonBlankString::new("bounded cut"),
     };
-    let wire = serde_json::to_value(&metadata).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&metadata).unwrap();
     assert_eq!(wire["signature"]["check"], "native_links");
     let mut open = wire.clone();
     open["signature"]["check"] = "a_check_no_release_names_yet".into();
-    let read: BundleMetadata = serde_json::from_value(open).unwrap();
+    let read: BundleMetadata = cadmpeg_core::serde_erase::json::from_value(open).unwrap();
     assert_eq!(
         read.signature.check.as_str(),
         "a_check_no_release_names_yet"
@@ -200,7 +203,7 @@ fn bundle_metadata_reads_an_open_check_name_and_refuses_a_blank_reason() {
             refused[field] = value.into();
         }
         assert!(
-            serde_json::from_value::<BundleMetadata>(refused).is_err(),
+            cadmpeg_core::serde_erase::json::from_value::<BundleMetadata>(refused).is_err(),
             "{field}"
         );
     }

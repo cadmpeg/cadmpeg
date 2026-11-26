@@ -978,8 +978,8 @@ mod tests {
         });
         assert_eq!(empty, cached);
         assert_eq!(
-            serde_json::to_vec(&empty).unwrap(),
-            serde_json::to_vec(&cached).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&empty).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&cached).unwrap()
         );
         let rows = AsmHistoricalRowsDelta {
             face_envelopes: AsmHistoricalRowDelta {
@@ -992,8 +992,8 @@ mod tests {
         let empty_rows = AsmHistoricalRowsDelta::default();
         assert_eq!(rows, empty_rows);
         assert_eq!(
-            serde_json::to_vec(&rows).unwrap(),
-            serde_json::to_vec(&empty_rows).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&rows).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&empty_rows).unwrap()
         );
     }
 
@@ -1021,8 +1021,8 @@ mod tests {
             };
             let old = AsmHistoryRecordWire::from(record.clone());
             assert_eq!(
-                serde_json::to_vec(&record).unwrap(),
-                serde_json::to_vec(&old).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&old).unwrap()
             );
         }
     }
@@ -1043,7 +1043,9 @@ mod tests {
             },
             raw_bytes: (vec![0xab; 4096]).into(),
         };
-        let needed = serde_json::to_vec(&record).unwrap().len();
+        let needed = cadmpeg_core::serde_erase::json::to_vec(&record)
+            .unwrap()
+            .len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -1076,8 +1078,8 @@ mod tests {
             .unwrap();
         let stored = &namespace.arenas()["asm_history_records"][0];
         assert_eq!(
-            serde_json::to_value(stored).unwrap(),
-            serde_json::to_value(&record).unwrap()
+            cadmpeg_core::serde_erase::json::to_value(stored).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(&record).unwrap()
         );
     }
 
@@ -1098,8 +1100,8 @@ mod tests {
             };
             let owned = AsmEntityChangeSerde::from(change.clone());
             assert_eq!(
-                serde_json::to_vec(&change).unwrap(),
-                serde_json::to_vec(&owned).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(&change).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
             );
         }
     }
@@ -1114,7 +1116,9 @@ mod tests {
             byte_offset: 12,
             kind: super::AsmEntityChangeKind::Update { old: 8, new: 7 },
         };
-        let needed = serde_json::to_vec(&change).unwrap().len();
+        let needed = cadmpeg_core::serde_erase::json::to_vec(&change)
+            .unwrap()
+            .len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -1146,8 +1150,9 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            serde_json::to_value(&namespace.arenas()["asm_entity_changes"][0]).unwrap(),
-            serde_json::to_value(&change).unwrap()
+            cadmpeg_core::serde_erase::json::to_value(&namespace.arenas()["asm_entity_changes"][0])
+                .unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(&change).unwrap()
         );
     }
 
@@ -1156,7 +1161,10 @@ mod tests {
         let wire = r#"{"id":"state","parent":"history","byte_offset":0,"state_id":1,"version_flag":1,"state_flag":0,"node_index":1,"owner_ref":0,"bulletin_boards":[],"records":[]}"#;
         let state: AsmDeltaState = serde_json::from_str(wire).unwrap();
         assert!(state.transition.is_none());
-        assert_eq!(serde_json::to_string(&state).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&state).unwrap(),
+            wire
+        );
     }
     #[test]
     fn history_record_framing_preserves_wire_and_rejects_opaque_metadata() {
@@ -1168,7 +1176,10 @@ mod tests {
         ] {
             let wire = format!("{prefix}{fields},\"raw_bytes\":\"\"}}");
             let record: super::AsmHistoryRecord = serde_json::from_str(&wire).unwrap();
-            assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
+                wire
+            );
         }
         for fields in [
             r#""edge","framing_error":"invalid frame""#,

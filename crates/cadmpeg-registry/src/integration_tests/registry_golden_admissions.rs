@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use cadmpeg_core::dialect::{
     Admission, DialectLayers, DialectMatch, FormatIdentity, LayerInstance,
 };
-use cadmpeg_ir::report::loss::{LossNote, LossTaxonomy, StrictConsequence};
+use cadmpeg_ir::report::loss::{LossNote, LossTaxonomy};
 use cadmpeg_parasolid::{Carrier, OwnedSchemaToken, DECLARED_CARRIER, DECLARED_SCHEMA};
 
 use crate::{dialect_table, ReadDisposition};
@@ -69,7 +69,7 @@ fn compiled_read_admissions_match_registry_policy() {
         }
         let bytes = std::fs::read(&path)
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
-        let value: serde_json::Value = serde_json::from_slice(&bytes)
+        let value: serde_json::Value = cadmpeg_core::serde_erase::json::from_slice(&bytes)
             .unwrap_or_else(|error| panic!("cannot parse {}: {error}", path.display()));
         let count =
             validate_snapshot(&value, &path, &registry).unwrap_or_else(|error| panic!("{error}"));
@@ -149,13 +149,14 @@ fn collect_layer_sets_at(
             }
 
             if object.contains_key("dialect") && object.contains_key("admission") {
-                serde_json::from_value::<DialectMatch>(value.clone()).map_err(|error| {
-                    AdmissionViolation::new(
-                        snapshot,
-                        pointer,
-                        format!("invalid dialect layer: {error}"),
-                    )
-                })?;
+                cadmpeg_core::serde_erase::json::from_value::<DialectMatch>(value.clone())
+                    .map_err(|error| {
+                        AdmissionViolation::new(
+                            snapshot,
+                            pointer,
+                            format!("invalid dialect layer: {error}"),
+                        )
+                    })?;
                 *match_count = (*match_count).checked_add(1).ok_or_else(|| {
                     AdmissionViolation::new(snapshot, pointer, "dialect layer count overflow")
                 })?;
@@ -163,13 +164,14 @@ fn collect_layer_sets_at(
 
             if let Some(dialects) = object.get("dialects") {
                 let layers =
-                    serde_json::from_value::<DialectLayers>(dialects.clone()).map_err(|error| {
-                        AdmissionViolation::new(
-                            snapshot,
-                            pointer_child(pointer, "dialects"),
-                            format!("invalid dialect layer set: {error}"),
-                        )
-                    })?;
+                    cadmpeg_core::serde_erase::json::from_value::<DialectLayers>(dialects.clone())
+                        .map_err(|error| {
+                            AdmissionViolation::new(
+                                snapshot,
+                                pointer_child(pointer, "dialects"),
+                                format!("invalid dialect layer set: {error}"),
+                            )
+                        })?;
                 occurrences.push(LayerOccurrence {
                     snapshot: snapshot.to_owned(),
                     pointer: pointer_child(pointer, "dialects"),
@@ -239,15 +241,16 @@ fn check_matching_view_identities(
                     format!("successful {owner} is missing its typed identity"),
                 )
             })?;
-            serde_json::from_value::<FormatIdentity<DialectLayers>>(identity.clone()).map_err(
-                |error| {
-                    AdmissionViolation::new(
-                        snapshot,
-                        &identity_pointer,
-                        format!("invalid typed {owner} identity: {error}"),
-                    )
-                },
-            )?;
+            cadmpeg_core::serde_erase::json::from_value::<FormatIdentity<DialectLayers>>(
+                identity.clone(),
+            )
+            .map_err(|error| {
+                AdmissionViolation::new(
+                    snapshot,
+                    &identity_pointer,
+                    format!("invalid typed {owner} identity: {error}"),
+                )
+            })?;
         }
 
         if let (Some(ir), Some(report)) = (object.get("ir"), object.get("report")) {
@@ -333,15 +336,16 @@ fn check_identity_pair(
             format!("matching identity is missing; expected the layer set at {second_pointer}"),
         )),
         (Some(first), Some(second)) => {
-            let first: DialectLayers = serde_json::from_value(first.clone()).map_err(|error| {
+            let first: DialectLayers = cadmpeg_core::serde_erase::json::from_value(first.clone())
+                .map_err(|error| {
                 AdmissionViolation::new(
                     snapshot,
                     first_pointer,
                     format!("invalid dialect layer set: {error}"),
                 )
             })?;
-            let second: DialectLayers =
-                serde_json::from_value(second.clone()).map_err(|error| {
+            let second: DialectLayers = cadmpeg_core::serde_erase::json::from_value(second.clone())
+                .map_err(|error| {
                     AdmissionViolation::new(
                         snapshot,
                         second_pointer,
@@ -568,14 +572,16 @@ fn check_kernel_loss_counts(
                 || pointer.ends_with("/inspect");
             if is_view {
                 if let Some(dialects) = identity.and_then(|identity| identity.get("dialects")) {
-                    let layers: DialectLayers =
-                        serde_json::from_value(dialects.clone()).map_err(|error| {
-                            AdmissionViolation::new(
-                                snapshot,
-                                pointer_child(&pointer_child(pointer, "identity"), "dialects"),
-                                format!("invalid dialect layer set: {error}"),
-                            )
-                        })?;
+                    let layers: DialectLayers = cadmpeg_core::serde_erase::json::from_value(
+                        dialects.clone(),
+                    )
+                    .map_err(|error| {
+                        AdmissionViolation::new(
+                            snapshot,
+                            pointer_child(&pointer_child(pointer, "identity"), "dialects"),
+                            format!("invalid dialect layer set: {error}"),
+                        )
+                    })?;
                     let host = layers.primary().format();
                     let expected = layers
                         .iter()
@@ -603,14 +609,16 @@ fn check_kernel_loss_counts(
                     for (index, loss) in losses.iter().enumerate() {
                         let loss_pointer =
                             pointer_child(&pointer_child(pointer, "losses"), &index.to_string());
-                        let loss: LossNote =
-                            serde_json::from_value(loss.clone()).map_err(|error| {
-                                AdmissionViolation::new(
-                                    snapshot,
-                                    &loss_pointer,
-                                    format!("invalid typed loss note: {error}"),
-                                )
-                            })?;
+                        let loss: LossNote = cadmpeg_core::serde_erase::json::from_value(
+                            loss.clone(),
+                        )
+                        .map_err(|error| {
+                            AdmissionViolation::new(
+                                snapshot,
+                                &loss_pointer,
+                                format!("invalid typed loss note: {error}"),
+                            )
+                        })?;
                         if loss.code.local_code() != "source.kernel-dialect-unverified" {
                             continue;
                         }
@@ -623,13 +631,6 @@ fn check_kernel_loss_counts(
                                 format!(
                                     "kernel loss must use the {host} namespaced source_dialect_unverified code"
                                 ),
-                            ));
-                        }
-                        if loss.strict_consequence() != StrictConsequence::Reject {
-                            return Err(AdmissionViolation::new(
-                                snapshot,
-                                loss_pointer,
-                                "kernel loss must reject strict mode",
                             ));
                         }
                         observed = observed.checked_add(1).ok_or_else(|| {

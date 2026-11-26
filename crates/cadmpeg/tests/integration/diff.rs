@@ -59,9 +59,7 @@ fn diff_reports_a_scope_change_and_notes_the_sub_full_scope() {
     let dir = tempdir().unwrap();
     let left = unit_cube().expect("unit cube fixture is admitted");
     let mut right = left.clone();
-    right
-        .set_scope(cadmpeg_core::decode::ContentScope::geometry())
-        .expect("the unit cube holds no design or process record");
+    right.set_scope(cadmpeg_core::decode::ContentScope::geometry());
     let a = fixture(dir.path(), "a.json", &left);
     let b = fixture(dir.path(), "b.json", &right);
 

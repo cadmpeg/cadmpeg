@@ -340,9 +340,7 @@ impl DecodeResult {
             source_fidelity,
         } = decoded;
         let scope = recorded_scope(&ir, body.transfer.depth().scope(), requested.scope());
-        ir.set_scope(scope).map_err(|error| {
-            CodecError::malformed(format_args!("codec {format:?} decoded {error}"))
-        })?;
+        ir.set_scope(scope);
         for class in scope.missing_from(requested.scope()) {
             if body
                 .losses

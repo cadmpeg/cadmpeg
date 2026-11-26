@@ -17,7 +17,7 @@ fn dimension_controls_preserve_sorted_serialization_and_replacement() {
         extra: None,
     };
     assert_eq!(
-        serde_json::to_string(&controls).expect("control serialization"),
+        cadmpeg_core::serde_erase::json::to_string(&controls).expect("control serialization"),
         "{\"a\":2,\"z\":3}"
     );
 }

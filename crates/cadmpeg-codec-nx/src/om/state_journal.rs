@@ -168,25 +168,32 @@ mod tests {
     fn journal_row_wire_preserves_tokens_and_derives_end() {
         let json = r#"{"timestamp":0,"value_marker":255,"value":0,"raw_value":"ff00000000","schema_id":0,"raw_schema_id":"900000","state_ordinal":0,"raw_state_ordinal":"a00000","source_offset":100,"end_offset":117}"#;
         let row: JournalRow = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&row).unwrap(), json);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&row).unwrap(),
+            json
+        );
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         let mut mismatch = wire.clone();
         mismatch["end_offset"] = 116.into();
-        assert!(serde_json::from_value::<JournalRow>(mismatch)
-            .unwrap_err()
-            .to_string()
-            .contains("end_offset"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<JournalRow>(mismatch)
+                .unwrap_err()
+                .to_string()
+                .contains("end_offset")
+        );
         let mut boundary = wire.clone();
         boundary["source_offset"] = (u64::MAX - 17).into();
         boundary["end_offset"] = u64::MAX.into();
-        assert!(serde_json::from_value::<JournalRow>(boundary).is_ok());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<JournalRow>(boundary).is_ok());
         let mut overflow = wire;
         overflow["source_offset"] = (u64::MAX - 16).into();
         overflow["end_offset"] = u64::MAX.into();
-        assert!(serde_json::from_value::<JournalRow>(overflow)
-            .unwrap_err()
-            .to_string()
-            .contains("source_offset"));
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<JournalRow>(overflow)
+                .unwrap_err()
+                .to_string()
+                .contains("source_offset")
+        );
     }
 
     #[test]

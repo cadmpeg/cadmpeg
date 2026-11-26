@@ -204,9 +204,13 @@ fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
             mode
         );
         let wire = serde_json::json!(expected);
-        assert_eq!(serde_json::to_value(mode).expect("serialize index"), wire);
         assert_eq!(
-            serde_json::from_value::<super::MapModeIndex>(wire).expect("deserialize index"),
+            cadmpeg_core::serde_erase::json::to_value(mode).expect("serialize index"),
+            wire
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::from_value::<super::MapModeIndex>(wire)
+                .expect("deserialize index"),
             mode
         );
     }
@@ -222,7 +226,7 @@ fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
         None,
     )
     .expect("attachment without a map mode");
-    let wire = serde_json::to_value(record).expect("serialize attachment");
+    let wire = cadmpeg_core::serde_erase::json::to_value(record).expect("serialize attachment");
     for value in [
         "not-an-index".to_owned(),
         "-1".to_owned(),
@@ -233,8 +237,9 @@ fn map_mode_admission_checks_indices_and_preserves_decimal_wire() {
         assert!(super::MapModeIndex::try_from(value.as_str()).is_err());
         let mut invalid = wire.clone();
         invalid["map_mode"] = serde_json::json!(value);
-        let error = serde_json::from_value::<crate::native::AttachmentRecord>(invalid)
-            .expect_err("invalid map mode at the record wire boundary");
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<crate::native::AttachmentRecord>(invalid)
+                .expect_err("invalid map mode at the record wire boundary");
         assert!(error.to_string().contains("map_mode"));
     }
 }
@@ -246,7 +251,7 @@ fn map_mode_writes_the_same_text_through_a_writer() {
     for index in 0..super::MAP_MODE_NAMES.len() {
         let mode = super::MapModeIndex::try_new(index).expect("valid table index");
         assert_eq!(
-            serde_json::to_string(&mode).expect("write index"),
+            cadmpeg_core::serde_erase::json::to_string(&mode).expect("write index"),
             format!("\"{index}\"")
         );
     }

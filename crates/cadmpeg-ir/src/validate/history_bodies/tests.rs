@@ -289,10 +289,11 @@ fn a_nest_round_trips_through_json_and_stays_out_of_the_document() {
     ir.model
         .history_bodies
         .push(history_body("0", scoped(cube_nest())));
-    let json = serde_json::to_string(&ir.model.history_bodies).expect("serialize");
+    let json =
+        cadmpeg_core::serde_erase::json::to_string(&ir.model.history_bodies).expect("serialize");
     let back: Vec<crate::history_body::HistoryBody> =
         serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back, ir.model.history_bodies);
-    let document = serde_json::to_value(&ir).expect("serialize");
+    let document = cadmpeg_core::serde_erase::json::to_value(&ir).expect("serialize");
     assert!(document["model"].get("history_bodies").is_none());
 }

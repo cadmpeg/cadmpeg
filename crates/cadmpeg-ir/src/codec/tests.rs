@@ -68,7 +68,13 @@ fn with_parameter(mut ir: CadIr) -> CadIr {
 struct RejectFloorCodec;
 
 fn reject_floor_kind() -> LossKind {
-    LossKind::shared(LossTaxonomy::TopologyNotTransferred)
+    crate::report::loss::NamespacedLossKind::new(
+        crate::loss_namespace!("test"),
+        "synthetic.reject-floor",
+        LossTaxonomy::TopologyNotTransferred,
+    )
+    .with_strict_floor(Some(crate::report::Severity::Warning))
+    .into()
 }
 
 impl CodecBackend for RejectFloorCodec {
@@ -141,7 +147,7 @@ impl CodecBackend for GeometryOnlyCodec {
 }
 
 #[test]
-fn the_sealed_decode_flags_and_strictly_refuses_a_shallower_delivery() {
+fn the_sealed_decode_flags_a_shallower_delivery_that_a_strict_decode_admits() {
     let options = DecodeOptions {
         depth: DecodeDepth::Full,
         ..DecodeOptions::default()
@@ -152,19 +158,18 @@ fn the_sealed_decode_flags_and_strictly_refuses_a_shallower_delivery() {
     assert_eq!(result.ir().scope(), ContentScope::geometry());
     assert_eq!(depth_losses(&result).len(), 2);
 
-    let error = GeometryOnlyCodec
+    let strict = GeometryOnlyCodec
         .decode(
             &mut Cursor::new(vec![1u8, 2, 3, 4]),
             &strict_options(DecodeDepth::Full),
         )
-        .unwrap_err();
-    let DecodeFailure::StrictRejected { rejection } = error else {
-        panic!("expected a strict refusal, got {error:?}")
-    };
-    assert_eq!(
-        rejection.loss().code.to_string(),
-        "decode/depth.not-delivered"
-    );
+        .unwrap();
+    let losses = depth_losses(&strict);
+    assert_eq!(losses.len(), 2);
+    assert!(losses
+        .iter()
+        .all(|loss| loss.severity == crate::report::Severity::Error
+            && loss.code.strict_floor().is_none()));
 
     let admitted = GeometryOnlyCodec
         .decode(
@@ -225,14 +230,16 @@ impl CodecBackend for ForeignIdentityCodec {
         _ctx: &DecodeContext<'_>,
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(serde_json::from_value(serde_json::json!({
-            "identity": {"kind": "unclassified", "format": "foreign"},
-            "container_kind": "flat",
-            "entries": [],
-            "losses": [],
-            "notes": []
-        }))
-        .expect("foreign inspection fixture"))
+        Ok(
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "identity": {"kind": "unclassified", "format": "foreign"},
+                "container_kind": "flat",
+                "entries": [],
+                "losses": [],
+                "notes": []
+            }))
+            .expect("foreign inspection fixture"),
+        )
     }
 
     fn decode_impl(
@@ -583,7 +590,7 @@ fn a_decode_result_stamps_every_source_dialect_layer_onto_the_report() {
 fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = Some(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
@@ -714,10 +721,7 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
         assert_eq!(losses.len(), missing.len(), "{losses:?}");
         for (loss, class) in losses.into_iter().zip(missing) {
             assert_eq!(loss.severity, crate::report::Severity::Error);
-            assert_eq!(
-                loss.strict_consequence(),
-                crate::report::loss::StrictConsequence::Reject
-            );
+            assert!(!strict_options(requested).strictness.refuses(loss, false));
             assert!(loss
                 .message
                 .contains(&format!("requested {requested} depth")));
@@ -793,24 +797,35 @@ fn the_wrapper_records_only_the_classes_a_request_names_when_the_rest_are_empty(
     }
 }
 
+/// A decode that holds records of a class its scope excludes keeps them and
+/// the scope; the breach is a part 10 finding (§2.1).
 #[test]
-fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
+fn the_wrapper_keeps_records_of_a_class_the_scope_excludes() {
+    use crate::document::{ArenaName, ScopeViolation};
+
     let ir = with_parameter(unit_cube().expect("valid unit cube fixture"));
-    for (depth, expected) in [
-        (DecodeDepth::Container, "model arena `bodies`"),
-        (DecodeDepth::Geometry, "design arena `parameters`"),
+    for (depth, arena) in [
+        (DecodeDepth::Container, "bodies"),
+        (DecodeDepth::Geometry, "parameters"),
     ] {
         let mut decoded = decoded(ir.clone());
         decoded.body.transfer = crate::report::decode::DecodeTransfer::at(depth, true);
-        let error = DecodeResult::new(
+        let result = DecodeResult::new(
             decoded,
             FormatId::new("test"),
             depth,
             &DecodePolicy::default(),
         )
-        .unwrap_err();
-        assert!(matches!(error, CodecError::Malformed(_)), "{error}");
-        assert!(error.to_string().contains(expected), "{error}");
+        .expect("a breach of the scope does not refuse the decode");
+        assert_eq!(result.ir().scope(), depth.scope());
+        assert_eq!(result.ir().model.parameters.len(), 1);
+        let violations = result.ir().scope_violations();
+        assert!(
+            violations.contains(&ScopeViolation::Populated {
+                arena: ArenaName::parse(arena).unwrap(),
+            }),
+            "{violations:?}"
+        );
     }
 
     let mut decoded = decoded(ir.clone());
@@ -922,6 +937,33 @@ fn the_sealed_wrapper_states_no_copy_of_a_repeated_id_whose_copies_differ_and_ch
 }
 
 #[test]
+fn a_pinned_decode_refuses_a_given_up_repeated_id_and_an_unpinned_decode_admits_it() {
+    let id_repeated = super::loss::DecodeLossCode::IdRepeated.note("").code;
+    let error = RepeatedIdentityCodec { differ: true }
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &strict_options(DecodeDepth::Full),
+        )
+        .unwrap_err();
+    assert_eq!(refused_code(error), id_repeated);
+
+    let result = RepeatedIdentityCodec { differ: true }
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &DecodeOptions {
+                depth: DecodeDepth::Full,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("an unpinned decode admits a given-up id");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == id_repeated));
+}
+
+#[test]
 fn the_sealed_wrapper_states_one_record_for_equal_copies_of_an_id_and_charges_nothing() {
     let result = RepeatedIdentityCodec { differ: false }
         .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
@@ -950,7 +992,7 @@ fn the_sealed_wrapper_records_the_digest_of_the_document_it_returns() {
     let (mut ir, _, fidelity) = result.into_parts();
     let mut scope = ContentScope::full();
     scope.process = false;
-    ir.set_scope(scope).unwrap();
+    ir.set_scope(scope);
     assert!(
         fidelity.edited(&ir).unwrap(),
         "a change of scope alone is an edit"
@@ -1165,9 +1207,23 @@ fn the_sealed_wrapper_gives_up_a_record_past_the_document_bound() {
             result.source_fidelity().content_digest,
             Some(crate::hash::content_digest(&ctx, result.ir()).unwrap())
         );
-        let text = serde_json::to_string(result.ir()).unwrap();
+        let text = cadmpeg_core::serde_erase::json::to_string(result.ir()).unwrap();
         assert!(CadIr::from_json(&text).is_ok());
     }
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_record_given_up_past_the_document_bound() {
+    let error = PastTheBoundCodec
+        .decode(
+            &mut Cursor::new(Vec::new()),
+            &strict_options(DecodeDepth::Full),
+        )
+        .unwrap_err();
+    assert_eq!(
+        refused_code(error),
+        crate::unknown::part::record_unreadable_kind()
+    );
 }
 
 /// A decoder that states, beside the unit cube, [`Self::RECORDS`] native
@@ -1441,7 +1497,7 @@ fn assert_resolves(result: &DecodeResult) {
         .filter(|finding| finding.check == crate::report::check::Check::ReferentialIntegrity)
         .collect::<Vec<_>>();
     assert!(unresolved.is_empty(), "{unresolved:?}");
-    let text = serde_json::to_string(ir).unwrap();
+    let text = cadmpeg_core::serde_erase::json::to_string(ir).unwrap();
     assert!(CadIr::from_json(&text).is_ok());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop()).unwrap();

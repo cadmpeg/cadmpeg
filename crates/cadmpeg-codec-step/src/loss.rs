@@ -57,10 +57,6 @@ pub(crate) enum StepLossCode {
     HeaderMetadataNoncanonical,
     /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
     SourceDialectUnverified,
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced,
-    /// The requested write target is written as another catalog row.
-    TargetRequestDisplaced,
     /// The declared schema object identifier names a module edition that the
     /// decoder reads as a published AP edition.
     SourceSchemaEditionAssumed,
@@ -465,8 +461,6 @@ impl StepLossCode {
         Self::ImplementationLevelUnverified,
         Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
-        Self::SourceDialectDisplaced,
-        Self::TargetRequestDisplaced,
         Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
@@ -666,8 +660,6 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified => "parse.implementation-level-unverified",
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
             Self::SourceDialectUnverified => "source.dialect-unverified",
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
-            Self::TargetRequestDisplaced => "target.request-displaced",
             Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
@@ -956,9 +948,6 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified
             | Self::SourceDialectUnverified
             | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced | Self::TargetRequestDisplaced => {
-                LossTaxonomy::SourceDialectDisplaced
-            }
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
@@ -1140,13 +1129,28 @@ impl StepLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
+        cadmpeg_ir::report::loss::NamespacedLossKind::new(
+            NAMESPACE,
+            self.code(),
+            self.shared_taxonomy(),
+        )
+        .with_strict_floor(self.strict_floor())
+        .into()
+    }
+
+    /// The strict floor `step.md` (Part 21 mapping) states: a repaired
+    /// noncanonical record pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::ParseNoncanonicalSyntax => Some(Severity::Warning),
+            _ => None,
+        }
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// The structured code is `step/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// The structured code is `step/<local>`. Severity and strict floor come
+    /// from the local code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -1156,7 +1160,7 @@ impl StepLossCode {
 #[cfg(test)]
 mod tests {
     use super::StepLossCode;
-    use cadmpeg_ir::report::{loss::StrictConsequence, Severity};
+    use cadmpeg_ir::report::{strictness::Strictness, Severity};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -1180,8 +1184,6 @@ mod tests {
                 "parse.implementation-level-unverified",
                 "parse.header-metadata-noncanonical",
                 "source.dialect-unverified",
-                "target.source-dialect-displaced",
-                "target.request-displaced",
                 "source.schema-edition-assumed",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
@@ -1399,14 +1401,31 @@ mod tests {
     fn globally_unproved_pcurve_admission_does_not_refuse_strict_decode() {
         let note = StepLossCode::PcurveGlobalFidelityUnproved.note("x");
         assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        let pinned = Strictness {
+            pinned: true,
+            ..Strictness::default()
+        };
+        assert!(!pinned.refuses(&note, false));
     }
 
-    /// A kept default replaces a source value, so strict decode refuses it.
+    /// `step.md` states a strict floor for a repaired noncanonical record
+    /// and for no other code.
     #[test]
-    fn substituted_length_uncertainty_refuses_strict_decode() {
-        let note = StepLossCode::UncertaintyLengthAmbiguous.note("x");
-        assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Reject);
+    fn only_a_repaired_noncanonical_record_pins_a_strict_floor() {
+        let pinned = Strictness {
+            pinned: true,
+            ..Strictness::default()
+        };
+        for code in StepLossCode::ALL {
+            let expected = match code {
+                StepLossCode::ParseNoncanonicalSyntax => Some(Severity::Warning),
+                _ => None,
+            };
+            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+        }
+        assert!(pinned.refuses(&StepLossCode::ParseNoncanonicalSyntax.note("x"), false));
+        let substituted = StepLossCode::UncertaintyLengthAmbiguous.note("x");
+        assert_eq!(substituted.severity, Severity::Warning);
+        assert!(!pinned.refuses(&substituted, false));
     }
 }

@@ -54,7 +54,7 @@ fn group(
     member: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("f3d:test:group#{record_index}"),
         "scope_record_index": 12,
         "scope_reference_ordinal": record_index - 100,
@@ -80,7 +80,7 @@ fn group(
 }
 
 fn axis() -> DesignEdgeOperand {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": "f3d:test:edge-operand#201",
         "scope_record_index": 12,
         "scope_reference_ordinal": 1,

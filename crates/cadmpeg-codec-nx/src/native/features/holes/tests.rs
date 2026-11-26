@@ -49,7 +49,10 @@ fn symbolic_thread_text_frame_derives_marker() {
     let json = r#"{"id":"frame","symbolic_thread":"thread","ordinal":0,"marker":3,"value":"CUT","source_offset":10}"#;
     let frame: crate::native::features::holes::FeatureSymbolicThreadTextFrame =
         serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&frame).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&frame).unwrap(),
+        json
+    );
     for marker in [0, 4, 255] {
         let invalid = json.replace("\"marker\":3", &format!("\"marker\":{marker}"));
         let error = serde_json::from_str::<
@@ -602,7 +605,9 @@ fn hole_group_rejects_short_and_duplicate_members_at_deserialization() {
             "scalar_lanes": (0..count).map(|index| format!("scalar-{index}")).collect::<Vec<_>>(),
             "block_references": (0..count).map(|index| format!("refs-{index}")).collect::<Vec<_>>(),
         });
-        let error = serde_json::from_value::<FeatureSimpleHoleConstructionGroup>(wire).unwrap_err();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<FeatureSimpleHoleConstructionGroup>(wire)
+                .unwrap_err();
         assert!(error.to_string().contains("operation_labels"));
     }
 }
@@ -955,7 +960,10 @@ fn simple_hole_reference_pairs_preserve_wire_and_reject_wrong_witness_wrappers()
     let base: serde_json::Value = serde_json::from_str(json).unwrap();
     let record: FeatureSimpleHoleRepeatedScalarLaneBlockReferences =
         serde_json::from_str(json).unwrap();
-    assert_eq!(serde_json::to_string(&record).unwrap(), json);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&record).unwrap(),
+        json
+    );
     for first in [false, true] {
         for second in [false, true] {
             let mut wire = base.clone();
@@ -968,8 +976,11 @@ fn simple_hole_reference_pairs_preserve_wire_and_reject_wrong_witness_wrappers()
                     serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(SECOND_PREFIX));
             }
             let record: FeatureSimpleHoleRepeatedScalarLaneBlockReferences =
-                serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(record).unwrap(), wire);
+                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+                wire
+            );
         }
     }
     for (field, prefix) in [
@@ -978,9 +989,10 @@ fn simple_hole_reference_pairs_preserve_wire_and_reject_wrong_witness_wrappers()
     ] {
         let mut wire = base.clone();
         wire[field] = serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(prefix));
-        let error =
-            serde_json::from_value::<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>(wire)
-                .unwrap_err();
+        let error = cadmpeg_core::serde_erase::json::from_value::<
+            FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
+        >(wire)
+        .unwrap_err();
         assert!(error.to_string().contains(field));
     }
 }

@@ -188,10 +188,12 @@ fn unstated_output() -> SolidOutput {
 fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
     value: &T,
 ) -> Result<(), String> {
-    let first = serde_json::to_string(value).map_err(|error| error.to_string())?;
+    let first =
+        cadmpeg_core::serde_erase::json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second = serde_json::to_string(&back).map_err(|error| error.to_string())?;
+    let second =
+        cadmpeg_core::serde_erase::json::to_string(&back).map_err(|error| error.to_string())?;
     if first != second {
         return Err(format!("{first} wrote back as {second}"));
     }
@@ -202,7 +204,7 @@ fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
 }
 
 fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).unwrap()
+    cadmpeg_core::serde_erase::json::to_value(value).unwrap()
 }
 
 /// Reads `text`, requires a refusal, and returns its message.
@@ -1280,7 +1282,7 @@ fn an_option_field_is_omitted_and_a_list_field_is_always_written() {
         connectors: Vec::new(),
     };
     assert_eq!(
-        serde_json::to_string(&empty).unwrap(),
+        cadmpeg_core::serde_erase::json::to_string(&empty).unwrap(),
         r#"{"connectors":[]}"#
     );
     refuses::<Correspondence>("{}");

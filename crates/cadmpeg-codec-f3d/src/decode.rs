@@ -507,7 +507,9 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::selections::Body
             !bodies.is_empty()
         }
         BodySelection::Historical { bodies, .. } => !bodies.is_empty(),
-        BodySelection::ResolvedSet { .. } | BodySelection::HistoricalSet { .. } => true,
+        BodySelection::ResolvedSet { .. }
+        | BodySelection::HistoricalSet { .. }
+        | BodySelection::GeneratedSet { .. } => true,
         BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
         BodySelection::Local { bodies, .. } => !bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
@@ -1783,6 +1785,7 @@ fn design_projection_gaps(
         | BodySelection::Historical { .. }
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
+        | BodySelection::GeneratedSet { .. }
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {

@@ -103,7 +103,7 @@ fn has_own_result(
     feature: &Feature,
     configuration: Option<&str>,
 ) -> Option<bool> {
-    let operation = &index.definition_in(feature, configuration).operation;
+    let operation = &index.definition_in(feature, configuration, None).operation;
     if matches!(operation, FeatureOperation::Native { .. }) {
         return None;
     }
@@ -334,7 +334,7 @@ pub(super) fn check_evaluations(
                 );
             } else if matches!(of, OfKey::Tool(_))
                 && super::ops::builds_tool_body(
-                    &index.definition_in(feature, configuration).operation,
+                    &index.definition_in(feature, configuration, None).operation,
                 ) == Some(false)
             {
                 super::error(
@@ -561,7 +561,7 @@ pub(super) fn is_stateless(
         return true;
     }
     index
-        .definition_in(feature, configuration)
+        .definition_in(feature, configuration, None)
         .operation
         .cannot_change_state()
 }
@@ -830,7 +830,7 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
             .as_ref()
             .map(ConfigurationId::as_str);
         let FeatureOperation::Stored { bodies, .. } =
-            &index.definition_in(feature, active).operation
+            &index.definition_in(feature, active, None).operation
         else {
             continue;
         };

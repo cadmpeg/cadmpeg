@@ -561,8 +561,10 @@ fn decode_preserves_primary_bspline_surface_with_unselected_deltas() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        cadmpeg_core::serde_erase::json::to_value((&result.ir().geometry, &result.ir().model))
+            .unwrap(),
+        cadmpeg_core::serde_erase::json::to_value((&baseline.ir().geometry, &baseline.ir().model))
+            .unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -586,8 +588,10 @@ fn decode_preserves_primary_bspline_curve_with_unselected_deltas() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
-        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
+        cadmpeg_core::serde_erase::json::to_value((&result.ir().geometry, &result.ir().model))
+            .unwrap(),
+        cadmpeg_core::serde_erase::json::to_value((&baseline.ir().geometry, &baseline.ir().model))
+            .unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())

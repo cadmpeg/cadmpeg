@@ -432,7 +432,11 @@ pub(super) fn width_through(occurrence: &str) -> ParamRef {
 }
 
 pub(super) fn process_findings(ir: &CadIr) -> Vec<Finding> {
-    crate::validate::design::fixture::family_findings(ir, Check::Process, super::check_process)
+    crate::validate::design::fixture::family_findings(
+        ir,
+        Check::Process,
+        super::check_design_and_process,
+    )
 }
 
 #[track_caller]

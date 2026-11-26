@@ -38,7 +38,7 @@ fn compact_members_with_missing_geometry_retain_the_selection_for_every_profile_
         assert!(selection.compact_references());
         assert!(selection.valid_layout());
         let selections = [selection];
-        let mut feature: Feature = serde_json::from_value(json!({
+        let mut feature: Feature = cadmpeg_core::serde_erase::json::from_value(json!({
             "id": "synthetic:test:feature#compact", "ordinal": 0, "suppressed": false,
             "native_ref": scope.id,
             "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind":"sketch", "value":sketch_id}},
@@ -126,7 +126,7 @@ fn a_complete_compact_loop_can_name_the_single_sketch_profile() {
         }]])
         .unwrap(),
     }];
-    let operand: DesignSketchProfileOperand = serde_json::from_value(json!({
+    let operand: DesignSketchProfileOperand = cadmpeg_core::serde_erase::json::from_value(json!({
         "scope_reference_ordinal": 0, "record_index": 10, "byte_offset": 10,
         "class_tag": "343", "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
         "asset_id_offset": 20, "entity_id": "Sketch_42", "entity_suffix": 42,

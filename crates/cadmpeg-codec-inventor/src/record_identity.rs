@@ -225,7 +225,10 @@ mod tests {
         ] {
             assert!(super::RecordTypeId::try_from(type_id.to_owned()).is_err());
             let wire = serde_json::json!({"id": "inventor:pmdc:test#segment-0", "type_id": type_id, "segment_token": "segment", "record_ordinal": 0});
-            assert!(serde_json::from_value::<super::Located<Payload>>(wire).is_err());
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<super::Located<Payload>>(wire)
+                    .is_err()
+            );
         }
     }
 
