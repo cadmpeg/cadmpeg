@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::test_support::{fixture, review};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 fn sweep_bundle(operation: &str, control: Option<&str>) -> Vec<u8> {
     review::edit(&fixture("plate-fillet"), |path, value| {

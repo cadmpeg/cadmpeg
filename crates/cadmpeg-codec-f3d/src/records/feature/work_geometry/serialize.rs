@@ -223,7 +223,7 @@ mod tests {
     }
 
     fn vertex_recipe() -> DesignVertexRecipe {
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "record_index": 2,
             "byte_offset": 10,
             "class_tag": "369",
@@ -264,7 +264,7 @@ mod tests {
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
@@ -291,7 +291,7 @@ mod tests {
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
@@ -314,7 +314,7 @@ mod tests {
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

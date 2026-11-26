@@ -107,7 +107,7 @@ mod tests {
                 json::to_vec(&super::ObjectFrameWire::from(frame.clone())).unwrap()
             );
             let mut invalid = json::to_value(frame).unwrap();
-            invalid["object_id"] = serde_json::json!(value + 1);
+            invalid["object_id"] = cadmpeg_core::json!(value + 1);
             assert!(json::from_value::<DataBlockObjectFrame>(invalid)
                 .unwrap_err()
                 .to_string()
@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn object_frame_native_limit_refuses_before_raw_token_copy() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:feature:object-frame#0", "data_block": "nx:om:data-block#0",
             "ordinal": 1, "object_id": 370, "raw_object_id": "8172",
             "source_offset": 100

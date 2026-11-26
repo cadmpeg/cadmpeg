@@ -644,7 +644,7 @@ fn generated_source_less_drops_lossy_asm_history_graphs() {
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
     let mut orphan_fields = orphan.fields().unwrap().clone();
-    orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
+    orphan_fields.insert("parent".into(), cadmpeg_core::json!("missing-state"));
     *orphan = cadmpeg_ir::NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(orphan.id()).expect("valid identity"),
         orphan_fields,

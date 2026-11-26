@@ -45,9 +45,9 @@ fn repro_strips_names_paths_ids_and_metadata_and_preserves_context() {
     let (mut document, finding) = failing_cube();
     document.geometry.bodies[0].name = Some("PLANTED_NAME".into());
     let mut value = json::to_value(&document).unwrap();
-    value["source"] = serde_json::json!({"identity": {"kind":"unclassified","format":"f3d"},
+    value["source"] = cadmpeg_core::json!({"identity": {"kind":"unclassified","format":"f3d"},
         "attributes": {"PLANTED_METADATA_KEY":"PLANTED_METADATA_VALUE", "file_path":"/PLANTED_FILE/secret-source.f3d", "private-member.f3z":"member-source.f3d"}});
-    value["geometry"]["points"][0]["source_object"] = serde_json::json!({"format":"f3d", "object_id":"PLANTED_SOURCE_NAME",
+    value["geometry"]["points"][0]["source_object"] = cadmpeg_core::json!({"format":"f3d", "object_id":"PLANTED_SOURCE_NAME",
         "instance_path":["PLANTED_MEMBER_PATH/member.cad"]});
 
     let old = value["geometry"]["points"][0]["id"]
@@ -60,7 +60,7 @@ fn repro_strips_names_paths_ids_and_metadata_and_preserves_context() {
     value = serde_json::from_str(&text).unwrap();
     document = json::from_value(value).unwrap();
     let options = CutOptions {
-        context: json::from_value(serde_json::json!({"operation": ["opaque", 42]})).unwrap(),
+        context: json::from_value(cadmpeg_core::json!({"operation": ["opaque", 42]})).unwrap(),
         ..CutOptions::default()
     };
     let bundle = cut(&document, &finding, &options).unwrap();
@@ -95,31 +95,31 @@ fn repro_native_feature_closure_keeps_numeric_joins_and_type_rows() {
     for (arena, records) in [
         (
             "scopes",
-            serde_json::json!([{"id":"synthetic:scope:scope#1", "references": [2], "class": 17}]),
+            cadmpeg_core::json!([{"id":"synthetic:scope:scope#1", "references": [2], "class": 17}]),
         ),
         (
             "operands",
-            serde_json::json!([{"id":"synthetic:scope:operand#2", "members": [3]}]),
+            cadmpeg_core::json!([{"id":"synthetic:scope:operand#2", "members": [3]}]),
         ),
         (
             "members",
-            serde_json::json!([{"id":"synthetic:scope:member#3", "recipe": 4}]),
+            cadmpeg_core::json!([{"id":"synthetic:scope:member#3", "recipe": 4}]),
         ),
         (
             "recipes",
-            serde_json::json!([{"id":"synthetic:scope:recipe#4", "parameters": [5], "history": 6}]),
+            cadmpeg_core::json!([{"id":"synthetic:scope:recipe#4", "parameters": [5], "history": 6}]),
         ),
         (
             "parameters",
-            serde_json::json!([{"id":"synthetic:scope:parameter#5", "value": 9.0}]),
+            cadmpeg_core::json!([{"id":"synthetic:scope:parameter#5", "value": 9.0}]),
         ),
         (
             "states",
-            serde_json::json!([{"id":"synthetic:scope:state#6", "state": 10}]),
+            cadmpeg_core::json!([{"id":"synthetic:scope:state#6", "state": 10}]),
         ),
         (
             "types",
-            serde_json::json!([{"id":"synthetic:scope:type#17", "class": 17}]),
+            cadmpeg_core::json!([{"id":"synthetic:scope:type#17", "class": 17}]),
         ),
     ] {
         native
@@ -366,11 +366,11 @@ fn assembly_boundary_document() -> (CadIr, crate::report::check::Finding) {
         }
     }
     value["geometry"]["faces"][6]["surface"] = surface;
-    value["model"]["product_definitions"] = serde_json::json!([
+    value["model"]["product_definitions"] = cadmpeg_core::json!([
         {"id":"synthetic:assembly:definition#1", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[first_body]},
         {"id":"synthetic:assembly:definition#2", "kind":"part", "bom_properties":{}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[], "bodies":[second_body]}
     ]);
-    value["geometry"]["points"][0]["source_object"] = serde_json::json!({
+    value["geometry"]["points"][0]["source_object"] = cadmpeg_core::json!({
         "format":"f3d", "object_id":"synthetic:assembly:definition#1",
         "instance_path":["synthetic:assembly:definition#2"]
     });

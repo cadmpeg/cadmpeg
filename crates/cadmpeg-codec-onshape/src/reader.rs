@@ -4,6 +4,7 @@
 use crate::archive;
 use cadmpeg_core::serde_erase::json;
 mod assembly;
+mod derived;
 pub(super) mod expression;
 mod features;
 mod intersection;
@@ -15,7 +16,8 @@ mod sweep;
 mod thin;
 pub(super) mod topology;
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
@@ -25,9 +27,12 @@ use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::design::projection::fields::{
     FeatureField, ModelFeatureField, ModelParameterField, ParameterField,
 };
+use cadmpeg_ir::unknown::part::{record_given_up, GivenUpPart};
 
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
+/// Nesting limit of referenced Part Studios.
+pub(super) const MAX_REFERENCE_DEPTH: usize = 7;
 
 fn text<'a>(row: &'a Value, key: &str) -> Mapping<&'a str> {
     row.get(key)
@@ -111,7 +116,10 @@ fn mapping_loss_code(
     valid_suppression: bool,
     reason: &str,
 ) -> OnshapeLossCode {
-    if !region_budget_exhausted
+    if features::is_custom(feature) {
+        // A namespaced feature keeps its own reason whatever its feature type.
+        OnshapeLossCode::HistoryNotSupported
+    } else if !region_budget_exhausted
         && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
         && features::value(feature, "bodyType") == Some("THIN")
     {
@@ -250,6 +258,27 @@ pub(super) fn part_studio_bodies(model: &mut Model) {
         }
     }
 }
+/// The creator at `ordinal` made the only part of the final rollback state. The rollback
+/// ids are stable, so a derived feature cannot have supplied that part.
+fn creator_made_final_body(
+    ordinal: usize,
+    final_state: usize,
+    inputs: &topology::Inputs<'_>,
+) -> bool {
+    let (Ok(before), Ok(after), Ok(last)) = (
+        inputs.parts(ordinal),
+        inputs.parts(ordinal + 1),
+        inputs.parts(final_state),
+    ) else {
+        return false;
+    };
+    let mut made = after.keys().filter(|id| !before.contains_key(*id));
+    match (made.next(), made.next(), last.len()) {
+        (Some(id), None, 1) => last.contains_key(id),
+        _ => false,
+    }
+}
+
 pub(super) fn part_bodies(
     creators: &[usize],
     inputs: &topology::Inputs<'_>,
@@ -288,6 +317,26 @@ pub(super) fn part_bodies(
         .filter(|(_, body)| claims.values().filter(|b| b == body).count() == 1)
         .map(|(ordinal, body)| (*ordinal, (*body).clone()))
         .collect()
+}
+
+/// The body ids of a historical-body list or a design reference. Only the ids are
+/// materialised; the captured design in the reference is skipped.
+fn body_ids(text: &str) -> Result<Vec<String>, serde_json::Error> {
+    #[derive(serde::Deserialize)]
+    struct Row {
+        id: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Bodies {
+        List(Vec<Row>),
+        Reference {
+            #[serde(default)]
+            bodies: Vec<Row>,
+        },
+    }
+    let (Bodies::List(rows) | Bodies::Reference { bodies: rows }) = serde_json::from_str(text)?;
+    Ok(rows.into_iter().filter_map(|row| row.id).collect())
 }
 
 fn boolean_field(row: &Value, key: &str) -> Mapping<bool> {
@@ -346,6 +395,12 @@ fn rollback_bar(
 fn suppression(feature: &Value) -> Mapping<bool> {
     Ok(boolean_field(feature, "suppressed")? | boolean_field(feature, "parentSuppressed")?)
 }
+/// Whether `feature` holds a `suppressed` or `parentSuppressed` key.
+pub(super) fn suppression_stated(feature: &Value) -> bool {
+    ["suppressed", "parentSuppressed"]
+        .iter()
+        .any(|key| feature.get(key).is_some())
+}
 fn reserve_history<T>(rows: &mut Vec<T>, count: usize) -> Result<(), Error> {
     rows.try_reserve(count)
         .map_err(|_| Error::Decode("Onshape history allocation failed".into()))
@@ -399,6 +454,7 @@ pub(super) fn read(
 ) -> Result<Model, Error> {
     let mut bundle = Bundle::open(ctx, root)?;
     report.notes.append(&mut bundle.losses);
+    report.parts.append(&mut bundle.given_up);
     let manifest = bundle.json("manifest.json")?;
     if manifest.get("schema").and_then(Value::as_str) != Some(SCHEMA) {
         return Err(Error::Decode(
@@ -419,7 +475,9 @@ pub(super) fn read(
         }
     }
     if ctx.container_only() {
-        return Ok(Model::from_decoded(empty(ctx, root), None));
+        let mut model = Model::from_decoded(empty(ctx, root), None);
+        report.commit_parts(ctx, &mut model.ir, &mut model.source_fidelity)?;
+        return Ok(model);
     }
     let document = manifest.get("document").unwrap_or(&Value::Null);
     let mid = text(document, "microversion").map_err(Error::Decode)?;
@@ -427,51 +485,120 @@ pub(super) fn read(
     for key in ["sourceMicroversion", "microversionId"] {
         microversion(manifest, key, &mid).map_err(Error::Decode)?;
     }
-    bundle.admit_microversions(&mid);
-    bundle.admit_topology(ctx)?;
-    report.notes.append(&mut bundle.losses);
+    bundle.admit_microversions(ctx, &mid, report)?;
+    bundle.admit_topology(ctx, report)?;
     let manifest = bundle.json("manifest.json")?;
     let elements = rows(manifest, "elements").map_err(Error::Decode)?;
-    let mut model = if elements.len() == 1
-        && elements
-            .first()
-            .and_then(|e| e.get("type"))
-            .and_then(Value::as_str)
-            == Some("PARTSTUDIO")
-    {
-        studio(
+    let mut model = if studio_root(manifest, elements)?.is_some() {
+        let mut session = Session {
             ctx,
+            bundle: &bundle,
             root,
             step_decoder,
-            report,
-            &bundle,
-            &mid,
-            text(
-                elements
-                    .first()
-                    .ok_or_else(|| Error::Decode("element missing".into()))?,
-                "id",
-            )
-            .map_err(Error::Decode)?,
-        )?
+            studios: std::collections::BTreeMap::new(),
+        };
+        read_studio(&mut session, manifest, "", 0, report)?
     } else {
         assembly::read(ctx, root, step_decoder, report, &bundle, &mid, manifest)?
     };
     report
         .notes
         .extend(bundle.retain_assets(ctx, &mut model.ir)?);
+    report.commit_parts(ctx, &mut model.ir, &mut model.source_fidelity)?;
     Ok(model)
 }
 
-fn studio(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
+/// The shared state of one decode across a host studio and its referenced studios.
+struct Session<'s, 'a> {
+    ctx: &'s DecodeContext<'a>,
+    bundle: &'s Bundle<'a>,
+    root: View<'a>,
     step_decoder: crate::StepDecoder,
+    /// The read of each referenced studio by its member folder. A studio that several
+    /// derived features name is read once.
+    studios: std::collections::BTreeMap<String, Result<std::rc::Rc<Model>, String>>,
+}
+
+/// The Part Studio element a manifest selects, or `None` when the manifest does not
+/// describe a Part Studio bundle. A manifest of several Part Studios names its own
+/// Part Studio in `root_element`.
+fn studio_root<'v>(manifest: &'v Value, elements: &'v [Value]) -> Result<Option<&'v str>, Error> {
+    if elements.is_empty()
+        || elements
+            .iter()
+            .any(|e| e.get("type").and_then(Value::as_str) != Some("PARTSTUDIO"))
+    {
+        return Ok(None);
+    }
+    let selected = match manifest.get("root_element") {
+        None if elements.len() > 1 => return Ok(None),
+        None => None,
+        Some(value) => match value.as_str().filter(|root| !root.is_empty()) {
+            Some(root) => Some(root),
+            None => return Ok(None),
+        },
+    };
+    let mut ids = std::collections::BTreeSet::new();
+    for element in elements {
+        if !ids.insert(text(element, "id").map_err(Error::Decode)?) {
+            return Err(Error::Decode(
+                "Onshape element ids repeat; fetch a new bundle".into(),
+            ));
+        }
+    }
+    let Some(element) = elements
+        .iter()
+        .find(|e| selected.is_none_or(|root| e.get("id").and_then(Value::as_str) == Some(root)))
+    else {
+        return Ok(None);
+    };
+    text(element, "id").map(Some).map_err(Error::Decode)
+}
+
+/// Read one studio of a bundle. `folder` is the member folder of its manifest and
+/// `depth` counts the derived references above it.
+fn read_studio<'s>(
+    session: &mut Session<'s, '_>,
+    manifest: &'s Value,
+    folder: &str,
+    depth: usize,
     report: &mut Report,
-    bundle: &Bundle<'_>,
+) -> Result<Model, Error> {
+    let document = manifest.get("document").unwrap_or(&Value::Null);
+    let mid = text(document, "microversion").map_err(Error::Decode)?;
+    let elements = rows(manifest, "elements").map_err(Error::Decode)?;
+    let eid = studio_root(manifest, elements)?.ok_or_else(|| {
+        Error::Decode(
+            "the Onshape manifest selects no Part Studio; fetch a bundle whose root is a Part Studio"
+                .into(),
+        )
+    })?;
+    studio_in(session, mid, eid, folder, depth, report)
+}
+
+fn studio(
+    session: &mut Session<'_, '_>,
+    report: &mut Report,
     mid: &str,
     eid: &str,
 ) -> Result<Model, Error> {
+    studio_in(session, mid, eid, "", 0, report)
+}
+
+fn studio_in(
+    session: &mut Session<'_, '_>,
+    mid: &str,
+    eid: &str,
+    folder: &str,
+    depth: usize,
+    report: &mut Report,
+) -> Result<Model, Error> {
+    let (ctx, bundle, root, step_decoder) = (
+        session.ctx,
+        session.bundle,
+        session.root,
+        session.step_decoder,
+    );
     if !eid
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
@@ -480,7 +607,7 @@ fn studio(
             "Onshape element id cannot name a bundle folder; fetch a new bundle".into(),
         ));
     }
-    let prefix = format!("partstudios/{eid}");
+    let prefix = format!("{folder}partstudios/{eid}");
     let history_path = format!("{prefix}/features.json");
     let (features, bar) = match bundle.json(&history_path) {
         Ok(response) => match rows(response, "features") {
@@ -489,11 +616,13 @@ fn studio(
                 rollback_bar(response, features, report, &history_path),
             ),
             Err(reason) => {
-                report.push_coded(
+                report.give_up(
+                    ctx,
+                    bundle,
                     &history_path,
                     OnshapeLossCode::HistoryNotSupported,
                     format!("{reason}; feature history is missing"),
-                );
+                )?;
                 (&[][..], RollbackBar::default())
             }
         },
@@ -524,11 +653,13 @@ fn studio(
             Ok((decoded, text)) => Some(Model::from_decoded(decoded, Some(text))),
             Err(error) if features.is_empty() => return Err(error.into()),
             Err(error) => {
-                report.push_coded(
+                report.give_up(
+                    ctx,
+                    bundle,
                     &step_path,
                     OnshapeLossCode::StepUnreadable,
                     format!("{error}; final geometry is missing"),
-                );
+                )?;
                 None
             }
         }
@@ -576,9 +707,17 @@ fn studio(
         })
         .map(|(ordinal, _)| ordinal)
         .collect();
-    let single_body = (creators.len() == 1 && model.ir.geometry.bodies.len() == 1)
-        .then(|| model.ir.geometry.bodies.first().map(|body| body.id.clone()))
-        .flatten();
+    let has_derived = features
+        .iter()
+        .any(|feature| derived::is_derived(feature) && suppression(feature) != Ok(true));
+    let single_body = match (creators.as_slice(), model.ir.geometry.bodies.as_slice()) {
+        ([ordinal], [body])
+            if !has_derived || creator_made_final_body(*ordinal, features.len(), &inputs) =>
+        {
+            Some(body.id.clone())
+        }
+        _ => None,
+    };
     let parts = model.ir.geometry.bodies.len();
     let part_bodies = if single_body.is_none() && parts > 1 && !creators.is_empty() {
         let bound = part_bodies(&creators, &inputs, &model);
@@ -614,24 +753,39 @@ fn studio(
         reserve_history(&mut model.ir.design.containers, 1)?;
         reserve_history(&mut model.ir.design.scopes, 1)?;
     }
-    let mut seen = std::collections::BTreeSet::new();
+    let mut seen = std::collections::BTreeMap::<&str, &Value>::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
     let mut assumed_sides = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
         let design_length = model.ir.design.features.len();
         let note_start = report.notes.len();
         let native = match text(feature, "featureId") {
-            Ok(native) if seen.insert(native) => native,
-            Ok(native) => {
-                report.push_coded(
-                    native,
-                    OnshapeLossCode::RecordMalformed,
-                    "a feature repeats an earlier feature id; omitted the feature",
-                );
-                continue;
-            }
+            Ok(native) => match seen.entry(native) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(feature);
+                    native
+                }
+                std::collections::btree_map::Entry::Occupied(first) if *first.get() == feature => {
+                    report.push_coded(
+                        native,
+                        OnshapeLossCode::RecordMalformed,
+                        "a feature repeats an earlier feature with the same id and content; kept the earlier feature",
+                    );
+                    continue;
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    report.give_up_as(
+                        &format!("{history_path}#/features/{ordinal}"),
+                        native,
+                        OnshapeLossCode::RecordMalformed,
+                        "a feature repeats an earlier feature id with different content; omitted the feature",
+                    );
+                    continue;
+                }
+            },
             Err(reason) => {
-                report.push_coded(
+                report.give_up_as(
+                    &format!("{history_path}#/features/{ordinal}"),
                     &format!("feature #{ordinal}"),
                     OnshapeLossCode::RecordMalformed,
                     format!("{reason}; omitted the feature"),
@@ -640,10 +794,7 @@ fn studio(
             }
         };
         let feature_id = id("feature", native);
-        let name = feature
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or(native);
+        let name = text(feature, "name").unwrap_or(native);
         let suppressed = suppression(feature);
         let bindings: Vec<_> =
             if feature.get("featureType").and_then(Value::as_str) == Some("assignVariable") {
@@ -677,7 +828,9 @@ fn studio(
             model.ir.model.parameters.len(),
             model.ir.model.feature_input_topologies.len(),
             model.ir.design.features.len(),
+            model.ir.model.feature_result_topologies.len(),
         );
+        let mut reference = None;
         let mut dependencies = Vec::new();
         let mapped = if let Err(reason) = &suppressed {
             Err(reason.clone())
@@ -686,6 +839,19 @@ fn studio(
                 "native",
                 json!({"kind": "Suppressed Onshape feature", "parameters": {}}),
             ))
+        } else if derived::is_derived(feature) {
+            match derived::map(session, feature, ordinal, &inputs, folder, depth, report) {
+                Ok(captured) => {
+                    reference = Some(captured);
+                    Ok(definition("stored_geometry", json!({})))
+                }
+                Err(derived::Failure::Fatal(error)) => return Err(error),
+                Err(derived::Failure::Local(reason)) => Err(reason),
+            }
+        } else if has_derived
+            && feature.get("featureType").and_then(Value::as_str) == Some(derived::BOOLEAN_TYPE)
+        {
+            derived::boolean(feature, ordinal, &inputs, &model.ir.model)
         } else {
             features::map(
                 feature,
@@ -731,7 +897,7 @@ fn studio(
                 Ok(definition)
             })
         };
-        let definition = match mapped {
+        let mut definition = match mapped {
             Ok(definition) => {
                 if suppressed != Ok(true)
                     && !matches!(
@@ -761,6 +927,7 @@ fn studio(
                 model.ir.model.parameters.truncate(sizes.3);
                 model.ir.model.feature_input_topologies.truncate(sizes.4);
                 model.ir.design.features.truncate(sizes.5);
+                model.ir.model.feature_result_topologies.truncate(sizes.6);
                 if suppressed != Ok(true) {
                     let region_budget_exhausted = inputs
                         .regions
@@ -827,6 +994,104 @@ fn studio(
                 properties.insert("symmetric_distance_parameter".into(), json!("total"));
             }
         }
+        let captured = (|| -> Mapping<()> {
+            let properties = source_properties
+                .as_object_mut()
+                .ok_or("the feature source properties are not supported yet")?;
+            if let Some(reference) = reference {
+                properties.insert("design_reference".into(), json!(reference));
+            }
+            // Historical bodies can be consumed by a later Boolean and absent from final STEP.
+            // Keep their proven rollback identities and names apart from the final geometry.
+            if has_derived
+                && creators.contains(&ordinal)
+                && matches!(
+                    definition.pointer("/value/kind").and_then(Value::as_str),
+                    Some("extrude" | "revolve")
+                )
+                && definition
+                    .pointer("/value/value/op")
+                    .and_then(Value::as_str)
+                    == Some("new_body")
+            {
+                if let (Ok(before), Ok(after)) = (inputs.parts(ordinal), inputs.parts(ordinal + 1))
+                {
+                    let made: Vec<_> = after
+                        .iter()
+                        .filter(|(key, _)| !before.contains_key(*key))
+                        .collect();
+                    if let [(native, Some(name))] = made.as_slice() {
+                        properties.insert(
+                            "historical_bodies".into(),
+                            json!(serde_json::to_string(
+                                &json!([{"id": id("body", native), "name": name}])
+                            )
+                            .map_err(|error| error.to_string())?),
+                        );
+                    }
+                }
+            }
+            let historical = properties
+                .get("historical_bodies")
+                .or_else(|| properties.get("design_reference"))
+                .and_then(Value::as_str)
+                .map(body_ids)
+                .transpose()
+                .map_err(|error| error.to_string())?;
+            if let Some(local) = historical {
+                let local: Vec<&str> = local.iter().map(String::as_str).collect();
+                push(
+                    &mut model.ir.model.feature_result_topologies,
+                    json!({"id": id("result", native), "output_of": feature_id, "members": local.iter().map(|id| json!({"kind": "body", "id": id})).collect::<Vec<_>>()}),
+                )?;
+            }
+            Ok(())
+        })();
+        if let Err(reason) = captured {
+            dependencies.clear();
+            source_properties = json!({});
+            definition = self::definition(
+                "native",
+                json!({"kind": format!("Onshape feature: {reason}"), "parameters": {}}),
+            );
+            loss(
+                report,
+                name,
+                &reason,
+                model.source_step.is_some(),
+                OnshapeLossCode::HistoryNotSupported,
+            );
+        }
+        if has_derived {
+            // Generated body references require direct producer dependencies, even
+            // when the timeline's preceding feature already depends on that producer.
+            for role in feature
+                .get("parameters")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|parameter| {
+                    match parameter.get("parameterId").and_then(Value::as_str) {
+                        Some("targets") => Some("target"),
+                        Some("tools") => Some("tools"),
+                        _ => None,
+                    }
+                })
+            {
+                if let Some(bodies) = definition
+                    .pointer(&format!("/value/value/operands/{role}/value/bodies"))
+                    .and_then(Value::as_array)
+                {
+                    for body in bodies {
+                        if let Some(producer) = body.get("feature").and_then(Value::as_str) {
+                            if !dependencies.iter().any(|id| id == producer) {
+                                dependencies.push(producer.to_owned());
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let outputs: Vec<_> = single_body
             .iter()
             .chain(part_bodies.get(&ordinal))
@@ -856,11 +1121,13 @@ fn studio(
             .cloned()
             .collect();
         let mut row = json!({"id": feature_id, "ordinal": ordinal, "name": name, "dependencies": dependencies, "source_properties": source_properties, "source_content": [], "outputs": outputs, "definition": definition});
-        if let Ok(suppressed) = suppressed {
+        // A source with neither key does not state suppression (§5.10).
+        if let (Ok(suppressed), true) = (suppressed, suppression_stated(feature)) {
             row["suppressed"] = json!(suppressed);
         }
         if let Err(reason) = push(&mut model.ir.model.features, row) {
             model.ir.design.features.truncate(design_length);
+            model.ir.model.feature_result_topologies.truncate(sizes.6);
             let mut tail = report.notes.split_off(note_start);
             tail.retain(|note| {
                 !OnshapeLossCode::SketchPlaneAssumed.matches(note)
@@ -868,7 +1135,8 @@ fn studio(
                     && !OnshapeLossCode::ThinNotSupported.matches(note)
             });
             report.notes.extend(tail);
-            report.push_coded(
+            report.give_up_as(
+                &format!("{history_path}#/features/{ordinal}"),
                 name,
                 OnshapeLossCode::RecordMalformed,
                 format!("{reason}; omitted the feature"),
@@ -882,6 +1150,9 @@ fn studio(
         .notes
         .extend(inputs.sampling_report.into_inner().notes);
     annotate(&mut model, features, &assumed_sides)?;
+    if depth > 0 {
+        model.ir.finalize();
+    }
     Ok(model)
 }
 
@@ -927,11 +1198,53 @@ pub(super) struct Model {
 #[derive(Default)]
 pub(super) struct Report {
     pub(super) notes: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// The members the decode gives up, in the order it gives them up.
+    pub(super) parts: Vec<GivenUpPart>,
 }
 impl Report {
     fn push_coded(&mut self, subject: &str, code: OnshapeLossCode, detail: impl Into<String>) {
         self.notes
             .push(code.note(format!("{}; subject: {subject}", detail.into())));
+    }
+    /// Pushes the coded note for `record`, a member path of `bundle`, and
+    /// gives the member up as a part over its stored bytes. The member
+    /// stays an asset.
+    fn give_up(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        bundle: &Bundle<'_>,
+        record: &str,
+        code: OnshapeLossCode,
+        detail: impl Into<String>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let note = code.note(format!("{}; subject: {record}", detail.into()));
+        bundle.give_up_member(ctx, record, note, &mut self.notes, &mut self.parts)
+    }
+    /// Commits the given-up members to `ir` and `fidelity`, and pushes
+    /// their `record.unreadable` losses.
+    fn commit_parts(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut cadmpeg_ir::CadIr,
+        fidelity: &mut cadmpeg_ir::SourceFidelity,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        for part in std::mem::take(&mut self.parts) {
+            self.notes.push(part.commit(ctx, ir, fidelity)?);
+        }
+        Ok(())
+    }
+    /// Pushes the coded note for `subject` and the `record.unreadable` of
+    /// `record`, its source address.
+    fn give_up_as(
+        &mut self,
+        record: &str,
+        subject: &str,
+        code: OnshapeLossCode,
+        detail: impl Into<String>,
+    ) {
+        let note = code.note(format!("{}; subject: {subject}", detail.into()));
+        self.notes
+            .extend(record_given_up(archive::source_record(record), note));
     }
 }
 fn empty(ctx: &DecodeContext<'_>, root: View<'_>) -> Decoded {
@@ -1022,12 +1335,12 @@ fn annotate(
             continue;
         }
         let sketch_id = id("sketch", native);
-        if model
+        if let Some(sketch) = model
             .ir
             .model
             .sketches
             .iter()
-            .any(|s| s.id.as_str() == sketch_id)
+            .find(|s| s.id.as_str() == sketch_id)
         {
             let queries = features::queries(source, "sketchPlane").unwrap_or(&[]);
             let inferred = queries.iter().all(|q| {
@@ -1043,7 +1356,7 @@ fn annotate(
             });
             annotations
                 .field_exactness(
-                    &sketch_id,
+                    &sketch.id,
                     "placement",
                     if inferred {
                         Exactness::Inferred
@@ -1053,21 +1366,17 @@ fn annotate(
                 )
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
-        if source.get("suppressed").is_none() && source.get("parentSuppressed").is_none() {
-            annotations
-                .field_exactness(id("feature", native), "suppressed", Exactness::Inferred)
-                .map_err(cadmpeg_core::CodecError::from)?;
-        }
-    }
-    for feature in &model.ir.design.features {
-        let id = feature.id.as_str();
-        if assumed_sides.contains(id) {
-            annotations
-                .field_exactness(id, thin::SIDE, Exactness::Inferred)
-                .map_err(cadmpeg_core::CodecError::from)?;
-        }
     }
     cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations, RESTATEMENT)?;
+    // The side is marked on the restated note, so the rest of the design
+    // `definition` keeps its mark.
+    for feature in &model.ir.design.features {
+        if assumed_sides.contains(feature.id.as_str()) {
+            annotations
+                .field_exactness(&feature.id, thin::SIDE, Exactness::Inferred)
+                .map_err(cadmpeg_core::CodecError::from)?;
+        }
+    }
     model.source_fidelity.annotations = annotations.build();
     Ok(())
 }

@@ -203,7 +203,7 @@ pub(super) fn render_json(listing: &Listing) -> Result<String> {
             entries
                 .iter()
                 .map(|entry| {
-                    serde_json::json!({
+                    cadmpeg_core::json!({
                         "name": entry.name,
                         "compression": entry.compression.label(),
                         "crc32": entry.crc32,
@@ -220,14 +220,14 @@ pub(super) fn render_json(listing: &Listing) -> Result<String> {
             "cfb",
             rows.iter()
                 .map(|entry| match entry {
-                    CompoundEntry::Storage(storage) => serde_json::json!({
+                    CompoundEntry::Storage(storage) => cadmpeg_core::json!({
                         "kind": "storage",
                         "path": storage.path(),
                         "size": null,
                         "allocation": null,
                         "directory_id": entry.directory_id(),
                     }),
-                    CompoundEntry::Stream(stream) => serde_json::json!({
+                    CompoundEntry::Stream(stream) => cadmpeg_core::json!({
                         "kind": "stream",
                         "path": stream.path(),
                         "size": stream.logical_size(),
@@ -238,7 +238,7 @@ pub(super) fn render_json(listing: &Listing) -> Result<String> {
                 .collect(),
         ),
     };
-    let payload = serde_json::json!({
+    let payload = cadmpeg_core::json!({
         "subcommand": "container",
         "container_kind": container_kind,
         "entries": entries,

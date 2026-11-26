@@ -15,6 +15,7 @@
 //! of emitted entity IDs.
 
 pub mod acis_header;
+pub mod acis_interned;
 pub mod asm_header;
 pub mod brep;
 pub mod dialect;

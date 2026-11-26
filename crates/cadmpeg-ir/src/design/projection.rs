@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use crate::annotations::{AnnotationBuilder, ExactnessNote};
+use crate::annotations::{AnnotationBuilder, AnnotationKey, ExactnessNote};
 use crate::document::CadIr;
 use crate::provenance::Exactness;
 use crate::report::loss::LossNote;
@@ -107,10 +107,12 @@ fn sub_marks<'n>(
 /// exactness) and the marks on its sub-paths. A stated design field takes the
 /// least exact of its model fields and the mark on its own name. Where that
 /// name is also a model field, the marks on its sub-paths fold into the field
-/// too, since the two records can shape the field differently; under a name
-/// only the design record has, a sub-path mark is kept at no more than its
-/// field. Marks on a design field the record does not state, and model marks
-/// no stated field reads, leave.
+/// too, since the two records can shape the field differently; and where
+/// `inputs` does not list that model field, those marks count at no more
+/// than the entity exactness, since they may describe the model field. Under
+/// a name only the design record has, a sub-path mark is kept at no more than
+/// its field. Marks on a design field the record does not state, and model
+/// marks no stated field reads, leave.
 fn restated_fields<D: Field, M: Field>(
     note: &ExactnessNote,
     stated: impl IntoIterator<Item = (D, bool)>,
@@ -131,11 +133,24 @@ fn restated_fields<D: Field, M: Field>(
         }
         let key = field.key();
         let shared = M::parse(key).is_some();
-        let own = note.fields().get(key).copied().into_iter().chain(
-            sub_marks(note, key)
-                .filter(|_| shared)
-                .map(|(_, exactness)| exactness),
-        );
+        let unlisted = shared && !inputs(field).iter().any(|model| model.key() == key);
+        let own = note
+            .fields()
+            .get(key)
+            .copied()
+            .into_iter()
+            .chain(
+                sub_marks(note, key)
+                    .filter(|_| shared)
+                    .map(|(_, exactness)| exactness),
+            )
+            .map(|mark| {
+                if unlisted {
+                    least_exact(mark, entity)
+                } else {
+                    mark
+                }
+            });
         let exactness = inputs(field)
             .iter()
             .map(input)
@@ -189,7 +204,7 @@ pub fn restate_exactness(
         ) {
             let overrides =
                 restated_fields(note, FeatureField::stated(feature), restatement.feature);
-            restated.push((feature.id.as_str(), note.entity(), overrides));
+            restated.push((AnnotationKey::from(&feature.id), note.entity(), overrides));
         }
     }
     for parameter in &ir.design.parameters {
@@ -202,15 +217,18 @@ pub fn restate_exactness(
                 ParameterField::stated(parameter),
                 restatement.parameter,
             );
-            restated.push((parameter.id.as_str(), note.entity(), overrides));
+            restated.push((AnnotationKey::from(&parameter.id), note.entity(), overrides));
         }
     }
-    let ids = restated.iter().map(|(id, ..)| *id).collect::<BTreeSet<_>>();
-    annotations.retain_exactness(|owner| !ids.contains(owner));
-    for (id, entity, overrides) in restated {
-        annotations.exactness(id, entity);
+    let keys = restated
+        .iter()
+        .map(|(key, ..)| key.as_str())
+        .collect::<BTreeSet<_>>();
+    annotations.retain_exactness(|owner| !keys.contains(owner));
+    for (key, entity, overrides) in restated {
+        annotations.exactness(&key, entity);
         for (field, exactness) in overrides {
-            annotations.field_exactness(id, field, exactness)?;
+            annotations.field_exactness(&key, field, exactness)?;
         }
     }
     Ok(())

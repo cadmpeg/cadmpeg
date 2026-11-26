@@ -330,7 +330,7 @@ fn canonical_key(value: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{join_records, JoinMode, JoinSpec, ROWS_BUILT};
-    use serde_json::json;
+    use cadmpeg_core::json;
     use serde_json::Value;
 
     fn spec<'a>(

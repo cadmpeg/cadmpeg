@@ -307,7 +307,7 @@ mod tests {
             json::to_vec(token).unwrap(),
             json::to_vec(&old_wire).unwrap()
         );
-        let expected = serde_json::json!({"id": id, "value": old_wire});
+        let expected = cadmpeg_core::json!({"id": id, "value": old_wire});
         TOKEN_INTO_WIRE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &Record { id, value: token },

@@ -112,7 +112,7 @@ fn generic_unknown_links_share_the_typed_identity_rewrite_boundary() {
     .unwrap();
     assert_eq!(
         rewritten,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "test:occurrence:unknown#source",
             "links": ["test:occurrence:point#a"]
         })
@@ -158,7 +158,7 @@ fn rewriting_distinguishes_identities_from_identical_text_in_every_container() {
     assert_eq!(calls.get(), 2);
     assert_eq!(
         rewritten,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "test:occurrence:point#a", "label": source,
             "optional": "test:occurrence:point#a", "absent": null,
             "tuple": ["test:occurrence:point#a", source],
@@ -239,7 +239,7 @@ fn a_serializer_cannot_swallow_a_rewrite_collision() {
     assert!(error.to_string().contains("collides"), "{error}");
     assert_eq!(
         json::to_value(&source).unwrap(),
-        serde_json::json!(["test:model:point#a", "test:model:point#b"])
+        cadmpeg_core::json!(["test:model:point#a", "test:model:point#b"])
     );
 }
 
@@ -314,6 +314,6 @@ fn full_fidelity_reference_rewrites_without_rewriting_identical_display_text() {
     assert_eq!(wire["geometry_ref"], "scoped:native:curve#1");
     assert_eq!(
         wire["endpoint_refs"],
-        serde_json::json!(["scoped:native:point#1"])
+        cadmpeg_core::json!(["scoped:native:point#1"])
     );
 }

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{archive, id, part_bodies, part_studio_bodies, topology, Model, OnshapeLossCode};
 use crate::test_support::{fixture, Report};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io::{Cursor, Read, Write};
 
 /// The revolve fixture's bundle with `states` as its bodydetails, each a list of
@@ -354,4 +355,34 @@ fn sweep_losses_distinguish_support_from_malformed_records_and_budgets() {
     feature["parameters"] = json!(null);
     let malformed = super::mapping_loss_code(&feature, false, true, "malformed parameters");
     assert!(OnshapeLossCode::HistoryNotSupported.matches(&malformed.note("record")));
+}
+
+#[test]
+fn custom_features_keep_the_history_loss_whatever_their_type() {
+    for (kind, extra) in [
+        (
+            "extrude",
+            json!({"parameters":[{"parameterId":"bodyType","value":"THIN"}]}),
+        ),
+        (
+            "sweep",
+            json!({"parameters":[
+                {"parameterId":"bodyType","value":"SOLID"},
+                {"parameterId":"operationType","value":"NEW"},
+                {"parameterId":"profiles","queries":[]},
+                {"parameterId":"path","queries":[]}
+            ]}),
+        ),
+    ] {
+        let mut feature = extra;
+        feature["featureType"] = json!(kind);
+        let built_in = super::mapping_loss_code(&feature, false, true, "unsupported control");
+        assert!(!OnshapeLossCode::HistoryNotSupported.matches(&built_in.note("built-in")));
+        feature["namespace"] = json!("synthetic");
+        let custom = super::mapping_loss_code(&feature, false, true, "custom feature");
+        assert!(OnshapeLossCode::HistoryNotSupported.matches(&custom.note("custom")));
+        feature["namespace"] = json!("");
+        let empty = super::mapping_loss_code(&feature, false, true, "empty namespace");
+        assert!(!OnshapeLossCode::HistoryNotSupported.matches(&empty.note("built-in")));
+    }
 }

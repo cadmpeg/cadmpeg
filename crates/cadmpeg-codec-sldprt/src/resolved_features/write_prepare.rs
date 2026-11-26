@@ -1671,15 +1671,23 @@ pub(crate) fn generated_profile_stream(
     sketch: &cadmpeg_ir::sketches::Sketch,
 ) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
     let sketch_ir = sketch_brep(ir, sketch)?;
+    let linear_resolution =
+        cadmpeg_parasolid::precision::written_linear_resolution(ir.tolerances.linear)
+            .unwrap_or(cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION);
     // The generated body's records are named for the sketch, which the
     // history writer's retry leaves out (§3.2).
-    let body = crate::writer::brep_body(&sketch_ir, 0.001, false).map_err(|error| match error {
-        cadmpeg_core::CodecError::ResourceLimit(_) | cadmpeg_core::CodecError::Io(_) => error,
-        other => cadmpeg_core::CodecError::NotImplemented(format!(
-            "source-less SLDPRT sketch {} cannot be encoded ({other})",
-            sketch.id.as_str()
-        )),
-    })?;
+    let body =
+        crate::writer::brep_body(&sketch_ir, 0.001, linear_resolution, false).map_err(|error| {
+            match error {
+                cadmpeg_core::CodecError::ResourceLimit(_) | cadmpeg_core::CodecError::Io(_) => {
+                    error
+                }
+                other => cadmpeg_core::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT sketch {} cannot be encoded ({other})",
+                    sketch.id.as_str()
+                )),
+            }
+        })?;
     crate::writer::parasolid_stream_named(
         &body,
         "SCH_SW_33103_11000",

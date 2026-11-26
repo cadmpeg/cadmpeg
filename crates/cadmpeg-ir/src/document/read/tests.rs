@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{CadirRead, ReadFailure, ReadOptions};
 use crate::examples::unit_cube;
@@ -232,9 +233,10 @@ fn listed<'m>(message: &'m str, field: &str) -> Vec<&'m str> {
         .unwrap_or_default()
 }
 
-/// The annotations of a sidecar read with the document leave with each
-/// record the read gives up and each record it drops with one; a record
-/// the read keeps keeps its annotations (§3.3).
+/// A sidecar read with the document loses the annotations of each record
+/// the read gives up and of each record it drops with one, keeps those of a
+/// record the read keeps, and gains the retained text of each part the read
+/// gives up (§3.3).
 #[test]
 fn a_given_up_record_takes_the_annotations_of_its_sidecar() {
     let (ir, mut value) = wire();
@@ -250,16 +252,21 @@ fn a_given_up_record_takes_the_annotations_of_its_sidecar() {
     let [kept, ..] = marked.as_slice() else {
         panic!("a marked record: {}", entry.message);
     };
+    let kept = (*kept).to_owned();
+    let dropped: Vec<String> = dropped.into_iter().map(str::to_owned).collect();
+    let stub = read.document.native_unknowns("cadir").unwrap()[0]
+        .id
+        .clone();
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     let mut annotations = crate::AnnotationBuilder::new();
-    for id in dropped.iter().chain([kept]) {
+    for id in dropped.iter().chain([&kept]) {
         annotations.note(id, &stream, 0, None);
     }
-    let mut fidelity =
+    let mut sidecar =
         crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
-    fidelity.annotations = annotations.build();
+    sidecar.annotations = annotations.build();
 
-    read.remove_given_up_annotations(&mut fidelity);
+    let (document, report, fidelity) = read.with_sidecar(sidecar).unwrap();
 
     let keys: Vec<&str> = fidelity
         .annotations
@@ -267,7 +274,152 @@ fn a_given_up_record_takes_the_annotations_of_its_sidecar() {
         .keys()
         .map(crate::annotations::AnnotationKey::as_str)
         .collect();
-    assert_eq!(keys, [*kept]);
+    assert_eq!(keys, [kept.as_str()]);
+    assert!(fidelity.retained_record(stub.as_str()).is_some());
+    assert_eq!(report.len(), 1);
+    assert!(document
+        .geometry
+        .points
+        .iter()
+        .all(|kept| kept.id.as_str() != point));
+}
+
+/// A sidecar read with the document loses the annotations of each record
+/// of a stored state's delta that the read drops with a given-up record,
+/// under the record's key in that state, and keeps those of the state
+/// (§3.2, §3.3).
+#[test]
+fn a_given_up_record_takes_the_annotations_of_the_delta_records_it_drops() {
+    let mut ir = crate::validate::design::fixture::document();
+    let face = ir.geometry.faces[0].clone();
+    let shell = face.shell.clone();
+    let own = crate::topology::Face {
+        id: crate::ids::FaceId::mint("test:design:face#delta").unwrap(),
+        ..face.clone()
+    };
+    let evaluation = ir.design.evaluations[0].id.clone();
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .expect("the fixture stores the state")
+        .delta
+        .records
+        .faces = vec![face.clone(), own.clone()];
+    ir.finalize();
+    let mut value = json::to_value(&ir).unwrap();
+    value["geometry"]["shells"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|record| record["id"] == json!(shell.as_str()))
+        .expect("the face's shell")["region"] = json!([]);
+    let read = read(value.to_string().as_bytes());
+    assert!(
+        codes(&read.report).contains(&"decode/record.unreadable".to_owned()),
+        "{:?}",
+        read.report
+    );
+
+    let qualified = [
+        crate::annotations::AnnotationKey::in_delta(&evaluation, &face.id),
+        crate::annotations::AnnotationKey::in_delta(&evaluation, &own.id),
+    ];
+    let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
+    let mut annotations = crate::AnnotationBuilder::new();
+    for key in qualified
+        .iter()
+        .cloned()
+        .chain([crate::annotations::AnnotationKey::from(&evaluation)])
+    {
+        annotations.note(&key, &stream, 0, None);
+    }
+    let mut sidecar =
+        crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
+    sidecar.annotations = annotations.build();
+
+    let (_, _, fidelity) = read.with_sidecar(sidecar).unwrap();
+
+    let keys: Vec<&str> = fidelity
+        .annotations
+        .provenance
+        .keys()
+        .map(crate::annotations::AnnotationKey::as_str)
+        .collect();
+    assert_eq!(keys, [evaluation.as_str()]);
+}
+
+/// A release that stops on an error after it dropped records keeps the id
+/// of each record it dropped, so a sidecar read with the document loses
+/// their annotations (§3.3).
+#[test]
+fn a_release_that_stops_on_an_error_keeps_the_records_it_dropped() {
+    use cadmpeg_core::text::NonBlankString;
+
+    use crate::native::{NativeField, NativeRecord};
+
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut document = unit_cube().unwrap();
+    let point = document.geometry.points.remove(0).id;
+    let needing: Vec<crate::ids::VertexId> = document
+        .geometry
+        .vertices
+        .iter()
+        .filter(|vertex| vertex.point == point)
+        .map(|vertex| vertex.id.clone())
+        .collect();
+    assert!(!needing.is_empty());
+    // The rewrite of the stubs after the release refuses an arena that
+    // states one stub id twice.
+    let stub = NativeRecord::from_identity(
+        crate::ids::Identity::new("cadir:record:unknown#0").unwrap(),
+        [(
+            "links".to_owned(),
+            NativeField::TextList(vec![point.as_str().to_owned()]),
+        )],
+    );
+    document
+        .native
+        .namespace_mut(cadmpeg_core::text::CodecId::new("cadir".to_owned()).unwrap())
+        .arenas_mut()
+        .insert(
+            NonBlankString::new("unknowns").unwrap(),
+            vec![stub.clone(), stub],
+        );
+    let mut reader = super::Reader {
+        bytes: b"",
+        ctx: &ctx,
+        limits: cadmpeg_core::decode::ResourceLimits::default(),
+        report: Vec::new(),
+        parts: Vec::new(),
+        part_entries: std::collections::BTreeMap::new(),
+        lost: vec![(point.as_str().to_owned(), 0)],
+        removed: crate::annotations::Removed::default(),
+        stop: None,
+        refusal: None,
+    };
+
+    reader.release_lost(&mut document).unwrap();
+
+    let [entry] = reader.report.as_slice() else {
+        panic!("one entry: {:?}", reader.report);
+    };
+    assert!(
+        entry.message.contains("are not released"),
+        "{}",
+        entry.message
+    );
+    let removed = reader.removed.after(&document);
+    for vertex in &needing {
+        assert!(document
+            .geometry
+            .vertices
+            .iter()
+            .all(|kept| kept.id != *vertex));
+        assert!(
+            removed.names(&crate::annotations::AnnotationKey::from(vertex)),
+            "{vertex}"
+        );
+    }
 }
 
 /// Each record that needs a given-up record is dropped, transitively, until
