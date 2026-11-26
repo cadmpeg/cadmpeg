@@ -43,6 +43,9 @@ static SCOPE_DRAWING: IdentityComponent = cadmpeg_ir::identity_component!("drawi
 /// The `<scope>` component of a body derived from a CSG item.
 static SCOPE_CSG: IdentityComponent = cadmpeg_ir::identity_component!("csg");
 
+/// The `<scope>` component of an ANCHOR-section identity.
+static SCOPE_ANCHOR: IdentityComponent = cadmpeg_ir::identity_component!("anchor");
+
 /// The `<scope>` component of a design-layer identity.
 static SCOPE_DESIGN: IdentityComponent = cadmpeg_ir::identity_component!("design");
 
@@ -155,6 +158,13 @@ pub(crate) fn csg(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity 
 pub(crate) fn design(kind: &IdentityKind, key: impl Into<IdentityKey>) -> Identity {
     let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_DESIGN, kind);
     Identity::compose(&namespace, key)
+}
+
+/// ANCHOR-section statement named `name` as written: `step:anchor:name#{name}`.
+#[must_use]
+pub(crate) fn anchor(name: &str) -> Identity {
+    let namespace = IdentityNamespace::from_components(FORMAT, &SCOPE_ANCHOR, kind!("name"));
+    Identity::compose(&namespace, IdentityKey::encode_key_text(name))
 }
 
 #[cfg(test)]

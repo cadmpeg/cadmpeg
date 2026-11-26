@@ -830,7 +830,7 @@ fn give_up_statements(
         );
         let part = ctx.give_up_part(part, statement.cause.clone().into_error())?;
         for record in &statement.dropped {
-            dependents.push(dropped_with(statement_record(record)?, part.id().clone()));
+            dependents.push(dropped_with(statement_record(record), part.id().clone()));
         }
         parts.push(part);
     }
@@ -915,14 +915,11 @@ fn instance_record(id: u64) -> Identity {
 
 /// The record that names the statement `name` (`#12` or `<anchor>`) a
 /// parser drop names.
-fn statement_record(name: &str) -> Result<Identity, CodecError> {
+fn statement_record(name: &str) -> Identity {
     if let Some(id) = name.strip_prefix('#').and_then(|key| key.parse().ok()) {
-        return Ok(instance_record(id));
+        return instance_record(id);
     }
-    Ok(Identity::new(format!(
-        "{}:anchor:name#{name}",
-        crate::dialect::FORMAT
-    ))?)
+    ids::anchor(name)
 }
 
 /// Drops instance `id` with the first of `needs` that the parser or the

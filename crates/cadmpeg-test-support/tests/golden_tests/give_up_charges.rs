@@ -4,8 +4,8 @@
 //!
 //! A record give-up names a record id the document does not hold. A part
 //! give-up names the `unknowns` stub that stands in for the lost part. No id
-//! is named by two give-ups. No id in a `dropped=[..]` list is a neutral
-//! record the document holds; a native record there names the source entity
+//! is named by two give-ups. No id in a `dropped=[..]` list is a record the
+//! document holds, except an IGES directory record, which names the entity
 //! whose neutral records the give-up dropped.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,6 +15,9 @@ use serde_json::Value;
 use super::{collect_documents, golden_files};
 
 const GIVE_UP_CODE: &str = "record.unreadable";
+
+/// The id prefix of the IGES directory records a dropped list may name.
+const IGES_DIRECTORY: &str = "iges:entity:directory#";
 
 #[test]
 fn every_give_up_names_a_record_the_document_does_not_hold() {
@@ -93,13 +96,6 @@ fn parse(message: &str) -> Option<Charge<'_>> {
 fn audit(ir: &Value, messages: &[&str]) -> Vec<String> {
     let mut held = BTreeSet::new();
     held_ids(ir, &mut held);
-    let mut neutral = BTreeSet::new();
-    if let Some(fields) = ir.as_object() {
-        fields
-            .iter()
-            .filter(|(key, _)| key.as_str() != "native")
-            .for_each(|(_, field)| held_ids(field, &mut neutral));
-    }
     let stubs = ir
         .get("native")
         .and_then(Value::as_object)
@@ -125,7 +121,7 @@ fn audit(ir: &Value, messages: &[&str]) -> Vec<String> {
         }
         *named.entry(charge.named).or_default() += 1;
         for id in charge.dropped {
-            if neutral.contains(id) {
+            if held.contains(id) && !id.starts_with(IGES_DIRECTORY) {
                 findings.push(format!("{} drops held record {id}", charge.named));
             }
             *named.entry(id).or_default() += 1;
@@ -161,10 +157,12 @@ fn the_audit_finds_each_misnamed_give_up() {
         "native": { "t": {
             "unknowns": [{ "id": "t:source:part#a" }],
             "entities": [{ "id": "t:entity:directory#5" }]
+        }, "iges": {
+            "entities": [{ "id": "iges:entity:directory#7" }]
         } }
     });
     let messages = [
-        "record t:body#1 given up: bad; dropped=[t:body#2, t:entity:directory#5, t:face#9]",
+        "record t:body#1 given up: bad; dropped=[iges:entity:directory#7, t:body#2, t:entity:directory#5, t:face#9]",
         "record t:face#9 given up: bad; dropped=[]",
         "part blob \"b\" stream=\"s\" offset=0 length=1 record=t:source:part#a: bad; dropped=[]",
         "part blob \"b\" stream=\"s\" offset=1 length=1 record=t:source:part#b: bad; dropped=[]",
@@ -175,6 +173,7 @@ fn the_audit_finds_each_misnamed_give_up() {
         [
             "names held record t:body#1",
             "t:body#1 drops held record t:body#2",
+            "t:body#1 drops held record t:entity:directory#5",
             "part names no held stub t:source:part#b",
             "unshaped give-up: t:body#3 was not read",
             "2 give-ups name t:face#9",

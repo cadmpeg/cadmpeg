@@ -6,6 +6,7 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 use super::{byte_accounting, claim_trivia, decode_exchange_mode, ByteClass, Packaging, ValueExt};
 use crate::loss::StepLossCode;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 
 #[test]
 fn step_integer_number_refuses_inexact_f64() {
@@ -106,6 +107,31 @@ fn a_given_up_instance_is_one_part_and_its_dependents_drop_with_it() {
             .expect("the stub's bytes")
             .data(),
         None
+    );
+}
+
+#[test]
+fn an_anchor_whose_name_holds_a_space_drops_with_its_bounded_part() {
+    let mut anchors = String::from("<x 0>=(1,1);");
+    for index in 1..=23 {
+        write!(anchors, "<x {index}>=(<#x {0}>,<#x {0}>);", index - 1).expect("write anchor");
+    }
+    anchors.push_str("<y z>=#1;");
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<#x 23>);ENDSEC;END-ISO-10303-21;"
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("a permissive decode refuses no anchor name");
+    assert!(
+        decoded.report().losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .ends_with("; dropped=[step:anchor:name#<y%20z>]")
+        }),
+        "{:?}",
+        decoded.report().losses
     );
 }
 

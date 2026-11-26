@@ -260,14 +260,14 @@ fn project_brep(
         // The face's profiles end before the first refused loop, so no later
         // loop takes its position.
         let mut refusals = Vec::new();
-        let mut dropped_profiles = Vec::new();
+        let mut refused_edges = HashSet::<&cadmpeg_ir::ids::EdgeId>::new();
         // The next entity ordinal of the face's edges. A refused edge keeps
         // its ordinal, so no later edge takes it.
         let mut minted = 0_usize;
         let Some(face_loops) = face.loops.boundary() else {
             continue;
         };
-        for (loop_position, loop_id) in face_loops.iter().enumerate() {
+        for loop_id in face_loops {
             let Some(loop_) = loops.get(loop_id) else {
                 continue;
             };
@@ -281,6 +281,9 @@ fn project_brep(
                 };
                 for vertex_id in edge.vertices() {
                     used_vertices.insert(vertex_id);
+                }
+                if refused_edges.contains(&edge.id) {
+                    continue;
                 }
                 let (entity_id, start_aligned) = if let Some((id, start_aligned)) =
                     edge_entities.get(&edge.id)
@@ -321,6 +324,7 @@ fn project_brep(
                     if !edge_refusals.is_empty() {
                         let record = edge_refusals.join("; ");
                         refusals.push((record, loop_id, id));
+                        refused_edges.insert(&edge.id);
                         minted += 1;
                         continue;
                     }
@@ -381,14 +385,6 @@ fn project_brep(
             if refusals.is_empty() && !profile.is_empty() {
                 orient_closed_profile_by_topology(&mut profile, &entities[first_entity..]);
                 profiles.push(profile);
-            } else if refusals
-                .last()
-                .is_some_and(|(_, refused, _)| *refused == loop_id)
-                || !profile.is_empty()
-            {
-                dropped_profiles.push(cadmpeg_ir::ids::Identity::new(format!(
-                    "sldprt:model:sketch-profile#{block_offset}:{stream_ordinal}:{face_ordinal}:{loop_position}"
-                ))?);
             }
         }
         for vertex in &brep.vertices {
@@ -448,7 +444,6 @@ fn project_brep(
                 .loss(),
             );
         }
-        let mut dropped_profiles = Some(dropped_profiles);
         for (record, loop_id, entity) in refusals {
             let consequence = match profiles {
                 Some(_) => format!(
@@ -463,13 +458,9 @@ fn project_brep(
             };
             let why = crate::loss::SldprtLossCode::SketchProfileRejected
                 .note(format!("{record}; {consequence}"));
-            // A kept sketch drops the entity, and with the first refused
-            // entity the profiles from its loop on.
-            let given_up = profiles.is_some().then(|| {
-                cadmpeg_ir::unknown::part::GivenUpRecord::caused_by(entity, &why)
-                    .dropping(dropped_profiles.take().into_iter().flatten())
-                    .loss()
-            });
+            let given_up = profiles
+                .is_some()
+                .then(|| cadmpeg_ir::unknown::part::GivenUpRecord::caused_by(entity, &why).loss());
             losses.push(why);
             losses.extend(given_up);
         }
