@@ -21,7 +21,7 @@ pub(crate) mod model;
 pub(crate) mod om;
 mod parasolid;
 pub(crate) mod rmfastload_storage;
-mod segments;
+pub(crate) mod segments;
 pub(crate) mod structure;
 pub(crate) mod substrate;
 pub(crate) mod toggle;

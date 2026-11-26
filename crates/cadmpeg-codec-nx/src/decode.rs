@@ -454,6 +454,7 @@ fn build_metadata_ir(
     let mut given_up = Vec::new();
     let mut unknowns = Vec::new();
     let mut ir = CadIr::decoded(source_meta(scan, dialects, None)?);
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances([]);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
     let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
