@@ -1054,7 +1054,6 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [
         {
@@ -2779,16 +2778,10 @@
         }
       ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -2805,7 +2798,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -2814,14 +2806,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -3206,8 +3191,7 @@
           "value": {
             "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "alibre",
-            "strict_floor": "warning"
+            "namespace": "alibre"
           }
         },
         "message": "the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
@@ -3228,115 +3212,115 @@
       "exactness": {
         "alibre:brep:entity#102": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#109": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#113": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#118": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#122": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#13": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#20": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#31": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#46": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#51": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#61": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#66": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#70": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#79": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#8": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#85": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#90": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#95": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         }
@@ -3985,7 +3969,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "7fc0e59e74d400ed737c6ee77a6b6d6c29b2c0a7c91fdd99e84195ca8a84c863",
+    "content_digest": "9ce4c930c10369cd1ffa8c337b265cfac5bdde9e6c0ca694edcf44b210309183",
     "decode_digest": "3748e1ccaa7813ef7fb868eac6fe0afdd1c76938c3fc3f84b83b401ad1bcfb26",
     "file_digests": {},
     "retained_records": {},

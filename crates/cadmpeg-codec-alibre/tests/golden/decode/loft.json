@@ -1811,7 +1811,6 @@
       "appearance_bindings": [],
       "appearances": [],
       "articulations": [],
-      "assembly_joints": [],
       "assets": [],
       "attributes": [
         {
@@ -4416,16 +4415,10 @@
         }
       ],
       "colliders": [],
-      "configurations": [],
       "declared_measures": [],
       "drawings": [],
-      "feature_input_topologies": [],
-      "feature_result_topologies": [],
-      "features": [],
-      "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -4442,7 +4435,6 @@
           "instance_bodies": [],
           "occurrences": [],
           "representations": [],
-          "sketches": [],
           "storage": {
             "document": {},
             "kind": "file"
@@ -4451,14 +4443,7 @@
       ],
       "rigid_bodies": [],
       "semantic_annotations": [],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
       "solver_settings": [],
-      "spatial_sketch_constraints": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "tessellations": [],
       "view_presentations": []
     },
@@ -4877,8 +4862,7 @@
           "value": {
             "code": "source.kernel-dialect-unverified",
             "kind": "source_dialect_unverified",
-            "namespace": "alibre",
-            "strict_floor": "warning"
+            "namespace": "alibre"
           }
         },
         "message": "the SAB_DATA stream declares save format 33.0, which no verified Spatial ACIS band declares; its records were read with the grammar `acis:save-format-217` declares, and what they decoded is reported as it decoded",
@@ -4890,8 +4874,7 @@
           "value": {
             "code": "geometry.procedural-surface-untyped",
             "kind": "geometry_not_transferred",
-            "namespace": "alibre",
-            "strict_floor": "warning"
+            "namespace": "alibre"
           }
         },
         "message": "4 surface construction(s) are untyped; solved caches and source records retained",
@@ -4903,8 +4886,7 @@
           "value": {
             "code": "geometry.pcurve-undecoded",
             "kind": "geometry_not_transferred",
-            "namespace": "alibre",
-            "strict_floor": "warning"
+            "namespace": "alibre"
           }
         },
         "message": "16 coedge(s) name a pcurve record with no decodable 2D carrier; those coedges carry no pcurve. Source kinds: pcurve=16",
@@ -4925,27 +4907,27 @@
       "exactness": {
         "alibre:brep:entity#101": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#111": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#13": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#133": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
@@ -4969,14 +4951,14 @@
         },
         "alibre:brep:entity#47": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#63": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         },
@@ -4988,28 +4970,28 @@
         },
         "alibre:brep:entity#72": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#78": {
           "fields": {
-            "geometry.axis": "derived",
-            "geometry.ref_direction": "derived"
+            "geometry.value.axis": "derived",
+            "geometry.value.ref_direction": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#8": {
           "fields": {
-            "geometry.normal": "derived",
-            "geometry.u_axis": "derived"
+            "geometry.value.normal": "derived",
+            "geometry.value.u_axis": "derived"
           },
           "kind": "fields"
         },
         "alibre:brep:entity#97": {
           "fields": {
-            "geometry.direction": "derived"
+            "geometry.value.direction": "derived"
           },
           "kind": "fields"
         }
@@ -5798,7 +5780,7 @@
       }
     },
     "codec_digests": {},
-    "content_digest": "9f6c86c9f1e7e37775b23d49ac3a77b450b6d6fe88059ba1e2b659570fe1a221",
+    "content_digest": "3fad6c91f151b76cee8d352856978720faf670251703a57d2f33b908832dbfd8",
     "decode_digest": "fd43d82345eca4cb065d5390bd60c7d3569f6428dedb0baa639986feebfc3f46",
     "file_digests": {},
     "retained_records": {
