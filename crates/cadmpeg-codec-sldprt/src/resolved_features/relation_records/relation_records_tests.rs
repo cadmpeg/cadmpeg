@@ -41,7 +41,7 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputLane, FeatureInputName,
     FeatureInputRelationBinding,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod dynamic_relations;
 
@@ -819,6 +819,42 @@ fn holds(instances: &[crate::records::FeatureInputRelationInstance], scalar: &st
         .any(|relation| relation.scalar_refs().iter().any(|id| id == scalar))
 }
 
+/// The code of each note of `notes` and the identities it names in
+/// backticks.
+fn named_notes(
+    notes: &[cadmpeg_ir::report::loss::LossNote],
+) -> Vec<(cadmpeg_ir::report::loss::LossKind, BTreeSet<&str>)> {
+    notes
+        .iter()
+        .map(|note| {
+            (
+                note.code.clone(),
+                note.message.split('`').skip(1).step_by(2).collect(),
+            )
+        })
+        .collect()
+}
+
+/// The `sketch.dimension-class-unknown` note that names `ids`.
+fn unknown_class<'a>(ids: &[&'a str]) -> (cadmpeg_ir::report::loss::LossKind, BTreeSet<&'a str>) {
+    (
+        crate::loss::SldprtLossCode::SketchDimensionClassUnknown.kind(),
+        ids.iter().copied().collect(),
+    )
+}
+
+/// The `sketch.dimension-repeated` note that names the dropped scalars
+/// `ids` and the kept relation `relation`.
+fn repeated<'a>(
+    ids: &[&'a str],
+    relation: &'a str,
+) -> (cadmpeg_ir::report::loss::LossKind, BTreeSet<&'a str>) {
+    (
+        crate::loss::SldprtLossCode::SketchDimensionRepeated.kind(),
+        ids.iter().copied().chain([relation]).collect(),
+    )
+}
+
 /// In a compound-file lane, a refused dimension takes the relation class
 /// its relation-class token names where the sketch points that its relation
 /// binds measure the relation's driving value, also when its display scalar
@@ -856,7 +892,7 @@ fn a_refused_dimension_of_a_compound_lane_forms_where_its_sketch_points_measure_
             vec![Some("point-1".to_owned()), Some("point-3".to_owned())],
         )
     );
-    assert!(relations.unclassed.is_none());
+    assert!(relations.notes.is_empty());
 }
 
 /// In a compound-file lane, the relation of a refused dimension takes its
@@ -891,7 +927,7 @@ fn a_refused_dimension_of_a_compound_lane_is_measured_within_the_linear_toleranc
         compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES + 0.5 * TOLERANCE_M);
     let relations = relation_instances(&sketch_history(), &lane, tolerance).unwrap();
     assert!(holds(&relations.instances, &lane.scalars[3].id));
-    assert!(relations.unclassed.is_none());
+    assert!(relations.notes.is_empty());
     let relations = relation_instances(&sketch_history(), &lane, linear()).unwrap();
     assert!(!holds(&relations.instances, &lane.scalars[3].id));
 
@@ -899,19 +935,9 @@ fn a_refused_dimension_of_a_compound_lane_is_measured_within_the_linear_toleranc
         compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES + 2.0 * TOLERANCE_M);
     let relations = relation_instances(&sketch_history(), &lane, tolerance).unwrap();
     assert!(!holds(&relations.instances, &lane.scalars[3].id));
-    let note = relations
-        .unclassed
-        .expect("a note for the unclassed dimension");
     assert_eq!(
-        note.code,
-        crate::loss::SldprtLossCode::SketchDimensionClassUnknown.kind()
-    );
-    assert!(
-        note.message.contains(&format!("`{}`", lane.scalars[3].id))
-            && note.message.contains(&format!("`{}`", lane.scalars[4].id))
-            && note.message.contains("EV-05"),
-        "{}",
-        note.message
+        named_notes(&relations.notes),
+        vec![unknown_class(&[&lane.scalars[3].id, &lane.scalars[4].id])]
     );
 }
 
@@ -931,21 +957,58 @@ fn a_measured_refused_dimension_forms_beside_a_following_driving_value_that_does
     assert!(holds(&relations.instances, &lane.scalars[3].id));
     assert!(holds(&relations.instances, &lane.scalars[4].id));
     assert!(!holds(&relations.instances, &lane.scalars[5].id));
-    let note = relations
-        .unclassed
-        .expect("a note for the following driving scalar");
-    let named = |scalar: &FeatureInputScalar| note.message.contains(&format!("`{}`", scalar.id));
-    assert!(
-        named(&lane.scalars[5]) && !named(&lane.scalars[3]) && !named(&lane.scalars[4]),
-        "{}",
-        note.message
+    assert_eq!(
+        named_notes(&relations.notes),
+        vec![unknown_class(&[&lane.scalars[5].id])]
+    );
+}
+
+/// In a compound-file lane, a driving scalar after a measured refused
+/// dimension, with the same operands and value, takes that dimension's
+/// class and measures the same two sketch points. The lane keeps the first
+/// relation in lane order, forms no second relation on those points, and
+/// one `sketch.dimension-repeated` note names the driving scalar and the
+/// kept relation.
+#[test]
+fn a_following_driving_value_that_repeats_a_measured_refused_dimension_forms_no_second_relation() {
+    let (mut lane, _) = compound_refused_dimension_lane(DISPLAY_METRES, DRIVING_METRES);
+    let mut following = lane.scalars[4].clone();
+    following.id = format!("{}-following", following.id);
+    following.offset += 1;
+    lane.scalars.push(following);
+    let relations = relation_instances(&sketch_history(), &lane, linear()).unwrap();
+    let on_points = relations
+        .instances
+        .iter()
+        .filter(|relation| {
+            let mut points = relation
+                .operands
+                .iter()
+                .map(|operand| operand.entity_ref.as_deref())
+                .collect::<Vec<_>>();
+            points.sort_unstable();
+            points == [Some("point-1"), Some("point-3")]
+        })
+        .collect::<Vec<_>>();
+    let [kept] = on_points.as_slice() else {
+        panic!("one relation on the two points: {on_points:#?}");
+    };
+    assert_eq!(
+        kept.scalar_refs(),
+        [lane.scalars[3].id.clone(), lane.scalars[4].id.clone()]
+    );
+    assert!(!holds(&relations.instances, &lane.scalars[5].id));
+    assert_eq!(
+        named_notes(&relations.notes),
+        vec![repeated(&[&lane.scalars[5].id], &kept.id)]
     );
 }
 
 /// In a compound-file lane, a refused dimension whose relation measures the
 /// two sketch points of a relation of the same family that the lane
-/// declares, in either order, forms no second relation on them, and the
-/// loss note names its scalars.
+/// declares, in either order, forms no second relation on them, and one
+/// `sketch.dimension-repeated` note names its scalars and the declared
+/// relation.
 #[test]
 fn a_refused_dimension_on_the_points_of_a_declared_relation_forms_no_second_relation() {
     for indices in [[1, 3], [3, 1]] {
@@ -978,16 +1041,13 @@ fn a_refused_dimension_on_the_points_of_a_declared_relation_forms_no_second_rela
                 && !holds(&relations.instances, &lane.scalars[4].id),
             "{indices:?}"
         );
-        let note = relations
-            .unclassed
-            .expect("a note for the dimension on the declared relation's points");
-        assert!(
-            note.message.contains(&format!("`{}`", lane.scalars[3].id))
-                && note.message.contains(&format!("`{}`", lane.scalars[4].id))
-                && note.message.contains("that the lane declares")
-                && !note.message.contains("is unknown"),
-            "{}",
-            note.message
+        assert_eq!(
+            named_notes(&relations.notes),
+            vec![repeated(
+                &[&lane.scalars[3].id, &lane.scalars[4].id],
+                &declared.id
+            )],
+            "{indices:?}"
         );
     }
 }
@@ -1025,15 +1085,9 @@ fn a_refused_dimension_of_a_compound_lane_whose_token_names_another_family_stays
         !holds(&relations.instances, &lane.scalars[3].id)
             && !holds(&relations.instances, &lane.scalars[4].id)
     );
-    let note = relations
-        .unclassed
-        .expect("a note for the dimension of another family");
-    assert!(
-        note.message.contains(&format!("`{}`", lane.scalars[3].id))
-            && note.message.contains(&format!("`{}`", lane.scalars[4].id))
-            && note.message.contains("is unknown"),
-        "{}",
-        note.message
+    assert_eq!(
+        named_notes(&relations.notes),
+        vec![unknown_class(&[&lane.scalars[3].id, &lane.scalars[4].id])]
     );
 }
 
@@ -1065,14 +1119,14 @@ fn a_display_only_refused_dimension_of_a_compound_lane_forms_where_its_points_me
             vec![Some("point-1".to_owned()), Some("point-3".to_owned())],
         )
     );
-    assert!(relations.unclassed.is_none());
+    assert!(relations.notes.is_empty());
 }
 
 /// In a compound-file lane, a driving scalar with no operands that carries
 /// the name of a refused dimension's display scalar gives that dimension's
 /// relation its value. Where the sketch points measure that value the
 /// relation forms and holds the driving scalar; elsewhere the loss note
-/// names the driving scalar.
+/// names the display scalar and the driving scalar.
 #[test]
 fn a_detached_driving_value_of_a_refused_dimension_is_held_or_named_in_the_loss_note() {
     for (reach, forms) in [(DRIVING_METRES, true), (0.03, false)] {
@@ -1090,16 +1144,12 @@ fn a_detached_driving_value_of_a_refused_dimension_is_held_or_named_in_the_loss_
             "{reach}"
         );
         if forms {
-            assert!(relations.unclassed.is_none());
+            assert!(relations.notes.is_empty());
         } else {
             assert!(!holds(&relations.instances, &driver));
-            let note = relations
-                .unclassed
-                .expect("a note for the unclassed dimension");
-            assert!(
-                note.message.contains(&format!("`{driver}`")),
-                "{}",
-                note.message
+            assert_eq!(
+                named_notes(&relations.notes),
+                vec![unknown_class(&[&lane.scalars[3].id, &driver])]
             );
         }
     }

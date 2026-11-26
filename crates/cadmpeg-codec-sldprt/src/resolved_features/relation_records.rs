@@ -16,6 +16,7 @@ use crate::records::{
     FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
     FeatureInputScalar, FeatureInputScalarRole,
 };
+use crate::writer::native::streams::MILLIMETRES_PER_METRE;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::PositiveLength;
@@ -258,10 +259,6 @@ pub(super) fn unique_relation_declaration_candidates<'a>(
         .collect()
 }
 
-/// The millimetres in one metre: the document states its linear tolerance in
-/// millimetres, and sketch coordinates and scalars are metres.
-const MILLIMETRES_PER_METRE: f64 = 1000.0;
-
 /// The span between two sketch points that a point-distance family
 /// measures.
 #[derive(Clone, Copy)]
@@ -290,12 +287,6 @@ impl PointSpan {
             Self::Vertical => y.abs(),
         }
     }
-}
-
-/// The point-distance families, whose relation the two sketch points of its
-/// operands measure.
-fn is_point_distance_family(family: FeatureInputRelationFamily) -> bool {
-    PointSpan::of(family).is_some()
 }
 
 /// Whether a point-distance relation's bound operands are two sketch points
@@ -341,46 +332,50 @@ fn bound_point_pair(relation: &FeatureInputRelationInstance) -> Option<[&str; 2]
     Some(pair)
 }
 
-/// Whether `declared` holds a relation of `relation`'s family on the same two
+/// The first relation of `kept` with `relation`'s family on the same two
 /// sketch points, in either order.
-fn has_declared_twin(
-    declared: &[FeatureInputRelationInstance],
+fn repeated_relation<'r>(
+    kept: impl IntoIterator<Item = &'r FeatureInputRelationInstance>,
     relation: &FeatureInputRelationInstance,
-) -> bool {
-    bound_point_pair(relation).is_some_and(|pair| {
-        declared
-            .iter()
-            .any(|other| other.family == relation.family && bound_point_pair(other) == Some(pair))
-    })
+) -> Option<&'r FeatureInputRelationInstance> {
+    let pair = bound_point_pair(relation)?;
+    kept.into_iter()
+        .find(|other| other.family == relation.family && bound_point_pair(other) == Some(pair))
 }
 
-/// A lane's relation instances, and for a compound-file lane the loss note
-/// that names its sketch dimension scalars of unknown relation class.
+/// A lane's relation instances, and for a compound-file lane the loss notes
+/// of its sketch dimension scalars that form no relation instance.
 pub(super) struct LaneRelations {
     pub(super) instances: Vec<FeatureInputRelationInstance>,
-    pub(super) unclassed: Option<cadmpeg_ir::report::loss::LossNote>,
+    pub(super) notes: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
-/// One loss note for the sketch dimension scalars of a compound-file lane
-/// that no relation instance of `instances` holds: those of `tried`, whose
-/// relation class is unknown (open item EV-05), and those of `twins`, whose
-/// relation measures the sketch points of a relation of the same family that
-/// the lane declares.
-fn unclassed_dimension_note(
+/// The loss notes for the sketch dimension scalars of a compound-file lane
+/// that no relation instance of `instances` holds. One note names those of
+/// `tried` whose relation class is unknown (open item EV-05). One note per
+/// relation of `instances` names the scalars that `repeats` maps to it: their
+/// relation measures the same two sketch points in that relation's family.
+fn dimension_notes(
     lane: &FeatureInputLane,
     sketch_features: &HashSet<&str>,
     tried: &HashSet<String>,
-    twins: &HashSet<String>,
+    repeats: &HashMap<String, String>,
     instances: &[FeatureInputRelationInstance],
-) -> Option<cadmpeg_ir::report::loss::LossNote> {
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let held = instances
         .iter()
         .flat_map(FeatureInputRelationInstance::scalar_refs)
         .map(String::as_str)
         .collect::<HashSet<_>>();
+    let kept = instances
+        .iter()
+        .map(|relation| relation.id.as_str())
+        .collect::<HashSet<_>>();
     let mut unknown = Vec::new();
-    let mut twinned = Vec::new();
-    for scalar in &lane.scalars {
+    let mut repeated = Vec::<(&str, Vec<&str>)>::new();
+    let mut scalars = lane.scalars.iter().collect::<Vec<_>>();
+    scalars.sort_by_key(|scalar| scalar.offset);
+    for scalar in scalars {
         let id = scalar.id.as_str();
         if held.contains(id)
             || !scalar
@@ -390,41 +385,42 @@ fn unclassed_dimension_note(
         {
             continue;
         }
-        if twins.contains(id) {
-            twinned.push(scalar);
-        } else if tried.contains(id) {
-            unknown.push(scalar);
+        match repeats
+            .get(id)
+            .map(String::as_str)
+            .filter(|relation| kept.contains(relation))
+        {
+            Some(relation) => match repeated.iter_mut().find(|(kept, _)| *kept == relation) {
+                Some((_, scalars)) => scalars.push(id),
+                None => repeated.push((relation, vec![id])),
+            },
+            None if tried.contains(id) => unknown.push(id),
+            None => {}
         }
     }
-    if unknown.is_empty() && twinned.is_empty() {
-        return None;
-    }
-    let named = |mut scalars: Vec<&FeatureInputScalar>| {
-        scalars.sort_by_key(|scalar| scalar.offset);
-        let ids = scalars
-            .iter()
-            .map(|scalar| scalar.id.as_str())
-            .collect::<Vec<_>>();
-        crate::loss::named(&ids)
-    };
-    let mut message = Vec::new();
+    let mut notes = Vec::new();
     if !unknown.is_empty() {
-        message.push(format!(
-            "sketch dimension scalar(s) {} of a compound-file lane form no relation instance: \
-             the relation class of their dimensions is unknown (open item EV-05).",
-            named(unknown)
-        ));
+        notes.push(
+            crate::loss::SldprtLossCode::SketchDimensionClassUnknown.note(format!(
+                "sketch dimension scalar(s) {} of a compound-file lane form no relation \
+                 instance: the relation class of their dimensions is unknown (open item \
+                 EV-05). The scalar records are kept as native records.",
+                crate::loss::named(&unknown)
+            )),
+        );
     }
-    if !twinned.is_empty() {
-        message.push(format!(
-            "sketch dimension scalar(s) {} of a compound-file lane measure the two sketch \
-             points of a relation of the same family that the lane declares, and form no \
-             second relation instance (open item EV-05).",
-            named(twinned)
-        ));
+    for (relation, scalars) in repeated {
+        notes.push(
+            crate::loss::SldprtLossCode::SketchDimensionRepeated.note(format!(
+                "sketch dimension scalar(s) {} of a compound-file lane measure the same two \
+                 sketch points as relation instance `{relation}` of the same family, and form \
+                 no second relation instance (open item EV-05). The scalar records are kept as \
+                 native records.",
+                crate::loss::named(&scalars)
+            )),
+        );
     }
-    message.push("The scalar records are kept as native records.".to_owned());
-    Some(crate::loss::SldprtLossCode::SketchDimensionClassUnknown.note(message.join(" ")))
+    notes
 }
 
 /// The class that a relation group takes only from a compound-file lane's
@@ -721,7 +717,7 @@ pub(super) fn relation_instances(
         if stated_kind.is_none()
             || relation_kind(&class.name) != stated_kind
             || !relation_signature_for_declaration(family, scalar)
-            || (compound && !is_point_distance_family(family))
+            || (compound && PointSpan::of(family).is_none())
         {
             continue;
         }
@@ -763,19 +759,18 @@ pub(super) fn relation_instances(
             tried.insert(driving.id.clone());
         }
     }
-    let mut twins = HashSet::new();
+    let mut repeats = HashMap::new();
     let instances = if lane_declarations.len() == declarations.len() {
         main
     } else {
-        measured_relations(&lane_formed, declarations, main, &mut tried, &mut twins)?
+        measured_relations(&lane_formed, declarations, main, &mut tried, &mut repeats)?
     };
-    let unclassed = compound
-        .then(|| unclassed_dimension_note(lane, &sketch_features, &tried, &twins, &instances))
-        .flatten();
-    Ok(LaneRelations {
-        instances,
-        unclassed,
-    })
+    let notes = if compound {
+        dimension_notes(lane, &sketch_features, &tried, &repeats, &instances)
+    } else {
+        Vec::new()
+    };
+    Ok(LaneRelations { instances, notes })
 }
 
 /// What the relation instances of one lane are formed from, besides the
@@ -790,20 +785,21 @@ struct LaneForms<'l, 'f> {
 }
 
 /// The lane's relation instances: `main`, which the lane's declarations
-/// form, and each relation whose class comes only from a compound-file
-/// lane's relation-class token (open item EV-05) where two sketch points
-/// measure its value, `main` holds none of its scalars and `main` holds no
-/// relation of its family on the same two points. Each other such relation
-/// is left out, and where a token declaration gives its class the lane is
-/// formed again without that declaration. The scalars of every such relation
-/// go into `tried`, and those of a relation that a relation of `main` twins
-/// into `twins`.
+/// form, and, in lane order, each relation whose class comes only from a
+/// compound-file lane's relation-class token (open item EV-05) where two
+/// sketch points measure its value, `main` holds none of its scalars, and
+/// neither `main` nor an earlier such relation is of its family on the same
+/// two points. Each other such relation is left out, and where a token
+/// declaration gives its class the lane is formed again without that
+/// declaration. The scalars of every such relation go into `tried`, and
+/// `repeats` maps the scalars of one whose family and points a kept relation
+/// repeats to that relation's identity.
 fn measured_relations<'l>(
     forms: &LaneForms<'l, '_>,
     mut declarations: HashMap<&'l str, Declaration<'l>>,
     main: Vec<FeatureInputRelationInstance>,
     tried: &mut HashSet<String>,
-    twins: &mut HashSet<String>,
+    repeats: &mut HashMap<String, String>,
 ) -> Result<Vec<FeatureInputRelationInstance>, CodecError> {
     let held = main
         .iter()
@@ -811,7 +807,8 @@ fn measured_relations<'l>(
         .cloned()
         .collect::<HashSet<_>>();
     loop {
-        let (formed, gates) = forms.relations(&declarations)?;
+        let (mut formed, gates) = forms.relations(&declarations)?;
+        formed.sort_by_key(|relation| relation.offset);
         let mut measured = Vec::new();
         let mut rejected = HashSet::new();
         for relation in formed {
@@ -821,11 +818,16 @@ fn measured_relations<'l>(
             tried.extend(relation.scalar_refs().iter().cloned());
             let accepted = relation_measures_its_value(&relation, forms.index, forms.linear_m)
                 && relation.scalar_refs().iter().all(|id| !held.contains(id));
-            let twinned = accepted && has_declared_twin(&main, &relation);
-            if twinned {
-                twins.extend(relation.scalar_refs().iter().cloned());
+            let repeated = accepted
+                .then(|| repeated_relation(main.iter().chain(&measured), &relation))
+                .flatten()
+                .map(|kept| kept.id.clone());
+            if let Some(kept) = &repeated {
+                for scalar in relation.scalar_refs() {
+                    repeats.insert(scalar.clone(), kept.clone());
+                }
             }
-            if accepted && !twinned {
+            if accepted && repeated.is_none() {
                 measured.push(relation);
             } else if let Gate::Declared(scalar) = gate {
                 rejected.insert(scalar);
@@ -2021,7 +2023,7 @@ fn bind_relation_geometry(
     within: &dyn Fn(f64, f64) -> bool,
 ) {
     let dynamic = relation_uses_dynamic_operands(relation);
-    let unbound_points = is_point_distance_family(relation.family)
+    let unbound_points = PointSpan::of(relation.family).is_some()
         && relation
             .operands
             .iter()

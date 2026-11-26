@@ -859,7 +859,7 @@ pub(crate) fn bind_sweep_profile_inputs(model_features: &mut [cadmpeg_ir::featur
 
 /// Binds the scalar operands and relation instances of `lanes` under the
 /// part's linear tolerance `linear`, and returns the loss notes of their
-/// sketch dimensions of unknown relation class.
+/// sketch dimensions that form no relation instance.
 pub(crate) fn bind_scalar_operands(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
@@ -940,14 +940,14 @@ pub(crate) fn bind_scalar_operands(
 }
 
 /// Completes the bindings of `lane` under the part's linear tolerance
-/// `linear`, and returns the loss note of its sketch dimensions of unknown
-/// relation class.
+/// `linear`, and returns the loss notes of its sketch dimensions that form no
+/// relation instance.
 pub(crate) fn finalize_lane_bindings(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     lane: &mut FeatureInputLane,
     linear: PositiveLength,
-) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
+) -> Result<Vec<LossNote>, cadmpeg_core::CodecError> {
     normalize_indexed_curve_entities(lane);
     let mut marker_ids = HashMap::<String, HashMap<u32, Vec<(String, bool)>>>::new();
     for entity in &lane.sketch_entities {
@@ -1037,7 +1037,7 @@ pub(crate) fn finalize_lane_bindings(
     lane.edge_selections = compact_edge_selections(ctx, histories, lane)?;
     lane.surface_selections = compact_surface_selections(ctx, histories, lane)?;
     lane.generated_surface_identities = generated_surface_identities(lane)?;
-    Ok(relations.unclassed)
+    Ok(relations.notes)
 }
 
 fn represented_sketch_features(
@@ -1080,7 +1080,7 @@ fn represented_sketch_features(
 
 /// Binds the detached sketch objects of the supplemental lanes in `lanes`
 /// again under the part's linear tolerance `linear`, and returns the loss
-/// notes of their sketch dimensions of unknown relation class.
+/// notes of their sketch dimensions that form no relation instance.
 pub(crate) fn bind_unresolved_detached_sketch_objects(
     ctx: &DecodeContext<'_>,
     model_features: &[cadmpeg_ir::features::Feature],
