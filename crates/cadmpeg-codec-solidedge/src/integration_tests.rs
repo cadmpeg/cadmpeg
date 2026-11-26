@@ -476,7 +476,9 @@ fn unreadable_partition_preserves_another_partition() {
     assert!(given_up.message.contains(&format!("record={}", stub.id)));
     let (_, _, fidelity) = result.into_parts();
     let retained = fidelity.retained_record(stub.id.as_str()).unwrap();
-    assert_eq!(retained.data(), Some(b"broken".as_slice()));
+    let mut stream = b"broken".to_vec();
+    stream.resize(4096, 0);
+    assert_eq!(retained.data(), Some(stream.as_slice()));
 }
 
 #[test]

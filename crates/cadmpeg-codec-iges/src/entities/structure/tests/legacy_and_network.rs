@@ -284,8 +284,12 @@ fn decode_rejects_cyclic_solid_assembly_definitions() {
             .filter(|loss| loss.message.contains(
                 "solid-assembly use flag, form, members, transforms, or acyclicity is invalid"
             ))
-            .count(),
-        2
+            .map(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .fold([0, 0], |mut counts, given_up| {
+                counts[usize::from(given_up)] += 1;
+                counts
+            }),
+        [2, 2]
     );
 }
 

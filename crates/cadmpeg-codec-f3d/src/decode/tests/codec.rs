@@ -641,8 +641,8 @@ fn decode_yields_metadata_and_honest_report() {
     )));
 
     let unknowns = result.ir().native_unknowns("f3d").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(result.source_fidelity().retained_records().len(), 2);
+    assert_eq!(unknowns.len(), 2);
+    assert_eq!(result.source_fidelity().retained_records().len(), 3);
     assert!(result
         .source_fidelity()
         .retained_records()
