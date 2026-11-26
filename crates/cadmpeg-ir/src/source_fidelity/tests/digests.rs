@@ -58,9 +58,9 @@ fn the_sidecar_writes_one_digest_per_file_before_its_records() {
     assert_eq!(wire["decode_digest"], root_digest().as_str());
     assert_eq!(
         wire["file_digests"],
-        serde_json::json!({"synthetic:document:definition#pin": component.as_str()})
+        cadmpeg_core::json!({"synthetic:document:definition#pin": component.as_str()})
     );
-    assert_eq!(wire["retained_records"], serde_json::json!({}));
+    assert_eq!(wire["retained_records"], cadmpeg_core::json!({}));
     assert_eq!(
         serde_json::from_str::<SourceFidelity>(&text).unwrap(),
         fidelity

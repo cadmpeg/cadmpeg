@@ -178,7 +178,7 @@ fn arena_table(
     let items = node.get("items").context(SHAPE)?;
     let element = resolve(defs, items);
     if json {
-        let payload = serde_json::json!({
+        let payload = cadmpeg_core::json!({
             "arena": format!("{home}.{arena}"),
             "element": ref_name(items).unwrap_or("(inline)"),
             "schema": element,
@@ -200,7 +200,7 @@ fn sidecar(json: bool) -> Result<()> {
         .and_then(Value::as_object)
         .unwrap_or(&empty);
     if json {
-        let payload = serde_json::json!({
+        let payload = cadmpeg_core::json!({
             "element": "DecodeSidecar",
             "schema": root,
         });

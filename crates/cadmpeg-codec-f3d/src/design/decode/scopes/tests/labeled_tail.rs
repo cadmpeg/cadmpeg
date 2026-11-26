@@ -400,7 +400,7 @@ fn scope_wire_refuses_stored_state_bytes_that_disagree_with_the_set_bytes() {
     let wire = json::to_value(&scope).unwrap();
     for stored in ["000001", "000200", "020002"] {
         let mut changed = wire.clone();
-        changed["tail_flags"]["wide_state"] = serde_json::json!(stored);
+        changed["tail_flags"]["wide_state"] = cadmpeg_core::json!(stored);
         assert!(
             json::from_value::<crate::records::feature::scope::DesignParameterScope>(changed)
                 .is_err(),
@@ -466,7 +466,7 @@ fn scope_wire_refuses_tail_flags_outside_the_tail_or_set_without_the_no_result_f
     }
     let mut current = wire;
     current["tail_flags"]["no_result"] = false.into();
-    current["tail_flags"]["suppression"] = serde_json::json!([false, true]);
+    current["tail_flags"]["suppression"] = cadmpeg_core::json!([false, true]);
     assert!(
         json::from_value::<crate::records::feature::scope::DesignParameterScope>(current).is_err()
     );

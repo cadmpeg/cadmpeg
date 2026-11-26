@@ -10,7 +10,7 @@ struct NestedRecord<'a, T: serde::Serialize> {
 }
 
 fn selector_context() -> super::DesignEdgeRecipeSelectorContext {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "selector": 3,
         "clause_entries": [null],
         "clause_triplet_edge_slots": [null],
@@ -152,21 +152,21 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
             let slots: Vec<_> = (0..count)
                 .map(|index| (index % 2 == 0).then(|| [vec![7, 8], vec![7]]))
                 .collect();
-            let mut wire = serde_json::json!({
+            let mut wire = cadmpeg_core::json!({
                 "selector": 3, "clause_entries": entries,
                 "clause_triplet_edge_slots": slots,
                 "incidence_matching_edge_slots": edges,
                 "boundary_count_matching_edge_slots": [7, 8]
             });
             if edges.len() == 1 {
-                wire["unique_incidence_edge_slot"] = serde_json::json!(7);
+                wire["unique_incidence_edge_slot"] = cadmpeg_core::json!(7);
             }
             let context: super::DesignEdgeRecipeSelectorContext =
                 json::from_value(wire.clone()).unwrap();
             assert_eq!(context.clauses.len(), count);
             assert_eq!(json::to_value(&context).unwrap(), wire);
             let mut invalid = wire.clone();
-            invalid["unique_incidence_edge_slot"] = serde_json::json!(9);
+            invalid["unique_incidence_edge_slot"] = cadmpeg_core::json!(9);
             assert!(
                 json::from_value::<super::DesignEdgeRecipeSelectorContext>(invalid)
                     .unwrap_err()
@@ -202,7 +202,7 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
 #[test]
 fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
     for field in ["incident_edge_ordinal", "incident_side"] {
-        let mut wire = serde_json::json!({"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"});
+        let mut wire = cadmpeg_core::json!({"outer":3,"middle":2,"vertex_ordinal":2,"incident_edge_ordinal":1,"incident_side":"preceding"});
         wire.as_object_mut().unwrap().remove(field);
         assert!(json::from_value::<super::DesignTopologyRecipeTriplet>(wire)
             .unwrap_err()
@@ -215,7 +215,7 @@ fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
         assert_eq!(triplet.vertex_ordinal(), vertex);
         assert_eq!(json::to_string(&triplet).unwrap(), wire);
         let mut invalid = json::to_value(triplet).unwrap();
-        invalid["vertex_ordinal"] = serde_json::json!(outer);
+        invalid["vertex_ordinal"] = cadmpeg_core::json!(outer);
         assert!(
             json::from_value::<super::DesignTopologyRecipeTriplet>(invalid)
                 .unwrap_err()
@@ -227,7 +227,7 @@ fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
     let entry: super::DesignTopologyRecipeEntry = serde_json::from_str(wire).unwrap();
     assert_eq!(json::to_string(&entry).unwrap(), wire);
     let mut invalid = json::to_value(entry).unwrap();
-    invalid["common_incident_edge_ordinal"] = serde_json::json!(2);
+    invalid["common_incident_edge_ordinal"] = cadmpeg_core::json!(2);
     assert!(
         json::from_value::<super::DesignTopologyRecipeEntry>(invalid)
             .unwrap_err()
@@ -266,20 +266,20 @@ fn surface_patch_recipe_requires_two_clauses_and_preserves_root_wire() {
 
 #[test]
 fn recipe_sidecar_rejects_disagreeing_counts() {
-    let side = serde_json::json!({"field_count": 3, "header_value": 0,
+    let side = cadmpeg_core::json!({"field_count": 3, "header_value": 0,
         "scalars": [0], "payload_prefix": [0], "payload_entry_count": 0, "entries": []});
     assert!(json::from_value::<super::DesignTopologyRecipeSide>(side).is_err());
-    let side = serde_json::json!({"field_count": 2, "header_value": 0,
+    let side = cadmpeg_core::json!({"field_count": 2, "header_value": 0,
         "scalars": [0], "payload_prefix": [0], "payload_entry_count": 1, "entries": []});
     assert!(json::from_value::<super::DesignTopologyRecipeSide>(side).is_err());
-    let clause = serde_json::json!({"fields": [], "face_reference_ordinals": [0, 0],
+    let clause = cadmpeg_core::json!({"fields": [], "face_reference_ordinals": [0, 0],
         "edge_reference_ordinals": [0, 0], "payload_entry_count": 1, "entries": []});
     assert!(json::from_value::<super::DesignSurfacePatchRecipeClause>(clause).is_err());
 }
 
 #[test]
 fn recipe_sidecar_derives_counts_without_changing_wire() {
-    let side = serde_json::json!({"field_count": 2, "header_value": 0,
+    let side = cadmpeg_core::json!({"field_count": 2, "header_value": 0,
         "scalars": [0], "payload_prefix": [0], "payload_entry_count": 0, "entries": []});
     let record: super::DesignTopologyRecipeSide = json::from_value(side.clone()).unwrap();
     assert_eq!(record.field_count(), 2);

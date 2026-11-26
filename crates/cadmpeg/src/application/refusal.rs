@@ -994,7 +994,7 @@ mod tests {
                 assert_eq!(report["stage"], "decode");
                 assert_eq!(
                     report["resource"],
-                    serde_json::json!({
+                    cadmpeg_core::json!({
                         "dimension": name, "reason": reason_name, "limit": u64::MAX,
                         "used": u64::MAX - 1, "requested": 2, "operation": limit.operation,
                     })

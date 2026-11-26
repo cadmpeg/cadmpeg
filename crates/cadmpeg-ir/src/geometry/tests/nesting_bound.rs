@@ -134,7 +134,7 @@ fn deserialization_refuses_a_surface_placement_past_the_bound() {
     // routes through is what refuses the extra placement.
     let admitted = json::to_value(placed_plane(MAX_GEOMETRY_NESTING).expect("admitted nesting"))
         .expect("serialized");
-    let past_the_bound = serde_json::json!({
+    let past_the_bound = cadmpeg_core::json!({
         "kind": "transformed",
         "basis": admitted,
         "transform": json::to_value(Transform::identity()).expect("serialized"),

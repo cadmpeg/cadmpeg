@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn class_registry_reference_roundtrip_and_source_bounds() {
-        let reference = json::from_value(serde_json::json!({
+        let reference = json::from_value(cadmpeg_core::json!({
             "name": "UGS::OM::Meta", "code": 2, "source_offset": 1475
         }))
         .unwrap();

@@ -75,7 +75,7 @@ fn fillet_law_admission_rejects_invalid_numeric_values() {
 
 #[test]
 fn fillet_law_serde_rejects_negative_zero_only_and_unordered_laws() {
-    let input = serde_json::json!({
+    let input = cadmpeg_core::json!({
         "radii": [0.0, 0.0, 1.0, 0.0],
         "radius_record_indexes": [1, 2, 3, 4], "radius_offsets": [40, 48, 56, 64],
         "intermediate_parameters": [0.0, 0.5],
@@ -84,14 +84,14 @@ fn fillet_law_serde_rejects_negative_zero_only_and_unordered_laws() {
     let group: DesignFixedFilletGroup = json::from_value(input.clone()).unwrap();
     assert_eq!(json::to_value(group).unwrap(), input);
     for (field, value) in [
-        ("radii", serde_json::json!([-1.0, 0.0, 1.0, 0.0])),
-        ("radii", serde_json::json!([0.0, 0.0, 0.0, 0.0])),
-        ("intermediate_parameters", serde_json::json!([0.5, 0.5])),
-        ("intermediate_parameters", serde_json::json!([0.75, 0.25])),
-        ("intermediate_parameters", serde_json::json!([0.0, 1.0])),
+        ("radii", cadmpeg_core::json!([-1.0, 0.0, 1.0, 0.0])),
+        ("radii", cadmpeg_core::json!([0.0, 0.0, 0.0, 0.0])),
+        ("intermediate_parameters", cadmpeg_core::json!([0.5, 0.5])),
+        ("intermediate_parameters", cadmpeg_core::json!([0.75, 0.25])),
+        ("intermediate_parameters", cadmpeg_core::json!([0.0, 1.0])),
         (
             "tangency_weight",
-            serde_json::json!({"value": 0.0, "record_index": 7, "value_offset": 88}),
+            cadmpeg_core::json!({"value": 0.0, "record_index": 7, "value_offset": 88}),
         ),
     ] {
         let mut invalid = input.clone();

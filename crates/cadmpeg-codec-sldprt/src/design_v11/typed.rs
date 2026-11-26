@@ -566,7 +566,7 @@ mod tests {
     #[test]
     fn the_unresolved_note_names_every_reason_however_many_features_it_lists() {
         let id = |index: usize| -> FeatureId {
-            json::from_value(serde_json::json!(format!("sldprt:model:feature#{index}"))).unwrap()
+            json::from_value(cadmpeg_core::json!(format!("sldprt:model:feature#{index}"))).unwrap()
         };
         let extrudes = (0..12)
             .map(|index| {

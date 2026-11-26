@@ -221,7 +221,7 @@ mod tests {
         ir.model.product_definitions.push(embedded);
         ir.geometry.bodies.push(
             json::from_value(
-                serde_json::json!({"id": "inventor:brep:body#embedded", "kind": "solid"}),
+                cadmpeg_core::json!({"id": "inventor:brep:body#embedded", "kind": "solid"}),
             )
             .expect("body"),
         );

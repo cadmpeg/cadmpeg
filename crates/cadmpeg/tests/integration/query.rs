@@ -81,7 +81,7 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
     let dir = tempdir().unwrap();
     for content in [CHECK_REPORT, CADIR_DOC, SIDECAR] {
         let mut valid: serde_json::Value = serde_json::from_str(content).unwrap();
-        valid["ir_version"] = serde_json::json!(cadmpeg_ir::IR_VERSION);
+        valid["ir_version"] = cadmpeg_core::json!(cadmpeg_ir::IR_VERSION);
         let path = write(dir.path(), "artifact.json", &valid.to_string());
         let result = cadmpeg()
             .args(["query", "summary", path.to_str().unwrap(), "--json"])
@@ -96,29 +96,29 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
         assert_eq!(report["ir_version"], cadmpeg_ir::IR_VERSION);
         assert_eq!(report["command"], "query");
         for version in [
-            Some(serde_json::json!("36")),
-            Some(serde_json::json!("35")),
-            Some(serde_json::json!("34")),
-            Some(serde_json::json!("33")),
+            Some(cadmpeg_core::json!("36")),
+            Some(cadmpeg_core::json!("35")),
+            Some(cadmpeg_core::json!("34")),
+            Some(cadmpeg_core::json!("33")),
             None,
             Some(serde_json::Value::Null),
-            Some(serde_json::json!(0)),
-            Some(serde_json::json!(false)),
-            Some(serde_json::json!("unsupported")),
-            Some(serde_json::json!("10")),
-            Some(serde_json::json!("13")),
-            Some(serde_json::json!("14")),
-            Some(serde_json::json!("18")),
-            Some(serde_json::json!("19")),
-            Some(serde_json::json!("23")),
-            Some(serde_json::json!("24")),
-            Some(serde_json::json!("30")),
-            Some(serde_json::json!("32")),
-            Some(serde_json::json!("7")),
-            Some(serde_json::json!("8")),
-            Some(serde_json::json!("9")),
-            Some(serde_json::json!("12")),
-            Some(serde_json::json!({})),
+            Some(cadmpeg_core::json!(0)),
+            Some(cadmpeg_core::json!(false)),
+            Some(cadmpeg_core::json!("unsupported")),
+            Some(cadmpeg_core::json!("10")),
+            Some(cadmpeg_core::json!("13")),
+            Some(cadmpeg_core::json!("14")),
+            Some(cadmpeg_core::json!("18")),
+            Some(cadmpeg_core::json!("19")),
+            Some(cadmpeg_core::json!("23")),
+            Some(cadmpeg_core::json!("24")),
+            Some(cadmpeg_core::json!("30")),
+            Some(cadmpeg_core::json!("32")),
+            Some(cadmpeg_core::json!("7")),
+            Some(cadmpeg_core::json!("8")),
+            Some(cadmpeg_core::json!("9")),
+            Some(cadmpeg_core::json!("12")),
+            Some(cadmpeg_core::json!({})),
         ] {
             let mut wire = valid.clone();
             match version {
@@ -1763,7 +1763,7 @@ fn summary_projects_cadir_export_without_a_native_target() {
     let report = write(
         dir.path(),
         "canonical-export.json",
-        &serde_json::json!({
+        &cadmpeg_core::json!({
             "ir_version": cadmpeg_ir::IR_VERSION,
             "command": "convert",
             "status": "ok",

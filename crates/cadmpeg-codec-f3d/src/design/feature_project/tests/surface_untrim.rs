@@ -18,7 +18,7 @@ use cadmpeg_ir::report::loss::LossNote;
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#40";
 
 fn group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
         "scope_record_index": 40,
         "scope_reference_ordinal": 1,
@@ -200,7 +200,7 @@ fn manual_loop_groups_are_retained_as_a_scope_aggregate() {
 #[test]
 fn duplicate_and_wrong_role_groups_preserve_the_scope_selection() {
     let mut wrong = json::to_value(group(44, 47)).unwrap();
-    wrong["role"] = serde_json::json!(68_719_476_736_u64);
+    wrong["role"] = cadmpeg_core::json!(68_719_476_736_u64);
     for groups in [
         vec![group(44, 47), group(44, 47)],
         vec![json::from_value(wrong).unwrap()],
