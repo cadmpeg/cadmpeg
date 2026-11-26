@@ -539,10 +539,13 @@ fn vector_at(record: &[u8], at: usize) -> [f64; 3] {
     [0, 1, 2].map(|axis| f64_at(record, at + 8 * axis))
 }
 
+/// The largest difference between a stored and an expected direction component.
+const EPS_DIRECTION: f64 = 1e-9;
+
 fn assert_vector(found: [f64; 3], expected: [f64; 3]) {
     for axis in 0..3 {
         assert!(
-            (found[axis] - expected[axis]).abs() < 1e-9,
+            (found[axis] - expected[axis]).abs() < EPS_DIRECTION,
             "{found:?} {expected:?}"
         );
     }

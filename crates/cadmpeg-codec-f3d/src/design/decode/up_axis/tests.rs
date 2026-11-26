@@ -102,3 +102,11 @@ fn apply_sets_the_axis_or_charges_a_loss() {
         crate::loss::F3dLossCode::SettingsUpAxisUnrecognized.kind()
     );
 }
+
+#[test]
+fn the_stored_pair_follows_the_document_up_axis() {
+    use super::stored_pair;
+    assert_eq!(stored_pair(Some(UpAxis::Y)), Y_UP_PAIR);
+    assert_eq!(stored_pair(Some(UpAxis::Z)), Z_UP_PAIR);
+    assert_eq!(stored_pair(None), Z_UP_PAIR);
+}

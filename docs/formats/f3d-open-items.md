@@ -1079,7 +1079,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** What rule gives the view extents `w0`, `w1` of the `HOME` camera and the scene radius at offset 426 of the `AssetSettings` record, and what centre does the camera use in a design with more than one result body?
 
-**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)`, the up direction, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
+**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)` in a Z-up document and `(1, 1, 1)` in a Y-up document, the up direction `(0, 0, 1)` or `(0, 1, 0)` respectively, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
 
 **Need.** A writer must store the extents, the radius, and the target. The displayed tessellation of the body, projected on the view plane, against the extents would settle the rule.
 

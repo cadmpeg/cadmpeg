@@ -24,9 +24,18 @@ const KEY_AT: usize = 15;
 /// The length of the LP-ASCII key.
 const KEY_LEN: usize = 17;
 /// The stored (front, up) pair of a Z-up document.
-const Z_UP_PAIR: ([f64; 3], [f64; 3]) = ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
+pub(crate) const Z_UP_PAIR: ([f64; 3], [f64; 3]) = ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
 /// The stored (front, up) pair of a Y-up document.
-const Y_UP_PAIR: ([f64; 3], [f64; 3]) = ([0.0, 0.0, -1.0], [0.0, 1.0, 0.0]);
+pub(crate) const Y_UP_PAIR: ([f64; 3], [f64; 3]) = ([0.0, 0.0, -1.0], [0.0, 1.0, 0.0]);
+
+/// The (front, up) pair `AssetSettings` stores twice for `axis`: the Y-up
+/// form for `Y`, the Z-up form for `Z` or no stated axis.
+pub(crate) fn stored_pair(axis: Option<UpAxis>) -> ([f64; 3], [f64; 3]) {
+    match axis {
+        Some(UpAxis::Y) => Y_UP_PAIR,
+        Some(UpAxis::Z) | None => Z_UP_PAIR,
+    }
+}
 
 /// What the `AssetSettings` record states about the up axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
