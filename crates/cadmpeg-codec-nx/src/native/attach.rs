@@ -61,13 +61,11 @@ use feature_projection::{
     hole_axis_placements_for_operations, hole_body_projection, hole_package_projection,
     native_feature_parameters, new_body_boolean_op, non_boolean_feature_definition_with_parameters,
     non_modeling_history_definition, offset_surface_feature_definition, primary_hole_outputs,
-    selection_indices_native, simple_hole_chamfers, simple_hole_native_properties,
-    simple_hole_operations, sphere_body_projection, thicken_feature_definition,
-    FeatureProjectionIndex, HolePackageSources, HoleProjection, NewBodyEvidence, ProjectionArenas,
+    recognition_tolerances, selection_indices_native, simple_hole_chamfers,
+    simple_hole_native_properties, simple_hole_operations, sphere_body_projection,
+    thicken_feature_definition, FeatureProjectionIndex, HolePackageSources, HoleProjection,
+    NewBodyEvidence, ProjectionArenas,
 };
-
-const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
-const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
 
 fn push_native_unknown(
     ctx: &DecodeContext<'_>,
@@ -77,30 +75,6 @@ fn push_native_unknown(
     ctx.charge_entities(1, "NX native unknown record")?;
 
     unknowns.push(record);
-    Ok(())
-}
-
-/// Refuses a document tolerance finer than the hole recognisers resolve.
-///
-/// The recognisers below compare evaluated B-rep geometry against the document
-/// linear and angular tolerances and then state the hole they find as a native
-/// NX feature. Evaluated geometry carries no meaning below these bounds, so a
-/// document that states a finer tolerance names a precision the attach route
-/// does not have. The route refuses such a document by name here, once, and
-/// every recogniser below reads the stated tolerance as stated.
-fn admit_hole_recognition_tolerances(ir: &CadIr) -> Result<(), CodecError> {
-    let linear = ir.tolerances.linear.get();
-    if linear < MIN_LINEAR_TOLERANCE {
-        return Err(CodecError::InvalidInput(format!(
-            "document linear tolerance {linear} is finer than the NX hole recognition bound {MIN_LINEAR_TOLERANCE}"
-        )));
-    }
-    let angular = ir.tolerances.angular.get();
-    if angular < MIN_ANGULAR_TOLERANCE {
-        return Err(CodecError::InvalidInput(format!(
-            "document angular tolerance {angular} is finer than the NX hole recognition bound {MIN_ANGULAR_TOLERANCE}"
-        )));
-    }
     Ok(())
 }
 
@@ -2030,7 +2004,16 @@ fn attach_feature_operations(
     .unwrap_or_default();
     let mut hole_outputs = explicit_hole_outputs;
     let mut simple_hole_diameters = BTreeMap::new();
-    admit_hole_recognition_tolerances(ir)?;
+    let recognition = recognition_tolerances(&ir.tolerances);
+    if recognition != ir.tolerances {
+        losses.push(NxLossCode::FeatureRecognitionToleranceFloor.note(format!(
+            "feature recognition compares evaluated geometry at {} mm and {} rad, coarser than the document tolerances {} mm and {} rad",
+            recognition.linear.get(),
+            recognition.angular.get(),
+            ir.tolerances.linear.get(),
+            ir.tolerances.angular.get(),
+        )));
+    }
     if let Some(projection) = hole_body_projection(ir, &simple_hole_operations, &hole_outputs) {
         hole_outputs.extend(projection.outputs);
         simple_hole_diameters.extend(projection.diameters);
@@ -3699,7 +3682,7 @@ fn attach_feature_operations(
         let block_projection = if label.value == "BLOCK" {
             match block_dimension_values {
                 Some(dimensions) => {
-                    block_placement(&projection_index, &ir.tolerances, dimensions, &outputs)
+                    block_placement(&projection_index, &recognition, dimensions, &outputs)
                 }
                 None => None,
             }

@@ -295,14 +295,14 @@ struct FaceRead {
     loops: Vec<(u32, LoopShape)>,
 }
 
-/// The document of one partition, and the `res_linear` values (metres) that
-/// its bodies store.
+/// The document of one partition, and the `res_linear` (metres) that each of
+/// its bodies stores.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     records: &PrimaryRecords<'_>,
     stream: u32,
     losses: &mut Vec<LossNote>,
-) -> Result<(CadIr, Vec<f64>), CodecError> {
+) -> Result<(CadIr, BTreeMap<BodyId, Option<f64>>), CodecError> {
     let mut nodes = BTreeMap::new();
     for node in records.nodes() {
         if nodes.insert(node.index(), node).is_some() {
@@ -311,22 +311,13 @@ pub(crate) fn project(
     }
     let mut ir = CadIr::empty();
     let mut selected_shells = BTreeMap::new();
-    let mut stored_resolutions = Vec::new();
+    let mut stored_resolutions = BTreeMap::new();
     for body in nodes
         .values()
         .copied()
         .filter(|node| node.kind() == kind::BODY)
     {
-        let res_linear = body.real("res_linear");
-        match res_linear.filter(|value| precision::linear_precision(*value).is_some()) {
-            Some(value) => stored_resolutions.push(value),
-            None => losses.push(SolidEdgeLossCode::BodyResolutionInvalid.note(
-                precision::unusable_resolution_message(
-                    body_id(stream, body.index()).as_str(),
-                    res_linear,
-                ),
-            )),
-        }
+        stored_resolutions.insert(body_id(stream, body.index()), body.real("res_linear"));
         let body_kind = match body.byte("body_type") {
             Some(1) => BodyKind::Solid,
             Some(2) => BodyKind::Wire,
@@ -474,8 +465,11 @@ pub(crate) fn project(
     // Largest departure of a carrier from the faces it bounds, where it
     // exceeds the document tolerance.
     let mut departures: BTreeMap<CurveId, f64> = BTreeMap::new();
-    ir.tolerances =
-        cadmpeg_parasolid::precision::part_tolerances(stored_resolutions.iter().copied());
+    ir.tolerances = precision::part_tolerances(
+        stored_resolutions
+            .values()
+            .filter_map(|res_linear| res_linear.and_then(precision::linear_precision)),
+    );
     let document_linear = ir.tolerances.linear.get();
     let mut vertices = BTreeSet::new();
     let mut surfaces = BTreeSet::new();

@@ -6,8 +6,8 @@ use std::collections::BTreeSet;
 use cadmpeg_ir::ids::BodyId;
 
 use super::{
-    body_preselection, has_plain_beside_partition_streams, plain_history_images,
-    retain_live_annotations,
+    apply_preselected_active_body_selection, body_preselection, has_plain_beside_partition_streams,
+    plain_history_images, retain_live_annotations, state_held_body_tolerances,
 };
 use crate::parasolid::StreamKind;
 
@@ -296,5 +296,37 @@ fn plain_images_beside_partitions_suppress_terminal_lineage_preselection() {
     assert_eq!(
         body_preselection(Some("membership"), Some("terminal"), false),
         Some("membership")
+    );
+}
+
+#[test]
+fn a_body_that_terminal_lineage_prunes_does_not_set_the_part_tolerance() {
+    let body = |index: u32| BodyId::mint(format!("nx:s1:body#{index}")).expect("identity");
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for index in [2, 3] {
+        ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
+            id: body(index),
+            kind: cadmpeg_ir::topology::BodyKind::Solid,
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+            native_ref: None,
+            unstated: None,
+        });
+    }
+    let stored =
+        std::collections::BTreeMap::from([(body(2), Some(1.0e-8)), (body(3), Some(1.0e-6))]);
+    assert!(apply_preselected_active_body_selection(
+        &mut ir,
+        &BTreeSet::from([body(2)]),
+        "terminal_feature_body_lineage",
+        None,
+    ));
+    let losses = state_held_body_tolerances(&mut ir, &stored);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(
+        Some(ir.tolerances.linear),
+        cadmpeg_parasolid::precision::linear_precision(1.0e-8)
     );
 }

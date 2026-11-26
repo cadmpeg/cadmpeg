@@ -373,6 +373,9 @@ pub(crate) enum SldprtLossCode {
     /// A body's stored `res_linear` states no linear precision
     /// (`parasolid.md` §4).
     BodyResolutionInvalid,
+    /// A body whose BODY node does not read states no `res_linear`, and the
+    /// part tolerance does not count it (`parasolid.md` §4).
+    BodyResolutionUnread,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotTransferred,
     /// Materials, tessellation, and metadata were not transferred.
@@ -778,6 +781,7 @@ impl SldprtLossCode {
         Self::GeometryMeshBodyNotTransferred,
         Self::GeometryImportedBodiesNotTransferred,
         Self::BodyResolutionInvalid,
+        Self::BodyResolutionUnread,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
@@ -1016,6 +1020,7 @@ impl SldprtLossCode {
                 "geometry.imported-bodies-not-transferred"
             }
             Self::BodyResolutionInvalid => "body.resolution-invalid",
+            Self::BodyResolutionUnread => "body.resolution-unread",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
@@ -1141,7 +1146,7 @@ impl SldprtLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
-            Self::BodyResolutionInvalid => Severity::Warning,
+            Self::BodyResolutionInvalid | Self::BodyResolutionUnread => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnitsMemberGenerated => Severity::Warning,
             Self::WriterNativeHistorySummary => Severity::Warning,
@@ -1376,6 +1381,7 @@ impl SldprtLossCode {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::BodyResolutionInvalid => LossTaxonomy::SourceTopologyInvalid,
+            Self::BodyResolutionUnread => LossTaxonomy::DecodeDiagnostic,
             Self::WriterNativeEnvelopeAuxiliaryOmitted
             | Self::WriterHistoryNameNotWritten
             | Self::WriterHistoryRegenerationRefused => LossTaxonomy::MetadataNotTransferred,

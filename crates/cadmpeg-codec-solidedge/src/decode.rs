@@ -13,6 +13,7 @@ use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::{brep, container, dialect, loss::SolidEdgeLossCode, partition};
 use cadmpeg_container::compound::CompoundEntry;
+use cadmpeg_parasolid::precision;
 use cadmpeg_parasolid::records::PrimaryRecords;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -28,7 +29,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             SolidEdgeLossCode::ContainerNoncanonical.note(deviation.description())
         }),
     );
-    let mut stored_resolutions = Vec::new();
+    let mut stored_resolutions = std::collections::BTreeMap::new();
     if !ctx.container_only() {
         let mut found = false;
         let mut kernels = Vec::new();
@@ -151,7 +152,25 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 .note("feature records and assembly placements remain undecoded"),
         );
     }
-    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances(stored_resolutions);
+    let mut precisions = Vec::new();
+    for held in &ir.geometry.bodies {
+        let res_linear = stored_resolutions.get(&held.id).copied().flatten();
+        if let Some(linear) = res_linear.and_then(precision::linear_precision) {
+            precisions.push(linear);
+            continue;
+        }
+        let code = if res_linear.is_some() {
+            SolidEdgeLossCode::BodyResolutionInvalid
+        } else {
+            SolidEdgeLossCode::BodyResolutionUnread
+        };
+        body.losses
+            .push(code.note(precision::unusable_resolution_message(
+                held.id.as_str(),
+                res_linear,
+            )));
+    }
+    ir.tolerances = precision::part_tolerances(precisions);
     body.transfer = DecodeTransfer::at(ctx.depth(), !ir.geometry.bodies.is_empty());
     Ok(Decoded {
         ir,

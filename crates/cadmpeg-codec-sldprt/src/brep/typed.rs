@@ -862,17 +862,29 @@ fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<Body
         .filter_map(|count| parse_body_fields(bytes, offset, payload, fields, count))
         .collect::<Vec<_>>();
     if candidates.len() > 1 {
-        candidates.retain(|body| {
-            (RESOLUTION_LINEAR_PLAUSIBLE_MIN..=RESOLUTION_LINEAR_PLAUSIBLE_MAX)
-                .contains(&body.linear_resolution.abs())
-        });
+        candidates.retain(plausible_resolution);
     }
     let candidate = candidates.pop()?;
     candidates.is_empty().then_some(candidate)
 }
 
+fn plausible_resolution(body: &BodyCandidate) -> bool {
+    (RESOLUTION_LINEAR_PLAUSIBLE_MIN..=RESOLUTION_LINEAR_PLAUSIBLE_MAX)
+        .contains(&body.linear_resolution.abs())
+}
+
+/// A BODY at a tag offset, read with a plausible `res_linear` (`sldprt.md`
+/// BODY).
+fn parse_plausible_body_layout(
+    bytes: &[u8],
+    offset: usize,
+    payload: usize,
+) -> Option<BodyCandidate> {
+    parse_body_layout(bytes, offset, payload).filter(plausible_resolution)
+}
+
 fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyCandidate> {
-    tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout)
+    tagged_candidates(bytes, offset, BODY_TAG, parse_plausible_body_layout)
         .into_iter()
         .min_by_key(|node| node.end)
 }
@@ -1049,6 +1061,9 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     let mut shell_offsets = HashSet::new();
     let mut region_offsets = HashSet::new();
     let mut face_offsets = HashSet::new();
+    // Tag-framed BODY readings whose `res_linear` is outside the plausible
+    // range, kept only where a SHELL or REGION names them (`sldprt.md` BODY).
+    let mut unnamed_tagged_bodies = HashSet::new();
     let mut schema_ranges = Vec::new();
     let mut offset = 0usize;
     while offset.checked_add(2).is_some_and(|end| end < bytes.len()) {
@@ -1144,6 +1159,9 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
             if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
                 for body in tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout) {
                     if !body_offsets.contains(&body.offset) {
+                        if !plausible_resolution(&body) {
+                            unnamed_tagged_bodies.insert(body.offset);
+                        }
                         push_record(
                             &mut body_offsets,
                             &mut facts.bodies,
@@ -1210,6 +1228,15 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     facts
         .faces
         .retain(|node| outside_payload(node.offset, node.end));
+    let named_bodies = facts
+        .shells
+        .iter()
+        .map(|node| node.refs[1])
+        .chain(facts.regions.iter().map(|node| node.refs[1]))
+        .collect::<HashSet<_>>();
+    facts.bodies.retain(|node| {
+        !unnamed_tagged_bodies.contains(&node.offset) || named_bodies.contains(&node.attr)
+    });
     let referenced = facts
         .bodies
         .iter()
@@ -1654,6 +1681,21 @@ mod tests {
         assert_eq!(readings, 1);
         let body = super::parse_body_layout(&bytes, 0, 0).expect("the body is admitted");
         assert_eq!(body.linear_resolution.to_bits(), 0.1f64.to_bits());
+    }
+
+    #[test]
+    fn a_tagged_body_outside_the_plausible_resolution_claims_no_owner_class() {
+        let mut bytes = typed_shell_with_body(5, 814, 3, 39);
+        bytes.extend(typed_prefix(BODY_TAG, 5, 1006));
+        bytes.extend(body_fields_with_resolution(
+            [5, 6, 1, 1, 1, 1],
+            0.5,
+            1,
+            [7, 8, 9, 10, 1, 12, 11],
+        ));
+        let facts = scan(&bytes);
+        assert!(facts.bodies.is_empty());
+        assert_eq!(facts.topology_class_masks().get(&5), Some(&2));
     }
 
     #[test]

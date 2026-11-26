@@ -184,6 +184,9 @@ loss_codes! {
     BodyResolutionInvalid => ("body.resolution-invalid", Warning, SourceTopologyInvalid),
     /// A BODY's `res_linear` is in a node the primary records do not read.
     BodyResolutionUnread => ("body.resolution-unread", Warning, DecodeDiagnostic),
+    /// The feature recognisers compare evaluated geometry at a floor coarser
+    /// than the document tolerances.
+    FeatureRecognitionToleranceFloor => ("feature.recognition-tolerance-floor", Warning, DecodeDiagnostic),
 }
 
 impl NxLossCode {

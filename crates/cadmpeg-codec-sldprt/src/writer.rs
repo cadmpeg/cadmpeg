@@ -61,6 +61,8 @@ pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
 pub(crate) const SWOBJECTS_METADATA_IDENTITY_LOCAL_DIGEST_ATTRIBUTE: &str =
     "sldprt_swobjects_metadata_identity_local_sha256";
 pub(crate) const PMI_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_pmi_local_sha256";
+pub(crate) const LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE: &str =
+    "sldprt_linear_tolerance_local_sha256";
 
 /// Opaque solved carriers require a retained native partition.
 pub(crate) fn requires_native_partition(ir: &CadIr) -> bool {
@@ -339,22 +341,12 @@ pub(crate) fn write_semantic_with_records_cached(
     {
         retained_source_baseline(source_baseline, source_context.as_ref())?;
     }
-    // The `res_linear` the BODY records of the source store, read once with no
-    // B-rep decode (`parasolid.md` §4).
-    let stored_resolutions = match (&source_context, &source_scan) {
-        (Some((ctx, _)), Some(scan)) if retained_partition.is_none() => {
-            crate::decode::stored_linear_resolutions(ctx, scan)?
-        }
-        _ => Vec::new(),
-    };
-    let linear_resolution = precision::written_linear_resolution(
-        normalized.tolerances.linear,
-        stored_resolutions.iter().copied(),
-    );
+    let linear_resolution = precision::written_linear_resolution(normalized.tolerances.linear);
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
     let patched_partition = if retained_partition.is_none()
-        && linear_resolution == Some(precision::part_linear_resolution(stored_resolutions))
+        && crate::codec_digests::baseline(digests, LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE)
+            == Some(linear_tolerance_local_sha256(&normalized)?.as_str())
     {
         crate::writer_patch::patch_partition(
             &normalized,
@@ -1651,6 +1643,15 @@ fn section_type_ids(
         .iter()
         .map(|(section, _)| source_ids.get_mut(section).and_then(VecDeque::pop_front))
         .collect()
+}
+
+/// The digest of the linear tolerance of `ir`, which the BODY records of a
+/// patched partition keep (`parasolid.md` §4).
+pub(crate) fn linear_tolerance_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+    let bytes = json::to_vec(&ir.tolerances.linear).map_err(|error| {
+        CodecError::malformed(format_args!("cannot hash SLDPRT linear tolerance: {error}"))
+    })?;
+    Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
 pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {

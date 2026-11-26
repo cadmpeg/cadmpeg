@@ -229,43 +229,11 @@ pub(super) fn try_decode_geometry(
                 .as_ref()
                 .is_none_or(|(_, selected, _)| selected.contains(&si))
     };
-    let mut stored_resolutions = Vec::new();
-    // Losses for bodies whose `res_linear` states no linear precision, kept
-    // for the bodies the document holds once inactive bodies are pruned.
-    let mut resolution_losses = Vec::new();
-    for (si, stream) in scan.streams.iter().enumerate() {
-        if !decoded_stream(si, stream) {
-            continue;
-        }
-        let graph = &parsed.stream(si).graph;
-        let scope = IdScope::stream_from_index(si)?;
-        let named_bodies = graph
-            .of_kind(NodeKind::Shell)
-            .filter_map(|shell| Some(u32::from(shell.shell_fields()?.body?)))
-            .collect::<BTreeSet<_>>();
-        for body_xmt in named_bodies {
-            let res_linear = graph.body_linear_resolutions().get(&body_xmt).copied();
-            if let Some(value) =
-                res_linear.filter(|value| precision::linear_precision(*value).is_some())
-            {
-                stored_resolutions.push(value);
-                continue;
-            }
-            let code = if res_linear.is_some() {
-                NxLossCode::BodyResolutionInvalid
-            } else {
-                NxLossCode::BodyResolutionUnread
-            };
-            let body: BodyId =
-                scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
-            let note = code.note(precision::unusable_resolution_message(
-                body.as_str(),
-                res_linear,
-            ));
-            resolution_losses.push((body, note));
-        }
-    }
-    ir.tolerances = precision::part_tolerances(stored_resolutions);
+    // The `res_linear` each SHELL-named BODY of a decoded stream stores, read
+    // when the document tolerances are stated after body selection.
+    let mut stored_resolutions: BTreeMap<BodyId, Option<f64>> = BTreeMap::new();
+    // Each decoded stream's tolerances, which its geometry stage reads.
+    let mut stream_tolerances = BTreeMap::new();
     let (chart_count, geometry_record_count) = scan
         .streams
         .iter()
@@ -363,6 +331,26 @@ pub(super) fn try_decode_geometry(
 
         completion_streams.push((si, source_stream.clone()));
         let graph = &view.graph;
+        let mut stream_precisions = Vec::new();
+        let named_bodies = graph
+            .of_kind(NodeKind::Shell)
+            .filter_map(|shell| Some(u32::from(shell.shell_fields()?.body?)))
+            .collect::<BTreeSet<_>>();
+        for body_xmt in named_bodies {
+            let body: BodyId =
+                scope.id_from_display(&cadmpeg_ir::identity_component!("body"), body_xmt)?;
+            let res_linear = graph.body_linear_resolutions().get(&body_xmt).copied();
+            if preselection
+                .as_ref()
+                .is_none_or(|(selected, _, _)| selected.contains(&body))
+            {
+                stream_precisions.extend(res_linear.and_then(precision::linear_precision));
+            }
+            stored_resolutions.insert(body, res_linear);
+        }
+        let tolerances = precision::part_tolerances(stream_precisions);
+        stream_tolerances.insert(si, tolerances);
+        ir.tolerances = tolerances;
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
         let mut reversed_analytic_surfaces = BTreeSet::new();
@@ -1433,23 +1421,27 @@ pub(super) fn try_decode_geometry(
 
     drop(procedural_admission);
     intersection_index.complete_from_model(&mut ir);
-    let mut completion_sources = Vec::new();
+    // Each source's surfaces are evaluated under the tolerances of its own
+    // stream.
     for (si, source_stream) in &completion_streams {
-        completion_sources.push(IntersectionCompletionSource {
+        if let Some(tolerances) = stream_tolerances.get(si) {
+            ir.tolerances = *tolerances;
+        }
+        let source = IntersectionCompletionSource {
             scope: IdScope::stream_from_index(*si)?,
             graph: parsed.stream(*si).graph.as_ref(),
             source_stream: source_stream.clone(),
             coedge_start: 0,
             procedural_start: 0,
-        });
+        };
+        attach_completed_intersection_pcurves_for_model_with_budget(
+            &mut ir,
+            std::slice::from_ref(&source),
+            &mut annotations,
+            &model_endpoint_witnesses,
+            &completion_geometry_budget,
+        )?;
     }
-    attach_completed_intersection_pcurves_for_model_with_budget(
-        &mut ir,
-        &completion_sources,
-        &mut annotations,
-        &model_endpoint_witnesses,
-        &completion_geometry_budget,
-    )?;
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
         return Ok(None);
@@ -1500,6 +1492,7 @@ pub(super) fn try_decode_geometry(
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
+    let resolution_losses = state_held_body_tolerances(&mut ir, &stored_resolutions);
     classify_body_kinds(&mut ir)?;
     crate::native::attach_annotations(
         ctx,
@@ -1567,13 +1560,7 @@ pub(super) fn try_decode_geometry(
             .filter(|(face, _)| stated_faces.contains(face))
             .map(|(_, note)| note),
     );
-    let stated_bodies: BTreeSet<_> = ir.geometry.bodies.iter().map(|body| &body.id).collect();
-    topology_losses.extend(
-        resolution_losses
-            .into_iter()
-            .filter(|(body, _)| stated_bodies.contains(body))
-            .map(|(_, note)| note),
-    );
+    topology_losses.extend(resolution_losses);
     for losses in [carrier_refusals, topology_losses, native_losses] {
         report.losses.extend(losses);
     }
@@ -1924,6 +1911,35 @@ fn has_plain_beside_partition_streams(kinds: impl IntoIterator<Item = StreamKind
         }
     }
     partition && plain
+}
+
+/// States the document tolerances of `ir` from the `res_linear` its held
+/// bodies store (`parasolid.md` §4), and returns the losses of the held bodies
+/// whose value states no linear precision.
+fn state_held_body_tolerances(
+    ir: &mut CadIr,
+    stored_resolutions: &BTreeMap<BodyId, Option<f64>>,
+) -> Vec<LossNote> {
+    let mut precisions = Vec::new();
+    let mut losses = Vec::new();
+    for body in &ir.geometry.bodies {
+        let res_linear = stored_resolutions.get(&body.id).copied().flatten();
+        if let Some(precision) = res_linear.and_then(precision::linear_precision) {
+            precisions.push(precision);
+            continue;
+        }
+        let code = if res_linear.is_some() {
+            NxLossCode::BodyResolutionInvalid
+        } else {
+            NxLossCode::BodyResolutionUnread
+        };
+        losses.push(code.note(precision::unusable_resolution_message(
+            body.id.as_str(),
+            res_linear,
+        )));
+    }
+    ir.tolerances = precision::part_tolerances(precisions);
+    losses
 }
 
 /// The stream-level preselection. Plain history images beside partition

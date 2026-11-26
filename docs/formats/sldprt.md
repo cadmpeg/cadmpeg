@@ -2698,7 +2698,10 @@ the last header reference has the bytes of the high word of an f64 in
 subnormal value. When one count reads a BODY, that count is the layout. When
 more than one count reads a BODY, the layout is the one count whose
 `resolution_linear` magnitude is in `[1e-15, 1e-2]` m. A BODY with no count,
-or with several counts and no such single count, is not valid.
+or with several counts and no such single count, is not valid. A BODY at a
+`00 0c` tag offset that no edited schema header frames, with a
+`resolution_linear` magnitude outside `[1e-15, 1e-2]` m, is valid only when a
+SHELL or REGION names its index in the `body` field.
 
 `resolution_size` and `resolution_linear` are the BODY fields `res_size` and
 `res_linear` in metres. `resolution_linear` takes every finite nonzero value.
@@ -2706,7 +2709,8 @@ The part's linear tolerance comes from `resolution_linear` of its bodies, and
 its angular tolerance is the Parasolid angular precision
 ([`parasolid.md`](parasolid.md) §4). A `resolution_linear` that states no
 linear precision leaves its body valid and is charged
-`body.resolution-invalid`.
+`body.resolution-invalid`. A body that the decode derives without a BODY
+node that reads is charged `body.resolution-unread`.
 
 A SHELL has eight references:
 
@@ -3605,6 +3609,7 @@ The `SourceFidelity.codec_digests` of a SLDPRT decode (CADIR §3.1, Rule B) hold
 | `brep_local_sha256` | The B-rep: geometry, topology, and face appearances, without names, colors, tessellations, history, and native records. |
 | `sldprt_configuration_feature_states_local_sha256` | The feature states of each configuration. |
 | `sldprt_configuration_parameter_values_local_sha256` | The parameter values of each configuration. |
+| `sldprt_linear_tolerance_local_sha256` | The linear tolerance. |
 | `sldprt_native_configuration_sha256` | The configurations of the native feature histories. |
 | `sldprt_native_history_sha256` | The native feature histories. |
 | `sldprt_native_parameter_sha256` | The parameters of the native feature histories. |

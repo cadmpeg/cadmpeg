@@ -213,11 +213,11 @@ fn a_linear_tolerance_no_resolution_states_is_charged() {
     assert!((linear - LINEAR_MM).abs() <= COMPARISON_SLACK, "{linear}");
 }
 
-/// A part regenerated from its source writes, in each BODY, the
-/// `res_linear` its bodies store. The stored value is one that the
+/// A part regenerated from its source writes, in each BODY, a `res_linear`
+/// that states the decoded tolerance. The stored value is one that the
 /// millimetre tolerance divided by 1000 misses by one unit in the last place.
 #[test]
-fn a_regenerated_part_writes_the_resolution_its_bodies_store() {
+fn a_regenerated_part_writes_a_resolution_that_states_its_tolerance() {
     const STORED_RESOLUTION_METRES: f64 = 1.0e-9;
     let decoded = SldprtCodec
         .decode(
@@ -253,13 +253,6 @@ fn a_regenerated_part_writes_the_resolution_its_bodies_store() {
         &mut written,
     )
     .expect("part writes");
-    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let scan = crate::container::scan(&ctx, cadmpeg_core::decode::View::over_retained(&written))
-        .expect("written part scans");
-    assert_eq!(
-        crate::decode::stored_linear_resolutions(&ctx, &scan).expect("written bodies decode"),
-        [STORED_RESOLUTION_METRES]
-    );
     let read_back = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .expect("written part decodes");

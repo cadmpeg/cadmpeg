@@ -8,8 +8,13 @@ use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::NxLossCode;
-use crate::test_support::test_prt::{prt_with_partition, topology_part_prt};
-use crate::test_support::test_streams::primary_stopped_topology_stream;
+use crate::test_support::test_prt::{
+    prt_with_arrangements_over, prt_with_partition, prt_with_rmfastload_over_resolutions,
+    prt_with_streams, topology_part_prt,
+};
+use crate::test_support::test_streams::{
+    primary_stopped_stream, primary_stopped_topology_stream, topology_partition_stream,
+};
 use crate::NxCodec;
 
 const MODELLER_DEFAULT_LINEAR_MM: f64 = 1.0e-5;
@@ -100,4 +105,61 @@ fn a_container_decode_states_the_modeller_precision() {
     assert_eq!(bodies, 0);
     assert!((linear - MODELLER_DEFAULT_LINEAR_MM).abs() <= COMPARISON_SLACK);
     assert!((angular - MODELLER_ANGULAR_RADIANS).abs() <= COMPARISON_SLACK);
+}
+
+#[test]
+fn a_withheld_plain_history_stream_does_not_set_the_part_tolerance() {
+    let plain = primary_stopped_stream(
+        &topology_partition_stream(),
+        ": TRANSMIT FILE created by modeller",
+        40,
+        1.0e-6,
+    );
+    let decoded = decode(
+        prt_with_streams(&[&primary_stopped_topology_stream(1.0e-8), &plain]),
+        DecodeOptions::default().depth,
+    );
+    let ir = decoded.ir();
+    assert_eq!(
+        messages(&decoded, NxLossCode::PlainHistoryImagesWithheld).len(),
+        1
+    );
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(
+        Some(ir.tolerances.linear),
+        cadmpeg_parasolid::precision::linear_precision(1.0e-8)
+    );
+}
+
+#[test]
+fn a_body_that_rmfastload_membership_leaves_out_does_not_set_the_part_tolerance() {
+    let decoded = decode(
+        prt_with_rmfastload_over_resolutions(1.0e-8, 1.0e-6),
+        DecodeOptions::default().depth,
+    );
+    let ir = decoded.ir();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(
+        Some(ir.tolerances.linear),
+        cadmpeg_parasolid::precision::linear_precision(1.0e-8)
+    );
+}
+
+#[test]
+fn a_precision_finer_than_the_recognition_floor_keeps_the_native_attachment() {
+    let decoded = decode(
+        prt_with_arrangements_over(Some("Model"), &primary_stopped_topology_stream(1.0e-13)),
+        DecodeOptions::default().depth,
+    );
+    let ir = decoded.ir();
+    assert_eq!(
+        Some(ir.tolerances.linear),
+        cadmpeg_parasolid::precision::linear_precision(1.0e-13)
+    );
+    assert!(messages(&decoded, NxLossCode::NativeAttachmentFailed).is_empty());
+    assert_eq!(ir.model.configurations.len(), 2);
+    assert_eq!(
+        messages(&decoded, NxLossCode::FeatureRecognitionToleranceFloor).len(),
+        1
+    );
 }

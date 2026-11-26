@@ -2819,46 +2819,6 @@ fn imported_bodies_loss(
     })
 }
 
-/// The `res_linear` values (metres) the decode of `scan` folds into the part's
-/// linear tolerance (`parasolid.md` §4): those of the BODY nodes of every
-/// active body stream and of every placed virtual component.
-pub(crate) fn stored_linear_resolutions(
-    ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
-) -> Result<Vec<f64>, CodecError> {
-    let placed_virtual = crate::assembly::read(ctx, scan)?
-        .as_ref()
-        .map(crate::assembly::AssemblyProjection::virtual_site_keys)
-        .unwrap_or_default();
-    let mut resolutions = site_linear_resolutions(&active_body_streams(scan))?;
-    for section in scan.sections() {
-        if section
-            .name()
-            .and_then(container::virtual_component_key)
-            .is_none()
-            || !placed_virtual.contains(&section.site_key())
-        {
-            continue;
-        }
-        let _depth = ctx.enter_nested("read SolidWorks virtual component resolutions")?;
-        let nested = match container::scan(ctx, View::over_retained(section.payload())) {
-            Ok(nested) => nested,
-            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
-            Err(_) => continue,
-        };
-        resolutions.extend(site_linear_resolutions(&active_body_streams(&nested))?);
-    }
-    Ok(resolutions)
-}
-
-fn site_linear_resolutions(sites: &[ActiveParasolidSite<'_>]) -> Result<Vec<f64>, CodecError> {
-    let bodies = sites
-        .iter()
-        .map(|site| (site.payload, site.header))
-        .collect::<Vec<_>>();
-    crate::brep::graph::stored_linear_resolutions(&bodies)
-}
-
 /// Decode the available Parasolid body streams into one B-rep. Returns
 /// `Ok(None)` when the streams frame but yield neither geometry nor a valid
 /// empty partition/deltas model, so the caller falls back to metadata. A
@@ -3309,8 +3269,8 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
         .native_body_identities
         .append(&mut source.native_body_identities);
     target
-        .body_linear_resolutions
-        .append(&mut source.body_linear_resolutions);
+        .body_linear_precisions
+        .append(&mut source.body_linear_precisions);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.losses.append(&mut source.losses);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
@@ -3794,7 +3754,7 @@ fn build_geometry_ir(
         display_summary,
     )?);
     ir.tolerances =
-        cadmpeg_parasolid::precision::part_tolerances(brep.body_linear_resolutions.iter().copied());
+        cadmpeg_parasolid::precision::part_tolerances(brep.body_linear_precisions.iter().copied());
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
@@ -6668,10 +6628,15 @@ pub(crate) fn stamp_local_digests(
 ) -> Result<(), CodecError> {
     ir.finalize();
     let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
+    let tolerance_hash = crate::writer::linear_tolerance_local_sha256(ir)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("brep_local_sha256"),
             brep_hash,
+        );
+        source.attributes.insert(
+            cadmpeg_core::nonblank_const!(crate::writer::LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE),
+            tolerance_hash,
         );
     }
     let has_swobjects_semantics = ir.model.attributes.iter().any(|attribute| {

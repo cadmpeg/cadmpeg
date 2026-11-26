@@ -1672,7 +1672,7 @@ pub(crate) fn generated_profile_stream(
 ) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
     let sketch_ir = sketch_brep(ir, sketch)?;
     let linear_resolution =
-        cadmpeg_parasolid::precision::written_linear_resolution(ir.tolerances.linear, [])
+        cadmpeg_parasolid::precision::written_linear_resolution(ir.tolerances.linear)
             .unwrap_or(cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION);
     // The generated body's records are named for the sketch, which the
     // history writer's retry leaves out (§3.2).

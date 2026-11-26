@@ -114,8 +114,9 @@ pub(crate) struct Brep {
     /// Per-face `DisplayLists` table keys resolved from Parasolid attributes.
     pub(crate) face_keys: Vec<(FaceId, u32)>,
     pub(crate) native_body_identities: Vec<attrib::NativeIdentity<BodyId>>,
-    /// The stored `res_linear` (metres) of each body emitted from a BODY node.
-    pub(crate) body_linear_resolutions: Vec<f64>,
+    /// The linear precision that the `res_linear` of each body emitted from a
+    /// BODY node states.
+    pub(crate) body_linear_precisions: Vec<cadmpeg_ir::scalar::PositiveLength>,
     /// Source-local sequence-to-attribute links carried by face bridge
     /// records. The decode boundary retains this map only for the active
     /// source because SWIFT identifiers resolve in that source namespace.
@@ -2626,37 +2627,6 @@ pub(crate) fn decode(
         stream,
         is_deltas_stream(header),
     )
-}
-
-/// The `res_linear` values (metres) that state a linear precision in the BODY
-/// nodes of `bodies`, read from the typed records the B-rep decode reads, with
-/// no topology or geometry built.
-pub(crate) fn stored_linear_resolutions(
-    bodies: &[(&[u8], &StreamHeader)],
-) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
-    let mut resolutions = Vec::new();
-    for (payload, header) in bodies {
-        let body = header_body(payload, header)?;
-        let prefixed = is_deltas_stream(header);
-        let facts = (!prefixed)
-            .then(|| topology::nodes::sequence(payload))
-            .flatten()
-            .and_then(|records| {
-                topology::nodes::tables(&records, payload, header.body_offset)?;
-                typed::nodes::facts(&records, header.body_offset)
-            })
-            .unwrap_or_else(|| typed::scan_with_payload_exclusions(body, prefixed));
-        resolutions.extend(
-            facts
-                .bodies
-                .iter()
-                .map(|body| body.linear_resolution)
-                .filter(|res_linear| {
-                    cadmpeg_parasolid::precision::linear_precision(*res_linear).is_some()
-                }),
-        );
-    }
-    Ok(resolutions)
 }
 
 pub(super) fn is_deltas_stream(header: &StreamHeader) -> bool {
@@ -5310,18 +5280,21 @@ fn decode_graph_inner(
             }
         }
         admit_brep_entity(ctx)?;
-        if let Some(record) = body_record {
-            let res_linear = record.linear_resolution;
-            if cadmpeg_parasolid::precision::linear_precision(res_linear).is_some() {
-                out.body_linear_resolutions.push(res_linear);
-            } else {
-                out.losses
-                    .push(crate::loss::SldprtLossCode::BodyResolutionInvalid.note(
-                        cadmpeg_parasolid::precision::unusable_resolution_message(
-                            body_id.as_str(),
-                            Some(res_linear),
-                        ),
-                    ));
+        let res_linear = body_record.map(|record| record.linear_resolution);
+        match res_linear.and_then(cadmpeg_parasolid::precision::linear_precision) {
+            Some(linear) => out.body_linear_precisions.push(linear),
+            None => {
+                let code = if res_linear.is_some() {
+                    crate::loss::SldprtLossCode::BodyResolutionInvalid
+                } else {
+                    crate::loss::SldprtLossCode::BodyResolutionUnread
+                };
+                out.losses.push(code.note(
+                    cadmpeg_parasolid::precision::unusable_resolution_message(
+                        body_id.as_str(),
+                        res_linear,
+                    ),
+                ));
             }
         }
         out.bodies.push(Body {
