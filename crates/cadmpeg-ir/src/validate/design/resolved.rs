@@ -165,11 +165,11 @@ struct Located<'a> {
     index: usize,
 }
 
-/// The records that `bodies` reach and their name entries.
-type Extent<'a> = (
-    BTreeMap<&'a str, Located<'a>>,
-    BTreeMap<&'a EntityRef, &'a NameEntry>,
-);
+/// The records that a current state's bodies reach, and their name entries.
+struct Extent<'a> {
+    records: BTreeMap<&'a str, Located<'a>>,
+    names: BTreeMap<&'a EntityRef, &'a NameEntry>,
+}
 
 /// Each record of `topology`, by identity, keeping the first of a repeated one.
 fn locate(topology: &Topology) -> BTreeMap<&str, Located<'_>> {
@@ -239,8 +239,14 @@ impl<'a> Resolver<'a, '_, '_> {
         }) else {
             return Ok(None);
         };
-        let (records, names) = self.geometry_extent(&current.bodies)?;
-        State::bottom(closure, records, names, current.poses.iter().collect()).map(Some)
+        let extent = self.geometry_extent(&current.bodies)?;
+        State::bottom(
+            closure,
+            extent.records,
+            extent.names,
+            current.poses.iter().collect(),
+        )
+        .map(Some)
     }
 
     /// The topology records that `bodies` reach through the derived child
@@ -285,7 +291,7 @@ impl<'a> Resolver<'a, '_, '_> {
                 names.insert(entity, entry);
             }
         }
-        Ok((records, names))
+        Ok(Extent { records, names })
     }
 }
 
@@ -338,8 +344,8 @@ pub(super) fn check_resolved_states(
         children: ir.geometry.child_lists(),
     };
     if has_names && !unproduced.is_empty() {
-        let (_, names) = resolver.geometry_extent(unproduced.iter().copied())?;
-        for (entity, entry) in &names {
+        let extent = resolver.geometry_extent(unproduced.iter().copied())?;
+        for (entity, entry) in &extent.names {
             if entry.name.is_some() {
                 super::error(
                     findings,

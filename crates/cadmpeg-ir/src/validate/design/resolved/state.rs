@@ -66,6 +66,11 @@ fn key(id: &str) -> u64 {
 /// One change to a state, holding the value it replaced.
 enum Change<'a> {
     Record(&'a str, Option<Located<'a>>),
+    Entry(Entry<'a>),
+}
+
+/// A change to a state's tables other than its records.
+enum Entry<'a> {
     Name(&'a EntityRef, Option<&'a NameEntry>),
     Owner(&'a BodyId, Option<&'a ProductDefinitionId>),
     Member(&'a str, Option<&'a ProductDefinitionId>),
@@ -227,19 +232,19 @@ impl<'a> State<'a> {
             }
         }
         for (entity, entry) in &delta.names {
-            self.change(Change::Name(entity, entry.as_ref()));
+            self.change(Entry::Name(entity, entry.as_ref()));
         }
         for (body, owner) in &delta.owners {
-            self.change(Change::Owner(body, owner.as_ref()));
+            self.change(Entry::Owner(body, owner.as_ref()));
         }
         for (occurrence, owner) in &delta.members {
-            self.change(Change::Member(occurrence.as_str(), owner.as_ref()));
+            self.change(Entry::Member(occurrence.as_str(), owner.as_ref()));
         }
         for (path, bodies) in &delta.instance_bodies {
-            self.change(Change::InstanceBodies(path, bodies.as_deref()));
+            self.change(Entry::InstanceBodies(path, bodies.as_deref()));
         }
         for (path, pose) in &delta.poses {
-            self.change(Change::Pose(path, pose.as_ref()));
+            self.change(Entry::Pose(path, pose.as_ref()));
         }
         self.reopen(closure, base.keys().copied())?;
         let mut names: BTreeSet<&'a EntityRef> = delta.names.keys().collect();
@@ -249,7 +254,7 @@ impl<'a> State<'a> {
         for entity in names {
             let unheld = self.names.contains_key(entity) && !self.holds_entity(entity);
             if unheld != self.unheld.contains(entity) {
-                self.change(Change::Unheld(entity, unheld));
+                self.change(Entry::Unheld(entity, unheld));
             }
         }
         Ok(Applied { base, seeds })
@@ -273,7 +278,7 @@ impl<'a> State<'a> {
                 None => None,
             };
             if self.open.get(id) != outside.as_ref() {
-                self.change(Change::Open(id, outside));
+                self.change(Entry::Open(id, outside));
             }
         }
         Ok(())
@@ -302,64 +307,62 @@ impl<'a> State<'a> {
         Ok(previous)
     }
 
-    /// Makes `change` and logs the value it replaces. Only a record change
-    /// can fail, and records go through [`Self::set_record`].
-    fn change(&mut self, change: Change<'a>) {
-        let previous = match &change {
-            Change::Record(id, _) => Change::Record(id, self.records.get(id).copied()),
-            Change::Name(entity, _) => Change::Name(entity, self.names.get(entity).copied()),
-            Change::Owner(body, _) => Change::Owner(body, self.owners.get(body).copied()),
-            Change::Member(occurrence, _) => {
-                Change::Member(occurrence, self.members.get(occurrence).copied())
+    /// Makes `entry` and logs the value it replaces.
+    fn change(&mut self, entry: Entry<'a>) {
+        let previous = match &entry {
+            Entry::Name(entity, _) => Entry::Name(entity, self.names.get(entity).copied()),
+            Entry::Owner(body, _) => Entry::Owner(body, self.owners.get(body).copied()),
+            Entry::Member(occurrence, _) => {
+                Entry::Member(occurrence, self.members.get(occurrence).copied())
             }
-            Change::InstanceBodies(path, _) => {
-                Change::InstanceBodies(path, self.instance_bodies.get(path).copied())
+            Entry::InstanceBodies(path, _) => {
+                Entry::InstanceBodies(path, self.instance_bodies.get(path).copied())
             }
-            Change::Pose(path, _) => Change::Pose(path, self.poses.get(path).copied()),
-            Change::Open(id, _) => Change::Open(id, self.open.get(id).cloned()),
-            Change::Unheld(entity, _) => Change::Unheld(entity, self.unheld.contains(entity)),
+            Entry::Pose(path, _) => Entry::Pose(path, self.poses.get(path).copied()),
+            Entry::Open(id, _) => Entry::Open(id, self.open.get(id).cloned()),
+            Entry::Unheld(entity, _) => Entry::Unheld(entity, self.unheld.contains(entity)),
         };
-        self.set_infallible(change);
-        self.undo.push(previous);
+        self.set_entry(entry);
+        self.undo.push(Change::Entry(previous));
     }
 
     fn set(&mut self, ctx: &DecodeContext<'_>, change: Change<'a>) -> Result<(), CodecError> {
-        if let Change::Record(id, located) = change {
-            if let Some(previous) = self.records.remove(id) {
-                self.refer(ctx, id, previous, false)?;
+        match change {
+            Change::Record(id, located) => {
+                if let Some(previous) = self.records.remove(id) {
+                    self.refer(ctx, id, previous, false)?;
+                }
+                if let Some(located) = located {
+                    self.refer(ctx, id, located, true)?;
+                    self.records.insert(id, located);
+                }
             }
-            if let Some(located) = located {
-                self.refer(ctx, id, located, true)?;
-                self.records.insert(id, located);
-            }
-            return Ok(());
+            Change::Entry(entry) => self.set_entry(entry),
         }
-        self.set_infallible(change);
         Ok(())
     }
 
-    fn set_infallible(&mut self, change: Change<'a>) {
+    fn set_entry(&mut self, entry: Entry<'a>) {
         fn put<K: Ord, V>(map: &mut BTreeMap<K, V>, key: K, value: Option<V>) {
             match value {
                 Some(value) => map.insert(key, value),
                 None => map.remove(&key),
             };
         }
-        match change {
-            Change::Record(..) => {}
-            Change::Name(entity, entry) => {
+        match entry {
+            Entry::Name(entity, entry) => {
                 let held = self.names.contains_key(entity);
                 if held != entry.is_some() {
                     self.index_name(entity, entry.is_some());
                 }
                 put(&mut self.names, entity, entry);
             }
-            Change::Owner(body, owner) => put(&mut self.owners, body, owner),
-            Change::Member(occurrence, owner) => put(&mut self.members, occurrence, owner),
-            Change::InstanceBodies(path, bodies) => put(&mut self.instance_bodies, path, bodies),
-            Change::Pose(path, pose) => put(&mut self.poses, path, pose),
-            Change::Open(id, target) => put(&mut self.open, id, target),
-            Change::Unheld(entity, unheld) => {
+            Entry::Owner(body, owner) => put(&mut self.owners, body, owner),
+            Entry::Member(occurrence, owner) => put(&mut self.members, occurrence, owner),
+            Entry::InstanceBodies(path, bodies) => put(&mut self.instance_bodies, path, bodies),
+            Entry::Pose(path, pose) => put(&mut self.poses, path, pose),
+            Entry::Open(id, target) => put(&mut self.open, id, target),
+            Entry::Unheld(entity, unheld) => {
                 if unheld {
                     self.unheld.insert(entity);
                 } else {
