@@ -2,7 +2,44 @@
   "decode": {
     "ir": {
       "design": {
-        "arrangements": [],
+        "arrangements": [
+          {
+            "appearances": [],
+            "id": "nx:arrangements:arrangement#0",
+            "kind": {
+              "kind": "positional"
+            },
+            "moves": [],
+            "name": "Model",
+            "native_ref": "nx:arrangements-1:configuration#0",
+            "nested": [],
+            "overrides": {
+              "definitions": {},
+              "features": {},
+              "occurrences": {},
+              "parameters": {}
+            },
+            "scope": "nx:document:product-definition#root"
+          },
+          {
+            "appearances": [],
+            "id": "nx:arrangements:arrangement#1",
+            "kind": {
+              "kind": "positional"
+            },
+            "moves": [],
+            "name": "Exploded",
+            "native_ref": "nx:arrangements-1:configuration#1",
+            "nested": [],
+            "overrides": {
+              "definitions": {},
+              "features": {},
+              "occurrences": {},
+              "parameters": {}
+            },
+            "scope": "nx:document:product-definition#root"
+          }
+        ],
         "configurations": [],
         "containers": [],
         "evaluations": [],
@@ -11,7 +48,18 @@
         "parameters": [],
         "programs": [],
         "publications": [],
-        "scopes": [],
+        "scopes": [
+          {
+            "active_arrangements": [],
+            "current": [],
+            "definition": "nx:document:product-definition#root",
+            "occurrences": {},
+            "roots": [],
+            "unproduced": [
+              "nx:s0:body#2"
+            ]
+          }
+        ],
         "sheet_metal_rules": [],
         "sketch_constraints": [],
         "sketch_entities": [],

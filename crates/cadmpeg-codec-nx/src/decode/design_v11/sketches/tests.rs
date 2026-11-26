@@ -179,14 +179,14 @@ fn the_feature_that_holds_a_sketch_states_it_with_its_native_points() {
             (
                 "nx:feature-history:sketch-entity#g0",
                 SKETCH,
-                "nx:point-group",
+                "nx:nx-point-group",
                 None,
                 Some("nx:feature-history:point#g0")
             ),
             (
                 "nx:feature-history:sketch-entity#p1",
                 SKETCH,
-                "nx:fixed-point",
+                "nx:nx-fixed-point",
                 Some(true),
                 Some("nx:feature-history:point#p1")
             ),

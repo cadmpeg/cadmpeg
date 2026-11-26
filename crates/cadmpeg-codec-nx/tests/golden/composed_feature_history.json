@@ -81,10 +81,8 @@
           {
             "definition": {
               "operation": {
-                "kind": "unresolved",
-                "value": {
-                  "family": "sketch"
-                }
+                "kind": "sketch",
+                "value": "nx:feature-history:sketch#0000000000-0000000000"
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000000",
@@ -93,10 +91,8 @@
           {
             "definition": {
               "operation": {
-                "kind": "unresolved",
-                "value": {
-                  "family": "sketch"
-                }
+                "kind": "sketch",
+                "value": "nx:feature-history:sketch#0000000000-0000000001"
               }
             },
             "id": "nx:feature-history:feature#0000000000-0000000001",
@@ -290,8 +286,123 @@
         ],
         "sheet_metal_rules": [],
         "sketch_constraints": [],
-        "sketch_entities": [],
-        "sketches": [],
+        "sketch_entities": [
+          {
+            "definition": {
+              "kind": "defined",
+              "value": {
+                "form": {
+                  "kind": "native",
+                  "value": "nx:nx-fixed-point"
+                }
+              }
+            },
+            "id": "nx:feature-history:sketch-entity#fixed-point-0000000000-0000000001-0000000001",
+            "native_options": {},
+            "native_ref": "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001",
+            "roles": [],
+            "sketch": "nx:feature-history:sketch#0000000000-0000000001",
+            "source_settings": {}
+          },
+          {
+            "definition": {
+              "kind": "defined",
+              "value": {
+                "form": {
+                  "kind": "native",
+                  "value": "nx:nx-point-group"
+                }
+              }
+            },
+            "id": "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0",
+            "native_options": {},
+            "native_ref": "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0",
+            "roles": [],
+            "sketch": "nx:feature-history:sketch#0000000000-0000000000",
+            "source_settings": {}
+          },
+          {
+            "definition": {
+              "kind": "defined",
+              "value": {
+                "form": {
+                  "kind": "native",
+                  "value": "nx:nx-point-group"
+                }
+              }
+            },
+            "id": "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-6-0",
+            "native_options": {},
+            "native_ref": "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-6-0",
+            "roles": [],
+            "sketch": "nx:feature-history:sketch#0000000000-0000000001",
+            "source_settings": {}
+          }
+        ],
+        "sketches": [
+          {
+            "id": "nx:feature-history:sketch#0000000000-0000000000",
+            "name": "SKETCH",
+            "native_options": {},
+            "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
+            "owner": "nx:feature-history:feature#0000000000-0000000000",
+            "plane": {
+              "after": [],
+              "inputs": [
+                {
+                  "reference": {
+                    "kind": "picks",
+                    "value": {
+                      "at": {
+                        "kind": "input"
+                      },
+                      "picks": {
+                        "kind": "unread"
+                      }
+                    }
+                  }
+                }
+              ],
+              "kind": "placed",
+              "resolved_in": {}
+            },
+            "solve": {
+              "status": "current"
+            },
+            "source_settings": {}
+          },
+          {
+            "id": "nx:feature-history:sketch#0000000000-0000000001",
+            "name": "SKETCH",
+            "native_options": {},
+            "native_ref": "nx:feature-history:operation-label#0000000000-0000000001",
+            "owner": "nx:feature-history:feature#0000000000-0000000001",
+            "plane": {
+              "after": [],
+              "inputs": [
+                {
+                  "reference": {
+                    "kind": "picks",
+                    "value": {
+                      "at": {
+                        "kind": "input"
+                      },
+                      "picks": {
+                        "kind": "unread"
+                      }
+                    }
+                  }
+                }
+              ],
+              "kind": "placed",
+              "resolved_in": {}
+            },
+            "solve": {
+              "status": "current"
+            },
+            "source_settings": {}
+          }
+        ],
         "spatial_sketch_constraints": [],
         "spatial_sketch_entities": [],
         "spatial_sketches": [],

@@ -157,14 +157,13 @@ fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Sketch {
     }
 }
 
-/// The definition of a native point record: its NX kind, with no solved
-/// curve. Every other entity has none here.
+/// The definition of a native point record: its native class in the `nx`
+/// namespace, with no solved curve. Every other entity has none here.
 fn definition(entity: &LegacyEntity) -> Option<EntityDefinition<Planar>> {
     let SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
         return None;
     };
-    let kind = native_kind.as_str();
-    let kind = NonBlankString::new(format!("nx:{}", kind.strip_prefix("nx-").unwrap_or(kind)))?;
+    let kind = NonBlankString::new(format!("nx:{native_kind}"))?;
     Some(EntityDefinition::Defined {
         form: Box::new(EntityForm::Native(kind)),
         solved: None,
