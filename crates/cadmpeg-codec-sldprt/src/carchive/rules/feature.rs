@@ -5,6 +5,8 @@
 
 use super::super::reader::{bad, MarkOwner, ParameterRecord, Ptr, Reader, Res, Stop, V};
 use super::{ctx, sketch};
+use crate::layout::axis_tail_version_15000_prefix as tail_prefix;
+use crate::layout::revolution_line_reference_record_tail as record_tail;
 use crate::layout::revolution_turn_block as turn;
 
 const FFFEFF: [u8; 3] = [0xff, 0xfe, 0xff];
@@ -89,10 +91,6 @@ pub(crate) const PLNDATA: &[&str] = &[
 pub(crate) const M12345: [u8; 12] = [
     0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
 ];
-
-/// The handle-block version word whose axis tail writes twenty zero bytes
-/// before its seven f64 (sldprt.md §2.3).
-const SW_VERSION_15000: u32 = 15000;
 
 /// How far an axis tail's direction may lie from unit length.
 const EPS_AXIS_TAIL_UNIT: f64 = 1e-9;
@@ -497,18 +495,21 @@ pub(crate) fn objat(r: &Reader<'_>, q: usize) -> bool {
 
 /// `axistail`.
 pub(crate) fn axistail(r: &mut Reader<'_>) -> Res<V> {
-    if r.p >= 24
-        && r.pu32(r.p - 24)
-            .is_ok_and(|version| version == SW_VERSION_15000)
-        && r.zeros(r.p - 20, 20)
-        && unit_direction_at(r, r.p + 32)
-        && r.eq(r.p + 56, &[0])
+    if r.p >= tail_prefix::LEN
+        && r.pu32(r.p - tail_prefix::LEN + tail_prefix::VERSION)
+            .is_ok_and(|version| version == tail_prefix::VERSION_VALUE)
+        && r.eq(
+            r.p - tail_prefix::LEN + tail_prefix::ZEROS,
+            &tail_prefix::ZEROS_VALUE,
+        )
+        && unit_direction_at(r, r.p + record_tail::DIRECTION)
+        && r.eq(r.p + record_tail::ZERO, &record_tail::ZERO_VALUE)
     {
         let mut ax = Vec::new();
         for _ in 0..7 {
             ax.push(V::from(r.f64()?));
         }
-        r.expect_bytes(&[0], "axis u8 0")?;
+        r.expect_bytes(&record_tail::ZERO_VALUE, "axis u8 0")?;
         return Ok(V::List(ax));
     }
     if r.p >= 8 && r.ffs(r.p - 8, 4) && r.zeros(r.p - 4, 8) && !r.zeros(r.p + 4, 8) {

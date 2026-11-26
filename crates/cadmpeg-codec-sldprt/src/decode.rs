@@ -3812,8 +3812,9 @@ fn build_geometry_ir(
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::walked_patterns::enrich_circular_patterns(
         &mut histories,
+        &lanes,
         &walked_patterns,
-    );
+    )?;
     let linear = ir.tolerances.linear;
     pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
         ctx, &histories, &mut lanes, linear,
@@ -5369,8 +5370,9 @@ fn build_metadata_ir(
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::walked_patterns::enrich_circular_patterns(
         &mut histories,
+        &lanes,
         &walked_patterns,
-    );
+    )?;
     let linear = ir.tolerances.linear;
     pmi_losses.extend(crate::resolved_features::bindings::bind_scalar_operands(
         ctx, &histories, &mut lanes, linear,

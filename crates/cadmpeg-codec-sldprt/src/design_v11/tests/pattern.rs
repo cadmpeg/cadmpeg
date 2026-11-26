@@ -16,7 +16,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveAngle;
 use cadmpeg_ir::units::UnitVector3;
 
-use super::{part_with_history, timeline_feature, typed_timeline};
+use super::{assert_no_design_findings, part_with_history, timeline_feature, typed_timeline};
 use crate::native::SldprtNative;
 
 /// A part whose history holds `Sketch1` and `CirPattern1`, whose decoded
@@ -79,8 +79,8 @@ fn part(angle: f64) -> (CadIr, SldprtNative, FeatureId) {
 
 #[test]
 fn a_full_turn_circular_pattern_of_features_fits_its_count_in_the_turn() {
-    let (ir, native, seed) = part(TAU);
-    let (timeline, _, _) = typed_timeline(&ir, &native);
+    let (mut ir, native, seed) = part(TAU);
+    let (timeline, entries, typed) = typed_timeline(&ir, &native);
     let FeatureOperation::Pattern(pattern) = &timeline_feature(&timeline, "CirPattern1")
         .definition
         .operation
@@ -114,6 +114,30 @@ fn a_full_turn_circular_pattern_of_features_fits_its_count_in_the_turn() {
     );
     assert_eq!(layout.radial, None);
     assert_eq!(pattern.instances, PatternInstances::Implicit(Vec::new()));
+    let definition = ir.design.scopes[0].definition.clone();
+    let (parameters, _, _) = entries.parameters(
+        &definition,
+        &super::super::parameters::Readings {
+            decoded: super::super::parameters::Decoded::new(
+                &ir.model.parameters,
+                &[],
+                &crate::resolved_features::assembly::ConfigurationMaps::new(),
+            ),
+            length_unit: Some(cadmpeg_ir::design::units::UnitSymbol::Mm),
+            length_places: None,
+            bound: typed.bound,
+            measured: typed.measured,
+            driven: typed.references,
+            manager: std::collections::HashMap::new(),
+            confirmed: std::collections::HashSet::new(),
+        },
+    );
+    ir.design.features = timeline.features;
+    ir.design.parameters = parameters;
+    ir.design.sketches = typed.sketches.records;
+    ir.design.sketch_entities = typed.sketches.entities;
+    ir.design.sketch_constraints = typed.sketches.constraints;
+    assert_no_design_findings(&ir);
 }
 
 #[test]

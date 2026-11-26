@@ -9,11 +9,14 @@ use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::UnitVector3;
 
+use super::scalars::FeatureObjectNames;
+use super::selections::generated_surface_identities;
 use crate::carchive::reader::V;
 use crate::carchive::PatternSeeds;
 use crate::records::{
-    FeatureHistory, CIRCULAR_PATTERN_ANGLE_DIMENSION, CIRCULAR_PATTERN_COUNT_DIMENSION,
-    CIRCULAR_PATTERN_SEED_SOURCES, CIRCULAR_PATTERN_WALKED_PROPERTIES,
+    Feature, FeatureHistory, FeatureInputLane, CIRCULAR_PATTERN_ANGLE_DIMENSION,
+    CIRCULAR_PATTERN_COUNT_DIMENSION, CIRCULAR_PATTERN_SEED_SOURCES,
+    CIRCULAR_PATTERN_WALKED_PROPERTIES,
 };
 
 #[cfg(test)]
@@ -28,8 +31,9 @@ const NATIVE_TO_IR: f64 = 1000.0;
 /// How far an axis tail's direction may lie from unit length.
 const EPS_UNIT_DIRECTION: f64 = 1e-9;
 
-/// How far a circular pattern's angle may lie from a full turn.
-const EPS_FULL_TURN_RAD: f64 = 1e-9;
+/// How far a circular pattern's angle may lie from a full turn, and its
+/// listed angle from its walked angle.
+pub(crate) const EPS_FULL_TURN_RAD: f64 = 1e-9;
 
 /// The operands a circular pattern's walked object states. Each is `None`
 /// where the object states it in no admitted form.
@@ -112,19 +116,31 @@ pub(crate) fn walked_circular(
 }
 
 /// Give each circular pattern of `histories` whose record states none of the
-/// walked group the operands its walked object states, where its object holds
-/// no seed identity record and no temporary-axis carrier, every lane that
-/// walked it walked it once and agrees on them, its one seed names one other
-/// feature of its history, and its angle is a full turn.
-pub(crate) fn enrich_circular_patterns(histories: &mut [FeatureHistory], walked: &WalkedPatterns) {
+/// walked group the operands its walked object states, where no lane's
+/// interval of the pattern holds a seed identity record or a temporary-axis
+/// carrier, every lane that walked it walked it once and agrees on them, its
+/// one seed names one other feature of its history with a source id no other
+/// feature of the history holds, and its angle is a full turn.
+pub(crate) fn enrich_circular_patterns(
+    histories: &mut [FeatureHistory],
+    feature_lanes: &[FeatureInputLane],
+    walked: &WalkedPatterns,
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut lanes = walked.keys().collect::<Vec<_>>();
     lanes.sort_unstable();
     for history in histories.iter_mut() {
-        for index in 0..history.features.len() {
-            let feature = &history.features[index];
+        let mut updates = Vec::new();
+        for (index, feature) in history.features.iter().enumerate() {
             if feature.input_class.as_deref() != Some("moCirPattern_c")
                 || feature.states_any(&CIRCULAR_PATTERN_WALKED_PROPERTIES)
             {
+                continue;
+            }
+            let mut other_sources = false;
+            for lane in feature_lanes {
+                other_sources |= interval_states_other_sources(lane, history, feature)?;
+            }
+            if other_sources {
                 continue;
             }
             let readings = lanes
@@ -146,21 +162,78 @@ pub(crate) fn enrich_circular_patterns(histories: &mut [FeatureHistory], walked:
             if others.iter().any(|other| other != reading) {
                 continue;
             }
-            let Some(properties) = walked_properties(reading, history, &feature.name) else {
-                continue;
-            };
+            if let Some(properties) = walked_properties(reading, history, feature) {
+                updates.push((index, properties));
+            }
+        }
+        for (index, properties) in updates {
             history.features[index].properties.extend(properties);
         }
     }
+    Ok(())
 }
 
-/// The record fields of `reading`, the walked operands of the pattern
-/// `pattern` of `history`.
+/// Whether `lane`'s interval of `pattern`, from its object name to the next
+/// object name of a feature of `history`, holds a seed identity record whose
+/// first component names the pattern, or a `moTempAxisRef_w` declaration.
+fn interval_states_other_sources(
+    lane: &FeatureInputLane,
+    history: &FeatureHistory,
+    pattern: &Feature,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let names = FeatureObjectNames::new(&lane.names);
+    let Some(start) = names
+        .of(pattern)
+        .and_then(|name| usize::try_from(name.offset).ok())
+    else {
+        return Ok(false);
+    };
+    let end = history
+        .features
+        .iter()
+        .filter_map(|feature| usize::try_from(names.of(feature)?.offset).ok())
+        .filter(|offset| *offset > start)
+        .min()
+        .unwrap_or(lane.native_payload.len())
+        .min(lane.native_payload.len());
+    if lane.native_payload.get(start..end).is_some_and(|interval| {
+        interval
+            .windows(CARRIER.len())
+            .any(|window| window == CARRIER)
+    }) {
+        return Ok(true);
+    }
+    let Some(source) = pattern.source_value() else {
+        return Ok(false);
+    };
+    let discovered;
+    let identities = if lane.generated_surface_identities.is_empty() {
+        discovered = generated_surface_identities(lane)?;
+        &discovered
+    } else {
+        &lane.generated_surface_identities
+    };
+    Ok(identities.iter().any(|identity| {
+        usize::try_from(identity.offset).is_ok_and(|offset| (start..end).contains(&offset))
+            && identity.components.first().is_some_and(|component| {
+                cadmpeg_core::decode::View::u32_le_at(component.type_signature.as_ref(), 4)
+                    == Some(source)
+            })
+    }))
+}
+
+/// The class name a temporary-axis carrier's declaration writes.
+const CARRIER: &[u8] = b"moTempAxisRef_w";
+
+/// The record fields of `reading`, the walked operands of `feature`, a
+/// pattern of `history`, where the record's listed count and angle equal the
+/// walked ones.
 fn walked_properties(
     reading: &WalkedCircular,
     history: &FeatureHistory,
-    pattern: &str,
+    feature: &Feature,
 ) -> Option<Vec<(NonBlankString, String)>> {
+    let pattern = feature.name.as_str();
     let [seed] = reading.seeds.as_deref()? else {
         return None;
     };
@@ -172,10 +245,31 @@ fn walked_properties(
     if named.next().is_some() {
         return None;
     }
+    let source = seed.source_value()?;
+    if history
+        .features
+        .iter()
+        .filter(|candidate| candidate.source_value() == Some(source))
+        .count()
+        != 1
+    {
+        return None;
+    }
     let (origin, direction) = reading.axis?;
-    let (count, _) = reading.count.as_ref()?;
+    let (count, walked_count) = reading.count.as_ref()?;
     let (angle, value) = reading.angle.as_ref()?;
     if (value - TAU).abs() > EPS_FULL_TURN_RAD {
+        return None;
+    }
+    let listed_count = feature
+        .parameters
+        .get(count.as_str())
+        .and_then(|text| crate::history::project::pattern::parse_count(text))?;
+    let listed_angle = feature
+        .parameters
+        .get(angle.as_str())
+        .and_then(|text| crate::history::literals::parse_positive_angle_rad(text))?;
+    if listed_count != *walked_count || (listed_angle.get() - value).abs() > EPS_FULL_TURN_RAD {
         return None;
     }
     let origin = origin.get();
@@ -191,7 +285,7 @@ fn walked_properties(
         ),
         (
             NonBlankString::new(CIRCULAR_PATTERN_SEED_SOURCES)?,
-            seed.source_value()?.to_string(),
+            source.to_string(),
         ),
         (
             NonBlankString::new(CIRCULAR_PATTERN_COUNT_DIMENSION)?,

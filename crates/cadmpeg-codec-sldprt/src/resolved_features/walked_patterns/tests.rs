@@ -9,6 +9,7 @@ use super::{enrich_circular_patterns, walked_circular, WalkedPatterns};
 use crate::carchive::reader::{ParameterRecord, V};
 use crate::carchive::PatternSeeds;
 use crate::records::{Feature, FeatureHistory, FeatureSource};
+use crate::records::{FeatureInputLane, FeatureInputName, ObjectId};
 
 fn parameter(class: &str, name: &str, value: f64) -> ParameterRecord {
     ParameterRecord {
@@ -104,7 +105,7 @@ fn a_direction_of_other_than_unit_length_states_no_axis() {
     }
 }
 
-fn feature(name: &str, source: &str, class: &str, parameters: &[&str]) -> Feature {
+fn feature(name: &str, source: &str, class: &str, parameters: &[(&str, &str)]) -> Feature {
     Feature {
         id: name.into(),
         parent: "history".into(),
@@ -118,7 +119,7 @@ fn feature(name: &str, source: &str, class: &str, parameters: &[&str]) -> Featur
         suppressed: false,
         parameters: parameters
             .iter()
-            .map(|key| (NonBlankString::new(*key).unwrap(), "1".to_owned()))
+            .map(|(key, value)| (NonBlankString::new(*key).unwrap(), (*value).to_owned()))
             .collect(),
         dimension_properties: BTreeMap::default(),
         properties: BTreeMap::default(),
@@ -138,7 +139,12 @@ fn history() -> [FeatureHistory; 1] {
         configurations: Vec::new(),
         features: vec![
             feature("Cut-Extrude2", "41", "moExtrusion_c", &[]),
-            feature("CirPattern1", "86", "moCirPattern_c", &["D1", "D3"]),
+            feature(
+                "CirPattern1",
+                "86",
+                "moCirPattern_c",
+                &[("D1", "4"), ("D3", "360deg")],
+            ),
         ],
     }]
 }
@@ -153,7 +159,12 @@ fn property<'a>(history: &'a [FeatureHistory; 1], key: &str) -> Option<&'a str> 
 #[test]
 fn a_full_turn_walked_pattern_fills_the_record() {
     let mut histories = history();
-    enrich_circular_patterns(&mut histories, &walked(vec![pattern("CirPattern1", TAU)]));
+    enrich_circular_patterns(
+        &mut histories,
+        &[],
+        &walked(vec![pattern("CirPattern1", TAU)]),
+    )
+    .unwrap();
     assert_eq!(property(&histories, "AxisOrigin"), Some("0mm,0.5mm,0mm"));
     assert_eq!(property(&histories, "AxisDirection"), Some("0,1,0"));
     assert_eq!(property(&histories, "SeedSources"), Some("41"));
@@ -164,7 +175,7 @@ fn a_full_turn_walked_pattern_fills_the_record() {
 #[test]
 fn a_partial_turn_disagreeing_lanes_or_a_stated_group_leave_the_record() {
     let mut partial = history();
-    enrich_circular_patterns(&mut partial, &walked(vec![pattern("CirPattern1", PI)]));
+    enrich_circular_patterns(&mut partial, &[], &walked(vec![pattern("CirPattern1", PI)])).unwrap();
     assert_eq!(property(&partial, "SeedSources"), None);
 
     let mut other = pattern("CirPattern1", TAU);
@@ -174,7 +185,7 @@ fn a_partial_turn_disagreeing_lanes_or_a_stated_group_leave_the_record() {
         ("other".to_owned(), vec![other]),
     ]);
     let mut disagreeing = history();
-    enrich_circular_patterns(&mut disagreeing, &lanes);
+    enrich_circular_patterns(&mut disagreeing, &[], &lanes).unwrap();
     assert_eq!(property(&disagreeing, "SeedSources"), None);
 
     let mut stated = history();
@@ -182,7 +193,7 @@ fn a_partial_turn_disagreeing_lanes_or_a_stated_group_leave_the_record() {
         NonBlankString::new("AxisOrigin").unwrap(),
         "1mm,2mm,3mm".to_owned(),
     );
-    enrich_circular_patterns(&mut stated, &walked(vec![pattern("CirPattern1", TAU)]));
+    enrich_circular_patterns(&mut stated, &[], &walked(vec![pattern("CirPattern1", TAU)])).unwrap();
     assert_eq!(property(&stated, "SeedSources"), None);
     assert_eq!(property(&stated, "AxisOrigin"), Some("1mm,2mm,3mm"));
 }
@@ -197,24 +208,109 @@ fn an_ambiguous_lane_a_carrier_a_repeated_seed_name_or_another_class_leave_the_r
         ),
     ]);
     let mut ambiguous = history();
-    enrich_circular_patterns(&mut ambiguous, &lanes);
+    enrich_circular_patterns(&mut ambiguous, &[], &lanes).unwrap();
     assert_eq!(property(&ambiguous, "SeedSources"), None);
 
     let mut carried = pattern("CirPattern1", TAU);
     carried.other_sources = true;
     let mut with_carrier = history();
-    enrich_circular_patterns(&mut with_carrier, &walked(vec![carried]));
+    enrich_circular_patterns(&mut with_carrier, &[], &walked(vec![carried])).unwrap();
     assert_eq!(property(&with_carrier, "SeedSources"), None);
 
     let mut repeated = history();
     repeated[0]
         .features
         .push(feature("Cut-Extrude2", "42", "moExtrusion_c", &[]));
-    enrich_circular_patterns(&mut repeated, &walked(vec![pattern("CirPattern1", TAU)]));
+    enrich_circular_patterns(
+        &mut repeated,
+        &[],
+        &walked(vec![pattern("CirPattern1", TAU)]),
+    )
+    .unwrap();
     assert_eq!(property(&repeated, "SeedSources"), None);
 
     let mut linear = history();
     linear[0].features[1].input_class = Some("moLPattern_c".to_owned());
-    enrich_circular_patterns(&mut linear, &walked(vec![pattern("CirPattern1", TAU)]));
+    enrich_circular_patterns(&mut linear, &[], &walked(vec![pattern("CirPattern1", TAU)])).unwrap();
     assert_eq!(property(&linear, "SeedSources"), None);
+}
+
+#[test]
+fn a_seed_whose_source_id_another_feature_holds_leaves_the_record() {
+    let mut shared = history();
+    shared[0]
+        .features
+        .push(feature("Sketch9", "41", "moProfileFeature_c", &[]));
+    enrich_circular_patterns(&mut shared, &[], &walked(vec![pattern("CirPattern1", TAU)])).unwrap();
+    assert_eq!(property(&shared, "SeedSources"), None);
+}
+
+#[test]
+fn a_listed_value_unlike_the_walked_one_leaves_the_record() {
+    let mut other_count = history();
+    other_count[0].features[1]
+        .parameters
+        .insert(NonBlankString::new("D1").unwrap(), "6".to_owned());
+    enrich_circular_patterns(
+        &mut other_count,
+        &[],
+        &walked(vec![pattern("CirPattern1", TAU)]),
+    )
+    .unwrap();
+    assert_eq!(property(&other_count, "SeedSources"), None);
+}
+
+/// A lane whose payload names `CirPattern1` (source 86) at offset 100 and
+/// `Cut-Extrude2` (source 41) at offset 10, holding `between` from offset
+/// 120.
+fn lane(between: &[u8]) -> FeatureInputLane {
+    let mut payload = vec![0; 400];
+    payload[120..120 + between.len()].copy_from_slice(between);
+    let name = |value: &str, ordinal, offset, source| FeatureInputName {
+        id: format!("{value}-name"),
+        parent: "lane".into(),
+        ordinal,
+        offset,
+        object_id: ObjectId::from_value(source),
+        value: value.into(),
+    };
+    FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.into(),
+        classes: Vec::new(),
+        names: vec![
+            name("Cut-Extrude2", 0, 10, 41),
+            name("CirPattern1", 1, 100, 86),
+        ],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }
+}
+
+#[test]
+fn a_carrier_in_the_patterns_lane_interval_leaves_the_record() {
+    let mut carried = history();
+    enrich_circular_patterns(
+        &mut carried,
+        &[lane(b"moTempAxisRef_w")],
+        &walked(vec![pattern("CirPattern1", TAU)]),
+    )
+    .unwrap();
+    assert_eq!(property(&carried, "SeedSources"), None);
+    let mut clear = history();
+    enrich_circular_patterns(
+        &mut clear,
+        &[lane(b"")],
+        &walked(vec![pattern("CirPattern1", TAU)]),
+    )
+    .unwrap();
+    assert_eq!(property(&clear, "SeedSources"), Some("41"));
 }

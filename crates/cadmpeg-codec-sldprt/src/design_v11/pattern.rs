@@ -18,9 +18,7 @@ use cadmpeg_ir::units::UnitVector3;
 
 use super::sketch::{pick, selection};
 use super::swept::{self, Context};
-
-/// How far a circular pattern's angle may lie from a full turn.
-const EPS_FULL_TURN_RAD: f64 = 1e-9;
+use crate::resolved_features::walked_patterns::EPS_FULL_TURN_RAD;
 
 /// Type each unresolved pattern of `features` whose decoded record is a
 /// full-turn circular pattern of features.
