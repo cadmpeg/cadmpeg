@@ -2054,6 +2054,9 @@ fn native_tolerant_edge_tail(
     }
 }
 
+/// The continuity tokens of the ASM edge record (asm.md §5.2).
+pub(super) const WRITTEN_CONTINUITIES: [&str; 2] = ["tangent", "unknown"];
+
 /// The native sense and continuity of `edge`. An edge on a curve that a
 /// forward edge also uses runs forward on that curve.
 fn edge_record_metadata(
@@ -2076,7 +2079,7 @@ fn edge_record_metadata(
         || "unknown".to_owned(),
         |metadata| metadata.continuity.clone(),
     );
-    if continuity != "tangent" && continuity != "unknown" {
+    if !WRITTEN_CONTINUITIES.contains(&continuity.as_str()) {
         return Err(CodecError::malformed(format_args!(
             "F3D edge {} has unsupported continuity token {continuity}",
             edge.id

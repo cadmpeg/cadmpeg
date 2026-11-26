@@ -26,11 +26,12 @@ mod records;
 mod reduce;
 mod smbh;
 use preconditions::{
-    unreachable_record_headers, unwritable_link_records, validate_source_less_auxiliary_geometry,
-    validate_source_less_design_bindings, validate_source_less_design_links,
-    validate_source_less_design_ownership, validate_source_less_history_graph,
-    validate_source_less_procedural_carriers, validate_source_less_recipes,
-    validate_source_less_sketch_graph, validate_source_less_topology_tolerances,
+    unreachable_record_headers, unwritable_continuities, unwritable_link_records,
+    validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
+    validate_source_less_design_links, validate_source_less_design_ownership,
+    validate_source_less_history_graph, validate_source_less_procedural_carriers,
+    validate_source_less_recipes, validate_source_less_sketch_graph,
+    validate_source_less_topology_tolerances,
 };
 use presentation::{BodySelection, GeneratedDesignRegistry};
 use records::{encode_design_bulkstream, encode_design_metastream};
@@ -214,6 +215,9 @@ fn attempt<W: Write + Seek>(
     let brep = if body_less {
         Ok(Vec::new())
     } else {
+        if let Some(unwritable) = unwritable_continuities(&native) {
+            return Err(Failure::unwritable(Stage::Brep, unwritable));
+        }
         encode_brep(target, &native, &attributes)
     };
     let smbh = match brep {

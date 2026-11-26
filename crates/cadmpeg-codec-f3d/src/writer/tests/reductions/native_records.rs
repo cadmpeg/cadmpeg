@@ -3,6 +3,8 @@
 //! with a loss naming it, and the other native records are written
 //! (cadir-v11.md §3.4, W1).
 
+use cadmpeg_asm::brep::records::identity::NativeRecordNamespace;
+use cadmpeg_asm::brep::records::EdgeContinuity;
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::export::ExportReport;
@@ -52,6 +54,42 @@ fn write_and_decode(ir: &CadIr) -> CadIr {
     )
     .expect("the written file decodes");
     decoded.into_parts().0
+}
+
+fn continuity(ir: &CadIr, edge: usize, record_index: u32, token: &str) -> EdgeContinuity {
+    EdgeContinuity {
+        source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        edge: ir.geometry.edges[edge].id.clone(),
+        record_index,
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        continuity: token.into(),
+    }
+}
+
+#[test]
+fn an_edge_continuity_the_asm_edge_record_does_not_hold_is_dropped_alone() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let rows = vec![
+        continuity(&ir, 0, 0, "convex"),
+        continuity(&ir, 1, 1, "tangent"),
+    ];
+    let convex = rows[0].id().clone();
+    f3d_native_mut(&mut ir).edge_continuities = rows;
+
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        OMITTED,
+        "of edge continuities other than `tangent` and `unknown`",
+    );
+    assert_no_whole_drop(&report);
+    assert!(
+        omitted(&report)
+            .iter()
+            .any(|message| message.ends_with(&format!(": {convex}"))),
+        "{:#?}",
+        report.losses
+    );
 }
 
 #[test]

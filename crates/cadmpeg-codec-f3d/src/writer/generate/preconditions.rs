@@ -357,6 +357,20 @@ pub(super) fn unwritable_link_records(
     ))
 }
 
+/// The edge continuities whose token the ASM edge record does not hold
+/// (asm.md §5.2): the edge is written with `unknown`.
+pub(super) fn unwritable_continuities(native: &F3dNative) -> Option<Unwritable> {
+    Unwritable::of(
+        "of edge continuities other than `tangent` and `unknown`, the tokens the ASM edge record holds",
+        native
+            .edge_continuities
+            .iter()
+            .filter(|row| !super::smbh::WRITTEN_CONTINUITIES.contains(&row.continuity.as_str()))
+            .map(|row| row.id().clone())
+            .collect(),
+    )
+}
+
 pub(super) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
     let sketch_owners = native
         .design_entity_headers
