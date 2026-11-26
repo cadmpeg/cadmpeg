@@ -1816,6 +1816,8 @@ pub(crate) struct F3dNative {
     /// Freedoms and limits of assembly joints with relative motion.
     #[serde(default)]
     pub(crate) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
+    /// Hidden-occurrence records resolved against the occurrence carriers of
+    /// their stream.
     #[serde(default)]
     pub(crate) design_hidden_occurrences:
         Vec<crate::design::decode::hidden_occurrences::DesignHiddenOccurrence>,

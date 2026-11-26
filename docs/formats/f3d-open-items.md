@@ -2417,7 +2417,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** Displayed matrices and stored Design world poses can differ.
 
-**Note.** The native source image retains enclosing node frames, visibility attributes, and material override attributes. The reader reports `scene.visibility-native` for retained visibility names. Binding uses the root design scene; member scenes retain their separate saved state.
+**Note.** The native source image retains enclosing node frames, visibility attributes, and material override attributes. Member scenes retain their separate saved state.
 
 ### DR-253. Typed occurrence path identity-pair words
 
