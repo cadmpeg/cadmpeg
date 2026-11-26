@@ -33,8 +33,14 @@ fn nurbs_triangle() -> CadIr {
 }
 
 fn read_back(ir: &CadIr, first: u32) -> CadIr {
-    let body = crate::writer::brep_body_from(ir, 0.001, false, first)
-        .unwrap_or_else(|error| panic!("partition from attr {first:#x}: {error}"));
+    let body = crate::writer::brep_body_from(
+        ir,
+        0.001,
+        cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+        false,
+        first,
+    )
+    .unwrap_or_else(|error| panic!("partition from attr {first:#x}: {error}"));
     let native = crate::test_support::container::sldprt_with_body(&body);
     crate::SldprtCodec
         .decode(&mut Cursor::new(native), &DecodeOptions::default())
@@ -142,8 +148,14 @@ fn a_part_whose_attributes_cross_the_short_pointer_range_reads_back_as_written_b
 fn a_compact_record_past_the_short_range_stores_its_attr_in_the_native_four_byte_cell() {
     // The writer gives the cube's six planes the first attributes, in order,
     // as `00 32 attr ordinal refs[5] marker values[9]` (§7.1).
-    let body = crate::writer::brep_body_from(&coloured_cube(), 0.001, false, 0x7fff)
-        .expect("partition is written");
+    let body = crate::writer::brep_body_from(
+        &coloured_cube(),
+        0.001,
+        cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+        false,
+        0x7fff,
+    )
+    .expect("partition is written");
     let record = 2 + 2 + 4 + 10 + 1 + 9 * 8;
     assert_eq!(body[..4], [0x00, 0x32, 0x7f, 0xff], "0x7fff is one word");
     // 0x8000 through 33 023 are left unused: their cells begin `ff`, which
