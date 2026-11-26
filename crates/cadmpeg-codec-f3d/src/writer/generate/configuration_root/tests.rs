@@ -43,12 +43,15 @@ fn documents() -> Vec<DesignConfiguration> {
     vec![table(TABLE, "1", &["small", "large"])]
 }
 
-/// `document` with a second table of id `table_id` and no rows after its
-/// table.
-fn with_twin(document: &DesignConfiguration, table_id: &str) -> DesignConfiguration {
+/// `document` with a table of id `table_id` and rows `rows` after its tables.
+fn with_table(
+    document: &DesignConfiguration,
+    table_id: &str,
+    rows: &[&str],
+) -> DesignConfiguration {
     let mut payload = document.payload().clone();
-    let twin = table_document(table_id, &[], &[], &[])["tables"][0].clone();
-    payload["tables"].as_array_mut().unwrap().push(twin);
+    let added = table(TABLE, table_id, rows).payload()["tables"][0].clone();
+    payload["tables"].as_array_mut().unwrap().push(added);
     DesignConfiguration::try_new(
         document.entry_name().clone(),
         DesignConfigurationKind::Table,
@@ -281,7 +284,7 @@ fn a_table_id_another_document_holds_is_written_unique_with_a_charge() {
 
 #[test]
 fn a_same_document_twin_of_the_table_id_is_not_renamed() {
-    let documents = vec![with_twin(&table(TABLE, "1", &["large"]), "1")];
+    let documents = vec![with_table(&table(TABLE, "1", &["large"]), "1", &[])];
     let ir = document(&documents, &[id("large")], &[]);
     assert_eq!(
         planned(&ir, &documents),
@@ -310,7 +313,7 @@ fn a_table_id_cut_that_another_document_holds_is_written_unique() {
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert!(losses[0].1.contains("renamed"));
 
-    let documents = vec![with_twin(&table(TABLE, &long, &["large"]), &cut)];
+    let documents = vec![with_table(&table(TABLE, &long, &["large"]), &cut, &[])];
     let (root, losses) = planned(&document(&documents, &[id("large")], &[]), &documents);
     assert_eq!(root, Some(row(&cut, "large")));
     assert_eq!(losses.len(), 1, "{losses:#?}");
@@ -343,7 +346,7 @@ fn stating(mut document: DesignConfiguration, table_id: &str, row_id: &str) -> D
 /// The document of [`documents`] with an empty table `2` that states row
 /// `x` of table `2` active.
 fn stating_an_empty_table() -> Vec<DesignConfiguration> {
-    vec![stating(with_twin(&documents()[0], "2"), "2", "x")]
+    vec![stating(with_table(&documents()[0], "2", &[]), "2", "x")]
 }
 
 #[test]
@@ -408,9 +411,78 @@ fn a_stated_row_the_reader_binds_elsewhere_is_charged() {
 }
 
 #[test]
+fn a_stated_row_the_reader_binds_to_another_document_is_charged() {
+    let documents = vec![
+        stating(table(TABLE, "1", &[]), "2", "x"),
+        table(SECOND, "2", &[]),
+    ];
+    let (root, losses) = planned(&document(&documents, &[], &[]), &documents);
+    assert!(root.is_none());
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert!(losses[0]
+        .1
+        .contains(&format!("{} table id 2 row id x", documents[0].id())));
+    assert!(losses[0]
+        .1
+        .contains("does not read back as the row of the document"));
+}
+
+#[test]
+fn a_stated_row_with_an_empty_or_over_wide_id_is_charged() {
+    let wide = "r".repeat(ID_WIDTH + 1);
+    for (table_id, row_id) in [
+        ("", "x"),
+        ("1", ""),
+        (wide.as_str(), "x"),
+        ("1", wide.as_str()),
+    ] {
+        let documents = vec![stating(table(TABLE, "1", &[]), table_id, row_id)];
+        let (root, losses) = planned(&document(&documents, &[], &[]), &documents);
+        assert!(root.is_none(), "{table_id:?} {row_id:?}");
+        assert_eq!(losses.len(), 1, "{losses:#?}");
+        assert!(losses[0].1.contains(&format!(
+            "{} table id {table_id} row id {row_id}",
+            documents[0].id()
+        )));
+        assert!(losses[0]
+            .1
+            .contains("does not read back as the row of the document"));
+    }
+}
+
+#[test]
+fn a_stated_row_of_a_populated_table_the_configurations_do_not_project_is_charged() {
+    for documents in [
+        vec![
+            documents()[0].clone(),
+            stating(table(SECOND, "2", &["x"]), "2", "x"),
+        ],
+        vec![stating(with_table(&documents()[0], "2", &["x"]), "2", "x")],
+    ] {
+        let stated = documents.last().unwrap().id();
+        let (root, losses) = planned(&CadIr::empty(), &documents);
+        assert!(root.is_none());
+        assert_eq!(losses.len(), 1, "{losses:#?}");
+        assert_eq!(losses[0].0, "export/value.unwritable");
+        assert!(losses[0]
+            .1
+            .contains(&format!("{stated} table id 2 row id x")));
+        assert!(losses[0]
+            .1
+            .contains("the configurations project the rows of another table"));
+    }
+}
+
+#[test]
+fn a_stated_row_of_the_projected_table_is_left_to_the_configurations() {
+    let documents = vec![stating(documents()[0].clone(), "1", "large")];
+    assert_eq!(planned(&CadIr::empty(), &documents), (None, Vec::new()));
+}
+
+#[test]
 fn a_unique_id_is_found_when_every_earlier_candidate_is_taken() {
     let taken = ["t-1", "t-2", "t-3"].into_iter().collect::<BTreeSet<_>>();
-    assert_eq!(super::unique(super::TABLE_ID, "t", &taken), "t-4");
+    assert_eq!(super::unique("t", &taken), "t-4");
     let taken = ["t-1", "t-3", "x"].into_iter().collect::<BTreeSet<_>>();
-    assert_eq!(super::unique(super::TABLE_ID, "t", &taken), "t-2");
+    assert_eq!(super::unique("t", &taken), "t-2");
 }

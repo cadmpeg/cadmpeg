@@ -198,12 +198,13 @@ fn a_source_row_of_a_table_document_with_no_rows_is_written_as_stated() {
             Some((table_id, "2"))
         );
         assert!(ir.model.configurations.is_empty());
+        assert!(listed(&ir, ROOT_RECORD));
         let (report, round_trip) = write_and_decode(&ir);
         assert!(
-            report.losses.iter().all(|loss| {
-                loss.code.to_string() != "export/value.unwritable"
-                    || !loss.message.contains(document.id().as_str())
-            }),
+            report
+                .losses
+                .iter()
+                .all(|loss| !loss.message.contains(document.id().as_str())),
             "{table_id}: {:#?}",
             report.losses
         );

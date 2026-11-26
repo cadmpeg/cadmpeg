@@ -143,6 +143,7 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         .map(|row| row.configuration.clone())
         .collect::<BTreeSet<_>>();
     let covered = rows.iter().any(|row| scoped.contains(&row.configuration));
+    let projected = rows.first().map(|row| (row.document, row.table.position));
     let mut scope_rows = Vec::new();
     let mut flagged_rows = Vec::new();
     let mut overridden = Vec::new();
@@ -182,7 +183,30 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         "writes these active configurations inactive: the Design stream holds one DesignConfigurationRoot record, which names another row",
         inactive,
     ));
-    let mut root = first.and_then(|row| root(row, documents, &mut losses));
+    let root = first.and_then(|row| root(row, documents, &mut losses));
+    let root = stated_root(documents, projected, root, &mut losses);
+    Plan {
+        root,
+        source: documents
+            .iter()
+            .find_map(DesignConfiguration::active_row)
+            .map(|row| row.record_index),
+        losses,
+    }
+}
+
+/// `root`, else the root record that a table document states, when that
+/// record names a row of a table that holds no rows (f3d.md §1.2) and reads
+/// back as the document's row. Each stated row that the write drops is
+/// charged. `projected` is the position of the document and of the table
+/// whose rows the configurations project.
+fn stated_root(
+    documents: &[DesignConfiguration],
+    projected: Option<(usize, usize)>,
+    mut root: Option<ConfigurationRoot>,
+    losses: &mut Vec<LossNote>,
+) -> Option<ConfigurationRoot> {
+    let mut unprojected = Vec::new();
     let mut holds_rows = Vec::new();
     let mut displaced = Vec::new();
     let mut unread = Vec::new();
@@ -196,7 +220,9 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
                 .iter()
                 .filter(|table| table.id == active.table_id)
         };
-        if tables().any(|table| table.rows.iter().any(|row| row.id == active.row_id)) {
+        let holding =
+            || tables().filter(|table| table.rows.iter().any(|row| row.id == active.row_id));
+        if holding().any(|table| Some((index, table.position)) == projected) {
             continue;
         }
         let entry = format!(
@@ -206,7 +232,9 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
             active.row_id
         );
         let fits = |capacity: TextCapacity, id: &str| !id.is_empty() && !capacity.fit(id).was_cut();
-        if tables().any(|table| !table.rows.is_empty()) {
+        if holding().next().is_some() {
+            unprojected.push(entry);
+        } else if tables().any(|table| !table.rows.is_empty()) {
             holds_rows.push(entry);
         } else if root.is_some() {
             displaced.push(entry);
@@ -225,6 +253,10 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
         }
     }
     for (reason, entries) in [
+        (
+            "the configurations project the rows of another table",
+            unprojected,
+        ),
         ("a table of its table id holds other rows", holds_rows),
         (
             "the Design stream holds one DesignConfigurationRoot record, which names another row",
@@ -241,14 +273,7 @@ pub(super) fn plan(target: &CadIr, documents: &[DesignConfiguration]) -> Plan {
             entries,
         ));
     }
-    Plan {
-        root,
-        source: documents
-            .iter()
-            .find_map(DesignConfiguration::active_row)
-            .map(|row| row.record_index),
-        losses,
-    }
+    root
 }
 
 /// The root record that names `row`, with its ids fitted to [`TABLE_ID`]
@@ -300,7 +325,7 @@ fn root(
                 })
                 .map(|(_, table)| table.id.as_str())
                 .collect::<BTreeSet<_>>();
-            let unique = unique(TABLE_ID, &row.table.id, &taken);
+            let unique = unique(&row.table.id, &taken);
             losses.extend(value_unwritable(
                 "F3D",
                 "writes the table id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: another configuration table document holds the id, and the record names its table by id alone",
@@ -321,7 +346,7 @@ fn root(
         .map(|other| other.id.as_str())
         .collect::<BTreeSet<_>>();
     let written_row_id = if taken.contains(row_id.text) {
-        let unique = unique(ROW_ID, row.row, &taken);
+        let unique = unique(row.row, &taken);
         losses.extend(value_unwritable(
             "F3D",
             &format!("writes the row id of this active configuration renamed, in the DesignConfigurationRoot record and in its configuration table document: its cut to {ID_WIDTH} UTF-16 units names another row of its table"),
@@ -367,18 +392,19 @@ fn root(
 const LONGEST_SUFFIX: &str = "-18446744073709551615";
 const _: () = assert!(ID_WIDTH > LONGEST_SUFFIX.len());
 
-/// The first id `stated` fitted to `capacity` with the suffix `-n`, for `n`
-/// from 1, that `taken` does not hold. The text after the last `-` of a
-/// candidate is `n`, so the candidates are distinct, and one of the first
-/// `taken.len() + 1` is free.
-fn unique(capacity: TextCapacity, stated: &str, taken: &BTreeSet<&str>) -> String {
+/// The first id `stated` fitted to [`ID_WIDTH`] UTF-16 units with the suffix
+/// `-n`, for `n` from 1, that `taken` does not hold. The text after the last
+/// `-` of a candidate is `n`, so the candidates are distinct, and one of the
+/// first `taken.len() + 1` is free.
+fn unique(stated: &str, taken: &BTreeSet<&str>) -> String {
     let candidate = |ordinal: usize| {
         let suffix = format!("-{ordinal}");
-        let width = capacity.width - suffix.len();
-        format!(
-            "{}{suffix}",
-            TextCapacity { width, ..capacity }.fit(stated).text
-        )
+        let capacity = TextCapacity::new(
+            "DesignConfigurationRoot id",
+            TextUnit::Utf16CodeUnit,
+            ID_WIDTH - suffix.len(),
+        );
+        format!("{}{suffix}", capacity.fit(stated).text)
     };
     (1..=taken.len())
         .map(candidate)
