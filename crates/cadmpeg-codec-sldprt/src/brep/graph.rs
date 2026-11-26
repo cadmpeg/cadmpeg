@@ -58,7 +58,8 @@ use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
 mod prune;
-use prune::prune_rejected_topology;
+
+use prune::{prune_rejected_topology, RingLoss};
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
 const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
@@ -844,38 +845,6 @@ struct WalkedFace {
     /// The loop chain names a loop the walk does not reach: a missing record
     /// or a loop of another face.
     chain_cut: bool,
-}
-
-/// Why the FIN ring of a loop record does not build a loop.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RingLoss {
-    /// The walk reaches a FIN that complete records claim in conflict.
-    AmbiguousFin,
-    /// The ring closes, and a forward link has no reciprocal backward link.
-    NonReciprocal,
-    /// The ring ends before it returns to its first FIN.
-    Open,
-}
-
-impl RingLoss {
-    fn code(self) -> crate::loss::SldprtLossCode {
-        match self {
-            Self::AmbiguousFin => crate::loss::SldprtLossCode::TopologyAmbiguousFinFaceWithheld,
-            Self::NonReciprocal | Self::Open => {
-                crate::loss::SldprtLossCode::TopologyFinLinkUnresolved
-            }
-        }
-    }
-
-    const fn why(self) -> &'static str {
-        match self {
-            Self::AmbiguousFin => "the ring of the loop holds an ambiguous FIN",
-            Self::NonReciprocal => {
-                "a FIN forward link of the loop names no reciprocal backward link"
-            }
-            Self::Open => "the FIN ring of the loop does not close",
-        }
-    }
 }
 
 impl WalkedFace {
