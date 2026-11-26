@@ -120,7 +120,7 @@ pub(super) fn emit_vertices(
             "05_08_01_vertex",
             Exactness::ByteExact,
         )?;
-        annotations.derived(vertex_id.as_str(), "point")?;
+        annotations.derived(&vertex_id, "point")?;
         admission.charge()?;
         ir.geometry.vertices.push(Vertex {
             id: vertex_id,
@@ -167,7 +167,7 @@ pub(super) fn emit_vertices(
             "5d_logical_vertex",
             Exactness::ByteExact,
         )?;
-        annotations.derived(vertex_id.as_str(), "point")?;
+        annotations.derived(&vertex_id, "point")?;
         admission.charge()?;
         ir.geometry.vertices.push(Vertex {
             id: vertex_id,

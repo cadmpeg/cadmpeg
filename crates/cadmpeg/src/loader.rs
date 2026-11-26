@@ -280,8 +280,18 @@ mod tests {
         let stream =
             cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:source"));
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-        annotations.note(given_up, &stream, 0, None);
-        annotations.note(kept, &stream, 0, None);
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(given_up).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(kept).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
         let mut fidelity =
             SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source"));
         fidelity.annotations = annotations.build();

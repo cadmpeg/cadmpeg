@@ -1035,8 +1035,18 @@ fn the_sidecar_of_a_document_written_after_a_give_up_names_no_removed_record() {
     let stream =
         cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:source"));
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    annotations.note(given_up.as_str(), &stream, 0, None);
-    annotations.note(kept.as_str(), &stream, 0, None);
+    annotations.note(
+        cadmpeg_ir::ids::Identity::new(given_up.as_str()).expect("identity grammar"),
+        &stream,
+        0,
+        None,
+    );
+    annotations.note(
+        cadmpeg_ir::ids::Identity::new(kept.as_str()).expect("identity grammar"),
+        &stream,
+        0,
+        None,
+    );
     let mut fidelity =
         cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source"));
     fidelity.annotations = annotations.build();
@@ -1126,7 +1136,12 @@ fn the_sidecar_keeps_the_annotations_of_a_written_record_that_shares_an_omitted_
         cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:source"));
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     for key in [point.as_str(), SHARED, OMITTED] {
-        annotations.note(key, &stream, 0, None);
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(key).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
     }
     let mut fidelity =
         cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source"));

@@ -3335,7 +3335,7 @@ fn ensure_display_appearance(
     );
     crate::annotations::note(
         annotations,
-        id.as_str(),
+        &id,
         &definition.source_name,
         u64_from_index(definition.record_offset),
         kind,
@@ -3620,7 +3620,7 @@ fn push_display_meshes(
             }
             crate::annotations::note(
                 annotations,
-                id.as_str(),
+                crate::annotations::native_key(&id)?,
                 display_stream,
                 u64_from_index(display_face.table.start()),
                 "displaylist_tessellation",
@@ -3674,7 +3674,7 @@ fn push_display_meshes(
         );
         crate::annotations::note(
             annotations,
-            display_id.as_str(),
+            &display_id,
             display_stream,
             0,
             "displaylist_tessellation",
@@ -4337,7 +4337,7 @@ fn build_geometry_ir(
         );
         crate::annotations::note(
             &mut annotations,
-            id.as_str(),
+            &id,
             annotation_source,
             u64_from_index(face_color.offset),
             "00_53_color",
@@ -4404,7 +4404,7 @@ fn build_geometry_ir(
         );
         crate::annotations::note(
             &mut annotations,
-            id.as_str(),
+            &id,
             &definition.source_name,
             u64_from_index(definition.record_offset),
             "moVisualProperties_c",
@@ -4571,10 +4571,10 @@ fn build_geometry_ir(
     }
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in scoped_color_faces {
-        annotation_builder.field_exactness(id.as_str(), "color", Exactness::Derived)?;
+        annotation_builder.field_exactness(&id, "color", Exactness::Derived)?;
     }
     for id in assigned_tessellations {
-        annotation_builder.field_exactness(id.as_str(), "of", Exactness::Derived)?;
+        annotation_builder.field_exactness(&id, "of", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -5244,7 +5244,7 @@ fn unprojected_source_meta(
         );
         crate::annotations::note(
             annotations,
-            id.as_str(),
+            &id,
             site.source_stream(),
             0,
             "parasolid_stream",
@@ -6969,19 +6969,20 @@ fn preserve_source_image(
     annotations: &mut Annotations,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
+    let id = UnknownId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
+        cadmpeg_ir::identity_key!("0"),
+    );
     crate::annotations::note(
         annotations,
-        "sldprt:file:source-image#0",
+        &id,
         &cadmpeg_ir::stream_name!("source"),
         0,
         "source_image",
         Exactness::ByteExact,
     )?;
     unknowns.push(UnknownRecord::retained(
-        UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "file", "source-image"),
-            cadmpeg_ir::identity_key!("0"),
-        ),
+        id,
         0,
         retained_copy(ctx, scan.source_image, "retain SLDPRT source image")?,
         Vec::new(),

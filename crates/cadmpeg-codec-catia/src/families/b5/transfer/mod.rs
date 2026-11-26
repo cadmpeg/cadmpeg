@@ -1343,12 +1343,12 @@ pub(in crate::families) fn resolved_offset_surface(
 
 fn annotate(
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    id: impl std::fmt::Display,
+    key: impl Into<cadmpeg_ir::annotations::AnnotationKey>,
     stream: &str,
     tag: &str,
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    annotations.annotate(id, format_args!("catia:{stream}"), 0, tag, exactness)
+    annotations.annotate(key, format_args!("catia:{stream}"), 0, tag, exactness)
 }
 
 fn vector(value: [f64; 3]) -> Vector3 {
