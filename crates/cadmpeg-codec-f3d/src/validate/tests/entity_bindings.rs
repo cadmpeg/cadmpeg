@@ -104,6 +104,30 @@ fn body_bounds_valid_binding_order_has_no_finding() {
     })
 }
 
+#[test]
+fn body_bounds_read_the_bindings_of_their_own_archive_member() {
+    fn in_member<T: serde::Serialize + serde::de::DeserializeOwned>(record: &T) -> T {
+        let text = serde_json::to_string(record)
+            .unwrap()
+            .replace("f3d:Design/", "f3d:member.f3d@Design/");
+        serde_json::from_str(&text).unwrap()
+    }
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = validation_body_bounds(true);
+        let bounds = in_member(&native.design_body_bounds[0]);
+        let binding = in_member(&native.design_body_bindings[0]);
+        let header = in_member(&native.design_entity_headers[0]);
+        native.design_body_bounds.push(bounds);
+        native.design_body_bindings.push(binding);
+        native.design_entity_headers.push(header);
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        let mut findings = Vec::new();
+        super::super::design_records::validate_body_bounds(&ctx, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+    })
+}
+
 fn history_only_binding(
     extra: serde_json::Value,
 ) -> Result<crate::records::bodies::DesignBodyBinding, serde_json::Error> {
