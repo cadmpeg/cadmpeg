@@ -13,7 +13,7 @@ use crate::test_support::with_service_context;
 
 use super::{
     closed_parameter_area, strip_windings, support_oriented_area, support_parameter_periods,
-    support_turn, turn_of, winding_from_area, BoundaryWinding, SignedArea, Turn,
+    support_turn, turn_of, winding_from_area, BoundaryWinding, SignedArea, Turn, Turning,
     BOUNDARY_AREA_DEGENERATE_FRACTION, PARAMETER_RING_CLOSURE_FRACTION,
 };
 
@@ -184,11 +184,24 @@ fn turning_line(axis: usize, level: f64, turns: f64) -> Vec<[f64; 2]> {
         .collect()
 }
 
-fn turn(axis: usize, forward: bool, level: f64) -> Turn {
-    Turn {
-        axis,
-        forward,
-        level,
+/// The turn at `position` of a boundary that is the outer boundary where
+/// `outer`, around `axis`, between the coordinates `extremes` on the other
+/// axis.
+fn turning(
+    position: usize,
+    outer: bool,
+    axis: usize,
+    forward: bool,
+    extremes: [f64; 2],
+) -> Turning {
+    Turning {
+        position,
+        outer,
+        turn: Turn {
+            axis,
+            forward,
+            extremes,
+        },
     }
 }
 
@@ -197,7 +210,8 @@ fn turn(axis: usize, forward: bool, level: f64) -> Turn {
 const SUPPORT_RESOLUTION: f64 = 1.0e-6;
 
 /// The degree-1 ring of three points about `+z` swept along `+z` over one
-/// unit, closed over its `u` knot domain `[0, 3]` and open in `v`.
+/// unit, closed over its `u` knot domain `[0, 3]` and open in `v`. Over the
+/// `u` range `[0, 2]` it is open.
 fn closed_ring_patch() -> SolvedSurfaceGeometry {
     let ring = [[1.0, 0.0], [-0.5, 1.0], [-0.5, -1.0], [1.0, 0.0]];
     SolvedSurfaceGeometry::Nurbs(
@@ -227,15 +241,20 @@ fn a_support_turns_only_around_its_one_closed_axis() {
     let torus = SolvedSurfaceGeometry::Torus(
         TorusSurface::try_new(origin, axis, reference, 5.0, 1.0).expect("torus"),
     );
+    let whole = [Some([0.0, 3.0]), Some([0.0, 1.0])];
     with_service_context(b"", |ctx| {
-        let turn = |support: &SolvedSurfaceGeometry| {
-            support_turn(support, SUPPORT_RESOLUTION, ctx).expect("the closure evaluates")
+        let turn = |support: &SolvedSurfaceGeometry, stated: [Option<[f64; 2]>; 2]| {
+            support_turn(support, stated, SUPPORT_RESOLUTION, ctx).expect("the closure evaluates")
         };
-        assert_eq!(turn(&cylinder), Some((0, TAU)));
-        assert_eq!(turn(&torus), None);
-        assert_eq!(turn(&bilinear_patch(true, false)), Some((0, 3.0)));
-        assert_eq!(turn(&bilinear_patch(false, false)), None);
-        assert_eq!(turn(&closed_ring_patch()), Some((0, 3.0)));
+        assert_eq!(turn(&cylinder, [None, None]), Some((0, TAU)));
+        assert_eq!(turn(&torus, [None, None]), None);
+        assert_eq!(turn(&bilinear_patch(false, false), whole), None);
+        assert_eq!(turn(&closed_ring_patch(), whole), Some((0, 3.0)));
+        assert_eq!(
+            turn(&closed_ring_patch(), [Some([0.0, 2.0]), Some([0.0, 1.0])]),
+            None
+        );
+        assert_eq!(turn(&closed_ring_patch(), [None, None]), None);
     });
 }
 
@@ -243,7 +262,7 @@ fn a_support_turns_only_around_its_one_closed_axis() {
 fn an_image_whose_ends_lie_one_turn_apart_turns_once() {
     let forward = turn_of(&turning_line(0, 2.0, 1.0), 0, TAU).expect("a turn");
     assert_eq!((forward.axis, forward.forward), (0, true));
-    assert!((forward.level - 2.0).abs() <= f64::EPSILON);
+    assert_eq!(forward.extremes, [2.0, 2.0]);
     let backward = turn_of(&turning_line(0, 2.0, -1.0), 0, TAU).expect("a turn");
     assert_eq!((backward.axis, backward.forward), (0, false));
     for turns in [2.0, 0.5] {
@@ -283,34 +302,71 @@ fn a_boundary_split_at_the_seam_does_not_turn() {
     assert!(turn_of(&seam_split_hole_from_its_upper_edge(), 0, TAU).is_none());
 }
 
-/// Bound on the difference between a computed turn level and its expected
-/// value.
-const LEVEL_AGREEMENT: f64 = 1.0e-12;
+/// The points at eight equal steps of each side of the polyline through
+/// `corners`, closed at the first corner moved by `closing` along `u`.
+fn sampled(corners: &[[f64; 2]], closing: f64) -> Vec<[f64; 2]> {
+    let mut ends = corners.to_vec();
+    ends.push([corners[0][0] + closing, corners[0][1]]);
+    let mut points = vec![ends[0]];
+    for pair in ends.windows(2) {
+        for step in 1..=8 {
+            let t = f64::from(step) / 8.0;
+            points.push([
+                pair[0][0] + t * (pair[1][0] - pair[0][0]),
+                pair[0][1] + t * (pair[1][1] - pair[0][1]),
+            ]);
+        }
+    }
+    points
+}
 
-/// The level of a ring at `v = 0` with a notch up to `v = 1` over
-/// `u` in `[1, 1.1]` is its mean `v` along its length, however densely the
-/// notch is sampled.
+/// Of two disjoint rings that turn around a cylinder, the lower has the
+/// lower lowest point and the lower highest point. The lower ring here runs
+/// at `v = 0` with a tab to 4 over `u` in `[1, 2.4]` that carries twelve
+/// fingers to 7. The upper ring runs back at 8 with a slot to 4 over `u` in
+/// `[3.8, 5.2]` that carries twelve slots to 1. Each keeps the strip
+/// between them on its left.
 #[test]
-fn the_level_of_a_turn_is_its_mean_along_its_length() {
-    let mut ring = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
-    ring.extend((1..=100).map(|step| [1.0 + 0.1 * f64::from(step) / 100.0, 1.0]));
-    ring.push([1.1, 0.0]);
-    ring.extend((1..=8).map(|step| [1.1 + (TAU - 1.1) * f64::from(step) / 8.0, 0.0]));
-    let turn = turn_of(&ring, 0, TAU).expect("a turn");
-    let expected = (0.1 * 1.0 + 2.0 * 0.5) / (TAU + 2.0);
-    assert!(
-        (turn.level - expected).abs() <= LEVEL_AGREEMENT,
-        "{}",
-        turn.level
+fn two_disjoint_rings_are_ordered_by_their_lowest_and_highest_points() {
+    let mut lower = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 4.0]];
+    let mut upper = vec![[TAU, 8.0], [5.2, 8.0], [5.2, 4.0]];
+    for finger in 0..12 {
+        let (a, b) = (
+            0.1f64.mul_add(f64::from(finger), 1.05),
+            (-0.1f64).mul_add(f64::from(finger), 5.15),
+        );
+        lower.extend([[a, 4.0], [a, 7.0], [a + 0.05, 7.0], [a + 0.05, 4.0]]);
+        upper.extend([[b, 4.0], [b, 1.0], [b - 0.05, 1.0], [b - 0.05, 4.0]]);
+    }
+    lower.extend([[2.4, 4.0], [2.4, 0.0]]);
+    upper.extend([[3.8, 4.0], [3.8, 8.0]]);
+    let low = turn_of(&sampled(&lower, TAU), 0, TAU).expect("a turn");
+    let high = turn_of(&sampled(&upper, -TAU), 0, TAU).expect("a turn");
+    assert_eq!((low.extremes, high.extremes), ([0.0, 7.0], [1.0, 8.0]));
+    let turns = [
+        Turning {
+            position: 0,
+            outer: true,
+            turn: low,
+        },
+        Turning {
+            position: 1,
+            outer: false,
+            turn: high,
+        },
+    ];
+    assert_eq!(
+        strip_windings(&turns, false),
+        [(0, BoundaryWinding::Kept), (1, BoundaryWinding::Kept)]
     );
 }
 
-/// A strip between two boundaries that turn along `u` lies to the left of
-/// the lower one as it advances and of the upper one as it returns; along
-/// `v` the left of an advance lies toward smaller `u`.
 #[test]
 fn two_turning_boundaries_keep_the_strip_between_them_on_their_left() {
-    let along_u = [(0, turn(0, true, 0.0)), (1, turn(0, true, 1.0))];
+    let along_u = [
+        turning(0, true, 0, true, [0.0, 0.0]),
+        turning(1, false, 0, true, [1.0, 1.0]),
+    ];
     assert_eq!(
         strip_windings(&along_u, false),
         [(0, BoundaryWinding::Kept), (1, BoundaryWinding::Reversed)]
@@ -319,12 +375,18 @@ fn two_turning_boundaries_keep_the_strip_between_them_on_their_left() {
         strip_windings(&along_u, true),
         [(0, BoundaryWinding::Reversed), (1, BoundaryWinding::Kept)]
     );
-    let upper_first = [(0, turn(0, false, 1.0)), (1, turn(0, true, 0.0))];
+    let upper_first = [
+        turning(0, true, 0, false, [1.0, 1.0]),
+        turning(1, false, 0, true, [0.0, 0.0]),
+    ];
     assert_eq!(
         strip_windings(&upper_first, false),
         [(1, BoundaryWinding::Kept), (0, BoundaryWinding::Kept)]
     );
-    let along_v = [(0, turn(1, true, 0.0)), (1, turn(1, true, 1.0))];
+    let along_v = [
+        turning(0, false, 1, true, [0.0, 0.0]),
+        turning(1, true, 1, true, [1.0, 1.0]),
+    ];
     assert_eq!(
         strip_windings(&along_v, false),
         [(0, BoundaryWinding::Reversed), (1, BoundaryWinding::Kept)]
@@ -333,12 +395,43 @@ fn two_turning_boundaries_keep_the_strip_between_them_on_their_left() {
 
 #[test]
 fn turning_boundaries_that_bound_no_one_strip_have_no_winding() {
-    let lower = (0, turn(0, true, 0.0));
+    let lower = turning(0, true, 0, true, [0.0, 0.0]);
     assert!(strip_windings(&[lower], false).is_empty());
     assert!(strip_windings(
-        &[lower, (1, turn(0, true, 1.0)), (2, turn(0, true, 2.0))],
+        &[
+            lower,
+            turning(1, false, 0, true, [1.0, 1.0]),
+            turning(2, false, 0, true, [2.0, 2.0]),
+        ],
         false
     )
     .is_empty());
-    assert!(strip_windings(&[lower, (1, turn(0, false, 0.0))], false).is_empty());
+    assert!(strip_windings(&[lower, turning(1, false, 0, false, [0.0, 0.0])], false).is_empty());
+}
+
+/// Two turning boundaries bound the face's strip only where the file states
+/// one of them as the face's outer boundary.
+#[test]
+fn two_inner_turning_boundaries_have_no_winding() {
+    let inner = [
+        turning(0, false, 0, true, [0.0, 0.0]),
+        turning(1, false, 0, true, [1.0, 1.0]),
+    ];
+    assert!(strip_windings(&inner, false).is_empty());
+}
+
+/// Two rings whose lowest and highest points do not both put one ring below
+/// the other touch or cross, and bound no strip.
+#[test]
+fn rings_that_are_not_both_lower_and_higher_have_no_winding() {
+    let crossing = [
+        turning(0, true, 0, true, [0.0, 5.0]),
+        turning(1, false, 0, true, [1.0, 4.0]),
+    ];
+    assert!(strip_windings(&crossing, false).is_empty());
+    let touching = [
+        turning(0, true, 0, true, [0.0, 4.0]),
+        turning(1, false, 0, true, [0.0, 5.0]),
+    ];
+    assert!(strip_windings(&touching, false).is_empty());
 }

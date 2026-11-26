@@ -401,17 +401,8 @@ fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {
 
 /// `ir` with its body under `stretch`, written and read back with every face
 /// and parameter curve and with no loss.
-fn read_back(mut ir: CadIr, stretch: Stretch) -> CadIr {
-    for body in &mut ir.geometry.bodies {
-        body.transform = stretch.transform();
-    }
-    let plan = IgesCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
-        )
-        .expect("the document is written");
-    let losses = plan.report().losses.clone();
+fn read_back(ir: CadIr, stretch: Stretch) -> CadIr {
+    let (losses, read) = written_under(ir, stretch, &[]);
     for code in [
         "iges/writer.body-omitted",
         "iges/writer.face-omitted",
@@ -419,9 +410,7 @@ fn read_back(mut ir: CadIr, stretch: Stretch) -> CadIr {
     ] {
         assert!(charged(&losses, code).is_empty(), "{losses:#?}");
     }
-    let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).expect("the file is written");
-    decoded_with(&bytes, &[])
+    read
 }
 
 /// The support points at sixteen equal steps of each parameter curve on the
@@ -689,19 +678,9 @@ fn cut_cylinder_sector(sweep: f64, bottom_pcurve: bool) -> CadIr {
 }
 
 /// `ir` with its body under `stretch`, written, with the losses of the
-/// write and the document that reads back with no loss.
-fn written_under(ir: CadIr, stretch: Stretch) -> (Vec<LossNote>, CadIr) {
-    written_under_with(ir, stretch, &[])
-}
-
-/// `ir` with its body under `stretch`, written, with the losses of the
 /// write and the document that reads back with a loss of each code in
 /// `expected` and with no other loss.
-fn written_under_with(
-    mut ir: CadIr,
-    stretch: Stretch,
-    expected: &[&str],
-) -> (Vec<LossNote>, CadIr) {
+fn written_under(mut ir: CadIr, stretch: Stretch, expected: &[&str]) -> (Vec<LossNote>, CadIr) {
     for body in &mut ir.geometry.bodies {
         body.transform = stretch.transform();
     }
@@ -758,7 +737,7 @@ fn a_cylinder_face_whose_parameter_curves_have_no_exact_form_keeps_its_model_spa
     for (stretch, bottom_pcurve) in [(STRETCH, false), (MIRROR_STRETCH, false), (STRETCH, true)] {
         // A boundary with no parameter curves on a curved support keeps its
         // written traversal on read.
-        let (losses, read) = written_under_with(
+        let (losses, read) = written_under(
             cut_cylinder_sector(sweep, bottom_pcurve),
             stretch,
             &["iges/topology.boundary-winding-unresolved"],
@@ -919,7 +898,7 @@ fn a_sphere_or_torus_face_that_states_no_loop_covers_its_whole_support() {
     .loopless();
     for stretch in [STRETCH, MIRROR_STRETCH] {
         for (ir, circular) in [(sphere.clone(), false), (torus.clone(), true)] {
-            let (losses, read) = written_under(ir, stretch);
+            let (losses, read) = written_under(ir, stretch, &[]);
             for code in [
                 "iges/writer.body-omitted",
                 "iges/writer.face-omitted",

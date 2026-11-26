@@ -2829,6 +2829,11 @@ pub(super) fn project(
                 }),
                 &carrier_index,
                 &support_geometry,
+                support_parameter_bounds.map_or([None, None], |bounds| {
+                    [[0, 1], [2, 3]].map(|[low, high]| {
+                        bounds[low].zip(bounds[high]).map(|(low, high)| [low, high])
+                    })
+                }),
                 global.minimum_resolution_mm(),
                 ctx,
             )?

@@ -99,7 +99,7 @@ fn exact_sides() -> [SideLines; 4] {
 /// Assert that `sides` write the square as one face with its outer loop,
 /// and that its boundary reads back on the square.
 fn assert_square_written(sides: [SideLines; 4]) {
-    let (losses, read) = written_under(square(sides), UNMOVED);
+    let (losses, read) = written_under(square(sides), UNMOVED, &[]);
     for code in [
         "iges/writer.face-omitted",
         "iges/writer.loop-classification-omitted",

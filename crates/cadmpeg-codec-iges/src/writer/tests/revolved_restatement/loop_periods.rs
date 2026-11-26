@@ -608,6 +608,7 @@ fn a_face_that_no_turn_holds_with_the_other_faces_is_dropped() {
         let (losses, read) = written_under(
             two_patches(first, [[3.0, 7.5], PATCH_HEIGHTS], [0.0, 0.0]),
             stretch,
+            &[],
         );
         let omitted = charged(&losses, "iges/writer.face-omitted");
         assert_eq!(omitted.len(), 1, "{losses:#?}");
@@ -865,7 +866,7 @@ fn a_band_whose_b_spline_circle_crosses_the_seam_cut_cuts_the_b_spline_there() {
             cylinder_band([0.0, 0.0], Some(SEAM_HOLE), true, false),
             lower_b_spline(),
         );
-        let (losses, read) = written_under(band, stretch);
+        let (losses, read) = written_under(band, stretch, &[]);
         assert!(
             charged(&losses, "iges/writer.loop-classification-omitted").is_empty(),
             "{losses:#?}"
@@ -912,7 +913,7 @@ fn a_classified_band_whose_composite_edge_curve_the_parameter_search_does_not_in
     for stretch in [STRETCH, MIRROR_STRETCH] {
         let band =
             with_composite_lower_circle(cylinder_band([0.0, 0.0], Some(SEAM_HOLE), true, false));
-        let (losses, read) = written_under(band, stretch);
+        let (losses, read) = written_under(band, stretch, &[]);
         let unclassified = charged(&losses, "iges/writer.loop-classification-omitted");
         assert_eq!(unclassified.len(), 1, "{losses:#?}");
         assert!(
@@ -1191,7 +1192,7 @@ fn a_band_whose_b_spline_comes_back_near_the_seam_cut_cuts_the_circle_there() {
             cylinder_band([0.0, 0.0], Some(SEAM_HOLE), true, false),
             lower_b_spline_that_comes_back(),
         );
-        let (losses, read) = written_under(band, stretch);
+        let (losses, read) = written_under(band, stretch, &[]);
         for code in [
             "iges/writer.face-omitted",
             "iges/writer.loop-classification-omitted",
@@ -1335,7 +1336,7 @@ fn a_ring_whose_curves_meet_at_the_end_of_the_turn_is_written_with_its_curves_jo
             regions.iter().copied().chain([hole]).collect()
         });
         for stretch in [STRETCH, MIRROR_STRETCH] {
-            let (losses, read) = written_under(ring_band(&ring, hole, classified), stretch);
+            let (losses, read) = written_under(ring_band(&ring, hole, classified), stretch, &[]);
             for code in [
                 "iges/writer.face-omitted",
                 "iges/writer.loop-classification-omitted",
@@ -1372,7 +1373,7 @@ fn a_classified_band_whose_ring_passes_the_end_of_the_turn_more_than_once_is_wri
 {
     // The seam hole starts the turn at the azimuth -0.1.
     for stretch in [STRETCH, MIRROR_STRETCH] {
-        let (losses, read) = written_under(ring_band(&NOTCH, Some(SEAM_HOLE), true), stretch);
+        let (losses, read) = written_under(ring_band(&NOTCH, Some(SEAM_HOLE), true), stretch, &[]);
         let unclassified = charged(&losses, "iges/writer.loop-classification-omitted");
         assert_eq!(unclassified.len(), 1, "{losses:#?}");
         assert!(
@@ -1397,7 +1398,7 @@ fn a_classified_band_whose_ring_passes_the_end_of_the_turn_more_than_once_is_wri
     }
     for (hole, classified) in [(None, true), (Some(SEAM_HOLE), false)] {
         for stretch in [STRETCH, MIRROR_STRETCH] {
-            let (losses, read) = written_under(ring_band(&NOTCH, hole, classified), stretch);
+            let (losses, read) = written_under(ring_band(&NOTCH, hole, classified), stretch, &[]);
             assert!(
                 charged(&losses, "iges/writer.loop-classification-omitted").is_empty(),
                 "{losses:#?}"
