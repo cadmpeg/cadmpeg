@@ -314,6 +314,26 @@ pub(super) fn part_bodies(
         .collect()
 }
 
+/// The body ids of a historical-body list or a design reference. Only the ids are
+/// materialised; the captured design in the reference is skipped.
+fn body_ids(text: &str) -> Result<Vec<String>, serde_json::Error> {
+    #[derive(serde::Deserialize)]
+    struct Row {
+        id: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Bodies {
+        List(Vec<Row>),
+        Reference {
+            #[serde(default)]
+            bodies: Vec<Row>,
+        },
+    }
+    let (Bodies::List(rows) | Bodies::Reference { bodies: rows }) = serde_json::from_str(text)?;
+    Ok(rows.into_iter().filter_map(|row| row.id).collect())
+}
+
 fn boolean_field(row: &Value, key: &str) -> Mapping<bool> {
     match row.get(key) {
         None => Ok(false),
@@ -996,7 +1016,7 @@ fn studio_in(
                 .get("historical_bodies")
                 .or_else(|| properties.get("design_reference"))
                 .and_then(Value::as_str)
-                .map(serde_json::from_str::<Value>)
+                .map(body_ids)
                 .transpose()
                 .map_err(|error| error.to_string())?;
             let bodies = historical.as_ref().and_then(|value| {
