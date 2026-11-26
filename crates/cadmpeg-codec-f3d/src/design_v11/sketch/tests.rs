@@ -171,7 +171,7 @@ fn a_sketch_whose_owner_has_no_timeline_item_is_owned_by_its_v10_feature_or_a_mi
     loose.name = Some("Loose".to_owned());
     model.sketches.push(loose);
 
-    let outside = super::outside(&model, &BTreeSet::new());
+    let outside = super::outside(&model, &BTreeSet::new()).unwrap();
     let owners = outside.get("").unwrap();
     let [owned, minted] = owners.as_slice() else {
         panic!("two owners: {owners:#?}");
@@ -189,11 +189,35 @@ fn a_sketch_whose_owner_has_no_timeline_item_is_owned_by_its_v10_feature_or_a_mi
     );
 
     let timeline = BTreeSet::from([FeatureId::mint(OWNER).unwrap()]);
-    let outside = super::outside(&model, &timeline);
+    let outside = super::outside(&model, &timeline).unwrap();
     let [minted] = outside.get("").unwrap().as_slice() else {
         panic!("one owner: {outside:#?}");
     };
     assert_eq!(minted.name.as_deref(), Some("Loose"));
+}
+
+#[test]
+fn the_group_and_a_minted_owner_of_an_archive_member_take_the_member_key() {
+    assert_eq!(
+        super::group_id("").unwrap().as_str(),
+        "f3d:design:container#sketches"
+    );
+    assert_eq!(
+        super::group_id("member.f3d@").unwrap().as_str(),
+        "f3d:member.f3d@design:container#sketches"
+    );
+
+    let mut model = model();
+    model.features.clear();
+    model.sketches[0].id = SketchId::mint("f3d:member.f3d@model:sketch#21").unwrap();
+    let outside = super::outside(&model, &BTreeSet::new()).unwrap();
+    let [minted] = outside.values().flatten().collect::<Vec<_>>()[..] else {
+        panic!("one owner: {outside:#?}");
+    };
+    assert!(minted
+        .id
+        .as_str()
+        .starts_with("f3d:member.f3d@design:sketch-owner#"));
 }
 
 #[test]

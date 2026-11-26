@@ -331,10 +331,102 @@
       "point_clouds": []
     },
     "design": {
-      "scopes": [],
-      "containers": [],
-      "features": [],
-      "sketches": [],
+      "scopes": [
+        {
+          "definition": "f3d:model:product-definition#root",
+          "roots": [
+            "f3d:design:container#sketches"
+          ],
+          "active_arrangements": [],
+          "occurrences": {},
+          "current": [],
+          "unproduced": [
+            "f3d:brep:entity#1"
+          ]
+        }
+      ],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "f3d:design:container#sketches",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "f3d:design:sketch-owner#73:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40800"
+              }
+            ]
+          }
+        }
+      ],
+      "features": [
+        {
+          "id": "f3d:design:sketch-owner#73:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40800",
+          "name": "Sketch_800",
+          "definition": {
+            "operation": {
+              "kind": "sketch",
+              "value": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@800"
+            }
+          }
+        }
+      ],
+      "sketches": [
+        {
+          "id": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@800",
+          "owner": "f3d:design:sketch-owner#73:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat%40800",
+          "name": "Sketch_800",
+          "plane": {
+            "kind": "placed",
+            "inputs": [
+              {
+                "reference": {
+                  "kind": "picks",
+                  "value": {
+                    "at": {
+                      "kind": "current"
+                    },
+                    "picks": {
+                      "kind": "unread"
+                    }
+                  }
+                }
+              }
+            ],
+            "after": [],
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "status": "current"
+          },
+          "native_options": {},
+          "source_settings": {},
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-sketch-placement#3054"
+        }
+      ],
       "sketch_entities": [],
       "sketch_constraints": [],
       "spatial_sketches": [],

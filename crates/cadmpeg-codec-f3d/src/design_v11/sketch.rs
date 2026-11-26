@@ -11,6 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::construction::{Construction, ConstructionInput, InputReference};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
@@ -34,6 +35,7 @@ use cadmpeg_ir::ids::IdentityKeyTail;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{SketchGeometryDefinition as Geometry, SketchId, SketchLocus};
 
+use super::timeline;
 use crate::loss::F3dLossCode;
 
 /// The restated sketches of a design.
@@ -52,7 +54,7 @@ pub(super) struct Sketches {
 pub(super) fn outside(
     model: &Model,
     features: &BTreeSet<FeatureId>,
-) -> BTreeMap<String, Vec<Feature>> {
+) -> Result<BTreeMap<String, Vec<Feature>>, CodecError> {
     let owned = model
         .features
         .iter()
@@ -72,11 +74,14 @@ pub(super) fn outside(
             .or(record.native_ref.as_deref());
         let prefix = native
             .and_then(crate::ids::native_stream)
-            .map_or("", super::timeline::document_prefix);
-        let id = source
+            .map_or("", timeline::document_prefix);
+        let id = match source
             .map(|feature| feature.id.clone())
             .filter(|id| !features.contains(id))
-            .unwrap_or_else(|| minted(&record.id));
+        {
+            Some(id) => id,
+            None => minted(&record.id)?,
+        };
         out.entry(prefix.to_owned()).or_default().push(Feature {
             id,
             name: source
@@ -97,24 +102,38 @@ pub(super) fn outside(
             native_ref: source.and_then(|feature| feature.native_ref.clone()),
         });
     }
-    out
+    Ok(out)
 }
 
 /// The container of the sketches outside the timelines of the document at
 /// `prefix`.
-pub(super) fn group_id(prefix: &str) -> ContainerId {
-    ContainerId::from(cadmpeg_ir::ids::Identity::compose(
-        &cadmpeg_ir::identity_namespace!("f3d", "design", "sketches"),
-        keyed(prefix),
-    ))
+pub(super) fn group_id(prefix: &str) -> Result<ContainerId, CodecError> {
+    let id = ContainerId::from(cadmpeg_ir::ids::Identity::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "design", "container"),
+        cadmpeg_ir::identity_key!("sketches"),
+    ));
+    match prefix.strip_suffix('@') {
+        Some(key) => {
+            ContainerId::mint(timeline::qualified(key, id.as_str())?).map_err(CodecError::malformed)
+        }
+        None => Ok(id),
+    }
 }
 
-/// The id of the feature minted to own the sketch `sketch`.
-fn minted(sketch: &SketchId) -> FeatureId {
-    FeatureId::compose(
+/// The id of the feature minted to own the sketch `sketch`, in the scope of
+/// the archive member that the sketch was read from.
+fn minted(sketch: &SketchId) -> Result<FeatureId, CodecError> {
+    let (key, alone) = timeline::member_scope(sketch.as_str());
+    let id = FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "design", "sketch-owner"),
-        keyed(sketch.as_str()),
-    )
+        keyed(&alone),
+    );
+    match key {
+        Some(key) => {
+            FeatureId::mint(timeline::qualified(key, id.as_str())?).map_err(CodecError::malformed)
+        }
+        None => Ok(id),
+    }
 }
 
 /// The identity key of `text`: its length and its percent-encoded form.

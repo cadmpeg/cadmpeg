@@ -168,7 +168,7 @@ pub(crate) fn project(
         .flat_map(|(_, projected)| &projected.features)
         .map(|feature| feature.id.clone())
         .collect::<BTreeSet<_>>();
-    for (prefix, owners) in sketch::outside(&ir.model, &restated) {
+    for (prefix, owners) in sketch::outside(&ir.model, &restated)? {
         let enclosing = if scopes.contains_key(&prefix) {
             prefix.clone()
         } else if let Some(definition) = scope_definition(&ir.model.product_definitions, &prefix) {
@@ -183,7 +183,7 @@ pub(crate) fn project(
                 timeline::Projected::default(),
             )
         });
-        let group = sketch::group_id(&prefix);
+        let group = sketch::group_id(&prefix)?;
         if into
             .containers
             .iter()
