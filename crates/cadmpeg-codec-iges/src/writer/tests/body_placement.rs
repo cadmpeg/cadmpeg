@@ -39,6 +39,8 @@ const FACE_KINDS: [&str; 6] = ["body", "region", "shell", "face", "loop", "coedg
 /// Bound on the distance between a read-back point and its expected place.
 const PLACED: f64 = 1.0e-9;
 
+/// `ir` written, with the losses of the write and the document that reads
+/// back with no loss.
 fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
     let plan = IgesCodec
         .plan(
@@ -49,12 +51,15 @@ fn written(ir: &CadIr) -> (Vec<LossNote>, CadIr) {
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    let read = IgesCodec
+    let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes")
-        .ir()
-        .clone();
-    (losses, read)
+        .expect("the written file decodes");
+    let read_losses = &decoded.report().losses;
+    assert!(
+        read_losses.is_empty(),
+        "the written file reads back with {read_losses:#?}"
+    );
+    (losses, decoded.ir().clone())
 }
 
 fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {

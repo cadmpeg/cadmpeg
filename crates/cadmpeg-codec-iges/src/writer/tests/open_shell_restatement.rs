@@ -35,12 +35,31 @@ fn written(ir: &CadIr, version: IgesVersion) -> (Vec<LossNote>, Vec<u8>) {
     (losses, bytes)
 }
 
+/// The document that the written file `bytes` reads back as, which the
+/// reader reads with no loss.
 fn decoded(bytes: Vec<u8>) -> CadIr {
-    IgesCodec
+    decoded_with(bytes, &[])
+}
+
+/// The document that the written file `bytes` reads back as, which the
+/// reader reads with a loss of each code in `expected` and with no other
+/// loss.
+fn decoded_with(bytes: Vec<u8>, expected: &[&str]) -> CadIr {
+    let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes")
-        .ir()
-        .clone()
+        .expect("the written file decodes");
+    let losses = &decoded.report().losses;
+    let mut codes = losses
+        .iter()
+        .map(|loss| loss.code.to_string())
+        .collect::<Vec<_>>();
+    codes.sort();
+    codes.dedup();
+    assert_eq!(
+        codes, expected,
+        "the written file reads back with {losses:#?}"
+    );
+    decoded.ir().clone()
 }
 
 fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {
@@ -321,16 +340,8 @@ fn a_solid_cylinder_under_a_non_uniform_scale_writes_an_elliptic_rational_suppor
         charged(&losses, "iges/writer.face-omitted").is_empty(),
         "{losses:#?}"
     );
-    let decode = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes");
-    let read = decode.ir();
-    assert_eq!(
-        read.geometry.faces.len(),
-        3,
-        "{losses:#?}\n{:#?}",
-        decode.report().losses
-    );
+    let read = &decoded(bytes);
+    assert_eq!(read.geometry.faces.len(), 3, "{losses:#?}");
     assert!(read
         .geometry
         .bodies
@@ -429,7 +440,9 @@ fn a_cylinder_face_with_a_slanted_parameter_curve_keeps_its_model_space_boundary
     );
     let omitted = charged(&losses, "iges/writer.pcurve-omitted");
     assert_eq!(omitted.len(), 4, "{losses:#?}");
-    let read = decoded(bytes);
+    // A boundary with no parameter curves on a curved support keeps its
+    // written traversal on read.
+    let read = decoded_with(bytes, &["iges/topology.boundary-winding-unresolved"]);
     assert_eq!(read.geometry.faces.len(), 2);
     let side = read
         .geometry

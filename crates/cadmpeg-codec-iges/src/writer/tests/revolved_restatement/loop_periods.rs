@@ -2,24 +2,28 @@
 //! Faces whose loops the writer moves by whole turns of a periodic parameter
 //! into one window of a turn.
 
-use std::f64::consts::{PI, TAU};
+use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_2, PI, TAU};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, CylinderSurface, LineCurve, TorusSurface};
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
     SolvedSurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId,
+};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::topology::{
     Coedge, Face, FaceLoops, IncreasingParameterInterval, Loop, LoopBoundary, LoopBoundaryRole,
-    LoopRing, Sense,
+    LoopRing, Region, Sense, Shell,
 };
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
+use cadmpeg_measure::test_support::round_trip::measured;
 
 use crate::entities::curve_conversion::elliptical_arc_nurbs;
 
@@ -500,7 +504,8 @@ fn cylinder_sheet() -> Sheet {
 }
 
 /// `sheet` with the face of `loops` and, for each key and loop of `sheet` in
-/// `others`, the face of that key that the loop bounds, on the same support.
+/// `others`, the face of that key that the loop bounds, on the same support
+/// and in a sheet body, region, and shell of that key.
 fn faces(mut sheet: Sheet, loops: FaceLoops, others: Vec<(&str, LoopId)>) -> CadIr {
     for (key, other) in &others {
         sheet
@@ -517,9 +522,21 @@ fn faces(mut sheet: Sheet, loops: FaceLoops, others: Vec<(&str, LoopId)>) -> Cad
         return ir;
     }
     for (key, other) in others {
+        let shell = id(ShellId::mint, "shell", key);
+        let region = id(RegionId::mint, "region", key);
+        let body = id(BodyId::mint, "body", key);
+        ir.geometry
+            .shells
+            .push(Shell::new(shell.clone(), region.clone()));
+        ir.geometry
+            .regions
+            .push(Region::new(region, body.clone(), vec![shell.clone()]));
+        let mut sheet_body = ir.geometry.bodies[0].clone();
+        sheet_body.id = body;
+        ir.geometry.bodies.push(sheet_body);
         ir.geometry.faces.push(Face {
             id: id(FaceId::mint, "face", key),
-            shell: id(ShellId::mint, "shell", "sheet"),
+            shell,
             surface: id(SurfaceId::mint, "surface", "face"),
             sense: Sense::Forward,
             loops: FaceLoops::classified(other, Vec::new()),
@@ -596,7 +613,8 @@ fn a_face_that_no_turn_holds_with_the_other_faces_is_dropped() {
         assert_eq!(omitted.len(), 1, "{losses:#?}");
         assert!(
             omitted[0].starts_with("face test:model:face#second ")
-                && omitted[0].contains("no one turn of the azimuth holds face"),
+                && omitted[0].contains("the turn of the azimuth from ")
+                && omitted[0].ends_with("does not hold face test:model:face#second"),
             "{omitted:#?}"
         );
         assert!(
@@ -747,6 +765,23 @@ fn band_circles_that_start_at_different_azimuths_lie_in_one_turn() {
     );
 }
 
+/// A band whose circles turn once around the cylinder from one azimuth or
+/// from azimuths half a turn apart reads back with loops whose winding gives
+/// the orientation of the face sense.
+#[test]
+fn a_band_reads_back_with_loops_that_keep_the_face_on_their_left() {
+    for starts in [[0.0, 0.0], [0.0, PI]] {
+        let read = read_back(cylinder_band(starts, None, true, false), STRETCH);
+        let report = measured("band", &read).expect("the band is measured");
+        for body in report.bodies() {
+            let orientation = body.orientation();
+            assert_eq!(orientation.consistent(), &Some(true), "{orientation:#?}");
+            assert!(orientation.inconsistent().is_empty(), "{orientation:#?}");
+            assert!(orientation.mixed().is_empty(), "{orientation:#?}");
+        }
+    }
+}
+
 /// Faces on one cylinder about `+z`, one for each parameter rectangle of
 /// `regions`, in that order.
 fn patches(regions: &[[[f64; 2]; 2]]) -> CadIr {
@@ -872,7 +907,8 @@ fn with_composite_lower_circle(mut band: CadIr) -> CadIr {
 }
 
 #[test]
-fn a_classified_band_whose_edge_curve_has_no_parameter_at_the_seam_cut_is_written_unclassified() {
+fn a_classified_band_whose_composite_edge_curve_the_parameter_search_does_not_invert_is_written_unclassified(
+) {
     for stretch in [STRETCH, MIRROR_STRETCH] {
         let band =
             with_composite_lower_circle(cylinder_band([0.0, 0.0], Some(SEAM_HOLE), true, false));
@@ -1008,7 +1044,18 @@ const CIRCLE_SAMPLES: u32 = 64;
 fn a_cut_band_circle_reads_back_from_the_cut_once_around_in_one_direction() {
     // Both circles cross the end of the turn that starts at the low side of
     // the seam hole, so the boundary of each starts at that azimuth.
-    for lower in [None, Some(lower_b_spline())] {
+    for (lower, label) in [
+        (None, "circle"),
+        (Some(lower_b_spline()), "b-spline"),
+        (
+            Some(lower_b_spline_that_comes_back()),
+            "b-spline that comes back",
+        ),
+        (
+            Some(lower_b_spline_with_a_knot_near_the_cut()),
+            "b-spline with a knot near the cut",
+        ),
+    ] {
         for stretch in [MIRROR_STRETCH, STRETCH] {
             let band = cylinder_band([0.0, 0.0], Some(SEAM_HOLE), true, false);
             let band = match &lower {
@@ -1022,8 +1069,7 @@ fn a_cut_band_circle_reads_back_from_the_cut_once_around_in_one_direction() {
                 assert!(
                     ((cut - SEAM_HOLE[0][0] + PI).rem_euclid(TAU) - PI).abs() <= ON_SURFACE
                         && (start.z - height).abs() <= ON_SURFACE,
-                    "the circle at height {height} starts at {start:?} (b-spline {}, scale {:?})",
-                    lower.is_some(),
+                    "the {label} at height {height} starts at {start:?} (scale {:?})",
                     stretch.scale
                 );
                 let first = azimuths[0];
@@ -1042,5 +1088,311 @@ fn a_cut_band_circle_reads_back_from_the_cut_once_around_in_one_direction() {
                 );
             }
         }
+    }
+}
+
+/// The azimuth between the seam cut of the lower circle and the knot of
+/// [`lower_b_spline_with_a_knot_near_the_cut`] before it. The knot point lies
+/// inside the topology tolerance of the cut point.
+const KNOT_GAP: f64 = 5.0e-4;
+
+/// The lower circle of the cylinder band as a rational B-spline of quadratic
+/// arcs whose knots are the azimuths at which the arcs meet. One knot lies
+/// [`KNOT_GAP`] before the azimuth of the seam cut.
+fn lower_b_spline_with_a_knot_near_the_cut() -> SolvedCurveGeometry {
+    let breaks = [
+        0.0,
+        FRAC_PI_2,
+        PI,
+        3.0 * FRAC_PI_2,
+        TAU + SEAM_HOLE[0][0] - KNOT_GAP,
+        TAU,
+    ];
+    let on_circle = |azimuth: f64, radius: f64| {
+        Point3::new(radius * azimuth.cos(), radius * azimuth.sin(), 0.0)
+    };
+    let mut poles = vec![on_circle(0.0, CYLINDER_RADIUS)];
+    let mut weights = vec![1.0];
+    let mut knots = vec![0.0; 3];
+    for pair in breaks.windows(2) {
+        let half = 0.5 * (pair[1] - pair[0]);
+        poles.push(on_circle(pair[0] + half, CYLINDER_RADIUS / half.cos()));
+        poles.push(on_circle(pair[1], CYLINDER_RADIUS));
+        weights.extend([half.cos(), 1.0]);
+        knots.extend([pair[1]; 2]);
+    }
+    knots.push(TAU);
+    SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(2, knots, poles, Some(weights), false).expect("a rational circle"),
+    )
+}
+
+/// The gap, inside the topology tolerance, between the seam cut of the lower
+/// circle and the end of [`lower_b_spline_that_comes_back`].
+const RETURN_GAP: f64 = 0.002;
+
+/// The lower circle of the cylinder band as a rational B-spline over the
+/// knots `[0, 2π]`, which then runs straight on over the knots `[2π, 2π + 1]`
+/// to [`RETURN_GAP`] outside the circle at the azimuth of the seam cut.
+fn lower_b_spline_that_comes_back() -> SolvedCurveGeometry {
+    let radius = CYLINDER_RADIUS;
+    let azimuth = SEAM_HOLE[0][0];
+    let end = Point3::new(
+        (radius + RETURN_GAP) * azimuth.cos(),
+        (radius + RETURN_GAP) * azimuth.sin(),
+        0.0,
+    );
+    let mut poles = [
+        [1.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0],
+        [-1.0, 1.0],
+        [-1.0, 0.0],
+        [-1.0, -1.0],
+        [0.0, -1.0],
+        [1.0, -1.0],
+        [1.0, 0.0],
+    ]
+    .map(|[x, y]| Point3::new(radius * x, radius * y, 0.0))
+    .to_vec();
+    poles.push(Point3::new(0.5 * (radius + end.x), 0.5 * end.y, 0.0));
+    poles.push(end);
+    let mut weights = vec![1.0; poles.len()];
+    for corner in [1, 3, 5, 7] {
+        weights[corner] = FRAC_1_SQRT_2;
+    }
+    let quarter = TAU / 4.0;
+    let knots = vec![
+        0.0,
+        0.0,
+        0.0,
+        quarter,
+        quarter,
+        2.0 * quarter,
+        2.0 * quarter,
+        3.0 * quarter,
+        3.0 * quarter,
+        TAU,
+        TAU,
+        TAU + 1.0,
+        TAU + 1.0,
+        TAU + 1.0,
+    ];
+    SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(2, knots, poles, Some(weights), false)
+            .expect("a rational circle and a line"),
+    )
+}
+
+#[test]
+fn a_band_whose_b_spline_comes_back_near_the_seam_cut_cuts_the_circle_there() {
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let band = with_lower_curve(
+            cylinder_band([0.0, 0.0], Some(SEAM_HOLE), true, false),
+            lower_b_spline_that_comes_back(),
+        );
+        let (losses, read) = written_under(band, stretch);
+        for code in [
+            "iges/writer.face-omitted",
+            "iges/writer.loop-classification-omitted",
+        ] {
+            assert!(charged(&losses, code).is_empty(), "{losses:#?}");
+        }
+        let face = &read.geometry.faces[0];
+        assert!(face
+            .loops
+            .stated()
+            .any(|loop_| face.loop_role(loop_) == LoopBoundaryRole::Outer));
+        assert_on_cylinder_regions(
+            &read,
+            stretch,
+            &[
+                [[0.0, TAU], [0.0, 0.0]],
+                [[0.0, TAU], [BAND_HEIGHT, BAND_HEIGHT]],
+                SEAM_HOLE,
+            ],
+        );
+    }
+}
+
+/// Adds to `sheet` the loop `key` of its face on the cylinder about `+z`
+/// through the parameter points `points` and back to the first one a turn
+/// on, of arcs where `v` is constant and axial lines where `u` is. Each
+/// coedge carries the parameter line of its edge in the direction of the
+/// loop.
+fn ring_through(sheet: &mut Sheet, key: &str, points: &[[f64; 2]]) -> LoopId {
+    for (position, [u, v]) in points.iter().enumerate() {
+        sheet.vertex(&format!("{key}-{position}"), (CYLINDER.point)(*u, *v));
+    }
+    let mut coedges = Vec::new();
+    for position in 0..points.len() {
+        let next = (position + 1) % points.len();
+        let from = points[position];
+        let to = if next == 0 {
+            [points[0][0] + TAU, points[0][1]]
+        } else {
+            points[next]
+        };
+        let name = format!("{key}-side-{position}");
+        let (curve, [from_t, to_t]) = if from[1] == to[1] {
+            ((CYLINDER.along_u)(from[1]), [from[0], to[0]])
+        } else {
+            ((CYLINDER.along_v)(from[0]), [from[1], to[1]])
+        };
+        let ends = [format!("{key}-{position}"), format!("{key}-{next}")];
+        let (range, ends, sense) = if from_t < to_t {
+            ([from_t, to_t], [&ends[0], &ends[1]], Sense::Forward)
+        } else {
+            ([to_t, from_t], [&ends[1], &ends[0]], Sense::Reversed)
+        };
+        sheet.edge(&name, curve, range, ends.map(String::as_str));
+        let length = (to[0] - from[0]).hypot(to[1] - from[1]);
+        let pcurve = parameter_line(
+            &mut sheet.ir,
+            &name,
+            from,
+            [(to[0] - from[0]) / length, (to[1] - from[1]) / length],
+            length,
+        );
+        sheet.ir.geometry.coedges.push(Coedge {
+            id: id(CoedgeId::mint, "coedge", &name),
+            owner_loop: id(LoopId::mint, "loop", key),
+            edge: id(EdgeId::mint, "edge", &name),
+            radial_next: id(CoedgeId::mint, "coedge", &name),
+            sense,
+            pcurves: vec![pcurve],
+            use_curve: None,
+            native_ref: None,
+        });
+        coedges.push(id(CoedgeId::mint, "coedge", &name));
+    }
+    sheet.ir.geometry.loops.push(Loop {
+        id: id(LoopId::mint, "loop", key),
+        face: id(FaceId::mint, "face", "face"),
+        boundary: LoopBoundary::Ring(LoopRing::new(coedges, Vec::new()).expect("a ring")),
+        native_ref: None,
+    });
+    id(LoopId::mint, "loop", key)
+}
+
+/// The band of the cylinder about `+z` between the ring through `lower` and
+/// the circle at [`BAND_HEIGHT`], with the parameter rectangle `hole` cut
+/// out. The ring is the outer loop where `classified`.
+fn ring_band(lower: &[[f64; 2]], hole: Option<[[f64; 2]; 2]>, classified: bool) -> CadIr {
+    let mut sheet = cylinder_sheet();
+    let lower = ring_through(&mut sheet, "ring", lower);
+    sheet.vertex("upper", (CYLINDER.point)(0.0, BAND_HEIGHT));
+    sheet.edge(
+        "upper",
+        (CYLINDER.along_u)(BAND_HEIGHT),
+        [0.0, TAU],
+        ["upper", "upper"],
+    );
+    let upper = parameter_line(&mut sheet.ir, "upper", [TAU, BAND_HEIGHT], [-1.0, 0.0], TAU);
+    let upper = ring_loop(
+        &mut sheet.ir,
+        ["upper", "face", "upper"],
+        Sense::Reversed,
+        upper,
+    );
+    let mut others = vec![upper];
+    others.extend(
+        hole.map(|hole| rectangle_loop(&mut sheet, &CYLINDER, "hole", hole, [0.0, 0.0], true)),
+    );
+    sheet.faced(if classified {
+        FaceLoops::classified(lower, others)
+    } else {
+        others.insert(0, lower);
+        FaceLoops::unspecified(others)
+    })
+}
+
+/// A ring along the azimuths `[0, π]` at height 0 and `[π, 2π]` at height 1,
+/// with an axial line at each of the azimuths `π` and `2π`.
+const STEP: [[f64; 2]; 4] = [[0.0, 0.0], [PI, 0.0], [PI, 1.0], [TAU, 1.0]];
+
+/// The ring of [`STEP`] stated from its arc at height 1.
+const STEP_FROM_ITS_UPPER_ARC: [[f64; 2]; 4] = [[PI, 1.0], [TAU, 1.0], [TAU, 0.0], [TAU + PI, 0.0]];
+
+#[test]
+fn a_ring_whose_curves_meet_at_the_end_of_the_turn_is_written_with_its_curves_joined() {
+    let regions = [
+        [[0.0, PI], [0.0, 0.0]],
+        [[PI, PI], [0.0, 1.0]],
+        [[PI, TAU], [1.0, 1.0]],
+        [[TAU, TAU], [0.0, 1.0]],
+        [[0.0, TAU], [BAND_HEIGHT, BAND_HEIGHT]],
+    ];
+    for ring in [STEP, STEP_FROM_ITS_UPPER_ARC] {
+        for classified in [false, true] {
+            for stretch in [STRETCH, MIRROR_STRETCH] {
+                let (losses, read) = written_under(ring_band(&ring, None, classified), stretch);
+                for code in [
+                    "iges/writer.face-omitted",
+                    "iges/writer.loop-classification-omitted",
+                ] {
+                    assert!(charged(&losses, code).is_empty(), "{losses:#?}");
+                }
+                assert_eq!(read.geometry.faces.len(), 1);
+                let face = &read.geometry.faces[0];
+                assert_eq!(
+                    face.loops
+                        .stated()
+                        .any(|loop_| face.loop_role(loop_) == LoopBoundaryRole::Outer),
+                    classified
+                );
+                assert_boundary_in_domain(&read);
+                assert_on_cylinder_regions(&read, stretch, &regions);
+            }
+        }
+    }
+}
+
+/// A ring with a notch below the azimuth `2π - 0.1`, which it crosses three
+/// times.
+const NOTCH: [[f64; 2]; 6] = [
+    [0.0, 0.0],
+    [6.25, 0.0],
+    [6.25, 0.5],
+    [6.12, 0.5],
+    [6.12, 1.0],
+    [TAU, 1.0],
+];
+
+#[test]
+fn a_classified_band_whose_ring_passes_the_end_of_the_turn_more_than_once_is_written_unclassified()
+{
+    // The seam hole starts the turn at the azimuth -0.1.
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let (losses, read) = written_under(ring_band(&NOTCH, Some(SEAM_HOLE), true), stretch);
+        let unclassified = charged(&losses, "iges/writer.loop-classification-omitted");
+        assert_eq!(unclassified.len(), 1, "{losses:#?}");
+        assert!(
+            unclassified[0].starts_with("IGES face test:model:face#face ")
+                && ["0", "2", "4"]
+                    .iter()
+                    .all(|side| unclassified[0]
+                        .contains(&format!("test:model:coedge#ring-side-{side}"))),
+            "{unclassified:#?}"
+        );
+        assert!(
+            charged(&losses, "iges/writer.face-omitted").is_empty(),
+            "{losses:#?}"
+        );
+        assert_eq!(read.geometry.faces.len(), 1);
+        let face = &read.geometry.faces[0];
+        assert_eq!(face.loops.stated().count(), 3);
+        assert!(face
+            .loops
+            .stated()
+            .all(|loop_| face.loop_role(loop_) == LoopBoundaryRole::Unspecified));
+    }
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let (losses, read) = written_under(ring_band(&NOTCH, None, true), stretch);
+        assert!(
+            charged(&losses, "iges/writer.loop-classification-omitted").is_empty(),
+            "{losses:#?}"
+        );
+        assert_eq!(read.geometry.faces.len(), 1);
     }
 }

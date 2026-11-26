@@ -2497,6 +2497,7 @@ pub(super) fn project(
         let mut explicit_outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
         let mut linear_boundary_candidates = Vec::new();
         let mut face_tolerance = 0.0_f64;
+        let mut drafts = Vec::new();
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence) else {
                 super::push_geometry_loss(
@@ -2819,17 +2820,23 @@ pub(super) fn project(
                 surface_kind,
                 ctx,
             )?);
-            let winding = if surface_kind == BoundarySurfaceKind::Trimmed {
-                winding::trimmed_boundary_winding(
-                    &items,
-                    explicit_outer_sequence == Some(sequence),
-                    &carrier_index,
-                    &support_geometry,
-                    ctx,
-                )?
-            } else {
-                winding::BoundaryWinding::Kept
-            };
+            drafts.push((boundary_index, sequence, items, sewing_tolerance));
+        }
+        let windings = if surface_kind == BoundarySurfaceKind::Trimmed {
+            winding::trimmed_boundary_windings(
+                drafts.iter().map(|(_, sequence, items, _)| {
+                    (items.as_slice(), explicit_outer_sequence == Some(*sequence))
+                }),
+                &carrier_index,
+                &support_geometry,
+                ctx,
+            )?
+        } else {
+            vec![winding::BoundaryWinding::Kept; drafts.len()]
+        };
+        for ((boundary_index, sequence, items, sewing_tolerance), winding) in
+            drafts.into_iter().zip(windings)
+        {
             let reversal = match winding {
                 winding::BoundaryWinding::Kept => Ok(false),
                 winding::BoundaryWinding::Reversed => use_ranges(&items, true).map(|_| true),

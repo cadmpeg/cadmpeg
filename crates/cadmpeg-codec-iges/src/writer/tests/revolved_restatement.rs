@@ -401,7 +401,7 @@ fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {
 }
 
 /// `ir` with its body under `stretch`, written and read back with every face
-/// and parameter curve.
+/// and parameter curve and with no loss.
 fn read_back(mut ir: CadIr, stretch: Stretch) -> CadIr {
     for body in &mut ir.geometry.bodies {
         body.transform = stretch.transform();
@@ -422,11 +422,33 @@ fn read_back(mut ir: CadIr, stretch: Stretch) -> CadIr {
     }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    IgesCodec
+    decoded_whole(bytes)
+}
+
+/// The document that the written file `bytes` reads back as, which the
+/// reader reads with no loss.
+fn decoded_whole(bytes: Vec<u8>) -> CadIr {
+    decoded_with(bytes, &[])
+}
+
+/// The decoded document of the written `bytes`, which reads back with a loss
+/// of each code in `expected` and with no other loss.
+fn decoded_with(bytes: Vec<u8>, expected: &[&str]) -> CadIr {
+    let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes")
-        .ir()
-        .clone()
+        .expect("the written file decodes");
+    let losses = &decoded.report().losses;
+    let mut codes = losses
+        .iter()
+        .map(|loss| loss.code.to_string())
+        .collect::<Vec<_>>();
+    codes.sort();
+    codes.dedup();
+    assert_eq!(
+        codes, expected,
+        "the written file reads back with {losses:#?}"
+    );
+    decoded.ir().clone()
 }
 
 /// The support points at sixteen equal steps of each parameter curve on the
@@ -694,8 +716,19 @@ fn cut_cylinder_sector(sweep: f64, bottom_pcurve: bool) -> CadIr {
 }
 
 /// `ir` with its body under `stretch`, written, with the losses of the
-/// write and the document that reads back.
-fn written_under(mut ir: CadIr, stretch: Stretch) -> (Vec<LossNote>, CadIr) {
+/// write and the document that reads back with no loss.
+fn written_under(ir: CadIr, stretch: Stretch) -> (Vec<LossNote>, CadIr) {
+    written_under_with(ir, stretch, &[])
+}
+
+/// `ir` with its body under `stretch`, written, with the losses of the
+/// write and the document that reads back with a loss of each code in
+/// `expected` and with no other loss.
+fn written_under_with(
+    mut ir: CadIr,
+    stretch: Stretch,
+    expected: &[&str],
+) -> (Vec<LossNote>, CadIr) {
     for body in &mut ir.geometry.bodies {
         body.transform = stretch.transform();
     }
@@ -708,12 +741,7 @@ fn written_under(mut ir: CadIr, stretch: Stretch) -> (Vec<LossNote>, CadIr) {
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    let read = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes")
-        .ir()
-        .clone();
-    (losses, read)
+    (losses, decoded_with(bytes, expected))
 }
 
 /// Points at 32 equal steps of each edge curve of `read` over its range.
@@ -755,7 +783,13 @@ fn edge_points(read: &CadIr) -> Vec<Point3> {
 fn a_cylinder_face_whose_parameter_curves_have_no_exact_form_keeps_its_model_space_boundary() {
     let sweep = PI / 3.0;
     for (stretch, bottom_pcurve) in [(STRETCH, false), (MIRROR_STRETCH, false), (STRETCH, true)] {
-        let (losses, read) = written_under(cut_cylinder_sector(sweep, bottom_pcurve), stretch);
+        // A boundary with no parameter curves on a curved support keeps its
+        // written traversal on read.
+        let (losses, read) = written_under_with(
+            cut_cylinder_sector(sweep, bottom_pcurve),
+            stretch,
+            &["iges/topology.boundary-winding-unresolved"],
+        );
         for code in ["iges/writer.body-omitted", "iges/writer.face-omitted"] {
             assert!(charged(&losses, code).is_empty(), "{losses:#?}");
         }

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The start of a Type 142 boundary of a loop that turns around a periodic
-//! parameter of its restated support. The restatement cuts one parameter
-//! curve of the loop at the end of the turn that holds the face, and the
-//! pieces lie at the two ends of the turn. A Type 102 composite of the
-//! parameter curves joins only when it starts at that cut, and the
-//! model-space curve of the Type 142 starts at the same point.
+//! parameter of its restated support. The loop passes the end of the turn
+//! that holds the face inside one parameter curve, which the restatement cuts
+//! there, or between two parameter curves. A Type 102 composite of the
+//! parameter curves joins only when it starts there, and the model-space
+//! curve of the Type 142 starts at the same point.
 
-use super::rational_support::SeamCuts;
+use super::rational_support::{CurveEnd, SeamCuts};
 use super::{
     effective_topology_tolerance, topology_edge_explicit_tolerance, CarrierEntity, CurveSpan,
     TopologyIndex, WrittenBoundary, WrittenPcurveUse,
@@ -15,10 +15,15 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::pcurve_uv;
-use cadmpeg_ir::eval::{curve_parameter_near_point, finite_or_refusal, model_surface_point};
+use cadmpeg_ir::eval::{
+    finite_or_refusal, model_curve_parameter_near_point_in_index_with_tolerance,
+    model_surface_point,
+};
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::units::FiniteVector;
+use std::cell::OnceCell;
 
 /// The distance from the cut point, relative to the largest magnitude of its
 /// coordinates and at least 1, within which an edge curve that passes
@@ -35,37 +40,64 @@ pub(super) struct CoedgeCut {
     pub(super) spans: [CurveSpan; 2],
 }
 
-/// Moves the start of the Type 142 `boundary` on `surface` to the seam cut
-/// that `cuts` names between two parameter curves of one of its coedges, and
-/// cuts the edge curve of that coedge at the same point. A boundary with no
-/// seam cut keeps its start. Returns the reason the boundary has no common
-/// start where the edge curve has no parameter at the cut.
-pub(super) fn start_at_seam_cut(
+/// Moves the start of the Type 142 `boundary` on `surface` to the place
+/// where its loop passes the end of the turn that holds its face, which
+/// `cuts` names. Where that place lies inside a coedge, the edge curve of
+/// that coedge is cut at the same point; `model` is the index of the
+/// document for the search of the edge curve parameter. A boundary that does
+/// not pass the end of its turn keeps its start. Returns the reason the
+/// boundary has no common start where it passes the end of its turn more
+/// than once, or where the edge curve has no parameter at the cut.
+pub(super) fn start_at_seam_cut<'ir>(
     ctx: &DecodeContext<'_>,
-    index: &TopologyIndex<'_>,
+    index: &TopologyIndex<'ir>,
+    model: &OnceCell<ModelIndex<'ir>>,
     surface: &SurfaceGeometry,
     cuts: &SeamCuts,
     boundary: &mut WrittenBoundary<'_>,
 ) -> Result<Option<String>, CodecError> {
-    let Some((coedge, first_use)) =
-        boundary
-            .coedges
-            .iter()
-            .enumerate()
-            .find_map(|(coedge, written)| {
-                written
-                    .pcurves
-                    .windows(2)
-                    .position(|pair| {
-                        cuts.cut_between(pair[0].pcurve.id.as_str(), pair[1].pcurve.id.as_str())
-                    })
-                    .map(|before| (coedge, before + 1))
-            })
-    else {
-        return Ok(None);
+    let count = boundary.coedges.len();
+    let mut places = Vec::new();
+    for (coedge, written) in boundary.coedges.iter().enumerate() {
+        let before = boundary.coedges[(coedge + count - 1) % count]
+            .pcurves
+            .last();
+        for (position, pcurve_use) in written.pcurves.iter().enumerate() {
+            let prior = match position {
+                0 => before,
+                _ => written.pcurves.get(position - 1),
+            };
+            if prior.is_some_and(|prior| {
+                cuts.cut_between(
+                    (prior.pcurve.id.as_str(), traversed_ends(prior)[1]),
+                    (pcurve_use.pcurve.id.as_str(), traversed_ends(pcurve_use)[0]),
+                )
+            }) {
+                places.push((coedge, position));
+            }
+        }
+    }
+    let loop_id = &boundary.loop_.id;
+    let (coedge, first_use) = match places.as_slice() {
+        [] => return Ok(None),
+        [place] => *place,
+        _ => {
+            let mut coedges = places
+                .iter()
+                .map(|(coedge, _)| boundary.coedges[*coedge].carrier.coedge.id.as_str())
+                .collect::<Vec<_>>();
+            coedges.dedup();
+            return Ok(Some(format!(
+                "loop {loop_id} passes the end of the turn of its support more than once, in \
+                 coedges {}",
+                coedges.join(", ")
+            )));
+        }
     };
     boundary.coedges.rotate_left(coedge);
-    let loop_id = &boundary.loop_.id;
+    if first_use == 0 {
+        return Ok(None);
+    }
     let written = &mut boundary.coedges[0];
     let carrier = &written.carrier;
     let unstarted = |what: &str| {
@@ -93,10 +125,18 @@ pub(super) fn start_at_seam_cut(
     let tolerance =
         effective_topology_tolerance(topology_edge_explicit_tolerance(index, carrier.edge));
     let mut parameter = None;
+    let model = model.get_or_init(|| ModelIndex::build(index.ir));
     for tolerance in [exact, tolerance] {
-        parameter = curve_parameter_near_point(ctx, &carrier.geometry, point, seed, tolerance)?
-            .map(cadmpeg_ir::scalar::FiniteReal::get)
-            .filter(|parameter| start < *parameter && *parameter < end);
+        parameter = model_curve_parameter_near_point_in_index_with_tolerance(
+            ctx,
+            model,
+            carrier.curve_id,
+            point,
+            seed,
+            tolerance,
+        )?
+        .map(cadmpeg_ir::scalar::FiniteReal::get)
+        .filter(|parameter| start < *parameter && *parameter < end);
         if parameter.is_some() {
             break;
         }
@@ -129,6 +169,14 @@ pub(super) fn start_at_seam_cut(
         },
     });
     Ok(None)
+}
+
+/// The curve ends that a written use passes first and last.
+fn traversed_ends(pcurve_use: &WrittenPcurveUse<'_>) -> [CurveEnd; 2] {
+    match pcurve_use.entity {
+        CarrierEntity::Stored => [CurveEnd::Start, CurveEnd::End],
+        CarrierEntity::ReversedCopy => [CurveEnd::End, CurveEnd::Start],
+    }
 }
 
 /// The parameter-plane start and end of the curve that a written use

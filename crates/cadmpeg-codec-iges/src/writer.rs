@@ -3059,6 +3059,7 @@ fn topology_entities(
     // The faces whose classified loops are written as Type 141 boundaries of
     // a Type 143 face.
     let mut unclassified = BTreeSet::new();
+    let model = std::cell::OnceCell::new();
     for face in &faces {
         named(face.id.as_str(), || {
             let surface_index = surface_indices[face.surface.as_str()];
@@ -3090,6 +3091,7 @@ fn topology_entities(
                     unstarted = turn_cut::start_at_seam_cut(
                         ctx,
                         index,
+                        &model,
                         &surface.geometry,
                         seam_cuts,
                         boundary,
@@ -4038,7 +4040,8 @@ fn written_boundary<'ir>(
             .collect::<Result<Vec<_>, CodecError>>()?;
         // Type 142 and Type 144 give a boundary no direction, so the boundary
         // is written in the direction that takes fewer reversed copies of its
-        // curves.
+        // curves. A reader keeps the written direction of a boundary that has
+        // no parameter curves, so that boundary keeps the loop direction.
         let copies = |direction: Sense| {
             chained
                 .iter()
@@ -4049,7 +4052,10 @@ fn written_boundary<'ir>(
                 })
                 .sum::<usize>()
         };
-        let direction = if copies(Sense::Reversed) < copies(Sense::Forward) {
+        let imaged = chained
+            .iter()
+            .any(|(carrier, _)| !carrier.coedge.pcurves.is_empty());
+        let direction = if imaged && copies(Sense::Reversed) < copies(Sense::Forward) {
             chained.reverse();
             Sense::Reversed
         } else {
@@ -7980,7 +7986,7 @@ fn encode_nurbs(
     let control_points = nurbs.pole_rows().raw_points();
     let plane_normal = nurbs_plane_normal(&control_points);
     let planar = plane_normal.is_some();
-    let closed = nurbs_is_closed(nurbs, domain)?;
+    let closed = nurbs_is_closed(nurbs, range.get())?;
     let k = control_count - 1;
     let mut parameters = format!(
         "{k},{},{},{},{},{}",
@@ -8078,11 +8084,13 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
         .then_some(unit_normal)
 }
 
-fn nurbs_is_closed(nurbs: &NurbsCurve, domain: [f64; 2]) -> Result<bool, CodecError> {
+/// Whether `nurbs` starts and ends at one point over the parameter `range`
+/// that its Type 126 entity states.
+fn nurbs_is_closed(nurbs: &NurbsCurve, range: [f64; 2]) -> Result<bool, CodecError> {
     let Some(start) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         nurbs,
-        domain[0],
+        range[0],
     ))?
     else {
         return Ok(false);
@@ -8090,7 +8098,7 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, domain: [f64; 2]) -> Result<bool, CodecEr
     let Some(end) = finite_or_refusal(cadmpeg_ir::eval::decode::nurbs_curve_point_at(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         nurbs,
-        domain[1],
+        range[1],
     ))?
     else {
         return Ok(false);

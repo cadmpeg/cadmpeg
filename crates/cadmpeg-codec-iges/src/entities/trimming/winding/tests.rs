@@ -10,9 +10,9 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::{
-    closed_parameter_area, support_oriented_area, support_parameter_periods, winding_from_area,
-    BoundaryWinding, SignedArea, BOUNDARY_AREA_DEGENERATE_FRACTION,
-    PARAMETER_RING_CLOSURE_FRACTION,
+    closed_parameter_area, strip_windings, support_oriented_area, support_parameter_periods,
+    support_turn_lengths, turn_of, winding_from_area, BoundaryWinding, SignedArea, Turn,
+    BOUNDARY_AREA_DEGENERATE_FRACTION, PARAMETER_RING_CLOSURE_FRACTION,
 };
 
 /// The counterclockwise unit square, closed at `(0, 0)`.
@@ -168,4 +168,100 @@ fn a_reversed_nurbs_normal_inverts_the_parameter_area() {
         winding_from_area(Some(area(reversed, image.extent)), true),
         BoundaryWinding::Reversed
     );
+}
+
+/// The image of a parameter line at `level` on the axis other than `axis`
+/// over `turns` periods of `axis`, in 64 equal steps.
+fn turning_line(axis: usize, level: f64, turns: f64) -> Vec<[f64; 2]> {
+    (0..=64)
+        .map(|step| {
+            let mut point = [level; 2];
+            point[axis] = TAU * turns * f64::from(step) / 64.0;
+            point
+        })
+        .collect()
+}
+
+fn turn(axis: usize, forward: bool, level: f64) -> Turn {
+    Turn {
+        axis,
+        forward,
+        level,
+    }
+}
+
+#[test]
+fn each_nurbs_axis_turns_over_its_knot_domain() {
+    let cylinder = SolvedSurfaceGeometry::Cylinder(
+        CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("cylinder"),
+    );
+    assert_eq!(support_turn_lengths(&cylinder), [Some(TAU), None]);
+    assert_eq!(
+        support_turn_lengths(&bilinear_patch(false, false)),
+        [Some(3.0), Some(1.0)]
+    );
+}
+
+#[test]
+fn an_image_whose_ends_lie_one_turn_apart_turns_once() {
+    let lengths = [Some(TAU), None];
+    let forward = turn_of(&turning_line(0, 2.0, 1.0), lengths, lengths).expect("a turn");
+    assert_eq!((forward.axis, forward.forward), (0, true));
+    assert!((forward.level - 2.0).abs() <= f64::EPSILON);
+    let backward = turn_of(&turning_line(0, 2.0, -1.0), lengths, lengths).expect("a turn");
+    assert_eq!((backward.axis, backward.forward), (0, false));
+    for turns in [2.0, 0.5] {
+        assert!(turn_of(&turning_line(0, 2.0, turns), lengths, lengths).is_none());
+    }
+    let mut rising = turning_line(0, 2.0, 1.0);
+    rising.last_mut().expect("an end")[1] += 1.0;
+    assert!(turn_of(&rising, lengths, lengths).is_none());
+    let tube = [None, Some(TAU)];
+    let meridian = turn_of(&turning_line(1, 2.0, 1.0), tube, tube).expect("a turn");
+    assert_eq!((meridian.axis, meridian.forward), (1, true));
+}
+
+/// A strip between two boundaries that turn along `u` lies to the left of
+/// the lower one as it advances and of the upper one as it returns; along
+/// `v` the left of an advance lies toward smaller `u`.
+#[test]
+fn two_turning_boundaries_keep_the_strip_between_them_on_their_left() {
+    let along_u = [(0, turn(0, true, 0.0)), (1, turn(0, true, 1.0))];
+    assert_eq!(
+        strip_windings(&along_u, false),
+        [(0, BoundaryWinding::Kept), (1, BoundaryWinding::Reversed)]
+    );
+    assert_eq!(
+        strip_windings(&along_u, true),
+        [(0, BoundaryWinding::Reversed), (1, BoundaryWinding::Kept)]
+    );
+    let upper_first = [(0, turn(0, false, 1.0)), (1, turn(0, true, 0.0))];
+    assert_eq!(
+        strip_windings(&upper_first, false),
+        [(1, BoundaryWinding::Kept), (0, BoundaryWinding::Kept)]
+    );
+    let along_v = [(0, turn(1, true, 0.0)), (1, turn(1, true, 1.0))];
+    assert_eq!(
+        strip_windings(&along_v, false),
+        [(0, BoundaryWinding::Reversed), (1, BoundaryWinding::Kept)]
+    );
+}
+
+#[test]
+fn turning_boundaries_that_bound_no_one_strip_have_no_winding() {
+    let lower = (0, turn(0, true, 0.0));
+    assert!(strip_windings(&[lower], false).is_empty());
+    assert!(strip_windings(
+        &[lower, (1, turn(0, true, 1.0)), (2, turn(0, true, 2.0))],
+        false
+    )
+    .is_empty());
+    assert!(strip_windings(&[lower, (1, turn(1, true, 1.0))], false).is_empty());
+    assert!(strip_windings(&[lower, (1, turn(0, false, 0.0))], false).is_empty());
 }
