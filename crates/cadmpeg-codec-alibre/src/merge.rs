@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Merges the decode of a component file into the decode of its assembly.
 //!
-//! Every identity of the component moves under `alibre:xref/<scope>/`, where
-//! the scope is one component file of the assembly. The scope keeps two files
-//! that each hold `alibre:brep:entity#0` apart, and a component that an
-//! assembly places twice is decoded and merged once.
+//! A component file has a definition key, `m<n>` for the n-th file an
+//! assembly merges and `<placing key>/m<n>` for a file that only a
+//! subassembly places, so two files never share a key. Its root definition
+//! becomes the `File` definition `alibre:xref:product-definition#<key>`, and
+//! every other identity and stream name of the component takes `<key>@` at
+//! the head of its scope (CADIR §2.2), which keeps two files that each hold
+//! `alibre:brep:entity#0` apart. A component that an assembly places twice
+//! is decoded and merged once.
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -19,25 +23,67 @@ use serde_json::Value;
 
 use crate::FORMAT;
 
-/// The identity of `text` inside `scope`; `None` for text that is not an
-/// Alibre identity.
-fn rescope(text: &str, scope: &str) -> Option<String> {
-    text.strip_prefix(FORMAT)?
-        .strip_prefix(':')
-        .map(|rest| format!("{FORMAT}:xref/{scope}/{rest}"))
+/// The kind of a component file's `File` definition, after its scope.
+const FILE_KIND: &str = ":product-definition#";
+/// The scope and kind of a component file's `File` definition.
+const FILE_DEFINITION: &str = "xref:product-definition#";
+
+/// How the identities of one component file move into its assembly.
+#[derive(Clone, Copy)]
+struct Keyed<'k> {
+    /// The definition key of the component file.
+    key: &'k str,
+    /// The id of the component's root definition, which becomes its `File`
+    /// definition.
+    root: Option<&'k str>,
 }
 
-/// A stream name without its codec prefix.
-fn unprefixed(name: &str) -> &str {
-    name.strip_prefix(FORMAT)
-        .and_then(|rest| rest.strip_prefix(':'))
-        .unwrap_or(name)
+impl Keyed<'_> {
+    /// The id or stream name of `text` in the assembly; `None` for text that
+    /// is not an Alibre identity.
+    fn rescope(self, text: &str) -> Option<String> {
+        let rest = text.strip_prefix(FORMAT)?.strip_prefix(':')?;
+        let key = self.key;
+        if self.root == Some(text) {
+            return Some(format!("{FORMAT}:{FILE_DEFINITION}{key}"));
+        }
+        let scope_end = rest.find(':').unwrap_or(rest.len());
+        Some(match rest[..scope_end].split_once('@') {
+            // A record of a file that this component places: the key of that
+            // file grows by this component's key, and so does the key of the
+            // file's own `File` definition.
+            Some((qualifier, scope)) => {
+                let tail = &rest[scope_end..];
+                let tail = match tail.strip_prefix(FILE_KIND) {
+                    Some(nested) if scope == "xref" => {
+                        format!("{}{key}/{nested}", FILE_KIND)
+                    }
+                    _ => tail.to_owned(),
+                };
+                format!("{FORMAT}:{key}/{qualifier}@{scope}{tail}")
+            }
+            None => match rest.strip_prefix(FILE_DEFINITION) {
+                // The `File` definition of a file that this component places
+                // is a record of this component.
+                Some(nested) => format!("{FORMAT}:{key}@{FILE_DEFINITION}{key}/{nested}"),
+                None => format!("{FORMAT}:{key}@{rest}"),
+            },
+        })
+    }
+
+    /// A stream name of the component in the assembly.
+    fn stream(self, name: &str) -> String {
+        match self.rescope(name) {
+            Some(scoped) => scoped,
+            None => format!("{FORMAT}:{}@{name}", self.key),
+        }
+    }
 }
 
 /// Moves every Alibre identity of an entity into one scope.
 struct Scope<'r, 'a> {
     ctx: &'r DecodeContext<'a>,
-    scope: &'r str,
+    keyed: Keyed<'r>,
 }
 
 impl EntityRewrite for Scope<'_, '_> {
@@ -45,7 +91,7 @@ impl EntityRewrite for Scope<'_, '_> {
 
     fn rewrite<T: RewriteIdentities>(&mut self, entity: T) -> Result<T, CodecError> {
         let mut map = IdentityMap::new(|id: &str| {
-            Ok(rescope(id, self.scope).unwrap_or_else(|| id.to_owned()))
+            Ok(self.keyed.rescope(id).unwrap_or_else(|| id.to_owned()))
         });
         let rewritten = entity.rewrite_identities(self.ctx, &mut map);
         map.finish()?;
@@ -54,45 +100,46 @@ impl EntityRewrite for Scope<'_, '_> {
 }
 
 /// Rewrites every text of a JSON value that is an Alibre identity.
-fn rescope_value(value: &mut Value, scope: &str) {
+fn rescope_value(value: &mut Value, keyed: Keyed<'_>) {
     match value {
         Value::String(text) => {
-            if let Some(scoped) = rescope(text, scope) {
+            if let Some(scoped) = keyed.rescope(text) {
                 *text = scoped;
             }
         }
-        Value::Array(items) => items.iter_mut().for_each(|item| rescope_value(item, scope)),
+        Value::Array(items) => items.iter_mut().for_each(|item| rescope_value(item, keyed)),
         Value::Object(members) => members
             .values_mut()
-            .for_each(|member| rescope_value(member, scope)),
+            .for_each(|member| rescope_value(member, keyed)),
         _ => {}
     }
 }
 
-fn rescope_record(record: &NativeRecord, scope: &str) -> Result<NativeRecord, CodecError> {
+fn rescope_record(record: &NativeRecord, keyed: Keyed<'_>) -> Result<NativeRecord, CodecError> {
     let mut fields = record.fields().map_err(CodecError::from)?;
     for value in fields.values_mut() {
-        rescope_value(value, scope);
+        rescope_value(value, keyed);
     }
-    let id = rescope(record.id(), scope).unwrap_or_else(|| record.id().to_owned());
+    let id = keyed
+        .rescope(record.id())
+        .unwrap_or_else(|| record.id().to_owned());
     NativeRecord::new(Identity::new(id).map_err(CodecError::malformed)?, fields)
         .map_err(CodecError::from)
 }
 
 fn rescope_fidelity(
     source: SourceFidelity,
-    scope: &str,
+    keyed: Keyed<'_>,
     decode_digest: Sha256Digest,
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
     annotations
-        .map_ids(|id| Ok(rescope(id, scope).unwrap_or_else(|| id.to_owned())))?
+        .map_ids(|id| Ok(keyed.rescope(id).unwrap_or_else(|| id.to_owned())))?
         .map_err(CodecError::from)?;
-    // A stream name keeps the file it belongs to: the scope goes in after the
-    // codec prefix, once for each level, so `alibre:SAB_DATA` of a component
-    // reads `alibre:xref/m0/SAB_DATA`, and one level further in
-    // `alibre:xref/m1/xref/m0/SAB_DATA`.
-    let scoped_stream = |name: &str| format!("{FORMAT}:xref/{scope}/{}", unprefixed(name));
+    // A stream name keeps the file it belongs to: `alibre:SAB_DATA` of the
+    // component keyed `m0` reads `alibre:m0@SAB_DATA`, and of a file that
+    // the component keyed `m1` places, `alibre:m1/m0@SAB_DATA`.
+    let scoped_stream = |name: &str| keyed.stream(name);
     let provenance = std::mem::take(&mut annotations.provenance);
     let mut builder = AnnotationBuilder::resume(annotations);
     for (id, provenance) in provenance {
@@ -107,7 +154,7 @@ fn rescope_fidelity(
     }
     let mut rescoped = SourceFidelity::with_annotations(builder.build(), decode_digest);
     for (id, record) in records {
-        let scoped = rescope(id.as_str(), scope).unwrap_or_else(|| id.to_string());
+        let scoped = keyed.rescope(id.as_str()).unwrap_or_else(|| id.to_string());
         let id = UnknownId::mint(scoped).map_err(|error| {
             CodecError::malformed(format_args!("Alibre retained record {id}: {error}"))
         })?;
@@ -142,7 +189,7 @@ pub(crate) fn merge_component(
     parent: &mut CadIr,
     fidelity: &mut SourceFidelity,
     child: cadmpeg_ir::codec::Decoded,
-    scope: &str,
+    key: &str,
     document: ExternalDocument,
 ) -> Result<Merged, CodecError> {
     let cadmpeg_ir::codec::Decoded {
@@ -169,7 +216,12 @@ pub(crate) fn merge_component(
     if root.kind.is_none() {
         root.kind = Some(ProductDefinitionKind::Part);
     }
-    let mut rewrite = Scope { ctx, scope };
+    let root_id = definition.as_str().to_owned();
+    let keyed = Keyed {
+        key,
+        root: Some(&root_id),
+    };
+    let mut rewrite = Scope { ctx, keyed };
     parent
         .geometry
         .extend_rewritten(child_ir.geometry, &mut rewrite)?;
@@ -182,13 +234,13 @@ pub(crate) fn merge_component(
             let arena = target.arenas_mut().entry(name).or_default();
             for record in &records {
                 ctx.charge_entities(1, "merge Alibre component native record")?;
-                arena.push(rescope_record(record, scope)?);
+                arena.push(rescope_record(record, keyed)?);
             }
         }
     }
     let decode_digest = fidelity.decode_digest.clone();
-    fidelity.append(rescope_fidelity(source_fidelity, scope, decode_digest)?)?;
-    let definition = rescope(definition.as_str(), scope).ok_or_else(|| {
+    fidelity.append(rescope_fidelity(source_fidelity, keyed, decode_digest)?)?;
+    let definition = keyed.rescope(definition.as_str()).ok_or_else(|| {
         CodecError::malformed("an Alibre root definition is not an Alibre identity")
     })?;
     Ok(Merged {
@@ -203,26 +255,63 @@ pub(crate) fn merge_component(
 
 #[cfg(test)]
 mod tests {
-    use super::{rescope, unprefixed};
+    use super::Keyed;
 
-    #[test]
-    fn a_stream_name_takes_each_scope_after_the_codec_prefix_once() {
-        assert_eq!(unprefixed("alibre:SAB_DATA"), "SAB_DATA");
-        assert_eq!(unprefixed("alibre:xref/m0/SAB_DATA"), "xref/m0/SAB_DATA");
-        assert_eq!(unprefixed("SAB_DATA"), "SAB_DATA");
+    const ROOT: &str = "alibre:model:product-definition#root";
+
+    fn keyed(key: &str) -> Keyed<'_> {
+        Keyed {
+            key,
+            root: Some(ROOT),
+        }
     }
 
     #[test]
-    fn only_alibre_identities_move_into_a_scope() {
+    fn a_record_of_a_component_takes_its_key_at_the_head_of_its_scope() {
         assert_eq!(
-            rescope("alibre:brep:entity#0", "m0").as_deref(),
-            Some("alibre:xref/m0/brep:entity#0")
+            keyed("m0").rescope("alibre:brep:entity#0").as_deref(),
+            Some("alibre:m0@brep:entity#0")
+        );
+        assert_eq!(keyed("m0").stream("alibre:SAB_DATA"), "alibre:m0@SAB_DATA");
+        assert_eq!(keyed("m0").stream("SAB_DATA"), "alibre:m0@SAB_DATA");
+    }
+
+    #[test]
+    fn the_root_definition_becomes_the_file_definition_of_its_key() {
+        assert_eq!(
+            keyed("m1").rescope(ROOT).as_deref(),
+            Some("alibre:xref:product-definition#m1")
+        );
+    }
+
+    #[test]
+    fn a_file_that_a_subassembly_places_is_keyed_below_it() {
+        // In the subassembly's own decode, the file it places is `m0`.
+        assert_eq!(
+            keyed("m1").rescope("alibre:m0@brep:entity#0").as_deref(),
+            Some("alibre:m1/m0@brep:entity#0")
         );
         assert_eq!(
-            rescope("alibre:xref/m0/brep:entity#0", "m1").as_deref(),
-            Some("alibre:xref/m1/xref/m0/brep:entity#0")
+            keyed("m1")
+                .rescope("alibre:xref:product-definition#m0")
+                .as_deref(),
+            Some("alibre:m1@xref:product-definition#m1/m0")
         );
-        assert_eq!(rescope("alibrex:brep#0", "m0"), None);
-        assert_eq!(rescope("acis:save-format", "m0"), None);
+        assert_eq!(
+            keyed("m2")
+                .rescope("alibre:m1@xref:product-definition#m1/m0")
+                .as_deref(),
+            Some("alibre:m2/m1@xref:product-definition#m2/m1/m0")
+        );
+        assert_eq!(
+            keyed("m1").stream("alibre:m0@SAB_DATA"),
+            "alibre:m1/m0@SAB_DATA"
+        );
+    }
+
+    #[test]
+    fn only_alibre_identities_move() {
+        assert_eq!(keyed("m0").rescope("alibrex:brep#0"), None);
+        assert_eq!(keyed("m0").rescope("acis:save-format"), None);
     }
 }
