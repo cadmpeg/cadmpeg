@@ -133,7 +133,7 @@ fn widen_measuring(
             continue;
         };
         if inserted {
-            annotations.copy_entity(&delta.source, key.clone());
+            annotations.copy_annotations(&delta.source, key.clone());
         }
         written.push((key, delta.increase));
     }
@@ -375,7 +375,7 @@ fn write_into_delta(ir: &mut CadIr, holder: &str, vertex: Vertex) -> Option<(Ann
         .binary_search_by(|evaluation| evaluation.id.as_str().cmp(holder))
     {
         let evaluation = &mut ir.design.evaluations[at];
-        let key = AnnotationKey::in_delta(&evaluation.id, vertex.id.as_str());
+        let key = AnnotationKey::in_delta(&evaluation.id, &vertex.id);
         (key, &mut evaluation.content.as_mut()?.delta)
     } else {
         let states = &mut ir.process.states;
@@ -383,7 +383,7 @@ fn write_into_delta(ir: &mut CadIr, holder: &str, vertex: Vertex) -> Option<(Ann
             .binary_search_by(|state| state.id.as_str().cmp(holder))
             .ok()?;
         let state = &mut states[at];
-        let key = AnnotationKey::in_delta(&state.id, vertex.id.as_str());
+        let key = AnnotationKey::in_delta(&state.id, &vertex.id);
         (key, &mut state.content.as_mut()?.delta)
     };
     let vertices = &mut delta.records.vertices;
