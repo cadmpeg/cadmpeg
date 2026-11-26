@@ -232,6 +232,13 @@ literal computation. A numeric quantity with a supported explicit `units`
 string uses that unit. A feature dependency identifies a consumed earlier
 feature in source operand order. Feature ordinals give timeline order.
 
+A `shell` feature stores `entities`, the faces to remove, as deterministic
+IDs in the consuming rollback state, `thickness` as a quantity, and
+`oppositeDirection` as a Boolean. `isHollow` and `parts` select the hollow
+form, which has no removed faces. A `false` `oppositeDirection` places the
+wall inside the original boundary: the outer extents of the shelled body equal
+those of the input body, and the removed face leaves an opening.
+
 ## 5. Admission bounds
 
 | Resource | Bound |
