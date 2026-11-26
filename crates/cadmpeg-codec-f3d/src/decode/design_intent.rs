@@ -374,7 +374,7 @@ fn extend_design_assets(
 }
 
 /// Part kind of an ASM history partition whose states do not read.
-const HISTORY_PART: &str = "asm-history";
+pub(super) const HISTORY_PART: &str = "asm-history";
 
 /// The history of one BREP stream. A history whose states do not read is
 /// given up over its partition, from its start to the end of the stream,

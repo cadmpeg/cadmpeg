@@ -385,14 +385,30 @@ impl<'a> ContainerScan<'a> {
         name: &str,
         error: CodecError,
     ) -> Result<Option<GivenUpPart>, CodecError> {
-        if !self.has_entry(name) {
-            return Ok(None);
-        }
         let classes = self
             .entries
             .iter()
             .find(|entry| entry.name == name)
             .map_or(&ArenaClass::ALL[..], |entry| held_classes(entry.role));
+        self.give_up_entry_holding(ctx, name, classes, error)
+    }
+
+    /// [`Self::give_up_entry`] for a part holding content of the classes in
+    /// `holds`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::give_up_entry`].
+    pub(crate) fn give_up_entry_holding(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+        holds: &[ArenaClass],
+        error: CodecError,
+    ) -> Result<Option<GivenUpPart>, CodecError> {
+        if !self.has_entry(name) {
+            return Ok(None);
+        }
         let stored = self
             .stored_ranges
             .get(name)
@@ -404,7 +420,7 @@ impl<'a> ContainerScan<'a> {
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("F3D entry {name} has no stored span"))
             })?;
-        let mut part = Part::new("f3d", ENTRY_PART, stored, classes.iter().copied())
+        let mut part = Part::new("f3d", ENTRY_PART, stored, holds.iter().copied())
             .named(name)
             .digest_only();
         if let Some(stream) = &self.stream {

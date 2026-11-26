@@ -3680,6 +3680,7 @@ impl<'a> F3dDecodeSession<'a> {
             .push(F3dLossCode::DesignIntentUndecoded.note(format!(
                 "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
             )));
+        self.give_up_design_sources(&failure)?;
         self.native
             .design_intent_failures
             .push(design_intent::DesignIntentFailure {
@@ -3688,6 +3689,49 @@ impl<'a> F3dDecodeSession<'a> {
             });
         self.note_undecoded_design()?;
         Ok(DesignState::Absent)
+    }
+
+    /// Gives up the sources phase 2 reads after it failed with `failure`:
+    /// each Design stream and Design configuration entry as an archive
+    /// entry, and the history partition of each history BREP whose
+    /// solved-record boundary frames one, each holding Design content.
+    fn give_up_design_sources(&mut self, failure: &str) -> Result<(), CodecError> {
+        let error = || CodecError::malformed(format!("design intent was not decoded: {failure}"));
+        let scan = self.scan;
+        for entry in &scan.entries {
+            if scan.is_design_stream(entry, ContainerRole::Bulkstream)
+                || scan.is_design_asset_entry(entry, ContainerRole::DesignConfig)
+            {
+                self.given_up.extend(scan.give_up_entry_holding(
+                    self.ctx,
+                    &entry.name,
+                    &[ArenaClass::Design],
+                    error(),
+                )?);
+            }
+        }
+        for brep in container::history_breps(scan) {
+            let Some(limit) = brep
+                .kernel
+                .as_ref()
+                .and_then(crate::container::KernelFraming::solved_record_limit)
+            else {
+                continue;
+            };
+            let bytes = scan.entry_bytes(&brep.name)?;
+            if bytes.get(limit..) == Some(EMPTY_HISTORY_TAIL.as_slice()) {
+                continue;
+            }
+            self.given_up.push(scan.give_up_entry_span(
+                self.ctx,
+                &brep.name,
+                design_intent::HISTORY_PART,
+                limit..bytes.len(),
+                [ArenaClass::Design],
+                error(),
+            )?);
+        }
+        Ok(())
     }
 
     fn note_undecoded_design(&mut self) -> Result<(), CodecError> {
@@ -6143,6 +6187,9 @@ fn source_has_design_records(scan: &ContainerScan<'_>) -> Result<bool, CodecErro
     }) || source_has_history_records(scan)?)
 }
 
+/// The bare EOF delta-state identifier: an empty history partition.
+const EMPTY_HISTORY_TAIL: &[u8; 13] = b"\x0d\x0bdelta_state";
+
 /// A bare EOF delta-state identifier is an empty partition boundary, not a
 /// historical record. Every other declared history tail remains conservative.
 fn source_has_history_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
@@ -6155,7 +6202,7 @@ fn source_has_history_records(scan: &ContainerScan<'_>) -> Result<bool, CodecErr
             return Ok(true);
         };
         let bytes = scan.entry_bytes(&brep.name)?;
-        if bytes.get(limit..) != Some(b"\x0d\x0bdelta_state".as_slice()) {
+        if bytes.get(limit..) != Some(EMPTY_HISTORY_TAIL.as_slice()) {
             return Ok(true);
         }
     }
