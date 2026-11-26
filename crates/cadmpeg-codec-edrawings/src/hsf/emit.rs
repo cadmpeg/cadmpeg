@@ -26,7 +26,7 @@ use cadmpeg_ir::products::{
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::unknown::part::{dropped_with, GivenUpPart, GivenUpRecord};
+use cadmpeg_ir::unknown::part::{dropped_with, Cause, GivenUpPart, GivenUpRecord};
 
 use super::scene::{Component, Scene};
 use super::shape::{append_shell, MeshData, MILLIMETRES_PER_METRE};
@@ -389,9 +389,6 @@ pub(super) fn emit(
     let mut shell_failure_count = 0_usize;
     let mut shell_parts: BTreeMap<u32, Option<UnknownId>> = BTreeMap::new();
     let shell_code = EdrawingsLossCode::ModelShellInvalid.kind();
-    let mut failed_bodies: Vec<String> = Vec::new();
-    let mut body_charges: Vec<LossNote> = Vec::new();
-    let body_code = EdrawingsLossCode::GeometryBodyFailed.kind();
     let mut admitted = u64_from_index(ir.entity_count());
     let options = MeshBrepOptions::default();
     let lone_set = matches!(sets.sets.as_slice(), [set] if set.len() == 1);
@@ -417,7 +414,6 @@ pub(super) fn emit(
                 (MAX_POSITIONS, MAX_TRIANGLES),
                 &mut mesh,
             ) {
-                shell_failure_count += 1;
                 if let btree_map::Entry::Vacant(entry) = shell_parts.entry(slot) {
                     let part = match scene.objects.get(&slot) {
                         Some(stored) => {
@@ -426,6 +422,7 @@ pub(super) fn emit(
                                 scene,
                                 super::OBJECT_PART,
                                 stored.span,
+                                error.cause(),
                                 CodecError::malformed(format_args!(
                                     "{shell_code}: {}",
                                     error.text()
@@ -439,11 +436,15 @@ pub(super) fn emit(
                     };
                     entry.insert(part);
                 }
-                if failed_shell.is_none() {
-                    failed_shell = shell_parts.get(&slot).cloned().flatten();
+                let part = shell_parts.get(&slot).cloned().flatten();
+                if part.is_none() {
+                    shell_failure_count += 1;
+                    if shell_failures.len() < MAX_LISTED {
+                        shell_failures.push(format!("object {slot} of {name}: {}", error.text()));
+                    }
                 }
-                if shell_failures.len() < MAX_LISTED {
-                    shell_failures.push(format!("object {slot} of {name}: {}", error.text()));
+                if failed_shell.is_none() {
+                    failed_shell = part;
                 }
             }
         }
@@ -488,11 +489,15 @@ pub(super) fn emit(
                 built.push(Some(Built { id: summary.body }));
             }
             Err(error) => {
-                failed_bodies.push(format!("{name} ({error})"));
                 let body = body_id(scope);
-                body_charges.push(match (&error, &failed_shell) {
+                losses.push(match (&error, &failed_shell) {
                     (MeshBrepError::Empty, Some(shell)) => dropped_with(&body, shell),
-                    _ => GivenUpRecord::new(&body, format_args!("{body_code}: {error}")).loss(),
+                    _ => GivenUpRecord::new(
+                        &body,
+                        error.cause(),
+                        format_args!("body {name} could not be built: {error}"),
+                    )
+                    .loss(),
                 });
                 built.push(None);
             }
@@ -506,43 +511,25 @@ pub(super) fn emit(
 
     if shell_failure_count > 0 {
         losses.push(EdrawingsLossCode::ModelShellInvalid.note(format!(
-            "{shell_failure_count} shells were left out of their bodies: {}",
+            "{shell_failure_count} shells that the store does not hold were left out of their \
+             bodies: {}",
             lead(&shell_failures)
         )));
     }
-    if !failed_bodies.is_empty() {
-        losses.push(EdrawingsLossCode::GeometryBodyFailed.note(format!(
-            "{} bodies could not be built and were left out: {}",
-            failed_bodies.len(),
-            lead(&failed_bodies)
-        )));
-        losses.append(&mut body_charges);
-    }
-    if !sets.unresolved.is_empty() {
-        let names: Vec<String> = sets
-            .unresolved
-            .iter()
-            .map(|&index| display_name(scene, index))
-            .collect();
-        losses.push(EdrawingsLossCode::ModelObjectInvalid.note(format!(
-            "{} instances name no library body and were left out: {}",
-            names.len(),
-            lead(&names)
-        )));
-        let code = EdrawingsLossCode::ModelObjectInvalid.kind();
-        for node in sets
-            .unresolved
-            .iter()
-            .filter_map(|&index| scene.nodes.get(index))
-        {
-            given_up.push(super::give_up_span(
-                ctx,
-                scene,
-                super::NODE_PART,
-                node.span,
-                CodecError::malformed(format_args!("{code}: the instance names no library body")),
-            )?);
-        }
+    let code = EdrawingsLossCode::ModelObjectInvalid.kind();
+    for node in sets
+        .unresolved
+        .iter()
+        .filter_map(|&index| scene.nodes.get(index))
+    {
+        given_up.push(super::give_up_span(
+            ctx,
+            scene,
+            super::NODE_PART,
+            node.span,
+            Cause::Unreadable,
+            CodecError::malformed(format_args!("{code}: the instance names no library body")),
+        )?);
     }
     if sets.dangling > 0 {
         losses.push(EdrawingsLossCode::ModelObjectInvalid.note(format!(

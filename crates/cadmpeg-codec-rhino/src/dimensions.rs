@@ -229,7 +229,7 @@ fn anonymous(
     }
     let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if reader.i32()? != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             chunk.body().start,
             "unsupported dimension chunk major version",
         ));
@@ -404,7 +404,7 @@ pub(crate) fn legacy_annotation_direct(
 ) -> Result<LegacyAnnotation, FramingError> {
     let version = reader.u8()?;
     if version >> 4 != 1 || version & 0x0f != 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position() - 1,
             "unsupported direct legacy annotation version",
         ));
@@ -587,7 +587,7 @@ pub(crate) fn v2_annotation_direct(
 ) -> Result<V2Annotation, FramingError> {
     let version_offset = reader.position();
     if reader.u8()? >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             version_offset,
             "unsupported direct V2 annotation version",
         ));
@@ -688,7 +688,7 @@ fn decode_legacy(
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let version = reader.u8()?;
         if version >> 4 != 1 || version & 0x0f != 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 range.start,
                 "unsupported direct legacy dimension version",
             ));
@@ -1027,7 +1027,7 @@ fn decode_v2(
             angle.get(),
         )
     } else {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "unsupported V2 dimension class",
         ));
@@ -1244,7 +1244,7 @@ pub(crate) fn decode(
             })?;
         Definition::CenterMark { radius }
     } else {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "unsupported dimension class",
         ));

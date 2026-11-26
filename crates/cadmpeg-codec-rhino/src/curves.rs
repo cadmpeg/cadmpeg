@@ -195,10 +195,25 @@ impl GeometryError {
         Self::Malformed(FramingError::unpositioned(message))
     }
 
+    /// A payload the decoder has no reading for, or a count above a decoder
+    /// cap, that ends the decode of its record.
+    pub(crate) fn undecoded(offset: usize, message: impl Into<String>) -> Self {
+        Self::Malformed(FramingError::unsupported(offset, message))
+    }
+
     pub(crate) fn unsupported(offset: usize, message: impl Into<String>) -> Self {
         Self::UnsupportedVersion {
             offset,
             message: message.into(),
+        }
+    }
+
+    /// The cause of a give-up that this error ends.
+    pub(crate) const fn cause(&self) -> cadmpeg_ir::unknown::part::Cause {
+        match self {
+            Self::UnsupportedVersion { .. } => cadmpeg_ir::unknown::part::Cause::Undecoded,
+            Self::Malformed(error) => error.cause(),
+            Self::Codec(error) => cadmpeg_ir::unknown::part::Cause::Unreadable.of(error),
         }
     }
 }
@@ -452,7 +467,7 @@ pub(crate) fn decode_inner(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             range.start,
             "curve recursion limit exceeded",
         ));
@@ -553,7 +568,7 @@ pub(crate) fn decode_embedded_curve(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             reader.position(),
             "curve recursion limit exceeded",
         ));
@@ -612,7 +627,7 @@ pub(crate) fn decode_embedded_curve_2d(
     depth: usize,
 ) -> Result<DecodedCurve, GeometryError> {
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             reader.position(),
             "plane-space curve recursion limit exceeded",
         ));
@@ -733,7 +748,7 @@ fn scale_decoded_curve(
                 ));
             }
             _ => {
-                return Err(GeometryError::malformed(
+                return Err(GeometryError::undecoded(
                     offset,
                     "unsupported plane-space analytic curve",
                 ));
@@ -1583,7 +1598,7 @@ pub(crate) fn decode_inner_2d(
 ) -> Result<DecodedGeometry, GeometryError> {
     let _depth_guard = ctx.enter_nested("Rhino C2 curve tree")?;
     if depth > MAX_CURVE_DEPTH {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             range.start,
             "C2 curve recursion limit exceeded",
         ));

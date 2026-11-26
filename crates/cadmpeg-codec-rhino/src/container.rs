@@ -15,7 +15,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::chunks::{
@@ -211,17 +211,18 @@ pub(crate) const VIEW_RECORD_PART: &str = "view-record";
 /// The part a record of the V1 flat stream is (`rhino_3dm.md` §21).
 pub(crate) const V1_RECORD_PART: &str = "v1-record";
 
-/// Gives up the framed record of `kind` at `range` of `data` for the codec
-/// loss `why`. A retained source record keeps the same bytes, so the part
-/// keeps only their digest. The part links to `holder`, the document record
-/// that contains it, when there is one.
+/// Gives up the framed record of `kind` at `range` of `data` for `cause`,
+/// with the text `error`. A retained source record keeps the same bytes, so
+/// the part keeps only their digest. The part links to `holder`, the
+/// document record that contains it, when there is one.
 pub(crate) fn give_up_retained(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     kind: &'static str,
     range: std::ops::Range<usize>,
     holder: Option<UnknownId>,
-    why: &LossNote,
+    cause: Cause,
+    error: impl std::fmt::Display,
 ) -> Result<GivenUpPart, CodecError> {
     let mut part = Part::at(
         "rhino",
@@ -234,21 +235,19 @@ pub(crate) fn give_up_retained(
     if let Some(holder) = holder {
         part = part.contained_in(cadmpeg_ir::ids::Identity::from(holder));
     }
-    ctx.give_up_part(
-        part,
-        CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
-    )
+    ctx.give_up_part(part, cause, CodecError::malformed(error))
 }
 
 /// Gives up the framed object record at `source_order`, spanning `range`,
-/// for the codec loss `why`. Its object record in the document keeps its
-/// bytes and contains the part.
+/// for `cause`, with the text `error`. Its object record in the document
+/// keeps its bytes and contains the part.
 pub(crate) fn give_up_object_record(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     source_order: usize,
     range: std::ops::Range<usize>,
-    why: &LossNote,
+    cause: Cause,
+    error: impl std::fmt::Display,
 ) -> Result<GivenUpPart, CodecError> {
     give_up_retained(
         ctx,
@@ -256,17 +255,19 @@ pub(crate) fn give_up_object_record(
         OBJECT_RECORD_PART,
         range,
         Some(object_record_id(source_order)),
-        why,
+        cause,
+        error,
     )
 }
 
-/// Gives up the framed table record `record` for the codec loss `why`. Its
-/// opaque record in the source fidelity keeps its bytes.
+/// Gives up the framed table record `record` for `cause`, with the text
+/// `error`. Its opaque record in the source fidelity keeps its bytes.
 pub(crate) fn give_up_table_record(
     ctx: &DecodeContext<'_>,
     data: &[u8],
     record: &Record,
-    why: &LossNote,
+    cause: Cause,
+    error: impl std::fmt::Display,
 ) -> Result<GivenUpPart, CodecError> {
     give_up_retained(
         ctx,
@@ -274,7 +275,8 @@ pub(crate) fn give_up_table_record(
         TABLE_RECORD_PART,
         record.range.clone(),
         None,
-        why,
+        cause,
+        error,
     )
 }
 
@@ -811,7 +813,7 @@ fn compressed_preview_buffer_child(
         1 => Ok(Some(take_anonymous_checksum_child(
             data, reader, archive, label,
         )?)),
-        method => Err(FramingError::structural(
+        method => Err(FramingError::unsupported(
             method_offset,
             format!("{label} has unsupported compression method {method}"),
         )),
@@ -1310,12 +1312,7 @@ fn scan_with_record_limit<'a>(
                     Err(FramingError::Resource(limit)) => {
                         return Err(CodecError::ResourceLimit(limit))
                     }
-                    Err(error) => {
-                        warnings.push(format_args!(
-                            "bounded object record at {child_offset} is malformed: {error}"
-                        ));
-                        degraded_object_record(&record, &error)
-                    }
+                    Err(error) => degraded_object_record(&record, &error),
                 };
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
                 count_object_typecode(&mut object_typecodes, typecode);

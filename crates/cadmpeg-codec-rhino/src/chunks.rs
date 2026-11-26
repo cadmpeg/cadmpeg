@@ -132,6 +132,9 @@ pub(crate) enum FramingError {
     InvalidLength { offset: usize, value: i128 },
     /// A structural framing rule was violated.
     Structural { offset: usize, message: String },
+    /// A framed payload has a version or a form the decoder has no reading
+    /// for, or a count above a decoder cap.
+    Unsupported { offset: usize, message: String },
     /// A structural rule was violated by a derived or already-decoded value
     /// that has no byte position of its own.
     Unpositioned { message: String },
@@ -166,9 +169,26 @@ impl FramingError {
         }
     }
 
+    pub(crate) fn unsupported(offset: usize, message: impl Into<String>) -> Self {
+        Self::Unsupported {
+            offset,
+            message: message.into(),
+        }
+    }
+
     pub(crate) fn unpositioned(message: impl Into<String>) -> Self {
         Self::Unpositioned {
             message: message.into(),
+        }
+    }
+
+    /// The cause of a give-up that this error ends.
+    pub(crate) const fn cause(&self) -> cadmpeg_ir::unknown::part::Cause {
+        match self {
+            Self::Resource(_) | Self::Unsupported { .. } => {
+                cadmpeg_ir::unknown::part::Cause::Undecoded
+            }
+            _ => cadmpeg_ir::unknown::part::Cause::Unreadable,
         }
     }
 }
@@ -183,7 +203,7 @@ impl fmt::Display for FramingError {
             Self::InvalidLength { offset, value } => {
                 write!(f, "invalid length {value} at {offset}")
             }
-            Self::Structural { offset, message } => {
+            Self::Structural { offset, message } | Self::Unsupported { offset, message } => {
                 write!(f, "framing error at {offset}: {message}")
             }
             Self::Unpositioned { message } => write!(f, "framing error: {message}"),

@@ -229,7 +229,7 @@ fn annotation_settings(
     let packed = reader.u8()?;
     let minor = packed & 0x0f;
     if packed >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "annotation-settings version is unsupported",
         ));
@@ -287,7 +287,7 @@ fn grid_defaults(
 ) -> Result<GridDefaultsRecord, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
     if reader.u8()? >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "grid-default version is unsupported",
         ));
@@ -327,7 +327,7 @@ fn render_settings(
         let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let (major, minor) = (reader.i32()?, reader.i32()?);
         if major != 1 || minor < 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position(),
                 "render-settings version is unsupported",
             ));
@@ -337,7 +337,7 @@ fn render_settings(
         let mut reader = BoundedReader::new(data, body.start, body.end)?;
         let version = reader.i32()?;
         if !(100..200).contains(&version) {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position(),
                 "legacy render-settings version is unsupported",
             ));

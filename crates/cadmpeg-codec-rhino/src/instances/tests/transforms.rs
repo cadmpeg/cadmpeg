@@ -70,7 +70,7 @@ fn extreme_finite_instance_transforms_keep_native_occurrences_and_geometry() {
             .unwrap();
         assert!(
             !decoded.report().losses.iter().any(|loss| [
-                RhinoLossCode::ProductOccurrenceDropped.kind(),
+                cadmpeg_ir::unknown::part::record_unreadable_kind(),
                 RhinoLossCode::IntegrityFailure.kind()
             ]
             .contains(&loss.code)),
@@ -125,7 +125,7 @@ fn invalid_instance_inverse_is_located_and_later_reference_survives() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == RhinoLossCode::ProductOccurrenceDropped.kind())
+            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
             .collect();
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].provenance.as_ref().unwrap().offset, offset);
@@ -179,7 +179,7 @@ fn source_instance_world_placement_is_applied_once() {
             .unwrap();
         assert!(!decoded.report().losses.iter().any(|loss| [
             RhinoLossCode::IntegrityFailure.kind(),
-            RhinoLossCode::ProductOccurrenceDropped.kind()
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
         ]
         .contains(&loss.code)));
         let reread = CadIr::from_json(&json::to_string(decoded.ir()).unwrap()).unwrap();

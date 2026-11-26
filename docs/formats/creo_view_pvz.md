@@ -188,7 +188,7 @@ A placement maps the child definition coordinate system into the parent definiti
 
 The definitions and child occurrences form a directed acyclic graph. Exactly one definition is not the target of a child occurrence; it is the root. Several occurrences can target one definition, which then has several instances. A world transform of an occurrence path is the product of the placements from the root to the leaf.
 
-The number of occurrence paths can grow exponentially with the depth of the graph. When the decoder reaches its occurrence limit, it gives up the occurrence at which it stops. The loss lists as dropped each other occurrence that the walk reaches and does not place.
+The number of occurrence paths can grow exponentially with the depth of the graph. When the decoder reaches its occurrence limit, it gives up the occurrence at which it stops (§9). The loss lists as dropped each other occurrence that the walk reaches and does not place.
 
 When the package carries illustrations, the root is a definition of type `0x01` (§3.12), and one of its child occurrences places the top model definition.
 
@@ -294,7 +294,7 @@ Tag values are local to a stream identity: one tag value has different meanings 
 
 The attribute stream is always present. The other streams are optional. A member carries at most one exact-geometry stream.
 
-A member that carries more than one exact-geometry stream does not decode to exact geometry. The decoder gives up each of its exact-geometry streams as an `ol-stream` part, and the member keeps its tessellation.
+A member that carries more than one exact-geometry stream does not decode to exact geometry. The decoder gives up each of its exact-geometry streams as an `ol-stream` part with `record.undecoded` (§9), and the member keeps its tessellation.
 
 The first record of every stream has tag `0x01000002` and a 4-byte payload. Its `u32` value is the stream index: the low byte of `stream_id` (0 to 4). In the exact-geometry stream this value is the exact version, 3 or 4 (§8.1).
 
@@ -706,3 +706,18 @@ The stream stores no face side. In an oriented shell the two coedges of a shared
 ### 8.21 Units and tolerances
 
 Lengths in OL members and in PVS placements and bounds are in metres. Angles are in radians. The member stores no tolerance value, so the stream states no tolerance for the equalities of §8.13, §8.17, and §8.20. Exact version 3 stores `f32` scalars, so its geometry carries `f32` rounding.
+
+## 9. Given-up units and strict floors
+
+The decoder gives up a unit that it does not transfer with one loss. The loss is `record.undecoded` when the unit holds a form, a version, or a value above a decoder bound that the decoder has no reading for, and `record.unreadable` when the bytes of the unit break the format. A resource refusal scoped to one unit is `record.undecoded`. Only `record.unreadable` refuses a pinned decode.
+
+| Unit | `record.undecoded` | `record.unreadable` |
+| ---- | ------------------ | ------------------- |
+| Structure member, an `archive-entry` part | An encrypted member, a compression method other than 0 or 8 (§1), an element descriptor outside §3.4, or a stream codec other than 1 (§3.3). | Any other structure member that does not decode. |
+| Property stream, a `pvs-stream` part | An element descriptor outside §3.4, or a stream codec other than 1 (§3.3). | Any other property stream that does not decode. |
+| Geometry member, an `archive-entry` part | An encrypted member, a compression method other than 0 or 8 (§1), a signature outside §4.1, or a header `version` other than 1. | Any other geometry member that does not open or decode. |
+| Geometry stream, an `ol-stream` part | A vertex block `layout` with a bit outside §6.3, a loop `marker` below 0 other than −2 (§8.11), a B-spline degree above 20, or a member with more than one exact-geometry stream (§4.5). | Any other stream that does not decode. |
+| Child occurrence | An occurrence at the occurrence limit or past the recursion depth limit (§3.11). | An occurrence that closes a definition cycle (§3.11). |
+| Tessellation | | A mesh with a position or a normal that is not finite, or with a triangle index outside its vertices. |
+
+`pvz/container.directory-recovered` carries strict floor Warning (CADIR §3.2): the decoder reads the members from their local headers when the ZIP central directory does not read. No other PVZ code carries a strict floor.

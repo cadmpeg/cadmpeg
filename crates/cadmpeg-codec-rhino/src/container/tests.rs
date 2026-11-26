@@ -1209,28 +1209,29 @@ fn optional_properties_tables_do_not_control_independent_objects() {
     }
 }
 
-/// Asserts that `losses` holds one `record.unreadable` for the given-up part
-/// of `kind` at `offset`, that `ir` holds its `unknowns` stub linked to the
-/// document record `link` (or to no record), and that `fidelity` keeps only
-/// the digest of the part, whose bytes the retained record `keeper` keeps.
-pub(crate) fn assert_part_given_up(
+/// Asserts that `losses` holds one give-up loss, for `cause`, of the given-up
+/// part of `kind` at `offset`, and returns it. Asserts also that `ir` holds
+/// its `unknowns` stub linked to the document record `link` (or to no
+/// record), and that `fidelity` keeps only the digest of the part, whose
+/// bytes the retained record `keeper` keeps.
+pub(crate) fn assert_part_given_up<'a>(
     ir: &cadmpeg_ir::document::CadIr,
     fidelity: &cadmpeg_ir::SourceFidelity,
-    losses: &[cadmpeg_ir::report::loss::LossNote],
-    kind: &str,
-    offset: usize,
+    losses: &'a [cadmpeg_ir::report::loss::LossNote],
+    (kind, offset): (&str, usize),
     link: Option<&str>,
     keeper: &str,
-) {
+    cause: cadmpeg_ir::unknown::part::Cause,
+) -> &'a cadmpeg_ir::report::loss::LossNote {
     let head = format!("part {kind} stream=\"\" offset={offset} ");
     let charges = losses
         .iter()
         .filter(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message.starts_with(&head)
+            cadmpeg_ir::unknown::part::gives_up(&loss.code) && loss.message.starts_with(&head)
         })
         .collect::<Vec<_>>();
     assert_eq!(charges.len(), 1, "{losses:?}");
+    assert_eq!(charges[0].code, cause.kind(), "{losses:?}");
     let stub = charges[0]
         .message
         .split_once(" record=")
@@ -1257,4 +1258,5 @@ pub(crate) fn assert_part_given_up(
     );
     assert!(retained.data().is_none());
     assert!(fidelity.retained_record(keeper).is_some());
+    charges[0]
 }

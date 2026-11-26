@@ -590,7 +590,7 @@ fn parse_mesh_correspondence_userdata(
             )
         })?;
         if count > MAX_MESH_FACE_SOURCE_IDS {
-            return Err(error(
+            return Err(GeometryError::undecoded(
                 count_offset,
                 "mesh correspondence face-source count exceeds cap",
             ));
@@ -1317,7 +1317,7 @@ fn read_v5_double_vertices(
     let major = reader.i32()?;
     let _minor = reader.i32()?;
     if major != 1 {
-        return Err(error(
+        return Err(GeometryError::undecoded(
             reader.position() - 8,
             "unsupported V5 mesh double-precision userdata version",
         ));
@@ -1404,7 +1404,9 @@ fn read_v4v5_ngon_userdata(
     let count = usize::try_from(raw_count)
         .ok()
         .filter(|count| *count <= MAX_MESH_NGONS)
-        .ok_or_else(|| error(reader.position() - 4, "mesh n-gon count exceeds cap"))?;
+        .ok_or_else(|| {
+            GeometryError::undecoded(reader.position() - 4, "mesh n-gon count exceeds cap")
+        })?;
 
     let mesh_face_count = i32::try_from(face_count)
         .map_err(|_| error(reader.position(), "mesh face count exceeds i32"))?;
@@ -1602,7 +1604,10 @@ fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, Geom
     let value = usize::try_from(reader.u32()?)
         .map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?;
     if value > cap {
-        return Err(error(reader.position() - 4, "mesh count exceeds cap"));
+        return Err(GeometryError::undecoded(
+            reader.position() - 4,
+            "mesh count exceeds cap",
+        ));
     }
     Ok(value)
 }

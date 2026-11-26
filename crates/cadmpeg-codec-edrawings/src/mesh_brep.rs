@@ -64,6 +64,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, IdentityKey};
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::unknown::part::Cause;
 
 mod adjacency;
 mod emit;
@@ -215,6 +216,23 @@ impl std::fmt::Display for MeshBrepError {
 }
 
 impl std::error::Error for MeshBrepError {}
+
+impl MeshBrepError {
+    /// How the body is charged when it cannot be built.
+    pub(crate) const fn cause(&self) -> Cause {
+        match self {
+            Self::Empty
+            | Self::AllDegenerate
+            | Self::IndexOutOfRange { .. }
+            | Self::NonFinitePosition { .. } => Cause::Unreadable,
+            Self::TooLarge
+            | Self::CoordinateTooLarge
+            | Self::InvalidTolerance
+            | Self::Model(_)
+            | Self::Internal(_) => Cause::Undecoded,
+        }
+    }
+}
 
 impl From<MeshBrepError> for CodecError {
     fn from(error: MeshBrepError) -> Self {

@@ -182,7 +182,7 @@ fn anonymous(
     let major = reader.i32()?;
     let minor = reader.u32()?;
     if major != 1 || minor > i32::MAX.unsigned_abs() {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             chunk.body().start,
             "unsupported anonymous major version",
         ));
@@ -489,7 +489,7 @@ fn subd_edge_chain(
 ) -> Result<(SubdEdgeChain, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
     if minor < 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported SubD edge-chain version",
         ));
@@ -542,7 +542,7 @@ fn subd_edge_chains(
         archive,
     )?;
     if minor < 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             nested.position(),
             "unsupported SubD edge-chain list version",
         ));

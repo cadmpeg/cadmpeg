@@ -372,6 +372,11 @@ fn registered_future_table_major_is_retained_without_known_prefix() {
             table(archive, 0x1000_0013, &[valid_point]),
         ],
     );
+    let mut pinned = DecodeOptions::default();
+    pinned.strictness.pinned = true;
+    RhinoCodec
+        .decode(&mut Cursor::new(bytes.clone()), &pinned)
+        .expect("a pinned decode accepts an undecoded future-major table record");
     let result = decode(bytes);
 
     assert_eq!(result.ir().geometry.points.len(), 1);
@@ -387,7 +392,7 @@ fn registered_future_table_major_is_retained_without_known_prefix() {
         .expect("future-major table record is retained");
     assert_eq!(retained.data(), Some(future_group.as_slice()));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
             && loss.message.contains("could not be transferred")
     }));
     assert_valid(&result);

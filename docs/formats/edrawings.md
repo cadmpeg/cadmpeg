@@ -281,17 +281,29 @@ Body ids come from the scope `body<k>`, with k the order of first use. An occurr
 
 ### 4.1 Parts
 
-The decoder gives up these units of the package as parts. The part kind names the unit in a `record.unreadable` loss. The offset of a part in the model stream is an offset in the inflated stream, which the loss names `eModel`.
+The decoder gives up these units of the package as parts. The part kind names the unit in a `record.unreadable` or `record.undecoded` loss. The offset of a part in the model stream is an offset in the inflated stream, which the loss names `eModel`.
 
 | Part kind | Unit | Framing |
 | --- | --- | --- |
-| `archive-entry` | The `eModel` member, when its zlib stream does not open or its model stream breaks a record rule | The ZIP entry (§1.2) |
+| `archive-entry` | The `eModel` member, when its zlib stream does not open or the walk of its model stream stops | The ZIP entry (§1.2) |
 | `model-object` | One shell, shell instance, or text object record that the decoder does not transfer | The record (§3.6, §3.7, §3.9) |
 | `tree-node` | One instance node whose includes name no library body | The node segment, from its open record to its close record (§3.5) |
 
 The decoder gives up a `model-object` part for a shell or shell instance that does not decode, for the object of a shell slot outside every library body, and for each later object whose id an earlier object has. The object of a shell slot outside every library body is not given up when a shell instance names it as its source.
 
-A record that the decoder drops only because it needs a given-up record is not given up by itself. The loss of the given-up record lists it as dropped. A body whose shells all fail to decode is dropped with the first of those shells. An instance whose bodies were all not built is dropped with the first body of its body set.
+A record that the decoder drops only because it needs a given-up record is not given up by itself. The loss of the given-up record lists it as dropped. A body whose shells all fail to decode is dropped with the first of those shells. A body that does not build for another reason is given up as a record. An instance whose bodies were all not built is dropped with the first body of its body set.
+
+The cause of a give-up sets its code. The charge is the one loss of the given-up unit, and only `record.unreadable` refuses a pinned decode.
+
+| Cause | Code |
+| --- | --- |
+| The walk of the model stream stops at a form that the decoder has no reading for: an unknown opcode, `V` payload, shell variant, attribute mask, or line style table version. | `record.undecoded` |
+| A value is above a decoder bound: segment nesting above 256, an attribute mask longer than four words, a colour mask longer than four bytes, a shell vertex count above 16777216, a library body, tree node, display component, object slot, object, or text object count above its cap, or a shell instance id above 32 bits. | `record.undecoded` |
+| A shell mesh is above the mesh size caps, or a body has a coordinate too large for the weld grid or fails in the B-rep builder for a reason other than its triangles and points. | `record.undecoded` |
+| The zlib stream does not open, or a record of the model stream breaks its length rule or its fixed bytes. | `record.unreadable` |
+| A shell refers to an object that the store does not hold or that is not a shell, or its face list or strip indices are invalid. | `record.unreadable` |
+| A body mesh has no triangles, every triangle is degenerate, a triangle names a point that does not exist, or a point is not finite. | `record.unreadable` |
+| An object repeats an earlier id, a shell slot lies outside every library body, or an instance node names no library body. | `record.unreadable` |
 
 ## 5. Detection
 
@@ -303,17 +315,14 @@ Detection reads the byte prefix only. A prefix that starts with the ZIP local he
 | ---- | ------- |
 | `edrawings/source.dialect-unverified` | The stream version is none of `19.10`, `18.00`, and `19.00`. |
 | `edrawings/container.directory-recovered` | The ZIP central directory was unreadable. |
-| `edrawings/stream.malformed` | The zlib stream did not open. |
 | `edrawings/stream.trailing-bytes` | Bytes other than one zero byte follow the zlib stream. |
-| `edrawings/model.malformed` | A record rule of the model stream failed (severity Blocking). The message gives the byte offset. The package carries no model data. |
 | `edrawings/model.no-geometry` | The model stream has no instance with a body that the decoder could build. |
-| `edrawings/model.object-invalid` | A slot, id, or include is unusable: a repeated object id, a shell slot outside every library body, or an instance without a library body. |
-| `edrawings/model.shell-invalid` | Shells were left out of their body (§3.6). |
+| `edrawings/model.object-invalid` | Shell slots outside every library body whose object is absent or is the source of a shell instance, or body references of instances that name no library body. The message counts them. The text of a given-up repeated object, object of a slot outside every library body, or instance node without a library body (§4.1) starts with this code. |
+| `edrawings/model.shell-invalid` | Body slots name objects that the store does not hold, and their shells were left out of their body (§3.6). The text of a given-up shell that does not decode (§4.1) starts with this code. |
 | `edrawings/geometry.reconstructed-from-mesh` | Bodies were rebuilt from display meshes as planar faces. It is present whenever a body is built. |
 | `edrawings/geometry.open-body` | Bodies are not watertight and became sheets. |
 | `edrawings/geometry.body-reversed` | Closed components whose signed volume had the wrong sign for their nesting had their triangles reversed. |
 | `edrawings/geometry.degenerate-triangles` | Degenerate triangles were dropped, and closed components without a usable volume (zero-volume pieces and cavities thinner than the plane tolerance) were dropped. Open slivers below the part size and closed shells of fewer than four faces were dropped, and faces without an area were removed with their neighbours joined. The message counts each kind and the triangles of the dropped components. |
-| `edrawings/geometry.body-failed` | A body could not be built from its mesh. |
 | `edrawings/structure.placement-invalid` | An instance matrix has a value that is not finite. The identity replaced it. |
 | `edrawings/appearance.face-colour-reduced` | The materials of sub-segments differ from the material of their body. The body colour replaced them (`edrawings:hsf-18-00`, `edrawings:hsf-19-00`). |
 | `edrawings/appearance.override-dropped` | Part-level colour overrides and the colour or transparency overrides of display states were not transferred (`edrawings:hsf-18-00`, `edrawings:hsf-19-00`). |
@@ -323,4 +332,4 @@ Detection reads the byte prefix only. A prefix that starts with the ZIP local he
 | `edrawings/structure.display-states-dropped` | Display states other than the current state were not applied (§3.9, EDR-09). |
 | `edrawings/structure.occurrence-dropped` | An instance has no occurrence because none of its bodies was built. Its placement was not transferred. |
 
-All codes are Warning except `edrawings/stream.trailing-bytes` (Info) and `edrawings/stream.malformed` and `edrawings/model.malformed` (Blocking).
+All codes are Warning except `edrawings/stream.trailing-bytes` (Info). `edrawings/container.directory-recovered` carries strict floor Warning (CADIR §3.2): the decoder reads the members from their local headers. No other eDrawings code carries a strict floor.

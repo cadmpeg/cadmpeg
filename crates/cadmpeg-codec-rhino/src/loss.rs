@@ -148,10 +148,6 @@ pub(crate) enum RhinoLossCode {
     /// A hidden carrier that no topology uses has no display colour, so no
     /// appearance binding states its visibility.
     FreeGeometryVisibilityNotStated,
-    /// A framed annotation record could not be transferred.
-    AnnotationRecordDropped,
-    /// A framed product occurrence could not be transferred to the native graph.
-    ProductOccurrenceDropped,
     /// A recognized annotation userdata payload could not be typed.
     AnnotationUserdataDropped,
     /// Viewport userdata has no typed CADIR owner.
@@ -182,8 +178,6 @@ pub(crate) enum RhinoLossCode {
     ObjectFamilyNotTransferred,
     /// Object attributes (name, layer, color, visibility) did not transfer whole.
     ObjectAttributesDegraded,
-    /// A framed object record could not be decoded from its payload.
-    ObjectFramingUndecodable,
     /// A decode phase surfaced a per-record diagnostic.
     ObjectDecodeDiagnostic,
     /// A discontinuous polycurve join moved both source endpoints to their midpoint.
@@ -294,8 +288,6 @@ impl RhinoLossCode {
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,
         Self::FreeGeometryVisibilityNotStated,
-        Self::AnnotationRecordDropped,
-        Self::ProductOccurrenceDropped,
         Self::AnnotationUserdataDropped,
         Self::ViewportUserdataDropped,
         Self::MeshNgonGroupingDropped,
@@ -311,7 +303,6 @@ impl RhinoLossCode {
         Self::ObjectRecordCensus,
         Self::ObjectFamilyNotTransferred,
         Self::ObjectAttributesDegraded,
-        Self::ObjectFramingUndecodable,
         Self::ObjectDecodeDiagnostic,
         Self::PolycurveJoinGap,
         Self::TrimPcurveDropped,
@@ -361,8 +352,6 @@ impl RhinoLossCode {
             Self::FreeGeometryVisibilityNotStated => {
                 "presentation.free-geometry-visibility-not-stated"
             }
-            Self::AnnotationRecordDropped => "annotation.record-dropped",
-            Self::ProductOccurrenceDropped => "product.occurrence-dropped",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
             Self::ViewportUserdataDropped => "viewport.userdata-dropped",
             Self::MeshNgonGroupingDropped => "mesh.ngon-grouping-dropped",
@@ -378,7 +367,6 @@ impl RhinoLossCode {
             Self::ObjectRecordCensus => "object.record-census",
             Self::ObjectFamilyNotTransferred => "object.family-not-transferred",
             Self::ObjectAttributesDegraded => "object.attributes-degraded",
-            Self::ObjectFramingUndecodable => "object.framing-undecodable",
             Self::ObjectDecodeDiagnostic => "object.decode-diagnostic",
             Self::PolycurveJoinGap => "curve.polycurve-join-gap",
             Self::TrimPcurveDropped => "brep.trim-pcurve-dropped",
@@ -424,9 +412,7 @@ impl RhinoLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::ObjectRecordCensus => Severity::Info,
-            Self::ObjectFramingUndecodable | Self::IntegrityFailure | Self::WriterRecordOmitted => {
-                Severity::Error
-            }
+            Self::IntegrityFailure | Self::WriterRecordOmitted => Severity::Error,
             _ => Severity::Warning,
         }
     }
@@ -436,9 +422,7 @@ impl RhinoLossCode {
         match self {
             Self::ContainerScanDiagnostic
             | Self::ContainerInstanceDefinitionDegraded
-            | Self::ObjectFramingUndecodable
             | Self::ObjectDecodeDiagnostic
-            | Self::AnnotationRecordDropped
             | Self::AnnotationUserdataDropped
             | Self::PolycurveJoinGap
             | Self::ReferenceMemberUnresolved
@@ -447,9 +431,7 @@ impl RhinoLossCode {
             Self::IntegrityFailure => LossTaxonomy::IntegrityFailure,
             Self::PresentationRecordDropped => LossTaxonomy::AssetNotTransferred,
             Self::FreeGeometryVisibilityNotStated => LossTaxonomy::MetadataNotTransferred,
-            Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::ViewportUserdataDropped => LossTaxonomy::RecordNotTyped,
             Self::MeshNgonGroupingDropped | Self::MeshQuadTopologyTriangulated => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -565,8 +547,6 @@ mod tests {
                 "container.integrity-failure",
                 "presentation.record-dropped",
                 "presentation.free-geometry-visibility-not-stated",
-                "annotation.record-dropped",
-                "product.occurrence-dropped",
                 "annotation.userdata-dropped",
                 "viewport.userdata-dropped",
                 "mesh.ngon-grouping-dropped",
@@ -582,7 +562,6 @@ mod tests {
                 "object.record-census",
                 "object.family-not-transferred",
                 "object.attributes-degraded",
-                "object.framing-undecodable",
                 "object.decode-diagnostic",
                 "curve.polycurve-join-gap",
                 "brep.trim-pcurve-dropped",

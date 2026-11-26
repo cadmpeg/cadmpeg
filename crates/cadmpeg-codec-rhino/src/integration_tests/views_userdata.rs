@@ -415,7 +415,7 @@ fn view_list_with_native_or_unavailable_units_is_retained_without_scale_one() {
             "unavailable"
         };
         assert!(result.report().losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss
                     .message
                     .contains(&format!("no physical millimetre binding ({label})"))
@@ -559,7 +559,7 @@ fn malformed_trace_reference_preserves_prior_diagnostic_and_recovers_later_view(
         .as_ref()
         .is_some_and(|provenance| provenance.offset > 0));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
             && loss.message.contains("named view record")
     }));
     assert!(result
@@ -631,7 +631,7 @@ fn malformed_wallpaper_reference_preserves_prior_diagnostic_and_recovers_later_v
         .as_ref()
         .is_some_and(|provenance| provenance.offset > 0));
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
             && loss.message.contains("named view record")
     }));
     assert!(result
@@ -745,7 +745,7 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
         .losses
         .iter()
         .filter(|loss| {
-            loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
                 && loss
                     .message
                     .contains("was omitted after child parsing failed")
@@ -773,7 +773,7 @@ fn later_view_recovery_keeps_prior_child_checksum_loss_when_following_child_fail
             .provenance
             .as_ref()
             .and_then(|provenance| provenance.tag.as_deref()),
-        Some("VIEW/RECORD")
+        Some("view-record")
     );
     assert!(result
         .source_fidelity()
@@ -868,7 +868,7 @@ fn later_view_recovery_keeps_viewport_warning_before_bad_end_marker() {
             .losses
             .iter()
             .filter(|loss| {
-                loss.code == crate::loss::RhinoLossCode::PresentationRecordDropped.kind()
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
                     && loss
                         .message
                         .contains("was omitted after child parsing failed")
@@ -1037,13 +1037,13 @@ fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
         assert_eq!(views[0].field("list_index"), Some(cadmpeg_core::json!(1)));
         for (code, tag, offset) in [
             (
-                crate::loss::RhinoLossCode::IntegrityFailure,
+                crate::loss::RhinoLossCode::IntegrityFailure.kind(),
                 "VIEW/TRACE_IMAGE/FILE_REFERENCE",
                 source_offset(&document, &reference),
             ),
             (
-                crate::loss::RhinoLossCode::PresentationRecordDropped,
-                "VIEW/RECORD",
+                cadmpeg_ir::unknown::part::record_unreadable_kind(),
+                "view-record",
                 source_offset(&document, &rejected),
             ),
         ] {
@@ -1052,7 +1052,7 @@ fn active_view_recovery_preserves_earlier_losses_and_exact_source() {
                 .losses
                 .iter()
                 .filter(|loss| {
-                    loss.code == code.kind()
+                    loss.code == code
                         && loss
                             .provenance
                             .as_ref()

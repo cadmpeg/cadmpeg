@@ -309,8 +309,8 @@ pub(crate) struct DefinitionDiagnostic {
     /// Complete table-record range.
     source_range: Range<usize>,
     /// The definition that did not parse, which its retained opaque record
-    /// keeps.
-    pub(crate) given_up: Option<Record>,
+    /// keeps, and the cause of its give-up.
+    pub(crate) given_up: Option<(Record, cadmpeg_ir::unknown::part::Cause)>,
 }
 
 impl DefinitionDiagnostic {
@@ -434,7 +434,7 @@ fn anonymous<'a>(
     let (chunk, payload, version) =
         anonymous_versioned(data, reader, archive, label, true, warnings)?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload.position(),
             format!("unsupported {label} version"),
         ));
@@ -492,7 +492,7 @@ fn model_component(
     let major = payload.i32()?;
     let minor = payload.i32()?;
     if major != 1 || minor < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload.position(),
             "unsupported model-component attributes version",
         ));
@@ -563,7 +563,7 @@ pub(crate) fn file_reference<'a>(
     let (chunk, mut payload, version) =
         anonymous_versioned(data, reader, archive, "file reference", false, warnings)?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload.position(),
             "unsupported file-reference version",
         ));
@@ -581,7 +581,7 @@ pub(crate) fn file_reference<'a>(
     let hash_major = hash_payload.i32()?;
     let hash_minor = hash_payload.i32()?;
     if hash_major != 1 || hash_minor < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             hash_payload.position(),
             "unsupported content-hash version",
         ));
@@ -603,7 +603,7 @@ pub(crate) fn file_reference<'a>(
             let digest_major = bytes.i32()?;
             let digest_minor = bytes.i32()?;
             if digest_major != 1 || digest_minor < 0 {
-                return Err(FramingError::structural(
+                return Err(FramingError::unsupported(
                     bytes.position(),
                     "unsupported SHA-1 version",
                 ));
@@ -665,7 +665,7 @@ fn skip_object_array(
     let count = usize::try_from(count)
         .map_err(|_| FramingError::structural(reader.position(), "negative object count"))?;
     if count > MAX_MEMBERS {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "object array exceeds item limit",
         ));
@@ -694,7 +694,7 @@ fn reference_settings<'a>(
     let (chunk, mut payload, version) =
         anonymous_versioned(data, reader, archive, "reference settings", false, warnings)?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload.position(),
             "unsupported reference settings version",
         ));
@@ -711,7 +711,7 @@ fn reference_settings<'a>(
                 warnings,
             )?;
         if implementation_version.0 != 1 || implementation_version.1 < 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 implementation_payload.position(),
                 "unsupported reference settings implementation version",
             ));
@@ -771,7 +771,7 @@ fn parse_v5(
     let packed = reader.u8()?;
     let version = (packed >> 4, packed & 0x0f);
     if version.0 != 1 || version.1 < 6 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported V5 definition version",
         ));
@@ -864,7 +864,7 @@ fn parse_v6(
         warnings,
     )?;
     if outer_version.0 != 1 || outer_version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported instance definition version",
         ));
@@ -900,7 +900,7 @@ fn parse_v6(
         let (linked_chunk, mut linked, linked_version) =
             anonymous_versioned(data, &mut reader, archive, "linked type", false, warnings)?;
         if linked_version.0 != 1 || linked_version.1 < 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 linked.position(),
                 "unsupported linked-type version",
             ));
@@ -980,7 +980,7 @@ fn extract_member_ids(
     if v5_layout {
         let packed = outer.u8()?;
         if packed >> 4 != 1 || packed & 0x0f < 6 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 outer.position(),
                 "unsupported V5 definition version",
             ));
@@ -997,7 +997,7 @@ fn extract_member_ids(
         &mut Diagnostics::new(),
     )?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "unsupported instance definition version",
         ));
@@ -1045,7 +1045,7 @@ fn parse_idef_alternative_path(
         warnings,
     )?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload.position(),
             "unsupported instance-definition alternate-path version",
         ));
@@ -1275,7 +1275,7 @@ pub(crate) fn parse_definitions(
                         message: format!("instance definition retained: {error}"),
                     },
                     source_range: record.range.clone(),
-                    given_up: Some(record.clone()),
+                    given_up: Some((record.clone(), error.cause())),
                 });
                 insert_opaque_index(&mut opaque_indices, source_order);
             }
@@ -1308,7 +1308,7 @@ pub(crate) fn parse_reference(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let version = reader.u8()?;
     if version >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "instance reference major version is not 1",
         ));

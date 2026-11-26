@@ -7144,9 +7144,8 @@ object record remains opaque and no partial typed topology is committed.
 
 No Rhino loss code carries a strict floor. The decoder gives up a framed
 record as a part (CADIR §3.3) when its framing does not decode, its payload
-does not parse, its unit system does not bind, its variant has no typed
-reading, or its list count is above its bound. The part kind identifies the
-record:
+does not parse, its version or form has no typed reading, its unit system does
+not bind, or a count is above its bound. The part kind identifies the record:
 
 | Part kind | Record |
 |---|---|
@@ -7163,13 +7162,21 @@ fidelity. The part keeps the length and digest of its bytes. The `unknowns`
 stub of an `object-record` part links to its object record. The stubs of the
 other part kinds have no links.
 
-The `record.unreadable` charge of the part sets the floor that refuses a
-pinned decode (CADIR §3.2). The codec loss of the record stays in the report
-beside the charge. `rhino/object.framing-undecodable` counts the given-up
-object records of each class. When the decoder gives up a view or a view list,
-the source fidelity keeps the complete list as an opaque record.
+The cause of the give-up selects the charge of the part:
+
+| Cause | Charge |
+|---|---|
+| The framing or grammar of the record breaks, a checksum does not match, a value is outside its type, or a referenced record is missing. | `record.unreadable` |
+| The version, class, or form of the record has no typed reading, the document has no physical unit binding, a count is above a decoder bound, or the decode budget ends. | `record.undecoded` |
+
+The `record.unreadable` charge refuses a pinned decode (CADIR §3.2). The
+`record.undecoded` charge does not. The charge is the one loss of the record:
+its text names the codec reason, and no codec loss of the record stays beside
+it. When the decoder gives up a view or a view list, the source fidelity keeps
+the complete list as an opaque record. The per-typecode counts of the version 1
+stream count only the records that the decoder does not give up.
 
 A view record of a counted view list whose frame does not read has no byte
-extent. Its `record.unreadable` charge names the id
-`rhino:document:view#<kind>-<index>` that the view takes when it decodes, at
-the offset of the view header. The decoder reads no later view of that list.
+extent. Its charge names the id `rhino:document:view#<kind>-<index>` that the
+view takes when it decodes, at the offset of the view header. The decoder
+reads no later view of that list.

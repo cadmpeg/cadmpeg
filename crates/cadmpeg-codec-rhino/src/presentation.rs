@@ -12,7 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
-use cadmpeg_ir::unknown::part::GivenUpPart;
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -432,6 +432,18 @@ impl From<FramingError> for PatternTransferError {
 impl From<CodecError> for PatternTransferError {
     fn from(error: CodecError) -> Self {
         Self::Framing(error.into())
+    }
+}
+
+impl PatternTransferError {
+    /// The cause of the give-up of the record that this error ends.
+    const fn cause(&self) -> Cause {
+        match self {
+            Self::Framing(error) => error.cause(),
+            Self::NativeDocumentUnits
+            | Self::UnavailableDocumentUnits
+            | Self::UnsupportedHatchUnit(_) => Cause::Undecoded,
+        }
     }
 }
 
@@ -1453,7 +1465,7 @@ fn component(
     let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (value.i32()?, value.i32()?);
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             value.position(),
             "model-component version is unsupported",
         ));
@@ -1522,7 +1534,7 @@ fn parse_physically_based_material(
 ) -> Result<PhysicallyBasedMaterialRecord, FramingError> {
     let (mut reader, (major, version)) = anonymous(data, payload_range, archive)?;
     if major != 1 || !matches!(version, 1 | 2) {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "physically based material payload version is unsupported",
         ));
@@ -1629,7 +1641,7 @@ fn classify_rdk_material_payload(
 ) -> Result<RdkMaterialPayload, FramingError> {
     let mut reader = BoundedReader::new(data, payload_range.start, payload_range.end)?;
     if reader.i32()? != 2 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload_range.start,
             "legacy RDK material userdata version is unsupported",
         ));
@@ -1779,7 +1791,7 @@ fn wide_string(
             text.to_owned()
         }
         _ => {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 value.position() - 1,
                 "wide-string format is unsupported",
             ))
@@ -2022,11 +2034,18 @@ fn class_data_with_userdata(
     Ok((class.class_data_range, userdata))
 }
 
-fn optional_malformed<T>(value: Result<T, FramingError>) -> Result<Option<T>, CodecError> {
+/// The value of `value`, or `None` with the cause of its failure in `cause`.
+fn optional_malformed<T>(
+    cause: &mut Cause,
+    value: Result<T, FramingError>,
+) -> Result<Option<T>, CodecError> {
     match value {
         Ok(value) => Ok(Some(value)),
         Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
-        Err(_) => Ok(None),
+        Err(error) => {
+            *cause = error.cause();
+            Ok(None)
+        }
     }
 }
 
@@ -2065,7 +2084,7 @@ fn parse_texture(
 ) -> Result<TextureRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "texture version is unsupported",
         ));
@@ -2180,7 +2199,7 @@ fn texture_array(
     let mut values = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let version = (values.i32()?, values.i32()?);
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             values.position(),
             "texture array version is unsupported",
         ));
@@ -2189,7 +2208,7 @@ fn texture_array(
     let count = usize::try_from(count)
         .map_err(|_| FramingError::structural(values.position() - 4, "negative texture count"))?;
     if count > 1 << 16 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             values.position() - 4,
             "texture count exceeds limit",
         ));
@@ -2336,7 +2355,7 @@ fn parse_v2_v3_material(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed_version = reader.u8()?;
     if packed_version >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "V2/V3 material version is unsupported",
         ));
@@ -2451,7 +2470,7 @@ fn parse_material(
     let (mut reader, component, minor, modern) = if framed {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version.0 != 1 || version.1 < 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position(),
                 "material version is unsupported",
             ));
@@ -2462,7 +2481,7 @@ fn parse_material(
         let mut outer = BoundedReader::new(data, range.start, range.end)?;
         // The first packed byte is the fixed outer material version 2.0.
         if outer.u8()? != 0x20 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 range.start,
                 "legacy material outer version is unsupported",
             ));
@@ -2471,7 +2490,7 @@ fn parse_material(
         let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
         let version = (reader.i32()?, reader.i32()?);
         if version.0 != 1 || version.1 < 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position(),
                 "legacy material version is unsupported",
             ));
@@ -2599,7 +2618,7 @@ fn parse_group(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "group version is unsupported",
         ));
@@ -2669,7 +2688,7 @@ fn parse_light(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "light version is unsupported",
         ));
@@ -2877,9 +2896,11 @@ fn parse_linetype(
         }
         (component, values)
     } else {
-        return Err(
-            FramingError::structural(reader.position(), "linetype version is unsupported").into(),
-        );
+        return Err(FramingError::unsupported(
+            reader.position(),
+            "linetype version is unsupported",
+        )
+        .into());
     };
     // An unknown or out-of-order extension has no generic width. The source
     // reader consumes its identifier and leaves a bounded suffix.
@@ -2926,7 +2947,7 @@ fn parse_linetype(
 fn hatch_line_v5(reader: &mut BoundedReader<'_>) -> Result<SourceHatchLine, FramingError> {
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position() - 1,
             "hatch-line version is unsupported",
         ));
@@ -3015,7 +3036,7 @@ fn parse_hatch_pattern(
     let (component, fill_type, description, lines) = if modern {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version.0 != 1 || version.1 < 0 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position(),
                 "hatch-pattern version is unsupported",
             )
@@ -3032,7 +3053,7 @@ fn parse_hatch_pattern(
             FramingError::structural(line_reader.position() - 4, "negative hatch-line count")
         })?;
         if count > 1 << 16 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 line_reader.position() - 4,
                 "hatch-line count exceeds limit",
             )
@@ -3050,7 +3071,7 @@ fn parse_hatch_pattern(
             let mut payload = BoundedReader::new(data, line.body().start, line.body().end)?;
             let version = (payload.i32()?, payload.i32()?);
             if version.0 != 1 || version.1 < 0 {
-                return Err(FramingError::structural(
+                return Err(FramingError::unsupported(
                     payload.position(),
                     "hatch-line version is unsupported",
                 )
@@ -3074,7 +3095,7 @@ fn parse_hatch_pattern(
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let packed = reader.u8()?;
         if packed >> 4 != 1 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 range.start,
                 "legacy hatch-pattern version is unsupported",
             )
@@ -3090,7 +3111,7 @@ fn parse_hatch_pattern(
             FramingError::structural(reader.position() - 4, "negative hatch-line count")
         })?;
         if count > 1 << 16 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position() - 4,
                 "hatch-line count exceeds limit",
             )
@@ -3384,7 +3405,7 @@ fn parse_v5_dimension_style_extra(
 ) -> Result<V5DimensionStyleExtraRecord, FramingError> {
     let (mut reader, version) = anonymous(data, extra.payload_range.clone(), archive)?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position() - 8,
             "V5 dimension-style extra version is unsupported",
         ));
@@ -3456,7 +3477,7 @@ fn parse_v5_dimension_style(
     let major = packed >> 4;
     let minor = packed & 0x0f;
     if major != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "V5 dimension-style version is unsupported",
         ));
@@ -3635,7 +3656,7 @@ fn parse_dimension_style(
 ) -> Result<DimensionStyleRecord, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "dimension-style version is unsupported",
         ));
@@ -3742,7 +3763,7 @@ fn parse_embedded_image(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let packed = reader.u8()?;
     if packed >> 4 != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             range.start,
             "embedded-image version is unsupported",
         ));
@@ -3753,7 +3774,7 @@ fn parse_embedded_image(
         0 => EmbeddedImageCompression::Raw,
         1 => EmbeddedImageCompression::Compressed,
         _ => {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position() - 4,
                 "embedded-image compression method is unsupported",
             ));
@@ -3774,7 +3795,7 @@ fn parse_embedded_image(
                 reader.skip(4)?;
                 let method = reader.u8()?;
                 if method > 1 {
-                    return Err(FramingError::structural(
+                    return Err(FramingError::unsupported(
                         reader.position() - 1,
                         "embedded-image buffer method is unsupported",
                     ));
@@ -3856,7 +3877,7 @@ fn bitmap_buffer(
             reader.skip(chunk.next_offset() - reader.position())?;
         }
         _ => {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position() - 1,
                 "Windows bitmap compressed buffer method is unsupported",
             ));
@@ -3876,7 +3897,7 @@ fn parse_windows_bitmap(
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let file_path = if class_uuid == WINDOWS_BITMAP_EX {
         if reader.u8()? >> 4 != 1 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position() - 1,
                 "Windows bitmap version is unsupported",
             ));
@@ -3986,7 +4007,7 @@ fn parse_mapping_crc_cache(data: &[u8], payload_range: Range<usize>) -> Result<(
     let mut reader = BoundedReader::new(data, payload_range.start, payload_range.end)?;
     let version = reader.i32()?;
     if version != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             payload_range.start,
             "MappingCRCCache version is unsupported",
         ));
@@ -4005,7 +4026,7 @@ fn parse_texture_mapping(
 ) -> Result<ParsedTextureMapping, FramingError> {
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "texture-mapping version is unsupported",
         ));
@@ -4076,7 +4097,7 @@ fn parse_rendering_mapping_channel(
     }
     let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     if value.i32()? != 1 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             value.position() - 4,
             "rendering mapping channel version is unsupported",
         ));
@@ -4125,7 +4146,7 @@ fn rendering_attributes(
             || version.1 < 0
             || (matches!(kind, settings::RenderingAttributesKind::Object) && version.1 < 1)
         {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 reader.position(),
                 "rendering-attributes version is unsupported",
             ));
@@ -4146,7 +4167,7 @@ fn rendering_attributes(
             let parsed = (|| {
                 let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
                 if value.i32()? != 1 {
-                    return Err(FramingError::structural(
+                    return Err(FramingError::unsupported(
                         value.position(),
                         "rendering-material version is unsupported",
                     ));
@@ -4213,7 +4234,7 @@ fn rendering_attributes(
                 let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
                 let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
                 if value.i32()? != 1 {
-                    return Err(FramingError::structural(
+                    return Err(FramingError::unsupported(
                         value.position() - 4,
                         "rendering mapping version is unsupported",
                     ));
@@ -4290,7 +4311,7 @@ fn parse_font(
     let mut value = BoundedReader::new(data, chunk.body().start, chunk.body().end)?;
     let (major, minor) = (value.i32()?, value.i32()?);
     if major != 1 || minor < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             value.position(),
             "font version is unsupported",
         ));
@@ -4356,7 +4377,7 @@ fn parse_font(
         }
         let mut bytes = BoundedReader::new(data, panose.body().start, panose.body().end)?;
         if bytes.u8()? != 0x10 || bytes.remaining() != 10 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 bytes.position(),
                 "font PANOSE version is unsupported",
             ));
@@ -4397,7 +4418,7 @@ fn parse_text_style(
         let mut reader = BoundedReader::new(data, range.start, range.end)?;
         let packed = reader.u8()?;
         if packed >> 4 != 1 {
-            return Err(FramingError::structural(
+            return Err(FramingError::unsupported(
                 range.start,
                 "legacy text-style version is unsupported",
             ));
@@ -4463,7 +4484,7 @@ fn parse_text_style(
 
     let (mut reader, version) = anonymous(data, range, archive)?;
     if version.0 != 1 || version.1 < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "text-style version is unsupported",
         ));
@@ -4509,14 +4530,15 @@ fn parse_text_style(
     })
 }
 
-/// The codec loss of the presentation record `record` of `kind`, which the
+/// The give-up text of the presentation record `record` of `kind`, which the
 /// decoder retains because the document has no physical unit `binding`.
-fn unbound_presentation_loss(record: &Record, binding: UnitBinding, kind: &str) -> LossNote {
-    RhinoLossCode::PresentationRecordDropped.note(format_args!(
-        "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+fn unbound_presentation_text(record: &Record, binding: UnitBinding, kind: &str) -> String {
+    format!(
+        "{}: {kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+        RhinoLossCode::PresentationRecordDropped.kind(),
         record.range.start,
         binding.label()
-    ))
+    )
 }
 
 /// The key of a layer's native record: its UUID where no other layer holds
@@ -4579,10 +4601,12 @@ pub(crate) fn install(
                     | FONT_TABLE
             );
             let mut parsed = false;
+            let mut cause = Cause::Unreadable;
             if table_type == GROUP_TABLE {
-                if let Some(range) =
-                    optional_malformed(class_data(scan.data, record, scan.archive, GROUP))?
-                {
+                if let Some(range) = optional_malformed(
+                    &mut cause,
+                    class_data(scan.data, record, scan.archive, GROUP),
+                )? {
                     match parse_group(ctx, scan.data, range, record.range.start) {
                         Ok(group) => {
                             groups.push(group);
@@ -4591,16 +4615,14 @@ pub(crate) fn install(
                         Err(FramingError::Resource(limit)) => {
                             return Err(CodecError::ResourceLimit(limit))
                         }
-                        Err(_) => {}
+                        Err(error) => cause = error.cause(),
                     }
                 }
             } else if table_type == MATERIAL_TABLE {
-                if let Some((range, userdata)) = optional_malformed(class_data_with_userdata(
-                    scan.data,
-                    record,
-                    scan.archive,
-                    MATERIAL,
-                ))? {
+                if let Some((range, userdata)) = optional_malformed(
+                    &mut cause,
+                    class_data_with_userdata(scan.data, record, scan.archive, MATERIAL),
+                )? {
                     let mut material_requires_opaque = false;
                     let legacy_rdk_instance_id =
                         legacy_rdk_material_instance_id(ctx, scan.data, &userdata)?;
@@ -4665,28 +4687,29 @@ pub(crate) fn install(
                         Err(FramingError::Resource(limit)) => {
                             return Err(CodecError::ResourceLimit(limit));
                         }
-                        Err(_) => {}
+                        Err(error) => cause = error.cause(),
                     }
                 }
             } else if table_type == LIGHT_TABLE {
                 let Some(scale) = physical_scale else {
-                    let loss = unbound_presentation_loss(record, binding, "light");
-                    given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
-                    losses.push(loss);
+                    given_up.push(give_up_table_record(
+                        ctx,
+                        scan.data,
+                        record,
+                        Cause::Undecoded,
+                        unbound_presentation_text(record, binding, "light"),
+                    )?);
                     push_opaque_record(&mut opaque_records, table.typecode, record);
                     continue;
                 };
-                if let Some(range) =
-                    optional_malformed(class_data_prefix(scan.data, record, scan.archive, LIGHT))?
-                {
-                    if let Some(mut light) = optional_malformed(parse_light(
-                        ctx,
-                        scan.data,
-                        range,
-                        scale,
-                        record.range.start,
-                        None,
-                    ))? {
+                if let Some(range) = optional_malformed(
+                    &mut cause,
+                    class_data_prefix(scan.data, record, scan.archive, LIGHT),
+                )? {
+                    if let Some(mut light) = optional_malformed(
+                        &mut cause,
+                        parse_light(ctx, scan.data, range, scale, record.range.start, None),
+                    )? {
                         match parse_light_record_attributes(
                             ctx,
                             scan.data,
@@ -4723,9 +4746,10 @@ pub(crate) fn install(
                     }
                 }
             } else if table_type == LINETYPE_TABLE {
-                if let Some(range) =
-                    optional_malformed(class_data(scan.data, record, scan.archive, LINETYPE))?
-                {
+                if let Some(range) = optional_malformed(
+                    &mut cause,
+                    class_data(scan.data, record, scan.archive, LINETYPE),
+                )? {
                     match parse_linetype(
                         ctx,
                         scan.data,
@@ -4741,21 +4765,27 @@ pub(crate) fn install(
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
-                                "linetype record at offset {} was retained as complete source: {error}",
-                                record.range.start,
-                            ));
-                            given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
-                            losses.push(loss);
+                            given_up.push(give_up_table_record(
+                                ctx,
+                                scan.data,
+                                record,
+                                error.cause(),
+                                format_args!(
+                                    "{}: linetype record at offset {} was retained as complete source: {error}",
+                                    RhinoLossCode::PresentationRecordDropped.kind(),
+                                    record.range.start,
+                                ),
+                            )?);
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
                     parsed = true;
                 }
             } else if table_type == HATCH_PATTERN_TABLE {
-                if let Some(range) =
-                    optional_malformed(class_data(scan.data, record, scan.archive, HATCH_PATTERN))?
-                {
+                if let Some(range) = optional_malformed(
+                    &mut cause,
+                    class_data(scan.data, record, scan.archive, HATCH_PATTERN),
+                )? {
                     match parse_hatch_pattern(
                         ctx,
                         scan.data,
@@ -4771,12 +4801,17 @@ pub(crate) fn install(
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
-                                "hatch pattern record at offset {} was retained as complete source: {error}",
-                                record.range.start,
-                            ));
-                            given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
-                            losses.push(loss);
+                            given_up.push(give_up_table_record(
+                                ctx,
+                                scan.data,
+                                record,
+                                error.cause(),
+                                format_args!(
+                                    "{}: hatch pattern record at offset {} was retained as complete source: {error}",
+                                    RhinoLossCode::PresentationRecordDropped.kind(),
+                                    record.range.start,
+                                ),
+                            )?);
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
@@ -4784,20 +4819,22 @@ pub(crate) fn install(
                 }
             } else if table_type == DIMSTYLE_TABLE {
                 let Some(scale) = physical_scale else {
-                    let loss = unbound_presentation_loss(record, binding, "dimension style");
-                    given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
-                    losses.push(loss);
+                    given_up.push(give_up_table_record(
+                        ctx,
+                        scan.data,
+                        record,
+                        Cause::Undecoded,
+                        unbound_presentation_text(record, binding, "dimension style"),
+                    )?);
                     push_opaque_record(&mut opaque_records, table.typecode, record);
                     continue;
                 };
                 if scan.archive.value() < 60 {
                     let mut extra_requires_opaque = false;
-                    if let Some((range, userdata)) = optional_malformed(class_data_with_userdata(
-                        scan.data,
-                        record,
-                        scan.archive,
-                        V5_DIMSTYLE,
-                    ))? {
+                    if let Some((range, userdata)) = optional_malformed(
+                        &mut cause,
+                        class_data_with_userdata(scan.data, record, scan.archive, V5_DIMSTYLE),
+                    )? {
                         let extra =
                             userdata
                                 .iter()
@@ -4828,14 +4865,17 @@ pub(crate) fn install(
                             },
                             None => None,
                         };
-                        if let Some(value) = optional_malformed(parse_v5_dimension_style(
-                            ctx,
-                            scan.data,
-                            range,
-                            scale,
-                            record.range.start,
-                            extra,
-                        ))? {
+                        if let Some(value) = optional_malformed(
+                            &mut cause,
+                            parse_v5_dimension_style(
+                                ctx,
+                                scan.data,
+                                range,
+                                scale,
+                                record.range.start,
+                                extra,
+                            ),
+                        )? {
                             dimension_styles.push(value);
                             if extra_requires_opaque {
                                 push_opaque_record(&mut opaque_records, table.typecode, record);
@@ -4843,9 +4883,10 @@ pub(crate) fn install(
                             parsed = true;
                         }
                     }
-                } else if let Some(range) =
-                    optional_malformed(class_data(scan.data, record, scan.archive, DIMSTYLE))?
-                {
+                } else if let Some(range) = optional_malformed(
+                    &mut cause,
+                    class_data(scan.data, record, scan.archive, DIMSTYLE),
+                )? {
                     match parse_dimension_style(
                         ctx,
                         scan.data,
@@ -4861,60 +4902,70 @@ pub(crate) fn install(
                         Err(FramingError::Resource(limit)) => {
                             return Err(CodecError::ResourceLimit(limit));
                         }
-                        Err(_) => {}
+                        Err(error) => cause = error.cause(),
                     }
                 }
             } else if table_type == BITMAP_TABLE {
-                if let Some(range) = optional_malformed(class_data(
-                    scan.data,
-                    record,
-                    scan.archive,
-                    EMBEDDED_BITMAP,
-                ))? {
-                    if let Some(value) = optional_malformed(parse_embedded_image(
-                        ctx,
-                        scan.data,
-                        range,
-                        scan.archive,
-                        record.range.start,
-                    ))? {
+                if let Some(range) = optional_malformed(
+                    &mut cause,
+                    class_data(scan.data, record, scan.archive, EMBEDDED_BITMAP),
+                )? {
+                    if let Some(value) = optional_malformed(
+                        &mut cause,
+                        parse_embedded_image(
+                            ctx,
+                            scan.data,
+                            range,
+                            scan.archive,
+                            record.range.start,
+                        ),
+                    )? {
                         images.push(value);
                         parsed = true;
                     }
-                } else if let Some(class) = optional_malformed(parse_class_wrapper(
-                    scan.data,
-                    record.body(),
-                    scan.archive,
-                    &mut Diagnostics::new(),
-                ))? {
+                } else if let Some(class) = optional_malformed(
+                    &mut cause,
+                    parse_class_wrapper(
+                        scan.data,
+                        record.body(),
+                        scan.archive,
+                        &mut Diagnostics::new(),
+                    ),
+                )? {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
-                        if let Some(value) = optional_malformed(parse_windows_bitmap(
-                            ctx,
-                            scan.data,
-                            class.class_data_range,
-                            class.class_uuid,
-                            scan.archive,
-                            record.range.start,
-                        ))? {
+                        if let Some(value) = optional_malformed(
+                            &mut cause,
+                            parse_windows_bitmap(
+                                ctx,
+                                scan.data,
+                                class.class_data_range,
+                                class.class_uuid,
+                                scan.archive,
+                                record.range.start,
+                            ),
+                        )? {
                             windows_bitmaps.push(value);
                             parsed = true;
                         }
+                    } else {
+                        cause = Cause::Undecoded;
                     }
                 }
             } else if table_type == TEXTURE_MAPPING_TABLE {
-                if let Some(range) = optional_malformed(class_data(
-                    scan.data,
-                    record,
-                    scan.archive,
-                    TEXTURE_MAPPING,
-                ))? {
-                    if let Some(value) = optional_malformed(parse_texture_mapping(
-                        ctx,
-                        scan.data,
-                        range,
-                        scan.archive,
-                        record.range.start,
-                    ))? {
+                if let Some(range) = optional_malformed(
+                    &mut cause,
+                    class_data(scan.data, record, scan.archive, TEXTURE_MAPPING),
+                )? {
+                    if let Some(value) = optional_malformed(
+                        &mut cause,
+                        parse_texture_mapping(
+                            ctx,
+                            scan.data,
+                            range,
+                            scan.archive,
+                            record.range.start,
+                        ),
+                    )? {
                         texture_mappings.push(value.value);
                         if value.cache_requires_opaque {
                             push_presentation_loss(
@@ -4931,9 +4982,10 @@ pub(crate) fn install(
                     }
                 }
             } else if table_type == FONT_TABLE {
-                if let Some(range) =
-                    optional_malformed(class_data(scan.data, record, scan.archive, TEXT_STYLE))?
-                {
+                if let Some(range) = optional_malformed(
+                    &mut cause,
+                    class_data(scan.data, record, scan.archive, TEXT_STYLE),
+                )? {
                     match parse_text_style(
                         ctx,
                         scan.data,
@@ -4964,17 +5016,22 @@ pub(crate) fn install(
                         Err(FramingError::Resource(limit)) => {
                             return Err(CodecError::ResourceLimit(limit))
                         }
-                        Err(_) => {}
+                        Err(error) => cause = error.cause(),
                     }
                 }
             }
             if recognized && !parsed {
-                let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
-                    "record at offset {} in table {table_type:#x} could not be transferred",
-                    record.range.start
-                ));
-                given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
-                losses.push(loss);
+                given_up.push(give_up_table_record(
+                    ctx,
+                    scan.data,
+                    record,
+                    cause,
+                    format_args!(
+                        "{}: record at offset {} in table {table_type:#x} could not be transferred",
+                        RhinoLossCode::PresentationRecordDropped.kind(),
+                        record.range.start
+                    ),
+                )?);
                 push_opaque_record(&mut opaque_records, table.typecode, record);
             }
         }
@@ -5007,34 +5064,34 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        let (loss, part) = light_object_given_up(
+                        given_up.push(crate::container::give_up_object_record(
                             ctx,
                             scan.data,
                             source_order,
-                            &object.range,
+                            object.range.clone(),
+                            error.cause(),
                             format_args!(
-                                "light object at offset {} could not be transferred: {error}",
+                                "{}: light object at offset {} could not be transferred: {error}",
+                                RhinoLossCode::PresentationRecordDropped.kind(),
                                 object.range.start
                             ),
-                        )?;
-                        losses.push(loss);
-                        given_up.push(part);
+                        )?);
                     }
                 }
             } else {
-                let (loss, part) = light_object_given_up(
+                given_up.push(crate::container::give_up_object_record(
                     ctx,
                     scan.data,
                     source_order,
-                    &object.range,
+                    object.range.clone(),
+                    Cause::Undecoded,
                     format_args!(
-                        "light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+                        "{}: light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+                        RhinoLossCode::PresentationRecordDropped.kind(),
                         object.range.start,
                         binding.label()
                     ),
-                )?;
-                losses.push(loss);
-                given_up.push(part);
+                )?);
             }
         }
         if let Some(attributes) = object.attributes.parsed() {
@@ -5200,26 +5257,6 @@ pub(crate) fn install(
         opaque_records,
         given_up,
     })
-}
-
-/// Gives up the light object at `source_order`, spanning `range`, for the
-/// codec loss with `message`: its codec loss and its given-up part.
-fn light_object_given_up(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    data: &[u8],
-    source_order: usize,
-    range: &std::ops::Range<usize>,
-    message: std::fmt::Arguments<'_>,
-) -> Result<(LossNote, GivenUpPart), CodecError> {
-    let loss = RhinoLossCode::PresentationRecordDropped
-        .note(message)
-        .with_provenance(SourceProvenance::root(
-            "rhino",
-            cadmpeg_core::decode::u64_from_index(range.start),
-        ));
-    let part =
-        crate::container::give_up_object_record(ctx, data, source_order, range.clone(), &loss)?;
-    Ok((loss, part))
 }
 
 #[cfg(test)]

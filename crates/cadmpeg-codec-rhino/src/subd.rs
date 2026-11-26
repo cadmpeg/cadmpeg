@@ -148,6 +148,7 @@ impl From<FramingError> for SubdError {
             FramingError::Truncated { offset, .. }
             | FramingError::InvalidLength { offset, .. }
             | FramingError::Structural { offset, .. }
+            | FramingError::Unsupported { offset, .. }
             | FramingError::Overflow { offset }
             | FramingError::OutOfBounds { offset, .. } => Self::Malformed { offset, message },
             FramingError::InvalidHeader

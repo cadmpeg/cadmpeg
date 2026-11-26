@@ -193,7 +193,6 @@ fn cycles_and_extra_roots_are_reported() {
         losses,
         [
             PvzLossCode::StructureRootAmbiguous.kind(),
-            PvzLossCode::StructureOccurrenceCycle.kind(),
             cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
@@ -226,22 +225,19 @@ fn exponential_instancing_stops_at_the_occurrence_limit() {
     assert_eq!(ir.model.occurrences.len(), LIMIT);
     assert_eq!(
         codes(&losses),
-        [
-            PvzLossCode::StructureOccurrenceTruncated.kind(),
-            cadmpeg_ir::unknown::part::record_unreadable_kind(),
-        ]
+        [cadmpeg_ir::unknown::part::record_undecoded_kind()]
     );
     assert!(
-        losses[1].message.starts_with(&format!(
+        losses[0].message.starts_with(&format!(
             "record pvz:model:child-occurrence#1-{} given up: ",
             LIMIT - 1
         )),
         "{}",
-        losses[1].message
+        losses[0].message
     );
     // The walk stops inside the first child of A, so every later child of A
     // is dropped with the stopped child occurrence.
-    let dropped = losses[1]
+    let dropped = losses[0]
         .message
         .split_once("; dropped=[")
         .and_then(|(_, tail)| tail.split_once(']'))
@@ -267,16 +263,13 @@ fn cycle_closing_children_are_left_out_without_truncating_the_rest() {
         LIMIT,
     );
     assert_eq!(ir.model.occurrences.len(), LIMIT / 2);
-    let mut expected = vec![PvzLossCode::StructureOccurrenceCycle.kind()];
-    expected.extend(std::iter::repeat_n(
-        cadmpeg_ir::unknown::part::record_unreadable_kind(),
-        LIMIT,
-    ));
-    assert_eq!(codes(&losses), expected);
     assert_eq!(
-        losses[0].message,
-        format!("{LIMIT} child occurrences close a definition cycle and were left out")
+        codes(&losses),
+        vec![cadmpeg_ir::unknown::part::record_unreadable_kind(); LIMIT]
     );
+    assert!(losses
+        .iter()
+        .all(|loss| loss.message.contains("closes a definition cycle")));
 }
 
 /// Bound on the expansion time of [`MANY_ROOTS`] root definitions.
@@ -459,7 +452,6 @@ fn a_mesh_with_a_non_finite_vertex_is_rejected() {
         losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
         [
             PvzLossCode::TessellationRecordsUndecoded.kind(),
-            PvzLossCode::TessellationMeshRejected.kind(),
             cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
@@ -525,13 +517,7 @@ fn placement_defects_and_deep_chains_are_reported() {
     // Each definition above the depth limit places the next; the root
     // definition, at the top, is placed by no occurrence (§8.1).
     assert_eq!(ir.model.occurrences.len(), depth - 1);
-    assert_eq!(
-        losses,
-        [
-            PvzLossCode::StructureOccurrenceTruncated.kind(),
-            cadmpeg_ir::unknown::part::record_unreadable_kind(),
-        ]
-    );
+    assert_eq!(losses, [cadmpeg_ir::unknown::part::record_undecoded_kind()]);
 }
 
 #[test]

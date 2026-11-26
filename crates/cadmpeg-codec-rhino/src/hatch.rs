@@ -198,7 +198,7 @@ pub(crate) fn decode(
         .into());
     };
     if count > MAX_LOOPS {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             count_offset,
             "hatch loop count exceeds cap",
         ));
@@ -504,7 +504,7 @@ fn parse_userdata(
     let major = reader.i32()?;
     let minor = reader.i32()?;
     if major != 1 || minor < 0 {
-        return Err(GeometryError::malformed(
+        return Err(GeometryError::undecoded(
             payload.body().start,
             "unsupported V5 hatch-extra version",
         ));
