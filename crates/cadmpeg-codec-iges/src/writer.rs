@@ -276,6 +276,9 @@ struct Synthesis {
     counts: BTreeMap<String, usize>,
     /// The entities the file holds, each with the neutral records it states.
     entities: Vec<Entity>,
+    /// The colour and blank status the Directory entry of each entity that
+    /// carries a body states, by entity index.
+    presented: BTreeMap<usize, dispositions::Presented>,
     losses: Vec<LossNote>,
 }
 
@@ -283,7 +286,19 @@ struct BodyPresentation {
     label: Option<String>,
     name: Option<String>,
     color: BodyColor,
+    /// The text and the restated source of the Type 314 the body colour is
+    /// written as, when the colour is a source colour definition.
+    color_definition: Option<ColorDefinition>,
     visible: Option<bool>,
+}
+
+/// The source Type 314 a body colour is bound to.
+struct ColorDefinition {
+    /// The name the written Type 314 states.
+    name: Option<String>,
+    /// The appearance of the source Type 314, when the written Type 314
+    /// states its colour and its name.
+    restates: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -294,6 +309,7 @@ enum BodyColor {
 }
 
 fn body_presentation(
+    ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,
     losses: &mut Vec<LossNote>,
 ) -> BodyPresentation {
@@ -325,6 +341,7 @@ fn body_presentation(
             None
         }
     });
+    let color_definition = bound_color_definition(ir, body);
     let color = body.color.map_or(BodyColor::Standard(0), |color| {
         let rgb = (color.r(), color.g(), color.b());
         let number = match rgb {
@@ -345,7 +362,7 @@ fn body_presentation(
                 color.a()
             )));
         }
-        if number == 0 {
+        if number == 0 || color_definition.is_some() {
             BodyColor::Custom(color)
         } else {
             BodyColor::Standard(number)
@@ -355,8 +372,49 @@ fn body_presentation(
         label,
         name,
         color,
+        color_definition,
         visible: body.visible,
     }
+}
+
+/// The source Type 314 whose appearance a binding of the whole of `body`
+/// names with the body colour. Its name is written when every byte is
+/// printable ASCII, and the written Type 314 then states the source one.
+fn bound_color_definition(
+    ir: &CadIr,
+    body: &cadmpeg_ir::topology::Body,
+) -> Option<ColorDefinition> {
+    let color = body.color?;
+    let appearance = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| {
+            binding.target.path.is_none()
+                && binding.target.entity
+                    == cadmpeg_ir::appearance::AppearanceTarget::Body(body.id.clone())
+        })
+        .filter_map(|binding| {
+            ir.model
+                .appearances
+                .iter()
+                .find(|appearance| appearance.id == binding.appearance)
+        })
+        .find(|appearance| {
+            appearance.base_color == Some(color)
+                && dispositions::color_definition_sequence(appearance.id.as_str()).is_some()
+        })?;
+    let name = appearance.name.clone();
+    let writable = name.as_deref().is_none_or(|name| {
+        !name.is_empty()
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+    });
+    Some(ColorDefinition {
+        name: name.filter(|_| writable),
+        restates: writable.then(|| appearance.id.as_str().to_owned()),
+    })
 }
 
 fn append_color_definitions(
@@ -371,6 +429,10 @@ fn append_color_definitions(
             .map(|component| finite(component * 100.0, "color percentage"))
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
+        let definition = presentation.color_definition.as_ref();
+        let name = definition
+            .and_then(|definition| definition.name.as_deref())
+            .map_or_else(String::new, |name| format!("{}H{name}", name.len()));
         let entity_index = entities.len();
         entities.push(Entity {
             type_code: 314,
@@ -378,14 +440,17 @@ fn append_color_definitions(
             label: "COLOR",
             status: EntityStatus::Definition,
             parameter_body: format!(
-                "{},{},{},;",
+                "{},{},{},{name};",
                 number(components[0]),
                 number(components[1]),
                 number(components[2])
             )
             .into_bytes(),
             transform: None,
-            restates: Vec::new(),
+            restates: definition
+                .and_then(|definition| definition.restates.clone())
+                .into_iter()
+                .collect(),
         });
         presentation.color = BodyColor::Definition(entity_index);
     }
@@ -673,6 +738,10 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
         }
         entities
     };
+    let presented = body_presentations
+        .iter()
+        .map(|(index, presentation)| (*index, dispositions::Presented::of(presentation)))
+        .collect();
     append_color_definitions(&mut entities, &mut body_presentations)?;
     ensure_version_support(&entities, version)?;
     resolve_entity_references(&mut entities)?;
@@ -701,6 +770,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Unwr
         bytes,
         counts,
         entities,
+        presented,
         losses,
     })
 }
@@ -2627,7 +2697,7 @@ fn brep_entities(
                     restates: vec![shell.id.as_str().to_owned()],
                 });
                 if body.kind == BodyKind::Sheet {
-                    body_presentations.insert(index, body_presentation(body, losses));
+                    body_presentations.insert(index, body_presentation(ir, body, losses));
                 }
                 shell_indices.insert(shell.id.as_str(), index);
             }
@@ -2670,7 +2740,7 @@ fn brep_entities(
                     transform,
                     restates: vec![body.id.as_str().to_owned()],
                 });
-                body_presentations.insert(index, body_presentation(body, losses));
+                body_presentations.insert(index, body_presentation(ir, body, losses));
             }
             Ok(())
         })?;
@@ -3372,7 +3442,7 @@ fn topology_entities(
                 transform: None,
                 restates: vec![face.id.as_str().to_owned()],
             });
-            body_presentations.insert(index, body_presentation(body, losses));
+            body_presentations.insert(index, body_presentation(ir, body, losses));
             Ok(())
         })?;
     }
@@ -5403,8 +5473,19 @@ fn minimum_resolution_for_output(index: &TopologyIndex<'_>) -> Result<f64, Codec
     Ok(generated.max(index.ir.tolerances.linear.get()))
 }
 
+/// The charge for a written field 19 that does not state the source
+/// resolution. Where the source states no positive resolution and the
+/// document keeps the decoder's default tolerance, the charge names what the
+/// source states.
 fn minimum_resolution_loss(ir: &CadIr, emitted: f64) -> Option<LossNote> {
     ir.source.as_ref()?;
+    if ir.tolerances.linear == cadmpeg_ir::units::Tolerances::default().linear {
+        if let Some(stated) = source_global::unresolved_minimum_resolution(ir) {
+            return Some(IgesLossCode::WriterMinimumResolutionAdjusted.note(format!(
+                "IGES Global minimum resolution changed from {stated} to {emitted:.17e} mm"
+            )));
+        }
+    }
     let declared = ir.tolerances.linear.get();
     if emitted <= declared {
         return None;

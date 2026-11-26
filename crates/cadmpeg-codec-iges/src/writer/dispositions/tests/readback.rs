@@ -14,7 +14,7 @@ use crate::{IgesCodec, IgesVersion};
 /// The geometry arenas whose records are facts an entity states.
 const FACT_ARENAS: &[&str] = &[
     "points", "curves", "surfaces", "pcurves", "vertices", "edges", "coedges", "loops", "faces",
-    "shells",
+    "shells", "bodies",
 ];
 
 /// The geometry arenas a fact states through the records it names.
@@ -35,9 +35,13 @@ const NAMED_ARENAS: &[&str] = &[
 /// The relative tolerance of a number that a write and a decode restate.
 const NUMBER_TOLERANCE: f64 = 1e-9;
 
-/// The fields of a geometry record that state a native arena of their own,
-/// with that arena.
-pub(super) const ARENA_FIELDS: &[(&str, &str)] = &[("color", "display_attributes")];
+/// The fields of a geometry record that the Directory display fields of the
+/// entity it is decoded from state.
+const DISPLAY_FIELDS: &[&str] = &["color", "visible"];
+
+/// The value that stands for a stated value another disposition charges. It
+/// agrees with every value, and with a field the other side lacks.
+const CHARGED: &str = "<charged>";
 
 /// The name a write's loss gives each Global text field, by field number.
 const TEXT_FIELDS: &[(usize, &str)] = &[
@@ -130,32 +134,66 @@ pub(super) fn without_entity(file: &[u8], sequence: u32) -> Option<Vec<u8>> {
     replaced.then_some(out)
 }
 
+/// The Directory sequence of the entity the decoder derives the geometry
+/// record `id` from: the last `D{n}` piece of its key.
+pub(super) fn decoded_from(id: &str) -> Option<u32> {
+    id.split_once('#')?
+        .1
+        .rsplit([':', '-'])
+        .find_map(|piece| piece.strip_prefix('D')?.parse().ok())
+}
+
+/// The source records whose stated values a write's other dispositions
+/// charge.
+#[derive(Default)]
+pub(super) struct Charged {
+    /// The sequences of the Dropped entities. A reference to a record decoded
+    /// from one of them is that entity's loss.
+    pub(super) entities: BTreeSet<u32>,
+    /// The sequences of the entities whose display attribute record is
+    /// Dropped. The colour and blank status of a record decoded from one of
+    /// them is that record's loss.
+    pub(super) displays: BTreeSet<u32>,
+}
+
 /// A geometry record with each record it names written in place of the name,
 /// and no ids.
 #[derive(Debug, Clone)]
 pub(super) struct Fact {
     arena: String,
-    value: Value,
-    /// The id of the record and of each record written in its value.
-    records: BTreeSet<String>,
+    /// The record as the decode states it.
+    stated: Value,
+    /// The record with each value another disposition charges replaced by
+    /// [`CHARGED`].
+    compared: Value,
+}
+
+/// Which value of a fact a count compares.
+#[derive(Clone, Copy)]
+pub(super) enum Compared {
+    /// The value with each value another disposition charges replaced: what
+    /// a Regenerated entity states.
+    Regenerated,
+    /// The value as the decode states it: what a Dropped entity loses.
+    Dropped,
 }
 
 impl Fact {
-    /// The id of the record and of each record written in its value.
-    pub(super) fn records(&self) -> impl Iterator<Item = &str> {
-        self.records.iter().map(String::as_str)
+    fn value(&self, compared: Compared) -> &Value {
+        match compared {
+            Compared::Regenerated => &self.compared,
+            Compared::Dropped => &self.stated,
+        }
     }
 }
 
-/// The facts of one decode, by record id, without the record fields
-/// `removed`.
+/// The facts of one decode, by record id.
 pub(super) struct Facts {
     facts: BTreeMap<String, Fact>,
-    removed: Vec<&'static str>,
 }
 
 impl Facts {
-    pub(super) fn of(ir: &CadIr, removed: &[&'static str]) -> Self {
+    pub(super) fn of(ir: &CadIr, charged: &Charged) -> Self {
         let geometry = serde_json::to_value(&ir.geometry).unwrap();
         let mut records = BTreeMap::new();
         for (arena, values) in geometry.as_object().unwrap() {
@@ -165,53 +203,54 @@ impl Facts {
                 }
             }
         }
+        let no_charge = Charged::default();
         let mut facts = BTreeMap::new();
         for (id, (arena, record)) in &records {
             if FACT_ARENAS.contains(arena) {
-                let mut inliner = Inliner {
-                    records: &records,
-                    removed,
-                    named: vec![id.as_str()],
-                    reached: BTreeSet::from([id.clone()]),
+                let state = |charged: &Charged| {
+                    Inliner {
+                        records: &records,
+                        charged,
+                        named: vec![id.as_str()],
+                    }
+                    .stated(record)
                 };
-                let value = inliner.stated(record);
                 facts.insert(
                     id.clone(),
                     Fact {
                         arena: (*arena).to_owned(),
-                        value,
-                        records: inliner.reached,
+                        stated: state(&no_charge),
+                        compared: state(charged),
                     },
                 );
             }
         }
-        Self {
-            facts,
-            removed: removed.to_vec(),
-        }
+        Self { facts }
     }
 
     /// The facts of this decode that the decode of `file` does not state
     /// with the same id and value. A file the decoder refuses states none.
     pub(super) fn changed_in(&self, file: &[u8]) -> BTreeMap<String, Fact> {
         let other =
-            decode(file).map_or_else(BTreeMap::new, |ir| Self::of(&ir, &self.removed).facts);
+            decode(file).map_or_else(BTreeMap::new, |ir| Self::of(&ir, &Charged::default()).facts);
         self.facts
             .iter()
             .filter(|(id, fact)| {
                 other
                     .get(*id)
-                    .is_none_or(|other| other.arena != fact.arena || other.value != fact.value)
+                    .is_none_or(|other| other.arena != fact.arena || other.stated != fact.stated)
             })
             .map(|(id, fact)| (id.clone(), fact.clone()))
             .collect()
     }
 
     /// The number of records of this decode that state `fact`.
-    pub(super) fn count(&self, fact: &Fact) -> usize {
+    pub(super) fn count(&self, fact: &Fact, compared: Compared) -> usize {
         self.facts
             .values()
-            .filter(|own| own.arena == fact.arena && same(&own.value, &fact.value))
+            .filter(|own| {
+                own.arena == fact.arena && same(own.value(compared), fact.value(compared))
+            })
             .count()
     }
 
@@ -221,9 +260,12 @@ impl Facts {
         fact: &Fact,
         ids: impl IntoIterator<Item = &'a String>,
     ) -> usize {
+        let compared = Compared::Regenerated;
         ids.into_iter()
             .filter_map(|id| self.facts.get(id))
-            .filter(|own| own.arena == fact.arena && same(&own.value, &fact.value))
+            .filter(|own| {
+                own.arena == fact.arena && same(own.value(compared), fact.value(compared))
+            })
             .count()
     }
 }
@@ -231,36 +273,53 @@ impl Facts {
 /// Writes the records a geometry record names in place of their names.
 struct Inliner<'a> {
     records: &'a BTreeMap<String, (&'a str, &'a Value)>,
-    removed: &'a [&'a str],
+    charged: &'a Charged,
     /// The records being written, outermost first, which a cycle names.
     named: Vec<&'a str>,
-    /// Every record written.
-    reached: BTreeSet<String>,
 }
 
 impl<'a> Inliner<'a> {
     fn stated(&mut self, value: &'a Value) -> Value {
         match value {
-            Value::Object(fields) => Value::Object(
-                fields
-                    .iter()
-                    .filter(|(key, _)| {
-                        !matches!(key.as_str(), "id" | "source_object" | "tolerance")
-                            && !self.removed.contains(&key.as_str())
-                    })
-                    .filter(|(key, _)| *key != "parameter_range" || !spans_its_knots(value))
-                    .map(|(key, field)| (key.clone(), self.stated(field)))
-                    .collect(),
-            ),
+            Value::Object(fields) => {
+                let display_charged = fields
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .and_then(decoded_from)
+                    .is_some_and(|sequence| self.charged.displays.contains(&sequence));
+                Value::Object(
+                    fields
+                        .iter()
+                        .filter(|(key, _)| {
+                            !matches!(key.as_str(), "id" | "source_object" | "tolerance")
+                        })
+                        .filter(|(key, _)| *key != "parameter_range" || !spans_its_knots(value))
+                        .map(|(key, field)| {
+                            let value = if display_charged && DISPLAY_FIELDS.contains(&key.as_str())
+                            {
+                                Value::String(CHARGED.to_owned())
+                            } else {
+                                self.stated(field)
+                            };
+                            (key.clone(), value)
+                        })
+                        .collect(),
+                )
+            }
             Value::Array(items) => {
                 Value::Array(items.iter().map(|item| self.stated(item)).collect())
             }
             Value::String(text) => match self.records.get_key_value(text) {
+                Some(_)
+                    if decoded_from(text)
+                        .is_some_and(|sequence| self.charged.entities.contains(&sequence)) =>
+                {
+                    Value::String(CHARGED.to_owned())
+                }
                 Some((id, (arena, record)))
                     if NAMED_ARENAS.contains(arena) && !self.named.contains(&id.as_str()) =>
                 {
                     self.named.push(id);
-                    self.reached.insert(id.clone());
                     let value = self.stated(record);
                     self.named.pop();
                     value
@@ -271,6 +330,82 @@ impl<'a> Inliner<'a> {
             Value::Null | Value::Bool(_) | Value::Number(_) => value.clone(),
         }
     }
+}
+
+/// The value of each display attribute record of a decode, by id, with its
+/// colour as red, green, and blue fractions, and no ids.
+pub(super) fn display_values(ir: &CadIr) -> BTreeMap<String, Value> {
+    let namespace = ir.native.namespace("iges").unwrap();
+    let arena = |name: &str| {
+        namespace
+            .arenas()
+            .get(name)
+            .into_iter()
+            .flatten()
+            .map(|record| (record.id().to_owned(), record.fields().unwrap()))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let colors = arena("colors");
+    arena("display_attributes")
+        .into_iter()
+        .map(|(id, mut fields)| {
+            let number = fields.get("color_number").and_then(Value::as_i64);
+            let color = match number {
+                Some(0) => Value::Null,
+                Some(standard @ 1..) => crate::entities::presentation::standard_color(standard)
+                    .map_or_else(
+                        || Value::String(format!("standard colour {standard}")),
+                        |color| serde_json::json!([color.r(), color.g(), color.b()]),
+                    ),
+                _ => fields
+                    .get("color_definition")
+                    .and_then(Value::as_str)
+                    .and_then(|definition| colors.get(definition))
+                    .map_or(Value::String("unresolved".to_owned()), |definition| {
+                        let percent = |field: &str| {
+                            definition
+                                .get(field)
+                                .and_then(Value::as_f64)
+                                .map(|p| p / 100.0)
+                        };
+                        serde_json::json!([
+                            percent("red_percent"),
+                            percent("green_percent"),
+                            percent("blue_percent")
+                        ])
+                    }),
+            };
+            for key in ["id", "source_entity", "color_number", "color_definition"] {
+                fields.remove(key);
+            }
+            fields.insert("color".to_owned(), color);
+            (id, Value::Object(fields))
+        })
+        .collect()
+}
+
+/// The value of each colour definition record of a decode, by id, with no
+/// ids.
+pub(super) fn color_values(ir: &CadIr) -> BTreeMap<String, Value> {
+    ir.native
+        .namespace("iges")
+        .unwrap()
+        .arenas()
+        .get("colors")
+        .into_iter()
+        .flatten()
+        .map(|record| {
+            let mut fields = record.fields().unwrap();
+            fields.remove("id");
+            fields.remove("source_entity");
+            (record.id().to_owned(), Value::Object(fields))
+        })
+        .collect()
+}
+
+/// Whether `values` holds a value that agrees with `value`.
+pub(super) fn holds<'a>(mut values: impl Iterator<Item = &'a Value>, value: &Value) -> bool {
+    values.any(|other| same(other, value))
 }
 
 /// Whether the curve `value` states as its parameter range the knot domain
@@ -290,8 +425,12 @@ fn spans_its_knots(value: &Value) -> bool {
 }
 
 /// Whether two stated values agree, each number within the restatement
-/// tolerance.
+/// tolerance. [`CHARGED`] agrees with every value.
 fn same(a: &Value, b: &Value) -> bool {
+    let charged = |value: &Value| value.as_str() == Some(CHARGED);
+    if charged(a) || charged(b) {
+        return true;
+    }
     match (a, b) {
         (Value::Number(a), Value::Number(b)) => {
             let (a, b) = (a.as_f64().unwrap(), b.as_f64().unwrap());
@@ -301,9 +440,9 @@ fn same(a: &Value, b: &Value) -> bool {
             a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same(a, b))
         }
         (Value::Object(a), Value::Object(b)) => {
-            a.len() == b.len()
-                && a.iter()
-                    .all(|(key, a)| b.get(key).is_some_and(|b| same(a, b)))
+            a.iter()
+                .all(|(key, a)| b.get(key).map_or(charged(a), |b| same(a, b)))
+                && b.iter().all(|(key, b)| a.contains_key(key) || charged(b))
         }
         _ => a == b,
     }
