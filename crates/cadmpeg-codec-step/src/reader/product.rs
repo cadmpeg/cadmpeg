@@ -15,7 +15,6 @@ use cadmpeg_ir::products::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::{Transform, TransformError};
-use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -604,13 +603,10 @@ pub(super) fn decode(
              {} usage(s) from NAUO #{first} are not decoded",
             depth_truncated.len()
         ));
-        let given_up = depth_truncated.iter().map(|&usage| {
-            let record = GivenUpRecord::caused_by(format_args!("#{usage}"), &why);
-            super::at_instance(exchange, usage, record).loss()
-        });
-        let given_up = given_up.collect::<Vec<_>>();
+        for &usage in &depth_truncated {
+            exchange.lost().give_up_for(usage, &why);
+        }
         losses.push(why);
-        losses.extend(given_up);
     }
     if !had_roots && !usages.is_empty() {
         losses.push(

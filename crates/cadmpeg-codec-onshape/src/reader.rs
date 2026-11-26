@@ -22,8 +22,7 @@ use crate::loss::OnshapeLossCode;
 use archive::{Bundle, SCHEMA};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::codec::Decoded;
-use cadmpeg_ir::unknown::part::{record_given_up, GivenUpRecord};
-use cadmpeg_ir::SourceProvenance;
+use cadmpeg_ir::unknown::part::{record_given_up, GivenUpPart};
 
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
@@ -398,6 +397,7 @@ pub(super) fn read(
 ) -> Result<Model, Error> {
     let mut bundle = Bundle::open(ctx, root)?;
     report.notes.append(&mut bundle.losses);
+    report.parts.append(&mut bundle.given_up);
     let manifest = bundle.json("manifest.json")?;
     if manifest.get("schema").and_then(Value::as_str) != Some(SCHEMA) {
         return Err(Error::Decode(
@@ -419,8 +419,7 @@ pub(super) fn read(
     }
     if ctx.container_only() {
         let mut model = Model::from_decoded(empty(ctx, root), None);
-        let given_up = bundle.commit_given_up(ctx, &mut model.ir, &mut model.source_fidelity)?;
-        report.notes.extend(given_up);
+        report.commit_parts(ctx, &mut model.ir, &mut model.source_fidelity)?;
         return Ok(model);
     }
     let document = manifest.get("document").unwrap_or(&Value::Null);
@@ -429,9 +428,8 @@ pub(super) fn read(
     for key in ["sourceMicroversion", "microversionId"] {
         microversion(manifest, key, &mid).map_err(Error::Decode)?;
     }
-    bundle.admit_microversions(ctx, &mid)?;
-    bundle.admit_topology(ctx)?;
-    report.notes.append(&mut bundle.losses);
+    bundle.admit_microversions(ctx, &mid, report)?;
+    bundle.admit_topology(ctx, report)?;
     let manifest = bundle.json("manifest.json")?;
     let elements = rows(manifest, "elements").map_err(Error::Decode)?;
     let mut model = if elements.len() == 1
@@ -462,8 +460,7 @@ pub(super) fn read(
     report
         .notes
         .extend(bundle.retain_assets(ctx, &mut model.ir)?);
-    let given_up = bundle.commit_given_up(ctx, &mut model.ir, &mut model.source_fidelity)?;
-    report.notes.extend(given_up);
+    report.commit_parts(ctx, &mut model.ir, &mut model.source_fidelity)?;
     Ok(model)
 }
 
@@ -494,11 +491,12 @@ fn studio(
             ),
             Err(reason) => {
                 report.give_up(
+                    ctx,
                     bundle,
                     &history_path,
                     OnshapeLossCode::HistoryNotSupported,
                     format!("{reason}; feature history is missing"),
-                );
+                )?;
                 (&[][..], RollbackBar::default())
             }
         },
@@ -529,12 +527,13 @@ fn studio(
             Ok((decoded, text)) => Some(Model::from_decoded(decoded, Some(text))),
             Err(error) if features.is_empty() => return Err(error.into()),
             Err(error) => {
-                let detail = format!("{error}; final geometry is missing");
-                if matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)) {
-                    report.push_coded(&step_path, OnshapeLossCode::StepUnreadable, detail);
-                } else {
-                    report.give_up(bundle, &step_path, OnshapeLossCode::StepUnreadable, detail);
-                }
+                report.give_up(
+                    ctx,
+                    bundle,
+                    &step_path,
+                    OnshapeLossCode::StepUnreadable,
+                    format!("{error}; final geometry is missing"),
+                )?;
                 None
             }
         }
@@ -947,6 +946,8 @@ pub(super) struct Model {
 #[derive(Default)]
 pub(super) struct Report {
     pub(super) notes: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// The members the decode gives up, in the order it gives them up.
+    pub(super) parts: Vec<GivenUpPart>,
 }
 impl Report {
     fn push_coded(&mut self, subject: &str, code: OnshapeLossCode, detail: impl Into<String>) {
@@ -954,25 +955,31 @@ impl Report {
             .push(code.note(format!("{}; subject: {subject}", detail.into())));
     }
     /// Pushes the coded note for `record`, a member path of `bundle`, and
-    /// its `record.unreadable` at the member's stored bytes. The member
-    /// stays an asset; the give-up is its typed content.
+    /// gives the member up as a part over its stored bytes. The member
+    /// stays an asset.
     fn give_up(
         &mut self,
+        ctx: &DecodeContext<'_>,
         bundle: &Bundle<'_>,
         record: &str,
         code: OnshapeLossCode,
         detail: impl Into<String>,
-    ) {
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let note = code.note(format!("{}; subject: {record}", detail.into()));
-        let Some((offset, length)) = bundle.stored_span(record) else {
-            self.notes.extend(record_given_up(record, note));
-            return;
-        };
-        let note = note.with_provenance(SourceProvenance::root("onshape", offset));
-        let unreadable = GivenUpRecord::caused_by(record, &note)
-            .spanning(length)
-            .loss();
-        self.notes.extend([note, unreadable]);
+        bundle.give_up_member(ctx, record, note, &mut self.notes, &mut self.parts)
+    }
+    /// Commits the given-up members to `ir` and `fidelity`, and pushes
+    /// their `record.unreadable` losses.
+    fn commit_parts(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut cadmpeg_ir::CadIr,
+        fidelity: &mut cadmpeg_ir::SourceFidelity,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        for part in std::mem::take(&mut self.parts) {
+            self.notes.push(part.commit(ctx, ir, fidelity)?);
+        }
+        Ok(())
     }
     /// Pushes the coded note for `subject` and the `record.unreadable` of
     /// `record`, its source address.

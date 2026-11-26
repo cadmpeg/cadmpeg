@@ -164,10 +164,9 @@ fn an_oversized_topology_table_keeps_other_tables_and_degrades_its_consumer() {
         assert!(
             result.report().losses.iter().any(|loss| {
                 loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                    && loss
-                        .message
-                        .split_whitespace()
-                        .any(|token| token.ends_with("bodydetails/2.json"))
+                    && loss.message.starts_with(
+                        "part archive-entry \"partstudios/studio/bodydetails/2.json\" ",
+                    )
             }),
             "{table}"
         );
@@ -203,6 +202,20 @@ fn unreadable_step_keeps_readable_history_and_reports_missing_geometry() {
         });
         let result = decode(&bytes);
         assert_eq!(named_losses(&result, "onshape/step.unreadable"), 1);
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(
+                    |loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                        && loss
+                            .message
+                            .starts_with("part archive-entry \"partstudios/studio/export.step\" ")
+                )
+                .count(),
+            1
+        );
         assert_eq!(feature_count(&wire(&result)), 3);
         assert!(result.ir().geometry.bodies.is_empty());
         let [root] = result.ir().model.product_definitions.as_slice() else {

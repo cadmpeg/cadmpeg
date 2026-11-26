@@ -63,6 +63,50 @@ fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
 }
 
 #[test]
+fn a_given_up_instance_is_one_part_and_its_dependents_drop_with_it() {
+    let source = "ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
+         #1=DIRECTION('',(0.,0.,0.));#2=VECTOR('',#1,2.);ENDSEC;END-ISO-10303-21;";
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("an invalid direction is given up");
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one record.unreadable: {charges:?}");
+    };
+    let direction = "#1=DIRECTION('',(0.,0.,0.));";
+    let offset = source.find(direction).expect("the direction");
+    let head = format!(
+        "part data_record stream=\"\" offset={offset} length={} record=",
+        direction.len()
+    );
+    assert!(charge.starts_with(&head), "{charge}");
+    assert!(
+        charge.contains("DIRECTION #1 is invalid or zero"),
+        "{charge}"
+    );
+    assert!(charge.ends_with("; dropped=[#2]"), "{charge}");
+    let stub = charge[head.len()..]
+        .split_once(": ")
+        .map(|(stub, _)| stub.to_owned())
+        .expect("the stub");
+    let (_, _, fidelity) = decoded.into_parts();
+    // The untyped instance keeps its exact source as an opaque record.
+    assert_eq!(
+        fidelity
+            .retained_record(&stub)
+            .expect("the stub's bytes")
+            .data(),
+        None
+    );
+}
+
+#[test]
 fn orphan_point_keeps_its_exact_record_when_no_carrier_owns_it() {
     let source = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
     let decoded = EditableDecodeResult::from(

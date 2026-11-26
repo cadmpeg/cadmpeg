@@ -133,7 +133,7 @@ fn face_sketch_without_a_usable_attachment_row_keeps_the_sketch_native() {
     );
     assert_native(
         &with_sketches_bytes(base(), b"not json"),
-        "the member bytes",
+        "omitted the member",
     );
 }
 

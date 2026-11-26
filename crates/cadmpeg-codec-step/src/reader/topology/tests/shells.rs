@@ -739,7 +739,7 @@ fn strict_decode_refuses_a_destroyed_solid() {
     .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
     let root = source.find("#18=").expect("the solid root");
     let head = format!(
-        "record #18 stream=\"\" offset={root} length={} given up: ",
+        "part data_record stream=\"\" offset={root} length={} record=",
         "#18=MANIFOLD_SOLID_BREP('',#17);".len()
     );
     let names_root = |message: &str| message.starts_with(&head);
@@ -751,12 +751,20 @@ fn strict_decode_refuses_a_destroyed_solid() {
     assert!(losses
         .iter()
         .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
-    assert_eq!(
-        losses
-            .iter()
-            .filter(|loss| loss.code == record_unreadable_kind() && names_root(&loss.message))
-            .count(),
-        1
+    let charges = losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind() && names_root(&loss.message))
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one charge names the root");
+    };
+    // The root's shell and its face drop with the root.
+    assert!(
+        charge
+            .message
+            .ends_with("; dropped=[#17, step:data:face#16]"),
+        "{}",
+        charge.message
     );
 
     let mut options = DecodeOptions::default();
@@ -770,6 +778,50 @@ fn strict_decode_refuses_a_destroyed_solid() {
             if rejection.loss().code == record_unreadable_kind()
                 && names_root(&rejection.loss().message)
     ));
+}
+
+#[test]
+fn a_rejected_root_drops_its_shells_and_faces_and_keeps_their_supports() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .lines()
+            .filter(|line| !(50..=57).any(|id| line.starts_with(&format!("#{id}="))))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .replace("#7,#57,", "#7,#16,")
+            .replace("ADVANCED_FACE('',(#26)", "ADVANCED_FACE('',()");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("salvage mode admits the document without the rejected root");
+    let ir = decoded.ir();
+    assert!(ir.geometry.faces.is_empty());
+    assert!(ir.geometry.shells.is_empty());
+    assert!(ir
+        .geometry
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "step:data:surface#28"));
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one charge: {charges:#?}");
+    };
+    // The oriented shell #33, its base shell #30, and the face #29 drop with
+    // the surface model #31. The face is named by its face id, so the support
+    // surface that carries the face's source label stays.
+    assert!(charge.message.contains(" record="), "{}", charge.message);
+    assert!(
+        charge
+            .message
+            .ends_with("; dropped=[#30, #33, step:data:face#29]"),
+        "{}",
+        charge.message
+    );
 }
 
 #[test]

@@ -2,11 +2,12 @@
 //! Bounded ZIP admission and member views.
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
+use crate::reader::Report;
 use cadmpeg_container::{ArchiveSnapshot, EntryRecord, ZipCompression};
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, GivenUpRecord, Part};
+use cadmpeg_ir::unknown::part::{record_given_up, DecodeParts, GivenUpPart, Part};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -193,28 +194,10 @@ impl<'a> Bundle<'a> {
                         json.insert(name.clone(), value);
                     }
                     Err((error, bound)) => {
-                        let retained = name.ends_with("/sketches.json");
-                        let action = if retained {
-                            "retained the member bytes"
-                        } else {
-                            "omitted the member"
-                        };
                         let note = OnshapeLossCode::MemberUnreadable
-                            .note(format!("{name}: {error}; {action}"));
-                        if retained {
-                            losses.push(note);
-                        } else {
-                            give_up_entry(
-                                ctx,
-                                root,
-                                entry,
-                                note,
-                                bound,
-                                &mut losses,
-                                &mut given_up,
-                            )?;
-                            continue;
-                        }
+                            .note(format!("{name}: {error}; omitted the member"));
+                        give_up_entry(ctx, root, entry, note, bound, &mut losses, &mut given_up)?;
+                        continue;
                     }
                 }
             }
@@ -247,6 +230,7 @@ impl<'a> Bundle<'a> {
         &mut self,
         ctx: &DecodeContext<'_>,
         expected: &str,
+        report: &mut Report,
     ) -> Result<(), Error> {
         let mut omitted = Vec::new();
         for (path, value) in &self.json {
@@ -255,28 +239,20 @@ impl<'a> Bundle<'a> {
             }
             for key in ["sourceMicroversion", "microversionId"] {
                 if let Err(reason) = super::reader::microversion(value, key, expected) {
-                    let retained = path.ends_with("/sketches.json");
-                    let action = if retained {
-                        "retained the member bytes"
-                    } else {
-                        "omitted the member"
-                    };
                     let note = OnshapeLossCode::MemberUnreadable
-                        .note(format!("{path}: {reason}; {action}"));
-                    if retained {
-                        self.losses.push(note);
-                    } else if let Some(entry) = self.snapshot.entry(path) {
+                        .note(format!("{path}: {reason}; omitted the member"));
+                    if let Some(entry) = self.snapshot.entry(path) {
                         give_up_entry(
                             ctx,
                             self.root,
                             entry,
                             note,
                             false,
-                            &mut self.losses,
-                            &mut self.given_up,
+                            &mut report.notes,
+                            &mut report.parts,
                         )?;
                     } else {
-                        self.losses.extend(record_given_up(path, note));
+                        report.notes.extend(record_given_up(path, note));
                     }
                     omitted.push(path.clone());
                     break;
@@ -285,31 +261,34 @@ impl<'a> Bundle<'a> {
         }
         for path in omitted {
             self.json.remove(&path);
-            if !path.ends_with("/sketches.json") {
-                self.members.remove(&path);
-            }
+            self.members.remove(&path);
         }
         Ok(())
     }
-    /// The root offset and the length of the stored bytes of member `path`.
-    pub(super) fn stored_span(&self, path: &str) -> Option<(u64, u64)> {
-        let range = self.snapshot.entry(path)?.stored_range().ok()?;
-        Some((range.start, range.end.checked_sub(range.start)?))
+    /// Gives up member `path`, which stays an asset, for the codec loss
+    /// `note`, as a part over its stored bytes. The part keeps only the
+    /// digest when the member is stored uncompressed, because the asset
+    /// holds the same bytes.
+    pub(super) fn give_up_member(
+        &self,
+        ctx: &DecodeContext<'_>,
+        path: &str,
+        note: LossNote,
+        losses: &mut Vec<LossNote>,
+        given_up: &mut Vec<GivenUpPart>,
+    ) -> Result<(), CodecError> {
+        let Some(entry) = self.snapshot.entry(path) else {
+            losses.extend(record_given_up(path, note));
+            return Ok(());
+        };
+        let digest_only = entry.compression == ZipCompression::Stored;
+        give_up_entry(ctx, self.root, entry, note, digest_only, losses, given_up)
     }
-    /// Commits the omitted entries to `ir` and `fidelity`, and returns
-    /// their `record.unreadable` losses.
-    pub(super) fn commit_given_up(
+    pub(super) fn admit_topology(
         &mut self,
         ctx: &DecodeContext<'_>,
-        ir: &mut cadmpeg_ir::CadIr,
-        fidelity: &mut cadmpeg_ir::SourceFidelity,
-    ) -> Result<Vec<LossNote>, CodecError> {
-        std::mem::take(&mut self.given_up)
-            .into_iter()
-            .map(|part| part.commit(ctx, ir, fidelity))
-            .collect()
-    }
-    pub(super) fn admit_topology(&mut self, ctx: &DecodeContext<'_>) -> Result<(), Error> {
+        report: &mut Report,
+    ) -> Result<(), Error> {
         let mut count = 0usize;
         let mut omitted = Vec::new();
         for (path, response) in &self.json {
@@ -365,15 +344,7 @@ impl<'a> Bundle<'a> {
             let note = OnshapeLossCode::TopologyTooLarge.note(format!(
                 "{path}: topology exceeds the row limit; omitted the topology table"
             ));
-            let Some((offset, length)) = self.stored_span(&path) else {
-                self.losses.extend(record_given_up(&path, note));
-                continue;
-            };
-            let note = note.with_provenance(cadmpeg_ir::SourceProvenance::root("onshape", offset));
-            let unreadable = GivenUpRecord::caused_by(&path, &note)
-                .spanning(length)
-                .loss();
-            self.losses.extend([note, unreadable]);
+            self.give_up_member(ctx, &path, note, &mut report.notes, &mut report.parts)?;
         }
         Ok(ctx.charge_entities(
             cadmpeg_core::decode::u64_from_index(count),
@@ -452,15 +423,13 @@ fn give_up_entry(
     if digest_only {
         part = part.digest_only();
     }
-    let error = CodecError::malformed(format_args!("{}: {}", note.code, note.message));
-    let part = ctx.give_up_part(part, error)?;
-    losses.push(note);
     // Two directory records that name one stored span are one part.
-    if given_up.iter().any(|held| held.id() == part.id()) {
-        losses.push(part.loss());
-    } else {
-        given_up.push(part);
+    let id = part.id()?;
+    if !given_up.iter().any(|held| *held.id() == id) {
+        let error = CodecError::malformed(format_args!("{}: {}", note.code, note.message));
+        given_up.push(ctx.give_up_part(part, error)?);
     }
+    losses.push(note);
     Ok(())
 }
 

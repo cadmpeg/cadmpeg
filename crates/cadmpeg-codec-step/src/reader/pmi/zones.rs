@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use crate::reader::{at_instance, give_up_instance};
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -11,7 +11,6 @@ use cadmpeg_ir::pmi::zones::{ToleranceProjection, ToleranceZone, ToleranceZoneFo
 use cadmpeg_ir::pmi::{PmiDefinition, PmiQuantity, PmiTarget};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
-use cadmpeg_ir::unknown::part::GivenUpRecord;
 use cadmpeg_ir::CadIr;
 
 use super::super::geometry::GeometryData;
@@ -204,25 +203,18 @@ pub(super) fn attach(
     Ok(())
 }
 
-/// The losses of tolerance zone `id`, which the reader drops for `why` with
-/// the projections that define it.
+/// The losses of tolerance zone `id`, which the reader gives up for `why`
+/// with the projections that define it.
 fn give_up_zone(
     exchange: &Exchange,
     id: u64,
     projections: &[(u64, ToleranceProjection)],
     why: LossNote,
-) -> [LossNote; 2] {
-    let unreadable = at_instance(
-        exchange,
-        id,
-        GivenUpRecord::caused_by(format_args!("#{id}"), &why).dropping(
-            projections
-                .iter()
-                .map(|(projection, _)| format!("#{projection}")),
-        ),
-    )
-    .loss();
-    [why, unreadable]
+) -> [LossNote; 1] {
+    for (projection, _) in projections {
+        exchange.lost().drop_with(*projection, id);
+    }
+    give_up_instance(exchange, id, why)
 }
 
 fn projection(

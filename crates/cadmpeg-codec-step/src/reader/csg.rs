@@ -16,7 +16,6 @@ use cadmpeg_ir::draft::CommitSession;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 use self::angles::AngleUnits;
 use self::brep::{Axis, SolidBuilder};
@@ -681,14 +680,7 @@ fn refuse_cycles(
         )));
     }
     for &id in &refused {
-        losses.push(
-            super::at_instance(
-                exchange,
-                id,
-                GivenUpRecord::new(format_args!("#{id}"), "Boolean operand cycle"),
-            )
-            .loss(),
-        );
+        exchange.lost().give_up(id, "Boolean operand cycle");
     }
     refused
 }

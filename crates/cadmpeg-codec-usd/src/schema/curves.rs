@@ -24,7 +24,7 @@ pub(crate) struct CurveData {
 
 /// The curves of a batch and the number of curves that were rejected.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct CurveBatch {
+pub(crate) struct Curves {
     pub(crate) curves: Vec<CurveData>,
     pub(crate) rejected: usize,
 }
@@ -200,7 +200,7 @@ fn split<'p>(
 }
 
 /// Reads a `BasisCurves` prim.
-pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<CurveBatch> {
+pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curves> {
     let points = vectors3(prim, "points", issues)?;
     let cubic = match token(prim, "type", issues).as_deref() {
         Some("linear") => None,
@@ -209,14 +209,14 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
             Some("bspline") => Basis::Bspline,
             Some("catmullRom") => Basis::CatmullRom,
             Some(_) => {
-                return Some(CurveBatch {
+                return Some(Curves {
                     curves: Vec::new(),
                     rejected: 1,
                 })
             }
         }),
         Some(_) => {
-            return Some(CurveBatch {
+            return Some(Curves {
                 curves: Vec::new(),
                 rejected: 1,
             })
@@ -227,13 +227,13 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
         Some("periodic") => Wrap::Periodic,
         Some("pinned") => Wrap::Pinned,
         Some(_) => {
-            return Some(CurveBatch {
+            return Some(Curves {
                 curves: Vec::new(),
                 rejected: 1,
             })
         }
     };
-    let mut out = CurveBatch::default();
+    let mut out = Curves::default();
     for slice in split(prim, &points, issues)? {
         match slice.and_then(|points| basis_curve(points, cubic, wrap)) {
             Some(curve) => out.curves.push(curve),
@@ -244,14 +244,14 @@ pub(crate) fn basis_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curve
 }
 
 /// Reads a `NurbsCurves` prim.
-pub(crate) fn nurbs_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<CurveBatch> {
+pub(crate) fn nurbs_curves(prim: &Prim<'_>, issues: &mut Issues) -> Option<Curves> {
     let points = vectors3(prim, "points", issues)?;
     let orders = integers(prim, "order", issues)?;
     let knots = reals(prim, "knots", 1, issues)?;
     let ranges = reals(prim, "ranges", 2, issues);
     let weights =
         reals(prim, "pointWeights", 1, issues).filter(|weights| weights.len() == points.len());
-    let mut out = CurveBatch::default();
+    let mut out = Curves::default();
     let mut point_start = 0_usize;
     let mut knot_start = 0_usize;
     for (curve, slice) in split(prim, &points, issues)?.into_iter().enumerate() {

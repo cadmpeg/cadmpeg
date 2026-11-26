@@ -3,7 +3,7 @@
 use super::{basis_curves, nurbs_curves, CurveData};
 use crate::schema::tests::with_layer;
 
-fn curves(prim_type: &str, body: &str) -> super::CurveBatch {
+fn curves(prim_type: &str, body: &str) -> super::Curves {
     let text = format!("#usda 1.0\ndef {prim_type} \"C\"\n{{\n{body}\n}}\n");
     with_layer(&text, |stage, issues| {
         let prim = &stage.prims[0];

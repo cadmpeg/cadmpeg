@@ -14,7 +14,6 @@ use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::ids::{DeclaredMeasureId, IdentityKey, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 use crate::ids::{self, kind};
 use crate::loss::StepLossCode;
@@ -236,8 +235,7 @@ pub(super) fn decode(
         if !retained {
             removed_points.insert(point.id.as_str().to_owned());
             if let Some(why) = unsupported_points.get(&id) {
-                let record = GivenUpRecord::caused_by(format_args!("#{id}"), why);
-                losses.push(super::at_instance(exchange, id, record).loss());
+                exchange.lost().give_up_for(id, why);
             }
         }
         retained

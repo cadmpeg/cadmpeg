@@ -273,6 +273,13 @@ End-of-ACIS-data\n";
         .losses
         .iter()
         .any(|loss| loss.code == SatLossCode::TopologyFaceOwnerUnprojected.kind()));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.starts_with("part face ")
+            && loss
+                .message
+                .ends_with("; dropped=[sat:brep:entity#1, sat:brep:entity#3]")
+    }));
     assert_eq!(
         result
             .source_fidelity()

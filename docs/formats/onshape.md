@@ -263,19 +263,27 @@ those of the input body, and the removed face leaves an opening.
 Each bound applies before the corresponding unbounded operation. A compact
 reference also charges its expanded value size and depth.
 
-A decoder gives up each member that it rejects as an `archive-entry` part. A
-rejected member has an invalid name, encryption, an unsupported method, a
-failed open, unreadable JSON, or a microversion that differs from the document
-microversion. The part keeps the stored bytes of the member. When the member is
-over a bound, the part keeps only the digest of the stored bytes. Two directory
-records that name one stored span are one part. A later member with the name of
-an earlier member adds no record when its method and stored bytes are equal to
+A decoder gives up each member that it rejects as an `archive-entry` part over
+the stored bytes of the member, and omits the member. A rejected member has an
+invalid name, encryption, an unsupported method, a failed open, JSON that does
+not parse, or a microversion that differs from the document microversion. The
+part keeps the stored bytes of the member. When the member is over a size bound,
+or the parse of its JSON stops at a resource bound, the part keeps only the
+digest of the stored bytes. Two directory records that name one stored span are
+one part with one `record.unreadable`. A later member with the name of an
+earlier member adds no record when its method and stored bytes are equal to
 those of the earlier member. The decoder gives up each other later member with
 a repeated name.
 
-A feature history or a topology table whose array length is over its bound is
-given up: the member stays an asset, and its `record.unreadable` names the
-member path with the member's offset and stored length.
+A member that the decoder reads stays an asset with its note. The decoder also
+gives up such a member as an `archive-entry` part over its stored bytes when
+the `features` array of a feature history is absent, is not an array, or is
+longer than its bound, when the topology rows of a body details table are over
+their bound, or when the nested decode of `export.step` fails. The decoder then
+reads no feature history, topology table, or final geometry from the member.
+When the member is stored without compression, the part keeps only the digest
+of the stored bytes, because the asset holds the same bytes. When a part studio
+has no feature history and its `export.step` fails, the part studio fails.
 
 ## Assembly definitions
 

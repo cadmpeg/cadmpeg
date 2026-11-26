@@ -35,7 +35,6 @@ use cadmpeg_ir::scalar::{
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::units::{HypotDirection2, OrthonormalFrame3, UnitVector3};
-use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -872,7 +871,11 @@ pub(super) fn decode(
             } else if let Some(value) = value2 {
                 vectors2.insert(id, value);
                 typed.insert(id);
-            } else {
+            } else if !super::drop_with_lost(
+                exchange,
+                id,
+                named_parameter(record, "VECTOR", 1).and_then(Value::reference),
+            ) {
                 losses.extend(give_up_instance(
                     exchange,
                     id,
@@ -921,7 +924,11 @@ pub(super) fn decode(
             if let Some(placement) = placement {
                 placements.insert(id, placement);
                 typed.insert(id);
-            } else {
+            } else if !super::drop_with_lost(
+                exchange,
+                id,
+                named_parameter(record, placement_type, 1).and_then(Value::reference),
+            ) {
                 losses.extend(give_up_instance(
                     exchange,
                     id,
@@ -936,7 +943,7 @@ pub(super) fn decode(
         if let Some(transform) = cartesian_transformation_operator(record, &points, &directions) {
             transformation_operators.insert(id, transform);
             typed.insert(id);
-        } else {
+        } else if !super::drop_with_lost(exchange, id, direct_references(record)) {
             losses.extend(give_up_instance(
                 exchange,
                 id,
@@ -969,7 +976,7 @@ pub(super) fn decode(
         {
             transformation_operators2.insert(id, transform);
             typed.insert(id);
-        } else {
+        } else if !super::drop_with_lost(exchange, id, direct_references(record)) {
             losses.extend(give_up_instance(
                 exchange,
                 id,
@@ -996,7 +1003,13 @@ pub(super) fn decode(
         if let Some(placement) = placement {
             placements2.insert(id, placement);
             typed.insert(id);
-        } else {
+        } else if !super::drop_with_lost(
+            exchange,
+            id,
+            [1, 2].into_iter().filter_map(|index| {
+                named_parameter(record, "AXIS2_PLACEMENT_2D", index).and_then(Value::reference)
+            }),
+        ) {
             losses.extend(give_up_instance(
                 exchange,
                 id,
@@ -2389,26 +2402,12 @@ pub(super) fn decode(
     // leaves no record.
     for id in invalid_curves {
         if !carrier_index.curves.contains_key(&id) {
-            losses.push(
-                super::at_instance(
-                    exchange,
-                    id,
-                    GivenUpRecord::new(format_args!("#{id}"), "invalid curve geometry"),
-                )
-                .loss(),
-            );
+            exchange.lost().give_up(id, "invalid curve geometry");
         }
     }
     for id in invalid_surfaces {
         if !carrier_index.surfaces.contains_key(&id) {
-            losses.push(
-                super::at_instance(
-                    exchange,
-                    id,
-                    GivenUpRecord::new(format_args!("#{id}"), "invalid surface geometry"),
-                )
-                .loss(),
-            );
+            exchange.lost().give_up(id, "invalid surface geometry");
         }
     }
     let mut surface_parameter_scales = BTreeMap::new();
@@ -6381,6 +6380,16 @@ fn base_axis_2d(
         }
         (None, None) => (HypotDirection2::X_AXIS, HypotDirection2::Y_AXIS),
     }
+}
+
+/// The instances that the parameters of `record` reference directly.
+fn direct_references(record: &RawRecord) -> Vec<u64> {
+    record
+        .partials
+        .iter()
+        .flat_map(|partial| &partial.parameters)
+        .filter_map(Value::reference)
+        .collect()
 }
 
 fn optional_direction(

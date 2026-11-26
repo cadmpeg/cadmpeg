@@ -32,7 +32,6 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3, COINCIDENCE_TOLERANCE};
-use cadmpeg_ir::unknown::part::GivenUpRecord;
 
 use crate::ids;
 use crate::loss::StepLossCode;
@@ -405,7 +404,6 @@ pub(super) fn decode(
         notes: Vec::new(),
     };
     let mut losses: Vec<LossNote> = Vec::new();
-    let mut given_up = GivenUp::new(exchange);
     for (&id, record) in exchange.records() {
         let Some(name) = most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])
         else {
@@ -498,13 +496,20 @@ pub(super) fn decode(
                 }
             }
             if committed == 0 {
-                given_up.give_up(
-                    &mut losses,
+                losses.extend(super::give_up_instance(
+                    exchange,
                     model,
                     StepLossCode::DecodeWarning.note(format!(
                         "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
                     )),
-                );
+                ));
+                for set in failures
+                    .into_iter()
+                    .flat_map(|failures| failures.omitted)
+                    .chain(rejected)
+                {
+                    exchange.lost().drop_with(set, model);
+                }
             } else {
                 if let Some(failures) = &failures {
                     losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -517,7 +522,9 @@ pub(super) fn decode(
                     .flat_map(|failures| failures.omitted)
                     .chain(rejected)
                 {
-                    given_up.charge(&mut losses, set, "unresolved connected edge set");
+                    exchange
+                        .lost()
+                        .give_up(set, "unresolved connected edge set");
                 }
             }
         }
@@ -564,13 +571,20 @@ pub(super) fn decode(
             }
         }
         if committed == 0 {
-            given_up.give_up(
-                &mut losses,
+            losses.extend(super::give_up_instance(
+                exchange,
                 model,
                 StepLossCode::DecodeWarning.note(format!(
                     "SHELL_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
                 )),
-            );
+            ));
+            for shell in failures
+                .into_iter()
+                .flat_map(|failures| failures.omitted)
+                .chain(rejected)
+            {
+                exchange.lost().drop_with(shell, model);
+            }
         } else {
             if let Some(failures) = &failures {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -583,7 +597,7 @@ pub(super) fn decode(
                 .flat_map(|failures| failures.omitted)
                 .chain(rejected)
             {
-                given_up.charge(&mut losses, shell, "unresolved wire shell");
+                exchange.lost().give_up(shell, "unresolved wire shell");
             }
         }
     }
@@ -668,13 +682,12 @@ pub(super) fn decode(
     }
     for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells) else {
-            given_up.give_up(
-                &mut losses,
+            losses.extend(super::give_up_instance(exchange,
                 id,
                 StepLossCode::DecodeWarning.note(format!(
                     "STEP topology root #{id} does not resolve to a complete connected topology graph",
                 )),
-            );
+            ));
             continue;
         };
         if let Some(root_built) = built_roots.get(&key) {
@@ -693,13 +706,12 @@ pub(super) fn decode(
             continue;
         }
         let Some((outcome, mut root_losses)) = root_outcomes.remove(&key) else {
-            given_up.give_up(
-                &mut losses,
+            losses.extend(super::give_up_instance(exchange,
                 id,
                 StepLossCode::TopologyRootIncomplete.note(format!(
                     "STEP topology root #{id} shares a rejected topology graph; no body was admitted"
                 )),
-            );
+            ));
             continue;
         };
 
@@ -748,7 +760,25 @@ pub(super) fn decode(
                     "STEP topology root #{id} does not resolve to a complete connected topology graph",
                 ))
             };
-            given_up.give_up(&mut result.losses, id, why);
+            result
+                .losses
+                .extend(super::give_up_instance(exchange, id, why));
+            for shell in root_shell_steps(record, exchange, &shells)
+                .into_iter()
+                .flatten()
+            {
+                let (named, faces) = shell_members(shell, exchange, &shells);
+                for shell in named {
+                    exchange.lost().drop_with(shell, id);
+                }
+                let held = &commit_session.document().geometry.faces;
+                for face in faces {
+                    let record = ids::data(kind!("face"), face);
+                    if !held.iter().any(|held| held.id.as_str() == record.as_str()) {
+                        exchange.lost().drop_record_with(face, record.as_str(), id);
+                    }
+                }
+            }
         } else {
             let copies = body_ids.clone();
             result.body_by_root.insert(id, copies);
@@ -774,7 +804,7 @@ pub(super) fn decode(
                 .flat_map(|failures| failures.omitted)
                 .chain(rejected)
             {
-                given_up.charge(&mut losses, shell, "unresolved shell");
+                exchange.lost().give_up(shell, "unresolved shell");
             }
         }
     }
@@ -807,7 +837,6 @@ pub(super) fn decode(
                     tolerance: document.tolerances.linear.get(),
                     ctx,
                 },
-                &mut given_up,
                 &mut losses,
             )?
         };
@@ -821,24 +850,23 @@ pub(super) fn decode(
             ) {
                 continue;
             }
-            given_up.give_up(
-                &mut losses,
+            losses.extend(super::give_up_instance(exchange,
                 id,
                 StepLossCode::DecodeWarning.note(format!(
                     "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
                 )),
-            );
+            ));
             continue;
         };
         if let Err(error) = commit_session.commit_model(built.draft)? {
-            given_up.give_up(
-                &mut losses,
+            losses.extend(super::give_up_instance(
+                exchange,
                 id,
                 StepLossCode::DecodeWarning.note(topology_commit_error(
                     &format!("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id}"),
                     &error,
                 )?),
-            );
+            ));
         } else {
             result
                 .body_by_root
@@ -975,45 +1003,6 @@ fn geometric_set_omission_message(
         "{representation_type} #{id} omitted unsupported or unresolved member(s): {}",
         OmittedMembers(omitted)
     )
-}
-
-/// The source records the topology pass gave up, each charged once.
-struct GivenUp<'a> {
-    exchange: &'a Exchange,
-    records: BTreeSet<u64>,
-}
-
-impl<'a> GivenUp<'a> {
-    const fn new(exchange: &'a Exchange) -> Self {
-        Self {
-            exchange,
-            records: BTreeSet::new(),
-        }
-    }
-
-    /// Pushes `why`, and the first time `record` is given up, its
-    /// `record.unreadable`.
-    fn give_up(&mut self, losses: &mut Vec<LossNote>, record: u64, why: LossNote) {
-        if self.records.insert(record) {
-            losses.extend(super::give_up_instance(self.exchange, record, why));
-        } else {
-            losses.push(why);
-        }
-    }
-
-    /// Charges `record.unreadable` the first time `record` is given up.
-    fn charge(&mut self, losses: &mut Vec<LossNote>, record: u64, reason: &str) {
-        if self.records.insert(record) {
-            losses.push(
-                super::at_instance(
-                    self.exchange,
-                    record,
-                    GivenUpRecord::new(format_args!("#{record}"), reason),
-                )
-                .loss(),
-            );
-        }
-    }
 }
 
 enum BuildOutcome {
@@ -1725,7 +1714,6 @@ fn build_geometric_set(
     id: u64,
     representation: &RawRecord,
     sources: GeometricSetSources<'_, '_>,
-    given_up: &mut GivenUp<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<Built>, CodecError> {
     let GeometricSetSources {
@@ -1766,13 +1754,12 @@ fn build_geometric_set(
             continue;
         };
         let Some(items) = named_reference_values(set, set_type, 1) else {
-            given_up.give_up(
-                losses,
+            losses.extend(super::give_up_instance(exchange,
                 set_id,
                 StepLossCode::DecodeWarning.note(format!(
                     "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} skipped set #{set_id} with no member list"
                 )),
-            );
+            ));
             continue;
         };
         typed.insert(set_id);
@@ -2972,6 +2959,32 @@ fn root_shell_steps(
         return Some(ids);
     }
     None
+}
+
+/// The shells a topology root's shell `shell` names, from `shell` to its
+/// base shell, and the faces of the base shell.
+fn shell_members(
+    shell: u64,
+    exchange: &Exchange,
+    shells: &BTreeMap<u64, ShellDef>,
+) -> (Vec<u64>, Vec<u64>) {
+    let definition = shells.get(&shell);
+    let base = definition.map_or(shell, |definition| definition.base);
+    let mut named = BTreeSet::from([shell, base]);
+    named.extend(
+        definition
+            .into_iter()
+            .flat_map(|definition| &definition.typed),
+    );
+    let faces = exchange
+        .records()
+        .get(&base)
+        .and_then(|record| connected_set_members(record, connected_face_set_type(record)?))
+        .into_iter()
+        .flatten()
+        .filter_map(ValueExt::reference)
+        .collect();
+    (named.into_iter().collect(), faces)
 }
 
 fn root_key(

@@ -984,7 +984,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     .rejected_breps
                     .push(format!("{}: {reason}", prim.path));
                 self.tallies.given_up.push(GivenUpRecord::new(
-                    &prim.path,
+                    crate::ids::body(key),
                     format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
                 ));
                 return Ok(Vec::new());
@@ -1016,7 +1016,7 @@ impl super::Builder<'_, '_, '_, '_> {
                         .rejected_breps
                         .push(format!("{}: {reason}", prim.path));
                     self.tallies.given_up.push(GivenUpRecord::new(
-                        format_args!("{}#brep{ordinal}", prim.path),
+                        crate::ids::body(&body_key),
                         format_args!("{}: {reason}", UsdLossCode::BrepRejected.kind()),
                     ));
                 }
@@ -1162,10 +1162,15 @@ impl super::Builder<'_, '_, '_, '_> {
         ordinal: usize,
         body: &cadmpeg_ir::ids::BodyId,
     ) -> Result<(), cadmpeg_core::CodecError> {
+        let tessellation_key = if ordinal == 0 {
+            key.to_owned()
+        } else {
+            format!("{key}/{}", prim.name)
+        };
         let Some(mesh) = crate::schema::mesh::read(self.stage, prim, &mut self.issues) else {
             self.tallies.rejected_meshes.push(prim.path.clone());
             self.tallies.given_up.push(GivenUpRecord::new(
-                &prim.path,
+                crate::ids::tessellation(&tessellation_key),
                 UsdLossCode::MeshRejected.kind(),
             ));
             return Ok(());
@@ -1177,11 +1182,6 @@ impl super::Builder<'_, '_, '_, '_> {
             ),
             super::RETAIN_MESH,
         )?;
-        let tessellation_key = if ordinal == 0 {
-            key.to_owned()
-        } else {
-            format!("{key}/{}", prim.name)
-        };
         let tessellation = match self.tessellation(&tessellation_key, &mesh) {
             Ok(tessellation) => tessellation,
             Err(reason) => {
@@ -1189,7 +1189,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     .rejected_meshes
                     .push(format!("{}: {reason}", prim.path));
                 self.tallies.given_up.push(GivenUpRecord::new(
-                    &prim.path,
+                    crate::ids::tessellation(&tessellation_key),
                     format_args!("{}: {reason}", UsdLossCode::MeshRejected.kind()),
                 ));
                 return Ok(());

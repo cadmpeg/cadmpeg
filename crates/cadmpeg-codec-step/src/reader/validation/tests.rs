@@ -60,17 +60,19 @@ fn point(x: f64, y: f64, z: f64) -> cadmpeg_ir::features::geometry::FinitePoint3
 }
 
 /// The sorted record ids that the `record.unreadable` losses name.
-fn given_up_records(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
-    let mut records = result
+/// The error text of each `record.unreadable` loss, sorted.
+fn given_up_errors(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
+    let mut errors = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == record_unreadable_kind())
-        .filter_map(|loss| loss.message.split_whitespace().nth(1))
+        .filter_map(|loss| loss.message.split_once(": "))
+        .filter_map(|(_, error)| error.split("; dropped=").next())
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    records.sort();
-    records
+    errors.sort();
+    errors
 }
 
 fn unsupported_items(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
@@ -406,9 +408,12 @@ fn item_names_select_the_class_of_each_quantity() {
     // Each unsupported item is dropped: the measures are not stated and the
     // points are not model points.
     assert_eq!(
-        given_up_records(&result),
+        given_up_errors(&result),
         (first + 3..first + 7)
-            .map(|item| format!("#{item}"))
+            .map(|item| format!(
+                "malformed container: step/validation.item-unsupported: \
+                 geometric validation property #1000 has unsupported item #{item}"
+            ))
             .collect::<Vec<_>>()
     );
     for id in first..first + 7 {
@@ -449,11 +454,14 @@ fn a_pinned_decode_refuses_an_unsupported_validation_item() {
     let loss = rejection.loss();
     assert_eq!(loss.code, record_unreadable_kind());
     assert!(
-        loss.message.starts_with("record #1007 stream=\"\" offset=")
-            && loss.message.contains(&format!(
-                " length={} given up: step/validation.item-unsupported: ",
-                item.len()
-            ))
+        loss.message
+            .starts_with("part data_record stream=\"\" offset=")
+            && loss
+                .message
+                .contains(&format!(" length={} record=", item.len()))
+            && loss
+                .message
+                .contains(": step/validation.item-unsupported: ")
             && loss.message.ends_with("; dropped=[]"),
         "{}",
         loss.message

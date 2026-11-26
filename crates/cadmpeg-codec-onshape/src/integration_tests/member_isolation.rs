@@ -231,6 +231,34 @@ fn repeated_name_keeps_first_member() {
 }
 
 #[test]
+fn two_directory_records_of_one_stored_span_are_one_part() {
+    let mut bytes = members(&fixture("plate-fillet"), |rows| {
+        rows.insert("notes/a.bin".into(), b"alias".to_vec());
+        rows.insert("notes/b.bin".into(), b"alias".to_vec());
+    });
+    let first = central(&bytes, "notes/a.bin");
+    let local = bytes[first + 42..first + 46].to_vec();
+    let second = central(&bytes, "notes/b.bin");
+    bytes[second + 42..second + 46].copy_from_slice(&local);
+    patch(&mut bytes, "notes/a.bin", 16, 14, &0u32.to_le_bytes());
+    patch(&mut bytes, "notes/b.bin", 16, 14, &0u32.to_le_bytes());
+    let result = decode(&bytes);
+    assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 2);
+    assert_eq!(given_up_entries(&result, "notes/a.bin"), 1);
+    assert_eq!(given_up_entries(&result, "notes/b.bin"), 0);
+    let stubs = result
+        .ir()
+        .native
+        .0
+        .get("onshape")
+        .and_then(|namespace| namespace.arenas().get("unknowns"))
+        .map_or(0, Vec::len);
+    assert_eq!(stubs, 1);
+    assert_eq!(result.ir().model.features.len(), 3);
+    validate(result);
+}
+
+#[test]
 fn oversized_step_is_omitted_before_or_after_history() {
     for step_first in [true, false] {
         let mut source = zip::ZipArchive::new(Cursor::new(fixture("plate-fillet"))).unwrap();
@@ -314,6 +342,10 @@ fn malformed_features_retain_step() {
         });
         let result = decode(&bytes);
         assert_eq!(has(&result, OnshapeLossCode::HistoryNotSupported), 1);
+        assert_eq!(
+            given_up_entries(&result, "partstudios/studio/features.json"),
+            1
+        );
         assert!(result.ir().model.features.is_empty());
         assert_eq!(result.ir().geometry.bodies.len(), 1);
         validate(result);
