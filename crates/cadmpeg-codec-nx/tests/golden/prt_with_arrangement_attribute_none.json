@@ -434,6 +434,20 @@
     "source_fidelity": {
       "annotations": {
         "exactness": {
+          "nx:arrangements:arrangement#0": {
+            "fields": {
+              "name": "derived",
+              "native_ref": "derived"
+            },
+            "kind": "fields"
+          },
+          "nx:arrangements:arrangement#1": {
+            "fields": {
+              "name": "derived",
+              "native_ref": "derived"
+            },
+            "kind": "fields"
+          },
           "nx:container:parasolid#0": {
             "entity": "derived",
             "fields": {
@@ -490,6 +504,16 @@
           }
         },
         "provenance": {
+          "nx:arrangements:arrangement#0": {
+            "offset": 436,
+            "stream": "nx:container",
+            "tag": "Arrangement"
+          },
+          "nx:arrangements:arrangement#1": {
+            "offset": 477,
+            "stream": "nx:container",
+            "tag": "Arrangement"
+          },
           "nx:container:parasolid#0": {
             "offset": 155,
             "stream": "nx:container",

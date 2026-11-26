@@ -473,6 +473,20 @@
     "source_fidelity": {
       "annotations": {
         "exactness": {
+          "nx:arrangements:arrangement#0": {
+            "fields": {
+              "name": "derived",
+              "native_ref": "derived"
+            },
+            "kind": "fields"
+          },
+          "nx:arrangements:arrangement#1": {
+            "fields": {
+              "name": "derived",
+              "native_ref": "derived"
+            },
+            "kind": "fields"
+          },
           "nx:container:parasolid#0": {
             "entity": "derived",
             "fields": {
@@ -484,6 +498,14 @@
             "entity": "derived",
             "fields": {},
             "kind": "entity"
+          },
+          "nx:part-attributes-2:attribute#0:neutral": {
+            "fields": {
+              "name": "derived",
+              "target": "derived",
+              "values": "derived"
+            },
+            "kind": "fields"
           },
           "nx:s0:crv#0": {
             "fields": {
@@ -529,10 +551,30 @@
           }
         },
         "provenance": {
+          "nx:arrangements:arrangement#0": {
+            "offset": 436,
+            "stream": "nx:container",
+            "tag": "Arrangement"
+          },
+          "nx:arrangements:arrangement#1": {
+            "offset": 477,
+            "stream": "nx:container",
+            "tag": "Arrangement"
+          },
           "nx:container:parasolid#0": {
             "offset": 155,
             "stream": "nx:container",
             "tag": "partition"
+          },
+          "nx:part-attributes-2:attribute#0": {
+            "offset": 562,
+            "stream": "nx:container",
+            "tag": "Attribute"
+          },
+          "nx:part-attributes-2:attribute#0:neutral": {
+            "offset": 562,
+            "stream": "nx:container",
+            "tag": "Attribute"
           },
           "nx:s0:body#2": {
             "offset": 73,

@@ -576,6 +576,11 @@
             "stream": "nx:parasolid#0:partition",
             "tag": "BLEND_SURF"
           },
+          "nx:s0:blend-surface-record#12": {
+            "offset": 473,
+            "stream": "nx:s0",
+            "tag": "BLEND_SURF"
+          },
           "nx:s0:body#2": {
             "offset": 73,
             "stream": "nx:parasolid#0:partition",
@@ -609,6 +614,11 @@
           "nx:s0:intersection-crv#0": {
             "offset": 539,
             "stream": "nx:parasolid#0:partition",
+            "tag": "INTERSECTION"
+          },
+          "nx:s0:intersection-record#18": {
+            "offset": 539,
+            "stream": "nx:s0",
             "tag": "INTERSECTION"
           },
           "nx:s0:loop#5": {

@@ -585,6 +585,16 @@
             "fields": {},
             "kind": "entity"
           },
+          "nx:om-entry-0:parameter#173": {
+            "fields": {
+              "definition": "derived",
+              "kind": "derived",
+              "native_ref": "derived",
+              "unit": "derived",
+              "value": "derived"
+            },
+            "kind": "fields"
+          },
           "nx:s0:crv#0": {
             "fields": {
               "geometry": "derived"
@@ -636,6 +646,16 @@
             "stream": "nx:container",
             "tag": "derived_point_topology"
           },
+          "nx:om-entry-0:parameter#173": {
+            "offset": 249,
+            "stream": "nx:container",
+            "tag": "Number"
+          },
+          "nx:om-expression-declarations-0:declaration#1": {
+            "offset": 185,
+            "stream": "nx:container",
+            "tag": "EXPRESSION_DECLARATION"
+          },
           "nx:om-section-0:record#0": {
             "offset": 150,
             "stream": "nx:container",
@@ -645,6 +665,11 @@
             "offset": 185,
             "stream": "nx:container",
             "tag": "OM_ENTITY_RECORD"
+          },
+          "nx:om-store-headers:store#0": {
+            "offset": 150,
+            "stream": "nx:container",
+            "tag": "OM_STORE_VERSION"
           },
           "nx:s0:crv#0": {
             "offset": 319,
