@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
+
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-use super::widen;
+use super::{settle, widen};
 use crate::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use crate::codec::loss::DecodeLossCode;
 use crate::codec::{DecodeBody, DecodeResult, Decoded, FormatId};
@@ -718,6 +720,170 @@ fn a_state_measured_after_its_base_restates_no_vertex_its_base_widens() {
         delta_vertex_tolerance(&base.content.as_ref().unwrap().delta, 0),
         moved_corner_gap(),
     );
+}
+
+/// The vertex-gap findings validation reports on any record.
+fn gaps(ir: &CadIr) -> usize {
+    validate_neutral(ir, Vec::new())
+        .unwrap()
+        .findings
+        .iter()
+        .filter(|finding| finding.message.contains("miss the edge's vertex positions"))
+        .count()
+}
+
+/// The cube's point at `at`, moved to `to`.
+fn moved_point(ir: &CadIr, at: Point3, to: Point3) -> crate::topology::Point {
+    let mut point = ir
+        .geometry
+        .points
+        .iter()
+        .find(|point| point.position().get() == at)
+        .unwrap()
+        .clone();
+    point.set_position(FinitePoint3::new(to).unwrap());
+    point
+}
+
+/// The cube's points at corners 0, 1 and 2, each but the first on the line
+/// of the edge from the corner before it, so that only the widening of that
+/// corner lets the measure state its distance from its other edges. Corner 0
+/// is moved by (-0.02, -0.02, -0.02), off the ends and lines of its three
+/// edges. Corner 1 is moved 0.015625 along edge 0 toward corner 0: 0.015625
+/// from the ends and lines of edges 1 and 9. Corner 2 is moved 0.01171875
+/// along edge 1 toward corner 1: 0.01171875 from the ends and lines of edges
+/// 2 and 10.
+fn chained_corner_points(ir: &CadIr) -> Vec<crate::topology::Point> {
+    vec![
+        moved_origin_corner(ir),
+        moved_point(
+            ir,
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(10.0 - 0.015_625, 0.0, 0.0),
+        ),
+        moved_point(
+            ir,
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(10.0, 10.0 - 0.011_718_75, 0.0),
+        ),
+    ]
+}
+
+#[test]
+fn a_chain_of_vertices_each_kept_by_a_miss_at_the_one_before_is_widened_in_turn() {
+    // A first measure widens corner 0 and keeps corners 1 and 2 as stored:
+    // each misses the end of the edge from the corner before it on that
+    // edge's line. Each widening covers the next corner's gap on that edge.
+    let mut ir = unit_cube().unwrap();
+    for moved in chained_corner_points(&ir) {
+        for point in &mut ir.geometry.points {
+            if point.id == moved.id {
+                *point = moved.clone();
+            }
+        }
+    }
+    assert!(gaps(&ir) > 0);
+    let mut annotations = Annotations::default();
+    let losses = widen(&mut ir, &mut annotations, &DecodePolicy::default());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        DecodeLossCode::VertexToleranceWidened.note("").code
+    );
+    let vertices = [0, 1, 2].map(|corner| vertex_id(&ir, corner));
+    assert!(
+        loss.message.starts_with("widened 3 vertex tolerance(s)")
+            && loss
+                .message
+                .ends_with(&format!(": {}", vertices.join(", "))),
+        "{}",
+        loss.message
+    );
+    assert_close(
+        vertex_tolerance(&ir.geometry, 0).unwrap(),
+        moved_corner_gap(),
+    );
+    assert_close(vertex_tolerance(&ir.geometry, 1).unwrap(), 0.015_625);
+    assert_close(vertex_tolerance(&ir.geometry, 2).unwrap(), 0.011_718_75);
+    let largest: f64 = loss
+        .message
+        .split_once("the largest widening is ")
+        .and_then(|(_, rest)| rest.split_once(" mm"))
+        .map(|(value, _)| value.parse().unwrap())
+        .unwrap();
+    assert_close(largest, moved_corner_gap() - ir.tolerances.linear.get());
+    assert_eq!(gaps(&ir), 0);
+}
+
+#[test]
+fn a_chain_of_state_vertices_each_kept_by_a_miss_at_the_one_before_is_widened_in_its_delta() {
+    // As above, with the three moved points in the delta of an evaluation on
+    // the current state.
+    let mut ir = crate::validate::design::fixture::document();
+    let points = chained_corner_points(&ir);
+    let evaluation = &mut ir.design.evaluations[0];
+    let holder = evaluation.id.as_str().to_owned();
+    evaluation.content.as_mut().unwrap().delta.records.points = points;
+    assert!(gaps_on(&ir, &holder) > 0);
+    let keys = [0, 1, 2].map(|corner| format!("{holder} {}", vertex_id(&ir, corner)));
+    let ir = assert_widened_in_deltas(ir, &keys);
+    let delta = &ir.design.evaluations[0].content.as_ref().unwrap().delta;
+    assert_close(delta_vertex_tolerance(delta, 0), moved_corner_gap());
+    assert_close(delta_vertex_tolerance(delta, 1), 0.015_625);
+    assert_close(delta_vertex_tolerance(delta, 2), 0.011_718_75);
+    assert_eq!(gaps_on(&ir, &holder), 0);
+}
+
+/// The tolerances a measure widens.
+fn a_measure(widened: &[(&str, f64)]) -> BTreeMap<String, f64> {
+    widened
+        .iter()
+        .map(|&(vertex, tolerance)| (vertex.to_owned(), tolerance))
+        .collect()
+}
+
+#[test]
+fn settling_measures_again_while_a_measure_widens_a_vertex() {
+    // Each measure widens one vertex more; the fourth widens none.
+    let mut again = 0;
+    let settled = settle(3, a_measure(&[("a", 1.0)]), |widened| {
+        again += 1;
+        Ok(match widened.len() {
+            1 => a_measure(&[("b", 2.0)]),
+            2 => a_measure(&[("c", 3.0)]),
+            _ => a_measure(&[]),
+        })
+    })
+    .unwrap();
+    assert_eq!(again, 3);
+    assert!(settled.settled);
+    assert_eq!(
+        settled.widened,
+        BTreeMap::from([("a".into(), 1.0), ("b".into(), 2.0), ("c".into(), 3.0)])
+    );
+}
+
+#[test]
+fn settling_does_not_measure_again_after_a_measure_that_widens_nothing() {
+    let settled = settle(3, a_measure(&[]), |_| panic!("measured again")).unwrap();
+    assert!(settled.settled);
+    assert!(settled.widened.is_empty());
+}
+
+#[test]
+fn settling_stops_unsettled_after_one_measure_more_than_the_geometry_holds_vertices() {
+    // Each measure widens `a` further.
+    let mut again = 0;
+    let settled = settle(2, a_measure(&[("a", 1.0)]), |_| {
+        again += 1;
+        Ok(a_measure(&[("a", 1.0 + f64::from(again))]))
+    })
+    .unwrap();
+    assert_eq!(again, 2);
+    assert!(!settled.settled);
+    assert_eq!(settled.widened, BTreeMap::from([("a".into(), 3.0)]));
 }
 
 #[test]
