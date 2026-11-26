@@ -91,3 +91,100 @@ fn an_error_that_ends_the_session_ends_the_decode() {
     .expect_err("I/O ends the session");
     assert!(matches!(error, CodecError::Io(_)));
 }
+
+/// A design record that restates a model feature or parameter under its id
+/// takes the exactness of that model record, with each model field override
+/// moved to the design field that restates it.
+#[test]
+fn restated_exactness_names_the_fields_of_the_design_record() {
+    use crate::design::units::{Quantity, ValueKind};
+    use crate::features::parameters::DesignParameter as ModelParameter;
+    use crate::features::selections::DistinctMembers;
+    use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation, ParameterId};
+    use crate::provenance::Exactness;
+    use crate::validate::design::fixture;
+
+    let mut ir = fixture::document();
+    ir.design.parameters.push(fixture::parameter(
+        "width",
+        ValueKind::Quantity(Quantity::LENGTH),
+    ));
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("test:design:feature#fillet").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: crate::features::FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
+        ),
+        native_ref: None,
+    });
+    ir.model.parameters.push(ModelParameter {
+        product_definition: None,
+        id: ParameterId::mint("test:design:parameter#width").unwrap(),
+        owner: None,
+        ordinal: 0,
+        name: "width".to_owned(),
+        expression: "10 mm".to_owned(),
+        display: None,
+        value: None,
+        dependencies: DistinctMembers::default(),
+        properties: BTreeMap::default(),
+        pmi: None,
+        native_ref: None,
+    });
+    let mut annotations = crate::AnnotationBuilder::new();
+    annotations.exactness("test:design:feature#fillet", Exactness::Inferred);
+    annotations.exactness("test:design:parameter#width", Exactness::Derived);
+    for (id, field) in [
+        ("test:design:feature#fillet", "source_content"),
+        ("test:design:feature#fillet", "dependencies"),
+        ("test:design:parameter#width", "owner"),
+        ("test:design:parameter#width", "ordinal"),
+        ("test:design:parameter#width", "properties"),
+        ("test:design:parameter#width", "expression"),
+        ("test:design:feature#extrude", "placement"),
+    ] {
+        annotations.derived(id, field).unwrap();
+    }
+
+    super::restate_exactness(&ir, &mut annotations).unwrap();
+
+    let annotations = annotations.build();
+    let stated = |id: &str| {
+        let note = &annotations.exactness()[id];
+        let fields = note
+            .fields()
+            .iter()
+            .map(|(field, exactness)| (field.to_string(), *exactness))
+            .collect::<Vec<_>>();
+        (note.entity(), fields)
+    };
+    let derived = |fields: &[&str]| {
+        fields
+            .iter()
+            .map(|field| ((*field).to_owned(), Exactness::Derived))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        stated("test:design:feature#fillet"),
+        (Exactness::Inferred, derived(&["definition"]))
+    );
+    assert_eq!(
+        stated("test:design:parameter#width"),
+        (
+            Exactness::Derived,
+            derived(&["definition", "kind", "scope"])
+        )
+    );
+    assert_eq!(
+        stated("test:design:feature#extrude").1,
+        derived(&["placement"])
+    );
+}

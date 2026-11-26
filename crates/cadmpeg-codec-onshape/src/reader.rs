@@ -1048,6 +1048,7 @@ fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
+    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations)?;
     model.source_fidelity.annotations = annotations.build();
     Ok(())
 }
