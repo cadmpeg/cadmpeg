@@ -88,7 +88,8 @@ fn successor_relative_endpoints_do_not_share_unresolved_vertex_identities() {
     assert_eq!(native.vertex_identity_ids(first), ["", ""]);
     assert_eq!(native.vertex_identity_ids(second), ["", ""]);
     assert!(native.consolidated_vertex_identities.is_empty());
-    let wire = serde_json::to_value(&native).expect("serialize native records");
+    let wire =
+        cadmpeg_core::serde_erase::json::to_value(&native).expect("serialize native records");
     assert_eq!(
         wire["consolidated_edge_nodes"][0]["vertices"],
         serde_json::json!(["", ""])
@@ -98,7 +99,8 @@ fn successor_relative_endpoints_do_not_share_unresolved_vertex_identities() {
         serde_json::json!(["", ""])
     );
     assert_eq!(
-        serde_json::from_value::<crate::native::CatiaNative>(wire).expect("load native records"),
+        cadmpeg_core::serde_erase::json::from_value::<crate::native::CatiaNative>(wire)
+            .expect("load native records"),
         native
     );
 }
@@ -495,14 +497,17 @@ fn chamfer_followed_by_spanning_parameter_point_terminates() {
 fn a_loaded_plane_carrier_direction_is_admitted_unit() {
     let native = crate::native::CatiaNative::decode(&b2_plane_carrier_stream());
     let direction3 = &native.consolidated_plane_carriers[1];
-    let mut value = serde_json::to_value(direction3).expect("plane carrier JSON");
+    let mut value =
+        cadmpeg_core::serde_erase::json::to_value(direction3).expect("plane carrier JSON");
     assert_eq!(
         value["payload"]["direction"],
         serde_json::json!([1.0, 0.0, 0.0])
     );
     value["payload"]["direction"] = serde_json::json!([2.0, 0.0, 0.0]);
-    let error = serde_json::from_value::<crate::native::CatiaConsolidatedPlaneCarrier>(value)
-        .expect_err("a non-unit plane-carrier direction");
+    let error = cadmpeg_core::serde_erase::json::from_value::<
+        crate::native::CatiaConsolidatedPlaneCarrier,
+    >(value)
+    .expect_err("a non-unit plane-carrier direction");
     assert!(
         error
             .to_string()

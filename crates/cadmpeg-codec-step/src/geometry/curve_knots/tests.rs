@@ -117,7 +117,7 @@ fn three_dimensional_curves_and_pcurves_emit_shared_join_poles() {
         &super::super::PcurveGeometry::Nurbs { nurbs: pcurve },
     )
     .expect("pcurve export");
-    let lines = emitter.into_lines().expect("finite STEP geometry");
+    let lines = emitter.into_lines();
     let curves = lines
         .iter()
         .filter(|line| line.contains("B_SPLINE_CURVE_WITH_KNOTS"))

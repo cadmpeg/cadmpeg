@@ -160,10 +160,7 @@ fn aggregate(
             reference(p::RECORD_BF7A6B8B, 33),
             (
                 p::NEXT_PERSISTENT_IDENTITY,
-                Bind::U64(super::super::base_feature::next_identity(
-                    ctx.roster.sketches.items.len() + ctx.roster.planes.len(),
-                    ctx.roster.item.is_some(),
-                )?),
+                Bind::U64(ctx.roster.next_identity),
             ),
             reference(p::RECORD_AD3F9695, 37),
             reference(p::PARAMETER_BODY_OWNER, PARAMETER_OWNER),

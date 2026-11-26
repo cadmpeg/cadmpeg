@@ -3,14 +3,704 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "usd:stage:container#joints",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "usd:stage:joint#/Arm/Joints/Anchor"
+              },
+              {
+                "kind": "feature",
+                "value": "usd:stage:joint#/Arm/Joints/Rail"
+              },
+              {
+                "kind": "feature",
+                "value": "usd:stage:joint#/Arm/Joints/Shoulder"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "component": "usd:stage:definition#/Arm",
+          "definition": {
+            "operation": {
+              "kind": "joint",
+              "value": {
+                "connectors": [
+                  {
+                    "after": [
+                      {
+                        "kind": "fixed",
+                        "value": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "inputs": [],
+                    "kind": "frame",
+                    "resolved": {
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "x_axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "y_axis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "z_axis": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      }
+                    },
+                    "resolved_in": {}
+                  },
+                  {
+                    "after": [
+                      {
+                        "kind": "fixed",
+                        "value": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "inputs": [
+                      {
+                        "reference": {
+                          "kind": "picks",
+                          "value": {
+                            "at": {
+                              "kind": "current"
+                            },
+                            "picks": {
+                              "kind": "named",
+                              "value": [
+                                {
+                                  "context": {
+                                    "kind": "occurrence",
+                                    "value": [
+                                      {
+                                        "occurrence": {
+                                          "kind": "occurrence",
+                                          "value": "usd:stage:occurrence#/Arm/Base"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "target": {
+                                    "kind": "component"
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "role": {
+                          "relation": {
+                            "kind": "coincident"
+                          },
+                          "subject": "whole"
+                        }
+                      }
+                    ],
+                    "kind": "frame",
+                    "resolved": {
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "x_axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "y_axis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "z_axis": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                ],
+                "kind": {
+                  "kind": "motion",
+                  "value": {
+                    "drives": [],
+                    "limits": [],
+                    "motion": {
+                      "kind": "rigid"
+                    },
+                    "offset": {}
+                  }
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "usd:stage:joint#/Arm/Joints/Anchor",
+          "name": "Anchor",
+          "native_ref": "/Arm/Joints/Anchor",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        },
+        {
+          "component": "usd:stage:definition#/Arm",
+          "definition": {
+            "operation": {
+              "kind": "joint",
+              "value": {
+                "connectors": [
+                  {
+                    "after": [
+                      {
+                        "kind": "fixed",
+                        "value": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "inputs": [
+                      {
+                        "reference": {
+                          "kind": "picks",
+                          "value": {
+                            "at": {
+                              "kind": "current"
+                            },
+                            "picks": {
+                              "kind": "named",
+                              "value": [
+                                {
+                                  "context": {
+                                    "kind": "occurrence",
+                                    "value": [
+                                      {
+                                        "occurrence": {
+                                          "kind": "occurrence",
+                                          "value": "usd:stage:occurrence#/Arm/Upper"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "target": {
+                                    "kind": "component"
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "role": {
+                          "relation": {
+                            "kind": "coincident"
+                          },
+                          "subject": "whole"
+                        }
+                      }
+                    ],
+                    "kind": "frame",
+                    "resolved": {
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 100.0
+                      },
+                      "x_axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "y_axis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "z_axis": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      }
+                    },
+                    "resolved_in": {}
+                  },
+                  {
+                    "after": [
+                      {
+                        "kind": "fixed",
+                        "value": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "inputs": [
+                      {
+                        "reference": {
+                          "kind": "picks",
+                          "value": {
+                            "at": {
+                              "kind": "current"
+                            },
+                            "picks": {
+                              "kind": "named",
+                              "value": [
+                                {
+                                  "context": {
+                                    "kind": "occurrence",
+                                    "value": [
+                                      {
+                                        "occurrence": {
+                                          "kind": "occurrence",
+                                          "value": "usd:stage:occurrence#/Arm/Slider"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "target": {
+                                    "kind": "component"
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "role": {
+                          "relation": {
+                            "kind": "coincident"
+                          },
+                          "subject": "whole"
+                        }
+                      }
+                    ],
+                    "kind": "frame",
+                    "resolved": {
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "x_axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "y_axis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "z_axis": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                ],
+                "kind": {
+                  "kind": "motion",
+                  "value": {
+                    "drives": [
+                      {
+                        "axis": {
+                          "axis": "z",
+                          "kind": "translation"
+                        },
+                        "damping": 2.0,
+                        "mode": "force",
+                        "stiffness": 20.0
+                      }
+                    ],
+                    "limits": [
+                      {
+                        "axis": "z",
+                        "kind": "translation",
+                        "limits": {
+                          "max": {
+                            "kind": "literal",
+                            "value": 50.0
+                          },
+                          "min": {
+                            "kind": "literal",
+                            "value": 0.0
+                          }
+                        }
+                      }
+                    ],
+                    "motion": {
+                      "kind": "slider",
+                      "value": {
+                        "axis": "z"
+                      }
+                    },
+                    "offset": {}
+                  }
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "usd:stage:joint#/Arm/Joints/Rail",
+          "name": "Rail",
+          "native_ref": "/Arm/Joints/Rail",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        },
+        {
+          "component": "usd:stage:definition#/Arm",
+          "definition": {
+            "operation": {
+              "kind": "joint",
+              "value": {
+                "connectors": [
+                  {
+                    "after": [
+                      {
+                        "kind": "fixed",
+                        "value": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            20.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "inputs": [
+                      {
+                        "reference": {
+                          "kind": "picks",
+                          "value": {
+                            "at": {
+                              "kind": "current"
+                            },
+                            "picks": {
+                              "kind": "named",
+                              "value": [
+                                {
+                                  "context": {
+                                    "kind": "occurrence",
+                                    "value": [
+                                      {
+                                        "occurrence": {
+                                          "kind": "occurrence",
+                                          "value": "usd:stage:occurrence#/Arm/Base"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "target": {
+                                    "kind": "component"
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "role": {
+                          "relation": {
+                            "kind": "coincident"
+                          },
+                          "subject": "whole"
+                        }
+                      }
+                    ],
+                    "kind": "frame",
+                    "resolved": {
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 20.0
+                      },
+                      "x_axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "y_axis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "z_axis": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      }
+                    },
+                    "resolved_in": {}
+                  },
+                  {
+                    "after": [
+                      {
+                        "kind": "fixed",
+                        "value": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "inputs": [
+                      {
+                        "reference": {
+                          "kind": "picks",
+                          "value": {
+                            "at": {
+                              "kind": "current"
+                            },
+                            "picks": {
+                              "kind": "named",
+                              "value": [
+                                {
+                                  "context": {
+                                    "kind": "occurrence",
+                                    "value": [
+                                      {
+                                        "occurrence": {
+                                          "kind": "occurrence",
+                                          "value": "usd:stage:occurrence#/Arm/Upper"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "target": {
+                                    "kind": "component"
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        },
+                        "role": {
+                          "relation": {
+                            "kind": "coincident"
+                          },
+                          "subject": "whole"
+                        }
+                      }
+                    ],
+                    "kind": "frame",
+                    "resolved": {
+                      "origin": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "x_axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "y_axis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "z_axis": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                ],
+                "kind": {
+                  "kind": "motion",
+                  "value": {
+                    "drives": [
+                      {
+                        "axis": {
+                          "axis": "y",
+                          "kind": "rotation"
+                        },
+                        "damping": 28647.88975654116,
+                        "max_force": 100000.0,
+                        "mode": "force",
+                        "stiffness": 572957.7951308233,
+                        "target_position": 0.5235987755982988
+                      }
+                    ],
+                    "limits": [
+                      {
+                        "axis": "y",
+                        "kind": "rotation",
+                        "limits": {
+                          "max": {
+                            "kind": "literal",
+                            "value": 0.7853981633974483
+                          },
+                          "min": {
+                            "kind": "literal",
+                            "value": -1.5707963267948966
+                          }
+                        }
+                      }
+                    ],
+                    "motion": {
+                      "kind": "revolute",
+                      "value": {
+                        "axis": "y"
+                      }
+                    },
+                    "offset": {}
+                  }
+                },
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "usd:stage:joint#/Arm/Joints/Shoulder",
+          "name": "Shoulder",
+          "native_ref": "/Arm/Joints/Shoulder",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        }
+      ],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [],
+          "definition": "usd:stage:root#stage",
+          "occurrences": {},
+          "roots": [
+            "usd:stage:container#joints"
+          ],
+          "unproduced": []
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],

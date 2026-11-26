@@ -109,13 +109,15 @@ fn neutral_spline_validation_recomputes_the_endpoint_bound_form() -> TestResult 
             match mode {
                 0 => {}
                 1 | 2 => {
-                    let mut wire = serde_json::to_value(&data.pm_dc_sketch_entities[2])?;
+                    let mut wire =
+                        cadmpeg_core::serde_erase::json::to_value(&data.pm_dc_sketch_entities[2])?;
                     if mode == 1 {
                         wire["save_version_major"] = serde_json::json!(25);
                     } else {
                         wire["entity_flags"] = serde_json::json!(0);
                     }
-                    data.pm_dc_sketch_entities[2] = serde_json::from_value(wire)?;
+                    data.pm_dc_sketch_entities[2] =
+                        cadmpeg_core::serde_erase::json::from_value(wire)?;
                 }
                 3 => {
                     crate::test_support::sketch_curves::edit_entity(
@@ -134,21 +136,26 @@ fn neutral_spline_validation_recomputes_the_endpoint_bound_form() -> TestResult 
                     |payload| payload.sketch = PmDcReference::from_packed(4),
                 ),
                 5 => {
-                    let wire = serde_json::to_value(&data.pm_dc_sketch_entities[2])?;
+                    let wire =
+                        cadmpeg_core::serde_erase::json::to_value(&data.pm_dc_sketch_entities[2])?;
                     let mut changed = wire;
                     changed["kind"]["data"]["secondary"]["poles"][1][0] = serde_json::json!(1.0);
-                    data.pm_dc_sketch_entities[2] = serde_json::from_value(changed)?;
+                    data.pm_dc_sketch_entities[2] =
+                        cadmpeg_core::serde_erase::json::from_value(changed)?;
                 }
                 _ => {}
             }
             sketch_records(&mut data)?;
-            data.records.push(serde_json::from_value(serde_json::json!({
-                "id": "inventor:rse:record#generated-2", "token": "generated", "ordinal": 2,
-                "selector": 0, "type_index": 0,
-                "type_id": "114d8790d011f8d10008cabc0663dc09",
-                "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
-                "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": ""
-            }))?);
+            data.records
+                .push(cadmpeg_core::serde_erase::json::from_value(
+                    serde_json::json!({
+                        "id": "inventor:rse:record#generated-2", "token": "generated", "ordinal": 2,
+                        "selector": 0, "type_index": 0,
+                        "type_id": "114d8790d011f8d10008cabc0663dc09",
+                        "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
+                        "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": ""
+                    }),
+                )?);
             let mut ir = cadmpeg_ir::CadIr::empty();
             ir.model.sketch_entities.push(neutral.clone());
             if mode == 6 {
@@ -199,7 +206,9 @@ fn spline_midpoint_validation_requires_native_locus_semantics() -> TestResult {
         };
         let mut data = empty_data();
         data.pm_dc_sketch_entities = sources;
-        let mut wire = serde_json::to_value(crate::test_support::sketch_curves::spline_midpoint())?;
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(
+            crate::test_support::sketch_curves::spline_midpoint(),
+        )?;
         if mode == 2 {
             wire["header"]["parameter"] = serde_json::json!(PmDcReference::from_packed(4));
         } else if mode == 3 {
@@ -207,7 +216,8 @@ fn spline_midpoint_validation_requires_native_locus_semantics() -> TestResult {
         } else if mode == 4 {
             wire["kind"]["value"] = serde_json::Value::Null;
         }
-        let native: crate::sketch::PmDcSketchConstraint = serde_json::from_value(wire)?;
+        let native: crate::sketch::PmDcSketchConstraint =
+            cadmpeg_core::serde_erase::json::from_value(wire)?;
         let native_ref = native.id();
         data.pm_dc_sketch_constraints.push(native);
         sketch_records(&mut data)?;
@@ -215,7 +225,7 @@ fn spline_midpoint_validation_requires_native_locus_semantics() -> TestResult {
             (2, "114d8790d011f8d10008cabc0663dc09"),
             (9, "bf70e821d011d0d20008ccbc0663dc09"),
         ] {
-            data.records.push(serde_json::from_value(serde_json::json!({
+            data.records.push(cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": format!("inventor:rse:record#generated-{ordinal}"), "token": "generated", "ordinal": ordinal,
             "selector": 0, "type_index": 0, "type_id": record_type,
             "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
@@ -360,9 +370,10 @@ fn neutral_construction_state_recomputes_from_the_entity_flags() -> TestResult {
         });
         source.identity.type_id =
             crate::record_identity::RecordTypeId::from_bytes(source.kind.record_type_id());
-        let mut wire = serde_json::to_value(&source)?;
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&source)?;
         wire["entity_flags"] = serde_json::json!(flags);
-        let source: crate::sketch::PmDcSketchEntity = serde_json::from_value(wire)?;
+        let source: crate::sketch::PmDcSketchEntity =
+            cadmpeg_core::serde_erase::json::from_value(wire)?;
         let native = source.id();
         data.pm_dc_sketch_entities.push(source);
         data.pm_dc_sketch_entities.push(sketch_point(

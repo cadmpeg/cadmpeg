@@ -12,7 +12,7 @@
 pub fn refusal<T: serde::de::DeserializeOwned>(key: &str) -> String {
     let mut wire = serde_json::json!({});
     wire[key] = serde_json::Value::Null;
-    let Err(refused) = serde_json::from_value::<T>(wire) else {
+    let Err(refused) = cadmpeg_core::serde_erase::json::from_value::<T>(wire) else {
         panic!("{key}: null was admitted")
     };
     refused.to_string()

@@ -6,7 +6,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::scalar::PositiveReal;
@@ -639,23 +638,23 @@ fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
-/// A kept default replaces the source value, so strict decode refuses the
-/// substitution. Strict decode keeps a faithfully transferred source relation.
+/// A kept default replaces the source value and reports it. Its code pins no
+/// strict floor, so a pinned decode admits the substitution.
 #[test]
-fn strict_decode_rejects_a_substituted_length_uncertainty() {
+fn a_pinned_decode_admits_a_substituted_length_uncertainty() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    let error = StepCodec::default()
+    options.strictness.pinned = true;
+    let result = StepCodec::default()
         .decode(
             &mut Cursor::new(DISTINCT_CONTEXT_UNCERTAINTY_SOURCE.as_bytes()),
             &options,
         )
-        .expect_err("strict mode rejects a substituted default tolerance");
-
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
-    ));
+        .expect("a substituted default tolerance pins no strict floor");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::StepLossCode::UncertaintyLengthAmbiguous.kind()));
 }
 
 #[test]
@@ -825,7 +824,7 @@ fn trim_end(result: &cadmpeg_ir::codec::DecodeResult) -> f64 {
     let [curve] = result.ir().geometry.procedural_curves.as_slice() else {
         panic!("one trimmed curve");
     };
-    let value = serde_json::to_value(curve).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(curve).unwrap();
     value["definition"]["parameter_range"][1].as_f64().unwrap()
 }
 

@@ -177,9 +177,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         assert_eq!(long_member.next_record_index, 201);
         assert!(long_member.tail_slot_present);
         assert_eq!(
-            serde_json::from_value::<
+            cadmpeg_core::serde_erase::json::from_value::<
                 crate::records::topology::extrude_selection::DesignExtrudeSelectionMember,
-            >(serde_json::to_value(&long_member).unwrap())
+            >(cadmpeg_core::serde_erase::json::to_value(&long_member).unwrap())
             .unwrap(),
             long_member
         );

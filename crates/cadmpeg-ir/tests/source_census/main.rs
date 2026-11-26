@@ -290,6 +290,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
     ),
     ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
     ("crates/cadmpeg-ir/src/provenance.rs", "Provenance", "wire"),
+    (
+        "crates/cadmpeg-ir/src/report/check.rs",
+        "RuleName",
+        "keyless",
+    ),
     ("crates/cadmpeg-ir/src/scalar.rs", "$name", "keyless"),
     (
         "crates/cadmpeg-ir/src/scalar.rs",
@@ -358,9 +363,10 @@ fn every_hand_written_deserialize_states_its_coverage() {
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": []}}),
     ] {
         let read: cadmpeg_ir::native::Native =
-            serde_json::from_value(wire.clone()).expect("native store reads back");
+            cadmpeg_core::serde_erase::json::from_value(wire.clone())
+                .expect("native store reads back");
         assert_eq!(
-            serde_json::to_value(read).expect("native store writes back"),
+            cadmpeg_core::serde_erase::json::to_value(read).expect("native store writes back"),
             wire
         );
     }
@@ -369,7 +375,8 @@ fn every_hand_written_deserialize_states_its_coverage() {
         serde_json::json!({"rhino": {"objects": [], "zz_bogus": true}}),
     ] {
         assert!(
-            serde_json::from_value::<cadmpeg_ir::native::Native>(wire).is_err(),
+            cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::Native>(wire)
+                .is_err(),
             "native namespace and arena maps refuse invalid value shapes"
         );
     }
@@ -380,17 +387,19 @@ fn every_hand_written_deserialize_states_its_coverage() {
 /// open native field map and a closed hand-written object adapter.
 #[test]
 fn compiled_hand_readers_keep_their_admission_boundaries() {
-    let native = serde_json::from_value::<cadmpeg_ir::native::NativeRecord>(serde_json::json!({
-        "id": "test:source-census:record#0",
-        "codec_field": {"preserved": true},
-    }))
+    let native = cadmpeg_core::serde_erase::json::from_value::<cadmpeg_ir::native::NativeRecord>(
+        serde_json::json!({
+            "id": "test:source-census:record#0",
+            "codec_field": {"preserved": true},
+        }),
+    )
     .expect("NativeRecord's open field reader admits codec-owned fields");
     assert_eq!(
         native.field("codec_field"),
         Some(serde_json::json!({"preserved": true}))
     );
 
-    let unknown_configuration = serde_json::from_value::<
+    let unknown_configuration = cadmpeg_core::serde_erase::json::from_value::<
         cadmpeg_ir::features::parameters::ConfigurationEvaluation,
     >(serde_json::json!({
         "kind": "suppressed",
@@ -678,8 +687,8 @@ fn every_hand_written_deserialize_refuses_a_null_spelling() {
         if name.starts_with('$') {
             continue;
         }
-        let text = read_source(&root.join(path));
-        let parsed = syn::parse_file(&text).expect("every source file in the wire crates parses");
+        let parsed_file = parse_source(&root.join(path), path);
+        let parsed = &parsed_file.1;
         let mut skipping = Vec::new();
         declared_optional_fields(
             &parsed.items,
@@ -938,10 +947,8 @@ fn shim_definitions() -> (ShimMacros, BTreeMap<(String, String), String>) {
             if is_test_path(&relative) {
                 continue;
             }
-            let text = read_source(&file);
-            let parsed = syn::parse_file(&text)
-                .map_err(|error| format!("{relative} does not parse: {error}"))
-                .expect("every source file in the wire crates parses");
+            let parsed_file = parse_source(&file, &relative);
+            let parsed = &parsed_file.1;
             walk(&parsed.items, &relative, &mut found, &mut forwarders);
         }
     }
@@ -1001,10 +1008,8 @@ fn optional_absence_census(root: &Path) -> (usize, Vec<String>) {
             if is_test_path(&relative) {
                 continue;
             }
-            let text = read_source(&file);
-            let parsed = syn::parse_file(&text)
-                .map_err(|error| format!("{relative} does not parse: {error}"))
-                .expect("every source file in the wire crates parses");
+            let parsed_file = parse_source(&file, &relative);
+            let parsed = &parsed_file.1;
             collect_optional_fields(
                 &parsed.items,
                 &relative,
@@ -1553,10 +1558,8 @@ fn hand_written_impls() -> Vec<(String, String)> {
             if is_test_path(&relative) {
                 continue;
             }
-            let text = read_source(&file);
-            let parsed = syn::parse_file(&text)
-                .map_err(|error| format!("{relative} does not parse: {error}"))
-                .expect("every source file in the wire crates parses");
+            let parsed_file = parse_source(&file, &relative);
+            let parsed = &parsed_file.1;
             collect_hand_impls(&parsed.items, &relative, &mut found);
         }
     }
@@ -1758,6 +1761,51 @@ const RUST_KEYWORDS: &[&str] = &[
 /// the name rustc reads, so every comparison of names sees one spelling.
 fn read_source(file: &Path) -> String {
     unraw(&std::fs::read_to_string(file).expect("read source"))
+}
+
+fn repo_root_dir() -> &'static Path {
+    static ROOT: OnceLock<PathBuf> = OnceLock::new();
+    ROOT.get_or_init(|| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("the repository root sits two levels above the crate manifest")
+            .to_path_buf()
+    })
+}
+
+/// Reads and parses `file`, caching repository sources on the current thread
+/// so repeated census passes over the wire crates parse each file once.
+fn parse_source(file: &Path, relative: &str) -> std::rc::Rc<(String, syn::File)> {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    thread_local! {
+        static CACHE: RefCell<HashMap<PathBuf, Rc<(String, syn::File)>>> = RefCell::new(HashMap::new());
+    }
+
+    if file.starts_with(repo_root_dir()) {
+        if let Some(cached) = CACHE.with(|cache| cache.borrow().get(file).cloned()) {
+            return cached;
+        }
+        let text = read_source(file);
+        let parsed = syn::parse_file(&text)
+            .map_err(|error| format!("{relative} does not parse: {error}"))
+            .expect("every source file in the wire crates parses");
+        let entry = Rc::new((text, parsed));
+        CACHE.with(|cache| {
+            cache
+                .borrow_mut()
+                .insert(file.to_path_buf(), Rc::clone(&entry));
+        });
+        return entry;
+    }
+    let text = read_source(file);
+    let parsed = syn::parse_file(&text)
+        .map_err(|error| format!("{relative} does not parse: {error}"))
+        .expect("every source file in the wire crates parses");
+    Rc::new((text, parsed))
 }
 
 /// `text` with each raw identifier `r#name` spelled `name`. A keyword keeps

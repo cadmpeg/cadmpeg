@@ -195,12 +195,12 @@ fn scene_binding_is_exact_and_preserves_all_three_states() {
         .any(|loss| loss.message.starts_with("2 display override")));
     assert_eq!(ir.model.occurrences, unchanged);
     for binding in [SceneBinding::Ambiguous {}, SceneBinding::Unbound {}] {
-        assert!(serde_json::to_value(binding)
+        assert!(cadmpeg_core::serde_erase::json::to_value(binding)
             .unwrap()
             .get("occurrence")
             .is_none());
     }
-    assert!(serde_json::from_value::<SceneBinding>(
+    assert!(cadmpeg_core::serde_erase::json::from_value::<SceneBinding>(
         serde_json::json!({"state":"ambiguous","occurrence":"f3d:test:occurrence#a"})
     )
     .is_err());
@@ -258,12 +258,12 @@ fn scene_native_validation_shares_matrix_and_path_gates() {
     }
     assert!(ScenePath::try_from(vec![]).is_ok());
     let (rows, _) = decode(&encoded(&[3, 17]));
-    let mut wire = serde_json::to_value(&rows[0]).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&rows[0]).unwrap();
     wire["path"] = serde_json::json!([3]);
-    assert!(serde_json::from_value::<DisplayPose>(wire).is_err());
-    let mut wire = serde_json::to_value(&rows[0]).unwrap();
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DisplayPose>(wire).is_err());
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&rows[0]).unwrap();
     wire["transform"][0][0] = serde_json::json!(-1.0);
-    assert!(serde_json::from_value::<DisplayPose>(wire).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<DisplayPose>(wire).is_err());
 }
 
 #[test]

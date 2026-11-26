@@ -20,6 +20,7 @@ use crate::{diff, CadIr};
 
 mod append;
 mod feature_parents;
+mod scope;
 mod unknowns;
 
 #[test]
@@ -197,8 +198,14 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
     assert_eq!(crate::schema::EntityKind::ALL.len(), ArenaName::ALL.len());
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut ids = std::collections::HashSet::new();
-    collect_ids(&serde_json::to_value(&ir.geometry).unwrap(), &mut ids);
-    collect_ids(&serde_json::to_value(&ir.model).unwrap(), &mut ids);
+    collect_ids(
+        &cadmpeg_core::serde_erase::json::to_value(&ir.geometry).unwrap(),
+        &mut ids,
+    );
+    collect_ids(
+        &cadmpeg_core::serde_erase::json::to_value(&ir.model).unwrap(),
+        &mut ids,
+    );
     let mut missing = Vec::new();
     let mut visit = |reference: &str| -> Result<(), cadmpeg_core::CodecError> {
         if !ids.contains(reference) {
@@ -314,7 +321,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     use crate::features::{Feature, FeatureDefinition, FeatureOperation};
 
     let (model, parent_id, child_id) = tree_node_model();
-    let value = serde_json::to_value(model.sorted_omitted()).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(model.sorted_omitted()).unwrap();
     assert!(value["features"][1].get("parent").is_none());
     assert!(value["features"][1].get("regeneration_parent").is_none());
     assert_eq!(
@@ -363,7 +370,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     regeneration
         .set_feature_regeneration_parent(&(child_id), &(parent_id.clone()))
         .unwrap();
-    let value = serde_json::to_value(regeneration.sorted_omitted()).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(regeneration.sorted_omitted()).unwrap();
     assert_eq!(
         value["features"][1]["regeneration_parent"],
         parent_id.as_str()
@@ -426,7 +433,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
         )
         .unwrap();
 
-    let value = serde_json::to_value(&ir).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
     let model = value["geometry"].as_object().unwrap();
     assert_eq!(model["surfaces"][0]["geometry"]["kind"], "solved");
     assert_eq!(model["surfaces"][0]["geometry"]["value"]["kind"], "plane");
@@ -439,7 +446,10 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
         .get("cache")
         .is_none());
     assert_eq!(model["procedural_curves"][0]["curve"], curve.as_str());
-    assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::from_value::<CadIr>(value).unwrap(),
+        ir
+    );
 
     let mut rewritten = Topology::default();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
@@ -586,28 +596,78 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
 
 #[test]
 fn parser_rejects_unsupported_missing_and_non_string_versions() {
-    let canonical = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
+    let canonical =
+        cadmpeg_core::serde_erase::json::to_value(unit_cube().expect("valid unit cube fixture"))
+            .unwrap();
     let expected_version = crate::IR_VERSION;
     for (version, found) in [
-        (Some(serde_json::Value::String("7".into())), "Some(\"7\")"),
-        (Some(serde_json::Value::String("8".into())), "Some(\"8\")"),
-        (Some(serde_json::Value::String("9".into())), "Some(\"9\")"),
-        (Some(serde_json::Value::String("12".into())), "Some(\"12\")"),
-        (Some(serde_json::Value::String("37".into())), "Some(\"37\")"),
-        (Some(serde_json::Value::String("36".into())), "Some(\"36\")"),
-        (Some(serde_json::Value::String("35".into())), "Some(\"35\")"),
-        (Some(serde_json::Value::String("34".into())), "Some(\"34\")"),
-        (Some(serde_json::Value::String("33".into())), "Some(\"33\")"),
-        (Some(serde_json::Value::String("0".into())), "Some(\"0\")"),
-        (Some(serde_json::Value::String("14".into())), "Some(\"14\")"),
-        (Some(serde_json::Value::String("15".into())), "Some(\"15\")"),
-        (Some(serde_json::Value::String("16".into())), "Some(\"16\")"),
-        (Some(serde_json::Value::String("17".into())), "Some(\"17\")"),
-        (Some(serde_json::Value::String("29".into())), "Some(\"29\")"),
-        (None, "None"),
-        (Some(serde_json::Value::Number(1.into())), "None"),
+        (
+            Some(serde_json::Value::String("7".into())),
+            "unsupported ir_version \"7\"",
+        ),
+        (
+            Some(serde_json::Value::String("8".into())),
+            "unsupported ir_version \"8\"",
+        ),
+        (
+            Some(serde_json::Value::String("9".into())),
+            "unsupported ir_version \"9\"",
+        ),
+        (
+            Some(serde_json::Value::String("12".into())),
+            "unsupported ir_version \"12\"",
+        ),
+        (
+            Some(serde_json::Value::String("37".into())),
+            "unsupported ir_version \"37\"",
+        ),
+        (
+            Some(serde_json::Value::String("36".into())),
+            "unsupported ir_version \"36\"",
+        ),
+        (
+            Some(serde_json::Value::String("35".into())),
+            "unsupported ir_version \"35\"",
+        ),
+        (
+            Some(serde_json::Value::String("34".into())),
+            "unsupported ir_version \"34\"",
+        ),
+        (
+            Some(serde_json::Value::String("33".into())),
+            "unsupported ir_version \"33\"",
+        ),
+        (
+            Some(serde_json::Value::String("0".into())),
+            "unsupported ir_version \"0\"",
+        ),
+        (
+            Some(serde_json::Value::String("14".into())),
+            "unsupported ir_version \"14\"",
+        ),
+        (
+            Some(serde_json::Value::String("15".into())),
+            "unsupported ir_version \"15\"",
+        ),
+        (
+            Some(serde_json::Value::String("16".into())),
+            "unsupported ir_version \"16\"",
+        ),
+        (
+            Some(serde_json::Value::String("17".into())),
+            "unsupported ir_version \"17\"",
+        ),
+        (
+            Some(serde_json::Value::String("29".into())),
+            "unsupported ir_version \"29\"",
+        ),
+        (None, "no `ir_version`"),
+        (
+            Some(serde_json::Value::Number(1.into())),
+            "unsupported ir_version 1",
+        ),
     ] {
-        let expected = format!("unsupported ir_version {found}; expected {expected_version}");
+        let expected = format!("{found}; expected {expected_version}");
         let mut value = canonical.clone();
         let object = value.as_object_mut().unwrap();
         match version {
@@ -618,7 +678,7 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
                 object.remove("ir_version");
             }
         }
-        let json = serde_json::to_string(&value).unwrap();
+        let json = cadmpeg_core::serde_erase::json::to_string(&value).unwrap();
         let error = CadIr::from_json(&json).unwrap_err();
         assert!(!error.is_syntax());
         assert!(error.to_string().contains(&expected), "{error}");
@@ -646,7 +706,7 @@ fn parser_distinguishes_malformed_json_from_version_rejection() {
 #[test]
 fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty();
-    let json = serde_json::to_value(&ir).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
 
     assert_eq!(json["ir_version"], crate::IR_VERSION);
     assert!(json.get("byte_ledger").is_none());
@@ -670,23 +730,23 @@ fn parameter(id: &str) -> crate::features::parameters::DesignParameter {
 }
 
 fn with_scope(ir: &CadIr, scope: serde_json::Value) -> String {
-    let mut value = serde_json::to_value(ir).unwrap();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(ir).unwrap();
     value["scope"] = scope;
-    serde_json::to_string(&value).unwrap()
+    cadmpeg_core::serde_erase::json::to_string(&value).unwrap()
 }
 
 #[test]
 fn scope_is_a_required_wire_field() {
     let ir = unit_cube().expect("valid unit cube fixture");
     assert_eq!(ir.scope(), ContentScope::full());
-    let mut value = serde_json::to_value(&ir).unwrap();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
     assert_eq!(
         value["scope"],
         serde_json::json!({"model": true, "design": true, "process": true})
     );
 
     value.as_object_mut().unwrap().remove("scope");
-    let json = serde_json::to_string(&value).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_string(&value).unwrap();
     let error = CadIr::from_json(&json).unwrap_err();
     assert!(error.to_string().contains("scope"), "{error}");
 }
@@ -704,55 +764,42 @@ fn a_geometry_document_without_design_records_round_trips() {
 }
 
 #[test]
-fn a_scope_missing_a_required_class_fails_to_parse() {
+fn a_scope_missing_a_required_class_reads_and_writes_as_stated() {
     let ir = CadIr::empty();
-    for (scope, expected) in [
-        (
-            serde_json::json!({"model": false, "design": true, "process": false}),
-            "the scope holds design but excludes model",
-        ),
-        (
-            serde_json::json!({"model": true, "design": false, "process": true}),
-            "the scope holds process but excludes design",
-        ),
+    for (held, required) in [
+        (ArenaClass::Design, ArenaClass::Model),
+        (ArenaClass::Process, ArenaClass::Design),
     ] {
-        let error = CadIr::from_json(&with_scope(&ir, scope)).unwrap_err();
-        assert!(error.to_string().contains(expected), "{error}");
+        let scope = ContentScope::full()
+            .with(required, false)
+            .with(ArenaClass::Process, held == ArenaClass::Process);
+        let mut set = ir.clone();
+        set.set_scope(scope);
+        assert_eq!(set.scope(), scope);
+        let violation = ScopeViolation::Unmet { held, required };
+        assert_eq!(set.scope_violations(), [violation]);
+        assert_eq!(
+            violation.to_string(),
+            format!(
+                "the document's scope holds {held} but excludes {required}, which {held} requires"
+            )
+        );
+        let read = CadIr::from_json(&with_scope(
+            &ir,
+            cadmpeg_core::serde_erase::json::to_value(scope).unwrap(),
+        ))
+        .unwrap();
+        assert_eq!(read.scope(), scope);
+        assert_eq!(read.scope_violations(), [violation]);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&read).unwrap()["scope"],
+            cadmpeg_core::serde_erase::json::to_value(scope).unwrap()
+        );
     }
 }
 
 #[test]
-fn set_scope_refuses_a_scope_missing_a_required_class() {
-    let mut ir = CadIr::empty();
-    let design_without_model = ContentScope {
-        model: false,
-        design: true,
-        process: false,
-    };
-    assert_eq!(
-        ir.set_scope(design_without_model),
-        Err(ScopeViolation {
-            class: ArenaClass::Model,
-            arena: None,
-        })
-    );
-    let process_without_design = ContentScope {
-        model: true,
-        design: false,
-        process: true,
-    };
-    assert_eq!(
-        ir.set_scope(process_without_design),
-        Err(ScopeViolation {
-            class: ArenaClass::Design,
-            arena: None,
-        })
-    );
-    assert_eq!(ir.scope(), ContentScope::full());
-}
-
-#[test]
-fn a_document_with_records_of_an_excluded_class_fails_to_parse() {
+fn a_document_with_records_of_an_excluded_class_reads_and_names_each_arena() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.design.scopes.push(crate::design::scope::DesignScope {
         definition: crate::ids::ProductDefinitionId::mint("synthetic:test:product-definition#root")
@@ -769,53 +816,76 @@ fn a_document_with_records_of_an_excluded_class_fails_to_parse() {
             .map(ArenaName::as_str),
         Some("design.scopes")
     );
+    let bodies = ScopeViolation::Populated {
+        arena: ArenaName::parse("bodies").unwrap(),
+    };
+    let scopes = ScopeViolation::Populated {
+        arena: ArenaName::parse("design.scopes").unwrap(),
+    };
+    assert_eq!(
+        bodies.to_string(),
+        "the document's scope excludes model but model arena `bodies` holds records"
+    );
+    assert_eq!(
+        scopes.to_string(),
+        "the document's scope excludes design but design arena `design.scopes` holds records"
+    );
+    let mut container: Vec<ScopeViolation> = [
+        "bodies",
+        "regions",
+        "shells",
+        "faces",
+        "loops",
+        "coedges",
+        "edges",
+        "vertices",
+        "points",
+        "surfaces",
+        "curves",
+        "product_definitions",
+    ]
+    .into_iter()
+    .map(|arena| ScopeViolation::Populated {
+        arena: ArenaName::parse(arena).unwrap(),
+    })
+    .collect();
+    assert_eq!(container[0], bodies);
+    container.push(scopes);
     for (scope, expected) in [
-        (
-            serde_json::json!({"model": false, "design": false, "process": false}),
-            "the document's scope excludes model but model arena `bodies` holds records",
-        ),
-        (
-            serde_json::json!({"model": true, "design": false, "process": false}),
-            "the document's scope excludes design but design arena `design.scopes` holds records",
-        ),
+        (ContentScope::container(), container),
+        (ContentScope::geometry(), vec![scopes]),
+        (ContentScope::design(), vec![]),
     ] {
-        let json = with_scope(&ir, scope);
-        let error = CadIr::from_json(&json).unwrap_err();
-        assert!(error.to_string().contains(expected), "{error}");
-        let direct = serde_json::from_str::<CadIr>(&json).unwrap_err();
-        assert!(direct.to_string().contains(expected), "{direct}");
+        let json = with_scope(
+            &ir,
+            cadmpeg_core::serde_erase::json::to_value(scope).unwrap(),
+        );
+        let read = CadIr::from_json(&json).unwrap();
+        assert_eq!(read.scope(), scope);
+        assert_eq!(serde_json::from_str::<CadIr>(&json).unwrap(), read);
+        assert_eq!(read.scope_violations(), expected);
     }
-    assert!(CadIr::from_json(&with_scope(
-        &ir,
-        serde_json::json!({"model": true, "design": true, "process": false})
-    ))
-    .is_ok());
 }
 
 #[test]
-fn a_design_record_outside_the_scope_is_refused_on_set_and_on_write() {
+fn a_design_record_outside_the_scope_is_kept_on_set_and_on_write() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.set_scope(ContentScope::geometry()).unwrap();
+    ir.set_scope(ContentScope::geometry());
     ir.model
         .parameters
         .push(parameter("synthetic:test:parameter#depth"));
-    let parameters = ArenaName::ALL
-        .iter()
-        .copied()
-        .find(|arena| arena.as_str() == "parameters");
-    let violation = ScopeViolation {
-        class: ArenaClass::Design,
-        arena: parameters,
+    let violation = ScopeViolation::Populated {
+        arena: ArenaName::parse("parameters").unwrap(),
     };
-    assert_eq!(ir.check_scope(), Err(violation));
-    assert_eq!(ir.set_scope(ContentScope::geometry()), Err(violation));
-    let error = serde_json::to_string(&ir).unwrap_err();
-    assert!(
-        error.to_string().contains(&violation.to_string()),
-        "{error}"
+    assert_eq!(ir.scope_violations(), [violation]);
+    ir.set_scope(ContentScope::geometry());
+    assert_eq!(ir.scope(), ContentScope::geometry());
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&ir).unwrap()["scope"],
+        cadmpeg_core::serde_erase::json::to_value(ContentScope::geometry()).unwrap()
     );
-    ir.set_scope(ContentScope::design()).unwrap();
-    assert!(serde_json::to_string(&ir).is_ok());
+    ir.set_scope(ContentScope::design());
+    assert!(ir.scope_violations().is_empty());
 }
 
 #[test]
@@ -873,7 +943,7 @@ fn an_unclassified_source_states_its_format_inside_the_identity() {
     assert_eq!(source.format(), "rhino");
     assert_eq!(source.dialect(), None);
 
-    let rewritten = serde_json::to_string(&source).unwrap();
+    let rewritten = cadmpeg_core::serde_erase::json::to_string(&source).unwrap();
     assert_eq!(
         rewritten,
         "{\"identity\":{\"kind\":\"unclassified\",\"format\":\"rhino\"},\
@@ -902,7 +972,7 @@ fn a_classified_source_carries_its_format_once() {
     assert_eq!(source.format(), "rhino");
     assert_eq!(source.dialect(), Some(&matched));
     assert_eq!(source.dialects(), Some(&layers));
-    let rendered = serde_json::to_value(&source).unwrap();
+    let rendered = cadmpeg_core::serde_erase::json::to_value(&source).unwrap();
     assert_eq!(rendered["identity"]["kind"], "classified");
     assert!(rendered["identity"].get("format").is_none());
     assert!(rendered["identity"]["dialects"]["primary"]
@@ -913,13 +983,13 @@ fn a_classified_source_carries_its_format_once() {
         "rhino:archive-80"
     );
     assert_eq!(
-        serde_json::from_value::<SourceMeta>(rendered.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<SourceMeta>(rendered.clone()).unwrap(),
         source
     );
 
     let mut restated = rendered;
     restated["identity"]["format"] = serde_json::json!("step");
-    let error = serde_json::from_value::<SourceMeta>(restated)
+    let error = cadmpeg_core::serde_erase::json::from_value::<SourceMeta>(restated)
         .expect_err("a classified identity carries no second format");
     assert!(error.to_string().contains("format"), "{error}");
 }
@@ -927,7 +997,8 @@ fn a_classified_source_carries_its_format_once() {
 #[cfg(feature = "schema")]
 #[test]
 fn source_metadata_schema_requires_its_identity_and_has_no_singular_dialect() {
-    let schema = serde_json::to_value(schemars::schema_for!(SourceMeta)).unwrap();
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(SourceMeta)).unwrap();
     let required = schema["required"].as_array().unwrap();
 
     assert!(
@@ -989,7 +1060,7 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
         .unwrap();
     assert_eq!(model.feature_tree_parent(&child_id), None);
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
-    let wire = serde_json::to_value(model.sorted_omitted()).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(model.sorted_omitted()).unwrap();
     assert_eq!(
         wire["features"][0]["definition"]["value"]["value"]["children"],
         serde_json::json!({"children": []})
@@ -1024,7 +1095,7 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
         ),
         native_ref: None,
     });
-    let feature = serde_json::to_value(&ir.model.features[0]).unwrap();
+    let feature = cadmpeg_core::serde_erase::json::to_value(&ir.model.features[0]).unwrap();
 
     for key in [
         "product_definition",
@@ -1039,7 +1110,7 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
             .as_object_mut()
             .unwrap()
             .insert(key.to_owned(), serde_json::Value::Null);
-        let error = serde_json::from_value::<Feature>(value)
+        let error = cadmpeg_core::serde_erase::json::from_value::<Feature>(value)
             .unwrap_err()
             .to_string();
         assert!(
@@ -1053,22 +1124,24 @@ fn a_stated_null_is_refused_on_every_feature_key_written_by_omission() {
 fn geometry_snapshot_matches_filtered_model_wire_without_intermediate_tree() {
     let geometry = Topology::default();
     let model = Model::default();
-    let mut baseline = serde_json::to_value(&geometry).expect("topology serializes");
+    let mut baseline =
+        cadmpeg_core::serde_erase::json::to_value(&geometry).expect("topology serializes");
     let object = baseline.as_object_mut().expect("topology is an object");
     object.remove("subds");
     object.insert(
         "tessellations".into(),
-        serde_json::to_value(&model.tessellations).expect("tessellations serialize"),
+        cadmpeg_core::serde_erase::json::to_value(&model.tessellations)
+            .expect("tessellations serialize"),
     );
     object.insert("kind".into(), serde_json::json!("brep"));
     assert_eq!(
-        serde_json::to_string(
+        cadmpeg_core::serde_erase::json::to_string(
             &geometry
                 .geometry_snapshot(&model, "brep")
                 .expect("snapshot admission")
         )
         .expect("snapshot serializes"),
-        serde_json::to_string(&baseline).expect("baseline serializes"),
+        cadmpeg_core::serde_erase::json::to_string(&baseline).expect("baseline serializes"),
     );
 }
 
@@ -1120,7 +1193,7 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
             crate::features::FeatureId::mint("synthetic:test:feature#cut").unwrap(),
         ),
     };
-    let attributes = ArenaName::parse("attributes");
+    let attributes = ArenaName::parse("attributes").unwrap();
     for record in [
         attribute(
             AttributeTarget::Configuration(configuration).into(),
@@ -1142,33 +1215,27 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
         ),
     ] {
         let mut ir = unit_cube().expect("valid unit cube fixture");
-        ir.set_scope(ContentScope::geometry()).unwrap();
+        ir.set_scope(ContentScope::geometry());
         ir.model.attributes.push(record);
-        let violation = ScopeViolation {
+        let violation = ScopeViolation::Referenced {
             class: ArenaClass::Design,
             arena: attributes,
         };
-        assert_eq!(ir.check_scope(), Err(violation));
+        assert_eq!(ir.scope_violations(), [violation]);
         assert_eq!(
             violation.to_string(),
             "the document's scope excludes design but model arena `attributes` holds a reference into it"
         );
-        assert!(serde_json::to_string(&ir).is_err());
-        ir.set_scope(ContentScope::design()).unwrap();
-        let json = serde_json::to_string(&ir).unwrap();
-        let error = CadIr::from_json(&with_scope(
-            &CadIr::from_json(&json).unwrap(),
-            serde_json::json!({"model": true, "design": false, "process": false}),
-        ))
-        .unwrap_err();
-        assert!(
-            error.to_string().contains(&violation.to_string()),
-            "{error}"
-        );
+        let json = cadmpeg_core::serde_erase::json::to_string(&ir).unwrap();
+        let read = CadIr::from_json(&json).unwrap();
+        assert_eq!(read.scope(), ContentScope::geometry());
+        assert_eq!(read.scope_violations(), [violation]);
+        ir.set_scope(ContentScope::design());
+        assert!(ir.scope_violations().is_empty());
     }
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.set_scope(ContentScope::geometry()).unwrap();
+    ir.set_scope(ContentScope::geometry());
     ir.model
         .declared_measures
         .push(crate::declared_measures::DeclaredMeasure::new(
@@ -1179,18 +1246,46 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
             },
         ));
     assert_eq!(
-        ir.check_scope(),
-        Err(ScopeViolation {
+        ir.scope_violations(),
+        [ScopeViolation::Referenced {
             class: ArenaClass::Design,
-            arena: ArenaName::parse("declared_measures"),
-        })
+            arena: ArenaName::parse("declared_measures").unwrap(),
+        }]
     );
 }
 
 #[test]
-fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
+fn a_solver_setting_of_a_joint_reads_the_design() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.set_scope(ContentScope::geometry());
+    ir.model
+        .solver_settings
+        .push(crate::physics::solver::SolverSettings {
+            id: crate::ids::SolverSettingsId::mint("synthetic:test:solver#joint").unwrap(),
+            solver: "physx".to_owned(),
+            schema: "PhysxJointAPI".to_owned(),
+            target: crate::physics::solver::SolverTarget::Joint {
+                joint: crate::features::FeatureId::mint("synthetic:test:feature#hinge").unwrap(),
+            }
+            .into(),
+            values: std::collections::BTreeMap::new(),
+            native_ref: None,
+        });
+    assert_eq!(
+        ir.scope_violations(),
+        [ScopeViolation::Referenced {
+            class: ArenaClass::Design,
+            arena: ArenaName::parse("solver_settings").unwrap(),
+        }]
+    );
+    ir.set_scope(ContentScope::design());
+    assert!(ir.scope_violations().is_empty());
+}
+
+#[test]
+fn an_arena_out_of_order_is_written_sorted_and_the_strict_reader_refuses_it() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let sorted = serde_json::to_value(&ir).expect("a sorted document writes");
+    let sorted = cadmpeg_core::serde_erase::json::to_value(&ir).expect("a sorted document writes");
     assert!(ir.geometry.points.len() >= 2);
 
     // Serialization sorts an arena out of order, as `finalize` does, and
@@ -1203,35 +1298,33 @@ fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
         .iter()
         .any(|finding| finding.check == crate::report::check::Check::ArenaOrder));
     assert_eq!(
-        serde_json::to_value(&unsorted).expect("an unsorted document writes"),
+        cadmpeg_core::serde_erase::json::to_value(&unsorted).expect("an unsorted document writes"),
         sorted
     );
     let mut repeated = ir.clone();
     let mut later = repeated.geometry.points[0].clone();
     later.native_ref = Some("the later copy".into());
     repeated.geometry.points.insert(0, later);
-    let wire = serde_json::to_value(&repeated).expect("a repeated id writes");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&repeated).expect("a repeated id writes");
     let points = wire["geometry"]["points"].as_array().unwrap();
     assert_eq!(points.len(), ir.geometry.points.len() + 1);
     assert_eq!(points[0]["native_ref"], "the later copy");
 
-    // Reading adds no refusal and no repair of its own (item Q).
+    // The strict reader refuses an arena out of order and a repeated id.
     let mut swapped = sorted;
     swapped["geometry"]["points"]
         .as_array_mut()
         .unwrap()
         .swap(0, 1);
-    let read = CadIr::from_json(&swapped.to_string()).expect("an arena out of order reads");
-    assert_eq!(read.geometry.points, unsorted.geometry.points);
-    let read = CadIr::from_json(&wire.to_string()).expect("a repeated id reads");
-    assert_eq!(read.geometry.points.len(), ir.geometry.points.len() + 1);
+    assert!(CadIr::from_json(&swapped.to_string()).is_err());
+    assert!(CadIr::from_json(&wire.to_string()).is_err());
 }
 
 /// The wire writes every `model` arena but those the registry marks omitted,
 /// and the reader refuses those.
 #[test]
 fn model_wire_omits_exactly_the_marked_arenas() {
-    let value = serde_json::to_value(super::Model::default()).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(super::Model::default()).unwrap();
     let written: std::collections::BTreeSet<&str> = value
         .as_object()
         .unwrap()

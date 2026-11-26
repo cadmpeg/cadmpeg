@@ -11,7 +11,7 @@
 use crate::document::CadIr;
 use crate::index::identities::IdentitySet;
 use crate::report::{
-    check::{Check, Finding, ValidationReport},
+    check::{Check, Finding, Ruled, ValidationReport},
     loss::LossNote,
     Severity,
 };
@@ -23,9 +23,9 @@ use cadmpeg_core::CodecError;
 pub mod admit;
 mod annotations_native;
 mod appearance_attributes;
-mod carriers_parameterization;
+pub(crate) mod carriers_parameterization;
 mod cycles;
-mod design;
+pub(crate) mod design;
 mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
@@ -62,8 +62,8 @@ use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use topology::graphs::{
-    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_partial_topology,
-    check_shell_connectivity, check_wire_topology,
+    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing, check_loopless_faces,
+    check_partial_topology, check_shell_connectivity, check_solid_edge_uses, check_wire_topology,
 };
 use topology::procedural_owners::check_procedural_owners;
 use topology::{
@@ -75,15 +75,15 @@ fn record_finding(
     check: Check,
     severity: Severity,
     entity: Option<&str>,
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
-    let message = std::fmt::format(message);
     let entity = entity.map(str::to_owned);
     findings.push(Finding {
         related: Vec::new(),
         check,
+        rule: message.rule.clone(),
         severity,
-        message,
+        message: std::fmt::format(message.message),
         entity,
     });
 }
@@ -94,12 +94,13 @@ fn record_related_finding(
     severity: Severity,
     entity: &str,
     related: &[&str],
-    message: std::fmt::Arguments<'_>,
+    message: Ruled<'_>,
 ) {
     let mut finding = Finding {
         check,
+        rule: message.rule.clone(),
         severity,
-        message: std::fmt::format(message),
+        message: std::fmt::format(message.message),
         entity: Some(entity.to_owned()),
         related: Vec::new(),
     };
@@ -153,7 +154,7 @@ fn validate_model_with_index<'ir>(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ids, &mut findings)?;
+    check_identity_and_order(ids, &products::decode_set::file_keys(ir), &mut findings)?;
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     check_procedural_owners(ir, &mut findings);
@@ -173,8 +174,7 @@ fn validate_model_with_index<'ir>(
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
     history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
-    design::check_design(ctx, ir, ids, &mut findings)?;
-    process::check_process(ctx, ir, ids, &mut findings)?;
+    process::check_design_and_process(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),
@@ -203,11 +203,13 @@ fn check_topology_rules(
     check_child_list_reciprocity(ir, findings);
     check_closed_edges(ir, findings);
     check_shell_connectivity(ir, findings);
+    check_loopless_faces(ir, findings);
+    check_solid_edge_uses(ir, findings);
     check_partial_topology(ir, findings);
     check_wire_topology(ir, findings);
     if reach.ir.fragment {
         record_finding(findings, Check::FragmentSkipped, Severity::Info, None,
-            format_args!("skipped carrier_reachability: document-wide ownership requires a complete document"));
+            crate::rule!("validate.skipped-carrier-reachability-document-wide-ownership", "skipped carrier_reachability: document-wide ownership requires a complete document"));
     } else {
         check_carrier_reachability(ctx, reach, &ir.geometry, findings)?;
     }
@@ -385,6 +387,7 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
             .map(crate::ids::UnknownId::as_str),
         &mut report.findings,
     )?;
+    products::decode_set::check_file_digests(ir, source_fidelity, &mut report.findings);
     Ok(report)
 }
 
@@ -412,7 +415,7 @@ mod tests {
                 crate::report::check::Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 entity,
-                format_args!("unresolved reference {}", 7),
+                crate::rule!("test.unresolved-reference", "unresolved reference {}", 7),
             );
         }
         assert_eq!(findings.len(), 2);
@@ -576,7 +579,7 @@ mod tests {
         ];
         for &(bytes, valid) in cases {
             let method: crate::features::surfaces::SplitFaceMethod =
-                serde_json::from_slice(bytes).unwrap();
+                cadmpeg_core::serde_erase::json::from_slice(bytes).unwrap();
             for configuration_local in [false, true] {
                 let definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
                     targets: FaceSelection::Unresolved,
@@ -806,16 +809,18 @@ mod tests {
             SplitBodyTool::Faces(FaceSelection::Unresolved),
             SplitBodyTool::Plane { plane },
         ] {
-            let wire = serde_json::to_value(&tool).expect("serialize tool");
+            let wire = cadmpeg_core::serde_erase::json::to_value(&tool).expect("serialize tool");
             assert_eq!(
-                serde_json::from_value::<SplitBodyTool>(wire).expect("tool"),
+                cadmpeg_core::serde_erase::json::from_value::<SplitBodyTool>(wire).expect("tool"),
                 tool
             );
         }
-        assert!(serde_json::from_value::<SplitBodyTool>(
-            serde_json::json!({"kind": "planes", "value": []})
-        )
-        .is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<SplitBodyTool>(
+                serde_json::json!({"kind": "planes", "value": []})
+            )
+            .is_err()
+        );
     }
 }
 

@@ -11,21 +11,22 @@ fn fixed_fillet_unassigned_groups_emit_one_scope_loss() {
         panic!("Fillet fixture");
     };
     slot.fixed = Some(
-        serde_json::from_value(serde_json::json!({"groups": [{
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({"groups": [{
             "radii": [0.2], "radius_offsets": [2020], "radius_record_indexes": [202]
         }]}))
         .unwrap(),
     );
-    let first: DesignConstructionOperandGroup = serde_json::from_value(serde_json::json!({
-        "id": "f3d:test:group#100", "record_index": 100, "scope_record_index": 10,
-        "scope_reference_ordinal": 0, "byte_offset": 0, "class_tag": "277",
-        "members": [101], "member_offsets": [26], "role": 0x0000_0008_0000_0000_u64,
-        "role_offset": 40, "paired_class_tag": "258", "paired_byte_offset": 80,
-        "frame": {"member_count_offset": 21, "opaque_index": 1,
-            "opaque_index_offset": 58, "opaque_scalar": 0.0,
-            "opaque_scalar_offset": 62, "variant": false}
-    }))
-    .unwrap();
+    let first: DesignConstructionOperandGroup =
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            "id": "f3d:test:group#100", "record_index": 100, "scope_record_index": 10,
+            "scope_reference_ordinal": 0, "byte_offset": 0, "class_tag": "277",
+            "members": [101], "member_offsets": [26], "role": 0x0000_0008_0000_0000_u64,
+            "role_offset": 40, "paired_class_tag": "258", "paired_byte_offset": 80,
+            "frame": {"member_count_offset": 21, "opaque_index": 1,
+                "opaque_index_offset": 58, "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 62, "variant": false}
+        }))
+        .unwrap();
     assert!(super::super::fillets::fixed_fillet_assignment_losses(
         std::slice::from_ref(&scope),
         std::slice::from_ref(&first),

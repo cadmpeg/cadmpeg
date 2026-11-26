@@ -21,8 +21,8 @@ const CHECK_REPORT: &str = r#"{
   "check_report": {
     "entity_counts": {"faces": 2, "edges": 12},
     "findings": [
-      {"check": "identity", "severity": "error", "message": "duplicate id", "entity": "e1"},
-      {"check": "tolerances", "severity": "warning", "message": "negative radius"}
+      {"check": "identity", "rule": "identity.duplicate-id", "severity": "error", "message": "duplicate id", "entity": "e1"},
+      {"check": "tolerances", "rule": "tolerances.negative-radius", "severity": "warning", "message": "negative radius"}
     ],
     "losses": [
       {
@@ -91,7 +91,8 @@ fn query_requires_the_current_version_for_every_artifact_and_writes_it() {
             "{}",
             String::from_utf8_lossy(&result.stderr)
         );
-        let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        let report: serde_json::Value =
+            cadmpeg_core::serde_erase::json::from_slice(&result.stdout).unwrap();
         assert_eq!(report["ir_version"], cadmpeg_ir::IR_VERSION);
         assert_eq!(report["command"], "query");
         for version in [
@@ -297,7 +298,8 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         .output()
         .unwrap();
     assert!(json.status.success());
-    let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    let json: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&json.stdout).unwrap();
     assert_eq!(
         json["payload"]["refusal_dialects"]["primary"]["dialect"],
         "rhino:unknown"
@@ -367,7 +369,8 @@ fn summary_projects_structured_target_refusals() {
         .output()
         .unwrap();
     assert!(output.status.success(), "{:?}", output.status);
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_eq!(
         value["payload"]["refusal_target"]["kind"],
         "unknown_explicit"
@@ -403,9 +406,9 @@ fn findings_and_losses_project_tsv_with_a_header() {
         .assert()
         .success()
         .stdout(
-            "severity\tcheck\tentity\tmessage\n\
-             error\tidentity\te1\tduplicate id\n\
-             warning\ttolerances\t\tnegative radius\n",
+            "severity\tcheck\trule\tentity\tmessage\n\
+             error\tidentity\tidentity.duplicate-id\te1\tduplicate id\n\
+             warning\ttolerances\ttolerances.negative-radius\t\tnegative radius\n",
         );
 
     cadmpeg()
@@ -519,13 +522,15 @@ fn query_json_wraps_the_projection_in_an_envelope() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "query");
     assert_eq!(value["status"], "ok");
     assert_eq!(value["refusal"], serde_json::Value::Null);
     assert!(value["generator"].is_string());
     assert_eq!(value["payload"].as_array().unwrap().len(), 2);
     assert_eq!(value["payload"][0]["check"], "identity");
+    assert_eq!(value["payload"][0]["rule"], "identity.duplicate-id");
 }
 
 #[test]
@@ -567,7 +572,7 @@ fn a_non_json_file_is_an_operational_error() {
 #[test]
 fn query_projects_a_real_check_report_end_to_end() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube().expect("unit cube fixture is admitted");
+    let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
     let report = dir.path().join("report.json");
@@ -623,7 +628,8 @@ fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
         .arg(&report)
         .assert()
         .success();
-    let measured: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let measured: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
     let unavailable = measured["measure"]["document"]["unavailable"]
         .as_object()
         .unwrap();
@@ -653,7 +659,8 @@ fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let summary: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     let payload = &summary["payload"];
     assert_eq!(payload["kind"], "command report");
     assert_eq!(payload["command"], "measure");
@@ -702,7 +709,7 @@ fn summary_names_a_measure_report_and_counts_its_rows_and_unavailable_values() {
         .arg(&report)
         .assert()
         .success()
-        .stdout("severity\tcheck\tentity\tmessage\n")
+        .stdout("severity\tcheck\trule\tentity\tmessage\n")
         .stderr(predicate::str::contains("this command did not check"));
     cadmpeg()
         .args(["query", "losses"])
@@ -959,7 +966,8 @@ fn item_json_envelope_uses_item_payload_key() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "query");
     assert_eq!(value["payload"].as_array().unwrap().len(), 1);
     assert_eq!(
@@ -1229,7 +1237,8 @@ fn item_round_trips_counts_dotted_name_on_unit_cube() {
         .output()
         .unwrap();
     assert!(counts.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&counts.stdout).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&counts.stdout).unwrap();
     let counts_map = value["payload"].as_object().unwrap();
     assert!(counts_map.contains_key("geometry.faces"));
     assert!(counts_map["geometry.faces"].as_u64().unwrap() > 0);
@@ -1375,7 +1384,8 @@ fn schema_infers_native_fields_from_a_document() {
         .output()
         .unwrap();
     assert!(json.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&json.stdout).unwrap();
     assert_eq!(value["command"], "query");
     assert_eq!(value["payload"]["inferred"], true);
     assert_eq!(value["payload"]["arena"], "native.creo.curve_parameters");
@@ -1465,7 +1475,8 @@ fn schema_sidecar_and_json_envelope() {
         .output()
         .unwrap();
     assert!(json.status.success());
-    let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+    let value: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&json.stdout).unwrap();
     assert_eq!(value["command"], "query");
     assert_eq!(value["payload"]["element"], "Face");
     assert!(value["payload"]["defs"]
@@ -1477,7 +1488,7 @@ fn schema_sidecar_and_json_envelope() {
 #[test]
 fn a_written_report_carries_the_generator_and_summary_prints_it() {
     let dir = tempdir().unwrap();
-    let ir = unit_cube().expect("unit cube fixture is admitted");
+    let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let model = dir.path().join("cube.cadir.json");
     fs::write(&model, ir.to_canonical_json().unwrap()).unwrap();
     let report = dir.path().join("cube.report.json");
@@ -1531,7 +1542,7 @@ fn view_json(args: &[&str]) -> Vec<u8> {
 #[cfg(feature = "sldprt")]
 fn first_model_arena(doc: &std::path::Path) -> String {
     let stdout = view_json(&["query", "counts", "--json", doc.to_str().unwrap()]);
-    let value: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let value: serde_json::Value = cadmpeg_core::serde_erase::json::from_slice(&stdout).unwrap();
     value["payload"]
         .as_object()
         .unwrap()
@@ -1608,7 +1619,8 @@ fn every_view_json_is_a_query_command_report() {
 
     for (view, args) in views {
         let stdout = view_json(&args);
-        let value: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let value: serde_json::Value =
+            cadmpeg_core::serde_erase::json::from_slice(&stdout).unwrap();
         assert_eq!(value["command"], "query", "{view}");
         assert_eq!(value["status"], "ok", "{view}");
         assert_eq!(value["view"], view, "{view}");
@@ -1686,7 +1698,7 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
     let input = write(
         dir.path(),
         "model.cadir.json",
-        &serde_json::to_string(&ir).unwrap(),
+        &cadmpeg_core::serde_erase::json::to_string(&ir).unwrap(),
     );
     let output = dir.path().join("model.igs");
     let report = dir.path().join("convert.json");
@@ -1703,7 +1715,8 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
         ])
         .assert()
         .success();
-    let mut wire: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let mut wire: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&report).unwrap()).unwrap();
     let export_loss_count = wire["export"]["losses"].as_array().unwrap().len();
     assert!(export_loss_count > 0);
     let summary = cadmpeg()
@@ -1711,7 +1724,8 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
         .output()
         .unwrap();
     assert!(summary.status.success());
-    let summary: serde_json::Value = serde_json::from_slice(&summary.stdout).unwrap();
+    let summary: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&summary.stdout).unwrap();
     assert_eq!(
         summary["payload"]["export_target"],
         wire["export"]["identity"]["target"]
@@ -1731,13 +1745,18 @@ fn query_projects_export_identity_and_losses_from_a_generated_report() {
     // Keep the chosen check-stage losses and append the distinct export stage.
     let check: serde_json::Value = serde_json::from_str(CHECK_REPORT).unwrap();
     wire["check_report"]["losses"] = check["check_report"]["losses"].clone();
-    fs::write(&report, serde_json::to_vec(&wire).unwrap()).unwrap();
+    fs::write(
+        &report,
+        cadmpeg_core::serde_erase::json::to_vec(&wire).unwrap(),
+    )
+    .unwrap();
     let losses = cadmpeg()
         .args(["query", "losses", "--json", report.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(losses.status.success());
-    let losses: serde_json::Value = serde_json::from_slice(&losses.stdout).unwrap();
+    let losses: serde_json::Value =
+        cadmpeg_core::serde_erase::json::from_slice(&losses.stdout).unwrap();
     let rows = losses["payload"].as_array().unwrap();
     assert_eq!(rows.len(), export_loss_count + 1);
     assert_eq!(rows[0]["message"], "wire dropped");

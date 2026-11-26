@@ -238,7 +238,7 @@ fn row(
         *index = (u64::from(middle) << 32) | u64::from(low);
     }
     Ok(DisplayPose {
-        id: format!("f3d:{stream}:display-pose#{offset}"),
+        id: crate::ids::native_scoped_id(stream, "display-pose", offset),
         stream: stream.to_owned(),
         byte_offset: offset,
         path: ScenePath(path),
@@ -540,6 +540,7 @@ pub(crate) fn validate(
             Some(cadmpeg_ir::report::check::Finding {
                 related: Vec::new(),
                 check: cadmpeg_ir::report::check::Check::NativeLinks,
+                rule: cadmpeg_ir::rule_name!("f3d/scene.displayed-pose-binding"),
                 severity: cadmpeg_ir::report::Severity::Error,
                 message: message.to_owned(),
                 entity: Some(row.id.clone()),

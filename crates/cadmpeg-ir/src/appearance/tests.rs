@@ -226,7 +226,10 @@ fn occurrence_and_record_targets_and_native_refs_read_back() {
             binding.target.entity,
             AppearanceTarget::Occurrence(_) | AppearanceTarget::Record { .. }
         ));
-        assert_eq!(serde_json::to_value(&binding).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(&binding).unwrap(),
+            wire
+        );
         let mut null_ref = wire.clone();
         null_ref["native_ref"] = Value::Null;
         assert!(read(&null_ref).is_err());
@@ -246,7 +249,10 @@ fn occurrence_and_record_targets_and_native_refs_read_back() {
         crate::design::read::from_str::<Appearance>(&wire.to_string(), &ResourceLimits::desktop())
     };
     let read_back = read_appearance(&appearance).unwrap();
-    assert_eq!(serde_json::to_value(&read_back).unwrap(), appearance);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&read_back).unwrap(),
+        appearance
+    );
     let mut null_ref = appearance.clone();
     null_ref["native_ref"] = Value::Null;
     assert!(read_appearance(&null_ref).is_err());
@@ -262,29 +268,37 @@ fn a_binding_states_its_precedence_and_a_definition_target_by_name() {
         "precedence": "outer",
         "channels": {},
     });
-    let binding: AppearanceBinding = serde_json::from_value(wire.clone()).unwrap();
+    let binding: AppearanceBinding =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(binding.precedence, Some(AppearancePrecedence::Outer));
     assert_eq!(
         binding.target.entity,
         AppearanceTarget::Definition("test:model:product#assembly".try_into().unwrap())
     );
-    assert_eq!(serde_json::to_value(&binding).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&binding).unwrap(),
+        wire
+    );
 
     let mut nearest = wire.clone();
     nearest["precedence"] = serde_json::json!("nearest");
-    let binding: AppearanceBinding = serde_json::from_value(nearest).unwrap();
+    let binding: AppearanceBinding = cadmpeg_core::serde_erase::json::from_value(nearest).unwrap();
     assert_eq!(binding.precedence, Some(AppearancePrecedence::Nearest));
 
     let mut unstated = wire.clone();
     unstated.as_object_mut().unwrap().remove("precedence");
-    let binding: AppearanceBinding = serde_json::from_value(unstated.clone()).unwrap();
+    let binding: AppearanceBinding =
+        cadmpeg_core::serde_erase::json::from_value(unstated.clone()).unwrap();
     assert_eq!(binding.precedence, None);
-    assert_eq!(serde_json::to_value(&binding).unwrap(), unstated);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&binding).unwrap(),
+        unstated
+    );
 
     for refused in [serde_json::Value::Null, serde_json::json!("closest")] {
         let mut wire = wire.clone();
         wire["precedence"] = refused;
-        assert!(serde_json::from_value::<AppearanceBinding>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<AppearanceBinding>(wire).is_err());
     }
 }
 
@@ -296,22 +310,29 @@ fn an_arrangement_appearance_states_its_precedence_with_its_appearance() {
         "path": path,
         "appearance": {"appearance": "test:model:appearance#1", "precedence": "outer"},
     });
-    let read: ArrangementAppearance = serde_json::from_value(wire.clone()).unwrap();
+    let read: ArrangementAppearance =
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(
         read.appearance
             .as_ref()
             .map(|appearance| appearance.precedence),
         Some(super::AppearancePrecedence::Outer)
     );
-    assert_eq!(serde_json::to_value(&read).unwrap(), wire);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_value(&read).unwrap(),
+        wire
+    );
 
     let transparency_only = serde_json::json!({"path": path, "transparency": 0.5});
-    let read: ArrangementAppearance = serde_json::from_value(transparency_only).unwrap();
+    let read: ArrangementAppearance =
+        cadmpeg_core::serde_erase::json::from_value(transparency_only).unwrap();
     assert!(read.appearance.is_none());
 
     let bare = serde_json::json!({"path": path, "appearance": "test:model:appearance#1"});
-    assert!(serde_json::from_value::<ArrangementAppearance>(bare).is_err());
+    assert!(cadmpeg_core::serde_erase::json::from_value::<ArrangementAppearance>(bare).is_err());
     let unordered =
         serde_json::json!({"path": path, "appearance": {"appearance": "test:model:appearance#1"}});
-    assert!(serde_json::from_value::<ArrangementAppearance>(unordered).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<ArrangementAppearance>(unordered).is_err()
+    );
 }

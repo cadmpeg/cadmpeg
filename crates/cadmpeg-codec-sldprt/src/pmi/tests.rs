@@ -692,8 +692,8 @@ fn identical_dimension_fields_can_have_different_patch_positions() {
     reordered[start..=inspection].rotate_left(1 + "isBasic".len() + 1);
     let other = parse_payload(&reordered, &mut losses);
     assert!(losses.is_empty(), "{losses:?}");
-    let mut left = serde_json::to_value(&original[0]).unwrap();
-    let mut right = serde_json::to_value(&other[0]).unwrap();
+    let mut left = cadmpeg_core::serde_erase::json::to_value(&original[0]).unwrap();
+    let mut right = cadmpeg_core::serde_erase::json::to_value(&other[0]).unwrap();
     for value in [&mut left, &mut right] {
         for field in [
             "value_offset",
@@ -1421,10 +1421,7 @@ fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
     let kept = patch_payload(decoded.ir(), &parent, &mut patched, &|_| true).unwrap();
     assert_eq!(patched, payload);
     assert_eq!(kept.len(), 1, "{kept:?}");
-    assert_eq!(
-        kept[0].code,
-        crate::loss::SldprtLossCode::WriterParameterEditUnwritten.kind()
-    );
+    assert!(crate::test_support::is_edit_dropped(&kept[0].code));
     assert!(
         kept[0].message.contains("beyond exact float range"),
         "{}",

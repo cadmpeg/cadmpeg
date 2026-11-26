@@ -56,11 +56,15 @@ fn configuration_body_membership_round_trips_and_validates() {
         native_ref: None,
     });
     ir.finalize();
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
     let round_trip: crate::features::parameters::DesignConfiguration =
-        serde_json::from_value(serde_json::to_value(&ir.model.configurations[0]).unwrap()).unwrap();
+        cadmpeg_core::serde_erase::json::from_value(
+            cadmpeg_core::serde_erase::json::to_value(&ir.model.configurations[0]).unwrap(),
+        )
+        .unwrap();
     assert_eq!(
         round_trip.bodies.as_deref(),
         Some([body.clone()].as_slice())
@@ -355,11 +359,13 @@ fn configuration_name_preserves_resolution_state() {
         "feature_states": {}
     });
     let configuration: DesignConfiguration =
-        serde_json::from_value(unresolved.clone()).expect("unresolved configuration");
+        cadmpeg_core::serde_erase::json::from_value(unresolved.clone())
+            .expect("unresolved configuration");
     assert_eq!(configuration.name, None);
     assert!(!configuration.active);
 
-    let encoded = serde_json::to_value(&configuration).expect("unresolved configuration");
+    let encoded = cadmpeg_core::serde_erase::json::to_value(&configuration)
+        .expect("unresolved configuration");
     assert!(encoded.get("name").is_none());
     assert_eq!(encoded, unresolved);
 
@@ -368,7 +374,7 @@ fn configuration_name_preserves_resolution_state() {
     for key in ["name", "bodies"] {
         let mut stated_null = unresolved.clone();
         stated_null[key] = serde_json::Value::Null;
-        let error = serde_json::from_value::<DesignConfiguration>(stated_null)
+        let error = cadmpeg_core::serde_erase::json::from_value::<DesignConfiguration>(stated_null)
             .expect_err("a stated null is not a second spelling of absence")
             .to_string();
         assert!(error.contains("does not state null"), "{key}: {error}");
@@ -428,10 +434,10 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
         native_ref: None,
     });
 
-    let wire = serde_json::to_value(&ir.model.configurations[0]).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&ir.model.configurations[0]).unwrap();
     assert!(wire.get("suppressed_features").is_none());
     let round_trip: crate::features::parameters::DesignConfiguration =
-        serde_json::from_value(wire.clone()).unwrap();
+        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
     assert_eq!(
         round_trip.suppressed_features().collect::<Vec<_>>(),
         vec![&feature.id]
@@ -442,9 +448,10 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
         "suppressed_features".into(),
         serde_json::json!([feature.id.0.clone()]),
     );
-    let error =
-        serde_json::from_value::<crate::features::parameters::DesignConfiguration>(restated)
-            .unwrap_err();
+    let error = cadmpeg_core::serde_erase::json::from_value::<
+        crate::features::parameters::DesignConfiguration,
+    >(restated)
+    .unwrap_err();
     assert!(
         error
             .to_string()
@@ -462,24 +469,24 @@ fn configuration_evaluation_wire_is_flat_and_strict() {
     let active = ConfigurationEvaluation::Active {
         outputs: crate::features::selections::DistinctMembers::try_from(vec![body]).unwrap(),
     };
-    let wire = serde_json::to_value(&active).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&active).unwrap();
     assert_eq!(
         wire,
         serde_json::json!({"kind": "active", "outputs": ["synthetic:test:body#evaluation"]})
     );
     assert_eq!(
-        serde_json::from_value::<ConfigurationEvaluation>(wire).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<ConfigurationEvaluation>(wire).unwrap(),
         active
     );
     assert!(
-        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value::<ConfigurationEvaluation>(serde_json::json!({
             "kind": "suppressed",
             "outputs": []
         }))
         .is_err()
     );
     assert!(
-        serde_json::from_value::<ConfigurationEvaluation>(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value::<ConfigurationEvaluation>(serde_json::json!({
             "kind": "active",
             "outputs": [],
             "suppressed": true
@@ -496,11 +503,11 @@ fn active_configuration_evaluation_can_have_no_body_outputs() {
         outputs: DistinctMembers::default(),
     };
     assert_eq!(
-        serde_json::to_value(&active).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(&active).unwrap(),
         serde_json::json!({"kind": "active", "outputs": []})
     );
     assert_eq!(
-        serde_json::from_value::<ConfigurationEvaluation>(
+        cadmpeg_core::serde_erase::json::from_value::<ConfigurationEvaluation>(
             serde_json::json!({"kind": "active", "outputs": []})
         )
         .unwrap(),

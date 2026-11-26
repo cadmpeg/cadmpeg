@@ -384,7 +384,7 @@ fn plain_base_header_and_explicit_base_edits_use_the_same_prefix_fields() {
             let EventContent::PartitionPrefix(state) = owner.events()[1].content() else {
                 panic!("prefix");
             };
-            let value = serde_json::to_value(state).unwrap();
+            let value = cadmpeg_core::serde_erase::json::to_value(state).unwrap();
             assert_eq!(value["partition"]["xmt"], 49947);
             assert_eq!(value["current_pmark"]["xmt"], 49948);
             assert_eq!(value["current_pmark"]["identifier"], 0x1234_5678u32);
@@ -511,7 +511,7 @@ fn maps_require_canonical_entries_and_bounded_kinds() {
             panic!("map");
         };
         assert_eq!(
-            serde_json::to_value(entries).unwrap(),
+            cadmpeg_core::serde_erase::json::to_value(entries).unwrap(),
             serde_json::json!([[32768, 2], [7, 239]])
         );
         assert_eq!(<[u8; 4]>::from(*terminal_bytes), [0, 0, 0x7f, 0xff]);

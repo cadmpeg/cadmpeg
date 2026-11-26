@@ -29,9 +29,13 @@ fn a_compound_surface_component_is_one_object_carrying_its_own_scalar() {
             {"parameter": 1.5, "component": "test:model:surface#1"},
         ],
     });
-    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
-        serde_json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(&definition).unwrap(),
+        wire
+    );
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire.clone())
+            .unwrap(),
         definition
     );
 }
@@ -43,9 +47,11 @@ fn a_compound_surface_carries_no_parallel_parameter_array() {
         "parameters": [-0.5, 1.5],
         "components": ["test:model:surface#0", "test:model:surface#1"],
     });
-    let error = serde_json::from_value::<ProceduralSurfaceDefinition>(struct_of_arrays)
-        .unwrap_err()
-        .to_string();
+    let error = cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(
+        struct_of_arrays,
+    )
+    .unwrap_err()
+    .to_string();
     assert!(
         error.contains("expected struct CompoundComponent"),
         "{error}"
@@ -59,7 +65,7 @@ fn a_compound_surface_carries_no_parallel_parameter_array() {
             {"parameter": 1.5, "component": "test:model:surface#1"},
         ],
     });
-    let error = serde_json::from_value::<ProceduralSurfaceDefinition>(stray)
+    let error = cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(stray)
         .unwrap_err()
         .to_string();
     assert!(error.contains("parameters"), "{error}");
@@ -93,15 +99,19 @@ fn a_compound_curve_component_is_one_object_carrying_its_own_scalar() {
             {"parameter": 4.0, "component": "test:model:curve#1"},
         ],
     });
-    assert_eq!(serde_json::to_value(&definition).unwrap(), wire);
     assert_eq!(
-        serde_json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(&definition).unwrap(),
+        wire
+    );
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::from_value::<ProceduralCurveDefinition>(wire.clone())
+            .unwrap(),
         definition
     );
 
     let mut stray = wire;
     stray["component_parameters"] = serde_json::json!([-2.0, 4.0]);
-    let error = serde_json::from_value::<ProceduralCurveDefinition>(stray)
+    let error = cadmpeg_core::serde_erase::json::from_value::<ProceduralCurveDefinition>(stray)
         .unwrap_err()
         .to_string();
     assert!(error.contains("component_parameters"), "{error}");
@@ -115,7 +125,7 @@ fn a_compound_component_rejects_an_unknown_key_by_name() {
             {"parameter": -0.5, "component": "test:model:surface#0", "zz_bogus": 1},
         ],
     });
-    let error = serde_json::from_value::<ProceduralSurfaceDefinition>(wire)
+    let error = cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire)
         .unwrap_err()
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -143,12 +153,14 @@ fn compound_curve_requires_components_and_finite_parameters() {
     let empty = serde_json::json!({
         "kind": "compound", "parameters": [], "components": []
     });
-    assert!(serde_json::from_value::<ProceduralCurveDefinition>(empty).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<ProceduralCurveDefinition>(empty).is_err()
+    );
     let unordered =
         CompoundCurveConstruction::try_new(vec![2.0, -1.0], vec![component()], None).unwrap();
-    let wire = serde_json::to_value(&unordered).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(&unordered).unwrap();
     assert_eq!(
-        serde_json::from_value::<CompoundCurveConstruction>(wire).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<CompoundCurveConstruction>(wire).unwrap(),
         unordered
     );
 }
@@ -175,7 +187,7 @@ fn a_compound_curve_holds_its_admitted_parameters() {
         ]
     );
     assert_eq!(
-        serde_json::to_value(&construction).unwrap()["parameters"],
+        cadmpeg_core::serde_erase::json::to_value(&construction).unwrap()["parameters"],
         serde_json::json!([2.0, -1.0])
     );
 }

@@ -12,15 +12,18 @@ use crate::products::{
 
 /// The value reads, and writes back as the same JSON.
 fn reads_back<T: DeserializeOwned + Serialize>(wire: &Value) -> T {
-    let value: T = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(&serde_json::to_value(&value).unwrap(), wire);
+    let value: T = cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    assert_eq!(
+        &cadmpeg_core::serde_erase::json::to_value(&value).unwrap(),
+        wire
+    );
     value
 }
 
 /// The value is refused, and the refusal names `named`.
 fn refused<T: DeserializeOwned + std::fmt::Debug>(wire: Value, named: &str) {
     let text = wire.to_string();
-    let error = serde_json::from_value::<T>(wire).unwrap_err();
+    let error = cadmpeg_core::serde_erase::json::from_value::<T>(wire).unwrap_err();
     assert!(error.to_string().contains(named), "{text}: {error}");
 }
 

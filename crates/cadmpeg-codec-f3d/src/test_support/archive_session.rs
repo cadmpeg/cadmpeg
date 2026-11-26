@@ -14,12 +14,12 @@ pub(crate) fn assert_equal(
     match (left, right) {
         (Ok(left), Ok(right)) => {
             assert_eq!(
-                serde_json::to_vec(left.ir()).unwrap(),
-                serde_json::to_vec(right.ir()).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(left.ir()).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(right.ir()).unwrap()
             );
             assert_eq!(
-                serde_json::to_vec(left.report()).unwrap(),
-                serde_json::to_vec(right.report()).unwrap()
+                cadmpeg_core::serde_erase::json::to_vec(left.report()).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(right.report()).unwrap()
             );
             assert!(left == right, "decode result or source fidelity differs");
         }
@@ -31,8 +31,8 @@ pub(crate) fn assert_equal(
                     DecodeFailure::StrictRejected { rejection: right },
                 ) => {
                     assert_eq!(
-                        serde_json::to_vec(left.report()).unwrap(),
-                        serde_json::to_vec(right.report()).unwrap()
+                        cadmpeg_core::serde_erase::json::to_vec(left.report()).unwrap(),
+                        cadmpeg_core::serde_erase::json::to_vec(right.report()).unwrap()
                     );
                 }
                 (
@@ -86,7 +86,7 @@ pub(crate) fn decode(
             .into_iter()
             .map(|id| session.decode_member(id).unwrap())
             .collect::<Vec<_>>();
-        assert_equal(&result, &session.compose(members));
+        assert_equal(&result, &session.compose(members, &options.strictness));
     }
     result
 }

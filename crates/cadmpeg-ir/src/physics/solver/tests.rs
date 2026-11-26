@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use super::{SolverSettings, SolverTarget, SolverValue};
 use crate::design::units::Quantity;
+use crate::features::FeatureId;
 use crate::ids::{OccurrenceId, SolverSettingsId};
-use crate::products::JointId;
 use crate::scalar::FiniteReal;
 
 fn settings() -> SolverSettings {
@@ -14,7 +14,7 @@ fn settings() -> SolverSettings {
         solver: "physx".to_owned(),
         schema: "PhysxJointAPI".to_owned(),
         target: SolverTarget::Joint {
-            joint: JointId::mint("test:model:joint#0").unwrap(),
+            joint: FeatureId::mint("test:model:feature#joint").unwrap(),
         }
         .into(),
         values: BTreeMap::from([
@@ -53,7 +53,7 @@ fn settings() -> SolverSettings {
 #[test]
 fn solver_settings_round_trip_through_json() {
     let record = settings();
-    let json = serde_json::to_value(&record).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
     assert_eq!(json["target"]["entity"]["kind"], "joint");
     assert_eq!(
         json["values"]["physxJoint:armature"]["dimension"],
@@ -64,7 +64,7 @@ fn solver_settings_round_trip_through_json() {
         serde_json::json!({"length": 0, "mass": 0, "angle": 0, "time": 0})
     );
     assert_eq!(
-        serde_json::from_value::<SolverSettings>(json).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<SolverSettings>(json).unwrap(),
         record
     );
 }

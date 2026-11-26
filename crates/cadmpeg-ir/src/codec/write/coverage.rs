@@ -225,10 +225,19 @@ macro_rules! declare_arena_dispositions {
             fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
                 self.charged_omissions(ir)
                     .into_iter()
-                    .map(|(kind, label, records)| {
+                    .map(|(kind, label, ids)| {
+                        // A write that omits the cages writes nothing of the
+                        // bodies that hold only cages (§5.6).
+                        let bodies = if kind == EntityKind::SubdSurface {
+                            super::cages::cage_bodies_clause(&super::cages::cage_bodies(ir))
+                        } else {
+                            String::new()
+                        };
                         ExportLossCode::ArenaOmitted(kind).note(format!(
                             "the {format} write does not represent model arena `{label}`: \
-                             {records} record(s) omitted",
+                             {} record(s) omitted: {}{bodies}",
+                            ids.len(),
+                            ids.join(", "),
                         ))
                     })
                     .collect()
@@ -242,8 +251,11 @@ macro_rules! declare_arena_dispositions {
             }
 
             /// Each arena of `ir` whose records the write omits and charges: its
-            /// kind, label and record count.
-            fn charged_omissions(&self, ir: &CadIr) -> Vec<(EntityKind, &'static str, usize)> {
+            /// kind, label and the ids of the omitted records, sorted (§3.2).
+            fn charged_omissions<'ir>(
+                &self,
+                ir: &'ir CadIr,
+            ) -> Vec<(EntityKind, &'static str, Vec<&'ir str>)> {
                 // While the document holds a v10 design record, the v11 design
                 // arenas with a v10 counterpart restate content the v10 path
                 // writes.
@@ -255,25 +267,31 @@ macro_rules! declare_arena_dispositions {
                 let mut charged = Vec::new();
                 $(
                     let label = crate::document::arena_label!($field, $home);
-                    // The document root is the written document itself.
-                    let records = if arena_kind(&ir.$home.$field) == EntityKind::ProductDefinition {
-                        crate::products::stated_definitions(&ir.model.product_definitions).count()
-                    } else if crate::document::ArenaName::WIRE_OMITTED
-                        .iter()
-                        .any(|arena| arena.as_str() == label)
-                    {
-                        ir.$home.$field
-                            .iter()
-                            .filter(|record| !written_design.contains(record.record_identity()))
-                            .count()
-                    } else {
-                        ir.$home.$field.len()
-                    };
+                    let kind = arena_kind(&ir.$home.$field);
                     if disposition!(self, $field, $home) == ArenaDisposition::Omitted
-                        && records != 0
-                        && !(restated && has_v10_counterpart(arena_kind(&ir.$home.$field)))
+                        && !(restated && has_v10_counterpart(kind))
                     {
-                        charged.push((arena_kind(&ir.$home.$field), label, records));
+                        // The document root is the written document itself.
+                        let mut ids: Vec<&str> = if kind == EntityKind::ProductDefinition {
+                            crate::products::stated_definitions(&ir.model.product_definitions)
+                                .map(ArenaRecord::record_identity)
+                                .collect()
+                        } else if crate::document::ArenaName::WIRE_OMITTED
+                            .iter()
+                            .any(|arena| arena.as_str() == label)
+                        {
+                            ir.$home.$field
+                                .iter()
+                                .map(|record| record.record_identity())
+                                .filter(|id| !written_design.contains(id))
+                                .collect()
+                        } else {
+                            ir.$home.$field.iter().map(|record| record.record_identity()).collect()
+                        };
+                        if !ids.is_empty() {
+                            ids.sort_unstable();
+                            charged.push((kind, label, ids));
+                        }
                     }
                 )*
                 charged

@@ -47,6 +47,7 @@ fn code_strings_are_pinned() {
             "brep.rejected",
             "brep.element-not-transferred",
             "brep.subset-not-transferred",
+            "topology.face-boundary-unstated",
             "physics.joint-rejected",
             "physics.joint-property-not-transferred",
             "physics.solver-property-not-transferred",
@@ -64,6 +65,7 @@ fn code_strings_are_pinned() {
             "export.carrier-not-written",
             "export.joint-not-written",
             "export.solver-property-not-written",
+            "export.design-not-written",
             "export.physics-not-written",
             "export.group-face-not-written",
         ]

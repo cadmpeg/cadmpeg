@@ -97,9 +97,6 @@ zip.workspace = true
 # `layout_tables` parses `docs/layouts/*.toml`. The dialect registries moved to
 # `cadmpeg-registry`, which embeds and parses them itself.
 toml.workspace = true
-# The CLI integration tests build `cadmpeg_ir::examples`; the feature keeps
-# those fixtures out of the normal library build.
-cadmpeg-ir = { workspace = true, features = ["examples"] }
 
 [lints]
 workspace = true

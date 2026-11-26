@@ -6,7 +6,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::CadIr;
@@ -330,20 +329,20 @@ fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
 }
 
 #[test]
-fn strict_decode_rejects_an_oriented_shell_missing_its_derived_slot() {
+fn a_pinned_decode_admits_an_oriented_shell_missing_its_derived_slot() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
-    let error = StepCodec::default()
+    options.strictness.pinned = true;
+    let result = StepCodec::default()
         .decode(
             &mut Cursor::new(oriented_closed_shell_source(false)),
             &options,
         )
-        .expect_err("strict mode rejects a noncanonical oriented shell");
-
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
-    ));
+        .expect("a noncanonical oriented shell pins no strict floor");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::OrientedShellOmitsCfsFaces.kind()));
 }
 
 #[test]
@@ -731,22 +730,23 @@ fn rejected_solid_root_reports_an_error_severity_loss() {
 }
 
 #[test]
-fn strict_decode_rejects_a_destroyed_solid() {
+fn a_pinned_decode_admits_a_destroyed_solid() {
     let source = String::from_utf8(
         include_bytes!("../../../../tests/fixtures/ap242_vertex_loop.p21").to_vec(),
     )
     .expect("fixture is UTF-8")
     .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
-    let error = StepCodec::default()
+    let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &options)
-        .expect_err("strict mode rejects a destroyed solid");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. }
-    ));
+        .expect("a rejected topology root pins no strict floor");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::TopologyRootRejected.kind()));
 }
 
 #[test]

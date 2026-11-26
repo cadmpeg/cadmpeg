@@ -89,17 +89,17 @@ pub(super) fn check_typed_references(
                     match &not_read {
                         Some((omitted, design)) if targets_omitted_arena() => {
                             if !design.contains(target) {
-                                record_finding(findings, Check::ReferentialIntegrity, Severity::Warning, Some(owner), format_args!("unresolved typed reference {target}; the document was read from CADIR, which does not carry the arenas {omitted}, and one of them may hold it"));
+                                record_finding(findings, Check::ReferentialIntegrity, Severity::Warning, Some(owner), crate::rule!("referential_integrity.unresolved-typed-reference-document-read-cadir", "unresolved typed reference {target}; the document was read from CADIR, which does not carry the arenas {omitted}, and one of them may hold it"));
                             }
                         }
-                        _ => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("unresolved typed reference {target}")),
+                        _ => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), crate::rule!("referential_integrity.unresolved-typed-reference", "unresolved typed reference {target}")),
                     }
                     Ok(())
                 });
                 match walk {
                     Ok(()) => {}
                     Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(error) => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), format_args!("entity schema cannot state its typed references: {error}")),
+                    Err(error) => record_finding(findings, Check::ReferentialIntegrity, Severity::Error, Some(owner), crate::rule!("referential_integrity.entity-schema-cannot-state-typed-references", "entity schema cannot state its typed references: {error}")),
                 }
             })*
         };
@@ -202,7 +202,7 @@ mod tests {
     fn a_reference_into_an_omitted_arena_of_a_cadir_read_document_is_a_warning() {
         let mut ir = read_from_cadir();
         let mut definition: crate::products::ProductDefinition =
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "id": "test:model:product#owner", "bom_properties": {},
                 "storage": {"kind": "embedded"}, "bodies": [], "occurrences": [],
                 "instance_bodies": [], "representations": []

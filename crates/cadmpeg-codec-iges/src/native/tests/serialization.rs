@@ -32,7 +32,7 @@ fn quarantined_record_id_serializes_its_section_and_sequence() {
         },
     };
     assert_eq!(
-        serde_json::to_value(&record).unwrap(),
+        cadmpeg_core::serde_erase::json::to_value(&record).unwrap(),
         serde_json::json!({"id": "iges:quarantine:directory#3"})
     );
 }

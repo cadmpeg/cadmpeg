@@ -106,6 +106,7 @@ fn a_closed_nest_in_its_own_scope_has_no_finding() {
     body.produced_by = Some(FeatureId::mint("test:model:feature#base").unwrap());
     ir.model.history_bodies.push(body);
     assert!(findings(&ir).is_empty(), "{:?}", findings(&ir));
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validation runs");
     assert!(
         !report
@@ -254,10 +255,11 @@ fn a_nest_round_trips_through_json_and_stays_out_of_the_document() {
     ir.model
         .history_bodies
         .push(history_body("0", scoped(cube_nest())));
-    let json = serde_json::to_string(&ir.model.history_bodies).expect("serialize");
+    let json =
+        cadmpeg_core::serde_erase::json::to_string(&ir.model.history_bodies).expect("serialize");
     let back: Vec<crate::history_body::HistoryBody> =
         serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back, ir.model.history_bodies);
-    let document = serde_json::to_value(&ir).expect("serialize");
+    let document = cadmpeg_core::serde_erase::json::to_value(&ir).expect("serialize");
     assert!(document["model"].get("history_bodies").is_none());
 }

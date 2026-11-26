@@ -40,6 +40,7 @@ fn face_on_unknown_surface_validates_clean() {
     .unwrap();
     make_first_face_surface_unknown(&mut ir, Some(rec));
 
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),
@@ -109,7 +110,7 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     let carrier_id = carrier.id.as_str().to_owned();
     ir.geometry.curves.push(carrier);
     ir.finalize();
-    let mut wire = serde_json::to_value(&ir).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
     wire["native"] = serde_json::json!({"test": {"unknowns": [
         {"id": "test:source:unknown#good", "links": [carrier_id]},
         {"id": "test:source:unknown#malformed", "links": [null]}

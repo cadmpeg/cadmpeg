@@ -2,11 +2,11 @@
 #![allow(clippy::disallowed_methods)]
 
 use super::{
-    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, coedge_sense,
-    edge_param_range, edge_vertices, face_components, face_sense, hatch_plane_transform,
-    region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
-    set_exactness, stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface,
-    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join, edge_param_range,
+    edge_vertices, face_components, face_sense, hatch_plane_transform, region_shell_groups,
+    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
+    stage_brep, stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
     CommittedExtrusionBoundary, DecodeContext, ObjectDisplay, ReferenceFailure, ReportBuckets,
 };
 use crate::chunks::ArchiveVersion;
@@ -734,22 +734,6 @@ fn edge_proxy_reversal_normalizes_endpoints_and_keeps_an_ascending_range() {
 }
 
 #[test]
-fn coedge_and_edge_proxy_reversals_are_independent() {
-    for trim_reversed in [false, true] {
-        for edge_proxy_reversed in [false, true] {
-            assert_eq!(
-                coedge_sense(trim_reversed, edge_proxy_reversed),
-                if trim_reversed ^ edge_proxy_reversed {
-                    Sense::Reversed
-                } else {
-                    Sense::Forward
-                }
-            );
-        }
-    }
-}
-
-#[test]
 fn face_reversal_selects_face_sense() {
     assert_eq!(face_sense(false), Sense::Forward);
     assert_eq!(face_sense(true), Sense::Reversed);
@@ -865,6 +849,7 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
             ),
         ],
         end_parameter: finite_parameter(40.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {
@@ -895,11 +880,13 @@ fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
             ),
         ],
         end_parameter: finite_parameter(2.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let outer = crate::curves::DecodedCurve::Compound {
         children: vec![(finite_parameter(5.0), nested)],
         end_parameter: finite_parameter(9.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| c2_curve_to_nurbs_join(expand.ctx(), outer, 0))
@@ -931,6 +918,7 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
             (finite_parameter(1.0), decoded_nurbs(quadratic)),
         ],
         end_parameter: finite_parameter(2.0),
+        scale: crate::settings::MillimeterScale::IDENTITY,
         warnings: Diagnostics::new(),
     };
     let merged = with_expand_bytes(&[], |expand| {
@@ -1289,6 +1277,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             assert_eq!(ir.geometry.faces[0].sense, Sense::Reversed);
             assert_eq!(ir.geometry.faces[1].sense, Sense::Forward);
         }
+        cadmpeg_ir::examples::add_document_root(&mut ir);
         assert_eq!(
             cadmpeg_ir::validate_neutral(&ir, Vec::new())
                 .expect("validate the neutral model")
@@ -1310,7 +1299,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
         &annotations,
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
@@ -1318,7 +1307,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     assert!(cadmpeg_ir::admit(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")
@@ -1328,7 +1317,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
         &annotations,
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
@@ -1336,7 +1325,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     assert!(!cadmpeg_ir::admit(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")
@@ -1353,7 +1342,7 @@ fn admission_ignores_findings_outside_its_checks() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &cadmpeg_ir::Annotations::default(),
-        cadmpeg_ir::RHINO_DRAFT_CHECKS,
+        cadmpeg_ir::RHINO_DRAFT,
         Vec::new(),
     )
     .expect("admit the model")
@@ -1361,7 +1350,7 @@ fn admission_ignores_findings_outside_its_checks() {
     assert!(cadmpeg_ir::admit(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
-        cadmpeg_ir::RHINO_INSTANCE_CHECKS,
+        cadmpeg_ir::RHINO_INSTANCE,
         Vec::new()
     )
     .expect("admit the model")
@@ -1813,3 +1802,97 @@ fn finite_parameter(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
 }
 
 mod brep;
+
+#[test]
+fn polycurve_states_continuity_where_adjacent_pieces_meet() {
+    use crate::test_support::test_archive as support;
+    use cadmpeg_ir::geometry::CompositeCurveTransition;
+
+    let children = [
+        (
+            support::LINE_CLASS,
+            support::line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([1.0, 1.5, 0.0], [0.0, 2.0, 0.0], [0.0, 1.0]),
+        ),
+    ];
+    let bytes = support::archive(&[support::object_record(
+        4,
+        support::POLYCURVE_CLASS,
+        &support::polycurve_payload(&[0.0, 1.0, 2.0, 3.0], &children),
+    )]);
+    assert_eq!(
+        composite_transitions(bytes),
+        [
+            CompositeCurveTransition::Discontinuous,
+            CompositeCurveTransition::Continuous,
+            CompositeCurveTransition::Discontinuous,
+        ]
+    );
+}
+
+#[test]
+fn polycurve_tests_continuity_on_file_unit_coordinates() {
+    use crate::test_support::test_archive as support;
+    use cadmpeg_ir::geometry::CompositeCurveTransition;
+
+    // In inches the pieces meet 2^-33 apart, within the 2^-32 absolute
+    // coincidence tolerance; in millimetres they are 25.4 times as far.
+    let join = 1.0 + 2.0_f64.powi(-33);
+    let children = [
+        (
+            support::LINE_CLASS,
+            support::line_payload([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0]),
+        ),
+        (
+            support::LINE_CLASS,
+            support::line_payload([join, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0]),
+        ),
+    ];
+    let inches = 8;
+    let bytes = support::archive_unit(
+        inches,
+        &[support::object_record(
+            4,
+            support::POLYCURVE_CLASS,
+            &support::polycurve_payload(&[0.0, 1.0, 2.0], &children),
+        )],
+    );
+    assert_eq!(
+        composite_transitions(bytes),
+        [
+            CompositeCurveTransition::Discontinuous,
+            CompositeCurveTransition::Continuous,
+        ]
+    );
+}
+
+/// The segment transitions of the composite curve that `bytes` decodes to.
+fn composite_transitions(bytes: Vec<u8>) -> Vec<cadmpeg_ir::geometry::CompositeCurveTransition> {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let decoded = crate::RhinoCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the polycurve archive decodes");
+    decoded
+        .ir()
+        .geometry
+        .curves
+        .iter()
+        .find_map(|curve| match &curve.geometry {
+            CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => Some(
+                segments
+                    .iter()
+                    .map(|segment| segment.transition)
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .expect("the polycurve decodes to a composite curve")
+}

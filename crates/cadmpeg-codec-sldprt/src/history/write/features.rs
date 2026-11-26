@@ -808,9 +808,9 @@ pub(in crate::history) fn sync_neutral_features(
         // The definitions in wire form; `None` when one cannot be read back.
         let definitions = written.and_then(|written| {
             Some((
-                serde_json::to_value(original.evaluation.definition()).ok()?,
+                cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition()).ok()?,
                 written,
-                serde_json::to_value(written.evaluation.definition()).ok()?,
+                cadmpeg_core::serde_erase::to_json_value(written.evaluation.definition()).ok()?,
             ))
         });
         let as_source = construction
@@ -1566,15 +1566,16 @@ mod tests {
     fn cleared_extrusion() -> cadmpeg_ir::features::Feature {
         use cadmpeg_ir::features::extents::ExtrudeDirection;
         use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-        let history: crate::records::FeatureHistory = serde_json::from_value(serde_json::json!({
-            "id":"history", "features":[{
-                "id":"native", "parent":"history", "ordinal":0,
-                "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
-                "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
-                "properties":{"EndCondition":"Blind", "Operation":"Join", "Reverse":"true"}
-            }]
-        }))
-        .expect("synthetic history");
+        let history: crate::records::FeatureHistory =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "id":"history", "features":[{
+                    "id":"native", "parent":"history", "ordinal":0,
+                    "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
+                    "input_class":"moExtrusion_c", "parameters":{"Depth":"10mm"},
+                    "properties":{"EndCondition":"Blind", "Operation":"Join", "Reverse":"true"}
+                }]
+            }))
+            .expect("synthetic history");
         let mut feature = crate::history::project::project_features(&[history])
             .expect("feature projection")
             .into_iter()
@@ -1691,7 +1692,7 @@ mod tests {
             if let Some(configuration) = configuration {
                 value["configuration"] = configuration.into();
             }
-            serde_json::from_value(value).expect("synthetic lane")
+            cadmpeg_core::serde_erase::json::from_value(value).expect("synthetic lane")
         };
         let anchors = HashMap::from([(
             feature.native_ref.clone().expect("the record"),

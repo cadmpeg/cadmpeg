@@ -443,12 +443,7 @@ pub(super) fn emit_edges(
                 tag,
                 Exactness::Derived,
             )?;
-            for field in ["curve", "definition"] {
-                annotations.derived(procedural_id.as_str(), field)?;
-            }
-            if cache_fit_tolerance.is_some() {
-                annotations.derived(procedural_id.as_str(), "cache_fit_tolerance")?;
-            }
+            annotations.derived(procedural_id.as_str(), "definition")?;
             let mut definition = definition;
             if let Some(tolerance) = cache_fit_tolerance {
                 definition
@@ -474,7 +469,7 @@ pub(super) fn emit_edges(
             annotations.derived(id.as_str(), field)?;
         }
         if edge_range.is_some() {
-            annotations.derived(id.as_str(), "param_range")?;
+            annotations.derived(id.as_str(), "carrier.param_range")?;
         }
         if edge_tolerance.is_some() {
             annotations.derived(id.as_str(), "tolerance")?;

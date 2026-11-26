@@ -5,12 +5,16 @@ use crate::index::identities::BorrowedIdentities;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::record_finding;
+use std::collections::{BTreeMap, BTreeSet};
 
+use super::{record_finding, record_related_finding};
+
+pub(in crate::validate) mod decode_set;
 pub(in crate::validate) mod definitions;
 use crate::document::CadIr;
 use crate::products::{JointOperands, OperandContainer, PairedJointKind};
 use crate::report::check::{Check, Finding};
+use crate::report::Severity;
 
 pub(super) fn check_products(
     ctx: &DecodeContext<'_>,
@@ -22,6 +26,7 @@ pub(super) fn check_products(
             add(definition.id.as_str(), ());
         }
     });
+    decode_set::check_component_records(ir, findings);
     for (id, owner) in ir
         .model
         .features
@@ -41,7 +46,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(id),
-                    format_args!("invalid product definition owner"),
+                    crate::rule!(
+                        "products.invalid-product-definition-owner",
+                        "invalid product definition owner"
+                    ),
                 );
             }
         }
@@ -65,7 +73,10 @@ pub(super) fn check_products(
                         Check::ReferentialIntegrity,
                         crate::report::Severity::Error,
                         Some(feature.id.as_str()),
-                        format_args!("feature output is not owned by its product definition"),
+                        crate::rule!(
+                            "products.feature-output-not-owned-product-definition",
+                            "feature output is not owned by its product definition"
+                        ),
                     );
                 }
             }
@@ -116,7 +127,7 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(definition.id.as_str()),
-                    format_args!("{message}"),
+                    crate::rule!("products.sketch-owning-definition", "{message}"),
                 );
                 break;
             }
@@ -128,7 +139,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(definition.id.as_str()),
-                    format_args!("invalid product body reference"),
+                    crate::rule!(
+                        "products.invalid-product-body-reference",
+                        "invalid product body reference"
+                    ),
                 );
                 break;
             }
@@ -151,7 +165,7 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(definition.id.as_str()),
-                    format_args!("{message}"),
+                    crate::rule!("products.occurrence-owning-definition", "{message}"),
                 );
                 break;
             }
@@ -171,18 +185,22 @@ pub(super) fn check_products(
                 Check::ReferentialIntegrity,
                 crate::report::Severity::Error,
                 Some(occurrence.id.as_str()),
-                format_args!("{message}"),
+                crate::rule!("products.occurrence-prototype-and-owner", "{message}"),
             );
         }
     }
     check_root_definition(ir, findings);
+    check_body_owners(ir, findings);
     if let Some(definition) = placement_cycle(ctx, ir)? {
         record_finding(
             findings,
             Check::ReferentialIntegrity,
-            crate::report::Severity::Warning,
+            crate::report::Severity::Error,
             Some(definition),
-            format_args!("product definition places itself"),
+            crate::rule!(
+                "products.product-definition-places-itself",
+                "product definition is the prototype of an occurrence it owns, directly or transitively"
+            ),
         );
     }
     for joint in &ir.model.assembly_joints {
@@ -194,7 +212,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(joint.id.as_str()),
-                    format_args!("assembly joint frame sense contradicts its kind's sense"),
+                    crate::rule!(
+                        "products.assembly-joint-frame-sense-contradicts-kind",
+                        "assembly joint frame sense contradicts its kind's sense"
+                    ),
                 );
             }
         }
@@ -205,7 +226,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(joint.id.as_str()),
-                    format_args!("invalid assembly joint driving parameter"),
+                    crate::rule!(
+                        "products.invalid-assembly-joint-driving-parameter",
+                        "invalid assembly joint driving parameter"
+                    ),
                 );
             }
         }
@@ -225,7 +249,10 @@ pub(super) fn check_products(
                     Check::ReferentialIntegrity,
                     crate::report::Severity::Error,
                     Some(joint.id.as_str()),
-                    format_args!("assembly joint couples other than two other joints"),
+                    crate::rule!(
+                        "products.assembly-joint-couples-other-two-other",
+                        "assembly joint couples other than two other joints"
+                    ),
                 );
             }
         }
@@ -237,7 +264,10 @@ pub(super) fn check_products(
                         Check::ReferentialIntegrity,
                         crate::report::Severity::Error,
                         Some(joint.id.as_str()),
-                        format_args!("invalid assembly joint operands, frames, or limits"),
+                        crate::rule!(
+                            "products.invalid-assembly-joint-operands-frames-limits",
+                            "invalid assembly joint operands, frames, or limits"
+                        ),
                     );
                     break;
                 }
@@ -248,12 +278,11 @@ pub(super) fn check_products(
     Ok(())
 }
 
-/// Part 10: exactly one definition is `File` with `source: None`, the root
-/// definition, and no occurrence places it (§8.1). The root is what the
-/// decode's root file holds at its top, so only a decoded document, one with
-/// a `source`, that holds the model class must state it; a fragment's root
-/// can lie outside it. The counts are not in the decoder admission sets,
-/// which judge candidate parts of a document.
+/// Part 10: where `model` is in scope and the document is not a fragment, a
+/// document that holds a model record holds exactly one definition that is
+/// `File` with `source: None`, the root definition, and no occurrence places
+/// it (§8.1). A fragment's root can lie outside it. The counts are not in the
+/// decoder admission sets, which judge candidate parts of a document.
 fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
     let roots = ir
         .model
@@ -262,16 +291,21 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
         .filter(|definition| definition.is_root())
         .collect::<Vec<_>>();
     match roots.split_first() {
-        None if ir.source.is_some()
-            && !ir.fragment
-            && ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model) =>
+        None if !ir.fragment
+            && ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model)
+            && ir
+                .populated_arena(cadmpeg_core::decode::ArenaClass::Model)
+                .is_some() =>
         {
             record_finding(
                 findings,
                 Check::Counts,
                 crate::report::Severity::Error,
                 None,
-                format_args!("document states no root definition"),
+                crate::rule!(
+                    "products.document-states-no-root-definition",
+                    "document states no root definition"
+                ),
             );
         }
         None => {}
@@ -283,7 +317,10 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
                     crate::report::Severity::Error,
                     extra.id.as_str(),
                     &[first.id.as_str()],
-                    format_args!("document states more than one root definition"),
+                    crate::rule!(
+                        "products.document-states-more-one-root-definition",
+                        "document states more than one root definition"
+                    ),
                 );
             }
         }
@@ -296,7 +333,84 @@ fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::report::Severity::Error,
                 root.id.as_str(),
                 &[occurrence.id.as_str()],
-                format_args!("an occurrence places the root definition"),
+                crate::rule!(
+                    "products.occurrence-places-root-definition",
+                    "an occurrence places the root definition"
+                ),
+            );
+        }
+    }
+}
+
+/// Part 10: every body of `CadIr.geometry` is listed by exactly one
+/// definition's `bodies` and by no `instance_bodies` entry, or by
+/// `instance_bodies` entries and by no definition's `bodies` (§8.1). The rule
+/// holds where the root rule holds, since a body the file holds outside every
+/// other definition is the root definition's.
+fn check_body_owners(ir: &CadIr, findings: &mut Vec<Finding>) {
+    if ir.fragment
+        || !ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model)
+        || ir
+            .populated_arena(cadmpeg_core::decode::ArenaClass::Model)
+            .is_none()
+    {
+        return;
+    }
+    let mut listing: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut instanced: BTreeSet<&str> = BTreeSet::new();
+    for definition in &ir.model.product_definitions {
+        for body in &definition.bodies {
+            listing
+                .entry(body.as_str())
+                .or_default()
+                .insert(definition.id.as_str());
+        }
+        for entry in &definition.instance_bodies {
+            instanced.extend(entry.bodies.iter().map(crate::ids::BodyId::as_str));
+        }
+    }
+    for body in &ir.geometry.bodies {
+        let id = body.id.as_str();
+        let owners: Vec<&str> = listing
+            .get(id)
+            .map(|owners| owners.iter().copied().collect())
+            .unwrap_or_default();
+        if owners.len() > 1 {
+            record_related_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                id,
+                &owners,
+                crate::rule!(
+                    "products.body-listed-several-definitions",
+                    "body is listed by {} definitions' `bodies`; one lists it",
+                    owners.len()
+                ),
+            );
+        } else if owners.len() == 1 && instanced.contains(id) {
+            let owner = owners[0];
+            record_related_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                id,
+                &[owner],
+                crate::rule!(
+                    "products.body-listed-definition-and-instance-bodies",
+                    "body is listed by definition {owner}'s `bodies` and by an `instance_bodies` entry; a body an entry shows is listed by no definition's `bodies`"
+                ),
+            );
+        } else if owners.is_empty() && !instanced.contains(id) {
+            record_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                Some(id),
+                crate::rule!(
+                    "products.body-listed-no-definition",
+                    "body is listed by no definition's `bodies` and by no `instance_bodies` entry"
+                ),
             );
         }
     }
@@ -364,6 +478,7 @@ fn placement_cycle<'ir>(
 #[cfg(test)]
 mod tests {
     mod admission;
+    mod body_owners;
     mod history_owners;
     mod root;
     use super::check_products;
@@ -406,6 +521,7 @@ mod tests {
             );
             assert!(joint.set_frame_sense(frame_sense));
             ir.model.assembly_joints.push(joint);
+            crate::examples::add_document_root(&mut ir);
             let mut findings = Vec::new();
             check_products(
                 &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -451,6 +567,7 @@ mod tests {
             None,
         ));
 
+        crate::examples::add_document_root(&mut ir);
         let mut findings = Vec::new();
         check_products(
             &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -467,13 +584,14 @@ mod tests {
             "test:model:product#placed".try_into().unwrap(),
             Some(Transform::identity()),
         ));
-        let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
+        let mut wire = cadmpeg_core::serde_erase::json::to_value(&ir.model.assembly_joints[0])
+            .expect("joint wire");
         wire["operands"]["value"]["connectors"][0]["operand"]["occurrence"] =
             serde_json::json!(occurrence.as_str());
         wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
             "path": "external.f3d"
         });
-        assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<AssemblyJoint>(wire).is_err());
     }
 
     #[test]
@@ -559,6 +677,7 @@ mod tests {
                 .expect("identity grammar"),
         );
         ir.model.assembly_joints.push(joint);
+        crate::examples::add_document_root(&mut ir);
         let mut findings = Vec::new();
         check_products(
             &cadmpeg_core::decode::test_support::service_decode_context(),

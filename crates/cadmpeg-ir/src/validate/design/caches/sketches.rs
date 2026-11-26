@@ -106,7 +106,10 @@ pub(super) fn check_sketches(index: &DesignRecords<'_>, findings: &mut Vec<Findi
                 warning(
                     findings,
                     constraint.id.as_str(),
-                    format_args!("the solved sketch geometry misses the constraint by {residual}"),
+                    crate::rule!(
+                        "design.solved-sketch-geometry-misses-constraint",
+                        "the solved sketch geometry misses the constraint by {residual}"
+                    ),
                 );
             }
         }
@@ -127,7 +130,8 @@ pub(super) fn check_sketches(index: &DesignRecords<'_>, findings: &mut Vec<Findi
                     warning(
                         findings,
                         entity.id.as_str(),
-                        format_args!(
+                        crate::rule!(
+                            "design.point-entity",
                             "the point is {distance} from the {:?} of entity {}",
                             role.role,
                             role.of.as_str()

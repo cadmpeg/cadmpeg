@@ -48,9 +48,10 @@ fn endpoint_bound_open_cubic_projects_its_exact_arrays_and_units() {
         ]
     );
     assert!(crate::sketch::curve::native_losses(&entities).is_empty());
-    let wire = serde_json::to_value(&entities[2]).expect("spline wire");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&entities[2]).expect("spline wire");
     assert_eq!(
-        serde_json::from_value::<PmDcSketchEntity>(wire).expect("restored spline"),
+        cadmpeg_core::serde_erase::json::from_value::<PmDcSketchEntity>(wire)
+            .expect("restored spline"),
         entities[2]
     );
 }

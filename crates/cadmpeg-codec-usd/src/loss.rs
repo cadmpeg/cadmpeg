@@ -108,6 +108,10 @@ pub(crate) enum UsdLossCode {
     /// Geometry subsets of a `BrepArray` prim that are not `face` or `brep`
     /// subsets binding a material were not transferred.
     BrepSubsetNotTransferred,
+    /// A `BrepArray` face on a plane, cylinder, or cone has no loop that
+    /// holds an edge or a vertex, so it states no extent. The face is stated
+    /// partial.
+    TopologyFaceBoundaryUnstated,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
@@ -146,6 +150,9 @@ pub(crate) enum UsdLossCode {
     ExportJointNotWritten,
     /// A solver property has no prim, attribute, or target to write.
     ExportSolverPropertyNotWritten,
+    /// A design feature other than a joint, or the design state of a scope,
+    /// was not written.
+    ExportDesignNotWritten,
     /// The rigid body, mass, or velocity of a body with a transform of its
     /// own, written as a group of prims, was not written.
     ExportPhysicsNotWritten,
@@ -193,6 +200,7 @@ impl UsdLossCode {
         Self::BrepRejected,
         Self::BrepElementNotTransferred,
         Self::BrepSubsetNotTransferred,
+        Self::TopologyFaceBoundaryUnstated,
         Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
@@ -210,6 +218,7 @@ impl UsdLossCode {
         Self::ExportCarrierNotWritten,
         Self::ExportJointNotWritten,
         Self::ExportSolverPropertyNotWritten,
+        Self::ExportDesignNotWritten,
         Self::ExportPhysicsNotWritten,
         Self::ExportGroupFaceNotWritten,
     ];
@@ -367,6 +376,11 @@ impl UsdLossCode {
                 Info,
                 T::MaterialNotTransferred,
             ),
+            Self::TopologyFaceBoundaryUnstated => (
+                "topology.face-boundary-unstated",
+                Warning,
+                T::TopologyNotTransferred,
+            ),
             Self::JointRejected => (
                 "physics.joint-rejected",
                 Warning,
@@ -449,6 +463,11 @@ impl UsdLossCode {
                 "export.group-face-not-written",
                 Info,
                 T::TopologyNotTransferred,
+            ),
+            Self::ExportDesignNotWritten => (
+                "export.design-not-written",
+                Warning,
+                T::ParametricRecordOmitted,
             ),
         }
     }

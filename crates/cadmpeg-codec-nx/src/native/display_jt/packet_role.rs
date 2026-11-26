@@ -182,10 +182,13 @@ mod tests {
         ] {
             let json = format!("\"{label}\"");
             let role: TopologyPacketRole = serde_json::from_str(&json).unwrap();
-            assert_eq!(serde_json::to_string(&role).unwrap(), json);
             assert_eq!(
-                serde_json::to_vec(&role).unwrap(),
-                serde_json::to_vec(&String::from(role)).unwrap()
+                cadmpeg_core::serde_erase::json::to_string(&role).unwrap(),
+                json
+            );
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_vec(&role).unwrap(),
+                cadmpeg_core::serde_erase::json::to_vec(&String::from(role)).unwrap()
             );
         }
     }
@@ -200,7 +203,7 @@ mod tests {
 
         for label in ["vertex_flags", "high_degree_face_attribute_masks_12"] {
             let role: TopologyPacketRole =
-                serde_json::from_value(serde_json::json!(label)).unwrap();
+                cadmpeg_core::serde_erase::json::from_value(serde_json::json!(label)).unwrap();
             let record = Record {
                 id: "nx:jt:packet-role#1",
                 role: &role,
@@ -226,7 +229,10 @@ mod tests {
             "face_attribute_masks_7_next_31",
         ] {
             assert!(
-                serde_json::from_value::<TopologyPacketRole>(serde_json::json!(label)).is_err()
+                cadmpeg_core::serde_erase::json::from_value::<TopologyPacketRole>(
+                    serde_json::json!(label)
+                )
+                .is_err()
             );
         }
     }

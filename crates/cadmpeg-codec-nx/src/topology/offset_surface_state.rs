@@ -60,12 +60,12 @@ mod tests {
     fn offset_state_preserves_signed_distance_and_checks_support() {
         for distance in [0.0, -0.0, -2.5, f64::MAX] {
             let state = OffsetSurfaceState::new(6, distance).unwrap();
-            let wire = serde_json::to_string(&state).unwrap();
+            let wire = cadmpeg_core::serde_erase::json::to_string(&state).unwrap();
             assert_eq!(
                 wire,
                 format!(
                     "{{\"support_xmt\":6,\"distance\":{}}}",
-                    serde_json::to_string(&distance).unwrap()
+                    cadmpeg_core::serde_erase::json::to_string(&distance).unwrap()
                 )
             );
             let decoded: OffsetSurfaceState = serde_json::from_str(&wire).unwrap();

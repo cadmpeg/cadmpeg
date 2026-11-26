@@ -102,16 +102,19 @@ fn extrude_op(result: &cadmpeg_ir::DecodeResult, name: &str) -> BooleanOp {
     }
 }
 
+/// The bodies of the current state of the `PartDesign::Body` `name`: the
+/// state at its `Tip`, which its own `Shape` holds (§5.5).
 fn outputs(result: &cadmpeg_ir::DecodeResult, name: &str) -> Vec<String> {
+    let object = format!("fcstd:native:object#{name}");
     result
         .ir()
-        .model
-        .features
+        .design
+        .scopes
         .iter()
-        .find(|feature| feature.name.as_deref() == Some(name))
-        .expect("feature")
-        .evaluation
-        .outputs()
+        .flat_map(|scope| &scope.current)
+        .find(|state| state.native_ref.as_deref() == Some(object.as_str()))
+        .expect("current state")
+        .bodies
         .iter()
         .map(|id| id.as_str().to_owned())
         .collect()
@@ -135,8 +138,8 @@ fn first_pads_of_independent_bodies_create_new_bodies() {
     );
     assert_eq!(extrude_op(&result, "Pad"), BooleanOp::NewBody);
     assert_eq!(extrude_op(&result, "ExtraPad"), BooleanOp::NewBody);
-    let first = outputs(&result, "Pad");
-    let second = outputs(&result, "ExtraPad");
+    let first = outputs(&result, "Part");
+    let second = outputs(&result, "Extra");
     assert_eq!(first.len(), 1);
     assert_eq!(second.len(), 1);
     assert!(first.iter().all(|body| !second.contains(body)));
@@ -168,7 +171,7 @@ fn later_pad_joins_the_body_that_owns_it() {
     assert_base_dependency(&result, "Pad2", "Pad");
     assert_body_members(&result, "Part", &["Pad", "Pad2"]);
     assert_body_members(&result, "Extra", &["ExtraPad"]);
-    assert_ne!(outputs(&result, "Pad2"), outputs(&result, "ExtraPad"));
+    assert_ne!(outputs(&result, "Part"), outputs(&result, "Extra"));
 }
 
 #[test]

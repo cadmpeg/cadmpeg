@@ -84,6 +84,14 @@ pub(super) struct TopologyBudgets<'inputs> {
     pub(super) completion_geometry: &'inputs GeometryWorkBudget<'inputs>,
 }
 
+/// Where topology emission charges its losses. A loss that states a face
+/// partial is held with the face's id, so the caller reports it only for a
+/// face the document still holds once inactive bodies are pruned.
+pub(super) struct TopologyLosses<'losses> {
+    pub(super) losses: &'losses mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(super) partial_faces: &'losses mut Vec<(FaceId, cadmpeg_ir::report::loss::LossNote)>,
+}
+
 pub(super) fn emit_topology(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -91,8 +99,12 @@ pub(super) fn emit_topology(
     annotations: &mut AnnotationBuilder,
     intersection_index: &mut IntersectionIncidenceIndex,
     topology_budgets: &TopologyBudgets<'_>,
-    topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    topology_losses: TopologyLosses<'_>,
 ) -> Result<EndpointWitnesses, CodecError> {
+    let TopologyLosses {
+        losses: topology_losses,
+        partial_faces: partial_face_losses,
+    } = topology_losses;
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
         cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
@@ -148,6 +160,9 @@ pub(super) fn emit_topology(
     }
     let vertex_point =
         |vertex_xmt: u32| resolved_vertex_point(graph, points, &point_positions, vertex_xmt);
+    let mut partial_face_xmts: BTreeSet<u32> = BTreeSet::new();
+    // Each loss names its face, so it waits until the face is emitted.
+    let mut vertex_loop_losses = Vec::new();
     for (face_xmt, loops) in &mut face_boundaries {
         loops.retain(|(loop_xmt, face_loop)| {
             let FaceLoop::Vertex { fin_xmt, vertex } = face_loop else {
@@ -157,9 +172,10 @@ pub(super) fn emit_topology(
             if vertex_xmt.and_then(vertex_point).is_some() {
                 return true;
             }
-            topology_losses.push(crate::loss::NxLossCode::TopologyVertexLoopUnresolved.note(
-                format!("parasolid#{stream_index} LOOP {loop_xmt} of FACE {face_xmt} is omitted: vertex-loop FIN {fin_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
-            ));
+            vertex_loop_losses.push((*face_xmt, crate::loss::NxLossCode::TopologyVertexLoopUnresolved.note(
+                format!("parasolid#{stream_index} LOOP {loop_xmt} of FACE {face_xmt} is omitted, and the face is stated partial: vertex-loop FIN {fin_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
+            )));
+            partial_face_xmts.insert(*face_xmt);
             false
         });
     }
@@ -797,6 +813,7 @@ pub(super) fn emit_topology(
     }
     let mut loops: BTreeMap<u32, LoopId> = BTreeMap::new();
     let mut loop_specs: BTreeMap<u32, (LoopId, FaceId)> = BTreeMap::new();
+    let mut partial_faces: BTreeSet<FaceId> = BTreeSet::new();
     for &loop_xmt in valid_loop_rings.keys() {
         let Some(node) = graph.get(NodeKind::Loop, loop_xmt) else {
             continue;
@@ -825,9 +842,10 @@ pub(super) fn emit_topology(
             })
         });
         if !ring_resolves {
-            topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face"),
-            ));
+            partial_face_losses.push((face_ref.clone(), crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
+                format!("parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted, and face {face_ref} is stated partial"),
+            )));
+            partial_faces.insert(face_ref.clone());
             continue;
         }
         annotate_node(annotations, id.as_str(), source_stream, node, "LOOP");
@@ -1125,9 +1143,9 @@ pub(super) fn emit_topology(
                     Some("INTERSECTION_PCURVE"),
                 );
                 annotations.derived(pcurve_id.as_str(), "geometry")?;
-                annotations.derived(pcurve_id.as_str(), "parameter_range")?;
+                annotations.derived(pcurve_id.as_str(), "metadata.form.parameter_range")?;
                 if fit_tolerance.is_some() {
-                    annotations.derived(pcurve_id.as_str(), "fit_tolerance")?;
+                    annotations.derived(pcurve_id.as_str(), "metadata.form.fit_tolerance")?;
                 }
 
                 ir.geometry.pcurves.push(Pcurve {
@@ -1226,9 +1244,10 @@ pub(super) fn emit_topology(
                 None
             };
             let Some(ring) = ring else {
-                topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                    format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"),
-                ));
+                partial_face_losses.push((face.clone(), crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
+                    format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted, and face {face} is stated partial"),
+                )));
+                partial_faces.insert(face.clone());
                 continue;
             };
 
@@ -1248,12 +1267,13 @@ pub(super) fn emit_topology(
             loops.push(id.clone());
         }
     }
+    let mut emitted_faces = BTreeMap::new();
     for pending in pending_faces {
         let boundary_failed = if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
-            topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
-                format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
-                pending.xmt),
-            ));
+            partial_face_losses.push((pending.id.clone(), crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
+                format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face {} is stated partial",
+                pending.xmt, pending.id),
+            )));
             true
         } else {
             false
@@ -1275,17 +1295,48 @@ pub(super) fn emit_topology(
             )?;
         }
 
+        let partial = boundary_failed
+            || partial_faces.contains(&pending.id)
+            || partial_face_xmts.contains(&pending.xmt);
+        let loops = if partial {
+            cadmpeg_ir::topology::FaceLoops::PartialUnspecified { loops }
+        } else {
+            let surface = if loops.is_empty() {
+                ir.geometry
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == pending.surface)
+                    .map(|surface| &surface.geometry)
+            } else {
+                None
+            };
+            let (loops, unbounded) =
+                cadmpeg_ir::topology::FaceLoops::unspecified_on(loops, surface);
+            if let Some(kind) = unbounded {
+                partial_face_losses.push((pending.id.clone(), crate::loss::NxLossCode::TopologyFaceBoundaryUnstated.note(
+                    format!("parasolid#{stream_index} FACE {} states no loop on a {kind}, which no face covers whole: face {} is stated partial",
+                    pending.xmt, pending.id),
+                )));
+            }
+            loops
+        };
+        emitted_faces.insert(pending.xmt, pending.id.clone());
         ir.geometry.faces.push(Face {
             id: pending.id,
             shell: pending.shell,
             surface: pending.surface,
             sense: pending.sense,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+            loops,
             name: None,
             color: None,
             tolerance: pending.tolerance,
             native_ref: None,
         });
+    }
+    for (face_xmt, note) in vertex_loop_losses {
+        if let Some(face) = emitted_faces.get(&face_xmt) {
+            partial_face_losses.push((face.clone(), note));
+        }
     }
     attach_tolerant_edge_intersections_with_budget(
         ir,
@@ -2155,7 +2206,7 @@ mod tests {
         assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
         assert_eq!(unknown.offset(), 0);
         assert_eq!(unknown.data(), None);
-        let wire = serde_json::to_value(&unknown).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&unknown).unwrap();
         assert_eq!(
             wire["retention"]["sha256"],
             cadmpeg_ir::hash::sha256_hex(&stream.inflated)
@@ -2189,8 +2240,8 @@ mod tests {
         let actual = source_meta(&scan, &dialects, Some(&parsed))
             .expect("source metadata reads the existing census");
         assert_eq!(
-            serde_json::to_value(actual).expect("source metadata"),
-            serde_json::to_value(expected).expect("source metadata")
+            cadmpeg_core::serde_erase::json::to_value(actual).expect("source metadata"),
+            cadmpeg_core::serde_erase::json::to_value(expected).expect("source metadata")
         );
     }
 

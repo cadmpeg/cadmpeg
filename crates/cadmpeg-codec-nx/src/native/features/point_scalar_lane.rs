@@ -147,10 +147,13 @@ mod tests {
     #[test]
     fn point_scalar_borrowed_wire_preserves_bytes() {
         let record: FeaturePointConstructionScalarLane = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), WIRE.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&FeaturePointConstructionScalarLaneWire::from(
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            WIRE.as_bytes()
+        );
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&FeaturePointConstructionScalarLaneWire::from(
                 record.clone()
             ))
             .unwrap()
@@ -180,8 +183,10 @@ mod tests {
             let mut invalid = wire.clone();
             invalid["source_offsets"][slot] =
                 serde_json::json!(wire["source_offsets"][slot].as_u64().unwrap() + 1);
-            let error =
-                serde_json::from_value::<FeaturePointConstructionScalarLane>(invalid).unwrap_err();
+            let error = cadmpeg_core::serde_erase::json::from_value::<
+                FeaturePointConstructionScalarLane,
+            >(invalid)
+            .unwrap_err();
             assert!(error.to_string().contains("source_offsets"));
         }
         for offsets in [
@@ -198,8 +203,10 @@ mod tests {
         ] {
             let mut invalid = wire.clone();
             invalid["source_offsets"] = serde_json::json!(offsets);
-            let error =
-                serde_json::from_value::<FeaturePointConstructionScalarLane>(invalid).unwrap_err();
+            let error = cadmpeg_core::serde_erase::json::from_value::<
+                FeaturePointConstructionScalarLane,
+            >(invalid)
+            .unwrap_err();
             assert!(error.to_string().contains("source_offsets"));
         }
         let mut boundary = wire;
@@ -212,7 +219,10 @@ mod tests {
             u64::MAX - 27
         ]);
         let lane: FeaturePointConstructionScalarLane =
-            serde_json::from_value(boundary.clone()).unwrap();
-        assert_eq!(serde_json::to_value(lane).unwrap(), boundary);
+            cadmpeg_core::serde_erase::json::from_value(boundary.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(lane).unwrap(),
+            boundary
+        );
     }
 }

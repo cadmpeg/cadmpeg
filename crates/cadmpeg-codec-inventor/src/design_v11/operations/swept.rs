@@ -18,9 +18,9 @@ use cadmpeg_ir::design::options::{
 };
 use cadmpeg_ir::features::{self as old, FeatureOperation as LegacyOperation};
 use cadmpeg_ir::scalar::{Angle, Length};
-use cadmpeg_ir::sketches::Sketch;
 use cadmpeg_ir::units::UnitVector3;
 
+use super::selections::SketchData;
 use super::{selections, Projected};
 
 pub(super) fn direction(
@@ -295,7 +295,7 @@ pub(super) fn setting(
 
 pub(super) fn operation(
     value: &LegacyOperation,
-    sketches: &[Sketch],
+    sketches: SketchData<'_>,
 ) -> Option<Projected<FeatureOperation>> {
     if !matches!(
         value,

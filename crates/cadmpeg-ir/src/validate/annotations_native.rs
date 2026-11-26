@@ -89,7 +89,10 @@ pub(super) fn check_annotations(
                 Check::Annotations,
                 Severity::Error,
                 Some(id),
-                format_args!("provenance key does not resolve to an entity"),
+                crate::rule!(
+                    "annotations_native.provenance-key-does-not-resolve-entity",
+                    "provenance key does not resolve to an entity"
+                ),
             );
         }
     }
@@ -100,7 +103,10 @@ pub(super) fn check_annotations(
                 Check::Annotations,
                 Severity::Error,
                 Some(id),
-                format_args!("exactness key does not resolve to an entity"),
+                crate::rule!(
+                    "annotations_native.exactness-key-does-not-resolve-entity",
+                    "exactness key does not resolve to an entity"
+                ),
             );
             continue;
         }
@@ -113,7 +119,8 @@ pub(super) fn check_annotations(
                 Check::Annotations,
                 Severity::Warning,
                 Some(id),
-                format_args!(
+                crate::rule!(
+                    "annotations_native.entity-could-not-serialized-validate-exactness",
                     "entity could not be serialized to validate its exactness field paths"
                 ),
             );
@@ -140,7 +147,10 @@ pub(super) fn check_annotations(
                     Check::Annotations,
                     Severity::Warning,
                     Some(id),
-                    format_args!("exactness field path `{path}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.exactness-field-path-does-not-resolve",
+                        "exactness field path `{path}` does not resolve"
+                    ),
                 );
             }
         }
@@ -256,7 +266,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(feature.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -273,7 +286,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(feature.id.as_str()),
-                    format_args!("helix axis native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.helix-axis-native-ref-does-not",
+                        "helix axis native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -286,7 +302,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(parameter.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -297,7 +316,11 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(parameter.id.as_str()),
-                    format_args!("PMI native_ref `{}` does not resolve", semantic.native_ref),
+                    crate::rule!(
+                        "annotations_native.pmi-native-ref-does-not-resolve",
+                        "PMI native_ref `{}` does not resolve",
+                        semantic.native_ref
+                    ),
                 );
             }
         }
@@ -310,7 +333,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(configuration.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -323,7 +349,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(sketch.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -336,7 +365,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(sketch.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -349,7 +381,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -364,7 +399,10 @@ pub(super) fn check_native_links(
                             Check::NativeLinks,
                             Severity::Error,
                             Some(constraint.id.as_str()),
-                            format_args!("operand native_ref `{target}` does not resolve"),
+                            crate::rule!(
+                                "annotations_native.operand-native-ref-does-not-resolve",
+                                "operand native_ref `{target}` does not resolve"
+                            ),
                         );
                     }
                 }
@@ -379,7 +417,10 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(constraint.id.as_str()),
-                    format_args!("native_ref `{target}` does not resolve"),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
                 );
             }
         }
@@ -395,10 +436,29 @@ pub(super) fn check_native_links(
                             Check::NativeLinks,
                             Severity::Error,
                             Some(constraint.id.as_str()),
-                            format_args!("operand native_ref `{target}` does not resolve"),
+                            crate::rule!(
+                                "annotations_native.operand-native-ref-does-not-resolve",
+                                "operand native_ref `{target}` does not resolve"
+                            ),
                         );
                     }
                 }
+            }
+        }
+    }
+    for mesh in &ir.model.tessellations {
+        if let Some(target) = &mesh.native_ref {
+            if !resolves(target.as_str()) {
+                super::record_finding(
+                    findings,
+                    Check::NativeLinks,
+                    Severity::Error,
+                    Some(mesh.id.as_str()),
+                    crate::rule!(
+                        "annotations_native.native-ref-does-not-resolve",
+                        "native_ref `{target}` does not resolve"
+                    ),
+                );
             }
         }
     }
@@ -416,7 +476,10 @@ pub(super) fn check_native_links(
                             Check::NativeLinks,
                             Severity::Error,
                             Some(entity.id()),
-                            format_args!("native-record link `{target}` does not resolve"),
+                            crate::rule!(
+                                "annotations_native.native-record-link-does-not-resolve",
+                                "native-record link `{target}` does not resolve"
+                            ),
                         );
                     }
                 }
@@ -440,7 +503,11 @@ pub(super) fn check_native_links(
                     Check::NativeLinks,
                     Severity::Error,
                     Some(record.id()),
-                    format_args!("{}", "native-record links must be an array of identities"),
+                    crate::rule!(
+                        "annotations_native.native-record-links-must-array-identities",
+                        "{}",
+                        "native-record links must be an array of identities"
+                    ),
                 );
                 continue;
             };
@@ -451,22 +518,53 @@ pub(super) fn check_native_links(
                         Check::NativeLinks,
                         Severity::Error,
                         Some(record.id()),
-                        format_args!("native-record link {index} must be an identity string"),
+                        crate::rule!(
+                            "annotations_native.native-record-link-must-identity-string",
+                            "native-record link {index} must be an identity string"
+                        ),
                     );
                     continue;
                 };
-                if !all_ids.contains(target, crate::index::StandardIndex) {
-                    super::record_finding(
-                        findings,
-                        Check::NativeLinks,
-                        Severity::Error,
-                        Some(record.id()),
-                        format_args!("native-record link `{target}` does not resolve"),
-                    );
-                }
+                check_native_record_link(all_ids, arena, record.id(), target, findings);
             }
         }
     });
+}
+
+/// A native record's link resolves, and to a native record: native records
+/// carry no reference into the neutral model (§2.1 Linkage, part 10). A
+/// given-up part's `unknowns` stub links its innermost containing record,
+/// which may be neutral (§3.3).
+fn check_native_record_link(
+    all_ids: &crate::index::ModelIndex<'_>,
+    arena: &str,
+    record: &str,
+    target: &str,
+    findings: &mut Vec<Finding>,
+) {
+    if !all_ids.contains(target, crate::index::StandardIndex) {
+        super::record_finding(
+            findings,
+            Check::NativeLinks,
+            Severity::Error,
+            Some(record),
+            crate::rule!(
+                "annotations_native.native-record-link-does-not-resolve",
+                "native-record link `{target}` does not resolve"
+            ),
+        );
+    } else if arena != "unknowns" && !all_ids.native_record_owns(target) {
+        super::record_finding(
+            findings,
+            Check::NativeLinks,
+            Severity::Error,
+            Some(record),
+            crate::rule!(
+                "annotations_native.native-record-link-names-neutral-record",
+                "native-record link `{target}` names a neutral record; a native record references no record of the neutral model"
+            ),
+        );
+    }
 }
 
 #[cfg(test)]

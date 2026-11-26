@@ -24,10 +24,10 @@ rewrite_native_record!(DesignSweepScope, []; {construction, sweep_profile});
 rewrite_native_record!(DesignWorkPlaneReference, []; {work_plane_reference, work_plane_reference_offset});
 rewrite_native_record!(DesignWorkPlaneTransform, []; {work_plane_transform, work_plane_transform_offset, reference, work_plane_construction});
 
-fn scope_fields<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+fn scope_fields(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &mut serde_json::Value,
-    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, F>,
+    map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     cadmpeg_ir::schema::rewrite::typed::native_fields::rewrite_field(
         ctx,

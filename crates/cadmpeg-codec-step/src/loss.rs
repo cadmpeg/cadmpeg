@@ -57,8 +57,6 @@ pub(crate) enum StepLossCode {
     HeaderMetadataNoncanonical,
     /// The declared `FILE_SCHEMA` identifier satisfies no declared dialect.
     SourceDialectUnverified,
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced,
     /// The declared schema object identifier names a module edition that the
     /// decoder reads as a published AP edition.
     SourceSchemaEditionAssumed,
@@ -334,7 +332,9 @@ pub(crate) enum StepLossCode {
     RegionVerticesRecovered,
     /// Edges of unwritable faces were retained as wire geometry.
     RegionEdgesRecovered,
-    /// No geometry was placed in the output representations.
+    /// No geometry was placed in the output representations, while other
+    /// records of the document were written. A file that holds no record of
+    /// the document charges `export:output.empty` instead.
     NoGeometryWritten,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
@@ -398,6 +398,13 @@ pub(crate) enum StepLossCode {
     /// A non-manifold edge of a closed shell was written as one edge per
     /// forward and reversed use pair.
     NonManifoldEdgeSplit,
+    /// An open edge whose ends coincide within the linear tolerance was
+    /// written as one edge: no point of its curve between the ends was found.
+    OpenEdgeUnsplit,
+    /// A face the source holds with no boundary on a plane, cylinder, or
+    /// cone, whose domain is unbounded, or whose stored boundary does not
+    /// resolve to a closed loop, is stated partial with no loop.
+    TopologyFaceBoundaryUnstated,
     /// An edge vertex lies off its own carrier by more than the document
     /// tolerance, and the edge's parameter range was derived anyway.
     ///
@@ -454,7 +461,6 @@ impl StepLossCode {
         Self::ImplementationLevelUnverified,
         Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
-        Self::SourceDialectDisplaced,
         Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
@@ -619,6 +625,8 @@ impl StepLossCode {
         Self::OccurrenceExpansionOutputTruncated,
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
+        Self::OpenEdgeUnsplit,
+        Self::TopologyFaceBoundaryUnstated,
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
         Self::LengthUnitContradicted,
@@ -652,7 +660,6 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified => "parse.implementation-level-unverified",
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
             Self::SourceDialectUnverified => "source.dialect-unverified",
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
@@ -835,6 +842,8 @@ impl StepLossCode {
             Self::OccurrenceExpansionOutputTruncated => "occurrence.expansion-output-truncated",
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
+            Self::OpenEdgeUnsplit => "topology.open-edge-unsplit",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
@@ -939,7 +948,6 @@ impl StepLossCode {
             Self::ImplementationLevelUnverified
             | Self::SourceDialectUnverified
             | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
             | Self::PresentationAnnotationTextUnordered
@@ -1033,7 +1041,9 @@ impl StepLossCode {
             | Self::EdgeStartVertexMissing
             | Self::EdgeEndVertexMissing
             | Self::EdgeNoVertex
-            | Self::NonManifoldEdgeSplit => LossTaxonomy::TopologyNotTransferred,
+            | Self::NonManifoldEdgeSplit
+            | Self::OpenEdgeUnsplit
+            | Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::SeamEdgePcurveUnresolved
             | Self::EdgeNoSurfaceOrCurveForPcurve
             | Self::PcurveAssociationAmbiguous
@@ -1119,13 +1129,28 @@ impl StepLossCode {
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
-        LossKind::namespaced(NAMESPACE, self.code(), self.shared_taxonomy())
+        cadmpeg_ir::report::loss::NamespacedLossKind::new(
+            NAMESPACE,
+            self.code(),
+            self.shared_taxonomy(),
+        )
+        .with_strict_floor(self.strict_floor())
+        .into()
+    }
+
+    /// The strict floor `step.md` (Part 21 mapping) states: a repaired
+    /// noncanonical record pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::ParseNoncanonicalSyntax => Some(Severity::Warning),
+            _ => None,
+        }
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// The structured code is `step/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// The structured code is `step/<local>`. Severity and strict floor come
+    /// from the local code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -1135,7 +1160,7 @@ impl StepLossCode {
 #[cfg(test)]
 mod tests {
     use super::StepLossCode;
-    use cadmpeg_ir::report::{loss::StrictConsequence, Severity};
+    use cadmpeg_ir::report::{strictness::Strictness, Severity};
     use std::collections::BTreeSet;
 
     /// Value-level golden: the stable string form of every code, pinned.
@@ -1159,7 +1184,6 @@ mod tests {
                 "parse.implementation-level-unverified",
                 "parse.header-metadata-noncanonical",
                 "source.dialect-unverified",
-                "target.source-dialect-displaced",
                 "source.schema-edition-assumed",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
@@ -1324,6 +1348,8 @@ mod tests {
                 "occurrence.expansion-output-truncated",
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
+                "topology.open-edge-unsplit",
+                "topology.face-boundary-unstated",
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",
                 "geometry.length-unit-contradicted",
@@ -1375,14 +1401,31 @@ mod tests {
     fn globally_unproved_pcurve_admission_does_not_refuse_strict_decode() {
         let note = StepLossCode::PcurveGlobalFidelityUnproved.note("x");
         assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
+        let pinned = Strictness {
+            pinned: true,
+            ..Strictness::default()
+        };
+        assert!(!pinned.refuses(&note, false));
     }
 
-    /// A kept default replaces a source value, so strict decode refuses it.
+    /// `step.md` states a strict floor for a repaired noncanonical record
+    /// and for no other code.
     #[test]
-    fn substituted_length_uncertainty_refuses_strict_decode() {
-        let note = StepLossCode::UncertaintyLengthAmbiguous.note("x");
-        assert_eq!(note.severity, Severity::Warning);
-        assert_eq!(note.strict_consequence(), StrictConsequence::Reject);
+    fn only_a_repaired_noncanonical_record_pins_a_strict_floor() {
+        let pinned = Strictness {
+            pinned: true,
+            ..Strictness::default()
+        };
+        for code in StepLossCode::ALL {
+            let expected = match code {
+                StepLossCode::ParseNoncanonicalSyntax => Some(Severity::Warning),
+                _ => None,
+            };
+            assert_eq!(code.kind().strict_floor(), expected, "{}", code.code());
+        }
+        assert!(pinned.refuses(&StepLossCode::ParseNoncanonicalSyntax.note("x"), false));
+        let substituted = StepLossCode::UncertaintyLengthAmbiguous.note("x");
+        assert_eq!(substituted.severity, Severity::Warning);
+        assert!(!pinned.refuses(&substituted, false));
     }
 }

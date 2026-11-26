@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::physics::solver::{SolverSettings, SolverTarget, SolverValue};
 
-use super::text::{quoted, real, real32};
+use super::text::{float, quoted, real};
 use crate::schema::physx::{find, holder, split, Attribute, Holder, Value};
 
 /// The solver whose settings the writer writes.
@@ -19,12 +19,19 @@ const MARK: char = '\u{1}';
 
 /// The placeholder of the prim of a target record.
 pub(super) fn placeholder(target: &SolverTarget) -> Option<String> {
-    let key = match target {
-        SolverTarget::Occurrence { occurrence } => format!("occurrence:{occurrence}"),
-        SolverTarget::Joint { joint } => format!("joint:{joint}"),
-        _ => return None,
-    };
-    Some(format!("{MARK}{key}{MARK}"))
+    match target {
+        SolverTarget::Occurrence { occurrence } => {
+            Some(format!("{MARK}occurrence:{occurrence}{MARK}"))
+        }
+        SolverTarget::Joint { joint } => Some(joint_placeholder(joint.as_str())),
+        _ => None,
+    }
+}
+
+/// The placeholder of the prim of a joint: an assembly joint, or the design
+/// joint feature that shares its id.
+pub(super) fn joint_placeholder(joint: &str) -> String {
+    format!("{MARK}joint:{joint}{MARK}")
 }
 
 /// Replaces the placeholders in `text` by the paths of `paths`, keyed by
@@ -89,7 +96,7 @@ fn real_text(
     Some(if attribute.usd_type.starts_with("double") {
         real(scene)
     } else {
-        real32(crate::text::value::round_f32(scene))
+        float(scene)
     })
 }
 

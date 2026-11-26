@@ -11,8 +11,8 @@ use std::rc::Rc;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use super::evaluations::check_path_steps;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
+use super::selections::{check_path, moved_occurrences};
 use crate::design::evaluation::{Evaluation, EvaluationStatus, StateBase, StateDelta};
 use crate::design::feature::FeatureOperation;
 use crate::design::names::{NameEntry, NameKind};
@@ -543,7 +543,7 @@ fn apply<'a>(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!("design.two-records-resolved-state-share-id", 
                     "two records of the resolved state share id {id}: a {} record and a {arena} record",
                     previous.arena
                 ),
@@ -621,7 +621,10 @@ pub(super) fn check_resolved_states(
                 super::error(
                     findings,
                     entity.id(),
-                    format_args!("an entity of an unproduced body must have no structured name"),
+                    crate::rule!(
+                        "design.entity-unproduced-body-must-no-structured",
+                        "an entity of an unproduced body must have no structured name"
+                    ),
                 );
             }
         }
@@ -658,11 +661,15 @@ pub(super) fn check_resolved_states(
                 super::error(
                     findings,
                     id,
-                    format_args!("evaluation states unproduced body {}", body.as_str()),
+                    crate::rule!(
+                        "design.evaluation-states-unproduced-body",
+                        "evaluation states unproduced body {}",
+                        body.as_str()
+                    ),
                 );
             }
         }
-        check_entries(index, &state, id, findings);
+        check_entries(index, &state, Some(evaluation.scope.as_str()), id, findings);
         check_closure(ctx, &state, &topology, ids, id, findings)?;
         let base_key = match &content.base {
             StateBase::Empty => StateKey::Empty,
@@ -704,7 +711,8 @@ fn check_current_names(
             super::error(
                 findings,
                 id,
-                format_args!(
+                crate::rule!(
+                    "design.name-entry-names-no-record-current",
                     "name entry names {id}, which is no record of the current geometry's {arena}"
                 ),
             );
@@ -713,20 +721,24 @@ fn check_current_names(
 }
 
 /// The resolved state's name, owner, member, instance-body, and pose entries
-/// name what the state holds.
+/// name what the state holds; instance-body and pose paths resolve from
+/// `root`, the definition of the state's scope.
 fn check_entries(
     index: &DesignRecords<'_>,
     state: &ResolvedState<'_>,
+    root: Option<&str>,
     evaluation: &str,
     findings: &mut Vec<Finding>,
 ) {
+    let moved = moved_occurrences(index.ir);
     for entity in state.names.keys() {
         let (arena, id) = Arena::of_entity(entity);
         if !state.holds(arena, id) {
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.name-entry-names-no-record-resolved",
                     "name entry names {id}, which is no record of the resolved state's {arena}"
                 ),
             );
@@ -737,7 +749,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.owner-entry-names-no-body-resolved",
                     "owner entry names {}, which is no body of the resolved state",
                     body.as_str()
                 ),
@@ -747,7 +760,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.owner-entry-names-no-product-definition",
                     "owner entry names {}, which is no product definition",
                     owner.as_str()
                 ),
@@ -759,7 +773,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.member-entry-names-no-occurrence-model",
                     "member entry names {occurrence}, which is no occurrence of the model"
                 ),
             );
@@ -768,7 +783,8 @@ fn check_entries(
             super::error(
                 findings,
                 evaluation,
-                format_args!(
+                crate::rule!(
+                    "design.member-entry-names-no-product-definition",
                     "member entry names {}, which is no product definition",
                     owner.as_str()
                 ),
@@ -776,13 +792,14 @@ fn check_entries(
         }
     }
     for (path, bodies) in &state.instance_bodies {
-        check_path_steps(index, path, evaluation, "instance-body", findings);
+        check_path(index, root, path, &moved, evaluation, findings);
         for body in *bodies {
             if !state.holds(Arena::Body, body.as_str()) {
                 super::error(
                     findings,
                     evaluation,
-                    format_args!(
+                    crate::rule!(
+                        "design.instance-body-entry-lists-no-body",
                         "instance-body entry lists {}, which is no body of the resolved state",
                         body.as_str()
                     ),
@@ -791,7 +808,7 @@ fn check_entries(
         }
     }
     for path in state.poses.keys() {
-        check_path_steps(index, path, evaluation, "pose", findings);
+        check_path(index, root, path, &moved, evaluation, findings);
     }
 }
 
@@ -822,7 +839,7 @@ fn check_closure(
             super::error(
                 findings,
                 evaluation,
-                format_args!("record {id} of the resolved state references {target}, which the state does not hold"),
+                crate::rule!("design.record-resolved-state-references-state-does", "record {id} of the resolved state references {target}, which the state does not hold"),
             );
         }
     }
@@ -852,7 +869,7 @@ fn check_stored_bodies(
     let FeatureOperation::Stored {
         bodies: Some(bodies),
         ..
-    } = &index.definition_in(feature, configuration).operation
+    } = &index.definition_in(feature, configuration, None).operation
     else {
         return;
     };
@@ -861,7 +878,8 @@ fn check_stored_bodies(
             super::error(
                 findings,
                 evaluation.id.as_str(),
-                format_args!(
+                crate::rule!(
+                    "design.stored-feature-names-no-body-state",
                     "stored feature {} names {}, which is no body of the state after it",
                     feature.id.as_str(),
                     body.as_str()
@@ -933,7 +951,7 @@ pub(in crate::validate) fn check_process_states<'a>(
             &content.delta,
             Some((id, &mut process_findings)),
         );
-        check_entries(index, &resolved, id, &mut process_findings);
+        check_entries(index, &resolved, scope(state), id, &mut process_findings);
         check_closure(ctx, &resolved, &topology, ids, id, &mut process_findings)?;
         let base_key = match &content.base {
             ProcessBase::State(base) => Some(StateKey::Process(base.as_str())),

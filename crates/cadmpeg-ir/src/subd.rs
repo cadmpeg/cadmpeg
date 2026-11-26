@@ -162,6 +162,18 @@ impl SubdCage {
         Ok(())
     }
 
+    /// Control vertices in cage order.
+    #[must_use]
+    pub fn vertices(&self) -> &[SubdVertex] {
+        &self.vertices
+    }
+
+    /// Symmetries of the cage.
+    #[must_use]
+    pub fn symmetries(&self) -> &[SubdSymmetry] {
+        &self.symmetries
+    }
+
     /// Control edges in cage order.
     #[must_use]
     pub fn edges(&self) -> &[SubdEdge] {
@@ -172,6 +184,29 @@ impl SubdCage {
     #[must_use]
     pub fn faces(&self) -> &[SubdFace] {
         &self.faces
+    }
+
+    /// Whether every edge of the cage borders two of its faces, which makes
+    /// the body that holds the cage a solid rather than a sheet (§5.6).
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
+        let mut bordered: Vec<[Option<usize>; 2]> = vec![[None, None]; self.edges.len()];
+        for (index, face) in self.faces.iter().enumerate() {
+            for edge_use in face.edge_uses() {
+                let Some(faces) = usize::try_from(edge_use.edge)
+                    .ok()
+                    .and_then(|edge| bordered.get_mut(edge))
+                else {
+                    return false;
+                };
+                match faces {
+                    [None, _] => faces[0] = Some(index),
+                    [Some(first), None] if *first != index => faces[1] = Some(index),
+                    _ => return false,
+                }
+            }
+        }
+        !bordered.is_empty() && bordered.iter().all(|faces| faces[1].is_some())
     }
 
     /// Atomically edit edge copies while preserving cage invariants.
@@ -403,6 +438,24 @@ impl SubdPlaneFrame {
             second_axis,
         })
     }
+
+    /// A point on the plane in document length units.
+    #[must_use]
+    pub const fn origin(&self) -> FinitePoint3 {
+        self.origin
+    }
+
+    /// The first unit in-plane axis.
+    #[must_use]
+    pub const fn first_axis(&self) -> UnitVector3 {
+        self.first_axis
+    }
+
+    /// The second unit in-plane axis.
+    #[must_use]
+    pub const fn second_axis(&self) -> UnitVector3 {
+        self.second_axis
+    }
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
@@ -624,6 +677,30 @@ impl SubdSymmetry {
             vertex_pairs,
         })
     }
+
+    /// The symmetry mode and its radial controls.
+    #[must_use]
+    pub const fn kind(&self) -> &SubdSymmetryKind {
+        &self.kind
+    }
+
+    /// The forward face correspondences.
+    #[must_use]
+    pub fn face_pairs(&self) -> &[[u32; 2]] {
+        &self.face_pairs
+    }
+
+    /// The forward edge correspondences.
+    #[must_use]
+    pub fn edge_pairs(&self) -> &[[u32; 2]] {
+        &self.edge_pairs
+    }
+
+    /// The forward vertex correspondences.
+    #[must_use]
+    pub fn vertex_pairs(&self) -> &[[u32; 2]] {
+        &self.vertex_pairs
+    }
 }
 
 impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
@@ -727,6 +804,12 @@ impl SubdVertex {
     /// Replace the vertex position.
     pub fn set_point(&mut self, point: FinitePoint3) {
         self.point = point;
+    }
+
+    /// Secondary-grip topology owned by this vertex.
+    #[must_use]
+    pub const fn secondary_grips(&self) -> Option<&SubdVertexGripLayout> {
+        self.secondary_grips.as_ref()
     }
 }
 
@@ -988,6 +1071,24 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
 }
 
 impl SubdEdge {
+    /// Start and end vertex indices into the cage's vertices.
+    #[must_use]
+    pub const fn vertices(&self) -> [u32; 2] {
+        self.vertices
+    }
+
+    /// Crease sharpness at the start and at the end vertex.
+    #[must_use]
+    pub const fn sharpness(&self) -> [NonNegativeReal; 2] {
+        self.sharpness
+    }
+
+    /// Sector coefficients at the start and at the end vertex.
+    #[must_use]
+    pub const fn sector_coefficients(&self) -> [FiniteReal; 2] {
+        self.sector_coefficients
+    }
+
     /// The knot interval the edge states, before any user value.
     #[must_use]
     pub const fn knot_interval(&self) -> Option<PositiveReal> {

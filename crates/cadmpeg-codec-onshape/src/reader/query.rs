@@ -224,7 +224,9 @@ impl Reader<'_> {
             _ => return Err(REFUSED.into()),
         };
         bounded_depth(&value, 0)?;
-        let size = serde_json::to_vec(&value).map_err(|_| REFUSED)?.len();
+        let size = cadmpeg_core::serde_erase::json::to_vec(&value)
+            .map_err(|_| REFUSED)?
+            .len();
         self.charge(size)?;
         self.values.push((value.clone(), size));
         Ok(value)

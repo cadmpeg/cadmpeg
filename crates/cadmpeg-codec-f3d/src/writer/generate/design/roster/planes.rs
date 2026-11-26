@@ -156,6 +156,7 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
             records,
             planned,
             ordinal,
+            rolled_back: planned.first >= ctx.marker,
         }
         .write(out)?;
     }
@@ -206,6 +207,8 @@ struct Item<'a> {
     planned: &'a PlannedPlane<'a>,
     /// The item's ordinal in the `WorkPlane` family, from `1`.
     ordinal: u32,
+    /// Whether the item stands after the timeline marker.
+    rolled_back: bool,
 }
 
 impl Item<'_> {
@@ -325,6 +328,7 @@ impl Item<'_> {
                 tracked: records.tracked,
                 companion: records.scope_companion,
                 stamps: records.scope_stamps,
+                rolled_back: self.rolled_back,
             },
         );
         timestamp_table(

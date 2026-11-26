@@ -173,7 +173,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             allow_multi_profile_faces: None,
         }),
     ];
-    let json = serde_json::to_string(&definitions).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_string(&definitions).unwrap();
     assert_eq!(
         serde_json::from_str::<[FeatureDefinition; 2]>(&json).unwrap(),
         definitions
@@ -524,6 +524,7 @@ fn document_parameters_can_feed_feature_parameters() {
         native_ref: None,
     });
     ir.finalize();
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
@@ -754,6 +755,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .get_mut(&extrude)
         .expect("configured extrude");
     state.dependencies.insert(source);
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
@@ -1050,6 +1052,7 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         .expect("block-instance state")
         .dependencies
         .insert(block);
+    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(report.is_ok(), "{:#?}", report.findings);
 }
@@ -1151,6 +1154,41 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
         .findings
         .iter()
         .any(|finding| finding.message == "generated body selection is invalid"));
+
+    let producer_id =
+        || FeatureId::mint("synthetic:test:feature#0-producer").expect("identity grammar");
+    let row = |local_id: &str, native: &str| {
+        crate::features::selections::BodyMember::new(
+            GeneratedBodyRef::new(producer_id(), local_id.into()).unwrap(),
+            cadmpeg_core::text::NonBlankString::new(native.to_owned()).unwrap(),
+        )
+    };
+    for (rows, valid) in [
+        (vec![row("body#declared", "native#0")], true),
+        (
+            vec![
+                row("body#declared", "native#0"),
+                row("body#undeclared", "native#1"),
+            ],
+            false,
+        ),
+    ] {
+        ir.model.features[1].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies }) = definition
+            else {
+                panic!("test consumer must retain its body selection");
+            };
+            *bodies = BodySelection::GeneratedSet {
+                members: crate::features::selections::BodyMembers::try_from_rows(rows).unwrap(),
+            };
+        });
+        let invalid = validate_neutral(&ir, Vec::new())
+            .expect("validate the neutral model")
+            .findings
+            .iter()
+            .any(|finding| finding.message == "generated body selection is invalid");
+        assert_eq!(invalid, !valid);
+    }
 }
 
 #[test]
@@ -1210,11 +1248,12 @@ fn reference_images_require_valid_assets_and_plane_placements() {
         native_ref: None,
     });
     ir.finalize();
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
     assert_eq!(
-        serde_json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
+        cadmpeg_core::serde_erase::json::to_value(&ir.model.assets[0]).unwrap()["content"]["data"],
         "AQID"
     );
 
@@ -1272,6 +1311,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
         native_ref: None,
     });
     ir.finalize();
+    crate::examples::add_document_root(&mut ir);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .is_ok());
@@ -1480,10 +1520,11 @@ fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
         ),
     ] {
         let mut ir = CadIr::empty();
-        let mut construction: RevolveConstruction = serde_json::from_value(serde_json::json!({
-            "kind": "unresolved", "value": {"kind": "profile"}
-        }))
-        .unwrap();
+        let mut construction: RevolveConstruction =
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+                "kind": "unresolved", "value": {"kind": "profile"}
+            }))
+            .unwrap();
         if let RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {
             extent: target,
             ..
