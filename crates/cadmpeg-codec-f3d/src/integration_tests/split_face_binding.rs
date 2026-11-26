@@ -108,6 +108,7 @@ fn split_face_binding_requires_target_membership_through_final_admission() {
     let prefix = crate::ids::feature_input_prefix(&feature_id, 7);
     let mut input_topologies = vec![FeatureInputTopology {
         face_owners: Vec::new(),
+        face_geometry: Vec::new(),
         id: crate::ids::feature_input_topology_id(&feature_id, 7),
         input_of: feature_id,
         bodies: Vec::new().try_into().unwrap(),

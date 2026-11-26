@@ -170,6 +170,9 @@ loss_codes! {
     /// A face was written with its model-space boundary, without the parameter
     /// curves that have no exact image on its written support.
     WriterPcurveOmitted => "writer.pcurve-omitted",
+    /// A face whose outer and inner loops have no Type 142 form was written
+    /// as a Type 143 with its loops unclassified.
+    WriterLoopClassificationOmitted => "writer.loop-classification-omitted",
     /// A vertex tolerance was raised to its distance from an edge's curve.
     VertexToleranceWidened => "geometry.vertex-tolerance-widened",
     /// The decoded document holds an error-severity validation finding.
@@ -238,6 +241,7 @@ impl IgesLossCode {
             | Self::WriterBodyVisibilityNotRepresented
             | Self::WriterEdgeRangeAssumed
             | Self::WriterPcurveOmitted
+            | Self::WriterLoopClassificationOmitted
             | Self::WriterOpenShellUnjoined
             | Self::WriterSolidUnjoined
             | Self::ProjectionInvalid => Severity::Warning,
@@ -252,7 +256,8 @@ impl IgesLossCode {
             | Self::WriterFaceOmitted
             | Self::WriterBodyOmitted
             | Self::WriterOpenShellUnjoined
-            | Self::WriterSolidUnjoined => LossTaxonomy::TopologyNotTransferred,
+            | Self::WriterSolidUnjoined
+            | Self::WriterLoopClassificationOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
             Self::VertexToleranceWidened
             | Self::OccurrenceExpansionOutputTruncated
@@ -436,6 +441,7 @@ mod tests {
                 "writer.solid-unjoined",
                 "writer.edge-range-assumed",
                 "writer.pcurve-omitted",
+                "writer.loop-classification-omitted",
                 "geometry.vertex-tolerance-widened",
                 "projection.invalid",
             ]

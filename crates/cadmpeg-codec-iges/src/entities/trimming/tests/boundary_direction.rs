@@ -14,7 +14,8 @@ use cadmpeg_ir::CadIr;
 use super::super::winding::polygon_signed_area_twice;
 use crate::loss::IgesLossCode;
 use crate::test_support::test_drawing_and_trimming::test_boundary_direction::{
-    trimmed_nurbs_patch_file, trimmed_plane_with_outer_and_inner,
+    ring_band_file, ring_band_with_bare_hole_file, trimmed_nurbs_patch_file,
+    trimmed_plane_with_outer_and_inner,
 };
 use crate::test_support::test_drawing_and_trimming::{
     trimmed_plane_with_boundaries, trimmed_plane_with_boundaries_and_inner,
@@ -329,4 +330,74 @@ fn polygon_area_is_positive_counterclockwise() {
     let mut clockwise = square;
     clockwise.reverse();
     assert_eq!(polygon_signed_area_twice(&clockwise), -2.0);
+}
+
+/// The read losses of the decode of `bytes` with the code
+/// `boundary-winding-unresolved`, and the closure checks of a support that
+/// the decode makes.
+fn band_read(bytes: Vec<u8>) -> (usize, usize) {
+    super::super::winding::TURN_CLOSURE_CHECKS.with(|checks| checks.set(0));
+    let result = crate::test_support::decode(bytes);
+    let unresolved = IgesLossCode::BoundaryWindingUnresolved.kind().to_string();
+    let losses = &result.report().losses;
+    assert!(
+        losses
+            .iter()
+            .all(|loss| loss.code.to_string() == unresolved),
+        "{losses:#?}"
+    );
+    (
+        losses.len(),
+        super::super::winding::TURN_CLOSURE_CHECKS.with(std::cell::Cell::get),
+    )
+}
+
+/// A Type 144 face whose explicit outer boundary and inner boundary each
+/// turn once around the closed axis of the support is the strip between
+/// them. The reader checks the closure of the support once.
+#[test]
+fn a_band_with_an_explicit_outer_ring_is_the_strip_between_its_rings() {
+    assert_eq!(
+        band_read(ring_band_file("144,1,1,1,7,13;", false, true)),
+        (0, 1)
+    );
+}
+
+/// With the outer-boundary flag zero, both rings keep their source
+/// traversal with an unresolved winding, and the reader checks no closure.
+#[test]
+fn a_band_with_no_outer_boundary_keeps_the_unresolved_winding() {
+    assert_eq!(
+        band_read(ring_band_file("144,1,0,2,0,7,13;", false, true)),
+        (2, 0)
+    );
+}
+
+/// A ring without a parameter curve has no image, so one ring is left to
+/// turn: both rings keep their source traversal with an unresolved winding,
+/// and the reader checks no closure.
+#[test]
+fn a_band_with_a_ring_without_a_parameter_curve_keeps_the_unresolved_winding() {
+    assert_eq!(
+        band_read(ring_band_file("144,1,1,1,7,13;", false, false)),
+        (2, 0)
+    );
+}
+
+/// Where a boundary of the face has no parameter curve, the two rings bound
+/// no strip: all three boundaries keep their source traversal with an
+/// unresolved winding, and the reader checks no closure.
+#[test]
+fn a_band_with_a_hole_without_a_parameter_curve_keeps_the_unresolved_winding() {
+    assert_eq!(band_read(ring_band_with_bare_hole_file()), (3, 0));
+}
+
+/// Type 141 states the direction of each boundary of a Type 143 face, and
+/// the reader checks no closure.
+#[test]
+fn a_bounded_surface_band_keeps_its_stated_directions() {
+    assert_eq!(
+        band_read(ring_band_file("143,1,1,2,7,13;", true, true)),
+        (0, 0)
+    );
 }
