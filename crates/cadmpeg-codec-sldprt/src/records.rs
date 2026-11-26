@@ -362,6 +362,9 @@ pub(crate) const COORDINATE_SYSTEM_PROPERTIES: [&str; 4] = ["Origin", "XAxis", "
 pub(crate) const REFERENCE_PLANE_FRAME_PROPERTIES: [&str; 3] = ["Origin", "Normal", "UAxis"];
 /// Where a reference plane's sketch U axis comes from, filled with its frame.
 pub(crate) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
+/// The U-axis source of a reference plane whose record stores its normal and
+/// distance only, so that the decoder constructs its in-plane frame.
+pub(crate) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
 /// What the decoder fills from the feature-input lane while a reference
 /// plane's record states none of its frame: the frame, its U-axis source, and
 /// the plane's reference.
