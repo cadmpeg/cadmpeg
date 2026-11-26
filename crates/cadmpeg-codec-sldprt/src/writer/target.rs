@@ -181,8 +181,9 @@ fn stored_losses(ir: &CadIr, image: &[u8], why: &str) -> Vec<LossNote> {
 /// The document synthesized without its `SolidWorks` history: the write
 /// takes no record of the `sldprt` native namespace and no codec digest, so
 /// the history stage drops what it cannot write (§3.4, Content the target
-/// cannot hold). The write declares each arena of the namespace dropped, with
-/// why the patch did not write the file, and the export wrapper names each
+/// cannot hold). Where the write consumes a sidecar, its path states why the
+/// patch did not write the file; the write declares each arena of the
+/// namespace dropped with that cause, and the export wrapper names each
 /// record. The configuration of each edit that shapes the solid against the
 /// retained source image takes the stale mark (§3.4, States); `digests` are
 /// the codec digests the decode recorded.
@@ -195,11 +196,6 @@ fn synthesize(
     let shaped = shaping_edits(input, digests)?;
     let mut ir = input.ir.clone();
     ir.native.0.remove("sldprt");
-    let fidelity = if preserves && input.fidelity.is_some() {
-        SemanticFidelity::ReplaySkipped(ReplaySkipped::PatchDeclined)
-    } else {
-        SemanticFidelity::NotConsumed
-    };
     let mut bytes = Vec::new();
     let mut written = SldprtCodec::write_semantic(
         &ir,
@@ -207,7 +203,7 @@ fn synthesize(
         &CodecDigests::new(),
         &[],
         &shaped,
-        fidelity,
+        SemanticFidelity::NotConsumed,
         &mut bytes,
     )?;
     if let Written::Semantic {
@@ -215,10 +211,8 @@ fn synthesize(
     } = &mut written
     {
         *history_dropped = Some(Box::new(HistoryDropped {
-            reason: format!(
-                "because the patch of the document {reason}, and its synthesis writes no \
-                 SolidWorks history record"
-            ),
+            cause: reason.to_owned(),
+            sidecar: preserves && input.fidelity.is_some(),
         }));
     }
     Ok((written, bytes))

@@ -1109,7 +1109,7 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
         members.iter().all(|member| member != EXTRA),
         "EXTRA was written"
     );
-    let omitted = format!("{EXTRA} ({block})");
+    let omitted = format!("{block} ({EXTRA})");
     assert!(
         losses.iter().any(
             |loss| loss.starts_with("export:native.records-omitted") && loss.contains(&omitted)

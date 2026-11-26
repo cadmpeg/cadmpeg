@@ -415,9 +415,6 @@ impl SldprtCodec {
 enum ReplaySkipped {
     DigestMismatch,
     ImageMissing,
-    /// The patch path cannot write the edited document, which is
-    /// synthesized without its `SolidWorks` history.
-    PatchDeclined,
 }
 
 impl ReplaySkipped {
@@ -428,10 +425,6 @@ impl ReplaySkipped {
                     "decoded model no longer matches the preserved SLDPRT source digest"
                 }
                 Self::ImageMissing => "preserved SLDPRT source image is unavailable",
-                Self::PatchDeclined => {
-                    "the SLDPRT patch path cannot write the edited document, which is synthesized \
-                     without its SolidWorks history"
-                }
             }
             .into(),
         }
@@ -476,9 +469,35 @@ impl SemanticPath {
     }
 }
 
-/// Why a semantic write takes no record of the `sldprt` namespace.
+/// Why a semantic write takes no record of the `sldprt` namespace: the patch
+/// path declined the edited document, which is synthesized without its
+/// `SolidWorks` history.
 struct HistoryDropped {
-    reason: String,
+    /// Why the patch declined.
+    cause: String,
+    /// Whether the write was given the sidecar whose image the patch did not
+    /// write, so its path states the cause (§3.4, `PatchDeclined { reason }`).
+    sidecar: bool,
+}
+
+impl HistoryDropped {
+    fn native_reason(&self) -> String {
+        format!(
+            "because the patch of the document {}, and its synthesis writes no SolidWorks \
+             history record",
+            self.cause
+        )
+    }
+
+    fn consumption(&self) -> Consumption {
+        Consumption::Degraded {
+            reason: format!(
+                "the SLDPRT patch of the edited document {}, so the document is synthesized \
+                 without its SolidWorks history",
+                self.cause
+            ),
+        }
+    }
 }
 
 /// One completed write.
@@ -523,6 +542,11 @@ impl Written {
     fn path(&self) -> WritePath {
         match self {
             Self::Replayed | Self::Stored { .. } => WritePath::VerbatimReplay,
+            Self::Semantic {
+                path,
+                history_dropped: Some(dropped),
+                ..
+            } if dropped.sidecar => path.write_path(dropped.consumption()),
             Self::Semantic { path, fidelity, .. } => path.write_path(fidelity.consumption()),
         }
     }
@@ -554,8 +578,9 @@ impl Written {
                 history_dropped: Some(dropped),
                 ..
             } => {
+                let reason = dropped.native_reason();
                 for arena in crate::native::SLDPRT_ARENA_NAMES {
-                    native.drop_arena("sldprt", arena, &dropped.reason);
+                    native.drop_arena("sldprt", arena, &reason);
                 }
             }
             Self::Semantic {
