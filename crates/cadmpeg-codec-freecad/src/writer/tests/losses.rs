@@ -116,8 +116,7 @@ fn a_property_the_patch_cannot_write_names_no_removed_optional_entry() {
         panic!("expected one omitted line, naming the property, got {omitted:?}");
     };
     assert!(
-        message.contains("each written property names no entry")
-            && message.ends_with(payload.id.as_str()),
+        message.contains("the file name value emptied") && message.ends_with(payload.id.as_str()),
         "{message}"
     );
     assert_eq!(export_messages(&report, "edit.dropped"), Vec::<&str>::new());
@@ -258,7 +257,10 @@ fn a_removed_member_is_named_on_one_line() {
     let [property_line] = property_lines.as_slice() else {
         panic!("expected one line naming the property, got {omitted:?}");
     };
-    assert!(property_line.contains("names no entry"), "{property_line}");
+    assert!(
+        property_line.contains("the file name value emptied"),
+        "{property_line}"
+    );
     for span in &named_spans {
         assert!(
             omitted

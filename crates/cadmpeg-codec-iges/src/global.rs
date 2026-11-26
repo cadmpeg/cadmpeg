@@ -735,7 +735,10 @@ fn open_or_defect(fault: GlobalFault) -> Result<RawOutcome, CodecError> {
 }
 
 fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
-    let bytes = global_bytes(scan);
+    parse_bytes(&global_bytes(scan))
+}
+
+fn parse_bytes(bytes: &[u8]) -> Result<RawOutcome, CodecError> {
     if bytes.is_empty() {
         return Ok(RawOutcome::Open(malformed("section is missing")));
     }
@@ -749,12 +752,12 @@ fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
             suffix_open: false,
         }));
     }
-    let (parameter_delimiter, mut cursor) = match first_delimiter(&bytes) {
+    let (parameter_delimiter, mut cursor) = match first_delimiter(bytes) {
         Ok(parsed) => parsed,
         Err(fault) => return open_or_defect(fault),
     };
     let (record_value, next, _) =
-        match delimited_value(&bytes, cursor, parameter_delimiter, None, true) {
+        match delimited_value(bytes, cursor, parameter_delimiter, None, true) {
             Ok(parsed) => parsed,
             Err(fault) => return open_or_defect(fault),
         };
@@ -792,7 +795,7 @@ fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
     loop {
         let retain = field_count < values.len();
         let framed = delimited_value(
-            &bytes,
+            bytes,
             cursor,
             parameter_delimiter,
             Some(record_delimiter),
@@ -833,6 +836,58 @@ fn parse_outcome(scan: &CardScan) -> Result<RawOutcome, CodecError> {
         unreadable_suffix,
         suffix_open,
     }))
+}
+
+/// A Global field as the source wrote it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum SourceField {
+    Omitted,
+    Text(Vec<u8>),
+    Integer(i64),
+    Real(FiniteReal),
+    Unreadable,
+}
+
+/// The Global fields of `bytes`, columns 1 to 72 of the Global cards in
+/// order, by field index from 0. `None` when the section does not close or
+/// its delimiters are invalid. A field after an unreadable suffix is
+/// [`SourceField::Unreadable`].
+pub(crate) fn source_fields(bytes: &[u8]) -> Option<Vec<SourceField>> {
+    let Ok(RawOutcome::Closed(raw)) = parse_bytes(bytes) else {
+        return None;
+    };
+    Some(
+        raw.values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                if raw.unreadable_suffix.is_some() && index >= raw.field_count {
+                    return SourceField::Unreadable;
+                }
+                match value {
+                    Value::Omitted => SourceField::Omitted,
+                    Value::String(text) => SourceField::Text(text.clone()),
+                    Value::Atom(atom) => {
+                        numeric_text(atom).map_or(SourceField::Unreadable, |text| {
+                            text.parse::<i64>().map_or_else(
+                                |_| {
+                                    parse_real_text(text)
+                                        .map_or(SourceField::Unreadable, SourceField::Real)
+                                },
+                                SourceField::Integer,
+                            )
+                        })
+                    }
+                    Value::Malformed(_) | Value::ForbiddenString => SourceField::Unreadable,
+                }
+            })
+            .collect(),
+    )
+}
+
+/// Whether `bytes` is a Global date the `table` grammar admits.
+pub(crate) fn date_is_valid(bytes: &[u8], table: GlobalTable) -> bool {
+    date_value_is_valid(bytes, table.accepts_four_digit_date())
 }
 
 /// Recover the Global field boundaries, then resolve every field once.

@@ -42,8 +42,8 @@ const UNREADABLE_ENTRY: &str = "whose archive entry record does not read";
 const DUPLICATE_ENTRY: &str = "whose archive entry name an earlier entry record takes";
 const UNREAD_PAYLOAD: &str = "whose ZIP member has no archive entry record";
 const UNHELD_PAYLOAD: &str =
-    "as the payload entries of these properties, which the archive does not hold; each written \
-     property names no entry";
+    "that are properties the patch writes with the file name value emptied, because the archive \
+     does not hold the payload entry the value names";
 const DROPPED_PROPERTY: &str =
     "that name payload entries the archive does not hold, and that the patch can write neither \
      without those names nor as stored";
