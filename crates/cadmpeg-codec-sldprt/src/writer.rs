@@ -30,6 +30,7 @@ use crate::native::SldprtNative;
 use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::AnnotationTarget;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
@@ -2090,7 +2091,7 @@ fn opaque_blocks(
             continue;
         }
         let Some(data) = record.data else {
-            unavailable.push(format!("{section} ({})", record.id.as_str()));
+            unavailable.push(format!("{} ({section})", record.id.as_str()));
             continue;
         };
         let mut payload = data.to_vec();
@@ -2152,7 +2153,7 @@ struct OpaqueBlocks {
     /// members the write generates for it.
     replaced: Vec<String>,
     /// Each retained block whose bytes the source fidelity does not hold,
-    /// as its stream and id.
+    /// as its id and stream.
     unavailable: Vec<String>,
     /// The losses of the edited records that keep their stored bytes.
     kept_edits: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -2272,7 +2273,9 @@ fn patch_retained_swobjects_metadata(
         .map(|attribute| attribute.id.as_str())
         .collect::<HashSet<_>>();
     for (key, provenance) in &annotations.provenance {
-        let id = key.as_str();
+        let AnnotationTarget::Entity(id) = key.target() else {
+            continue;
+        };
         let stream = provenance.stream();
         if id.starts_with("sldprt:metadata:")
             && !id.starts_with("sldprt:metadata:source_linear_unit_code#")

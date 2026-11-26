@@ -1336,104 +1336,7 @@ fn linear_boundary_relationship_is_valid(
     Some(rings_are_disjoint(rings))
 }
 
-#[derive(Clone)]
-struct HomogeneousPcurveSpan {
-    domain: [f64; 2],
-    controls: Vec<[f64; 4]>,
-}
-
 type HomogeneousPcurveSplit = (Vec<[f64; 4]>, Vec<[f64; 4]>);
-
-fn homogeneous_pcurve_spans(
-    degree: usize,
-    knots: &[f64],
-    controls: &[[f64; 4]],
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<HomogeneousPcurveSpan>>, CodecError> {
-    let Some(expected_knots) = controls
-        .len()
-        .checked_add(degree)
-        .and_then(|value| value.checked_add(1))
-    else {
-        return Ok(None);
-    };
-    if degree == 0
-        || degree >= controls.len()
-        || knots.len() != expected_knots
-        || knots.iter().any(|knot| !knot.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
-    {
-        return Ok(None);
-    }
-    let Some(domain) = knots
-        .get(degree)
-        .copied()
-        .zip(knots.get(controls.len()).copied())
-    else {
-        return Ok(None);
-    };
-    let domain = [domain.0, domain.1];
-    if domain[0] >= domain[1] {
-        return Ok(None);
-    }
-    let Some(internal_slice) = knots.get(degree + 1..controls.len()) else {
-        return Ok(None);
-    };
-    let mut internal = Vec::new();
-    internal.extend(
-        internal_slice
-            .iter()
-            .copied()
-            .filter(|knot| domain[0] < *knot && *knot < domain[1]),
-    );
-    internal.sort_by(f64::total_cmp);
-    internal.dedup();
-    let multiplicity = |knot: f64| {
-        knots.partition_point(|candidate| *candidate <= knot)
-            - knots.partition_point(|candidate| *candidate < knot)
-    };
-    let mut insertions = 0_usize;
-    for knot in &internal {
-        let multiplicity = multiplicity(*knot);
-        if multiplicity < degree {
-            insertions += degree - multiplicity;
-        }
-    }
-    let mut net = RefiningNet::new(ctx, knots, controls, insertions)?;
-    for knot in internal {
-        for _ in multiplicity(knot)..degree {
-            if net.insert(knot, degree, BlendCheck::Denominator).is_none() {
-                return Ok(None);
-            }
-        }
-    }
-    let (refined_knots, refined_controls) = net.into_parts();
-    let mut spans = Vec::new();
-    for span in degree..refined_controls.len() {
-        let Some((start, end)) = refined_knots
-            .get(span)
-            .copied()
-            .zip(refined_knots.get(span + 1).copied())
-        else {
-            return Ok(None);
-        };
-        if start >= end {
-            continue;
-        }
-        let Some(span_controls) = span
-            .checked_sub(degree)
-            .and_then(|start_index| refined_controls.get(start_index..=span))
-        else {
-            return Ok(None);
-        };
-        let copied_controls = span_controls.to_vec();
-        spans.push(HomogeneousPcurveSpan {
-            domain: [start, end],
-            controls: copied_controls,
-        });
-    }
-    Ok((!spans.is_empty()).then_some(spans))
-}
 
 /// Splits a Bézier polygon at `parameter` with de Casteljau's levels, keeping
 /// only the level ends that the two halves use.
@@ -1462,39 +1365,6 @@ fn split_homogeneous_pcurve(
     }
     right.reverse();
     Some((left, right))
-}
-
-fn restrict_homogeneous_pcurve(
-    controls: &[[f64; 4]],
-    start: f64,
-    end: f64,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<[f64; 4]>>, CodecError> {
-    let _nested = ctx.enter_nested("iges pcurve restricted span")?;
-    if start > end {
-        let Some(mut restricted) = restrict_homogeneous_pcurve(controls, end, start, ctx)? else {
-            return Ok(None);
-        };
-        restricted.reverse();
-        return Ok(Some(restricted));
-    }
-    if start == end {
-        let Some(point) =
-            split_homogeneous_pcurve(controls, start).and_then(|(left, _)| left.into_iter().last())
-        else {
-            return Ok(None);
-        };
-        let result = vec![point];
-        return Ok(Some(result));
-    }
-    let Some((left, _)) = split_homogeneous_pcurve(controls, end) else {
-        return Ok(None);
-    };
-    if start == 0.0 {
-        return Ok(Some(left));
-    }
-    let relative_start = start / end;
-    Ok(split_homogeneous_pcurve(&left, relative_start).map(|(_, right)| right))
 }
 
 #[cfg(test)]
@@ -1575,21 +1445,9 @@ fn pcurve_declared_interval_bounds(
     if bezier_blends(span_count, degree).is_none_or(|blends| blends > MAX_BEZIER_BLENDS) {
         return Ok(PcurveBounds::Unchecked);
     }
-    let mut controls = Vec::new();
-    for index in 0..nurbs.pole_rows().count() {
-        let Some(point) = nurbs
-            .pole_rows()
-            .point_at(index)
-            .map(cadmpeg_ir::units::FinitePoint2::get)
-        else {
-            return Ok(PcurveBounds::Outside);
-        };
-        let weight = nurbs.pole_rows().weight_at(index).unwrap_or(1.0);
-        if weight <= 0.0 {
-            return Ok(PcurveBounds::Outside);
-        }
-        controls.push([weight, weight * point.u, weight * point.v, 0.0]);
-    }
+    let Some(controls) = homogeneous_pcurve_controls(nurbs) else {
+        return Ok(PcurveBounds::Outside);
+    };
     let within =
         pcurve_spans_within_intervals(degree, knots, &controls, range, bounds, periodic, ctx)?;
     Ok(if within {
@@ -1597,6 +1455,115 @@ fn pcurve_declared_interval_bounds(
     } else {
         PcurveBounds::Outside
     })
+}
+
+/// The homogeneous controls `[w, w·u, w·v, 0]` of `nurbs`, or `None` where
+/// a pole has no point or a weight is not positive.
+fn homogeneous_pcurve_controls(nurbs: &PcurveNurbs) -> Option<Vec<[f64; 4]>> {
+    let mut controls = Vec::new();
+    for index in 0..nurbs.pole_rows().count() {
+        let point = nurbs
+            .pole_rows()
+            .point_at(index)
+            .map(cadmpeg_ir::units::FinitePoint2::get)?;
+        let weight = nurbs.pole_rows().weight_at(index).unwrap_or(1.0);
+        if weight <= 0.0 {
+            return None;
+        }
+        controls.push([weight, weight * point.u, weight * point.v, 0.0]);
+    }
+    Some(controls)
+}
+
+/// The Bézier net of each knot span of a homogeneous parameter curve inside
+/// `range`, in parameter order, or `None` where the curve has no valid net
+/// or an end of `range` lies outside its domain. An empty or reversed
+/// `range` holds no span and gives an empty list. Each end of `range` and
+/// each knot between them with fewer than `degree` copies is first inserted
+/// up to `degree` copies, so every span inside `range` starts and ends on at
+/// least `degree` equal knots, also where the stored knots are unclamped.
+fn restricted_pcurve_spans(
+    degree: usize,
+    knots: &[f64],
+    controls: &[[f64; 4]],
+    range: [f64; 2],
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<Vec<[f64; 4]>>>, CodecError> {
+    let Some(expected_knots) = controls
+        .len()
+        .checked_add(degree)
+        .and_then(|value| value.checked_add(1))
+    else {
+        return Ok(None);
+    };
+    if degree == 0
+        || degree >= controls.len()
+        || knots.len() != expected_knots
+        || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return Ok(None);
+    }
+    let domain = [knots[degree], knots[controls.len()]];
+    if !(domain[0] < domain[1]
+        && range
+            .iter()
+            .all(|end| domain[0] <= *end && *end <= domain[1]))
+    {
+        return Ok(None);
+    }
+    if range[0] >= range[1] {
+        return Ok(Some(Vec::new()));
+    }
+    let mut breaks = vec![range[0]];
+    for &knot in knots {
+        if range[0] < knot && knot < range[1] && breaks.last() != Some(&knot) {
+            breaks.push(knot);
+        }
+    }
+    breaks.push(range[1]);
+    let multiplicity = |knot: f64| {
+        knots.partition_point(|candidate| *candidate <= knot)
+            - knots.partition_point(|candidate| *candidate < knot)
+    };
+    let mut insertions = 0_usize;
+    for &value in &breaks {
+        let Some(shortfall) = degree.checked_sub(multiplicity(value)) else {
+            continue;
+        };
+        let Some(total) = insertions.checked_add(shortfall) else {
+            return Ok(None);
+        };
+        insertions = total;
+    }
+    let mut net = RefiningNet::new(ctx, knots, controls, insertions)?;
+    for value in breaks {
+        for _ in multiplicity(value)..degree {
+            if net.insert(value, degree, BlendCheck::Denominator).is_none() {
+                return Ok(None);
+            }
+        }
+    }
+    let (refined_knots, refined_controls) = net.into_parts();
+    let mut nets = Vec::new();
+    for (span, pair) in refined_knots
+        .windows(2)
+        .enumerate()
+        .take(refined_controls.len())
+        .skip(degree)
+    {
+        if !(range[0] <= pair[0] && pair[0] < pair[1] && pair[1] <= range[1]) {
+            continue;
+        }
+        let Some(span_controls) = span
+            .checked_sub(degree)
+            .and_then(|start| refined_controls.get(start..=span))
+        else {
+            return Ok(None);
+        };
+        nets.push(span_controls.to_vec());
+    }
+    Ok(Some(nets))
 }
 
 fn pcurve_spans_within_intervals(
@@ -1608,18 +1575,6 @@ fn pcurve_spans_within_intervals(
     periodic: [bool; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
-    let Some(spans) = homogeneous_pcurve_spans(degree, knots, controls, ctx)? else {
-        return Ok(false);
-    };
-    let Some(first_span) = spans.first() else {
-        return Ok(false);
-    };
-    let Some(last_span) = spans.last() else {
-        return Ok(false);
-    };
-    if range[0] < first_span.domain[0] || range[1] > last_span.domain[1] {
-        return Ok(false);
-    }
     let in_bound =
         |value: f64, lower: Option<DeclaredInterval>, upper: Option<DeclaredInterval>| {
             value.is_finite()
@@ -1645,40 +1600,17 @@ fn pcurve_spans_within_intervals(
     let Some((v_lower, v_upper)) = expand_periodic(bounds[2], bounds[3], periodic[1]) else {
         return Ok(false);
     };
-    let mut covered = false;
-    for span in spans {
-        let start = range[0].max(span.domain[0]);
-        let end = range[1].min(span.domain[1]);
-        if start >= end {
-            continue;
-        }
-        covered = true;
-        let Some(local_start) =
-            cadmpeg_ir::math::parameter_fraction(start, span.domain[0], span.domain[1])
-        else {
-            return Ok(false);
-        };
-        let Some(local_end) =
-            cadmpeg_ir::math::parameter_fraction(end, span.domain[0], span.domain[1])
-        else {
-            return Ok(false);
-        };
-        let Some(restricted) =
-            restrict_homogeneous_pcurve(&span.controls, local_start.get(), local_end.get(), ctx)?
-        else {
-            return Ok(false);
-        };
-        if restricted.iter().any(|control| {
+    let Some(nets) = restricted_pcurve_spans(degree, knots, controls, range, ctx)? else {
+        return Ok(false);
+    };
+    Ok(!nets.is_empty()
+        && nets.iter().flatten().all(|control| {
             let weight = control[0];
-            !weight.is_finite()
-                || weight <= 0.0
-                || !in_bound(control[1] / weight, u_lower, u_upper)
-                || !in_bound(control[2] / weight, v_lower, v_upper)
-        }) {
-            return Ok(false);
-        }
-    }
-    Ok(covered)
+            weight.is_finite()
+                && weight > 0.0
+                && in_bound(control[1] / weight, u_lower, u_upper)
+                && in_bound(control[2] / weight, v_lower, v_upper)
+        }))
 }
 
 fn periodic_surface_parameters(surface: &SurfaceGeometry) -> [bool; 2] {
@@ -2497,6 +2429,7 @@ pub(super) fn project(
         let mut explicit_outer_loop: Option<cadmpeg_ir::ids::LoopId> = None;
         let mut linear_boundary_candidates = Vec::new();
         let mut face_tolerance = 0.0_f64;
+        let mut drafts = Vec::new();
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence) else {
                 super::push_geometry_loss(
@@ -2819,17 +2752,32 @@ pub(super) fn project(
                 surface_kind,
                 ctx,
             )?);
-            let winding = if surface_kind == BoundarySurfaceKind::Trimmed {
-                winding::trimmed_boundary_winding(
-                    &items,
-                    explicit_outer_sequence == Some(sequence),
-                    &carrier_index,
-                    &support_geometry,
-                    ctx,
-                )?
-            } else {
-                winding::BoundaryWinding::Kept
-            };
+            drafts.push((boundary_index, sequence, items, sewing_tolerance));
+        }
+        if !valid {
+            continue;
+        }
+        let windings = if surface_kind == BoundarySurfaceKind::Trimmed {
+            winding::trimmed_boundary_windings(
+                drafts.iter().map(|(_, sequence, items, _)| {
+                    (items.as_slice(), explicit_outer_sequence == Some(*sequence))
+                }),
+                &carrier_index,
+                &support_geometry,
+                support_parameter_bounds.map_or([None, None], |bounds| {
+                    [[0, 1], [2, 3]].map(|[low, high]| {
+                        bounds[low].zip(bounds[high]).map(|(low, high)| [low, high])
+                    })
+                }),
+                global.minimum_resolution_mm(),
+                ctx,
+            )?
+        } else {
+            vec![winding::BoundaryWinding::Kept; drafts.len()]
+        };
+        for ((boundary_index, sequence, items, sewing_tolerance), winding) in
+            drafts.into_iter().zip(windings)
+        {
             let reversal = match winding {
                 winding::BoundaryWinding::Kept => Ok(false),
                 winding::BoundaryWinding::Reversed => use_ranges(&items, true).map(|_| true),

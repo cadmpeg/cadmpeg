@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{edit_dropped, evaluation_stale, native_records_omitted};
+use cadmpeg_ir::codec::write::{edit_dropped, evaluation_stale, NativeDispositions};
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::EntityKind;
@@ -42,13 +42,11 @@ const UNREADABLE_ENTRY: &str = "whose archive entry record does not read";
 const DUPLICATE_ENTRY: &str = "whose archive entry name an earlier entry record takes";
 const UNREAD_PAYLOAD: &str = "whose ZIP member has no archive entry record";
 const UNHELD_PAYLOAD: &str =
-    "as the payload entries of these properties, which the archive does not hold; each written \
-     property names no entry";
+    "that are properties the patch writes with the file name value emptied, because the archive \
+     does not hold the payload entry the value names";
 const DROPPED_PROPERTY: &str =
-    "whose payload entries the archive does not hold, each with the entries it names";
-const KEPT_REFERENCE: &str =
-    "as the payload entries of these properties, which are written as stored and still name \
-     them; each with the property that names it";
+    "that name payload entries the archive does not hold, and that the patch can write neither \
+     without those names nor as stored";
 const UNREADABLE_SPAN: &str =
     "whose physical ledger span does not read; the archive member order it states is not kept";
 
@@ -61,10 +59,11 @@ impl Omissions {
         self.0.entry(reason).or_default().push(id.into());
     }
 
-    fn losses(&self) -> impl Iterator<Item = LossNote> + '_ {
-        self.0.iter().filter_map(|(reason, ids)| {
-            native_records_omitted("FCStd", reason, ids.iter().cloned())
-        })
+    /// Declare each omitted record dropped, so the write wrapper charges it.
+    fn declare(&self, native: &mut NativeDispositions) {
+        for (reason, ids) in &self.0 {
+            native.drop_records("fcstd", reason, ids);
+        }
     }
 }
 
@@ -128,11 +127,8 @@ fn write_seekable(
     for id in written.unheld {
         omitted.push(UNHELD_PAYLOAD, id);
     }
-    for line in written.omitted_properties {
-        omitted.push(DROPPED_PROPERTY, line);
-    }
-    for line in written.unresolved {
-        omitted.push(KEPT_REFERENCE, line);
+    for id in written.omitted_properties {
+        omitted.push(DROPPED_PROPERTY, id);
     }
     let mut omitted_members = resolution.omitted_members().clone();
     omitted_members.extend(written.members);
@@ -171,14 +167,15 @@ fn write_seekable(
             std::io::Error::other(format!("cannot finish FCStd archive: {error}"))
         })?;
     }
-    let mut losses = omitted.losses().collect::<Vec<_>>();
-    losses.extend(edit_dropped(
+    let mut losses = edit_dropped(
         EntityKind::Feature,
         "FCStd",
         "holds these records of the retained Document.xml as the source stores them, without \
          their edits",
         dropped,
-    ));
+    )
+    .into_iter()
+    .collect::<Vec<_>>();
     losses.extend(evaluation_stale(
         "FCStd",
         "writes input edits of these objects, or removes payload entry names from them, beside \
@@ -200,6 +197,7 @@ fn write_seekable(
             counts: resolution.ir().census(),
         },
         losses,
+        omitted,
         notes,
     })
 }
@@ -207,6 +205,8 @@ fn write_seekable(
 struct WriteOutcome {
     census: cadmpeg_ir::report::export::EntityCensus,
     losses: Vec<LossNote>,
+    /// The retained records the archive leaves out, declared dropped.
+    omitted: Omissions,
     notes: Vec<String>,
 }
 
@@ -248,13 +248,10 @@ struct WrittenDocument {
     /// Properties written with an empty file name in place of an archive
     /// entry the output does not hold.
     unheld: BTreeSet<String>,
-    /// Properties left out of the written file, each with the entries it
-    /// names that the output does not hold.
+    /// Properties left out of the written file.
     omitted_properties: Vec<String>,
-    /// Entries the output does not hold that a property written as stored
-    /// names, each with that property.
-    unresolved: Vec<String>,
-    /// The archive members that the properties above name.
+    /// The archive members that the properties above name, which those
+    /// properties account for.
     members: HashSet<String>,
 }
 
@@ -281,7 +278,6 @@ impl WrittenDocument {
             stale,
             unheld: unheld.emptied,
             omitted_properties: unheld.omitted,
-            unresolved: unheld.named,
             members: unheld.members,
         }
     }
@@ -297,12 +293,12 @@ struct Unheld {
     expected: Vec<PropertyRecord>,
     /// Properties written with an empty file name.
     emptied: BTreeSet<String>,
-    /// Properties left out, each as `<property> names <entry>, …`.
+    /// Properties left out.
     omitted: Vec<String>,
-    /// Entries named by properties written as stored, each as
-    /// `<entry> named by <property>`.
-    named: Vec<String>,
-    /// The archive members the properties above name.
+    /// The archive members that the properties written with an empty file
+    /// name, or left out, name. A property written as stored accounts for
+    /// none: the ledger span of each member it names is omitted by its own
+    /// id.
     members: HashSet<String>,
 }
 
@@ -331,7 +327,6 @@ impl Unheld {
             expected: Vec::with_capacity(written.len()),
             emptied: BTreeSet::new(),
             omitted: Vec::new(),
-            named: Vec::new(),
             members: HashSet::new(),
         };
         for (written, original) in written.iter().zip(originals) {
@@ -342,18 +337,14 @@ impl Unheld {
             }
             let names = entries(original);
             if left_out.contains(id) {
-                split
-                    .omitted
-                    .push(format!("{id} names {}", names.join(" and ")));
+                split.omitted.push(id.clone());
             } else if as_stored.contains(id) {
-                split
-                    .named
-                    .extend(names.iter().map(|name| format!("{name} named by {id}")));
                 let mut stored = original.clone();
                 if let PropertyBody::Persisted { side_entries, .. } = &mut stored.body {
                     side_entries.retain(|name| !removed.contains(name));
                 }
                 split.expected.push(stored);
+                continue;
             } else {
                 split.emptied.insert(id.clone());
                 split.expected.push(written.clone());
@@ -718,7 +709,6 @@ fn stored_document(
         stale: BTreeSet::new(),
         unheld: BTreeSet::new(),
         omitted_properties: Vec::new(),
-        unresolved: Vec::new(),
         members: HashSet::new(),
     })
 }

@@ -35,6 +35,7 @@ fn an_operand_that_its_slot_leaves_native_takes_its_recipe_binding() {
         merge_operand_list_bindings(
             (bodies("target"), native("tools")),
             (native("target"), bodies("tool")),
+            None,
         ),
         (bodies("target"), bodies("tool"))
     );
@@ -42,6 +43,7 @@ fn an_operand_that_its_slot_leaves_native_takes_its_recipe_binding() {
         merge_operand_list_bindings(
             (native("target"), historical(2)),
             (bodies("target"), native("tools")),
+            None,
         ),
         (bodies("target"), historical(2))
     );
@@ -49,6 +51,7 @@ fn an_operand_that_its_slot_leaves_native_takes_its_recipe_binding() {
         merge_operand_list_bindings(
             (native("target"), native("tools")),
             (native("target"), native("tools")),
+            None,
         ),
         (native("target"), native("tools"))
     );
@@ -60,6 +63,7 @@ fn recipe_tools_that_name_model_bodies_replace_slot_tools() {
         merge_operand_list_bindings(
             (bodies("target"), historical(2)),
             (native("target"), bodies("tool")),
+            None,
         ),
         (bodies("target"), bodies("tool"))
     );
@@ -71,6 +75,7 @@ fn a_recipe_tool_replacement_charges_a_loss_that_names_both_tools() {
     let (_, merged) = merge_operand_list_bindings(
         (bodies("target"), historical(2)),
         (native("target"), bodies("tool")),
+        None,
     );
     let loss = tool_replacement_loss(&feature, &historical(2), &merged)
         .expect("a replacement of bound slot tools");
@@ -112,6 +117,7 @@ fn a_recipe_binding_that_overlaps_the_other_operand_is_refused() {
         merge_operand_list_bindings(
             (bodies("one"), native("tools")),
             (native("target"), bodies("one")),
+            None,
         ),
         (bodies("one"), native("tools"))
     );
@@ -119,6 +125,7 @@ fn a_recipe_binding_that_overlaps_the_other_operand_is_refused() {
         merge_operand_list_bindings(
             (native("target"), bodies("one")),
             (bodies("one"), bodies("one")),
+            None,
         ),
         (native("target"), bodies("one"))
     );
@@ -152,4 +159,40 @@ fn only_operands_that_stay_native_keep_their_slot_refusals() {
         ["target", "tools"]
     );
     assert!(messages(bodies("target"), bodies("tool")).is_empty());
+}
+
+#[test]
+fn a_recipe_tool_that_is_the_model_body_of_the_target_slot_is_refused() {
+    let model_tool = |id: &str| BodySelection::Resolved {
+        bodies: DistinctMembers::try_from(vec![BodyId::mint(id).unwrap()]).unwrap(),
+        native: "f3d:test:selection#tools".to_owned(),
+    };
+    for (tool, source) in [
+        ("f3d:brep:entity#4", None),
+        ("f3d:brep/root.smbh/brep:entity#4", Some("root.smbh")),
+    ] {
+        assert_eq!(
+            merge_operand_list_bindings(
+                (historical(4), historical(5)),
+                (native("target"), model_tool(tool)),
+                source,
+            ),
+            (historical(4), historical(5)),
+            "{tool}"
+        );
+    }
+    assert_eq!(
+        merge_operand_list_bindings(
+            (historical(4), historical(5)),
+            (
+                native("target"),
+                model_tool("f3d:brep/other.smbh/brep:entity#4")
+            ),
+            Some("root.smbh"),
+        ),
+        (
+            historical(4),
+            model_tool("f3d:brep/other.smbh/brep:entity#4")
+        )
+    );
 }
