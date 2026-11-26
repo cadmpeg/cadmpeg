@@ -121,16 +121,20 @@ pub(super) fn write_new(
     })
 }
 
-/// Whether `stage` writes `target` (one body of the document, without its
-/// native namespace) on its own, with `native` for the B-rep stream.
-fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage) -> bool {
+/// Whether `stage` writes `target` (one body of the document, or the
+/// document) on its own without native records: with the carrier metadata
+/// only those records carry cleared, as the reduction clears it once they are
+/// dropped.
+fn writes_alone(target: &CadIr, stage: Stage) -> bool {
+    let target = reduce::without_native_carrier_metadata(target);
+    let native = crate::native::F3dNative::default();
     match stage {
         Stage::Brep => {
-            let attributes = attributes::AttributeIndex::new(target, native);
-            encode_brep(target, native, &attributes).is_ok()
+            let attributes = attributes::AttributeIndex::new(&target, &native);
+            encode_brep(&target, &native, &attributes).is_ok()
         }
         Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
-            target,
+            &target,
             false,
             false,
             MissingStateForm::GeometryTrue,
@@ -236,10 +240,7 @@ fn attempt<W: Write + Seek>(
         Ok(smbh) => smbh,
         // The design scope's names fail the B-rep stream when it writes
         // without them.
-        Err(error)
-            if stamped
-                && writes_alone(target, &crate::native::F3dNative::default(), Stage::Brep) =>
-        {
+        Err(error) if stamped && writes_alone(target, Stage::Brep) => {
             return Err(Failure::neutral_design(error));
         }
         Err(error) => return Err(Failure::brep(error)),

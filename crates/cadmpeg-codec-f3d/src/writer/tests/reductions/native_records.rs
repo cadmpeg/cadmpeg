@@ -440,3 +440,96 @@ fn a_tolerant_edge_tail_on_an_edge_with_no_tolerance_is_dropped_alone() {
     assert_eq!(decoded.geometry.bodies.len(), 1);
     assert!(f3d_native(&decoded).tolerant_edge_tails.is_empty());
 }
+
+/// Append to `ir` a copy of the unit cube under `prefix`, moved along x, and
+/// return the copy's body.
+fn append_cube(ir: &mut CadIr, prefix: &str, x: f64) -> cadmpeg_ir::topology::Body {
+    let json = cadmpeg_ir::examples::unit_cube()
+        .expect("unit cube fixture is admitted")
+        .to_canonical_json()
+        .expect("canonical cube JSON")
+        .replace("synthetic:cube:", prefix);
+    let mut cube = CadIr::from_json(&json).expect("renamed cube IR");
+    cube.geometry.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, x],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("affine transform"),
+    );
+    let body = cube.geometry.bodies[0].clone();
+    let geometry = &mut ir.geometry;
+    let added = &mut cube.geometry;
+    geometry.bodies.append(&mut added.bodies);
+    geometry.regions.append(&mut added.regions);
+    geometry.shells.append(&mut added.shells);
+    geometry.faces.append(&mut added.faces);
+    geometry.loops.append(&mut added.loops);
+    geometry.coedges.append(&mut added.coedges);
+    geometry.edges.append(&mut added.edges);
+    geometry.vertices.append(&mut added.vertices);
+    geometry.points.append(&mut added.points);
+    geometry.surfaces.append(&mut added.surfaces);
+    geometry.curves.append(&mut added.curves);
+    body
+}
+
+/// A body F3D has no record form for is omitted alone. Each other body is
+/// tested on its own without the native records of the document, with the
+/// carrier metadata only those records hold cleared: the cube whose use
+/// curve needs its tolerant-coedge record, and the cube whose edge has an
+/// ownership record, are both written with their records.
+#[test]
+fn a_body_with_no_record_form_is_omitted_alone_beside_native_records() {
+    use cadmpeg_asm::brep::records::EdgeOwnership;
+
+    let (mut ir, _) = tolerant_coedge_cube([-2.0, 3.0]);
+    append_cube(&mut ir, "synthetic:cube_two:", 30.0);
+    let edge = ir
+        .geometry
+        .edges
+        .iter()
+        .find(|edge| edge.id.as_str().starts_with("synthetic:cube_two:"))
+        .expect("the second cube has edges")
+        .id
+        .clone();
+    f3d_native_mut(&mut ir).edge_ownerships = vec![EdgeOwnership {
+        source_namespace: NativeRecordNamespace::new(crate::ids::ID_FORMAT),
+        edge,
+        record_index: 0,
+        owner_coedge: None,
+    }];
+    let mut regionless = append_cube(&mut CadIr::empty(), "synthetic:cube_three:", 60.0);
+    regionless.transform = None;
+    ir.geometry.bodies.push(regionless.clone());
+
+    let mut bytes = Vec::new();
+    let report = cadmpeg_ir::codec::write::Encoder::plan(
+        &crate::F3dCodec,
+        cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
+        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
+    )
+    .and_then(|plan| plan.write_to(&mut bytes))
+    .expect("the writer writes the document");
+    let omitted_bodies = report
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("was not written, with the topology"))
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(omitted_bodies.len(), 1, "{:#?}", report.losses);
+    assert!(
+        omitted_bodies[0].starts_with(&format!("body {} was not written", regionless.id)),
+        "{omitted_bodies:?}"
+    );
+    let decoded = write_and_decode(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 2);
+    assert!(decoded
+        .geometry
+        .coedges
+        .iter()
+        .any(|coedge| coedge.use_curve.is_some()));
+    assert_eq!(decoded.geometry.faces.len(), 12);
+    assert_eq!(f3d_native(&decoded).tolerant_coedge_parameters.len(), 1);
+}

@@ -452,7 +452,7 @@ impl<'a> Reduction<'a> {
     pub(super) fn degrade(
         &mut self,
         failure: Failure,
-        writes_alone: impl Fn(&CadIr, &crate::native::F3dNative, Stage) -> bool,
+        writes_alone: impl Fn(&CadIr, Stage) -> bool,
     ) -> Result<(), CodecError> {
         let Failure {
             stage,
@@ -659,21 +659,9 @@ impl<'a> Reduction<'a> {
         if associations.is_empty() && tolerances.is_empty() {
             return;
         }
-        let geometry = &mut self.ir.to_mut().geometry;
-        for surface in &mut geometry.surfaces {
-            surface.source_object = None;
-        }
-        for curve in &mut geometry.curves {
-            curve.source_object = None;
-        }
-        for face in &mut geometry.faces {
-            face.tolerance = None;
-        }
-        for coedge in &mut geometry.coedges {
-            if tolerances.contains(coedge.id.as_str()) {
-                coedge.use_curve = None;
-            }
-        }
+        clear_carrier_metadata(&mut self.ir.to_mut().geometry, |coedge| {
+            !tolerances.contains(coedge)
+        });
         self.losses.extend(named_loss(
             F3dLossCode::WriterSourceAssociationOmitted,
             "carrier source-object association",
@@ -1732,14 +1720,14 @@ impl<'a> Reduction<'a> {
         true
     }
 
-    /// Drop each body the stage cannot write on its own, with or without the
-    /// native records. A body that writes alone only without them blames the
-    /// native records, and the native fallbacks run first.
+    /// Drop each body the stage cannot write on its own without native
+    /// records (W1: F3D has no record form for it). Where every body writes
+    /// alone, drop the geometry no body uses.
     fn drop_unwritable_bodies(
         &mut self,
         reason: &str,
         stage: Stage,
-        writes_alone: &impl Fn(&CadIr, &crate::native::F3dNative, Stage) -> bool,
+        writes_alone: &impl Fn(&CadIr, Stage) -> bool,
     ) -> Result<bool, CodecError> {
         let bodies = self
             .ir
@@ -1752,36 +1740,25 @@ impl<'a> Reduction<'a> {
             return Ok(false);
         }
         let reach = Reach::new(&self.ir.geometry)?;
-        let native = self
-            .ir
-            .native
-            .namespace("f3d")
-            .and_then(|namespace| crate::native::F3dNative::load(namespace).ok());
-        let without_native = crate::native::F3dNative::default();
-        let writes = |group: &[String], native: &crate::native::F3dNative| {
+        let writes = |group: &[String]| {
             let mut alone = CadIr::empty();
             alone.tolerances = self.ir.tolerances;
             alone.geometry = reach.subset(
                 &self.ir.geometry,
                 &reach.from(group.iter().map(String::as_str)),
             );
-            writes_alone(&alone, native, stage)
+            writes_alone(&alone, stage)
         };
         // Bisect: a group that writes clears its bodies; a failing group is
         // halved until each failing body stands alone.
         let mut unwritable = Vec::new();
-        let mut native_blamed = false;
         let mut pending = vec![bodies.as_slice()];
         while let Some(group) = pending.pop() {
-            if writes(group, native.as_ref().unwrap_or(&without_native)) {
+            if writes(group) {
                 continue;
             }
             if let [body] = group {
-                if native.is_some() && writes(group, &without_native) {
-                    native_blamed = true;
-                } else {
-                    unwritable.push(body.clone());
-                }
+                unwritable.push(body.clone());
                 continue;
             }
             let (first, second) = group.split_at(group.len() / 2);
@@ -1789,9 +1766,6 @@ impl<'a> Reduction<'a> {
             pending.push(first);
         }
         if unwritable.is_empty() {
-            if native_blamed {
-                return Ok(false);
-            }
             let kept = bodies.iter().map(String::as_str).collect();
             let removed = self.retain(&kept, reason)?;
             return Ok(!removed.is_empty());
@@ -2668,6 +2642,53 @@ impl Reach {
         for_each_geometry_arena!(copy);
         subset
     }
+}
+
+/// Clear the carrier metadata the F3D B-rep stream holds only through native
+/// records: source-object associations, face tolerances, and the use curve of
+/// each coedge `keeps_use_curve` does not name.
+fn clear_carrier_metadata(
+    geometry: &mut cadmpeg_ir::document::Topology,
+    keeps_use_curve: impl Fn(&str) -> bool,
+) {
+    for surface in &mut geometry.surfaces {
+        surface.source_object = None;
+    }
+    for curve in &mut geometry.curves {
+        curve.source_object = None;
+    }
+    for face in &mut geometry.faces {
+        face.tolerance = None;
+    }
+    for coedge in &mut geometry.coedges {
+        if !keeps_use_curve(coedge.id.as_str()) {
+            coedge.use_curve = None;
+        }
+    }
+}
+
+/// `target` as the generator writes it without native records.
+pub(super) fn without_native_carrier_metadata(target: &CadIr) -> Cow<'_, CadIr> {
+    let geometry = &target.geometry;
+    let carries = geometry
+        .surfaces
+        .iter()
+        .any(|row| row.source_object.is_some())
+        || geometry
+            .curves
+            .iter()
+            .any(|row| row.source_object.is_some())
+        || geometry.faces.iter().any(|face| face.tolerance.is_some())
+        || geometry
+            .coedges
+            .iter()
+            .any(|coedge| coedge.use_curve.is_some());
+    if !carries {
+        return Cow::Borrowed(target);
+    }
+    let mut target = target.clone();
+    clear_carrier_metadata(&mut target.geometry, |_| false);
+    Cow::Owned(target)
 }
 
 /// Keep the bodies in `kept` and every topology and geometry record they
