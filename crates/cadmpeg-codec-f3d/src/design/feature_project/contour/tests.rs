@@ -232,7 +232,7 @@ fn contour_missing_source_links_preserves_direction_and_signed_distance() {
 
 #[test]
 fn contour_native_optional_fields_refuse_nulls_and_bad_locations() {
-    let value = serde_json::to_value(prefix()).unwrap();
+    let value = cadmpeg_core::serde_erase::json::to_value(prefix()).unwrap();
     for key in [
         "settings",
         "carrier",
@@ -243,9 +243,10 @@ fn contour_native_optional_fields_refuse_nulls_and_bad_locations() {
     ] {
         let mut invalid = value.clone();
         invalid[key] = serde_json::Value::Null;
-        let error = serde_json::from_value::<DesignContourFlangeOperation>(invalid)
-            .unwrap_err()
-            .to_string();
+        let error =
+            cadmpeg_core::serde_erase::json::from_value::<DesignContourFlangeOperation>(invalid)
+                .unwrap_err()
+                .to_string();
         assert!(error.contains(key), "{error}");
     }
     let scope = scope();

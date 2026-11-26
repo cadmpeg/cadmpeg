@@ -617,7 +617,7 @@ fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
         &[corners.map(|corner| (corner, Side::Line)).to_vec()],
         [0.0, SIDE],
     );
-    let renamed = serde_json::to_string(&solid.geometry)
+    let renamed = cadmpeg_core::serde_erase::json::to_string(&solid.geometry)
         .expect("the prism serializes")
         .replace('#', "#second-");
     let serde_json::Value::Object(arenas) =
@@ -625,7 +625,8 @@ fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
     else {
         panic!("the prism's arenas");
     };
-    let mut merged = serde_json::to_value(&ir.geometry).expect("the cube serializes");
+    let mut merged =
+        cadmpeg_core::serde_erase::json::to_value(&ir.geometry).expect("the cube serializes");
     let mut body = None;
     for (arena, records) in arenas {
         let serde_json::Value::Array(records) = records else {
@@ -641,8 +642,9 @@ fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
             .or_insert_with(|| serde_json::Value::Array(Vec::new()));
         slot.as_array_mut().expect("an arena").extend(records);
     }
-    ir.geometry = serde_json::from_value(merged).expect("the merged arenas");
-    let body = serde_json::from_value(body.expect("the prism's body")).expect("a body id");
+    ir.geometry = cadmpeg_core::serde_erase::json::from_value(merged).expect("the merged arenas");
+    let body = cadmpeg_core::serde_erase::json::from_value(body.expect("the prism's body"))
+        .expect("a body id");
     ir.design.scopes[0].current[0].bodies.push(body);
     ir.finalize();
     (ir, second_id)
@@ -1135,7 +1137,8 @@ fn sharing_carriers() -> (CadIr, usize) {
     use std::collections::BTreeMap;
     let (mut ir, _) = with_a_second_extrude(Boolean::NewBody);
     let content = |surface: &cadmpeg_ir::geometry::Surface| {
-        let mut value = serde_json::to_value(surface).expect("a surface serializes");
+        let mut value =
+            cadmpeg_core::serde_erase::json::to_value(surface).expect("a surface serializes");
         value
             .as_object_mut()
             .expect("a surface object")

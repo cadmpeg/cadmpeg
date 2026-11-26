@@ -1847,7 +1847,7 @@ fn edge_recipe_scope_binding_with_peer(
         .iter()
         .enumerate()
         .map(|(index, _)| {
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "id": format!("{stream}:design-edge-operand#{}", index + 20),
                 "scope_record_index": scope.record_index,
                 "scope_reference_ordinal": index,

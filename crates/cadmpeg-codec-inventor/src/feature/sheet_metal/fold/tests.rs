@@ -13,7 +13,7 @@ struct FoldFixture {
 const SLOTS: [u32; 8] = [41, 42, 43, 44, 45, 0, 0, 48];
 
 fn face_item(values: &[u32]) -> Kind {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "form": "face_item",
         "index_references": {
             "marker": 2,
@@ -302,7 +302,7 @@ fn fold_losses_name_retained_controls_the_unresolved_source_and_refusals() {
     let codes = |feature: &Feature| {
         super::super::retained_control_losses([feature])
             .into_iter()
-            .map(|note| serde_json::to_string(&note).expect("note"))
+            .map(|note| cadmpeg_core::serde_erase::json::to_string(&note).expect("note"))
             .collect::<Vec<_>>()
     };
     let unfold_notes = codes(&unfold);
@@ -327,7 +327,7 @@ fn fold_losses_name_retained_controls_the_unresolved_source_and_refusals() {
     );
     let notes = refusals.losses(&[native, unfold]);
     assert_eq!(notes.len(), 1);
-    let text = serde_json::to_string(&notes[0]).expect("note");
+    let text = cadmpeg_core::serde_erase::json::to_string(&notes[0]).expect("note");
     assert!(text.contains("feature.sheet-metal-fold-refused"));
     assert!(text.contains("bends"));
 }

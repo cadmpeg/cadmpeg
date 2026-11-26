@@ -123,7 +123,7 @@ fn two_part_studio(x: f64) -> Model {
     let body = ir.geometry.bodies[0].id.as_str().to_owned();
     // As in a Part Studio's export, the part's name is on its product, not its body.
     ir.geometry.bodies[0].name = None;
-    ir.model.product_definitions = serde_json::from_value(json!([
+    ir.model.product_definitions = cadmpeg_core::serde_erase::json::from_value(json!([
         {"id": "synthetic:test:component#first", "kind": "part", "label": "Part 1", "bodies": [body], "bom_properties": {}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
         {"id": "synthetic:test:component#second", "kind": "part", "label": "Part 2", "bodies": [], "bom_properties": {}, "storage":{"kind":"embedded"}, "occurrences":[], "instance_bodies":[], "representations":[]},
     ]))
@@ -134,8 +134,11 @@ fn two_part_studio(x: f64) -> Model {
             "overrides": [],
             "transform": [[1.0, 0.0, 0.0, x], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]})
     };
-    ir.model.occurrences =
-        serde_json::from_value(json!([placed(0, "first", 0.0), placed(1, "second", x)])).unwrap();
+    ir.model.occurrences = cadmpeg_core::serde_erase::json::from_value(json!([
+        placed(0, "first", 0.0),
+        placed(1, "second", x)
+    ]))
+    .unwrap();
     ir.finalize();
     Model { ir, ..model }
 }
@@ -158,7 +161,7 @@ fn part_studio_parts_are_one_design_but_moved_parts_stay_placed() {
 /// The two-product studio with both placements owned by one root file product.
 fn rooted_two_part_studio() -> Model {
     let model = two_part_studio(0.0);
-    let mut wire = serde_json::to_value(&model.ir).unwrap();
+    let mut wire = cadmpeg_core::serde_erase::json::to_value(&model.ir).unwrap();
     wire["model"]["product_definitions"]
         .as_array_mut()
         .unwrap()
@@ -198,7 +201,7 @@ fn part_studio_flattening_keeps_insertion_state_and_nested_ownership() {
         let child = model.ir.model.occurrences[0].id.clone();
         match state {
             "override" => {
-                model.ir.model.occurrences[0].overrides = serde_json::from_value(json!([
+                model.ir.model.occurrences[0].overrides = cadmpeg_core::serde_erase::json::from_value(json!([
                     {"path":[{"occurrence":{"kind":"occurrence","value":child}}], "visible":false}
                 ]))
                 .unwrap();
@@ -208,7 +211,7 @@ fn part_studio_flattening_keeps_insertion_state_and_nested_ownership() {
             "hidden" => model.ir.model.occurrences[0].visible = Some(false),
             "representation" => {
                 model.ir.model.occurrences[0].representation =
-                    serde_json::from_value(json!("stored-view")).unwrap();
+                    cadmpeg_core::serde_erase::json::from_value(json!("stored-view")).unwrap();
             }
             "nested" => {
                 model.ir.model.product_definitions[2].occurrences.remove(0);

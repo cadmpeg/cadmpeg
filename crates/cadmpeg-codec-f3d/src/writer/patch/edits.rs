@@ -4461,7 +4461,7 @@ mod tests {
             document["physical_token"] = "Prism-002".into();
             document["physical_token_offset"] = 90.into();
         }
-        serde_json::from_value(document).expect("material assignment")
+        cadmpeg_core::serde_erase::json::from_value(document).expect("material assignment")
     }
 
     fn native(assignments: Vec<DesignMaterialAssignment>) -> F3dNative {

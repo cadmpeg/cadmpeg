@@ -49,8 +49,10 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                     >(&value, &["external_property_key"], |_, _| {});
                 }
                 assert_eq!(
-                    serde_json::to_string(&result.expect("complete version form"))
-                        .expect("version wire"),
+                    cadmpeg_core::serde_erase::json::to_string(
+                        &result.expect("complete version form")
+                    )
+                    .expect("version wire"),
                     wire
                 );
             } else {
@@ -111,8 +113,10 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
                     );
                 }
                 assert_eq!(
-                    serde_json::to_string(&result.expect("complete version form"))
-                        .expect("version wire"),
+                    cadmpeg_core::serde_erase::json::to_string(
+                        &result.expect("complete version form")
+                    )
+                    .expect("version wire"),
                     wire
                 );
             } else {
@@ -150,8 +154,11 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
             wire["owner_entity_offset"] = serde_json::json!(347);
         }
         let record: crate::records::feature::assembly_features::DesignComponentOccurrence =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(record).unwrap(), wire);
+            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_value(record).unwrap(),
+            wire
+        );
     }
     for (field, value) in [
         ("transform", transform),
@@ -159,7 +166,7 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
     ] {
         let mut wire = base.clone();
         wire[field] = value;
-        assert!(serde_json::from_value::<
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
             crate::records::feature::assembly_features::DesignComponentOccurrence,
         >(wire)
         .unwrap_err()
@@ -317,15 +324,18 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             form,
         )
         .unwrap();
-        let wire = serde_json::to_string(&alignment).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_string(&alignment).unwrap();
         let decoded: crate::records::feature::assembly::DesignAssemblyAlignment =
             serde_json::from_str(&wire).unwrap();
         assert_eq!(decoded, alignment);
-        assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&decoded).unwrap(),
+            wire
+        );
         if alignment.operand_paths().is_some() {
             let mut unframed = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
             unframed.as_object_mut().unwrap().remove("operand_frames");
-            let error = serde_json::from_value::<
+            let error = cadmpeg_core::serde_erase::json::from_value::<
                 crate::records::feature::assembly::DesignAssemblyAlignment,
             >(unframed)
             .unwrap_err();
@@ -333,7 +343,7 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
         }
         let mut invalid = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
         invalid["value_offsets"] = serde_json::json!([11]);
-        let error = serde_json::from_value::<
+        let error = cadmpeg_core::serde_erase::json::from_value::<
             crate::records::feature::assembly::DesignAssemblyAlignment,
         >(invalid)
         .unwrap_err()
@@ -465,21 +475,27 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             .unwrap()
         );
         assert_eq!(frames[1].transform[2][3], 6.0);
-        let wire = serde_json::to_string(&alignment).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_string(&alignment).unwrap();
         let decoded: crate::records::feature::assembly::DesignAssemblyAlignment =
             serde_json::from_str(&wire).unwrap();
         assert_eq!(decoded, alignment);
-        assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
+        assert_eq!(
+            cadmpeg_core::serde_erase::json::to_string(&decoded).unwrap(),
+            wire
+        );
         let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
         assert_eq!(value.get("operand_frames").is_some(), frames_field_present);
         for (field, replacement) in [
             ("construction_record_index", serde_json::json!(99)),
             ("construction_byte_offset", serde_json::json!(99)),
-            ("frame", serde_json::to_value(&frames[1]).unwrap()),
+            (
+                "frame",
+                cadmpeg_core::serde_erase::json::to_value(&frames[1]).unwrap(),
+            ),
         ] {
             let mut invalid = value.clone();
             invalid["legacy_operand_carriers"][0][field] = replacement;
-            let error = serde_json::from_value::<
+            let error = cadmpeg_core::serde_erase::json::from_value::<
                 crate::records::feature::assembly::DesignAssemblyAlignment,
             >(invalid)
             .unwrap_err()
@@ -491,18 +507,16 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             .as_array_mut()
             .unwrap()
             .swap(0, 1);
-        assert!(
-            serde_json::from_value::<crate::records::feature::assembly::DesignAssemblyAlignment>(
-                invalid
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("construction")
-        );
+        assert!(cadmpeg_core::serde_erase::json::from_value::<
+            crate::records::feature::assembly::DesignAssemblyAlignment,
+        >(invalid)
+        .unwrap_err()
+        .to_string()
+        .contains("construction"));
         if frames_field_present {
             let mut invalid = value;
             invalid["operand_frames"][0]["transform"][0][3] = serde_json::json!(99.0);
-            assert!(serde_json::from_value::<
+            assert!(cadmpeg_core::serde_erase::json::from_value::<
                 crate::records::feature::assembly::DesignAssemblyAlignment,
             >(invalid)
             .unwrap_err()
@@ -537,9 +551,12 @@ fn assembly_path_wire_pairs_guid_locations() {
                 wire["identity_guid_offsets"] = serde_json::json!([700, 780, 860, 940]);
             }
             let path: crate::records::feature::assembly::DesignAssemblyOperandPath =
-                serde_json::from_value(wire.clone()).unwrap();
+                cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
             assert_eq!(path.occurrence_guids().len(), count);
-            assert_eq!(serde_json::to_value(&path).unwrap(), wire);
+            assert_eq!(
+                cadmpeg_core::serde_erase::json::to_value(&path).unwrap(),
+                wire
+            );
             for (value_field, offset_field) in [
                 ("occurrence_guids", "occurrence_guid_offsets"),
                 ("identity_guids", "identity_guid_offsets"),
@@ -552,7 +569,7 @@ fn assembly_path_wire_pairs_guid_locations() {
                     .unwrap_or_default();
                 bad_offsets.push(serde_json::json!(999));
                 invalid[offset_field] = serde_json::Value::Array(bad_offsets);
-                let error = serde_json::from_value::<
+                let error = cadmpeg_core::serde_erase::json::from_value::<
                     crate::records::feature::assembly::DesignAssemblyOperandPath,
                 >(invalid)
                 .unwrap_err()
@@ -586,7 +603,7 @@ fn borrowed_assembly_path(with_identity: bool) -> super::DesignAssemblyOperandPa
         ]);
         wire["identity_guid_offsets"] = serde_json::json!([500, 580, 660, 740]);
     }
-    serde_json::from_value(wire).unwrap()
+    cadmpeg_core::serde_erase::json::from_value(wire).unwrap()
 }
 
 #[test]
@@ -594,8 +611,8 @@ fn assembly_operand_path_borrowed_wire_matches_owned_wire_bytes() {
     for path in [borrowed_assembly_path(false), borrowed_assembly_path(true)] {
         let owned = super::DesignAssemblyOperandPathWire::from(path.clone());
         assert_eq!(
-            serde_json::to_vec(&path).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&path).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -638,7 +655,8 @@ fn component_insert_pairs_explicit_matrix_with_scope_and_carrier_locations() {
         let construction: crate::records::feature::assembly_features::DesignComponentInsertConstruction =
             serde_json::from_str(&wire).expect("component placement");
         assert_eq!(
-            serde_json::to_string(&construction).expect("component placement wire"),
+            cadmpeg_core::serde_erase::json::to_string(&construction)
+                .expect("component placement wire"),
             wire
         );
         assert_eq!(construction.placement.is_some(), !offsets.is_empty());
@@ -672,7 +690,8 @@ fn component_occurrence_derives_base_ordinal_and_requires_nonzero_placed_ordinal
         let occurrence: crate::records::feature::assembly_features::DesignComponentOccurrence =
             serde_json::from_str(&wire).expect("component occurrence");
         assert_eq!(
-            serde_json::to_string(&occurrence).expect("component occurrence wire"),
+            cadmpeg_core::serde_erase::json::to_string(&occurrence)
+                .expect("component occurrence wire"),
             wire
         );
         assert_eq!(occurrence.occurrence_ordinal(), ordinal);
@@ -698,12 +717,15 @@ fn assert_relaxed_guid_fields<T: serde::de::DeserializeOwned + serde::Serialize>
             let mut changed = wire.clone();
             changed[field] = serde_json::json!(guid);
             complete_edit(&mut changed, field);
-            let decoded = serde_json::from_value::<T>(changed.clone());
+            let decoded = cadmpeg_core::serde_erase::json::from_value::<T>(changed.clone());
             if guid == "invalid" {
                 assert!(decoded.is_err(), "{field}");
             } else {
                 let decoded = decoded.unwrap_or_else(|error| panic!("{field}: {error}"));
-                assert_eq!(serde_json::to_value(decoded).unwrap(), changed);
+                assert_eq!(
+                    cadmpeg_core::serde_erase::json::to_value(decoded).unwrap(),
+                    changed
+                );
             }
         }
     }
@@ -725,9 +747,9 @@ fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds
     }
     let alignment =
         DesignAssemblyAlignment::try_new(-1.0, [-2.0, -0.0, 3.0], Vec::new(), None).unwrap();
-    let json = serde_json::to_value(&alignment).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&alignment).unwrap();
     assert_eq!(
-        serde_json::from_value::<DesignAssemblyAlignment>(json).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<DesignAssemblyAlignment>(json).unwrap(),
         alignment
     );
     for (minimum, maximum, valid) in [
@@ -747,11 +769,15 @@ fn assembly_numeric_admission_preserves_signed_values_and_rejects_invalid_bounds
         };
         assert_eq!(DesignAssemblyLimits::try_from(wire.clone()).is_ok(), valid);
         if minimum.is_finite() && maximum.is_finite() {
-            let json = serde_json::to_value(wire).unwrap();
-            let result = serde_json::from_value::<DesignAssemblyLimits>(json.clone());
+            let json = cadmpeg_core::serde_erase::json::to_value(wire).unwrap();
+            let result =
+                cadmpeg_core::serde_erase::json::from_value::<DesignAssemblyLimits>(json.clone());
             assert_eq!(result.is_ok(), valid);
             if let Ok(limits) = result {
-                assert_eq!(serde_json::to_value(limits).unwrap(), json);
+                assert_eq!(
+                    cadmpeg_core::serde_erase::json::to_value(limits).unwrap(),
+                    json
+                );
             }
         }
     }
@@ -801,14 +827,15 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
     use crate::records::feature::assembly::{
         DesignAssemblyOperandPath, DesignAssemblyOperandPathLink,
     };
-    let link: DesignAssemblyOperandPathLink = serde_json::from_value(serde_json::json!({
-        "locator_reference_offset": 11, "locator_record_index": 10,
-        "locator_class_tag": "451", "locator_byte_offset": 100,
-        "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
-        "wrapper_reference_offset": 122, "wrapper_class_tag": "369",
-        "wrapper_byte_offset": 200, "path_reference_offset": 211
-    }))
-    .unwrap();
+    let link: DesignAssemblyOperandPathLink =
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+            "locator_reference_offset": 11, "locator_record_index": 10,
+            "locator_class_tag": "451", "locator_byte_offset": 100,
+            "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
+            "wrapper_reference_offset": 122, "wrapper_class_tag": "369",
+            "wrapper_byte_offset": 200, "path_reference_offset": 211
+        }))
+        .unwrap();
     for tag in ["294", "299", "307", "329", "330", "386", "390"] {
         for count in [0, 1, 3, 4, 8] {
             let offsets: Vec<_> = (0..count).map(|index| 500 + index * 80).collect();
@@ -837,8 +864,11 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
         guids(&[560, 640, 720, 800]),
     )
     .unwrap();
-    let wire = serde_json::to_value(path).unwrap();
-    assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wire.clone()).is_ok());
+    let wire = cadmpeg_core::serde_erase::json::to_value(path).unwrap();
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<DesignAssemblyOperandPath>(wire.clone())
+            .is_ok()
+    );
     for (field, offsets) in [
         ("occurrence_guid_offsets", vec![300, 480]),
         ("occurrence_guid_offsets", vec![480, 400]),
@@ -847,16 +877,24 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
     ] {
         let mut invalid = wire.clone();
         invalid[field] = serde_json::json!(offsets);
-        assert!(serde_json::from_value::<DesignAssemblyOperandPath>(invalid).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<DesignAssemblyOperandPath>(invalid)
+                .is_err()
+        );
     }
     let mut empty = wire.clone();
     empty["occurrence_guids"] = serde_json::json!([]);
     empty["occurrence_guid_offsets"] = serde_json::json!([]);
-    assert!(serde_json::from_value::<DesignAssemblyOperandPath>(empty).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<DesignAssemblyOperandPath>(empty).is_err()
+    );
     let mut wrong_class = wire;
     wrong_class["link"]["locator_class_tag"] = serde_json::json!("363");
     wrong_class["class_tag"] = serde_json::json!("386");
-    assert!(serde_json::from_value::<DesignAssemblyOperandPath>(wrong_class).is_err());
+    assert!(
+        cadmpeg_core::serde_erase::json::from_value::<DesignAssemblyOperandPath>(wrong_class)
+            .is_err()
+    );
 }
 
 fn complete_combine_field_edit(wire: &mut serde_json::Value, field: &str) {
@@ -939,13 +977,13 @@ fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
         ),
     ] {
         let occurrence = Occurrence::try_new(draft(100, placement)).unwrap();
-        let wire = serde_json::to_value(&occurrence).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&occurrence).unwrap();
         assert_eq!(wire["component_guid_offset"], 148);
         assert_eq!(wire["occurrence_guid_offset"], 224);
         assert_eq!(wire["owner_entity"], 9);
         assert_eq!(wire["owner_entity_offset"], 100 + last_offset);
         assert_eq!(
-            serde_json::from_value::<Occurrence>(wire.clone()).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<Occurrence>(wire.clone()).unwrap(),
             occurrence
         );
         for field in [
@@ -959,15 +997,18 @@ fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
             }
             let mut invalid = wire.clone();
             invalid[field] = 0.into();
-            assert!(serde_json::from_value::<Occurrence>(invalid)
-                .unwrap_err()
-                .to_string()
-                .contains(field));
+            assert!(
+                cadmpeg_core::serde_erase::json::from_value::<Occurrence>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field)
+            );
         }
         let boundary = Occurrence::try_new(draft(u64::MAX - last_offset, placement)).unwrap();
-        assert!(
-            serde_json::from_value::<Occurrence>(serde_json::to_value(boundary).unwrap()).is_ok()
-        );
+        assert!(cadmpeg_core::serde_erase::json::from_value::<Occurrence>(
+            cadmpeg_core::serde_erase::json::to_value(boundary).unwrap()
+        )
+        .is_ok());
         assert!(Occurrence::try_new(draft(u64::MAX - last_offset + 1, placement)).is_err());
     }
 }
@@ -991,8 +1032,8 @@ fn assembly_axial_selector_borrowed_wire_matches_owned_wire_bytes() {
     ] {
         let owned = super::DesignAssemblyAxialSelectorIdentityWire::from(selector.clone());
         assert_eq!(
-            serde_json::to_vec(&selector).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            cadmpeg_core::serde_erase::json::to_vec(&selector).unwrap(),
+            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -1048,7 +1089,7 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
             recipe_record_byte_offset: 500,
             recipe_id: "recipe".into(),
             recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
-            recipe_references: vec![serde_json::from_value(serde_json::json!({
+            recipe_references: vec![cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
                 "design_reference": 1, "design_reference_offset": 3,
                 "candidate_faces": ["f3d:model:face#one"], "candidate_edges": ["f3d:model:edge#one"],
@@ -1128,7 +1169,7 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
         }),
     )
     .unwrap();
-    let mut value = serde_json::to_value(&alignment).unwrap();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&alignment).unwrap();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let remap = |id: &str| {
         Ok(format!(
@@ -1141,7 +1182,10 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
     super::DesignAssemblyAlignment::rewrite_native_value(&ctx, &mut value, &mut identities)
         .unwrap();
     identities.finish().unwrap();
-    assert_eq!(value, serde_json::to_value(expected).unwrap());
+    assert_eq!(
+        value,
+        cadmpeg_core::serde_erase::json::to_value(expected).unwrap()
+    );
     for operand in value["legacy_operand_carriers"].as_array().unwrap() {
         assert_eq!(
             operand["selection"]["recipe_references"][0]["candidate_faces"][0],
@@ -1171,7 +1215,8 @@ fn guids<T: TryFrom<String, Error = String>>(
 #[test]
 fn root_operand_paths_refuse_continuations() {
     let path = |root, shift| {
-        let mut wire = serde_json::to_value(borrowed_assembly_path(true)).unwrap();
+        let mut wire =
+            cadmpeg_core::serde_erase::json::to_value(borrowed_assembly_path(true)).unwrap();
         wire["type_guid"] = serde_json::json!(super::TYPED_OCCURRENCE_PATH_TYPE_GUID);
         wire["byte_offset"] = serde_json::json!(300 + shift);
         wire["occurrence_guid_offsets"] = serde_json::json!([400 + shift]);
@@ -1185,7 +1230,8 @@ fn root_operand_paths_refuse_continuations() {
                 .unwrap()
                 .truncate(2);
         }
-        let path: super::DesignAssemblyOperandPath = serde_json::from_value(wire).unwrap();
+        let path: super::DesignAssemblyOperandPath =
+            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
         assert_eq!(path.is_root(), root);
         path
     };

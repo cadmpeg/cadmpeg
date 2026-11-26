@@ -6,7 +6,9 @@ use crate::features::selections::FaceSelection;
 #[cfg(feature = "schema")]
 #[test]
 fn tangent_chain_schema_is_optional_boolean() {
-    let schema = serde_json::to_value(schemars::schema_for!(ReplaceFaceOperands)).unwrap();
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(ReplaceFaceOperands))
+            .unwrap();
     assert_eq!(schema["properties"]["tangent_chain"]["type"], "boolean");
     assert!(!schema["required"]
         .as_array()
@@ -30,18 +32,21 @@ fn optional_tangent_chain_preserves_legacy_wire_forms_and_refuses_null() {
         if let Some(value) = tangent_chain {
             expected["tangent_chain"] = serde_json::json!(value);
         }
-        let wire = serde_json::to_value(&operands).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&operands).unwrap();
         assert_eq!(wire, expected);
         assert_eq!(
-            serde_json::from_value::<ReplaceFaceOperands>(wire.clone()).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<ReplaceFaceOperands>(wire.clone())
+                .unwrap(),
             operands
         );
         let mut unknown = wire.clone();
         unknown["unknown"] = serde_json::json!(true);
-        assert!(serde_json::from_value::<ReplaceFaceOperands>(unknown).is_err());
+        assert!(
+            cadmpeg_core::serde_erase::json::from_value::<ReplaceFaceOperands>(unknown).is_err()
+        );
         let mut null = wire;
         null["tangent_chain"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<ReplaceFaceOperands>(null).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<ReplaceFaceOperands>(null).is_err());
     }
 }
 

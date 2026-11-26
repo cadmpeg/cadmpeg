@@ -11,7 +11,7 @@ const INVALID: &str = "Fusion Design parameter scope has an invalid paired frame
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 
 fn binding(entity_suffix: u32, ordinal: u32) -> DesignBodyBinding {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("{STREAM}:design-body-binding#{}", 1000 + 100 * ordinal),
         "stream": "Design/BulkStream.dat",
         "pair_count": 4,
@@ -28,7 +28,7 @@ fn binding(entity_suffix: u32, ordinal: u32) -> DesignBodyBinding {
 }
 
 fn member(entity_suffix: u32) -> DesignBodyMember {
-    serde_json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "id": format!("{STREAM}:design-body-member#{}", 5000 + entity_suffix),
         "byte_offset": 5000 + entity_suffix,
         "entity_suffix": entity_suffix,
@@ -39,7 +39,7 @@ fn member(entity_suffix: u32) -> DesignBodyMember {
 
 /// A scope that copies the bodies with suffixes 11 and 13 to 12 and 14.
 fn native() -> crate::native::F3dNative {
-    let operation: DesignCopyPasteBodiesOperation = serde_json::from_value(serde_json::json!({
+    let operation: DesignCopyPasteBodiesOperation = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
         "body_group_record_index": 501, "body_group_class_tag": "264", "body_group_byte_offset": 100,
         "body_operand_record_indices": [502, 504], "body_operand_record_offsets": [126, 137],
         "relation_record_index": 503, "relation_class_tag": "264", "relation_byte_offset": 200,
@@ -126,11 +126,11 @@ fn source_body_is_a_bodies_root_member_or_a_bound_body() {
 #[test]
 fn copied_body_can_be_history_only_but_not_unsolved() {
     let unsolved = |ordinal: u32, history_only: bool| {
-        let mut value = serde_json::to_value(binding(14, ordinal)).unwrap();
+        let mut value = cadmpeg_core::serde_erase::json::to_value(binding(14, ordinal)).unwrap();
         let object = value.as_object_mut().unwrap();
         object.remove("body");
         object.insert("history_only".to_owned(), history_only.into());
-        serde_json::from_value::<DesignBodyBinding>(value).unwrap()
+        cadmpeg_core::serde_erase::json::from_value::<DesignBodyBinding>(value).unwrap()
     };
     let mut native = native();
     native.design_body_members.extend([member(11), member(13)]);

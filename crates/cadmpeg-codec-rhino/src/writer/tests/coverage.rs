@@ -153,7 +153,7 @@ fn unrepresented_product_structure_is_an_export_loss() {
 /// design content a part from a history-based system holds beside its shape.
 fn with_design_content(ir: &mut CadIr) {
     ir.model.features.push(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
             "id": "cadir:model:feature#boss", "ordinal": 0, "name": "Boss", "suppressed": false,
             "definition": {"kind": "operation", "value": {"kind": "stored_geometry", "value": {}}},
             "outputs": [], "dependencies": [], "source_properties": {},

@@ -7,7 +7,7 @@ fn native_rolling_ball_continuation_preserves_current_and_maximal_limits() {
     assert_eq!(repeated.len() - repeated_tail, 87);
     let (bytes, tail) = fixture(2, false, TailForm::Absent79);
     let native = crate::native::CatiaNative::decode(&bytes);
-    let value = serde_json::to_value(&native).expect("native wire");
+    let value = cadmpeg_core::serde_erase::json::to_value(&native).expect("native wire");
     let rows = value["consolidated_rolling_ball_continuations"]
         .as_array()
         .expect("continuation arena");
@@ -36,7 +36,7 @@ fn native_rolling_ball_continuation_keeps_explicit_scalar_jet_unbound() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("native store");
-    let value = serde_json::to_value(&namespace).expect("namespace wire");
+    let value = cadmpeg_core::serde_erase::json::to_value(&namespace).expect("namespace wire");
     let rows = value["consolidated_rolling_ball_continuations"]
         .as_array()
         .expect("continuation arena");
@@ -68,7 +68,7 @@ fn native_rolling_ball_continuation_keeps_sheet_scalar_jet_unbound() {
         let native = crate::native::CatiaNative::decode(&bytes);
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         native.store(&mut namespace).expect("native store");
-        let value = serde_json::to_value(&namespace).expect("namespace wire");
+        let value = cadmpeg_core::serde_erase::json::to_value(&namespace).expect("namespace wire");
         let rows = value["consolidated_rolling_ball_continuations"]
             .as_array()
             .expect("continuation arena");
@@ -94,7 +94,8 @@ fn native_rolling_ball_continuation_keeps_sheet_scalar_jet_unbound() {
             assert!(rows[0].get(field).is_none());
             assert!(scalar.get(field).is_none());
         }
-        let restored = serde_json::from_value(value).expect("namespace JSON round trip");
+        let restored =
+            cadmpeg_core::serde_erase::json::from_value(value).expect("namespace JSON round trip");
         assert_eq!(
             crate::native::CatiaNative::load(&restored).expect("checked native load"),
             native

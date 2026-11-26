@@ -300,7 +300,7 @@ fn mixed_scope() -> DesignParameterScope {
     let mut scope = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.sets = Some(
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "form":"current", "corner_type":"miter", "entry_count":3, "sets":sets
             }))
             .unwrap(),
@@ -639,7 +639,7 @@ fn ownerless_chamfer_fixed_scalar_fallback_preserves_the_referenced_dimensions()
         let sets = payload.sets.as_mut().unwrap();
         sets.sets = vec![sets.sets[1].clone()];
         payload.fixed = Some(
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "kind":"two_distances", "first":{"value":0.2,"record_index":20,"value_offset":2020},
                 "second":{"value":0.3,"record_index":30,"value_offset":2030}
             }))
@@ -725,7 +725,7 @@ fn fixed_two_distance_chamfer_names_reference_face_assumption() {
     let mut scope = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.fixed = Some(
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "kind":"two_distances", "first":{"value":0.2,"record_index":20,"value_offset":2020},
                 "second":{"value":0.3,"record_index":30,"value_offset":2030}
             }))
@@ -744,7 +744,7 @@ fn fixed_equal_distance_scope() -> DesignParameterScope {
     let mut scope = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.fixed = Some(
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "kind":"equal_distance", "distance":{"value":0.2,"record_index":20,"value_offset":2020}
             }))
             .unwrap(),
@@ -840,7 +840,7 @@ fn reversed_distance_angle_keeps_dimensions_and_native_side_control() {
     let mut scope = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.sets = Some(
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "form":"current", "corner_type":"chamfer", "entry_count":1,
                 "sets":[{
                     "record_index":500, "byte_offset":2000, "frame_length":93,
@@ -894,7 +894,7 @@ fn reversed_two_distance_set_projects_flip_direction_and_disagreeing_sets_record
     let mut single = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = single.payload_mut() {
         payload.sets = Some(
-            serde_json::from_value(serde_json::json!({
+            cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
                 "form":"current", "corner_type":"chamfer", "entry_count":1,
                 "sets":[{
                     "record_index":500, "byte_offset":2000, "frame_length":93,

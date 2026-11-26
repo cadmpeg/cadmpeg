@@ -19,7 +19,8 @@ fn decoded(bytes: &[u8]) -> (serde_json::Value, Vec<String>) {
     assert!(validation.is_ok(), "{validation:#?}");
     let mut codes = Vec::new();
     loss_codes(
-        &serde_json::to_value(&result.report().losses).expect("serialize the losses"),
+        &cadmpeg_core::serde_erase::json::to_value(&result.report().losses)
+            .expect("serialize the losses"),
         &mut codes,
     );
     assert!(!codes.is_empty(), "the report names loss codes");

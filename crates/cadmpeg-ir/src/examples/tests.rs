@@ -42,8 +42,11 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
             panic!("the directed SubD example curve is a line");
         };
         assert_eq!(
-            serde_json::to_string(line).unwrap(),
-            serde_json::to_string(&LineCurve::try_new(origin, direction).unwrap()).unwrap()
+            cadmpeg_core::serde_erase::json::to_string(line).unwrap(),
+            cadmpeg_core::serde_erase::json::to_string(
+                &LineCurve::try_new(origin, direction).unwrap()
+            )
+            .unwrap()
         );
     }
     let id = v2_id!(SurfaceId, "surface", crate::identity_key!("sum-cache"));
@@ -61,8 +64,8 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
         panic!("the directed SubD example cache is a plane");
     };
     assert_eq!(
-        serde_json::to_string(plane).unwrap(),
-        serde_json::to_string(
+        cadmpeg_core::serde_erase::json::to_string(plane).unwrap(),
+        cadmpeg_core::serde_erase::json::to_string(
             &PlaneSurface::try_new(
                 origin,
                 Vector3::new(0.0, 0.0, 1.0),
@@ -77,8 +80,9 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
 #[cfg(feature = "schema")]
 #[test]
 fn directed_subd_sum_fixture_matches_schema_shape() {
-    let schema = serde_json::to_value(schemars::schema_for!(crate::document::Topology))
-        .expect("serialize schema");
+    let schema =
+        cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(crate::document::Topology))
+            .expect("serialize schema");
     let schema_text = schema.to_string();
     assert!(schema_text.contains("procedural_surfaces"));
     assert!(schema_text.contains("sharpness"));

@@ -207,8 +207,11 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             |configuration| configuration.feature_states.len() == decoded.ir().model.features.len()
         ));
     let round_trip: Vec<cadmpeg_ir::features::parameters::DesignConfiguration> =
-        serde_json::from_str(&serde_json::to_string(&decoded.ir().model.configurations).unwrap())
-            .unwrap();
+        serde_json::from_str(
+            &cadmpeg_core::serde_erase::json::to_string(&decoded.ir().model.configurations)
+                .unwrap(),
+        )
+        .unwrap();
     assert_eq!(
         round_trip[0].feature_states.get(&feature_id),
         decoded.ir().model.configurations[0]

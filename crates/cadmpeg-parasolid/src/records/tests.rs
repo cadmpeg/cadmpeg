@@ -149,7 +149,7 @@ fn region_insert_and_append_preserve_class_constraints() {
                 schema.fields.iter().any(|f| f.name.as_str() == "frame"),
                 frame
             );
-            let wire = serde_json::to_value(&schema).unwrap();
+            let wire = cadmpeg_core::serde_erase::json::to_value(&schema).unwrap();
             assert_eq!(
                 wire["fields"][schema.fields.len() - 1]["pointer_class"],
                 owner_class
@@ -186,7 +186,7 @@ fn descriptor_positive_integer_and_wire_invariants_are_checked() {
         assert_eq!(positive(&mut View::over_retained(bytes)), None);
     }
     let field = serde_json::json!({"name":"child", "data_type":"p", "pointer_class":12, "n_elements":0, "transmit":true});
-    let valid: SchemaField = serde_json::from_value(field.clone()).unwrap();
+    let valid: SchemaField = cadmpeg_core::serde_erase::json::from_value(field.clone()).unwrap();
     assert_eq!(valid.data_type, DataType::Pointer);
     for (name, value) in [
         ("name", serde_json::json!("")),
@@ -195,7 +195,7 @@ fn descriptor_positive_integer_and_wire_invariants_are_checked() {
     ] {
         let mut invalid = field.clone();
         invalid[name] = value;
-        assert!(serde_json::from_value::<SchemaField>(invalid).is_err());
+        assert!(cadmpeg_core::serde_erase::json::from_value::<SchemaField>(invalid).is_err());
     }
 }
 

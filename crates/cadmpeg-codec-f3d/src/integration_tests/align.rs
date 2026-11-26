@@ -26,17 +26,26 @@ fn align_scopes_retain_typed_prefix_or_emit_exact_refusal_loss() {
                 if let Some(envelope) = result.scopes[0].align_envelope() {
                     assert_eq!(envelope.construction.is_none(), constructor_refused);
                 }
-                let wire = serde_json::to_value(&result.scopes[0]).unwrap();
-                let back: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
+                let wire = cadmpeg_core::serde_erase::json::to_value(&result.scopes[0]).unwrap();
+                let back: DesignParameterScope =
+                    cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
                 assert_eq!(back, result.scopes[0]);
                 if !refused {
                     let mut wrong_kind = wire.clone();
                     wrong_kind["kind"] = "Move".into();
-                    assert!(serde_json::from_value::<DesignParameterScope>(wrong_kind).is_err());
+                    assert!(
+                        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(
+                            wrong_kind
+                        )
+                        .is_err()
+                    );
                     let mut null_construction = wire;
                     null_construction["align_envelope"]["construction"] = serde_json::Value::Null;
                     assert!(
-                        serde_json::from_value::<DesignParameterScope>(null_construction).is_err()
+                        cadmpeg_core::serde_erase::json::from_value::<DesignParameterScope>(
+                            null_construction
+                        )
+                        .is_err()
                     );
                 }
                 assert_eq!(result.losses.len(), 1);

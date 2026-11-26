@@ -677,7 +677,10 @@ fn an_option_field_is_omitted_and_a_list_field_is_always_written() {
         steps: Vec::new(),
         resolved: None,
     };
-    assert_eq!(serde_json::to_string(&empty).unwrap(), r#"{"steps":[]}"#);
+    assert_eq!(
+        cadmpeg_core::serde_erase::json::to_string(&empty).unwrap(),
+        r#"{"steps":[]}"#
+    );
     refuses::<Transformation>("{}");
     let message = refuses::<Transformation>(r#"{"steps": [], "resolved": null}"#);
     assert!(message.contains("resolved"), "{message}");

@@ -53,7 +53,7 @@ fn settings() -> SolverSettings {
 #[test]
 fn solver_settings_round_trip_through_json() {
     let record = settings();
-    let json = serde_json::to_value(&record).unwrap();
+    let json = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
     assert_eq!(json["target"]["entity"]["kind"], "joint");
     assert_eq!(
         json["values"]["physxJoint:armature"]["dimension"],
@@ -64,7 +64,7 @@ fn solver_settings_round_trip_through_json() {
         serde_json::json!({"length": 0, "mass": 0, "angle": 0, "time": 0})
     );
     assert_eq!(
-        serde_json::from_value::<SolverSettings>(json).unwrap(),
+        cadmpeg_core::serde_erase::json::from_value::<SolverSettings>(json).unwrap(),
         record
     );
 }

@@ -96,17 +96,21 @@ mod tests {
         let text = format!("NX {}", "x".repeat(250));
 
         let value = ProductText::new(text.as_str()).unwrap().into_owned();
-        let wire = serde_json::to_string(&value).unwrap();
-        assert_eq!(wire, serde_json::to_string(&text).unwrap());
+        let wire = cadmpeg_core::serde_erase::json::to_string(&value).unwrap();
+        assert_eq!(
+            wire,
+            cadmpeg_core::serde_erase::json::to_string(&text).unwrap()
+        );
         assert_eq!(
             serde_json::from_str::<ProductText<String>>(&wire).unwrap(),
             value
         );
         for text in ["NX", "NX μ", "NX \n", &format!("NX {}", "x".repeat(251))] {
             assert!(ProductText::new(text).is_err());
-            let error =
-                serde_json::from_str::<ProductText<String>>(&serde_json::to_string(text).unwrap())
-                    .unwrap_err();
+            let error = serde_json::from_str::<ProductText<String>>(
+                &cadmpeg_core::serde_erase::json::to_string(text).unwrap(),
+            )
+            .unwrap_err();
             assert!(error.to_string().contains("product_version/version"));
         }
     }

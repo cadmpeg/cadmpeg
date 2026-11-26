@@ -45,7 +45,7 @@ fn archive(table: &[u8], second_discriminator: u64) -> Vec<u8> {
 }
 
 fn width_table() -> Vec<u8> {
-    serde_json::to_vec(&table_document(
+    cadmpeg_core::serde_erase::json::to_vec(&table_document(
         "1",
         &[("W", object_target("71", "UserParameterValue"))],
         &[

@@ -1136,14 +1136,14 @@ fn split_body_projects_tool_extension_independently_of_native_tool_selection() {
                 groups[0].id.clone()
             )),
         );
-        let wire = serde_json::to_value(&definition).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
         let operation = &wire["value"];
         assert_eq!(
             operation["value"].get("extend_tool"),
             extend_tool.map(serde_json::Value::Bool).as_ref(),
         );
         assert_eq!(
-            serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+            cadmpeg_core::serde_erase::json::from_value::<FeatureDefinition>(wire).unwrap(),
             definition
         );
     }

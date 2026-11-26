@@ -58,9 +58,9 @@ fn style_prefix_versions_preserve_operands_qualifiers_and_opaque_fields() {
         for end in 0..required {
             assert!(with_view(&bytes[..end], |ctx, view| parse(ctx, view, version)).is_err());
         }
-        let wire = serde_json::to_value(&value).expect("serialize");
+        let wire = cadmpeg_core::serde_erase::json::to_value(&value).expect("serialize");
         assert_eq!(
-            serde_json::from_value::<StylePayload>(wire).expect("deserialize"),
+            cadmpeg_core::serde_erase::json::from_value::<StylePayload>(wire).expect("deserialize"),
             value
         );
     }
