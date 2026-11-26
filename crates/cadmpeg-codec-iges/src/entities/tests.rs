@@ -160,15 +160,15 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
     let part = |sequence| ids.entity(entry(sequence)).unwrap();
     let notes = losses
         .iter()
-        .filter(|loss| loss.code == dropped_with("", "").code)
+        .filter(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some())
         .map(|loss| loss.message.clone())
         .collect::<Vec<_>>();
     assert_eq!(
         notes,
         [
-            dropped_with(part(3), part(1)).message,
-            dropped_with(part(5), part(3)).message,
-            dropped_with(part(11), part(9)).message,
+            dropped_with(super::entity_record(3), part(1)).message,
+            dropped_with(super::entity_record(5), super::entity_record(3)).message,
+            dropped_with(super::entity_record(11), part(9)).message,
         ]
     );
 }

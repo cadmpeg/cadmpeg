@@ -2900,7 +2900,7 @@ fn try_decode_brep(
         let mut decoded = Brep::default();
         merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded, given_up)?;
         if decoded.bodies.is_empty() {
-            fallback_losses.extend(decoded.take_losses());
+            fallback_losses.extend(decoded.take_losses()?);
             return Ok(None);
         }
         let report = build_geometry_report(
@@ -2946,7 +2946,7 @@ fn try_decode_brep(
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
             let (site, _, decoded) = &mut decoded_sites[selected_site];
-            fallback_losses.extend(decoded.take_losses());
+            fallback_losses.extend(decoded.take_losses()?);
             append_topology_record_losses(&decoded.stats, fallback_losses);
             give_up_unbuilt_site(
                 ctx,
@@ -2972,7 +2972,7 @@ fn try_decode_brep(
         if !any_site_has_geometry && !any_empty_model {
             for (site, _, decoded) in &mut decoded_sites {
                 decoded.qualify_ids(site)?;
-                fallback_losses.extend(decoded.take_losses());
+                fallback_losses.extend(decoded.take_losses()?);
                 append_topology_record_losses(&decoded.stats, fallback_losses);
                 give_up_unbuilt_site(
                     ctx,
@@ -5174,7 +5174,7 @@ fn build_geometry_report(
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
-    let mut brep_losses = decoded.take_losses();
+    let mut brep_losses = decoded.take_losses()?;
     let s = &decoded.stats;
     let mut losses = Vec::new();
 

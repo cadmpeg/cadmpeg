@@ -991,7 +991,8 @@ impl Report {
         detail: impl Into<String>,
     ) {
         let note = code.note(format!("{}; subject: {subject}", detail.into()));
-        self.notes.extend(record_given_up(record, note));
+        self.notes
+            .extend(record_given_up(archive::source_record(record), note));
     }
 }
 fn empty(ctx: &DecodeContext<'_>, root: View<'_>) -> Decoded {

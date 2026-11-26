@@ -449,10 +449,21 @@ fn a_refused_loop_before_a_projected_loop_leaves_no_profile_in_its_place() {
         panic!("the line edge states the one entity");
     };
     assert_eq!(entity.native_ref.as_deref(), Some("0:sldprt:brep:edge#1"));
+    assert_eq!(entity.id().as_str(), "sldprt:model:sketch-entity#0:0:0:1");
     assert!(sketch.profiles.is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss names the refused edge: {losses:?}");
+    let [loss, given_up] = losses.as_slice() else {
+        panic!("one loss names the refused edge, and its entity is given up: {losses:?}");
     };
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(given_up
+        .message
+        .starts_with("record sldprt:model:sketch-entity#0:0:0:0 given up: "));
+    assert!(given_up.message.ends_with(
+        "; dropped=[sldprt:model:sketch-profile#0:0:0:0, sldprt:model:sketch-profile#0:0:0:1]"
+    ));
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::SketchProfileRejected.kind()
@@ -482,6 +493,9 @@ fn a_face_whose_only_loop_is_refused_gives_up_its_sketch() {
          offset=0 given up: sldprt/sketch.profile-rejected: "
     ));
     assert!(!given_up.message.contains("sldprt:brep:"));
+    assert!(given_up
+        .message
+        .ends_with("; dropped=[sldprt:model:sketch-entity#0:0:0:0]"));
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::SketchProfileRejected.kind()
@@ -505,9 +519,19 @@ fn an_unprojectable_edge_costs_its_loop_profile_and_keeps_the_sketch() {
     assert_eq!(sketch.profiles.len(), 1);
     assert_eq!(sketch.profiles[0].len(), 1);
     assert_eq!(sketch.profiles[0][0].entity, *entity.id());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss names the refused edge: {losses:?}");
+    let [loss, given_up] = losses.as_slice() else {
+        panic!("one loss names the refused edge, and its entity is given up: {losses:?}");
     };
+    assert_eq!(
+        given_up.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(given_up
+        .message
+        .starts_with("record sldprt:model:sketch-entity#0:0:0:1 given up: "));
+    assert!(given_up
+        .message
+        .ends_with("; dropped=[sldprt:model:sketch-profile#0:0:0:1]"));
     assert_eq!(
         loss.code,
         crate::loss::SldprtLossCode::SketchProfileRejected.kind()

@@ -50,7 +50,7 @@ pub(crate) struct LaneRefusals {
     notes: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Source records already charged `record.unreadable`, so a record two
     /// routes read and refuse is given up once.
-    given_up: std::collections::BTreeSet<String>,
+    given_up: std::collections::BTreeSet<cadmpeg_ir::ids::Identity>,
 }
 
 impl LaneRefusals {
@@ -80,12 +80,19 @@ impl LaneRefusals {
 
     /// Record `why` and give up the source record `source`, whose carrier
     /// the document then holds nowhere.
-    fn give_up(&mut self, source: String, why: cadmpeg_ir::report::loss::LossNote) {
+    fn give_up(
+        &mut self,
+        source: cadmpeg_ir::ids::Identity,
+        why: cadmpeg_ir::report::loss::LossNote,
+    ) {
         if self.given_up.contains(&source) {
             self.notes.push(why);
         } else {
             self.notes
-                .extend(cadmpeg_ir::unknown::part::record_given_up(&source, why));
+                .extend(cadmpeg_ir::unknown::part::record_given_up(
+                    source.clone(),
+                    why,
+                ));
             self.given_up.insert(source);
         }
     }
@@ -481,12 +488,12 @@ pub(crate) fn give_up_refused<T>(
     result: Result<T, cadmpeg_ir::geometry::nurbs::NurbsError>,
     refusal: &mut LaneRefusals,
     record: impl std::fmt::Display,
-    source: impl std::fmt::Display,
+    source: cadmpeg_ir::ids::Identity,
 ) -> Option<T> {
     match result {
         Ok(value) => Some(value),
         Err(error) => {
-            refusal.give_up(source.to_string(), lane_refusal_note(record, &error));
+            refusal.give_up(source, lane_refusal_note(record, &error));
             None
         }
     }
@@ -1789,7 +1796,10 @@ mod tests {
                 short_weight_lane(),
                 &mut refusal,
                 "a5 NURBS surface record at byte 64",
-                "cgm-a5-surface-frame:0000000064",
+                cadmpeg_ir::ids::Identity::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-surface-frame"),
+                    64_usize,
+                ),
             )
             .is_none());
         }
@@ -1802,7 +1812,7 @@ mod tests {
         assert!(notes[1]
             .message
             .split_whitespace()
-            .any(|token| token == "cgm-a5-surface-frame:0000000064"));
+            .any(|token| token == "catia:cgm:a5-surface-frame#64"));
         assert_eq!(notes[1].severity, cadmpeg_ir::report::Severity::Error);
     }
 

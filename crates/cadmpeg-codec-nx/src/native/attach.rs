@@ -279,8 +279,12 @@ pub(super) fn attach(
         Err(error) => {
             let attached = snapshot.attached_records(ir, unknowns);
             snapshot.restore(ir, annotations, unknowns, losses);
+            let attachment = cadmpeg_ir::ids::Identity::compose(
+                &cadmpeg_ir::identity_namespace!("nx", "container", "object-model"),
+                0_u64,
+            );
             losses.extend(record_given_up(
-                "nx:container",
+                attachment.clone(),
                 NxLossCode::NativeAttachmentFailed.note(format!(
                     "Native object-model attachment failed: {error}. Decoded geometry and \
                      topology are kept. None of the attachment's features, sketches, \
@@ -288,11 +292,12 @@ pub(super) fn attach(
                      tessellations, native records, or container passthrough records are kept."
                 )),
             ));
-            losses.extend(
-                attached
-                    .iter()
-                    .map(|record| dropped_with(record, "nx:container")),
-            );
+            for record in attached {
+                losses.push(dropped_with(
+                    cadmpeg_ir::ids::Identity::new(record)?,
+                    attachment.clone(),
+                ));
+            }
             Ok(())
         }
     }

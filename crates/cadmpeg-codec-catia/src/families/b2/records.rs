@@ -2369,7 +2369,10 @@ fn parse_b2_nurbs_curve(
         NurbsCurve::from_checked_lanes(degree, knots, control_points, Some(weights), false),
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
-        format_args!("cgm-b2-nurbs-curve-frame:{:010}", frame.pos),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "b2-nurbs-curve-frame"),
+            frame.pos,
+        ),
     )
     .map(|geometry| B2NurbsCurve {
         pos: frame.pos,

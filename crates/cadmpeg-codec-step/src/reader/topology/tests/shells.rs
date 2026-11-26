@@ -376,6 +376,48 @@ fn failed_void_shell_does_not_commit_the_outer_brep() {
         .contains("STEP topology root #31 rejected: face carrier #99")));
 }
 
+/// A root that fails drops no shell or face that another root built: the
+/// shell, its face, and the style bound to the face stay with the root that
+/// built them.
+#[test]
+fn a_failed_root_keeps_the_shell_a_second_root_built() {
+    let source = String::from_utf8(
+        include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
+    .replace(
+        "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+        "#31=BREP_WITH_VOIDS('',#30,(#34));",
+    )
+    .replace(
+        "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
+        "#33=OPEN_SHELL('',(#29));\n#34=CLOSED_SHELL('',(#99));\n#99=UNSUPPORTED_FACE('',());\n\
+         #70=MANIFOLD_SOLID_BREP('',#30);",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode a failed root beside a root that shares its shell");
+    let ir = decoded.ir();
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("STEP topology root #31 rejected")));
+    assert!(ir
+        .geometry
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "step:data:body#70"));
+    assert_eq!(ir.geometry.shells.len(), 1, "{:#?}", ir.geometry.shells);
+    let [face] = ir.geometry.faces.as_slice() else {
+        panic!("the face of the kept shell: {:#?}", ir.geometry.faces);
+    };
+    assert!(serde_json::to_string(&ir.model.appearance_bindings)
+        .unwrap()
+        .contains(&format!("\"{}\"", face.id.as_str())));
+}
+
 #[test]
 fn complex_oriented_open_shell_preserves_shell_sense() {
     let source =
@@ -758,11 +800,12 @@ fn strict_decode_refuses_a_destroyed_solid() {
     let [charge] = charges.as_slice() else {
         panic!("one charge names the root");
     };
-    // The root's shell and its face drop with the root.
+    // The root's shell and its face drop with the root, each named by the id
+    // its record takes.
     assert!(
         charge
             .message
-            .ends_with("; dropped=[#17, step:data:face#16]"),
+            .ends_with("; dropped=[step:data:face#16, step:data:shell#17]"),
         "{}",
         charge.message
     );
@@ -812,13 +855,12 @@ fn a_rejected_root_drops_its_shells_and_faces_and_keeps_their_supports() {
         panic!("one charge: {charges:#?}");
     };
     // The oriented shell #33, its base shell #30, and the face #29 drop with
-    // the surface model #31. The face is named by its face id, so the support
-    // surface that carries the face's source label stays.
+    // the surface model #31, each named by the id its record takes.
     assert!(charge.message.contains(" record="), "{}", charge.message);
     assert!(
         charge
             .message
-            .ends_with("; dropped=[#30, #33, step:data:face#29]"),
+            .ends_with("; dropped=[step:data:face#29, step:data:shell#30, step:data:shell#33]"),
         "{}",
         charge.message
     );

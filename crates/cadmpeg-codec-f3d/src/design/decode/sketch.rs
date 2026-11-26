@@ -4281,31 +4281,44 @@ fn decode_sketch_curve_identities_from_stream(
     let mut out = Vec::new();
     for frame in frames {
         let payload = &bytes[frame.start..frame.end];
-        let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
-            decode_sketch_curve_identity(payload)
-        else {
-            continue;
-        };
-        let Some(primary_id) = std::num::NonZeroU64::new(primary_id) else {
-            continue;
-        };
-        let Some(record_index) = super::record::recover_frame(
-            u32::try_from(frame.entity_id)
-                .map_err(|_| CodecError::malformed("F3D sketch-curve entity ID exceeds u32")),
-            losses,
-            given_up,
-            F3dLossCode::SketchCurveRecordUndecoded,
-            RecordFrame::new(stream, frame.start, frame.end),
-            format_args!("Sketch curve record {} in {stream}", frame.entity_id),
-        )?
-        else {
-            continue;
-        };
         let curve_class = SketchCurveClass::of(
             frame.design_type.type_guid.as_str(),
             frame.design_type.version,
             &frame.design_type.module,
         );
+        let identity = decode_sketch_curve_identity(payload).and_then(
+            |(primary_id, secondary_id, geometry_shift, entity_genesis)| {
+                std::num::NonZeroU64::new(primary_id)
+                    .map(|primary_id| (primary_id, secondary_id, geometry_shift, entity_genesis))
+            },
+        );
+        // A frame of a curve class is a sketch curve, so one whose identity
+        // does not read is given up; a frame of another class is no curve.
+        let identity = match identity {
+            Some(identity) => Ok(identity),
+            None if curve_class.is_some() => Err(CodecError::malformed(
+                "F3D sketch-curve record has no usable curve identity",
+            )),
+            None => continue,
+        };
+        let Some(((primary_id, secondary_id, geometry_shift, entity_genesis), record_index)) =
+            super::record::recover_frame(
+                identity.and_then(|identity| {
+                    u32::try_from(frame.entity_id)
+                        .map(|record_index| (identity, record_index))
+                        .map_err(|_| {
+                            CodecError::malformed("F3D sketch-curve entity ID exceeds u32")
+                        })
+                }),
+                losses,
+                given_up,
+                F3dLossCode::SketchCurveRecordUndecoded,
+                RecordFrame::new(stream, frame.start, frame.end),
+                format_args!("Sketch curve record {} in {stream}", frame.entity_id),
+            )?
+        else {
+            continue;
+        };
         let parsed_geometry = if let Some(curve_class) = curve_class {
             super::record::recover_partial(
                 decode_sketch_curve_geometry(

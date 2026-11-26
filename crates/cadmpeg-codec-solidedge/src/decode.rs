@@ -52,7 +52,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 Err(error) => {
                     body.losses
                         .extend(cadmpeg_ir::unknown::part::record_given_up(
-                            entry.path(),
+                            cadmpeg_ir::ids::Identity::compose(
+                                &cadmpeg_ir::identity_namespace!(
+                                    "solidedge",
+                                    "container",
+                                    "stream"
+                                ),
+                                cadmpeg_ir::ids::IdentityKey::encode_key_text(entry.path()),
+                            ),
                             SolidEdgeLossCode::PartitionUnreadable
                                 .note(format!("partition stream does not open: {error}")),
                         ));

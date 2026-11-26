@@ -252,7 +252,9 @@ impl<'a> Bundle<'a> {
                             &mut report.parts,
                         )?;
                     } else {
-                        report.notes.extend(record_given_up(path, note));
+                        report
+                            .notes
+                            .extend(record_given_up(source_record(path), note));
                     }
                     omitted.push(path.clone());
                     break;
@@ -278,7 +280,7 @@ impl<'a> Bundle<'a> {
         given_up: &mut Vec<GivenUpPart>,
     ) -> Result<(), CodecError> {
         let Some(entry) = self.snapshot.entry(path) else {
-            losses.extend(record_given_up(path, note));
+            losses.extend(record_given_up(source_record(path), note));
             return Ok(());
         };
         let digest_only = entry.compression == ZipCompression::Stored;
@@ -395,6 +397,15 @@ impl<'a> Bundle<'a> {
         Ok(losses)
     }
 }
+/// The record that names the bundle source `address`, a member path or a
+/// JSON pointer into one, which the document holds as no record.
+pub(crate) fn source_record(address: &str) -> cadmpeg_ir::ids::Identity {
+    cadmpeg_ir::ids::Identity::compose(
+        &cadmpeg_ir::identity_namespace!("onshape", "bundle", "source"),
+        cadmpeg_ir::ids::IdentityKey::encode_key_text(address),
+    )
+}
+
 /// Gives up `entry`, which the bundle omits for the codec loss `note`, as a
 /// part over its stored bytes, or over its directory record where its stored
 /// bytes have no bounded span. `digest_only` keeps only the digest of the
@@ -410,7 +421,7 @@ fn give_up_entry(
     given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(), CodecError> {
     let Some(view) = entry_view(root, entry) else {
-        losses.extend(record_given_up(&entry.name, note));
+        losses.extend(record_given_up(source_record(&entry.name), note));
         return Ok(());
     };
     let mut part = Part::new(

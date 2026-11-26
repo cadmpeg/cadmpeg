@@ -172,7 +172,12 @@ pub(super) fn read(
         let ledger: cadmpeg_ir::report::decode::TransferLedger =
             rescope_home(ctx, &part.body.transfer_ledger, &home)?;
         model.body.transfer_ledger.entries.extend(ledger.entries);
-        model.body.losses.extend(part.body.losses);
+        let mut losses = part.body.losses;
+        for loss in &mut losses {
+            cadmpeg_ir::unknown::part::rescope_give_up(loss, |id| Ok(home.map(id)))
+                .map_err(|e| Error::Decode(e.to_string()))?;
+        }
+        model.body.losses.extend(losses);
         model.body.notes.extend(part.body.notes);
     }
     model.body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(

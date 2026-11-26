@@ -6,9 +6,10 @@ use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 
+use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{
-    dropped_with, record_unreadable_kind, DecodeParts, GivenUpPart, GivenUpRecord, Part,
+    dropped_with, needs, record_unreadable_kind, DecodeParts, GivenUpPart, GivenUpRecord, Part,
 };
 use cadmpeg_ir::{CadIr, SourceFidelity, StreamName};
 
@@ -65,11 +66,11 @@ impl<'a> CardImage<'a> {
     }
 
     /// The stub id of the part of `kind` at `offset`.
-    pub(crate) fn part_id(&self, kind: &'static str, offset: u64) -> Result<String, CodecError> {
+    pub(crate) fn part_id(&self, kind: &'static str, offset: u64) -> Result<Identity, CodecError> {
         Ok(self
             .placed(Part::at("iges", kind, offset, &[], []))
             .id()?
-            .into_string())
+            .into())
     }
 
     fn placed(&self, part: Part<'a>) -> Part<'a> {
@@ -97,7 +98,7 @@ pub(crate) fn give_up_part(
 /// records, for a pass that drops an entity only because it needs one.
 pub(crate) struct GivenUpIds<'a> {
     image: &'a CardImage<'a>,
-    quarantined: BTreeMap<u32, String>,
+    quarantined: BTreeMap<u32, Identity>,
 }
 
 impl<'a> GivenUpIds<'a> {
@@ -125,14 +126,14 @@ impl<'a> GivenUpIds<'a> {
 
     /// The id of `entry`'s entity part: the stub of its give-up, or the id
     /// by which a give-up that drops it names it.
-    fn entity(&self, entry: &DirectoryEntry) -> Result<String, CodecError> {
+    fn entity(&self, entry: &DirectoryEntry) -> Result<Identity, CodecError> {
         self.image.part_id(ENTITY_PART, entry.source_offset)
     }
 
     /// The stub of the quarantined record that keeps the entity of
     /// `sequence` from the projection.
-    fn quarantined(&self, sequence: u32) -> Option<&str> {
-        self.quarantined.get(&sequence).map(String::as_str)
+    fn quarantined(&self, sequence: u32) -> Option<&Identity> {
+        self.quarantined.get(&sequence)
     }
 }
 
@@ -170,11 +171,12 @@ fn push_given_up_loss(
 
 /// The id of the native record of the entity of Directory sequence
 /// `sequence`.
-fn entity_record(sequence: u32) -> String {
-    format!("{ENTITY_RECORD}{sequence}")
+fn entity_record(sequence: u32) -> Identity {
+    Identity::compose(
+        &cadmpeg_ir::identity_namespace!("iges", "entity", "directory"),
+        sequence,
+    )
 }
-
-const ENTITY_RECORD: &str = "iges:entity:directory#";
 
 /// Pushes `why` and the `record.unreadable` that gives up `entry`'s entity.
 /// [`give_up_entities`] makes it the give-up of the entity's part.
@@ -211,10 +213,9 @@ fn give_up_needing(
 /// projection holds no record, and removes the others, and each
 /// `record.dropped-with` note of an entity that the projection holds.
 fn settle_given_up(losses: &mut Vec<LossNote>, decoded: &BTreeSet<u32>) {
-    let with = dropped_with("", "").code;
     let mut charged = BTreeSet::new();
     losses.retain(|loss| {
-        if loss.code == with {
+        if needs(loss).is_some() {
             return entity_tag(loss).is_none_or(|sequence| !decoded.contains(&sequence));
         }
         given_up_entity(loss)
@@ -232,11 +233,9 @@ fn given_up_entity(loss: &LossNote) -> Option<u32> {
 /// The Directory sequence of the entity that a [`give_up_needing`] marker
 /// names as needed.
 fn needed_entity(loss: &LossNote) -> Option<u32> {
-    if loss.code != dropped_with("", "").code {
-        return None;
-    }
-    let (_, needs) = loss.message.split_once(" needs ")?;
-    needs.strip_prefix(ENTITY_RECORD)?.parse().ok()
+    let (_, needed) = needs(loss)?;
+    let directory = needed.as_str().strip_prefix("iges:entity:directory#")?;
+    directory.parse().ok()
 }
 
 fn entity_tag(loss: &LossNote) -> Option<u32> {
@@ -380,11 +379,14 @@ fn settle_needs(
         }
         losses[at] = match settlement {
             Some(Some(with)) if with == needed => {
+                // A needed entity has a stub where the decode gives it up;
+                // a dropped one keeps its native entity record.
                 let needs_id = match ids.quarantined(with) {
-                    Some(stub) => stub.to_owned(),
-                    None => entity_id(with)?,
+                    Some(stub) => stub.clone(),
+                    None if charged.contains(&with) => entity_id(with)?,
+                    None => entity_record(with),
                 };
-                let mut note = dropped_with(entity_id(entity)?, needs_id);
+                let mut note = dropped_with(entity_record(entity), needs_id);
                 note.provenance.clone_from(&losses[at].provenance);
                 note
             }

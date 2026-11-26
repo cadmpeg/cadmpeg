@@ -836,7 +836,10 @@ fn parse_a5_nurbs_curve(
         ),
         refusal,
         format_args!("a5 NURBS curve record at byte {}", frame.pos),
-        format_args!("cgm-a5-nurbs-curve-frame:{:010}", frame.pos),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-nurbs-curve-frame"),
+            frame.pos,
+        ),
     )
     .map(|geometry| A5NurbsCurve {
         pos: frame.pos,
@@ -1912,7 +1915,10 @@ fn a5_surface(
         ),
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
-        format_args!("cgm-a5-surface-frame:{pos:010}"),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-surface-frame"),
+            pos,
+        ),
     );
     if geometry.is_some()
         && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
@@ -2197,7 +2203,10 @@ fn a8_surface_from_parsed(
                 Err(error),
                 refusal,
                 format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
-                format_args!("cgm-surface:{object_id:06x}"),
+                cadmpeg_ir::ids::Identity::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "cgm", "surface"),
+                    object_id,
+                ),
             ))
         }
     };
@@ -2212,7 +2221,10 @@ fn a8_surface_from_parsed(
         ),
         refusal,
         format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
-        format_args!("cgm-surface:{object_id:06x}"),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "surface"),
+            object_id,
+        ),
     )
     .map(|geometry| FreeformSurface {
         pos,

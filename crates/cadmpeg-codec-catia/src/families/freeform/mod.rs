@@ -918,7 +918,10 @@ pub(super) fn try_decode_freeform_surfaces(
                     let code = CatiaLossCode::TopologyB5GraphUnclosed.kind();
                     losses.extend(face_records.into_iter().map(|object_id| {
                         cadmpeg_ir::unknown::part::GivenUpRecord::new(
-                            format_args!("catia:b5:face#{object_id}"),
+                            cadmpeg_ir::ids::Identity::compose(
+                                &cadmpeg_ir::identity_namespace!("catia", "b5", "face"),
+                                object_id,
+                            ),
                             format_args!("{code}: the face/loop/pcurve/edge graph did not close"),
                         )
                         .loss()

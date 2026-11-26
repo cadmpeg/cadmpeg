@@ -653,6 +653,7 @@ pub(super) fn decode(
     // the commit session after releasing the immutable geometry borrow.
     let mut root_outcomes = BTreeMap::new();
     let seed_cache = std::cell::RefCell::new(PcurveSeedCache::default());
+    let mut failed_roots = Vec::new();
     {
         let index = (!decoded_pcurves.is_empty())
             .then(|| ModelIndex::new_model_only(commit_session.document()));
@@ -763,22 +764,7 @@ pub(super) fn decode(
             result
                 .losses
                 .extend(super::give_up_instance(exchange, id, why));
-            for shell in root_shell_steps(record, exchange, &shells)
-                .into_iter()
-                .flatten()
-            {
-                let (named, faces) = shell_members(shell, exchange, &shells);
-                for shell in named {
-                    exchange.lost().drop_with(shell, id);
-                }
-                let held = &commit_session.document().geometry.faces;
-                for face in faces {
-                    let record = ids::data(kind!("face"), face);
-                    if !held.iter().any(|held| held.id.as_str() == record.as_str()) {
-                        exchange.lost().drop_record_with(face, record.as_str(), id);
-                    }
-                }
-            }
+            failed_roots.push((id, record));
         } else {
             let copies = body_ids.clone();
             result.body_by_root.insert(id, copies);
@@ -805,6 +791,29 @@ pub(super) fn decode(
                 .chain(rejected)
             {
                 exchange.lost().give_up(shell, "unresolved shell");
+            }
+        }
+    }
+    // A shell or face of a failed root that another root built stays in
+    // the document, so only the members no root holds drop with the root.
+    let held = &commit_session.document().geometry.faces;
+    for (id, record) in failed_roots {
+        for shell in root_shell_steps(record, exchange, &shells)
+            .into_iter()
+            .flatten()
+        {
+            let (named, faces) = shell_members(shell, exchange, &shells);
+            for shell in named {
+                if !result.body_by_shell.contains_key(&shell) {
+                    let record = shell_identity(id, shell, scope_distinct_roots);
+                    exchange.lost().drop_record_with(shell, record.into(), id);
+                }
+            }
+            for face in faces {
+                let record = ids::data(kind!("face"), face);
+                if !held.iter().any(|held| held.id.as_str() == record.as_str()) {
+                    exchange.lost().drop_record_with(face, record, id);
+                }
             }
         }
     }

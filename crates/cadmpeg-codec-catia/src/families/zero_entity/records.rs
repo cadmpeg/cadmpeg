@@ -2309,7 +2309,10 @@ fn zero_entity_nurbs_surface(
         ),
         refusal,
         format_args!("zero-entity NURBS surface record at byte {record}"),
-        format_args!("cgm-zero-entity-nurbs-surface-frame:{record:010}"),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "zero-entity-nurbs-surface-frame"),
+            record,
+        ),
     )
     .map(|surface| SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)))
 }

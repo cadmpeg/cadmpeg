@@ -182,19 +182,28 @@ impl DroppedRecord {
         }
     }
 
-    fn loss(self) -> cadmpeg_ir::report::loss::LossNote {
-        match self {
+    fn loss(self) -> Result<cadmpeg_ir::report::loss::LossNote, cadmpeg_core::CodecError> {
+        use cadmpeg_ir::ids::Identity;
+        Ok(match self {
             Self::GivenUp {
                 record,
                 at,
                 error,
                 dropping,
-            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(record, error)
+            } => cadmpeg_ir::unknown::part::GivenUpRecord::new(Identity::new(record)?, error)
                 .at(at)
-                .dropping(dropping)
+                .dropping(
+                    dropping
+                        .into_iter()
+                        .map(Identity::new)
+                        .collect::<Result<Vec<_>, _>>()?,
+                )
                 .loss(),
-            Self::With { record, needs } => cadmpeg_ir::unknown::part::dropped_with(record, needs),
-        }
+            Self::With { record, needs } => cadmpeg_ir::unknown::part::dropped_with(
+                Identity::new(record)?,
+                Identity::new(needs)?,
+            ),
+        })
     }
 }
 
@@ -214,14 +223,14 @@ pub(crate) struct OwnedFaceColor {
 
 impl Brep {
     /// The losses of the decode: its notes, then one loss per dropped record.
-    pub(crate) fn take_losses(&mut self) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    pub(crate) fn take_losses(
+        &mut self,
+    ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
         let mut losses = std::mem::take(&mut self.losses);
-        losses.extend(
-            std::mem::take(&mut self.dropped)
-                .into_iter()
-                .map(DroppedRecord::loss),
-        );
-        losses
+        for dropped in std::mem::take(&mut self.dropped) {
+            losses.push(dropped.loss()?);
+        }
+        Ok(losses)
     }
 
     pub(crate) fn neutral_entity_count(&self) -> Result<u64, cadmpeg_core::CodecError> {

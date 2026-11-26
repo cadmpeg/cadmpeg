@@ -200,7 +200,7 @@ fn decode_two_curves(
 }
 
 #[test]
-fn a_record_without_a_usable_curve_identity_is_no_sketch_curve() {
+fn a_curve_record_without_a_usable_curve_identity_gives_up_its_frame() {
     let damages: [fn(&mut Vec<u8>); 2] = [|bytes| bytes[29] = b'x', |bytes| bytes[70..78].fill(0)];
     for damage in damages {
         let mut bytes = curve_record(41);
@@ -215,8 +215,17 @@ fn a_record_without_a_usable_curve_identity_is_no_sketch_curve() {
                 .collect::<Vec<_>>(),
             [42]
         );
-        assert!(losses.is_empty());
-        assert!(given_up.is_empty());
+        assert_eq!(
+            crate::test_support::loss_codes(&losses),
+            [crate::loss::F3dLossCode::SketchCurveRecordUndecoded.kind()]
+        );
+        assert_eq!(
+            given_up
+                .iter()
+                .map(crate::design::decode::record::GivenUpFrame::span)
+                .collect::<Vec<_>>(),
+            [("Design/BulkStream.dat", 0..sibling_start)]
+        );
     }
 }
 

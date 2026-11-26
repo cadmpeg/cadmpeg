@@ -419,7 +419,8 @@ fn a_sheet_whose_view_link_is_given_up_is_dropped_with_that_record() -> TestResu
     let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
     assert!(losses.iter().all(|loss| loss.code != unreadable));
     assert!(losses.contains(&cadmpeg_ir::unknown::part::dropped_with(
-        &sheet.id, given_up
+        cadmpeg_ir::ids::Identity::new(&sheet.id)?,
+        cadmpeg_ir::ids::Identity::new(given_up)?,
     )));
     Ok(())
 }

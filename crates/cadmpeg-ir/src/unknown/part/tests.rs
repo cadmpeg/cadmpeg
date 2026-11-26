@@ -501,7 +501,10 @@ fn a_record_given_up_whole_is_refused_by_a_pinned_decode_through_record_unreadab
     )
     .with_severity(Severity::Warning)
     .with_provenance(SourceProvenance::root("step", 40));
-    let [codec, unreadable] = super::record_given_up("#12", why.clone());
+    let [codec, unreadable] = super::record_given_up(
+        Identity::new("step:data:shell#12").expect("an id"),
+        why.clone(),
+    );
     assert_eq!(codec, why);
     assert_eq!(unreadable.code, super::record_unreadable_kind());
     assert_eq!(unreadable.severity, Severity::Error);
@@ -509,10 +512,10 @@ fn a_record_given_up_whole_is_refused_by_a_pinned_decode_through_record_unreadab
     assert!(unreadable
         .message
         .split_whitespace()
-        .any(|token| token == "#12"));
+        .any(|token| token == "step:data:shell#12"));
     assert_eq!(
         unreadable.message,
-        "record #12 stream=\"\" offset=40 given up: step/topology.root-rejected: \
+        "record step:data:shell#12 stream=\"\" offset=40 given up: step/topology.root-rejected: \
          STEP topology root #12 rejected; dropped=[]"
     );
     let pinned = Strictness {
@@ -529,47 +532,63 @@ fn a_record_given_up_names_its_span_and_the_sorted_records_dropped_with_it() {
     use crate::provenance::{SourceProvenance, StreamName};
 
     let stream = StreamName::try_from("Body".to_owned()).expect("stream");
-    let loss = super::GivenUpRecord::new("rec:7", "carrier unsupported")
+    let id = |text: &str| Identity::new(text).expect("an id");
+    let loss = super::GivenUpRecord::new(id("t:r:rec#7"), "carrier unsupported")
         .at(SourceProvenance::in_stream("nx", stream, 96))
         .spanning(24)
-        .dropping(["rec:9", "rec:8", "rec:9"])
+        .dropping([id("t:r:rec#9"), id("t:r:rec#8"), id("t:r:rec#9")])
         .loss();
     assert_eq!(loss.code, super::record_unreadable_kind());
     assert_eq!(loss.severity, Severity::Error);
     assert_eq!(
         loss.message,
-        "record rec:7 stream=\"Body\" offset=96 length=24 given up: carrier unsupported; \
-         dropped=[rec:8, rec:9]"
+        "record t:r:rec#7 stream=\"Body\" offset=96 length=24 given up: carrier unsupported; \
+         dropped=[t:r:rec#8, t:r:rec#9]"
     );
     assert_eq!(
-        super::GivenUpRecord::new("rec:7", "carrier unsupported")
+        super::GivenUpRecord::new(id("t:r:rec#7"), "carrier unsupported")
             .loss()
             .message,
-        "record rec:7 given up: carrier unsupported; dropped=[]"
+        "record t:r:rec#7 given up: carrier unsupported; dropped=[]"
     );
 }
 
 #[test]
 fn a_tail_gains_the_wrapper_s_dropped_and_marked_records_in_order() {
-    let mut text = "part blob \"b\" stream=\"s\" offset=0 length=1 record=t:source:part#a: bad; \
-                    dropped=[t:b#2]; marked=[t:m#1]; lost=[t:x entry 0]"
-        .to_owned();
-    assert_eq!(super::given_up_id(&text), Some("t:source:part#a"));
-    super::extend_tail(
-        &mut text,
-        ["t:b#1".to_owned(), "t:b#2".to_owned()],
-        ["t:m#0".to_owned()],
-        ["delta of s: dropped=[t:d#1]; marked=[]".to_owned()],
+    let id = |text: &str| Identity::new(text).expect("an id");
+    let mut loss = super::GivenUpRecord::new(id("t:r:rec#1"), "bad")
+        .dropping([id("t:b:rec#2")])
+        .loss();
+    loss.message.insert_str(0, "prefix: ");
+    super::name_released(
+        &mut loss,
+        ["t:b:rec#1".to_owned(), "t:b:rec#2".to_owned()],
+        ["t:m:rec#0".to_owned()],
+        ["delta of s: dropped=[t:d:rec#1]; marked=[]".to_owned()],
     );
     assert_eq!(
-        text,
-        "part blob \"b\" stream=\"s\" offset=0 length=1 record=t:source:part#a: bad; \
-         dropped=[t:b#1, t:b#2]; marked=[t:m#0, t:m#1]; delta of s: dropped=[t:d#1]; \
-         marked=[]; lost=[t:x entry 0]"
+        loss.message,
+        "prefix: record t:r:rec#1 given up: bad; dropped=[t:b:rec#1, t:b:rec#2]; \
+         marked=[t:m:rec#0]; delta of s: dropped=[t:d:rec#1]; marked=[]"
+    );
+    let (named, dropped) = super::charged(&loss).expect("a charge");
+    assert_eq!(named.as_str(), "t:r:rec#1");
+    assert_eq!(dropped, ["t:b:rec#1", "t:b:rec#2"]);
+
+    super::rescope_give_up(&mut loss, |text| Ok(text.replace(":rec#", ":rec#s/"))).unwrap();
+    assert_eq!(
+        loss.message,
+        "prefix: record t:r:rec#s/1 given up: bad; dropped=[t:b:rec#s/1, t:b:rec#s/2]; \
+         marked=[t:m:rec#s/0]; delta of s: dropped=[t:d:rec#1]; marked=[]"
     );
 
-    let mut record = "record t:r#1 given up: bad".to_owned();
-    super::extend_tail(&mut record, ["t:b#1".to_owned()], [], []);
-    assert_eq!(record, "record t:r#1 given up: bad; dropped=[t:b#1]");
-    assert_eq!(super::dropped_ids(&record), ["t:b#1"]);
+    let mut note = super::dropped_with(id("t:a:rec#1"), id("t:r:rec#1"));
+    assert!(super::needs(&note).is_some());
+    super::rescope_give_up(&mut note, |text| Ok(format!("{text}/s"))).unwrap();
+    assert_eq!(note.message, "record t:a:rec#1/s needs t:r:rec#1/s");
+    let (record, needs) = super::needs(&note).expect("a note");
+    assert_eq!(
+        (record.as_str(), needs.as_str()),
+        ("t:a:rec#1/s", "t:r:rec#1/s")
+    );
 }

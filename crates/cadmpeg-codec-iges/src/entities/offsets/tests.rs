@@ -775,19 +775,6 @@ fn dropped_ids(message: &str) -> Vec<&str> {
         })
 }
 
-/// The id by which a give-up names the entity whose Directory Entry pair is
-/// the `sequence`th Directory card of `bytes`.
-fn entity_part(bytes: &[u8], sequence: usize) -> String {
-    let first = bytes
-        .chunks_exact(81)
-        .position(|line| line[72] == b'D')
-        .unwrap();
-    let offset = u64::try_from((first + sequence - 1) * 81).unwrap();
-    crate::entities::CardImage::new(bytes, crate::representation::Representation::FixedAscii)
-        .part_id("entity", offset)
-        .unwrap()
-}
-
 #[test]
 fn an_offset_of_a_given_up_source_is_dropped_with_the_source() {
     let bytes = offset_file_with_source(
@@ -795,7 +782,6 @@ fn an_offset_of_a_given_up_source_is_dropped_with_the_source() {
         b"100,0,0,0,2,0,0,3;",
         b"130,1,1,0,,,0.5,,,,0,0,1,0,1.5707963267948966;",
     );
-    let offset = entity_part(&bytes, 3);
 
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -810,7 +796,7 @@ fn an_offset_of_a_given_up_source_is_dropped_with_the_source() {
     assert_eq!(given_up.len(), 1, "{given_up:#?}");
     crate::test_support::assert_given_up(given_up[0], ("entity", 1));
     assert!(
-        dropped_ids(&given_up[0].message).contains(&offset.as_str()),
+        dropped_ids(&given_up[0].message).contains(&"iges:entity:directory#3"),
         "{}",
         given_up[0].message
     );
@@ -818,7 +804,7 @@ fn an_offset_of_a_given_up_source_is_dropped_with_the_source() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == cadmpeg_ir::unknown::part::dropped_with("", "").code));
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
     assert!(result.ir().geometry.curves.is_empty());
 }
 

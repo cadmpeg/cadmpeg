@@ -1516,7 +1516,10 @@ fn parse_list(
                         "{kind} view record at offset {child_offset} could not be framed: {error}"
                     ),
                 );
-                losses.extend(record_given_up(view_record_id(list_kind, index), loss));
+                losses.extend(record_given_up(
+                    cadmpeg_ir::ids::Identity::new(view_record_id(list_kind, index))?,
+                    loss,
+                ));
                 break;
             }
         };

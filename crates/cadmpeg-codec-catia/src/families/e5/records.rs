@@ -776,7 +776,10 @@ fn e5_nurbs_surface(
         ),
         refusal,
         format_args!("e5 NURBS surface record at byte {}", record.pos),
-        format_args!("cgm-e5-nurbs-surface-frame:{:010}", record.pos),
+        cadmpeg_ir::ids::Identity::compose(
+            &cadmpeg_ir::identity_namespace!("catia", "cgm", "e5-nurbs-surface-frame"),
+            record.pos,
+        ),
     )
     .map(SolvedSurfaceGeometry::Nurbs)
     .map(SurfaceGeometry::Solved))

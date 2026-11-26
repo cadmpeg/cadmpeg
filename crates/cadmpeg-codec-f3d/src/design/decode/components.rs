@@ -130,7 +130,7 @@ pub(crate) fn decode_component_occurrences(
             &source_entities,
             &primary,
             &typed_primary,
-        );
+        )?;
         let mut stream_occurrences = admitted.occurrences;
         let unread = typed_frames
             .iter()
@@ -194,7 +194,7 @@ fn admitted_stream_occurrences(
     source_entities: &std::collections::BTreeSet<u64>,
     primary: &std::collections::BTreeSet<(u64, u64)>,
     typed_primary: &std::collections::BTreeSet<(u64, u64)>,
-) -> AdmittedOccurrences {
+) -> Result<AdmittedOccurrences, CodecError> {
     let DiscoveredOccurrences {
         mut occurrences,
         unproven,
@@ -204,23 +204,28 @@ fn admitted_stream_occurrences(
         .chain(&unproven)
         .map(occurrence_key)
         .collect();
-    let mut losses = unproven
-        .iter()
-        .filter_map(|occurrence| {
-            unproven_identity_loss(occurrence).map(|why| {
-                let why = match frame_at(stream, occurrence.byte_offset()) {
-                    Some(at) => why.with_provenance(at),
-                    None => why,
-                };
-                record_given_up(&occurrence.id, why)
-            })
-        })
-        .flatten()
-        .collect::<Vec<_>>();
+    let mut losses = Vec::new();
+    for occurrence in &unproven {
+        let Some(why) = unproven_identity_loss(occurrence) else {
+            continue;
+        };
+        let why = match frame_at(stream, occurrence.byte_offset()) {
+            Some(at) => why.with_provenance(at),
+            None => why,
+        };
+        losses.extend(record_given_up(
+            cadmpeg_ir::ids::Identity::new(&occurrence.id)?,
+            why,
+        ));
+    }
     let superseded = admit_occurrence_envelopes(&mut occurrences, primary, typed_primary);
-    losses.extend(drop_class_256_first_matrices(&mut occurrences, stream));
-    losses.extend(yield_to_registered(&mut occurrences, typed_primary, stream));
-    losses.extend(drop_repeated_occurrence_keys(&mut occurrences, stream));
+    losses.extend(drop_class_256_first_matrices(&mut occurrences, stream)?);
+    losses.extend(yield_to_registered(
+        &mut occurrences,
+        typed_primary,
+        stream,
+    )?);
+    losses.extend(drop_repeated_occurrence_keys(&mut occurrences, stream)?);
     // A readable frame projects even when its source registration
     // disagrees; the loss names that assumption.
     losses.extend(
@@ -229,12 +234,12 @@ fn admitted_stream_occurrences(
             .filter_map(|occurrence| unregistered_source_loss(occurrence, source_entities)),
     );
     losses.extend(unregistered_leading_flag_loss(&occurrences, typed_primary));
-    AdmittedOccurrences {
+    Ok(AdmittedOccurrences {
         occurrences,
         recognized,
         losses,
         superseded,
-    }
+    })
 }
 
 /// The occurrence frames of one Design stream.
@@ -523,16 +528,17 @@ fn given_up_frames(
     why: cadmpeg_ir::report::loss::LossNote,
     stream: &str,
     dropped: &[(String, u64)],
-) -> Vec<cadmpeg_ir::report::loss::LossNote> {
-    let unreadable = dropped
-        .iter()
-        .map(|(id, offset)| {
-            GivenUpRecord::caused_by(id, &why)
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    for (id, offset) in dropped {
+        losses.push(
+            GivenUpRecord::caused_by(cadmpeg_ir::ids::Identity::new(id)?, &why)
                 .at(frame_at(stream, *offset))
-                .loss()
-        })
-        .collect::<Vec<_>>();
-    std::iter::once(why).chain(unreadable).collect()
+                .loss(),
+        );
+    }
+    losses.insert(0, why);
+    Ok(losses)
 }
 
 /// Drop every frame that a class-256 carrier stores with a matrix at ordinal
@@ -540,7 +546,7 @@ fn given_up_frames(
 fn drop_class_256_first_matrices(
     occurrences: &mut Vec<DesignComponentOccurrence>,
     stream: &str,
-) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let mut dropped = Vec::new();
     occurrences.retain(|occurrence| {
         let refused = occurrence.is_class_256_first_matrix();
@@ -550,7 +556,7 @@ fn drop_class_256_first_matrices(
         !refused
     });
     if dropped.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     given_up_frames(
         crate::loss::F3dLossCode::LocalOccurrenceFirstMatrixRefused.note(format!(
@@ -570,7 +576,7 @@ fn yield_to_registered(
     occurrences: &mut Vec<DesignComponentOccurrence>,
     typed_primary: &std::collections::BTreeSet<(u64, u64)>,
     stream: &str,
-) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let guid = |occurrence: &DesignComponentOccurrence| {
         occurrence.occurrence_guid.as_str().to_ascii_lowercase()
     };
@@ -589,7 +595,7 @@ fn yield_to_registered(
         !yields
     });
     if yielded.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     given_up_frames(
         crate::loss::F3dLossCode::LocalOccurrenceYieldedToRegistered.note(format!(
@@ -607,7 +613,7 @@ fn yield_to_registered(
 fn drop_repeated_occurrence_keys(
     occurrences: &mut Vec<DesignComponentOccurrence>,
     stream: &str,
-) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let key = |occurrence: &DesignComponentOccurrence| {
         occurrence.occurrence_guid.as_str().to_ascii_lowercase()
     };
@@ -624,7 +630,7 @@ fn drop_repeated_occurrence_keys(
         !repeated
     });
     if dropped.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     given_up_frames(
         crate::loss::F3dLossCode::LocalOccurrenceKeyRepeated.note(format!(
@@ -2157,6 +2163,7 @@ mod tests {
                     &std::collections::BTreeSet::from([(20, 0)]),
                     &std::collections::BTreeSet::new(),
                 )
+                .unwrap()
             });
             (admitted.occurrences, admitted.losses)
         };
@@ -2202,6 +2209,7 @@ mod tests {
                 &std::collections::BTreeSet::from([(20, 0), (21, second)]),
                 &std::collections::BTreeSet::from([(21, second)]),
             )
+            .unwrap()
         });
         assert_eq!(admitted.occurrences.len(), 1);
         assert_eq!(admitted.occurrences[0].byte_offset(), second);

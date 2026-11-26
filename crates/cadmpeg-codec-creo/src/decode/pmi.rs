@@ -348,13 +348,15 @@ pub(super) fn transfer(
         losses.push(CreoLossCode::PmiRecordUnresolved.note(format!("{unresolved} geometric-tolerance attribute owner(s) have an unresolved or ambiguous type, value, or annotation-element join.")));
     }
     let code = CreoLossCode::PmiRecordUnresolved.kind();
-    losses.extend(unformed.iter().map(|record| {
-        GivenUpRecord::new(
-            record,
-            format_args!("{code}: the geometric-tolerance attributes form no PMI record"),
-        )
-        .loss()
-    }));
+    for record in &unformed {
+        losses.push(
+            GivenUpRecord::new(
+                cadmpeg_ir::ids::Identity::new(record)?,
+                format_args!("{code}: the geometric-tolerance attributes form no PMI record"),
+            )
+            .loss(),
+        );
+    }
     for (rows, what) in [
         (&ownerless_tolerances, "geometric-tolerance type"),
         (&ownerless_dimensions, "dimensional"),

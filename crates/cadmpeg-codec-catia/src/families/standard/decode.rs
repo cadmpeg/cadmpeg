@@ -1938,6 +1938,9 @@ fn try_decode_standard_populations(
                     .map(|token| rescope_standard_id(token, &scope))
                     .collect::<Vec<_>>()
                     .join(" ");
+                cadmpeg_ir::unknown::part::map_give_up(&mut loss, |id| {
+                    Ok(rescope_standard_id(id, &scope))
+                })?;
                 merged.report.losses.push(loss);
             }
         }
@@ -2682,12 +2685,12 @@ fn try_decode_standard_population(
         Err(StandardTopologyError::Codec(error)) => return Some(Err(error)),
     };
     let topology_attached = topology_failure.is_none();
-    let given_up_faces: Vec<String> = match topology_failure {
+    let given_up_faces: Vec<cadmpeg_ir::ids::FaceId> = match topology_failure {
         Some(_) => topology_ir
             .geometry
             .faces
             .iter()
-            .map(|face| face.id.as_str().to_owned())
+            .map(|face| face.id.clone())
             .collect(),
         None => Vec::new(),
     };
@@ -2857,7 +2860,7 @@ scan,
 topology_failure.map(StandardTopologyFailure::message));
     if let Some(failure) = topology_failure {
         let code = CatiaLossCode::TopologyBoundaryGraphNotEmitted.kind();
-        report.losses.extend(given_up_faces.iter().map(|face| {
+        report.losses.extend(given_up_faces.into_iter().map(|face| {
             cadmpeg_ir::unknown::part::GivenUpRecord::new(
                 face,
                 format_args!("{code}: {}", failure.message()),

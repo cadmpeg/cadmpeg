@@ -42,7 +42,7 @@ pub fn record_unreadable_kind() -> LossKind {
 #[derive(Debug, Clone)]
 #[must_use]
 pub struct GivenUpRecord {
-    record: String,
+    record: Identity,
     error: String,
     provenance: Option<SourceProvenance>,
     length: Option<u64>,
@@ -51,9 +51,9 @@ pub struct GivenUpRecord {
 
 impl GivenUpRecord {
     /// The record whose id is `record`, dropped for `error`.
-    pub fn new(record: impl std::fmt::Display, error: impl std::fmt::Display) -> Self {
+    pub fn new(record: impl Into<Identity>, error: impl std::fmt::Display) -> Self {
         Self {
-            record: record.to_string(),
+            record: record.into(),
             error: error.to_string(),
             provenance: None,
             length: None,
@@ -63,7 +63,7 @@ impl GivenUpRecord {
 
     /// The record whose id is `record`, dropped for the codec loss `why`:
     /// the error text is `why`'s code and message, at `why`'s provenance.
-    pub fn caused_by(record: impl std::fmt::Display, why: &LossNote) -> Self {
+    pub fn caused_by(record: impl Into<Identity>, why: &LossNote) -> Self {
         Self::new(record, format_args!("{}: {}", why.code, why.message)).at(why.provenance.clone())
     }
 
@@ -83,11 +83,13 @@ impl GivenUpRecord {
     pub fn dropping<I>(mut self, records: I) -> Self
     where
         I: IntoIterator,
-        I::Item: std::fmt::Display,
+        I::Item: Into<Identity>,
     {
         join_sorted(
             &mut self.dropped,
-            records.into_iter().map(|record| record.to_string()),
+            records
+                .into_iter()
+                .map(|record| record.into().into_string()),
         );
         self
     }
@@ -112,8 +114,7 @@ impl GivenUpRecord {
             dropped: self.dropped,
             ..Tail::default()
         };
-        let loss = LossNote::new(record_unreadable_kind(), message(&head, Some(&tail)))
-            .with_severity(Severity::Error);
+        let loss = charge(&head, self.record, tail).with_severity(Severity::Error);
         match self.provenance {
             Some(provenance) => loss.with_provenance(provenance),
             None => loss,
@@ -121,11 +122,32 @@ impl GivenUpRecord {
     }
 }
 
+/// The `record.unreadable` that names `named` given up: `head`, then the
+/// lists of `tail`, with the ids it carries for the decode wrapper.
+fn charge(head: &str, named: Identity, tail: Tail) -> LossNote {
+    let mut loss = LossNote::new(record_unreadable_kind(), message(head, Some(&tail)));
+    loss.give_up = Some(Box::new(GiveUpIds::Charge { named, tail }));
+    loss
+}
+
+/// The ids of a give-up that its loss carries, from which the decode
+/// wrapper names the records dropped with each give-up (§3.3). The report's
+/// wire form leaves them out: its text states them.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum GiveUpIds {
+    /// A `record.unreadable`: the given-up record or stub, and the lists
+    /// the text names after its head.
+    Charge { named: Identity, tail: Tail },
+    /// A `record.dropped-with` note: `record` is dropped only because it
+    /// needs `needs`.
+    Needs { record: Identity, needs: Identity },
+}
+
 /// The losses of a record a decoder drops whole for the codec loss `why`:
 /// `why`, then the `record.unreadable` of [`GivenUpRecord::caused_by`],
 /// which names the record by its id `record`.
 #[must_use]
-pub fn record_given_up(record: impl std::fmt::Display, why: LossNote) -> [LossNote; 2] {
+pub fn record_given_up(record: impl Into<Identity>, why: LossNote) -> [LossNote; 2] {
     let unreadable = GivenUpRecord::caused_by(record, &why).loss();
     [why, unreadable]
 }
@@ -135,101 +157,132 @@ pub fn record_given_up(record: impl std::fmt::Display, why: LossNote) -> [LossNo
 /// names as dropped. The decode wrapper names `record` among the records
 /// that give-up drops, and removes the note (CADIR §3.3).
 #[must_use]
-pub fn dropped_with(record: impl std::fmt::Display, needs: impl std::fmt::Display) -> LossNote {
-    crate::codec::loss::DecodeLossCode::RecordDroppedWith
-        .note(format!("record {record} needs {needs}"))
+pub fn dropped_with(record: impl Into<Identity>, needs: impl Into<Identity>) -> LossNote {
+    let (record, needs) = (record.into(), needs.into());
+    let mut note = crate::codec::loss::DecodeLossCode::RecordDroppedWith
+        .note(format!("record {record} needs {needs}"));
+    note.give_up = Some(Box::new(GiveUpIds::Needs { record, needs }));
+    note
 }
 
-/// The record and the record it needs that a [`dropped_with`] note names.
-pub(crate) fn dropped_with_ids(message: &str) -> Option<(&str, &str)> {
-    let mut words = message.split_whitespace();
-    match (
-        words.next(),
-        words.next(),
-        words.next(),
-        words.next(),
-        words.next(),
-    ) {
-        (Some("record"), Some(record), Some("needs"), Some(needs), None) => Some((record, needs)),
+/// Maps each id the give-up `loss` carries through `map`, and restates its
+/// text to match, as when a decoder composing several documents rescopes one
+/// document's records before the decode wrapper names what each give-up
+/// drops. A loss that carries no ids is unchanged.
+///
+/// # Errors
+///
+/// [`CodecError::Malformed`] when `map` returns text that is no id, or the
+/// error `map` returns.
+pub fn rescope_give_up(
+    loss: &mut LossNote,
+    map: impl FnMut(&str) -> Result<String, CodecError>,
+) -> Result<(), CodecError> {
+    let Some((old_head, old_tail)) = loss.give_up.as_deref().map(give_up_text) else {
+        return Ok(());
+    };
+    map_give_up(loss, map)?;
+    if let Some((head, tail)) = loss.give_up.as_deref().map(give_up_text) {
+        loss.message = loss
+            .message
+            .strip_suffix(&old_tail)
+            .unwrap_or(&loss.message)
+            .replacen(&old_head, &head, 1)
+            + &tail;
+    }
+    Ok(())
+}
+
+/// Maps each id the give-up `loss` carries through `map`, and leaves its
+/// text as it is, as when a decoder restates the whole text with the same
+/// map.
+///
+/// # Errors
+///
+/// [`CodecError::Malformed`] when `map` returns text that is no id, or the
+/// error `map` returns.
+pub fn map_give_up(
+    loss: &mut LossNote,
+    mut map: impl FnMut(&str) -> Result<String, CodecError>,
+) -> Result<(), CodecError> {
+    let mut id = |id: &str| {
+        Identity::new(map(id)?).map_err(|error| CodecError::malformed(format_args!("{error}")))
+    };
+    match loss.give_up.as_deref_mut() {
+        None => {}
+        Some(GiveUpIds::Needs { record, needs }) => {
+            *record = id(record.as_str())?;
+            *needs = id(needs.as_str())?;
+        }
+        Some(GiveUpIds::Charge { named, tail }) => {
+            *named = id(named.as_str())?;
+            for list in [&mut tail.dropped].into_iter().chain(tail.marked.as_mut()) {
+                let mapped = list
+                    .iter()
+                    .map(|entry| id(entry).map(Identity::into_string))
+                    .collect::<Result<Vec<_>, _>>()?;
+                list.clear();
+                join_sorted(list, mapped);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The text that names the ids of `ids` at the head of its message, and
+/// the text of the list that ends it.
+fn give_up_text(ids: &GiveUpIds) -> (String, String) {
+    match ids {
+        GiveUpIds::Needs { record, needs } => {
+            (format!("record {record} needs {needs}"), String::new())
+        }
+        GiveUpIds::Charge { named, tail } => (named.as_str().to_owned(), tail_text(tail)),
+    }
+}
+
+/// The given-up record or stub the `record.unreadable` `loss` names, and the
+/// records it names dropped, where `loss` carries them.
+pub(crate) fn charged(loss: &LossNote) -> Option<(&Identity, &[String])> {
+    match loss.give_up.as_deref() {
+        Some(GiveUpIds::Charge { named, tail }) => Some((named, &tail.dropped)),
         _ => None,
     }
 }
 
-/// The id a `record.unreadable` message names: the record of a record
-/// give-up, or the stub of a part. Ids hold no whitespace (CADIR §2.2).
-pub(crate) fn given_up_id(message: &str) -> Option<&str> {
-    if let Some(rest) = message.strip_prefix("record ") {
-        return rest.split_whitespace().next();
+/// The record a [`dropped_with`] note drops and the record it needs.
+#[must_use]
+pub fn needs(loss: &LossNote) -> Option<(&Identity, &Identity)> {
+    match loss.give_up.as_deref() {
+        Some(GiveUpIds::Needs { record, needs }) => Some((record, needs)),
+        _ => None,
     }
-    let (_, rest) = message.strip_prefix("part ")?.split_once(" record=")?;
-    rest.split_whitespace().next()?.strip_suffix(':')
 }
 
-/// The ids of the `dropped=[..]` list of a `record.unreadable` message.
-pub(crate) fn dropped_ids(message: &str) -> Vec<&str> {
-    list_at(message, DROPPED).map_or_else(Vec::new, |(start, end)| {
-        message[start..end]
-            .split(", ")
-            .filter(|id| !id.is_empty())
-            .collect()
-    })
-}
-
-const DROPPED: &str = "; dropped=[";
-const MARKED: &str = "; marked=[";
-
-/// The bounds of the list that `field` opens in the tail of `message`.
-fn list_at(message: &str, field: &str) -> Option<(usize, usize)> {
-    let start = message.rfind(field)? + field.len();
-    let end = start + message[start..].find(']')?;
-    Some((start, end))
-}
-
-/// Adds to the tail of the `record.unreadable` message `text` the records
-/// `dropped` and `marked`, and the `stated` outcome of each stored state, in
-/// the order [`message`] writes them.
-pub(crate) fn extend_tail(
-    text: &mut String,
+/// Adds to the `record.unreadable` `loss` the records `dropped` and
+/// `marked`, and the `stated` outcome of each stored state, and restates its
+/// tail. A loss that carries no give-up is unchanged.
+pub(crate) fn name_released(
+    loss: &mut LossNote,
     dropped: impl IntoIterator<Item = String>,
     marked: impl IntoIterator<Item = String>,
     stated: impl IntoIterator<Item = String>,
 ) {
-    let mut ids = dropped_ids(text)
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    join_sorted(&mut ids, dropped);
-    let (head, mut rest) = match list_at(text, DROPPED) {
-        Some((start, end)) => (
-            text[..start - DROPPED.len()].to_owned(),
-            text[end + 1..].to_owned(),
-        ),
-        None => (std::mem::take(text), String::new()),
+    let Some(GiveUpIds::Charge { tail, .. }) = loss.give_up.as_deref_mut() else {
+        return;
     };
-    let mut marks = Vec::new();
-    if let Some(list) = rest
-        .strip_prefix(MARKED)
-        .and_then(|list| list.find(']').map(|end| (list, end)))
-        .map(|(list, end)| (list[..end].to_owned(), list[end + 1..].to_owned()))
-    {
-        marks.extend(
-            list.0
-                .split(", ")
-                .filter(|id| !id.is_empty())
-                .map(str::to_owned),
-        );
-        rest = list.1;
+    let old = tail_text(tail);
+    join_sorted(&mut tail.dropped, dropped);
+    let marked = marked.into_iter().collect::<Vec<_>>();
+    if !marked.is_empty() {
+        join_sorted(tail.marked.get_or_insert_with(Vec::new), marked);
     }
-    join_sorted(&mut marks, marked);
-    let stated = stated.into_iter().collect::<Vec<_>>();
-    let tail = Tail {
-        dropped: ids,
-        marked: (!marks.is_empty()).then_some(marks),
-        stated,
-        lost: Vec::new(),
-    };
-    *text = message(&head, Some(&tail));
-    text.push_str(&rest);
+    tail.stated.extend(stated);
+    let head_len = loss
+        .message
+        .strip_suffix(&old)
+        .map_or(loss.message.len(), str::len);
+    loss.message.truncate(head_len);
+    loss.message.push_str(&tail_text(tail));
 }
 
 /// One part as its decoder names it before reading it.
@@ -421,8 +474,8 @@ pub struct GivenUpPart {
 
 /// The records a give-up drops and marks and the entries it loses, which
 /// its loss names after the head.
-#[derive(Debug, Clone, Default)]
-struct Tail {
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct Tail {
     dropped: Vec<String>,
     marked: Option<Vec<String>>,
     /// The outcome of each stored state that the release changed.
@@ -432,25 +485,31 @@ struct Tail {
 
 /// The loss message of a part: `head`, then the lists of `tail`.
 fn message(head: &str, tail: Option<&Tail>) -> String {
-    let Some(tail) = tail else {
-        return head.to_owned();
-    };
-    let mut message = format!("{head}; dropped=[{}]", tail.dropped.join(", "));
-    if let Some(marked) = &tail.marked {
-        message.push_str("; marked=[");
-        message.push_str(&marked.join(", "));
-        message.push(']');
-    }
-    for stated in &tail.stated {
-        message.push_str("; ");
-        message.push_str(stated);
-    }
-    if !tail.lost.is_empty() {
-        message.push_str("; lost=[");
-        message.push_str(&tail.lost.join(", "));
-        message.push(']');
+    let mut message = head.to_owned();
+    if let Some(tail) = tail {
+        message.push_str(&tail_text(tail));
     }
     message
+}
+
+/// The lists of `tail` as a loss message states them after its head.
+fn tail_text(tail: &Tail) -> String {
+    let mut text = format!("; dropped=[{}]", tail.dropped.join(", "));
+    if let Some(marked) = &tail.marked {
+        text.push_str("; marked=[");
+        text.push_str(&marked.join(", "));
+        text.push(']');
+    }
+    for stated in &tail.stated {
+        text.push_str("; ");
+        text.push_str(stated);
+    }
+    if !tail.lost.is_empty() {
+        text.push_str("; lost=[");
+        text.push_str(&tail.lost.join(", "));
+        text.push(']');
+    }
+    text
 }
 
 /// Puts the ids of `more` into the sorted set `ids`.
@@ -629,6 +688,9 @@ impl GivenUpPart {
             );
         }
         loss.message = message(&head, tail.as_ref());
+        if let Some(GiveUpIds::Charge { named, .. }) = loss.give_up.as_deref_mut() {
+            *named = Identity::from(id.clone());
+        }
         ctx.retain_bytes(
             u64_from_index(loss.message.len()),
             "nested given-up part loss",
@@ -679,6 +741,10 @@ impl GivenUpPart {
         let restated = message(&self.head, Some(tail));
         ctx.retain_bytes(u64_from_index(restated.len()), "given-up part loss")?;
         self.loss.message = restated;
+        self.loss.give_up = Some(Box::new(GiveUpIds::Charge {
+            named: Identity::from(self.stub.id.clone()),
+            tail: tail.clone(),
+        }));
         Ok(())
     }
 
@@ -744,7 +810,8 @@ impl GivenUpPart {
 /// from `from` to `to`, as when a decoder composing several documents
 /// rescopes one document's records. Returns whether `loss` names `from`.
 pub fn restate_loss(loss: &mut LossNote, from: &str, to: &str) -> bool {
-    loss.code == record_unreadable_kind() && restate_record(&mut loss.message, from, to)
+    charged(loss).is_some_and(|(named, _)| named.as_str() == from)
+        && rescope_give_up(loss, |id| Ok(if id == from { to } else { id }.to_owned())).is_ok()
 }
 
 /// Restates the `record=` field of the loss text `text` from `from` to
@@ -861,14 +928,14 @@ impl DecodeParts for DecodeContext<'_> {
             stated: Vec::new(),
             lost: part.lost.clone(),
         };
-        let message = message(&head, Some(&tail));
-        self.retain_bytes(u64_from_index(message.len()), "given-up part loss")?;
+        let loss = charge(&head, Identity::from(id.clone()), tail.clone());
+        self.retain_bytes(u64_from_index(loss.message.len()), "given-up part loss")?;
         let provenance = match part.stream.clone() {
             Some(stream) => SourceProvenance::in_stream(part.codec, stream, part.offset()),
             None => SourceProvenance::root(part.codec, part.offset()),
         }
         .with_tag(part.kind);
-        let loss = LossNote::new(record_unreadable_kind(), message)
+        let loss = loss
             .with_severity(Severity::Error)
             .with_provenance(provenance);
         Ok(GivenUpPart {

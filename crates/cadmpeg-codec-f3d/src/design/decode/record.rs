@@ -50,10 +50,11 @@ impl<'a> DesignRecord<'a> {
     /// The losses of the record given up whole for the codec loss `why`:
     /// `why` at the record's position, then the `record.unreadable` that
     /// names the record by its id.
-    pub(crate) fn given_up(&self, why: LossNote) -> [LossNote; 2] {
+    pub(crate) fn given_up(&self, why: LossNote) -> Result<[LossNote; 2], CodecError> {
         let why = with_position(why, self.stream, self.offset);
-        let unreadable = GivenUpRecord::caused_by(self.id(), &why).loss();
-        [why, unreadable]
+        let unreadable =
+            GivenUpRecord::caused_by(cadmpeg_ir::ids::Identity::new(self.id())?, &why).loss();
+        Ok([why, unreadable])
     }
 }
 
@@ -175,7 +176,7 @@ pub(crate) fn recover<T>(
         Ok(record) => Ok(Some(record)),
         Err(error) if is_fatal(&error) => Err(error),
         Err(error) => {
-            losses.extend(record.given_up(failure_note(code, what, &error)));
+            losses.extend(record.given_up(failure_note(code, what, &error))?);
             Ok(None)
         }
     }

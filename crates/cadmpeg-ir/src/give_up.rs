@@ -222,6 +222,35 @@ impl Holder {
         })
     }
 
+    /// The holder `entity`, a record of `arena`, is under `naming`: by
+    /// [`Self::of`] for [`Naming::Text`], and otherwise where a field the
+    /// CADIR schema types as an id, a key of a map keyed by ids, or a
+    /// `native_ref` names an id that `lookup` finds. A native record, and a
+    /// record of an arena the schema does not hold, names nothing then.
+    pub(crate) fn named<'k, T: Serialize>(
+        naming: Naming,
+        arena: &Arena,
+        id: &str,
+        entity: &T,
+        lookup: impl Fn(&str) -> Option<&'k str>,
+    ) -> Option<Self> {
+        match naming {
+            Naming::Text => Self::of(arena, id, entity, lookup),
+            Naming::References => {
+                let Arena::Home { home, field } = arena else {
+                    return None;
+                };
+                let value = crate::hash::finite_json::to_json_value(entity).ok()?;
+                let names = restate::Schema::cadir()?.references(home, field, &value, &lookup);
+                (!names.is_empty()).then(|| Self {
+                    arena: arena.clone(),
+                    id: id.to_owned(),
+                    names,
+                })
+            }
+        }
+    }
+
     /// Whether every name lies under one of `prefixes`.
     fn names_only_under(&self, prefixes: &[&str]) -> bool {
         self.names
@@ -269,16 +298,39 @@ fn keys<'k>(
     }
 }
 
+/// Which fields of a record name an id, for a release.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum Naming {
+    /// Every text value and map key of a neutral or native record: the
+    /// CADIR reader's walk of the records it read as JSON.
+    #[default]
+    Text,
+    /// The typed references and state-local members of a neutral record,
+    /// and its `native_ref`: the decode wrapper's walk (§3.3). A label that
+    /// equals an id names nothing, and a native record, which holds no
+    /// reference into the neutral model (§2), names nothing.
+    References,
+}
+
 /// The references of a document, from one walk of its records: the number
 /// of records that hold each id, and the records that name each id.
 #[derive(Debug, Default)]
 pub(crate) struct References {
+    pub(crate) naming: Naming,
     held: HashMap<String, usize>,
     holders: Vec<(Arena, String)>,
     named_by: HashMap<String, Vec<usize>>,
 }
 
 impl References {
+    /// The references a walk by `naming` fills.
+    pub(crate) fn new(naming: Naming) -> Self {
+        Self {
+            naming,
+            ..Self::default()
+        }
+    }
+
     /// Counts one record, neutral or native, that holds `id`.
     pub(crate) fn hold(&mut self, id: &str) {
         *self.held.entry(id.to_owned()).or_default() += 1;
@@ -288,7 +340,7 @@ impl References {
     /// counted so far. The caller counts every record first.
     pub(crate) fn add<T: Serialize>(&mut self, arena: &Arena, id: &str, entity: &T) {
         let held = &self.held;
-        let Some(holder) = Holder::of(arena, id, entity, |text| {
+        let Some(holder) = Holder::named(self.naming, arena, id, entity, |text| {
             held.get_key_value(text).map(|(key, _)| key.as_str())
         }) else {
             return;
@@ -482,7 +534,7 @@ impl Cascade {
     fn new(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Self, CodecError> {
         ir.finalize();
         Ok(Self {
-            references: ir.references(),
+            references: ir.references_from(References::default()),
             lazy: Lazy::default(),
             unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
         })
@@ -495,9 +547,10 @@ impl Cascade {
         ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         lost: &[String],
+        naming: Naming,
     ) -> Result<Self, CodecError> {
         ir.finalize();
-        let mut named = References::default();
+        let mut named = References::new(naming);
         for id in lost {
             named.name(id);
         }
@@ -559,6 +612,7 @@ fn remove(
 /// one, transitively, marks each record that holds one, and drops each
 /// carrier left with no user (§3.3). An id a record of `ir` holds names that
 /// record, so nothing needs the given-up one, and it releases nothing.
+/// `naming` states which fields of a record name an id.
 ///
 /// # Errors
 ///
@@ -568,8 +622,9 @@ pub(crate) fn release_lost(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     ids: &[String],
+    naming: Naming,
 ) -> Result<Vec<(String, Released)>, CodecError> {
-    let mut cascade = Cascade::naming(ctx, ir, ids)?;
+    let mut cascade = Cascade::naming(ctx, ir, ids, naming)?;
     let Cascade {
         references,
         lazy,
@@ -937,7 +992,7 @@ fn release(
                 unheld = gone.difference(&held).cloned().collect();
                 &unheld
             };
-            let Some(mut holder) = ir.holder(arena, id, here) else {
+            let Some(mut holder) = ir.holder(references.naming, arena, id, here) else {
                 continue;
             };
             if holder
@@ -1383,7 +1438,7 @@ fn release_delta(
             }
         }
     }
-    let mut local = References::default();
+    let mut local = References::new(references.naming);
     for id in &plan.gone {
         local.name(id);
     }

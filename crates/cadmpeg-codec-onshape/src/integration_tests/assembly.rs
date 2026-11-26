@@ -169,6 +169,71 @@ fn several_studios_have_distinct_geometry_identities() {
     assert_ne!(first.prototype, second.prototype);
 }
 
+/// A record one studio drops leaves every record of another studio, also
+/// where both studios' STEP text states the same instance labels.
+#[test]
+fn a_record_one_studio_drops_leaves_the_records_of_another_studio() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let mut definition = definition();
+    definition["rootAssembly"]["instances"][1]["elementId"] = json!("other");
+    let mut other = definition["parts"][0].clone();
+    other["elementId"] = json!("other");
+    definition["parts"].as_array_mut().unwrap().push(other);
+    let text = String::from_utf8(crate::test_support::step().to_vec()).unwrap();
+    let unread = unreadable_plane_placement(&text);
+    let bytes = bundle_with_other_studio(definition, Some(unread.as_bytes()));
+    let result = crate::test_support::codec()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == unreadable));
+    let ir = result.ir();
+    assert!(
+        ir.geometry
+            .shells
+            .iter()
+            .any(|shell| shell.members.len() == 6),
+        "{:#?}",
+        ir.geometry.shells
+    );
+}
+
+/// `text` with the placement of its first plane stating its location as
+/// its axes, so the placement does not read and the plane drops with it.
+fn unreadable_plane_placement(text: &str) -> String {
+    let refs = |line: &str| {
+        line.split('#')
+            .skip(1)
+            .map(|tail| {
+                tail.chars()
+                    .take_while(char::is_ascii_digit)
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+    };
+    let plane = text
+        .lines()
+        .find(|line| line.contains("=PLANE("))
+        .expect("a plane");
+    let placement = refs(plane).last().cloned().expect("a placement");
+    let head = format!("#{placement}=");
+    text.lines()
+        .map(|line| match line.strip_prefix(&head) {
+            Some(rest) => {
+                let location = refs(rest).first().cloned().expect("a location");
+                format!("{head}AXIS2_PLACEMENT_3D('',#{location},#{location},#{location});")
+            }
+            None => line.to_owned(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
 fn malformed_placement_and_external_parts_retain_other_instances() {
     let mut definition = definition();

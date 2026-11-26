@@ -829,12 +829,9 @@ fn give_up_statements(
                 .map(|(record, entry)| format!("#{record} entry #{entry}")),
         );
         let part = ctx.give_up_part(part, statement.cause.clone().into_error())?;
-        dependents.extend(
-            statement
-                .dropped
-                .iter()
-                .map(|record| dropped_with(record, part.id())),
-        );
+        for record in &statement.dropped {
+            dependents.push(dropped_with(statement_record(record)?, part.id().clone()));
+        }
         parts.push(part);
     }
     Ok((parts, dependents))
@@ -847,8 +844,8 @@ enum Lost {
     GivenUp(String),
     /// The instance is dropped because it needs instance `needs`, which is
     /// given up or dropped. `record` is the id the document would hold for
-    /// the instance, where the reader mints one.
-    Dropped { needs: u64, record: Option<String> },
+    /// the instance.
+    Dropped { needs: u64, record: Identity },
 }
 
 /// The DATA instances the reader gives up or drops, each with the first
@@ -887,21 +884,18 @@ impl LostInstances {
         self.give_up(id, format_args!("{}: {}", why.code, why.message));
     }
 
-    /// Drops instance `id` because it needs instance `needs`.
+    /// Drops instance `id`, which the document holds as no record, because
+    /// it needs instance `needs`.
     pub(crate) fn drop_with(&self, id: u64, needs: u64) {
-        self.lock().entry(id).or_insert(Lost::Dropped {
-            needs,
-            record: None,
-        });
+        self.drop_record_with(id, instance_record(id), needs);
     }
 
     /// Drops instance `id`, for which the document would hold `record`,
     /// because it needs instance `needs`.
-    pub(crate) fn drop_record_with(&self, id: u64, record: impl Into<String>, needs: u64) {
-        self.lock().entry(id).or_insert(Lost::Dropped {
-            needs,
-            record: Some(record.into()),
-        });
+    pub(crate) fn drop_record_with(&self, id: u64, record: Identity, needs: u64) {
+        self.lock()
+            .entry(id)
+            .or_insert(Lost::Dropped { needs, record });
     }
 
     fn contains(&self, id: u64) -> bool {
@@ -911,6 +905,24 @@ impl LostInstances {
     fn take(&self) -> BTreeMap<u64, Lost> {
         std::mem::take(&mut *self.lock())
     }
+}
+
+/// The record that names DATA instance `id`, where the document holds no
+/// record minted from it.
+fn instance_record(id: u64) -> Identity {
+    ids::data(kind!("instance"), id)
+}
+
+/// The record that names the statement `name` (`#12` or `<anchor>`) a
+/// parser drop names.
+fn statement_record(name: &str) -> Result<Identity, CodecError> {
+    if let Some(id) = name.strip_prefix('#').and_then(|key| key.parse().ok()) {
+        return Ok(instance_record(id));
+    }
+    Ok(Identity::new(format!(
+        "{}:anchor:name#{name}",
+        crate::dialect::FORMAT
+    ))?)
 }
 
 /// Drops instance `id` with the first of `needs` that the parser or the
@@ -954,7 +966,7 @@ fn give_up_instances(
             continue;
         };
         let Some(instance) = exchange.records().get(&id) else {
-            losses.push(GivenUpRecord::new(format_args!("#{id}"), error).loss());
+            losses.push(GivenUpRecord::new(instance_record(id), error).loss());
             continue;
         };
         let bytes = input
@@ -971,16 +983,13 @@ fn give_up_instances(
             part = part.digest_only();
         }
         let part = ctx.give_up_part(part, CodecError::malformed(error))?;
-        stubs.insert(id, part.id().to_string());
+        stubs.insert(id, Identity::from(part.id().clone()));
         losses.push(part.loss());
         parts.push(part);
     }
     let named = |id: u64| match lost.get(&id) {
-        Some(Lost::Dropped {
-            record: Some(record),
-            ..
-        }) => record.clone(),
-        _ => format!("#{id}"),
+        Some(Lost::Dropped { record, .. }) => record.clone(),
+        _ => instance_record(id),
     };
     for (&id, cause) in &lost {
         let &Lost::Dropped { needs, .. } = cause else {
@@ -991,7 +1000,7 @@ fn give_up_instances(
                 .lost_record(needs)
                 .filter(|_| !lost.contains_key(&needs))
                 .and_then(|statement| statements.get(statement))
-                .map_or_else(|| named(needs), |part| part.id().to_string())
+                .map_or_else(|| named(needs), |part| part.id().clone().into())
         });
         losses.push(dropped_with(named(id), needs));
     }

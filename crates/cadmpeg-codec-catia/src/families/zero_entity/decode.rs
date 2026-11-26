@@ -1108,7 +1108,10 @@ pub(in crate::families) fn try_decode_zero_entity(
         let code = topology_loss.kind();
         losses.extend(face_records.into_iter().map(|ordinal| {
             cadmpeg_ir::unknown::part::GivenUpRecord::new(
-                format_args!("catia:zero-entity:topology-face#{ordinal}"),
+                cadmpeg_ir::ids::Identity::compose(
+                    &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "topology-face"),
+                    ordinal,
+                ),
                 format_args!("{code}: the face has no complete allocation graph or face geometry"),
             )
             .loss()

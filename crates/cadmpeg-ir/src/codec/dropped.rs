@@ -6,11 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
-use super::loss::DecodeLossCode;
 use super::DecodeResult;
-use crate::unknown::part::{
-    dropped_ids, dropped_with_ids, extend_tail, given_up_id, record_unreadable_kind, GivenUpRecord,
-};
+use crate::unknown::part::{charged, name_released, needs, GivenUpRecord};
 
 /// One `record.unreadable` of the report and the records it drops.
 struct Charge {
@@ -44,32 +41,25 @@ impl DecodeResult {
         &mut self,
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
-        let with = DecodeLossCode::RecordDroppedWith.kind();
         let mut edges = Vec::new();
         self.report.losses.retain(|loss| {
-            let edge = (loss.code == with)
-                .then(|| dropped_with_ids(&loss.message))
-                .flatten();
+            let edge = needs(loss);
             if let Some((record, needs)) = edge {
-                edges.push((record.to_owned(), needs.to_owned()));
+                edges.push((record.as_str().to_owned(), needs.as_str().to_owned()));
             }
             edge.is_none()
         });
-        let unreadable = record_unreadable_kind();
         let mut charges = self
             .report
             .losses
             .iter()
             .enumerate()
-            .filter(|(_, loss)| loss.code == unreadable)
             .filter_map(|(at, loss)| {
+                let (named, dropped) = charged(loss)?;
                 Some(Charge {
                     at,
-                    named: given_up_id(&loss.message)?.to_owned(),
-                    dropped: dropped_ids(&loss.message)
-                        .into_iter()
-                        .map(str::to_owned)
-                        .collect(),
+                    named: named.as_str().to_owned(),
+                    dropped: dropped.iter().cloned().collect(),
                     marked: BTreeSet::new(),
                     stated: Vec::new(),
                     changed: false,
@@ -117,9 +107,10 @@ impl DecodeResult {
                 {
                     continue;
                 }
+                let id = crate::ids::Identity::new(record.as_str())?;
                 self.report.losses.push(
                     GivenUpRecord::new(
-                        record,
+                        id,
                         format_args!("it needs {needs}, which no give-up of the decode names"),
                     )
                     .loss(),
@@ -147,7 +138,13 @@ impl DecodeResult {
                 }
             }
         }
-        for (id, released) in crate::give_up::release_lost(ctx, &mut self.ir, &ids)? {
+        let before = cfg!(debug_assertions).then(|| record_ids(&self.ir));
+        for (id, released) in crate::give_up::release_lost(
+            ctx,
+            &mut self.ir,
+            &ids,
+            crate::give_up::Naming::References,
+        )? {
             let Some(&index) = owner.get(&id) else {
                 continue;
             };
@@ -164,13 +161,40 @@ impl DecodeResult {
             charge.marked.extend(released.marked);
             charge.stated.extend(stated);
         }
+        if let Some(before) = before {
+            let after = record_ids(&self.ir);
+            let unlisted = before
+                .difference(&after)
+                .filter(|id| {
+                    !own.contains(*id)
+                        && !charges
+                            .iter()
+                            .any(|charge| charge.named == **id || charge.dropped.contains(*id))
+                })
+                .collect::<Vec<_>>();
+            debug_assert!(
+                unlisted.is_empty(),
+                "each record the release removes is on the dropped list of a give-up: \
+                 {unlisted:?}"
+            );
+        }
         for charge in charges.into_iter().filter(|charge| charge.changed) {
-            let message = &mut self.report.losses[charge.at].message;
-            extend_tail(message, charge.dropped, charge.marked, charge.stated);
-            ctx.retain_bytes(u64_from_index(message.len()), "given-up record loss")?;
+            let loss = &mut self.report.losses[charge.at];
+            name_released(loss, charge.dropped, charge.marked, charge.stated);
+            ctx.retain_bytes(u64_from_index(loss.message.len()), "given-up record loss")?;
         }
         Ok(())
     }
+}
+
+/// The id of each record of the arenas of `ir`.
+fn record_ids(ir: &crate::CadIr) -> BTreeSet<String> {
+    ir.arenas()
+        .record_ids()
+        .into_values()
+        .flat_map(|(_, ids)| ids)
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Names in the charge at `index` each record that needs, transitively, a

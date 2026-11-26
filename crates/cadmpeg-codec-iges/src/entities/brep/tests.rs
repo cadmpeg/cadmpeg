@@ -533,7 +533,7 @@ fn topology_that_needs_a_quarantined_edge_list_is_dropped_with_its_part() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == cadmpeg_ir::unknown::part::dropped_with("", "").code));
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
 }
 
 #[test]

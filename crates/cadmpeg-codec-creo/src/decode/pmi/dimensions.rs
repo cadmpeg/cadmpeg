@@ -401,13 +401,15 @@ pub(super) fn transfer(
         )));
     }
     let code = CreoLossCode::PmiRecordUnresolved.kind();
-    losses.extend(unformed.iter().map(|record| {
-        GivenUpRecord::new(
-            record,
-            format_args!("{code}: the dimensional attributes form no PMI record"),
-        )
-        .loss()
-    }));
+    for record in &unformed {
+        losses.push(
+            GivenUpRecord::new(
+                cadmpeg_ir::ids::Identity::new(record)?,
+                format_args!("{code}: the dimensional attributes form no PMI record"),
+            )
+            .loss(),
+        );
+    }
     if conflicting != 0 {
         losses.push(CreoLossCode::PmiFirstAttributeAssumed.note(format!(
             "{conflicting} dimension(s) use the first value of conflicting attributes."

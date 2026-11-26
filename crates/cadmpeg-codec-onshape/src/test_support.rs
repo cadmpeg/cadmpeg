@@ -13,7 +13,7 @@ pub(crate) mod regions;
 pub(crate) fn codec() -> OnshapeCodec {
     OnshapeCodec::new(|ctx, view| cadmpeg_codec_step::StepCodec::default().decode_impl(ctx, view))
 }
-fn step() -> &'static [u8] {
+pub(crate) fn step() -> &'static [u8] {
     static STEP: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     STEP.get_or_init(|| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();

@@ -4764,7 +4764,7 @@ fn collect_mesh_outcome(
             error,
         } => {
             report.losses.extend(record_given_up(
-                &body_id,
+                cadmpeg_ir::ids::Identity::new(&body_id)?,
                 F3dLossCode::MeshContainerUndecoded.note(format!(
                     "mesh body {body_id} from container `{entry_name}` was not placed: {error}"
                 )),
@@ -5312,9 +5312,13 @@ fn report_xref_parse_loss(
             report.losses.push(note);
             given_up.push(part);
         }
-        None => report
-            .losses
-            .extend(record_given_up(crate::xref::REDIRECTIONS_ENTRY, note)),
+        None => report.losses.extend(record_given_up(
+            cadmpeg_ir::ids::Identity::compose(
+                &cadmpeg_ir::identity_namespace!("f3d", "archive", "entry"),
+                cadmpeg_ir::ids::IdentityKey::encode_key_text(crate::xref::REDIRECTIONS_ENTRY),
+            ),
+            note,
+        )),
     }
     Ok(())
 }

@@ -335,7 +335,10 @@ refusal,
             let code = CatiaLossCode::TopologyE5GraphUnclosed.kind();
             losses.extend(face_records.into_iter().map(|record_id| {
                 cadmpeg_ir::unknown::part::GivenUpRecord::new(
-                    format_args!("catia:e5:face#{record_id}"),
+                    cadmpeg_ir::ids::Identity::compose(
+                        &cadmpeg_ir::identity_namespace!("catia", "e5", "face"),
+                        record_id,
+                    ),
                     format_args!("{code}: the reference graph of the face did not close"),
                 )
                 .loss()

@@ -824,7 +824,9 @@ fn decode_with_occurrence_limits(
         record_retained_transfer(
             &mut transfer_ledger,
             source,
-            image.part_id(entities::DIRECTORY_ENTRY_PART, record.source_offset)?,
+            image
+                .part_id(entities::DIRECTORY_ENTRY_PART, record.source_offset)?
+                .into_string(),
             "quarantined directory record given up; its part keeps the cards",
         );
     }
@@ -833,7 +835,9 @@ fn decode_with_occurrence_limits(
         record_retained_transfer(
             &mut transfer_ledger,
             source,
-            image.part_id(entities::PARAMETER_DATA_PART, record.source_offset())?,
+            image
+                .part_id(entities::PARAMETER_DATA_PART, record.source_offset())?
+                .into_string(),
             "quarantined parameter data given up; its part keeps the cards",
         );
     }

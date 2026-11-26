@@ -383,10 +383,10 @@ pub(crate) fn occurrences(
 
 /// The id of child occurrence `occurrence` of definition `definition` in
 /// loss messages.
-fn child_occurrence(definition: usize, occurrence: usize) -> String {
-    format!(
-        "{}/occurrence#{occurrence}",
-        crate::ids::definition(definition)
+fn child_occurrence(definition: usize, occurrence: usize) -> cadmpeg_ir::ids::Identity {
+    cadmpeg_ir::ids::Identity::compose(
+        &cadmpeg_ir::identity_namespace!("pvz", "model", "child-occurrence"),
+        cadmpeg_ir::ids::IdentityKey::from(definition).dash(occurrence),
     )
 }
 

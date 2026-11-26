@@ -64,13 +64,13 @@ fn attachment_failures(result: &EditableDecodeResult) -> Vec<&LossNote> {
         .collect()
 }
 
-fn charges_the_container(loss: &LossNote) -> bool {
+fn charges_the_object_model(loss: &LossNote) -> bool {
     loss.code == record_unreadable_kind()
         && loss.severity == Severity::Error
         && loss
             .message
             .split_whitespace()
-            .any(|token| token == "nx:container")
+            .any(|token| token == "nx:container:object-model#0")
 }
 
 fn assert_attachment_given_up(result: &EditableDecodeResult) {
@@ -89,7 +89,7 @@ fn assert_attachment_given_up(result: &EditableDecodeResult) {
         "{}",
         errors[0].message
     );
-    assert!(charges_the_container(errors[1]), "{:#?}", errors[1]);
+    assert!(charges_the_object_model(errors[1]), "{:#?}", errors[1]);
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn attachment_failure_after_every_write_equals_failure_before_any_write() {
             let index = report
                 .losses
                 .iter()
-                .position(charges_the_container)
+                .position(charges_the_object_model)
                 .expect("the container is charged");
             report.losses.remove(index)
         };
@@ -205,13 +205,13 @@ fn strict_decode_refuses_a_contained_attachment_failure() {
     assert!(salvaged
         .iter()
         .any(|loss| loss.code.local_code() == "native.attachment-failed"));
-    assert!(salvaged.iter().any(charges_the_container));
+    assert!(salvaged.iter().any(charges_the_object_model));
     let error = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, true)
         .expect_err("strict decode refuses the attachment failure");
     match error {
         DecodeFailure::StrictRejected { rejection } => {
             assert!(
-                charges_the_container(rejection.loss()),
+                charges_the_object_model(rejection.loss()),
                 "{:#?}",
                 rejection.loss()
             );

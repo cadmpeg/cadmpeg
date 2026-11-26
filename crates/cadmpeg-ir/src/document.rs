@@ -1314,14 +1314,9 @@ macro_rules! declare_document_arenas {
                 0
             }
 
-            /// The references of the document, from one walk of its records
-            /// (§3.3).
-            pub(crate) fn references(&self) -> crate::give_up::References {
-                self.references_from(crate::give_up::References::default())
-            }
-
             /// The references of the document added to `references`, which
-            /// counts the ids it names that the document does not hold.
+            /// counts the ids it names that the document does not hold, by
+            /// the walk its naming states (§3.3).
             pub(crate) fn references_from(
                 &self,
                 mut references: crate::give_up::References,
@@ -1340,7 +1335,9 @@ macro_rules! declare_document_arenas {
                         references.add(&arena, entity.record_identity(), entity);
                     }
                 })*
-                self.native.add_holders(&mut references);
+                if references.naming == crate::give_up::Naming::Text {
+                    self.native.add_holders(&mut references);
+                }
                 references
             }
 
@@ -1348,18 +1345,22 @@ macro_rules! declare_document_arenas {
             /// an id of `gone`. The arena is in identity order.
             pub(crate) fn holder(
                 &self,
+                naming: crate::give_up::Naming,
                 arena: &crate::give_up::Arena,
                 id: &str,
                 gone: &std::collections::BTreeSet<String>,
             ) -> Option<crate::give_up::Holder> {
                 let crate::give_up::Arena::Home { home, field } = arena else {
-                    return self.native.holder(arena, id, gone);
+                    return match naming {
+                        crate::give_up::Naming::Text => self.native.holder(arena, id, gone),
+                        crate::give_up::Naming::References => None,
+                    };
                 };
                 $(if *home == stringify!($home) && *field == stringify!($field) {
                     let names: Vec<(String, String)> = crate::give_up::records(&self.$home.$field, id)
                         .iter()
                         .filter_map(|entity| {
-                            crate::give_up::Holder::of(arena, id, entity, |text| {
+                            crate::give_up::Holder::named(naming, arena, id, entity, |text| {
                                 gone.get(text).map(String::as_str)
                             })
                         })

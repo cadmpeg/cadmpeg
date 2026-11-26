@@ -995,9 +995,15 @@ fn decode_container<'a>(
             "Rejected {} Protein native record(s); retained the remaining records.",
             protein_issue_records.len()
         )));
-        losses.extend(protein_issue_records.iter().map(|(record, detail)| {
-            GivenUpRecord::new(record, format_args!("{}: {detail}", code.kind())).loss()
-        }));
+        for (record, detail) in &protein_issue_records {
+            losses.push(
+                GivenUpRecord::new(
+                    cadmpeg_ir::ids::Identity::new(record)?,
+                    format_args!("{}: {detail}", code.kind()),
+                )
+                .loss(),
+            );
+        }
     }
     losses.extend(dialect_loss(&matched, &recovery));
     if let Some(kernel) = ir
@@ -1425,13 +1431,15 @@ fn decode_container<'a>(
                             protein_rejections.len()
                         )));
                         let code = InventorLossCode::ProteinAssetRejected.kind();
-                        losses.extend(protein_rejections.iter().map(|rejection| {
-                            GivenUpRecord::new(
-                                rejection.asset_id(),
-                                format_args!("{code}: {}", rejection.detail()),
-                            )
-                            .loss()
-                        }));
+                        for rejection in &protein_rejections {
+                            losses.push(
+                                GivenUpRecord::new(
+                                    cadmpeg_ir::ids::Identity::new(rejection.asset_id())?,
+                                    format_args!("{code}: {}", rejection.detail()),
+                                )
+                                .loss(),
+                            );
+                        }
                     }
                     if ir.model.appearances.is_empty() {
                         losses.push(
@@ -1489,9 +1497,15 @@ fn decode_container<'a>(
             losses.push(code.note(format!(
                 "Skipped {ufrx_issue_count} invalid UFRxDoc native record(s)."
             )));
-            losses.extend(ufrx_issue_records.iter().map(|(record, detail)| {
-                GivenUpRecord::new(record, format_args!("{}: {detail}", code.kind())).loss()
-            }));
+            for (record, detail) in &ufrx_issue_records {
+                losses.push(
+                    GivenUpRecord::new(
+                        cadmpeg_ir::ids::Identity::new(record)?,
+                        format_args!("{}: {detail}", code.kind()),
+                    )
+                    .loss(),
+                );
+            }
         }
         match &container.ufrx {
             UfrxState::Malformed { stream, detail } => {
@@ -1548,12 +1562,15 @@ fn decode_container<'a>(
                     );
                 }
                 let code = InventorLossCode::AssemblyPlacementNotTransferred.kind();
-                losses.extend(assembly_projection.unbuilt_placements.iter().map(
-                    |(record, cause)| {
-                        GivenUpRecord::new(record, format_args!("{code}: {}", cause.description()))
-                            .loss()
-                    },
-                ));
+                for (record, cause) in &assembly_projection.unbuilt_placements {
+                    losses.push(
+                        GivenUpRecord::new(
+                            cadmpeg_ir::ids::Identity::new(record)?,
+                            format_args!("{code}: {}", cause.description()),
+                        )
+                        .loss(),
+                    );
+                }
             }
             UfrxState::Absent | UfrxState::Parsed(_) => {}
         }

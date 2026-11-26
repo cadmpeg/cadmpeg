@@ -185,7 +185,7 @@ fn a_face_with_a_valid_ring_and_an_ambiguous_vertex_loop_fin_is_withheld() {
     assert!(brep.loops.is_empty());
     assert_eq!(brep.stats.unresolved_topology_fins, 1);
     assert_eq!(brep.stats.withheld_ambiguous_fin_faces, 1);
-    let losses = brep.take_losses();
+    let losses = brep.take_losses().unwrap();
     let [face] = losses
         .iter()
         .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
@@ -209,10 +209,9 @@ fn assert_dependents_reach(
     given_up: &cadmpeg_ir::report::loss::LossNote,
     dependent: &str,
 ) {
-    let with = cadmpeg_ir::unknown::part::dropped_with("a", "b").code;
     let notes = losses
         .iter()
-        .filter(|loss| loss.code == with)
+        .filter(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some())
         .map(|loss| {
             let words = loss.message.split_whitespace().collect::<Vec<_>>();
             let [_, record, _, needs] = words[..] else {

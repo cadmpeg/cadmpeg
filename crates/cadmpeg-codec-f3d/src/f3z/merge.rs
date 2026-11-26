@@ -538,6 +538,9 @@ impl MergeSession<'_, '_> {
                 for loss in &mut component_report.losses {
                     loss.message =
                         format!("xref {label}: {}", rescope_text(&loss.message, &occurrence));
+                    cadmpeg_ir::unknown::part::map_give_up(loss, |id| {
+                        Ok(rescope_text(id, &occurrence))
+                    })?;
                 }
                 parent_report.losses.append(&mut component_report.losses);
                 self.members

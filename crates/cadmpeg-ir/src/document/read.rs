@@ -376,7 +376,8 @@ impl Reader<'_, '_> {
         let lost = std::mem::take(&mut self.lost);
         let ids: Vec<String> = lost.iter().map(|(id, _)| id.clone()).collect();
         let before = Removed::before(document);
-        let released = crate::give_up::release_lost(self.ctx, document, &ids);
+        let released =
+            crate::give_up::release_lost(self.ctx, document, &ids, crate::give_up::Naming::Text);
         self.removed = before.after(ids.iter().cloned(), document);
         let released = match released {
             Ok(released) => released,

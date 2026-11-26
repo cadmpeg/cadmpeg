@@ -150,9 +150,12 @@ impl Inventory {
             .then(|| references::refused_link(record, &self.refused, &self.failed_tables))
             .flatten();
         self.refusals.push(match need {
-            Some(need) => dropped_with(&record.id, need),
+            Some(need) => dropped_with(
+                cadmpeg_ir::ids::Identity::new(&record.id)?,
+                cadmpeg_ir::ids::Identity::new(need)?,
+            ),
             None => GivenUpRecord::new(
-                &record.id,
+                cadmpeg_ir::ids::Identity::new(&record.id)?,
                 format_args!(
                     "{}: {detail}",
                     InventorLossCode::DrawingRecordMalformed.kind()
@@ -220,7 +223,7 @@ pub(crate) fn inventory(
                     let id = format!("inventor:drawing:reference-tables#{token}");
                     inventory.refusals.push(
                         GivenUpRecord::new(
-                            &id,
+                            cadmpeg_ir::ids::Identity::new(&id)?,
                             format_args!(
                                 "{}: {detail}",
                                 InventorLossCode::DrawingRecordMalformed.kind()

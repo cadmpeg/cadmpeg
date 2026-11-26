@@ -468,36 +468,45 @@ pub(super) fn push_legacy_value_losses(
 
 /// One `record.unreadable` per legacy value row that forms no record. Rows
 /// kept with a partial payload are not charged.
-pub(super) fn push_unread_legacy_rows(losses: &mut Vec<LossNote>, scan: &ContainerScan) {
+pub(super) fn push_unread_legacy_rows(
+    losses: &mut Vec<LossNote>,
+    scan: &ContainerScan,
+) -> Result<(), cadmpeg_core::CodecError> {
     fn charge(
         losses: &mut Vec<LossNote>,
         code: CreoLossCode,
         rows: impl Iterator<Item = crate::legacy::SerializedOffsetId>,
-    ) {
+    ) -> Result<(), cadmpeg_core::CodecError> {
         let code = code.kind();
-        losses.extend(rows.map(|row| {
-            GivenUpRecord::new(&row, format_args!("{code}: the value row forms no record"))
+        for row in rows {
+            losses.push(
+                GivenUpRecord::new(
+                    cadmpeg_ir::ids::Identity::new(row.to_string())?,
+                    format_args!("{code}: the value row forms no record"),
+                )
                 .at(SourceProvenance::root(
                     "creo",
                     cadmpeg_core::decode::u64_from_index(row.offset),
                 ))
-                .loss()
-        }));
+                .loss(),
+            );
+        }
+        Ok(())
     }
     let Some(legacy) = scan.framing.layout.legacy_ascii() else {
-        return;
+        return Ok(());
     };
     let values = &legacy.persistence;
     charge(
         losses,
         CreoLossCode::LegacyRealValueUnresolved,
         values.real_values.unresolved_ids(),
-    );
+    )?;
     charge(
         losses,
         CreoLossCode::LegacyIntegerValueUnresolved,
         values.integer_values.unresolved_ids(),
-    );
+    )?;
     charge(
         losses,
         CreoLossCode::LegacyContinuationFormUndefined,
@@ -505,7 +514,7 @@ pub(super) fn push_unread_legacy_rows(losses: &mut Vec<LossNote>, scan: &Contain
             .type_3_values
             .unresolved_ids()
             .chain(values.type_4_values.unresolved_ids()),
-    );
+    )?;
     charge(
         losses,
         CreoLossCode::LegacyUnsignedValueUnresolved,
@@ -515,17 +524,17 @@ pub(super) fn push_unread_legacy_rows(losses: &mut Vec<LossNote>, scan: &Contain
             .chain(values.type_7_values.unresolved_ids())
             .chain(values.type_9_values.unresolved_ids())
             .chain(values.type_11_values.unresolved_ids()),
-    );
+    )?;
     charge(
         losses,
         CreoLossCode::LegacyCompactRealUnresolved,
         values.type_6_values.unresolved_ids(),
-    );
+    )?;
     charge(
         losses,
         CreoLossCode::LegacyStringContinuationUndefined,
         values.unread_string_scalar_ids(),
-    );
+    )
 }
 
 pub(super) fn push_brep_transfer_note(
