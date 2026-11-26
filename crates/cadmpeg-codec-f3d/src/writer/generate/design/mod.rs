@@ -919,9 +919,11 @@ fn run_end(
 /// an evaluation holds the state at the marker (cadir-v11.md §3.4, Features
 /// without their state; §5.4): `target` with that state as its current
 /// state, and the loss of the records of the current state the document then
-/// does not hold. `None` where the form writes `target` itself.
+/// does not hold. `None` where the form writes `target` itself. The state
+/// resolves under the caller's `limits`.
 pub(in crate::writer::generate) fn state_at_marker(
     target: &CadIr,
+    limits: &ResourceLimits,
 ) -> Option<(CadIr, Option<LossNote>)> {
     // A native Design names the records of the current state.
     if target.native.namespace("f3d").is_some() {
@@ -954,7 +956,7 @@ pub(in crate::writer::generate) fn state_at_marker(
         return None;
     };
     let state = target
-        .resolved_evaluation_state(&evaluation.id, &ResourceLimits::default())
+        .resolved_evaluation_state(&evaluation.id, limits)
         .ok()?;
     if state.records().bodies.is_empty() {
         return None;

@@ -582,7 +582,8 @@ pub(crate) fn write_semantic_with_records_cached(
         }
         if !materials.omitted.is_empty() {
             // A source that does not decode leaves the note saying the write
-            // cannot tell; it does not refuse the write.
+            // cannot tell. A decode that the caller's limits refuse refuses
+            // the write.
             let baseline = match retained_source_baseline(source_baseline, source_context.as_ref())
             {
                 Ok(baseline) => baseline,
@@ -807,7 +808,7 @@ pub(crate) fn write_semantic_with_records_cached(
                 CachedNative::Unloaded => None,
             },
             stale: &stale.configurations,
-            limits,
+            ctx,
         },
     )?;
     unwritten_edits.extend(opaque.kept_edits);
@@ -835,7 +836,11 @@ pub(crate) fn write_semantic_with_records_cached(
             &mut sections,
         );
         let skeleton = written.is_ok();
-        marked.extend(stale::mark_sections(&mut sections, &stale.configurations));
+        marked.extend(stale::mark_sections(
+            ctx,
+            &mut sections,
+            &stale.configurations,
+        )?);
         losses.extend(written.unwrap_or_else(|reason| {
             vec![crate::loss::SldprtLossCode::WriterNativeSkeletonOmitted
                 .note(format!("the native skeleton is not written: {reason}"))]
@@ -2067,7 +2072,8 @@ struct RetainedBlockPatches<'a> {
     native: Option<&'a SldprtNative>,
     /// The configurations, by name, whose stale mark the write sets.
     stale: &'a BTreeSet<String>,
-    limits: ResourceLimits,
+    /// The encode session the patches parse in.
+    ctx: &'a DecodeContext<'a>,
 }
 
 /// The retained blocks the output holds as stored, and the retained blocks it
@@ -2089,7 +2095,11 @@ fn opaque_blocks(
                 .native
                 .namespace("sldprt")
                 .map(|namespace| {
-                    SldprtNative::load_under(namespace, patches.limits, ir.tolerances.linear)
+                    SldprtNative::load_under(
+                        namespace,
+                        patches.ctx.policy().limits,
+                        ir.tolerances.linear,
+                    )
                 })
                 .transpose()
                 .map_err(CodecError::from)?;
@@ -2154,11 +2164,11 @@ fn opaque_blocks(
                 record.id.as_str(),
                 &mut payload,
                 &|id| patches.edited_parameters.contains(id),
-                patches.limits,
+                patches.ctx.policy().limits,
             )?);
         }
         if let Some(active_name) = active_name {
-            match patch_active_configuration_xml(&payload, active_name) {
+            match patch_active_configuration_xml(patches.ctx, &payload, active_name)? {
                 Ok(Some(patched)) => payload = patched,
                 Ok(None) => {}
                 Err(reason) => kept_edits.push(edit_dropped_note(
@@ -2171,7 +2181,7 @@ fn opaque_blocks(
             }
         }
         if !patches.stale.is_empty() {
-            if let Some((patched, names)) = stale::mark(&payload, patches.stale) {
+            if let Some((patched, names)) = stale::mark(patches.ctx, &payload, patches.stale)? {
                 payload = patched;
                 marked.extend(names);
             }
@@ -2570,19 +2580,33 @@ fn overwrite_bytes(payload: &mut [u8], offset: usize, bytes: &[u8]) -> Result<()
 }
 
 /// `payload`, a `swSolidWorks` document of one model, with `name` as its
-/// active configuration. `Ok(None)` where `payload` is no `swSolidWorks`
-/// document; `Err` names why the document keeps its stored active
-/// configuration.
+/// active configuration, parsed in the session `ctx`. `Ok(None)` where
+/// `payload` is no `swSolidWorks` document; `Err` names why the document
+/// keeps its stored active configuration. The outer `Err` is the session's
+/// resource refusal.
 fn patch_active_configuration_xml(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     name: &str,
-) -> Result<Option<Vec<u8>>, &'static str> {
+) -> Result<Result<Option<Vec<u8>>, &'static str>, CodecError> {
     let Some(text) = crate::container::xml_text(payload) else {
-        return Ok(None);
+        return Ok(Ok(None));
     };
-    let Ok(document) = roxmltree::Document::parse(&text) else {
-        return Ok(None);
+    let document = match ctx.parse_input_xml(&text, "SLDPRT active configuration patch") {
+        Ok(document) => document,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(Ok(None)),
     };
+    Ok(active_configuration_patched(&document, &text, name))
+}
+
+/// `text`, parsed as `document`, with `name` as its active configuration
+/// ([`patch_active_configuration_xml`]).
+fn active_configuration_patched(
+    document: &roxmltree::Document<'_>,
+    text: &str,
+    name: &str,
+) -> Result<Option<Vec<u8>>, &'static str> {
     if document.root_element().tag_name().name() != "swSolidWorks" {
         return Ok(None);
     }

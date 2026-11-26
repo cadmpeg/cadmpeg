@@ -111,7 +111,8 @@ fn prefix(member: &[u8]) -> Option<&[u8]> {
 }
 
 /// The member of the regenerated text when the decoder reads it back under
-/// `limits`, else the source, charging what is not written.
+/// `limits`, else the source, charging what is not written. A read-back that
+/// `limits` refuses refuses the write.
 fn checked_member(
     section: &str,
     built: Result<String, String>,

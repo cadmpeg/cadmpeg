@@ -88,7 +88,7 @@ pub(super) fn state_pcurves<'ir>(
                         revolved_loop_segments(ctx, &index, surface, &form, &loops)?
                     {
                         if let Some(pcurves) =
-                            revolved_pcurves(&index, surface, &form, face.sense, segments)?
+                            revolved_pcurves(ctx, &index, surface, &form, face.sense, segments)?
                         {
                             computed.extend(pcurves);
                         }
@@ -336,7 +336,7 @@ fn revolved_segment<'ir>(
                 (end - start).mul_add(f64::from(step) / f64::from(SEGMENT_SAMPLES), start);
             let uv = segment.at(parameter);
             let point = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                 &index.model,
                 &surface.geometry,
                 uv.u,
@@ -433,6 +433,7 @@ enum Join {
 /// The join from `from` to `to` on `surface`, checked by evaluating the
 /// straight parameter line between them against the point at `from`.
 fn join(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     surface: &Surface,
     from: Point2,
@@ -444,7 +445,7 @@ fn join(
     }
     let at = |uv: Point2| {
         finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             &index.model,
             &surface.geometry,
             uv.u,
@@ -471,6 +472,7 @@ fn join(
 /// ends, joined along a pole or apex where they meet there, or none where
 /// the loop does not close in the parameter plane.
 fn closed_chain<'ir>(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     surface: &Surface,
     periods: impl Fn(Point2) -> Point2,
@@ -484,7 +486,7 @@ fn closed_chain<'ir>(
             let shift = periods(Point2::new(end.u - start.u, end.v - start.v));
             segment.mid_uv = Point2::new(segment.mid_uv.u + shift.u, segment.mid_uv.v + shift.v);
             let [start, _] = segment.ends();
-            match join(index, surface, end, start, previous.segment.tolerance)? {
+            match join(ctx, index, surface, end, start, previous.segment.tolerance)? {
                 Join::Coincident => {}
                 Join::Pole => previous.pole = Some([end, start]),
                 Join::Open => return Ok(None),
@@ -502,7 +504,7 @@ fn closed_chain<'ir>(
     let [_, end] = last.segment.ends();
     let turns = periods(Point2::new(start.u - end.u, start.v - end.v));
     let target = Point2::new(start.u - turns.u, start.v - turns.v);
-    let pole = match join(index, surface, end, target, last.segment.tolerance)? {
+    let pole = match join(ctx, index, surface, end, target, last.segment.tolerance)? {
         Join::Coincident => None,
         Join::Pole => Some([end, target]),
         Join::Open => return Ok(None),
@@ -528,6 +530,7 @@ fn closed_chain<'ir>(
 /// face. None where a loop does not close in the parameter plane or the
 /// loops do not bound the face.
 fn revolved_pcurves(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     surface: &Surface,
     form: &Revolved,
@@ -547,7 +550,7 @@ fn revolved_pcurves(
     };
     let mut chains = Vec::new();
     for segments in loops.into_iter().filter(|segments| !segments.is_empty()) {
-        let Some(chain) = closed_chain(index, surface, periods, segments)? else {
+        let Some(chain) = closed_chain(ctx, index, surface, periods, segments)? else {
             return Ok(None);
         };
         chains.push(chain);

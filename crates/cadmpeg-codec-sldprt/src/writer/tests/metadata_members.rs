@@ -486,6 +486,13 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
         owners.unpatched(MEMBER),
         Some((Unwritten::OwnerCarried, crate::writer::Held::Source))
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
     let opaque = crate::writer::opaque_blocks(
         decoded.ir(),
         &records,
@@ -498,7 +505,7 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
             edited_parameters: &HashSet::new(),
             native: None,
             stale: &std::collections::BTreeSet::new(),
-            limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+            ctx: &ctx,
         },
     )
     .unwrap();
