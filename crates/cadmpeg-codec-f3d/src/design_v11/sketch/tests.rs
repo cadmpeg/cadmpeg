@@ -616,6 +616,17 @@ fn a_spatial_sketch_is_the_operation_of_its_feature_and_construction_joins_its_g
         "construction": false, "endpoint_refs": [],
         "geometry": {"kind": "line", "start": {"x": 0.0, "y": 0.0, "z": 0.0},
             "end": {"x": 0.0, "y": 0.0, "z": 2.0}}
+    }, {
+        "id": "f3d:model:spatial-sketch-entity#20:rise", "sketch": SPATIAL,
+        "construction": false, "endpoint_refs": [],
+        "geometry": {"kind": "line", "start": {"x": 0.0, "y": 0.0, "z": 2.0},
+            "end": {"x": 1.0, "y": 0.0, "z": 3.0}}
+    }]))
+    .unwrap();
+    model.spatial_sketch_constraints = json::from_value(cadmpeg_core::json!([{
+        "id": constraint("group"), "sketch": SPATIAL,
+        "definition": {"kind": "spline_group", "entities": [
+            "f3d:model:spatial-sketch-entity#20:line", "f3d:model:spatial-sketch-entity#20:rise"]}
     }]))
     .unwrap();
 
@@ -655,6 +666,46 @@ fn a_spatial_sketch_is_the_operation_of_its_feature_and_construction_joins_its_g
     };
     assert_eq!(sketch.owner.as_str(), OWNER);
     assert_eq!(sketch.name.as_deref(), Some("Path"));
-    assert_eq!(out.spatial_entities.len(), 1);
+    assert_eq!(out.spatial_entities.len(), 2);
     assert!(out.records.is_empty());
+    assert!(names(
+        &losses,
+        F3dLossCode::DesignSketchRelationNative,
+        &constraint("group")
+    ));
+}
+
+#[test]
+fn a_relation_on_the_start_of_a_circle_states_the_circle_and_is_charged() {
+    let mut model = model();
+    let mut constraints = json::to_value(&model.sketch_constraints).unwrap();
+    constraints
+        .as_array_mut()
+        .unwrap()
+        .push(cadmpeg_core::json!({
+        "id": constraint("on"), "sketch": SKETCH,
+        "definition": {"kind": "point_on_object",
+            "point": {"kind": "start", "value": entity("circle")}, "entity": entity("line")}}));
+    model.sketch_constraints = json::from_value(constraints).unwrap();
+    let mut features = [unresolved_sketch(OWNER)];
+    let mut out = super::Sketches::default();
+    let mut losses = Vec::new();
+    super::project(
+        &scope(&model, &BTreeSet::new(), &[]),
+        &mut features,
+        &mut out,
+        &mut losses,
+    );
+    assert!(
+        out.constraints
+            .iter()
+            .any(|candidate| candidate.id.as_str() == constraint("on")),
+        "{:#?}",
+        out.constraints
+    );
+    assert!(names(
+        &losses,
+        F3dLossCode::DesignSketchLocusUnplaced,
+        &constraint("on")
+    ));
 }

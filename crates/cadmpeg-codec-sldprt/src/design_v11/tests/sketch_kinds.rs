@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The sketches a timeline feature owns besides a placed planar sketch: a
 //! block definition, a spatial sketch, a sketch read from the records of one
-//! configuration's lane, and a reference dimension whose parameter the tree
-//! does not list (§5.2, §6.1).
+//! configuration's lane, a reference dimension whose parameter the tree
+//! does not list, and a relation on a curve locus the sketch does not store
+//! (§5.2, §6.1).
 
 use cadmpeg_core::serde_erase::json;
 
@@ -176,7 +177,11 @@ fn a_spatial_sketch_is_the_operation_of_its_timeline_feature() {
     ir.model.spatial_sketch_constraints = json::from_value(cadmpeg_core::json!([
         {"id": "sldprt:model:sketch-constraint#path:0", "sketch": SPATIAL,
             "definition": {"kind": "line_length",
-                "entity": "sldprt:model:spatial-sketch-entity#path:l", "parameter": length}}
+                "entity": "sldprt:model:spatial-sketch-entity#path:l", "parameter": length}},
+        {"id": "sldprt:model:sketch-constraint#path:1", "sketch": SPATIAL,
+            "definition": {"kind": "spline_group", "entities": [
+                "sldprt:model:spatial-sketch-entity#path:l",
+                "sldprt:model:spatial-sketch-entity#path:h"]}}
     ]))
     .unwrap();
     let owner = set_operation(
@@ -208,9 +213,21 @@ fn a_spatial_sketch_is_the_operation_of_its_timeline_feature() {
     assert!(in_timeline(&ir, &owner));
     assert!(!has_group(&ir), "{:#?}", ir.design.containers);
     assert_eq!(ir.design.spatial_sketch_entities.len(), 2);
-    let [constraint] = ir.design.spatial_sketch_constraints.as_slice() else {
-        panic!("one constraint");
+    let [constraint, group] = ir.design.spatial_sketch_constraints.as_slice() else {
+        panic!("two constraints");
     };
+    assert!(
+        matches!(&group.relation, SketchRelation::Native { .. }),
+        "{:?}",
+        group.relation
+    );
+    assert!(
+        losses.iter().any(
+            |note| note.code == SldprtLossCode::DesignSketchRelationNative.kind()
+                && note.message.contains(group.id.as_str())
+        ),
+        "{losses:#?}"
+    );
     let SketchRelation::Length {
         value: Dimension::Parameter(parameter),
         ..
@@ -285,5 +302,41 @@ fn a_reference_dimension_of_a_parameter_the_tree_omits_binds_a_driven_parameter(
             if bound.as_str() == REFERENCE),
         "{:?}",
         diameter.relation
+    );
+}
+
+#[test]
+fn a_relation_on_the_start_of_a_circle_states_the_circle_and_is_charged() {
+    const ON: &str = "sldprt:model:sketch-constraint#test:on";
+    let (mut ir, native) = sketch_and_extrude();
+    let mut constraints = json::to_value(&ir.model.sketch_constraints).unwrap();
+    constraints
+        .as_array_mut()
+        .unwrap()
+        .push(cadmpeg_core::json!({"id": ON, "sketch": SKETCH,
+            "definition": {"kind": "point_on_object",
+                "point": {"kind": "start", "value": "sldprt:model:sketch-entity#test:hole"},
+                "entity": "sldprt:model:sketch-entity#test:l0"}}));
+    ir.model.sketch_constraints = json::from_value(constraints).unwrap();
+    let losses = project(
+        &mut ir,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+
+    assert!(
+        ir.design
+            .sketch_constraints
+            .iter()
+            .any(|constraint| constraint.id.as_str() == ON),
+        "{:#?}",
+        ir.design.sketch_constraints
+    );
+    assert!(
+        losses.iter().any(
+            |note| note.code == SldprtLossCode::DesignSketchLocusUnplaced.kind()
+                && note.message.contains(ON)
+        ),
+        "{losses:#?}"
     );
 }
