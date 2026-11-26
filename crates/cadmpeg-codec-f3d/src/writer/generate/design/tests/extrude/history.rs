@@ -29,7 +29,7 @@ use super::arcs::{prism, Side};
 use super::{blind, extrude, kinds, loss, sketch_and_extrude, EVALUATION_MISSING, EXTRUDE, SIDE};
 
 /// The decoded rollback of the one decoded timeline, and its members.
-fn decoded_rollback(decoded: &CadIr) -> (Option<Rollback>, Vec<Member>) {
+pub(super) fn decoded_rollback(decoded: &CadIr) -> (Option<Rollback>, Vec<Member>) {
     let [Container::Ordered {
         members, rollback, ..
     }] = decoded.design.containers.as_slice()
@@ -41,7 +41,7 @@ fn decoded_rollback(decoded: &CadIr) -> (Option<Rollback>, Vec<Member>) {
 
 /// `ir` with an unresolved fillet inserted in its timeline before the datum
 /// `after`, its last member. Returns the fillet's id.
-fn with_fillet(ir: &mut CadIr) -> FeatureId {
+pub(super) fn with_fillet(ir: &mut CadIr) -> FeatureId {
     let fillet = feature(
         "fillet",
         FeatureOperation::Unresolved {
@@ -328,7 +328,7 @@ fn a_design_whose_timeline_holds_no_body_decodes_with_no_body_loss() {
 /// The unit cube as `Sketch` and `Extrude`, then a second `Extrude` of the
 /// same profile, rolled back before the second extrude. Returns the design
 /// and the second extrude.
-fn with_a_rolled_back_extrude() -> (CadIr, FeatureId) {
+pub(super) fn with_a_rolled_back_extrude() -> (CadIr, FeatureId) {
     let mut ir = sketch_and_extrude(blind(), false);
     let second = feature(
         "second",
@@ -556,7 +556,7 @@ fn a_native_design_rolled_back_writes_the_chosen_form() {
 /// to 10 mm with `boolean`, before the datum. The current state holds the
 /// cube and the prism of the second square. Returns the design and the
 /// second extrude.
-fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
+pub(super) fn with_a_second_extrude(boolean: Boolean) -> (CadIr, FeatureId) {
     let mut ir = sketch_and_extrude(blind(), false);
     let corners = [[20.0, 0.0], [30.0, 0.0], [30.0, SIDE], [20.0, SIDE]];
     let mut square = Source::new(
@@ -1183,13 +1183,17 @@ fn has_gap(decoded: &CadIr) -> bool {
 }
 
 /// A history failure drops the geometry items before the sketch
-/// dimensions. Geometry-true writes the current bodies as the Base Feature;
-/// history-true writes the items after the timeline marker, rolled back
-/// with no body. The feature whose result body is not written takes the
-/// failure in its entry.
+/// dimensions. Geometry-true writes the current bodies as the Base Feature.
+/// History-true ends the run at the feature whose result body is not
+/// written: the item before it keeps its state and its body, and the
+/// feature follows the timeline marker. The feature whose result body is
+/// not written takes the failure in its entry.
 #[test]
 fn a_history_failure_drops_the_items_first_and_keeps_the_sketch_dimensions() {
     let (ir, second, body) = dimensioned_second_extrude();
+    let history = format!(
+        "the writer cannot write its history state (not implemented yet: the history state of {second} holds its result body {body}, which the B-rep stream does not write)"
+    );
     for form in [
         MissingStateForm::GeometryTrue,
         MissingStateForm::HistoryTrue,
@@ -1203,38 +1207,50 @@ fn a_history_failure_drops_the_items_first_and_keeps_the_sketch_dimensions() {
         );
         assert!(has_gap(&decoded), "{:#?}", report.losses);
         super::super::super::HIDE_NEXT_RESULT_BODY.with(|hide| hide.set(true));
-        let (report, decoded, _) = write_bytes_as(&ir, form);
-        let (written, bodies, held) = match form {
-            MissingStateForm::GeometryTrue => (
-                &["sketch", "sketch", "base"][..],
-                2,
-                "the Base Feature holds it",
-            ),
-            MissingStateForm::HistoryTrue => (
-                &["sketch", "extrude", "sketch", "extrude"][..],
-                0,
-                "the writer writes it without its state",
-            ),
-        };
-        assert_eq!(kinds(&decoded), written, "{form:?}: {:#?}", report.losses);
-        assert_eq!(decoded.geometry.bodies.len(), bodies, "{form:?}");
-        if form == MissingStateForm::HistoryTrue {
-            let (rollback, members) = decoded_rollback(&decoded);
-            assert_eq!(rollback, Some(Rollback::Before(members[1].clone())));
-        }
+        let (report, decoded, bytes) = write_bytes_as(&ir, form);
         assert!(has_gap(&decoded), "{form:?}: {:#?}", report.losses);
         let missing = loss(&report, EVALUATION_MISSING).join("\n");
-        assert!(
-            missing.contains(&format!(
-                "{EXTRUDE} ({held}: the writer cannot write {second} with its state"
-            )),
-            "{form:?}: {missing}"
-        );
-        assert!(
-            missing.contains(&format!(
-                "{second} ({held}: the writer cannot write its history state (not implemented yet: the history state of {second} holds its result body {body}, which the B-rep stream does not write)"
-            )),
-            "{form:?}: {missing}"
-        );
+        match form {
+            MissingStateForm::GeometryTrue => {
+                assert_eq!(
+                    kinds(&decoded),
+                    ["sketch", "sketch", "base"],
+                    "{:#?}",
+                    report.losses
+                );
+                assert_eq!(decoded.geometry.bodies.len(), 2);
+                for entry in [
+                    format!(
+                        "{EXTRUDE} (the Base Feature holds it: the writer cannot write {second} with its state"
+                    ),
+                    format!("{second} (the Base Feature holds it: {history}"),
+                ] {
+                    assert!(missing.contains(&entry), "{entry}\n{missing}");
+                }
+            }
+            MissingStateForm::HistoryTrue => {
+                assert_eq!(
+                    kinds(&decoded),
+                    ["sketch", "extrude", "sketch", "extrude"],
+                    "{:#?}",
+                    report.losses
+                );
+                let (rollback, members) = decoded_rollback(&decoded);
+                assert_eq!(rollback, Some(Rollback::Before(members[3].clone())));
+                assert_eq!(decoded.geometry.bodies.len(), 1);
+                assert_eq!(decoded.geometry.faces.len(), 6);
+                assert_eq!(
+                    history_chain(&bytes),
+                    [(3, -1, 1, 0, vec![(0, 2, true)]), (2, 0, -1, 1, Vec::new())]
+                );
+                assert!(!missing.contains(&format!("{EXTRUDE} (")), "{missing}");
+                assert!(
+                    missing.contains(&format!(
+                        "{second} (the writer writes it without its state: {history})"
+                    )),
+                    "{missing}"
+                );
+            }
+        }
     }
 }
