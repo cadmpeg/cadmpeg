@@ -128,9 +128,9 @@ pub(crate) struct RetainedSource {
 
 impl RetainedSource {
     /// The written part `bytes` as the full decoder reads it back: the
-    /// edit-free part when `bytes` are its bytes, else decoded again. Bytes
-    /// that write no edit as edited (`edit_free`) become the edit-free part
-    /// when there is none yet.
+    /// edit-free part when `bytes` are its bytes, else decoded again. The
+    /// bytes of a pass that writes no edit as edited (`edit_free`) become the
+    /// edit-free part when there is none yet.
     pub(crate) fn read_back(
         &self,
         bytes: &[u8],
