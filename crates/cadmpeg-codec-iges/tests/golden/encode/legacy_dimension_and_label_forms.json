@@ -115,6 +115,18 @@
             "namespace": "export"
           }
         },
+        "message": "the IGES write omits 34 native record(s) of `iges` arena `cards`: iges:physical:card#1, iges:physical:card#10, iges:physical:card#11, iges:physical:card#12, iges:physical:card#13, iges:physical:card#14, iges:physical:card#15, iges:physical:card#16, iges:physical:card#17, iges:physical:card#18, iges:physical:card#19, iges:physical:card#20, iges:physical:card#21, iges:physical:card#22, iges:physical:card#23, iges:physical:card#24, iges:physical:card#25, iges:physical:card#26, iges:physical:card#27, iges:physical:card#28, iges:physical:card#29, iges:physical:card#30, iges:physical:card#31, iges:physical:card#32, iges:physical:card#33, iges:physical:card#34, iges:physical:card#35, iges:physical:card#36, iges:physical:card#4, iges:physical:card#5, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9; that are Start section cards, whose text the semantic writer replaces with its own: iges:physical:card#1; whose entity has no neutral geometry for the semantic writer to encode: iges:physical:card#10, iges:physical:card#11, iges:physical:card#29; whose entity the semantic writer does not encode: iges:physical:card#16, iges:physical:card#17, iges:physical:card#18, iges:physical:card#19, iges:physical:card#20, iges:physical:card#21, iges:physical:card#22, iges:physical:card#23, iges:physical:card#24, iges:physical:card#25, iges:physical:card#26, iges:physical:card#27, iges:physical:card#28, iges:physical:card#32, iges:physical:card#33, iges:physical:card#34, iges:physical:card#35, iges:physical:card#36, iges:physical:card#4, iges:physical:card#5, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9; whose neutral curve the semantic writer withholds: iges:physical:card#12, iges:physical:card#13, iges:physical:card#14, iges:physical:card#15, iges:physical:card#30, iges:physical:card#31",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
         "message": "the IGES write omits 1 native record(s) of `iges` arena `copious_data` whose entity has no neutral geometry for the semantic writer to encode: iges:native:copious-data#D7",
         "severity": "warning"
       },
@@ -139,7 +151,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 9 native record(s) of `iges` arena `entities`: iges:entity:directory#1, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7; whose entity has no neutral geometry for the semantic writer to encode: iges:entity:directory#7; whose entity the semantic writer does not encode: iges:entity:directory#1, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#3, iges:entity:directory#5",
+        "message": "the IGES write omits 11 native record(s) of `iges` arena `entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9; whose entity has no neutral geometry for the semantic writer to encode: iges:entity:directory#7; whose entity the semantic writer does not encode: iges:entity:directory#1, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#3, iges:entity:directory#5; whose neutral curve the semantic writer withholds: iges:entity:directory#11, iges:entity:directory#9",
         "severity": "warning"
       },
       {

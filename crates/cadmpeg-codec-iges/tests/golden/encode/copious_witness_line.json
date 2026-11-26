@@ -55,6 +55,18 @@
             "namespace": "export"
           }
         },
+        "message": "the IGES write omits 4 native record(s) of `iges` arena `cards`: iges:physical:card#1, iges:physical:card#4, iges:physical:card#5, iges:physical:card#6; that are Start section cards, whose text the semantic writer replaces with its own: iges:physical:card#1; whose entity has no neutral geometry for the semantic writer to encode: iges:physical:card#4, iges:physical:card#5, iges:physical:card#6",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
         "message": "the IGES write omits 1 native record(s) of `iges` arena `copious_data` whose entity has no neutral geometry for the semantic writer to encode: iges:native:copious-data#D1",
         "severity": "warning"
       },

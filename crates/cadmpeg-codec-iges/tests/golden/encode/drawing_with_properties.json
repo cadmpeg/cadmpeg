@@ -91,6 +91,18 @@
             "namespace": "export"
           }
         },
+        "message": "the IGES write omits 16 native record(s) of `iges` arena `cards`: iges:physical:card#1, iges:physical:card#10, iges:physical:card#11, iges:physical:card#14, iges:physical:card#15, iges:physical:card#16, iges:physical:card#17, iges:physical:card#18, iges:physical:card#19, iges:physical:card#21, iges:physical:card#4, iges:physical:card#5, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9; that are Start section cards, whose text the semantic writer replaces with its own: iges:physical:card#1; whose entity the semantic writer does not encode: iges:physical:card#10, iges:physical:card#11, iges:physical:card#14, iges:physical:card#15, iges:physical:card#16, iges:physical:card#18, iges:physical:card#19, iges:physical:card#21, iges:physical:card#4, iges:physical:card#5, iges:physical:card#8, iges:physical:card#9; whose neutral point the semantic writer withholds: iges:physical:card#17, iges:physical:card#6, iges:physical:card#7",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
         "message": "the IGES write omits 6 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "warning"
       },
@@ -115,7 +127,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 4 native record(s) of `iges` arena `entities` whose entity the semantic writer does not encode: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#5, iges:entity:directory#7",
+        "message": "the IGES write omits 5 native record(s) of `iges` arena `entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7; whose entity the semantic writer does not encode: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#5, iges:entity:directory#7; whose neutral point the semantic writer withholds: iges:entity:directory#3",
         "severity": "warning"
       },
       {

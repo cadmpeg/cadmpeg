@@ -99,6 +99,18 @@
             "namespace": "export"
           }
         },
+        "message": "the IGES write omits 4 native record(s) of `iges` arena `cards`: iges:physical:card#1, iges:physical:card#16, iges:physical:card#17, iges:physical:card#24; that are Start section cards, whose text the semantic writer replaces with its own: iges:physical:card#1; whose entity the semantic writer does not encode: iges:physical:card#16, iges:physical:card#17, iges:physical:card#24",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
         "message": "the IGES write omits 1 native record(s) of `iges` arena `colors` which the semantic writer does not encode: iges:presentation:color#D13",
         "severity": "warning"
       },

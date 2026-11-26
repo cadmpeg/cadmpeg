@@ -67,6 +67,18 @@
             "namespace": "export"
           }
         },
+        "message": "the IGES write omits 10 native record(s) of `iges` arena `cards`: iges:physical:card#1, iges:physical:card#10, iges:physical:card#11, iges:physical:card#12, iges:physical:card#4, iges:physical:card#5, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9; that are Start section cards, whose text the semantic writer replaces with its own: iges:physical:card#1; whose entity the semantic writer does not encode: iges:physical:card#10, iges:physical:card#11, iges:physical:card#12, iges:physical:card#4, iges:physical:card#5, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "native.records-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "export"
+          }
+        },
         "message": "the IGES write omits 3 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5",
         "severity": "warning"
       },
