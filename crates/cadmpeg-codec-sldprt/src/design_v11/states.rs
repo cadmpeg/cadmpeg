@@ -384,7 +384,7 @@ macro_rules! topology_arenas {
         }
 
         /// Calls `visit` with the id of every record of `topology`.
-        fn topology_ids(topology: &Topology, mut visit: impl FnMut(&str)) {
+        pub(crate) fn topology_ids(topology: &Topology, mut visit: impl FnMut(&str)) {
             $(for record in &topology.$field {
                 visit(record.identity());
             })*

@@ -1236,7 +1236,7 @@ fn semantic_writer_keeps_stored_filled_surface_weights_and_names_the_edit() {
             });
         });
     }
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
         unwritten
@@ -1291,7 +1291,7 @@ fn semantic_writer_keeps_stored_filled_surface_constraints_and_names_the_edit() 
                 }
             });
         }
-        let unwritten =
+        let (unwritten, _) =
             crate::test_support::unwritten_feature_edits(edited.ir(), edited.source_fidelity());
         assert!(
             unwritten
