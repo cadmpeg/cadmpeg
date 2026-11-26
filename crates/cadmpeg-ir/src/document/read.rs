@@ -28,6 +28,7 @@ use serde_json::Value;
 use self::loss::ReadLossCode;
 use self::text::{Found, Member, Scanner, Span};
 use super::{one_zero, CadIr, Design, Model, Process, Topology};
+use crate::annotations::Removed;
 use crate::bounds::MAX_DOCUMENT_DEPTH;
 use crate::design::evaluation::Cycles;
 use crate::native::{Native, NativeRecord};
@@ -79,6 +80,17 @@ pub struct CadirRead {
     /// The text of each part the read gave up, retained `untyped` under the
     /// id of its `unknowns` stub (§3.3).
     pub fidelity: SourceFidelity,
+    /// Each record the read gave up, and each record it dropped with one.
+    removed: Removed,
+}
+
+impl CadirRead {
+    /// Removes from `fidelity`, the source fidelity read together with this
+    /// document, the annotations of each record the read gave up and of each
+    /// record it dropped with one (§3.3).
+    pub fn remove_given_up_annotations(&self, fidelity: &mut SourceFidelity) {
+        fidelity.annotations.remove(&self.removed);
+    }
 }
 
 /// Why a read states no document.
@@ -132,17 +144,21 @@ impl CadIr {
             parts: Vec::new(),
             part_entries: BTreeMap::new(),
             lost: Vec::new(),
+            removed: Removed::default(),
             stop: None,
             refusal: None,
         };
         let (document, fidelity) = reader.document()?;
-        let report = reader.report;
+        let Reader {
+            report, removed, ..
+        } = reader;
         match options.strictness.first_refused(&report, false) {
             Some(entry) => Err(ReadFailure::StrictRejected { report, entry }),
             None => Ok(CadirRead {
                 document,
                 report,
                 fidelity,
+                removed,
             }),
         }
     }
@@ -178,6 +194,9 @@ struct Reader<'r, 'a> {
     /// The id of each record the read gave up, with the report entry that
     /// names it.
     lost: Vec<(String, usize)>,
+    /// Each record that `lost` names, and each record the release of one
+    /// dropped.
+    removed: Removed,
     stop: Option<text::Stop>,
     refusal: Option<ResourceLimit>,
 }
@@ -356,7 +375,10 @@ impl Reader<'_, '_> {
         }
         let lost = std::mem::take(&mut self.lost);
         let ids: Vec<String> = lost.iter().map(|(id, _)| id.clone()).collect();
-        let released = match crate::give_up::release_lost(self.ctx, document, &ids) {
+        let before = Removed::before(document);
+        let released = crate::give_up::release_lost(self.ctx, document, &ids);
+        self.removed = before.after(ids.iter().cloned(), document);
+        let released = match released {
             Ok(released) => released,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(session_failure(&error)),
             Err(other) => {

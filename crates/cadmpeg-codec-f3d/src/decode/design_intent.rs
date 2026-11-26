@@ -1061,6 +1061,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             operands: &design.design_body_recipe_operands,
             recipes: &prereqs.construction_recipes,
         },
+        geometry.bodies,
         derived_snapshots,
         &mut losses,
     )?;
@@ -1615,6 +1616,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.feature_input_topologies,
     )?;
     crate::history::input_topologies::retain_selected_face_owners(
+        inputs.ctx,
+        &model.features,
+        &mut model.feature_input_topologies,
+    )?;
+    crate::history::input_topologies::retain_selected_face_geometry(
         inputs.ctx,
         &model.features,
         &mut model.feature_input_topologies,
