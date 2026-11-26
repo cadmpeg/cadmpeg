@@ -151,6 +151,40 @@ fn measuring_the_region_of_each_stored_state_widens_as_measuring_it_whole() {
     assert_eq!(region, whole);
 }
 
+#[test]
+fn a_state_whose_chain_of_bases_does_not_resolve_is_charged_and_the_others_are_measured() {
+    // Three chained evaluations over three cubes, each restating a moved
+    // corner; `step-0`'s base names no evaluation.
+    let mut ir = history(3, 3);
+    let missing = id("evaluation", "missing");
+    ir.design.evaluations[0].content.as_mut().unwrap().base = StateBase::Evaluation(missing);
+    let (ir, _, losses) = widened(ir, Measured::Region);
+    let unmeasured = DecodeLossCode::VertexToleranceUnmeasured.note("").code;
+    let charged: Vec<&LossNote> = losses
+        .iter()
+        .filter(|loss| loss.code == unmeasured)
+        .collect();
+    let [charged] = charged[..] else {
+        panic!("one unmeasured loss: {losses:?}");
+    };
+    let step = |k: usize| &ir.design.evaluations[k];
+    assert!(
+        charged
+            .message
+            .ends_with(&format!(": {}", step(0).id.as_str())),
+        "{}",
+        charged.message
+    );
+    let vertices = |k: usize| &step(k).content.as_ref().unwrap().delta.records.vertices;
+    assert!(vertices(0).is_empty(), "{:?}", vertices(0));
+    for k in [1, 2] {
+        let [vertex] = &vertices(k)[..] else {
+            panic!("one widened vertex in step {k}: {:?}", vertices(k));
+        };
+        assert!(vertex.tolerance.is_some(), "{vertex:?}");
+    }
+}
+
 /// Prints the time of the vertex tolerance pass on stored histories of
 /// growing size.
 #[test]

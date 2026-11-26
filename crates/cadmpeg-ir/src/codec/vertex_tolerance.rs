@@ -23,10 +23,12 @@
 //! tolerances they widen, and over the records connected through references
 //! with a record its delta changes or with a vertex its base widens: every
 //! other vertex is compared as in the base, where it was measured. A state
-//! whose base is the current state or empty is measured whole. A record
-//! inside a history body or a witness body has no annotation key of its own,
-//! so its widened tolerance could not be marked derived; it keeps its stored
-//! tolerance, and validation reports its gaps.
+//! whose base is the current state or empty is measured whole. A state
+//! whose chain of bases the pass does not resolve keeps its stored
+//! tolerances, and the pass charges `geometry.vertex-tolerance-unmeasured`
+//! naming it. A record inside a history body or a witness body has no
+//! annotation key of its own, so its widened tolerance could not be marked
+//! derived; it keeps its stored tolerance, and validation reports its gaps.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -72,7 +74,9 @@ const SURFACE_PROJECTION_WORK: usize = 1_000_000;
 /// where it widens one. The pass measures in a session of its own under
 /// `policy`. Where it meets a resource ceiling of that session, it widens no
 /// tolerance of the geometry it has not measured and returns the
-/// `geometry.vertex-tolerance-unmeasured` loss.
+/// `geometry.vertex-tolerance-unmeasured` loss. It returns that loss also
+/// where it resolves no state of an evaluation or a process state with
+/// content, naming each.
 pub(super) fn widen(
     ir: &mut CadIr,
     annotations: &mut Annotations,
@@ -110,10 +114,11 @@ fn widen_measuring(
                 states.measure(&ctx, ir, &read, &state)
             })
             .err();
+            let unresolved = unresolved(ir, &states.measured_states);
             let deltas = states.widened;
-            Ok((current, deltas, stopped))
+            Ok((current, deltas, stopped, unresolved))
         });
-    let (current, deltas, stopped) = match measured {
+    let (current, deltas, stopped, unresolved) = match measured {
         Ok(measured) => measured,
         Err(error) => {
             return vec![DecodeLossCode::VertexToleranceUnmeasured.note(format!(
@@ -173,8 +178,39 @@ fn widen_measuring(
              vertex tolerance of the resolved states of evaluations and process states it had not \
              measured"
         )));
+    } else if !unresolved.is_empty() {
+        losses.push(DecodeLossCode::VertexToleranceUnmeasured.note(format!(
+            "the decode wrapper's vertex tolerance pass resolved no state of {} evaluation(s) \
+             and process state(s) with content, so it widened no vertex tolerance of them: {}",
+            unresolved.len(),
+            unresolved.join(", ")
+        )));
     }
     losses
+}
+
+/// The ids of the evaluations and process states with content that are not
+/// in `measured`, sorted.
+fn unresolved(ir: &CadIr, measured: &HashSet<String>) -> Vec<String> {
+    let mut unresolved: Vec<String> = ir
+        .design
+        .evaluations
+        .iter()
+        .filter(|evaluation| evaluation.content.is_some())
+        .map(|evaluation| evaluation.id.as_str())
+        .chain(
+            ir.process
+                .states
+                .iter()
+                .filter(|state| state.content.is_some())
+                .map(|state| state.id.as_str()),
+        )
+        .filter(|id| !measured.contains(*id))
+        .map(str::to_owned)
+        .collect();
+    unresolved.sort_unstable();
+    unresolved.dedup();
+    unresolved
 }
 
 /// A vertex tolerance widened in the resolved state of an evaluation or a
@@ -201,7 +237,8 @@ struct StateWidening<'w> {
     by_state: HashMap<String, Vec<(String, PositiveLength)>>,
     /// For each evaluation or process state, the vertices it widens.
     by_holder: HashMap<String, Vec<String>>,
-    /// The evaluations and process states the pass measured.
+    /// The evaluations and process states whose resolved state the pass
+    /// visited.
     measured_states: HashSet<String>,
     widened: Vec<DeltaWidening>,
 }
