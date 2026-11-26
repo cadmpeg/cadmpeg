@@ -116,6 +116,9 @@ pub struct FeatureInputTopology {
     /// Carrier surfaces of faces present in this state, at most one entry per
     /// face.
     pub face_geometry: Vec<HistoricalFaceGeometry>,
+    /// The feature that last writes each of some of the bodies of this state,
+    /// at most one entry per body.
+    pub body_writers: Vec<HistoricalBodyWriter>,
     /// Full-fidelity source state reference.
     #[serde(
         default,
@@ -123,6 +126,18 @@ pub struct FeatureInputTopology {
         deserialize_with = "deserialize_native_ref"
     )]
     pub native_ref: Option<String>,
+}
+
+/// The feature whose result last inserts or updates one body of a feature's
+/// input state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct HistoricalBodyWriter {
+    /// Body of the owning input state.
+    pub body: HistoricalBodyId,
+    /// Feature whose result last inserts or updates the body before the state.
+    pub writer: FeatureId,
 }
 
 /// The body of a feature's input state that holds one face of that state.
