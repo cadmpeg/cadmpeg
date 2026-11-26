@@ -21,6 +21,9 @@ pub(crate) enum IronCadLossCode {
     FeatureShapeRetained,
     FaceBoundaryUnstated,
     SurfaceUntyped,
+    PlacementBoundByOrder,
+    PlacementUnbound,
+    AssemblyFlattened,
     SceneStreamsPending,
 }
 
@@ -67,6 +70,17 @@ impl IronCadLossCode {
                 LossTaxonomy::TopologyNotTransferred,
             ),
             Self::SurfaceUntyped => ("surface.untyped", LossTaxonomy::GeometryNotTransferred),
+            Self::PlacementBoundByOrder => {
+                ("placement.bound-by-order", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::PlacementUnbound => (
+                "placement.unbound",
+                LossTaxonomy::AssemblyPlacementsNotTransferred,
+            ),
+            Self::AssemblyFlattened => (
+                "assembly.flattened",
+                LossTaxonomy::AssemblyPlacementsNotTransferred,
+            ),
             Self::SceneStreamsPending => (
                 "scene.decode-pending",
                 LossTaxonomy::ObjectRecordsUntransferred,

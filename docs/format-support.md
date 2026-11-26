@@ -754,9 +754,10 @@ the framed `Brep Data` stream, and walks its record tree. Each Parasolid record
 contributes a Parasolid dialect layer with its schema token, and each ACIS
 record contributes an ACIS layer from its binary header. The ACIS or
 Parasolid record that follows a part's child node decodes into B-rep topology
-and geometry in the part frame; feature records are retained. Part placements
-and feature history are pending, and each scene stream other than `Brep Data`
-produces a loss. The headline is L0. The codec is read-only.
+and geometry in the part frame; feature records are retained. Each part is
+placed in the scene by the matrix of its `Public Access` part record. Assembly
+structure and feature history are pending, and each scene stream other than
+`Brep Data` produces a loss. The headline is L0. The codec is read-only.
 
 See [`formats/ironcad.md`](formats/ironcad.md) and
 [`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).

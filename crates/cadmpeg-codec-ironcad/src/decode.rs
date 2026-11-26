@@ -12,16 +12,19 @@ use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
-use cadmpeg_ir::products::ExternalDocument;
+use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId, UnknownId};
+use cadmpeg_ir::products::{
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
+};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 
-use crate::container::BREP_DATA;
+use crate::container::{BREP_DATA, PUBLIC_ACCESS};
 use crate::loss::IronCadLossCode;
+use crate::placement::SceneRecord;
 use crate::tree::{Kernel, KernelRecord};
-use crate::{acis, container, dialect, frame, kernel, parasolid, tree};
+use crate::{acis, container, dialect, frame, kernel, parasolid, placement, tree};
 use cadmpeg_codec_sldprt::transmit::TransmitGeometry;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -32,10 +35,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map(|deviation| IronCadLossCode::ContainerNoncanonical.note(deviation.description()))
         .collect();
     let mut bodies = Bodies::default();
+    let mut scene = None;
     if !ctx.container_only() {
         if let Some(records) = records(ctx, &snapshot, &mut losses)? {
             bodies = classify(ctx, &records, &mut layers, &mut losses)?;
         }
+        scene = scene_records(ctx, &snapshot, &mut losses)?;
         scene_streams(&snapshot, &mut losses);
     }
     let mut ir = CadIr::empty();
@@ -54,7 +59,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             source_fidelity: SourceFidelity::new(digest),
         });
     }
-    transfer(ctx, ir, bodies, losses, digest)
+    transfer(ctx, ir, bodies, scene.as_deref(), losses, digest)
 }
 
 /// The decoded ACIS graph, the decoded Parasolid bodies, and the kernel
@@ -64,6 +69,8 @@ struct Bodies {
     brep: Option<AsmBrep>,
     parasolid: Vec<TransmitGeometry>,
     retained: Vec<UnknownRecord>,
+    /// The bodies of each part result record, in stored order.
+    results: Vec<Vec<BodyId>>,
 }
 
 /// Moves the decoded ACIS graph and Parasolid bodies into the document.
@@ -71,6 +78,7 @@ fn transfer(
     ctx: &DecodeContext<'_>,
     mut ir: CadIr,
     bodies: Bodies,
+    scene: Option<&[SceneRecord]>,
     mut losses: Vec<LossNote>,
     digest: Sha256Digest,
 ) -> Result<Decoded, CodecError> {
@@ -78,6 +86,7 @@ fn transfer(
         brep,
         parasolid,
         retained,
+        results,
     } = bodies;
     let AsmTransferRemainder {
         mut unknowns,
@@ -162,14 +171,20 @@ fn transfer(
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
     }
-    ir.state_root_definition(
+    let placed = match scene {
+        Some(scene) => place(ctx, &mut ir, results, scene, &mut losses)?,
+        None => Vec::new(),
+    };
+    if let Some(root) = ir.state_root_definition(
         ctx,
         ProductDefinitionId::compose(
             &cadmpeg_ir::identity_namespace!("ironcad", "model", "product-definition"),
             cadmpeg_ir::identity_key!("root"),
         ),
         ExternalDocument::default(),
-    )?;
+    )? {
+        root.occurrences.extend(placed);
+    }
     Ok(Decoded {
         ir,
         body: DecodeBody {
@@ -351,9 +366,13 @@ fn acis_body(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
             losses.push(IronCadLossCode::BodyUnreadable.note(format!("{carrier}: {error}")));
+            bodies.results.push(Vec::new());
             return retain(ctx, record, ordinal, bodies);
         }
     };
+    bodies
+        .results
+        .push(brep.bodies.iter().map(|body| body.id.clone()).collect());
     match &mut bodies.brep {
         Some(merged) => merged.append(brep),
         None => bodies.brep = Some(brep),
@@ -392,9 +411,18 @@ fn parasolid_body(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
             losses.push(IronCadLossCode::BodyUnreadable.note(format!("{carrier}: {error}")));
+            bodies.results.push(Vec::new());
             return retain(ctx, record, ordinal, bodies);
         }
     };
+    bodies.results.push(
+        decoded
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect(),
+    );
     for loss in std::mem::take(&mut decoded.losses) {
         losses.push(
             IronCadLossCode::ParasolidBodyPartial
@@ -411,6 +439,104 @@ fn feature_shape(carrier: &str) -> LossNote {
         "{carrier}: the record lies in the node before a part result record and is read as a \
          feature shape of that part; the kernel record is retained"
     ))
+}
+
+/// Reads the part and assembly records of `Public Access`, or charges the
+/// reason they are absent.
+fn scene_records(
+    ctx: &DecodeContext<'_>,
+    snapshot: &CompoundSnapshot<'_>,
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<Vec<SceneRecord>>, CodecError> {
+    let Some(entry) = snapshot.stream(PUBLIC_ACCESS) else {
+        losses.push(
+            IronCadLossCode::PlacementUnbound
+                .note("`Public Access` is not a stream; bodies stay in their part frames"),
+        );
+        return Ok(None);
+    };
+    match snapshot
+        .open(ctx, entry)
+        .and_then(|stream| frame::payload(ctx, stream))
+    {
+        Ok(payload) => Ok(Some(placement::records(payload.window()))),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => {
+            losses.push(IronCadLossCode::PlacementUnbound.note(format!(
+                "`Public Access` frame could not be read: {error}; bodies stay in their part frames"
+            )));
+            Ok(None)
+        }
+    }
+}
+
+/// Places each part result in the scene by the matrix of its part record.
+///
+/// Returns the occurrences that the root definition places.
+fn place(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    results: Vec<Vec<BodyId>>,
+    scene: &[SceneRecord],
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<OccurrenceId>, CodecError> {
+    let parts: Vec<&SceneRecord> = scene.iter().filter(|record| record.is_part()).collect();
+    if parts.len() != results.len() {
+        losses.push(IronCadLossCode::PlacementUnbound.note(format!(
+            "`Public Access` holds {} part record(s) and `Brep Data` holds {} part result \
+             record(s); bodies stay in their part frames",
+            parts.len(),
+            results.len()
+        )));
+        return Ok(Vec::new());
+    }
+    if parts.is_empty() {
+        return Ok(Vec::new());
+    }
+    losses.push(IronCadLossCode::PlacementBoundByOrder.note(
+        "each `Public Access` part record is bound to the `Brep Data` part result record of \
+         the same rank, and its matrix places the part frame as a row-vector rotation and a \
+         translation in metres",
+    ));
+    let assemblies = scene.len() - parts.len();
+    if assemblies > 0 {
+        losses.push(IronCadLossCode::AssemblyFlattened.note(format!(
+            "{assemblies} assembly record(s) are not transferred; each part is placed in the \
+             scene by its own matrix"
+        )));
+    }
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(2 * parts.len()),
+        "IronCAD part definitions and occurrences",
+    )?;
+    let mut placed = Vec::new();
+    for (rank, (part, bodies)) in parts.into_iter().zip(results).enumerate() {
+        let rank = cadmpeg_core::decode::u64_from_index(rank);
+        let definition_id = ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("ironcad", "model", "product-definition"),
+            rank,
+        );
+        let mut definition = ProductDefinition::new(definition_id.clone(), Storage::Embedded);
+        definition.kind = Some(ProductDefinitionKind::Part);
+        definition.source_name = Some(part.name.clone());
+        definition.bodies = bodies;
+        ir.model.product_definitions.push(definition);
+        if part.transform.is_none() {
+            losses.push(IronCadLossCode::PlacementUnbound.note(format!(
+                "part record `{}` stores no affine matrix; the part stays in its part frame",
+                part.name
+            )));
+        }
+        let occurrence_id = OccurrenceId::compose(
+            &cadmpeg_ir::identity_namespace!("ironcad", "model", "occurrence"),
+            rank,
+        );
+        let mut occurrence = Occurrence::new(occurrence_id.clone(), definition_id, part.transform);
+        occurrence.name = Some(part.name.clone());
+        ir.model.occurrences.push(occurrence);
+        placed.push(occurrence_id);
+    }
+    Ok(placed)
 }
 
 /// Retains the kernel bytes of `record` as a native record.

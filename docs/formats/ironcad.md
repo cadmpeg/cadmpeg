@@ -95,3 +95,44 @@ header product string names `IronCAD`. Lengths are centimetres (`asm.md` §4).
 The `Document Data` stream names the scene units as UTF-16LE strings: a length
 unit (`Millimeters`), an angle unit (`Degrees`), and a mass unit (`Kilograms`).
 Parasolid kernel lengths are in metres.
+
+## 5. Scene records
+
+The `Public Access` stream is framed (§2). Its payload holds a sequence of
+named records. A record name is the bytes `ff ff fe`, a `u8` count of UTF-16
+code units, and that many little-endian UTF-16 code units. A marker with count
+`0` opens no record.
+
+A **part record** and an **assembly record** continue after the name with a
+property set. The property set starts with these 20 bytes:
+
+```
+02 00 00 00 4a 00 e1 3d 2d 92 cf 11 ac 2e 00 a0 24 58 1e 5c
+```
+
+A **feature record** continues after the name with `00 00 00 00 01 00`. The
+feature records of a part come before its part record. An assembly record
+comes after the part records of its parts, and no feature record comes
+between it and the record before it.
+
+The property set holds named properties. A property name is a NUL-terminated
+little-endian UTF-16 string, a `u16` value type, and the value. Type `8` is a
+string: a `u32` byte length and the NUL-terminated UTF-16 text. Type `5` is an
+f64. The properties include `PartName`, `PartVolume`, `MassDensity`,
+`SizeboxHeight`, `SizeboxLength`, `SizeboxWidth`, and `ModelGUID`. Lengths are
+metres.
+
+The `ModelGUID` value is a brace-enclosed GUID string. The record matrix
+starts 41 bytes after the end of that string.
+
+| Offset | Size | Field | Meaning |
+|---|---|---|---|
+| 0 | 41 | `gap` | Bytes between the `ModelGUID` text and the matrix. |
+| 41 | 128 | `matrix` | Sixteen little-endian f64 values in row order. |
+
+Rows 1 to 3 of `matrix` hold a 3 × 3 block and the value `0`. Row 4 holds a
+translation in metres and the value `1`.
+
+`Shape Data` holds one matrix of the same form for each feature. It maps a
+point of the feature body to the part frame as `p · R + t`, where `R` is the
+3 × 3 block and `t` the translation.

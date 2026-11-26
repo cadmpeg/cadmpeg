@@ -58,6 +58,18 @@ Parsed by:
 | 12 | 12 | `words` | `u32[3]` | little | spec | \| 12 \| 12 \| `words` \| |
 | 24 | 4 | `reserved` | `u32` | little | spec | \| 24 \| 4 \| `reserved` \| `0`. \| |
 
+## `scene_record_matrix`
+
+Spec §5 · layout: byte offsets · size: 169 B
+
+Parsed by:
+- `crates/cadmpeg-codec-ironcad/src/placement.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 41 | `gap` | `u8[41]` | little | spec | \| 0 \| 41 \| `gap` \| |
+| 41 | 128 | `matrix` | `f64[16]` | little | spec | \| 41 \| 128 \| `matrix` \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

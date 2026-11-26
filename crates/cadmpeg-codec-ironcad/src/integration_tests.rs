@@ -273,3 +273,64 @@ fn parasolid_records_rewrite_into_framed_neutral_transmits() {
         ctx.finish_session().unwrap();
     }
 }
+
+#[test]
+fn scene_parts_are_placed_by_their_public_access_matrices() {
+    let result = decode(SCENE);
+    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::PlacementUnbound), 0);
+    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 1);
+    let model = &result.ir().model;
+    let names: Vec<_> = model
+        .occurrences
+        .iter()
+        .map(|occurrence| occurrence.name.as_deref().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "Box_Parasolid",
+            "Cylinder_ACIS",
+            "Compound_part",
+            "Part6",
+            "Part4"
+        ]
+    );
+    let translation = |name: &str| {
+        let occurrence = model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.name.as_deref() == Some(name))
+            .unwrap();
+        let rows = occurrence.transform.unwrap().affine_rows();
+        for (axis, row) in rows.iter().enumerate() {
+            for (column, value) in row[..3].iter().enumerate() {
+                let expected = if axis == column { 1.0 } else { 0.0 };
+                assert!((value - expected).abs() <= EPS_POINT_MM, "{name}: {rows:?}");
+            }
+        }
+        rows.map(|row| row[3])
+    };
+    assert_eq!(translation("Box_Parasolid"), [0.0; 3]);
+    let block = translation("Part6");
+    let cylinder = translation("Part4");
+    assert!((block[2] - (cylinder[2] + 50.0)).abs() <= EPS_POINT_MM);
+    let root = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap();
+    assert_eq!(root.occurrences.len(), 5);
+    assert!(root.bodies.is_empty());
+}
+
+#[test]
+fn single_part_scenes_place_their_part_at_the_origin() {
+    let result = decode(BOX);
+    let occurrence = &result.ir().model.occurrences[0];
+    assert_eq!(
+        occurrence.transform.unwrap().affine_rows(),
+        cadmpeg_ir::transform::Transform::identity().affine_rows()
+    );
+    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
+}

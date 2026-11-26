@@ -14,6 +14,7 @@ mod kernel;
 mod layout;
 mod loss;
 mod parasolid;
+mod placement;
 mod tree;
 
 use cadmpeg_core::decode::{DecodeContext, View};

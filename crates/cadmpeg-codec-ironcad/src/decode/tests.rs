@@ -64,6 +64,7 @@ fn the_result_record_decodes_and_the_feature_record_is_retained() {
         &ctx,
         CadIr::empty(),
         bodies,
+        None,
         losses,
         Sha256Digest::digest(&payload),
     )
@@ -115,6 +116,7 @@ fn a_face_on_an_unrecognized_surface_record_is_charged() {
         &ctx,
         CadIr::empty(),
         bodies,
+        None,
         losses,
         Sha256Digest::digest(&payload),
     )
@@ -135,4 +137,18 @@ fn a_face_on_an_unrecognized_surface_record_is_charged() {
         1,
         "{codes:?}"
     );
+}
+
+#[test]
+fn part_records_that_do_not_match_the_part_results_are_unbound() {
+    let payload = plane_face_body();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
+    let mut losses = Vec::new();
+    let placed = super::place(&ctx, &mut ir, vec![Vec::new()], &[], &mut losses).unwrap();
+    assert!(placed.is_empty());
+    assert_eq!(count(&losses, IronCadLossCode::PlacementUnbound), 1);
+    assert!(ir.model.product_definitions.is_empty());
 }
