@@ -5161,14 +5161,14 @@ impl<'a> PcurveOrientationContext<'a, '_> {
             let end_uv = pcurve_point(range[1], "end")?;
             let start = model_surface_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Write(self.ctx),
-                self.index.ir,
+                &self.index.model,
                 self.surface,
                 start_uv.u,
                 start_uv.v,
             );
             let end = model_surface_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Write(self.ctx),
-                self.index.ir,
+                &self.index.model,
                 self.surface,
                 end_uv.u,
                 end_uv.v,

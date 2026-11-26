@@ -174,7 +174,7 @@ impl<'a> Builder<'a> {
         {
             let Some(point) = finite_or_refusal(model_surface_point(
                 EvaluationAdmission::Write(self.context),
-                self.ir,
+                &self.model_index,
                 &surface.geometry,
                 u,
                 v,

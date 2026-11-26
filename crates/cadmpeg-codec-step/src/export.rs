@@ -320,7 +320,7 @@ pub(crate) struct Builder<'a> {
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Vec<Ref>>,
     edge_midpoints: HashMap<String, Ref>,
-    edge_split_index: cadmpeg_ir::index::ModelIndex<'a>,
+    model_index: cadmpeg_ir::index::ModelIndex<'a>,
     /// The encode's evaluation session, under the caller's limits.
     context: &'a cadmpeg_core::decode::DecodeContext<'a>,
     edge_split_error: Option<cadmpeg_core::CodecError>,
@@ -635,7 +635,7 @@ impl<'a> Builder<'a> {
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
             edge_midpoints: HashMap::new(),
-            edge_split_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
+            model_index: cadmpeg_ir::index::ModelIndex::new_model_only(ir),
             context,
             edge_split_error: None,
             coedge_edge_occurrences: HashMap::new(),
@@ -3879,7 +3879,7 @@ impl<'a> Builder<'a> {
             let uv = uv.get();
             let Some(point) = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Write(self.context),
-                self.ir,
+                &self.model_index,
                 &surface.geometry,
                 uv.u,
                 uv.v,
@@ -4237,7 +4237,7 @@ impl<'a> Builder<'a> {
         let midpoint = if let Some(vertex) = self.edge_midpoints.get(edge_id) {
             Some(*vertex)
         } else {
-            match edge_split::midpoint(&self.edge_split_index, edge, self.context) {
+            match edge_split::midpoint(&self.model_index, edge, self.context) {
                 Ok(edge_split::Split::At(point)) => {
                     let point = geometry::point(&mut self.emitter, point);
                     let vertex = self.emitter.emit("VERTEX_POINT", &format!("'',{point}"));
@@ -4518,7 +4518,7 @@ impl<'a> Builder<'a> {
             let uv = uv.get();
             finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
                 EvaluationAdmission::Write(self.context),
-                self.ir,
+                &self.model_index,
                 &surface.geometry,
                 uv.u,
                 uv.v,

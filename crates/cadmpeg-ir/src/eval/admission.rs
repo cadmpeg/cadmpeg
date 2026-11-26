@@ -609,7 +609,7 @@ mod tests {
                 .map(|partials| partials.point),
                 _ => crate::eval::model_surface_point(
                     EvaluationAdmission::Decode(&ctx),
-                    &ir,
+                    &crate::index::ModelIndex::new_model_only(&ir),
                     &ir.geometry.surfaces[0].geometry,
                     0.5,
                     0.5,

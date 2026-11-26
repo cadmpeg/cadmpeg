@@ -337,7 +337,7 @@ fn revolved_segment<'ir>(
             let uv = segment.at(parameter);
             let point = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                index.ir,
+                &index.model,
                 &surface.geometry,
                 uv.u,
                 uv.v,
@@ -445,7 +445,7 @@ fn join(
     let at = |uv: Point2| {
         finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            index.ir,
+            &index.model,
             &surface.geometry,
             uv.u,
             uv.v,
