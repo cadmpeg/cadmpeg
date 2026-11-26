@@ -625,6 +625,11 @@ pub(crate) enum SldprtLossCode {
     /// Typed revolves whose `Sketch` pick's closed regions the decoder did
     /// not compare with the stored profile loops.
     DesignRevolveProfileUnchecked,
+    /// Revolves whose solid depends on the turn sense, a partial turn on one
+    /// side or a two-sided turn, whose decoded axis turns about the axis
+    /// direction their record stores, reversed where their record's reverse
+    /// byte is `1`.
+    DesignRevolveSenseAssumed,
 }
 
 impl SldprtLossCode {
@@ -857,6 +862,7 @@ impl SldprtLossCode {
         Self::DesignRevolveBooleanUnstated,
         Self::DesignRevolveProfileDiffers,
         Self::DesignRevolveProfileUnchecked,
+        Self::DesignRevolveSenseAssumed,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -1120,6 +1126,7 @@ impl SldprtLossCode {
             Self::DesignRevolveBooleanUnstated => "design.revolve-boolean-unstated",
             Self::DesignRevolveProfileDiffers => "design.revolve-profile-differs",
             Self::DesignRevolveProfileUnchecked => "design.revolve-profile-unchecked",
+            Self::DesignRevolveSenseAssumed => "design.revolve-sense-assumed",
             Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
         }
     }
@@ -1339,7 +1346,8 @@ impl SldprtLossCode {
             | Self::DesignExtrudeSketchEmpty
             | Self::DesignSketchDimensionCircle
             | Self::DesignRevolveAxisDerived
-            | Self::DesignRevolveProfileDiffers => Severity::Warning,
+            | Self::DesignRevolveProfileDiffers
+            | Self::DesignRevolveSenseAssumed => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -1461,7 +1469,8 @@ impl SldprtLossCode {
             | Self::DesignRevolveAxisDerived
             | Self::DesignRevolveBooleanUnstated
             | Self::DesignRevolveProfileDiffers
-            | Self::DesignRevolveProfileUnchecked => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignRevolveProfileUnchecked
+            | Self::DesignRevolveSenseAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -2006,6 +2015,7 @@ mod tests {
                 "design.revolve-boolean-unstated",
                 "design.revolve-profile-differs",
                 "design.revolve-profile-unchecked",
+                "design.revolve-sense-assumed",
             ]
         );
     }
