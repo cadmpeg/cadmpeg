@@ -7,7 +7,9 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::ProductDefinitionId;
 
 use super::{plan, ID_WIDTH};
-use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
+use crate::records::configuration::{
+    DesignConfiguration, DesignConfigurationActiveRow, DesignConfigurationKind,
+};
 use crate::test_support::configuration_table::table_document;
 
 const TABLE: &str = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.synthetic.dsgcfg";
@@ -102,15 +104,13 @@ type Pair = (String, String);
 /// The table id and row id the root record of `ir` names, and the code and
 /// message of each loss.
 fn planned(ir: &CadIr, documents: &[DesignConfiguration]) -> (Option<Pair>, Vec<Pair>) {
-    let plan = plan(ir, documents).unwrap();
+    let plan = plan(ir, documents);
     let losses = plan
         .losses
         .iter()
         .map(|loss| (loss.code.to_string(), loss.message.clone()))
         .collect();
-    let root = plan
-        .root
-        .map(|root| (root.table_id.written, root.row_id.written));
+    let root = plan.root.map(|root| (root.table_id, root.row_id));
     (root, losses)
 }
 
@@ -200,10 +200,7 @@ fn a_row_id_cut_that_names_another_row_is_written_unique_with_a_charge() {
     assert!(losses[0].1.contains("names another row"));
     assert!(losses[0].1.contains(id(&long).as_str()));
 
-    let written = plan(&ir, &documents)
-        .unwrap()
-        .payload(0, &documents[0])
-        .unwrap();
+    let written = plan(&ir, &documents).payload(0, &documents[0]).unwrap();
     let written = DesignConfiguration::try_new(
         TABLE.into(),
         DesignConfigurationKind::Table,
@@ -277,7 +274,7 @@ fn a_table_id_another_document_holds_is_written_unique_with_a_charge() {
     assert!(losses[0].1.contains(id("large").as_str()));
     assert!(losses[0].1.contains(&documents[1].id()));
 
-    let plan = plan(&ir, &documents).unwrap();
+    let plan = plan(&ir, &documents);
     assert_eq!(table_ids(&written(&plan, 0, &documents[0])), ["1-1"]);
     assert_eq!(table_ids(&written(&plan, 1, &documents[1])), ["1"]);
 }
@@ -298,7 +295,7 @@ fn a_same_document_twin_of_the_table_id_is_not_renamed() {
     assert_eq!(losses.len(), 1, "{losses:#?}");
     assert!(losses[0].1.contains(&documents[1].id()));
     assert!(!losses[0].1.contains(&documents[0].id()));
-    let plan = plan(&ir, &documents).unwrap();
+    let plan = plan(&ir, &documents);
     assert_eq!(table_ids(&written(&plan, 0, &documents[0])), ["1-1", "1"]);
 }
 
@@ -329,4 +326,91 @@ fn a_unique_table_id_avoids_every_other_table_id() {
     ];
     let (root, _) = planned(&document(&documents, &[id("large")], &[]), &documents);
     assert_eq!(root, Some(row("1-2", "large")));
+}
+
+/// `document` with the stated active row `row_id` of table `table_id`.
+fn stating(mut document: DesignConfiguration, table_id: &str, row_id: &str) -> DesignConfiguration {
+    document
+        .set_active_row(DesignConfigurationActiveRow {
+            record_index: 7,
+            table_id: table_id.into(),
+            row_id: row_id.into(),
+        })
+        .unwrap();
+    document
+}
+
+/// The document of [`documents`] with an empty table `2` that states row
+/// `x` of table `2` active.
+fn stating_an_empty_table() -> Vec<DesignConfiguration> {
+    vec![stating(with_twin(&documents()[0], "2"), "2", "x")]
+}
+
+#[test]
+fn a_stated_row_of_an_empty_table_is_written_as_stated() {
+    let documents = stating_an_empty_table();
+    assert_eq!(
+        planned(&document(&documents, &[], &[]), &documents),
+        (Some(row("2", "x")), Vec::new())
+    );
+    let documents = vec![
+        table(TABLE, "1", &["small", "large"]),
+        stating(table(SECOND, "2", &[]), "2", "x"),
+    ];
+    assert_eq!(
+        planned(&document(&documents, &[], &[]), &documents),
+        (Some(row("2", "x")), Vec::new())
+    );
+}
+
+#[test]
+fn a_stated_row_beside_a_scope_row_of_its_document_is_charged_as_replaced() {
+    let documents = stating_an_empty_table();
+    let (root, losses) = planned(&document(&documents, &[], &[id("large")]), &documents);
+    assert_eq!(root, Some(row("1", "large")));
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(losses[0].0, "export/value.unwritable");
+    assert!(losses[0]
+        .1
+        .contains(&format!("{} table id 2 row id x", documents[0].id())));
+    assert!(losses[0]
+        .1
+        .contains("holds one DesignConfigurationRoot record, which names another row"));
+    assert!(!losses[0].1.contains("writes no active row"));
+}
+
+#[test]
+fn a_stated_row_missing_from_its_populated_table_is_charged() {
+    let documents = vec![stating(table(TABLE, "1", &["small", "large"]), "1", "x")];
+    let (root, losses) = planned(&document(&documents, &[], &[]), &documents);
+    assert!(root.is_none());
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert!(losses[0]
+        .1
+        .contains(&format!("{} table id 1 row id x", documents[0].id())));
+    assert!(losses[0]
+        .1
+        .contains("a table of its table id holds other rows"));
+}
+
+#[test]
+fn a_stated_row_the_reader_binds_elsewhere_is_charged() {
+    let documents = vec![
+        stating(table(TABLE, "1", &[]), "9", "x"),
+        table(SECOND, "2", &[]),
+    ];
+    let (root, losses) = planned(&document(&documents, &[], &[]), &documents);
+    assert!(root.is_none());
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert!(losses[0]
+        .1
+        .contains("does not read back as the row of the document"));
+}
+
+#[test]
+fn a_unique_id_is_found_when_every_earlier_candidate_is_taken() {
+    let taken = ["t-1", "t-2", "t-3"].into_iter().collect::<BTreeSet<_>>();
+    assert_eq!(super::unique(super::TABLE_ID, "t", &taken), "t-4");
+    let taken = ["t-1", "t-3", "x"].into_iter().collect::<BTreeSet<_>>();
+    assert_eq!(super::unique(super::TABLE_ID, "t", &taken), "t-2");
 }

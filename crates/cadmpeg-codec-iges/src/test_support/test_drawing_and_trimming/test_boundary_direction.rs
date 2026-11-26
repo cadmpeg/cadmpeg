@@ -214,8 +214,15 @@ pub(crate) fn ring_band_file(face: &str, bounded: bool, upper_pcurve: bool) -> V
 /// The Type 144 band of [`ring_band_entities`] with the lower ring as its
 /// outer boundary, and as inner boundaries the upper ring and a square hole
 /// at directory entry 17 that states no parameter curve. The hole runs
-/// through `S(u, v)` at `u` in `[0.4, 0.6]` and `v` in `[0.4, 0.6]`.
-pub(crate) fn ring_band_with_bare_hole_file() -> Vec<u8> {
+/// through `S(u, v)` at `u` in `[0.4, 0.6]` and `v` in `[0.4, 0.6]`. Where
+/// `closed` does not hold, the hole stops at its fourth corner.
+pub(crate) fn ring_band_with_bare_hole_file(closed: bool) -> Vec<u8> {
+    let corners = "0.4,0.4,0.4,0.1,0.6,0.4,0.1,0.6,0.6,0.4,0.4,0.6";
+    let hole = if closed {
+        format!("106,2,5,{corners},0.4,0.4,0.4;")
+    } else {
+        format!("106,2,4,{corners};")
+    };
     let mut entities = ring_band_entities(false, true);
     entities.extend([
         OwnedTestEntity {
@@ -223,8 +230,7 @@ pub(crate) fn ring_band_with_bare_hole_file() -> Vec<u8> {
             form: 12,
             label: "HOLEMODL".into(),
             status: "00010000",
-            parameters: "106,2,5,0.4,0.4,0.4,0.1,0.6,0.4,0.1,0.6,0.6,0.4,0.4,0.6,0.4,0.4,0.4;"
-                .into(),
+            parameters: hole,
         },
         OwnedTestEntity {
             entity_type: 142,

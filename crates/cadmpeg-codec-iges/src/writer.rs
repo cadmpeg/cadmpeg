@@ -190,6 +190,7 @@ fn body(
         losses,
         notes: vec![note.into()],
         written_row: None,
+        annotations: None,
     }
 }
 
@@ -5107,14 +5108,14 @@ impl<'a> PcurveOrientationContext<'a> {
             let end_uv = pcurve_point(range[1], "end")?;
             let start = model_surface_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                self.index.ir,
+                &self.index.model,
                 self.surface,
                 start_uv.u,
                 start_uv.v,
             );
             let end = model_surface_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                self.index.ir,
+                &self.index.model,
                 self.surface,
                 end_uv.u,
                 end_uv.v,

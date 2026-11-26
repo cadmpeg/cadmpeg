@@ -1235,6 +1235,14 @@ In the first form, reverse byte `0` gives the right-handed turn about the stored
 
 **Need.** The identifier that a record with nonzero `+80` gives the next line; whether the closing record's `+84` names the first line's face where it is nonzero; and the entry order and entities of a component path for producers other than an extrusion.
 
+### EV-39. Partial turns of a circular feature pattern
+
+**Question.** How does a `moCirPattern_c` whose angle is less than a full turn place its instances, and what does the byte after its axis tail select?
+
+**Known.** The byte follows the circular pattern's axis tail (`sldprt.md` §2.3) and takes the values `0` and `1`. With a full turn the instances lie evenly around the axis for both values. A pattern whose listed angle dimension is `D3` holds the full turn. A pattern whose listed angle dimension is `D2`, with value 90° and 4 instances, places its copies 90° apart, so its angle is the step between neighbours. The decoder types only full-turn circular patterns from the walked object.
+
+**Need.** Save one profile cut patterned circularly 4 times over 90°, once with equal spacing and once with the instance spacing, each with the pattern direction reversed and not reversed. Compare the angle parameter's name and value, the byte after the axis tail, and the angles of the copies in the stored solid.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?

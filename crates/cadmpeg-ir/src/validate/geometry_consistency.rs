@@ -31,6 +31,7 @@ use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
 use crate::index::identities::BorrowedIdentities;
+use crate::index::StandardIndex;
 
 /// A curve point as the checks measure it: the finite point, or the point an
 /// evaluation outside the finite range reached, whose mismatch is then the
@@ -733,27 +734,6 @@ fn curve_owners(ir: &CadIr) -> BorrowedIdentities<'_, &crate::ids::CurveId> {
     })
 }
 
-fn vertex_positions(ir: &CadIr) -> BorrowedIdentities<'_, (Point3, Option<f64>)> {
-    let points = BorrowedIdentities::build(|add| {
-        for point in &ir.geometry.points {
-            add(point.id.as_str(), point.position().get());
-        }
-    });
-    BorrowedIdentities::build(|add| {
-        for vertex in &ir.geometry.vertices {
-            if let Some(position) = points.get(vertex.point.as_str()) {
-                add(
-                    vertex.id.as_str(),
-                    (
-                        *position,
-                        vertex.tolerance.map(crate::scalar::PositiveLength::get),
-                    ),
-                );
-            }
-        }
-    })
-}
-
 /// Whether a curve carrier is open: a bounded carrier whose ends do not
 /// coincide within `bound`, or an unbounded line, parabola, or hyperbola. A
 /// carrier that neither its kind nor an evaluation decides is not open.
@@ -822,14 +802,12 @@ pub(super) fn vertexless_edge_on_open_carrier(
 /// vertex at the curve's start.
 pub(super) fn check_edge_endpoint_consistency(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+    index: &crate::index::ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let curves = BorrowedIdentities::build(|add| {
-        for curve in &ir.geometry.curves {
-            add(curve.id.as_str(), curve);
-        }
-    });
+    let ir = index.ir();
+    let curves = |id: &str| index.curves(id, StandardIndex);
+    let vertices = |id: &str| index.vertex_position(id);
     let curve_domains = BorrowedIdentities::build(|add| {
         for curve in &ir.geometry.curves {
             if let Some(domain) = crate::eval::bounded_curve_domain(curve) {
@@ -845,12 +823,11 @@ pub(super) fn check_edge_endpoint_consistency(
             }
         }
     });
-    let vertices = vertex_positions(ir);
     for edge in &ir.geometry.edges {
         let Some(curve_id) = edge.curve() else {
             continue;
         };
-        let Some(curve) = curves.get(curve_id.as_str()).copied() else {
+        let Some(curve) = curves(curve_id.as_str()) else {
             continue;
         };
         let geometry = &curve.geometry;
@@ -879,10 +856,9 @@ pub(super) fn check_edge_endpoint_consistency(
             }
             continue;
         };
-        let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(ends.start.as_str()),
-            vertices.get(ends.end.as_str()),
-        ) else {
+        let (Some((start, start_tol)), Some((end, end_tol))) =
+            (vertices(ends.start.as_str()), vertices(ends.end.as_str()))
+        else {
             continue;
         };
         let range = edge.param_range().map(crate::units::FiniteVector::get);
@@ -953,21 +929,16 @@ pub(super) fn check_edge_endpoint_consistency(
             );
         }
     }
-    let edges = BorrowedIdentities::build(|add| {
-        for edge in &ir.geometry.edges {
-            add(edge.id.as_str(), edge);
-        }
-    });
     for coedge in &ir.geometry.coedges {
         let Some(use_curve) = &coedge.use_curve else {
             continue;
         };
         let [start_t, end_t] = use_curve.parameter_range.endpoints();
         let curve_id = &use_curve.curve;
-        let Some(geometry) = curves.get(curve_id.as_str()).map(|curve| &curve.geometry) else {
+        let Some(geometry) = curves(curve_id.as_str()).map(|curve| &curve.geometry) else {
             continue;
         };
-        let Some(edge) = edges.get(coedge.edge.as_str()) else {
+        let Some(edge) = index.edges(coedge.edge.as_str(), StandardIndex) else {
             continue;
         };
         let Some(ends) = &edge.ends else {
@@ -978,8 +949,8 @@ pub(super) fn check_edge_endpoint_consistency(
             Sense::Reversed => (&ends.end, &ends.start),
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(first_vertex.as_str()),
-            vertices.get(last_vertex.as_str()),
+            vertices(first_vertex.as_str()),
+            vertices(last_vertex.as_str()),
         ) else {
             continue;
         };
@@ -1044,16 +1015,6 @@ pub(super) fn check_pcurve_surface_consistency(
         index,
         pass: evaluations,
     };
-    let curves = BorrowedIdentities::build(|add| {
-        for curve in &ir.geometry.curves {
-            add(curve.id.as_str(), &curve.geometry);
-        }
-    });
-    let surfaces = BorrowedIdentities::build(|add| {
-        for surface in &ir.geometry.surfaces {
-            add(surface.id.as_str(), &surface.geometry);
-        }
-    });
     let surface_owners = BorrowedIdentities::build(|add| {
         for surface in &ir.geometry.surfaces {
             if let Some(construction) = surface.geometry.procedural_construction() {
@@ -1073,46 +1034,28 @@ pub(super) fn check_pcurve_surface_consistency(
             }
         }
     });
-    let pcurves = BorrowedIdentities::build(|add| {
-        for pcurve in &ir.geometry.pcurves {
-            add(pcurve.id.as_str(), pcurve);
-        }
-    });
-    let edges = BorrowedIdentities::build(|add| {
-        for edge in &ir.geometry.edges {
-            add(edge.id.as_str(), edge);
-        }
-    });
-    let faces = BorrowedIdentities::build(|add| {
-        for face in &ir.geometry.faces {
-            add(face.id.as_str(), face);
-        }
-    });
-    let loops = BorrowedIdentities::build(|add| {
-        for lp in &ir.geometry.loops {
-            add(lp.id.as_str(), lp);
-        }
-    });
-    let vertices = vertex_positions(ir);
+    let vertices = |id: &str| index.vertex_position(id);
 
     for coedge in &ir.geometry.coedges {
         let Some((first_use, last_use)) = coedge.pcurves.first().zip(coedge.pcurves.last()) else {
             continue;
         };
         let (Some(first), Some(last)) = (
-            pcurves.get(first_use.pcurve.as_str()),
-            pcurves.get(last_use.pcurve.as_str()),
+            index.pcurves(first_use.pcurve.as_str(), StandardIndex),
+            index.pcurves(last_use.pcurve.as_str(), StandardIndex),
         ) else {
             continue;
         };
-        let face = match loops.get(coedge.owner_loop.as_str()) {
-            Some(lp) => faces.get(lp.face.as_str()),
-            None => None,
-        };
+        let face = index
+            .loops(coedge.owner_loop.as_str(), StandardIndex)
+            .and_then(|lp| index.faces(lp.face.as_str(), StandardIndex));
         let Some(face) = face else {
             continue;
         };
-        let Some(geometry) = surfaces.get(face.surface.as_str()) else {
+        let Some(geometry) = index
+            .surfaces(face.surface.as_str(), StandardIndex)
+            .map(|surface| &surface.geometry)
+        else {
             continue;
         };
         // A procedural construction defines its own UV space. Its solved
@@ -1122,16 +1065,15 @@ pub(super) fn check_pcurve_surface_consistency(
         if procedurally_parameterized_surfaces.contains(face.surface.as_str()) {
             continue;
         }
-        let Some(edge) = edges.get(coedge.edge.as_str()) else {
+        let Some(edge) = index.edges(coedge.edge.as_str(), StandardIndex) else {
             continue;
         };
         let Some(ends) = &edge.ends else {
             continue;
         };
-        let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(ends.start.as_str()),
-            vertices.get(ends.end.as_str()),
-        ) else {
+        let (Some((start, start_tol)), Some((end, end_tol))) =
+            (vertices(ends.start.as_str()), vertices(ends.end.as_str()))
+        else {
             continue;
         };
         // A single parameter-space image is checked over its candidate
@@ -1139,7 +1081,9 @@ pub(super) fn check_pcurve_surface_consistency(
         // range. Multiple images are checked from the first image's start
         // extreme to the last image's end extreme.
         let curve_geometry = match edge.curve() {
-            Some(curve) => curves.get(curve.as_str()).copied(),
+            Some(curve) => index
+                .curves(curve.as_str(), StandardIndex)
+                .map(|curve| &curve.geometry),
             None => None,
         };
         let in_force = tolerance_in_force(
