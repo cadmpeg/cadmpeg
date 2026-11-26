@@ -21,7 +21,8 @@ use crate::report::check::Finding;
 use crate::validate::design::evaluations::{
     check_position, check_resulting_position, state_chains,
 };
-use crate::validate::design::records::{MemberKey, PositionKey};
+use crate::validate::design::records::{DesignRecords, MemberKey, PositionKey};
+use crate::validate::design::resolved::StateTopology;
 
 pub(super) fn check_evaluations(
     records: &ProcessRecords<'_>,
@@ -593,6 +594,24 @@ pub(super) fn check_resolved_states(
         ids,
         |state| setup_of_state(records, state).and_then(|setup| records.scope_of_setup(setup)),
         findings,
+    )
+}
+
+/// Visits the resolved state of each evaluation and each process state of
+/// `ir` whose delta holds a topology record, as the checks of resolved
+/// states resolve it (`resolved::visit_states`).
+pub(crate) fn visit_resolved_states(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    visit: &mut dyn FnMut(StateTopology<'_>) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let design = DesignRecords::new(ir);
+    let records = ProcessRecords::new(&design);
+    crate::validate::design::resolved::visit_states(
+        ctx,
+        &design,
+        |state| setup_of_state(&records, state).and_then(|setup| records.scope_of_setup(setup)),
+        visit,
     )
 }
 

@@ -37,7 +37,8 @@ pub(crate) enum DecodeLossCode {
     /// farther from a compared position than the coincidence allowance.
     VertexToleranceWidened,
     /// The wrapper's vertex tolerance pass met a resource ceiling of its own
-    /// session and widened no vertex tolerance.
+    /// session and widened no vertex tolerance in the geometry or resolved
+    /// states it had not measured.
     VertexToleranceUnmeasured,
 }
 
