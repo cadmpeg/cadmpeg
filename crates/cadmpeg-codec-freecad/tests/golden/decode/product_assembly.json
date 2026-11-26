@@ -3,14 +3,320 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#BracketOccurrence"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#BracketPrototype"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#ExternalOccurrence"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#NestedBracketOccurrence"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#PinArray"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#PinOccurrence"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#PinPrototype"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "place",
+              "value": {
+                "base": "own_occurrence",
+                "constraints": [],
+                "native_options": {},
+                "occurrence": "fcstd:model:occurrence#BracketOccurrence:instance",
+                "placement": {
+                  "after": [
+                    {
+                      "kind": "fixed",
+                      "value": [
+                        [
+                          1.0,
+                          0.0,
+                          0.0,
+                          10.0
+                        ],
+                        [
+                          0.0,
+                          1.0,
+                          0.0,
+                          0.0
+                        ],
+                        [
+                          0.0,
+                          0.0,
+                          1.0,
+                          0.0
+                        ]
+                      ]
+                    }
+                  ],
+                  "inputs": [],
+                  "resolved": {
+                    "origin": {
+                      "x": 10.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "x_axis": {
+                      "x": 1.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "y_axis": {
+                      "x": 0.0,
+                      "y": 1.0,
+                      "z": 0.0
+                    },
+                    "z_axis": {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 1.0
+                    }
+                  },
+                  "resolved_in": {}
+                },
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "fcstd:design:feature#BracketOccurrence",
+          "name": "BracketOccurrence",
+          "native_ref": "fcstd:native:object#BracketOccurrence"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#BracketPrototype",
+          "name": "BracketPrototype",
+          "native_ref": "fcstd:native:object#BracketPrototype"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "place",
+              "value": {
+                "constraints": [],
+                "native_options": {},
+                "occurrence": "fcstd:model:occurrence#ExternalOccurrence:instance",
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "fcstd:design:feature#ExternalOccurrence",
+          "name": "ExternalOccurrence",
+          "native_ref": "fcstd:native:object#ExternalOccurrence"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "place",
+              "value": {
+                "constraints": [],
+                "native_options": {},
+                "occurrence": "fcstd:model:occurrence#NestedBracketOccurrence:instance",
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "fcstd:design:feature#NestedBracketOccurrence",
+          "name": "NestedBracketOccurrence",
+          "native_ref": "fcstd:native:object#NestedBracketOccurrence"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "place_set",
+              "value": {
+                "native_options": {},
+                "occurrences": [
+                  "fcstd:model:occurrence#PinArray:0",
+                  "fcstd:model:occurrence#PinArray:1",
+                  "fcstd:model:occurrence#PinArray:2"
+                ],
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "fcstd:design:feature#PinArray",
+          "name": "PinArray",
+          "native_ref": "fcstd:native:object#PinArray"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "place",
+              "value": {
+                "base": "own_occurrence",
+                "constraints": [],
+                "native_options": {},
+                "occurrence": "fcstd:model:occurrence#PinOccurrence:instance",
+                "placement": {
+                  "after": [
+                    {
+                      "kind": "fixed",
+                      "value": [
+                        [
+                          2.220446049250313e-16,
+                          0.0,
+                          1.0,
+                          20.0
+                        ],
+                        [
+                          0.0,
+                          1.0,
+                          0.0,
+                          6.0
+                        ],
+                        [
+                          -1.0,
+                          0.0,
+                          2.220446049250313e-16,
+                          3.0
+                        ]
+                      ]
+                    }
+                  ],
+                  "inputs": [],
+                  "resolved": {
+                    "origin": {
+                      "x": 20.0,
+                      "y": 6.0,
+                      "z": 3.0
+                    },
+                    "x_axis": {
+                      "x": 2.220446049250313e-16,
+                      "y": 0.0,
+                      "z": -1.0
+                    },
+                    "y_axis": {
+                      "x": 0.0,
+                      "y": 1.0,
+                      "z": 0.0
+                    },
+                    "z_axis": {
+                      "x": 1.0,
+                      "y": 0.0,
+                      "z": 2.220446049250313e-16
+                    }
+                  },
+                  "resolved_in": {}
+                },
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "fcstd:design:feature#PinOccurrence",
+          "name": "PinOccurrence",
+          "native_ref": "fcstd:native:object#PinOccurrence"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "stored",
+              "value": {
+                "bodies": [
+                  "fcstd:model:body#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1"
+                ],
+                "origin": {
+                  "kind": "base"
+                },
+                "tessellations": []
+              }
+            }
+          },
+          "id": "fcstd:design:feature#PinPrototype",
+          "name": "PinPrototype",
+          "native_ref": "fcstd:native:object#PinPrototype"
+        }
+      ],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#BracketPrototype"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#BracketPrototype:Shape:BracketPrototype.Shape.brp:34%40location1"
+              ],
+              "native_ref": "fcstd:native:object#BracketPrototype",
+              "poses": [],
+              "status": "current"
+            },
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "fcstd:design:feature#PinPrototype"
+                }
+              },
+              "bodies": [
+                "fcstd:model:body#PinPrototype:Shape:PinPrototype.Shape.brp:13%40location1"
+              ],
+              "native_ref": "fcstd:native:object#PinPrototype",
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "fcstd:model:product_definition#document:root",
+          "occurrences": {},
+          "roots": [
+            "fcstd:design:container#document:group"
+          ],
+          "unproduced": []
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],

@@ -20,9 +20,73 @@
                 "value": "fcstd:design:feature#Pad"
               }
             ],
+            "placement": {
+              "after": [
+                {
+                  "kind": "fixed",
+                  "value": [
+                    [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      1.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      1.0,
+                      0.0
+                    ]
+                  ]
+                }
+              ],
+              "inputs": [],
+              "resolved": {
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "x_axis": {
+                  "x": 1.0,
+                  "y": 0.0,
+                  "z": 0.0
+                },
+                "y_axis": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "z_axis": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 1.0
+                }
+              },
+              "resolved_in": {}
+            },
             "rollback": {
               "kind": "end"
             }
+          }
+        },
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#Parameters"
+              }
+            ]
           }
         }
       ],
@@ -1371,6 +1435,19 @@
             "operation": {
               "kind": "unresolved",
               "value": {
+                "family": "spreadsheet"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#Parameters",
+          "name": "Parameters",
+          "native_ref": "fcstd:native:object#Parameters"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
                 "family": "sketch"
               }
             }
@@ -1386,17 +1463,18 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "source",
+              "kind": "neutral",
               "value": {
-                "dialect": {
-                  "kind": "free_cad"
-                },
-                "tokens": [
+                "measures": [],
+                "refs": [
                   {
-                    "kind": "text",
-                    "value": "Parameters.plate_w / 2"
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Parameters:cell:B1"
+                    }
                   }
-                ]
+                ],
+                "text": "$0 / 2"
               }
             }
           },
@@ -1472,9 +1550,88 @@
                 "tokens": [
                   {
                     "kind": "text",
-                    "value": "Parameters.plate_w"
+                    "value": "'plate_w"
                   }
                 ]
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:A1",
+          "kind": {
+            "kind": "text"
+          },
+          "name": "A1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "text",
+            "value": "plate_w"
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "free_cad"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "=20 mm"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#Parameters:cell:B1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "plate_w",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#Parameters:cells",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#Parameters"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 20.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [
+                  {
+                    "target": {
+                      "kind": "parameter",
+                      "value": "fcstd:design:parameter#Parameters:cell:B1"
+                    }
+                  }
+                ],
+                "text": "$0"
               }
             }
           },
@@ -1564,7 +1721,8 @@
           "definition": "fcstd:model:product_definition#document:root",
           "occurrences": {},
           "roots": [
-            "fcstd:design:container#Body"
+            "fcstd:design:container#Body",
+            "fcstd:design:container#document:group"
           ],
           "unproduced": []
         }
