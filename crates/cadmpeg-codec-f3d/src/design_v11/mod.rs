@@ -195,9 +195,17 @@ pub(crate) fn project(
         } = spans.remove(&prefix).unwrap_or_default();
         if spanned.len() > 1 {
             for feature in &mut projected.features {
+                // The span above counts the definitions each document hosts,
+                // which does not match the span of a member's own scope, so a
+                // feature of an archive member names no component.
+                let member = feature
+                    .native_ref
+                    .as_deref()
+                    .and_then(crate::ids::native_stream)
+                    .is_some_and(|stream| !timeline::document_prefix(stream).is_empty());
                 feature.component = owners
                     .get(&feature.id)
-                    .filter(|owner| spanned.contains(**owner))
+                    .filter(|owner| !member && spanned.contains(**owner))
                     .map(|owner| (*owner).clone());
             }
         }
