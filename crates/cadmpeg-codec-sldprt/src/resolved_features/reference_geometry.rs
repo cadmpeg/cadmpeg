@@ -2628,12 +2628,20 @@ const PLANE_DATA_TOKEN_ZEROS: usize = 6;
 type PlaneFrame = (Point3, Vector3, Vector3);
 
 pub(super) fn explicit_reference_plane_frame(payload: &[u8]) -> Result<Option<PlaneFrame>, ()> {
-    let frames = matrix_reference_plane_frame_candidates(payload)
+    let mut first = None;
+    let mut has_strong = false;
+    for frame in matrix_reference_plane_frame_candidates(payload)
         .map(|(_, frame)| frame)
         .chain(fixed_reference_plane_frame_candidates(payload).map(|(_, frame)| frame))
-        .chain(minimal_reference_plane_frame(payload));
-    let mut first = None;
-    for frame in frames {
+    {
+        has_strong = true;
+        match first {
+            None => first = Some(frame),
+            Some(existing) if existing != frame => return Err(()),
+            Some(_) => {}
+        }
+    }
+    if let Some(frame) = minimal_reference_plane_frame(payload) {
         match first {
             None => first = Some(frame),
             Some(existing) if existing != frame => return Err(()),
@@ -2641,7 +2649,9 @@ pub(super) fn explicit_reference_plane_frame(payload: &[u8]) -> Result<Option<Pl
         }
     }
     for (offset, frame) in raw_angled_reference_plane_frame_candidates(payload) {
-        if strong_reference_plane_overlap(payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN) {
+        if has_strong
+            && strong_reference_plane_overlap(payload, offset, ANGLED_REFERENCE_PLANE_FRAME_LEN)
+        {
             continue;
         }
         match first {
@@ -2651,7 +2661,9 @@ pub(super) fn explicit_reference_plane_frame(payload: &[u8]) -> Result<Option<Pl
         }
     }
     for (offset, frame) in compact_reference_plane_frame_candidates(payload) {
-        if strong_reference_plane_overlap(payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN) {
+        if has_strong
+            && strong_reference_plane_overlap(payload, offset, COMPACT_REFERENCE_PLANE_FRAME_LEN)
+        {
             continue;
         }
         match first {
@@ -3218,6 +3230,9 @@ fn compact_reference_plane_frame_candidates(
                     scalar(bytes, 16)? * NATIVE_TO_IR,
                 );
                 let normal_xy = scalar(bytes, 24).zip(scalar(bytes, 32))?;
+                if normal_xy.0.abs() > 1.0 + 1.0e-6 || normal_xy.1.abs() > 1.0 + 1.0e-6 {
+                    return None;
+                }
                 let u_axis =
                     Vector3::new(scalar(bytes, 40)?, scalar(bytes, 48)?, scalar(bytes, 56)?);
                 let v_xy = scalar(bytes, 65).zip(scalar(bytes, 73))?;
@@ -3234,6 +3249,16 @@ fn compact_reference_plane_frame_candidates(
                 let omitted = remaining.max(0.0).sqrt();
                 let mut pair = [omitted, -omitted].map(|v_z| {
                     let v_axis = Vector3::new(v_xy.0, v_xy.1, v_z);
+                    let approx_dot =
+                        u_axis.x * v_axis.x + u_axis.y * v_axis.y + u_axis.z * v_axis.z;
+                    let approx_nx = u_axis.y * v_axis.z - u_axis.z * v_axis.y;
+                    let approx_ny = u_axis.z * v_axis.x - u_axis.x * v_axis.z;
+                    if approx_dot.abs() > 1.0e-6
+                        || (approx_nx - normal_xy.0).abs() > 1.0e-6
+                        || (approx_ny - normal_xy.1).abs() > 1.0e-6
+                    {
+                        return None;
+                    }
                     let normal = u_axis.cross(v_axis);
                     (u_axis.dot(v_axis).abs()
                         <= EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9

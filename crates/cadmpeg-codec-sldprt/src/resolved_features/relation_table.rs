@@ -110,11 +110,12 @@ pub(crate) fn row_id(lane_key: &str, offset: usize) -> String {
 }
 
 fn marker_offsets(payload: &[u8]) -> Vec<usize> {
+    let finder = memchr::memmem::Finder::new(&[0xff, 0xff]);
     let mut out = Vec::new();
     let mut offset = 0;
     while let Some(found) = payload
         .get(offset..)
-        .and_then(|rest| rest.windows(2).position(|pair| pair == [0xff, 0xff]))
+        .and_then(|rest| finder.find(rest))
     {
         let at = offset + found;
         if marker_at(payload, at) {
@@ -360,8 +361,16 @@ const ARC_HANDLE: &str = "sgArcHandle";
 ///    counts match. Only when every handle class is declared in one lane.
 /// 3. Otherwise, when exactly one other class tag occurs in the rows, it is the
 ///    point tag.
+#[cfg(test)]
 pub(crate) fn tag_kinds<'a>(
     lanes: impl IntoIterator<Item = (&'a [u8], &'a [SketchTable])> + Clone,
+) -> HashMap<HandleTag, ArrayKind> {
+    tag_kinds_with_declarations(lanes, None)
+}
+
+fn tag_kinds_with_declarations<'a>(
+    lanes: impl IntoIterator<Item = (&'a [u8], &'a [SketchTable])> + Clone,
+    cached_declarations: Option<&[&[(usize, String)]]>,
 ) -> HashMap<HandleTag, ArrayKind> {
     let mut votes: HashMap<HandleTag, BTreeMap<u8, usize>> = HashMap::new();
     for (payload, sketches) in lanes.clone() {
@@ -432,10 +441,20 @@ pub(crate) fn tag_kinds<'a>(
         return kinds;
     }
     let mut declared: Vec<(usize, usize, String)> = Vec::new();
-    for (lane, (payload, _)) in lanes.into_iter().enumerate() {
-        for (at, name) in handle_declarations(payload) {
-            if !declared.iter().any(|(_, _, seen)| *seen == name) {
-                declared.push((lane, at, name));
+    if let Some(cached) = cached_declarations {
+        for (lane, entries) in cached.iter().enumerate() {
+            for (at, name) in *entries {
+                if !declared.iter().any(|(_, _, seen)| seen == name) {
+                    declared.push((lane, *at, name.clone()));
+                }
+            }
+        }
+    } else {
+        for (lane, (payload, _)) in lanes.into_iter().enumerate() {
+            for (at, name) in handle_declarations(payload) {
+                if !declared.iter().any(|(_, _, seen)| *seen == name) {
+                    declared.push((lane, at, name));
+                }
             }
         }
     }
@@ -531,13 +550,11 @@ pub(crate) fn operand_kind(
     kinds.get(&operand.tag).copied()
 }
 
-fn handle_declarations(payload: &[u8]) -> Vec<(usize, String)> {
+pub(crate) fn handle_declarations(payload: &[u8]) -> Vec<(usize, String)> {
+    let finder = memchr::memmem::Finder::new(&[0xff, 0xff, 0x01, 0x00]);
     let mut out = Vec::new();
     let mut offset = 0;
-    while let Some(found) = payload.get(offset..).and_then(|rest| {
-        rest.windows(4)
-            .position(|window| window == [0xff, 0xff, 0x01, 0x00])
-    }) {
+    while let Some(found) = payload.get(offset..).and_then(|rest| finder.find(rest)) {
         let at = offset + found;
         if let Some(length) = View::u16_le_at(payload, at + 4).map(usize::from) {
             if let Some(name) = payload.get(at + 6..at + 6 + length) {
@@ -1079,7 +1096,18 @@ fn resolution(definition: &SketchConstraintDefinitionInput) -> u8 {
 /// its code, flag, and each operand's kind, slot, class tag and marker. A row
 /// whose operands do not identify one sketch is left to
 /// `sketch.relation-unprojected`.
+#[cfg(test)]
 pub(super) fn project_relation_tables(
+    constraints: &mut Vec<SketchConstraint>,
+    sketches_by_feature: &HashMap<&str, &SketchId>,
+    sketch_entities: &[SketchEntity],
+    lanes: &[FeatureInputLane],
+) {
+    project_relation_tables_with_cache(None, constraints, sketches_by_feature, sketch_entities, lanes);
+}
+
+pub(super) fn project_relation_tables_with_cache(
+    cache: Option<&super::lane_cache::LaneScanCache<'_>>,
     constraints: &mut Vec<SketchConstraint>,
     sketches_by_feature: &HashMap<&str, &SketchId>,
     sketch_entities: &[SketchEntity],
@@ -1087,7 +1115,13 @@ pub(super) fn project_relation_tables(
 ) {
     let tables = lanes
         .iter()
-        .map(|lane| lane_tables(&lane.native_payload))
+        .map(|lane| {
+            if let Some(cached) = cache.and_then(|cache| cache.get(lane)) {
+                std::borrow::Cow::Borrowed(cached.relation_tables())
+            } else {
+                std::borrow::Cow::Owned(lane_tables(&lane.native_payload))
+            }
+        })
         .collect::<Vec<_>>();
     if tables
         .iter()
@@ -1095,11 +1129,22 @@ pub(super) fn project_relation_tables(
     {
         return;
     }
-    let kinds = tag_kinds(
+    let cached_declarations = cache.and_then(|cache| {
+        lanes
+            .iter()
+            .map(|lane| {
+                cache
+                    .get(lane)
+                    .map(super::lane_cache::CachedLane::handle_declarations)
+            })
+            .collect::<Option<Vec<_>>>()
+    });
+    let kinds = tag_kinds_with_declarations(
         lanes
             .iter()
             .zip(&tables)
-            .map(|(lane, sketches)| (&lane.native_payload[..], sketches.as_slice())),
+            .map(|(lane, sketches)| (&lane.native_payload[..], sketches.as_ref())),
+        cached_declarations.as_deref(),
     );
     let geometry = Geometry {
         entities: sketch_entities
@@ -1144,7 +1189,7 @@ pub(super) fn project_relation_tables(
                     .or_default() += 1;
             }
         }
-        for sketch in sketches {
+        for sketch in sketches.as_ref() {
             if sketch.rows.is_empty() {
                 continue;
             }

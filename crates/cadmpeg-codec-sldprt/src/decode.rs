@@ -3889,6 +3889,8 @@ fn build_geometry_ir(
     let all_lanes = lanes;
     let lanes = &all_lanes[..base_lane_count];
     let sketch_lanes = all_lanes.as_slice();
+    let lane_cache =
+        crate::resolved_features::lane_cache::LaneScanCache::new(&histories, sketch_lanes);
     crate::resolved_features::markers::report_listed_curve_relation_drops(
         sketch_lanes,
         &histories,
@@ -3910,7 +3912,9 @@ fn build_geometry_ir(
         &brep.curves,
     );
     plane_bindings.extend(
-        crate::resolved_features::profiles::project_marker_backed_sketches(
+        crate::resolved_features::profiles::project_marker_backed_sketches_with_cache(
+            Some(&lane_cache),
+            None,
             ctx,
             &mut ir.model.features,
             &mut sketches,
@@ -4004,7 +4008,8 @@ fn build_geometry_ir(
         held_handles,
         &mut pmi_losses,
     );
-    crate::resolved_features::relation_geometry::project_relation_bindings(
+    crate::resolved_features::relation_geometry::project_relation_bindings_with_cache(
+        Some(&lane_cache),
         ctx,
         &mut sketch_constraints,
         &sketches,
@@ -4164,7 +4169,9 @@ fn build_geometry_ir(
             points: &ir.geometry.points,
         },
     )?;
-    crate::resolved_features::holes::project_hole_axes(
+    crate::resolved_features::holes::project_hole_axes_with_cache(
+        Some(&lane_cache),
+        None,
         ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
@@ -4201,7 +4208,8 @@ fn build_geometry_ir(
         &histories,
         &all_lanes,
     );
-    crate::resolved_features::relation_geometry::project_relation_bindings(
+    crate::resolved_features::relation_geometry::project_relation_bindings_with_cache(
+        Some(&lane_cache),
         ctx,
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
@@ -4230,7 +4238,8 @@ fn build_geometry_ir(
         configuration_body_roles(&ir, &configuration_bodies, active_given_up);
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let (configuration_losses, configuration_points) =
-        crate::history::configuration::project_configuration_sketch_states(
+        crate::history::configuration::project_configuration_sketch_states_with_cache(
+            Some(&lane_cache),
             ctx,
             &mut ir,
             &histories,

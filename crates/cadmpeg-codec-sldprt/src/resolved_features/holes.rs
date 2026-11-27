@@ -3033,6 +3033,43 @@ pub(crate) fn project_hole_axes(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
+    project_hole_axes_with_cache(
+        None,
+        None,
+        ctx,
+        model_features,
+        sketch_entities,
+        topology,
+        histories,
+        lanes,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn project_hole_axes_with_cache(
+    cache: Option<&super::lane_cache::LaneScanCache<'_>>,
+    shared_plane_frames: Option<&HashMap<usize, HashMap<u32, SketchPlaneFrame>>>,
+    ctx: &DecodeContext<'_>,
+    model_features: &mut [cadmpeg_ir::features::Feature],
+    sketch_entities: &[SketchEntity],
+    topology: &HoleTopology<'_>,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> Result<(), CodecError> {
+    let has_unresolved_diameter_hole = model_features.iter().any(|feature| {
+        feature.suppressed != Some(true)
+            && matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Hole {
+                    placements: None,
+                    shape,
+                    ..
+                }) if shape.diameter().is_some()
+            )
+    });
+    if !has_unresolved_diameter_hole {
+        return Ok(());
+    }
     let surfaces = topology.surfaces;
     let native_features = crate::records::HistoryFeatures::new(histories);
     let mut model_sketches = HashMap::new();
@@ -3074,40 +3111,56 @@ pub(crate) fn project_hole_axes(
     for position in hole_positions.values() {
         position_features.insert(position.id.as_str());
     }
-    let mut feature_ranges = HashMap::new();
-    for lane in lanes {
-        feature_ranges.insert(
-            lane.id.as_str(),
-            feature_object_byte_ranges(histories, lane),
-        );
-    }
+    let mut owned_feature_ranges = HashMap::new();
     let mut feature_frames = HashMap::new();
-    for lane in lanes {
-        let Some(ranges) = feature_ranges.get(lane.id.as_str()) else {
-            continue;
-        };
-        let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
-        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
-        for feature in native_features.iter() {
-            if !position_features.contains(feature.id.as_str()) {
-                continue;
+    if !position_features.is_empty() {
+        for lane in lanes {
+            let cached = cache.and_then(|cache| cache.get(lane));
+            let ranges = if let Some(cached) = cached {
+                cached.feature_ranges()
+            } else {
+                owned_feature_ranges
+                    .entry(lane.id.as_str())
+                    .or_insert_with(|| feature_object_byte_ranges(histories, lane))
+            };
+            let owned_plane_frames;
+            let plane_frames = if let Some(frames) =
+                shared_plane_frames.and_then(|map| map.get(&std::ptr::from_ref(lane).addr()))
+            {
+                frames
+            } else {
+                owned_plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
+                &owned_plane_frames
+            };
+            let owned_plane_index;
+            let plane_index = if let Some(cached) = cached {
+                cached.plane_index()
+            } else {
+                owned_plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+                &owned_plane_index
+            };
+            for feature in native_features.iter() {
+                if !position_features.contains(feature.id.as_str()) {
+                    continue;
+                }
+                let Some(&range) = ranges.get(feature.id.as_str()) else {
+                    continue;
+                };
+                let (context_start, start, end) = range;
+                let Some(frame) = feature_input_sketch_frame_with_cache(
+                    cached,
+                    &lane.native_payload,
+                    plane_frames,
+                    plane_index,
+                    context_start,
+                    start,
+                    end,
+                ) else {
+                    continue;
+                };
+                let key = (lane.id.as_str(), feature.id.as_str());
+                feature_frames.insert(key, frame);
             }
-            let Some(&range) = ranges.get(feature.id.as_str()) else {
-                continue;
-            };
-            let (context_start, start, end) = range;
-            let Some(frame) = feature_input_sketch_frame(
-                &lane.native_payload,
-                &plane_frames,
-                &plane_index,
-                context_start,
-                start,
-                end,
-            ) else {
-                continue;
-            };
-            let key = (lane.id.as_str(), feature.id.as_str());
-            feature_frames.insert(key, frame);
         }
     }
     let mut hole_diameter_counts = HashMap::<u64, usize>::new();
@@ -3205,8 +3258,10 @@ pub(crate) fn project_hole_axes(
             }
             if solutions.is_empty() {
                 for lane in lanes {
-                    let temporary_axis = feature_ranges
-                        .get(lane.id.as_str())
+                    let temporary_axis = cache
+                        .and_then(|cache| cache.get(lane))
+                        .map(super::lane_cache::CachedLane::feature_ranges)
+                        .or_else(|| owned_feature_ranges.get(lane.id.as_str()))
                         .and_then(|ranges| ranges.get(position_feature.id.as_str()))
                         .and_then(|(_, start, end)| {
                             hole_temporary_axis(&lane.native_payload, *start, *end)
@@ -4147,7 +4202,7 @@ fn has_unique_marker_loci_subset(
     Ok(subsets.len() == 1)
 }
 
-pub(super) fn feature_object_byte_ranges<'a>(
+pub(crate) fn feature_object_byte_ranges<'a>(
     histories: &'a [crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> HashMap<&'a str, (usize, usize, usize)> {
@@ -4307,6 +4362,7 @@ pub(super) fn principal_profile_frame(
     })
 }
 
+#[cfg(test)]
 pub(super) fn feature_input_sketch_frame(
     payload: &[u8],
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
@@ -4315,7 +4371,28 @@ pub(super) fn feature_input_sketch_frame(
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    feature_input_support_frame(
+    feature_input_sketch_frame_with_cache(
+        None,
+        payload,
+        plane_frames,
+        plane_index,
+        context_start,
+        start,
+        end,
+    )
+}
+
+fn feature_input_sketch_frame_with_cache(
+    cached_lane: Option<&super::lane_cache::CachedLane<'_>>,
+    payload: &[u8],
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    context_start: usize,
+    start: usize,
+    end: usize,
+) -> Option<(Point3, Vector3, Vector3)> {
+    feature_input_support_frame_with_cache(
+        cached_lane,
         payload,
         plane_frames,
         plane_index,
@@ -4346,7 +4423,28 @@ impl SupportFrame {
 /// The support frame of a sketch or hole-position profile: the plane that a
 /// principal-plane component record of the profile's own object names
 /// (`principal_profile_frame`), otherwise [`reference_support_frame`].
+#[cfg(test)]
 pub(super) fn feature_input_support_frame(
+    payload: &[u8],
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    context_start: usize,
+    start: usize,
+    end: usize,
+) -> Option<SupportFrame> {
+    feature_input_support_frame_with_cache(
+        None,
+        payload,
+        plane_frames,
+        plane_index,
+        context_start,
+        start,
+        end,
+    )
+}
+
+pub(super) fn feature_input_support_frame_with_cache(
+    cached_lane: Option<&super::lane_cache::CachedLane<'_>>,
     payload: &[u8],
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
@@ -4362,7 +4460,8 @@ pub(super) fn feature_input_support_frame(
             binding: PlaneBinding::Principal(plane),
         });
     }
-    reference_support_frame(
+    reference_support_frame_with_cache(
+        cached_lane,
         payload,
         plane_frames,
         plane_index,
@@ -4375,7 +4474,28 @@ pub(super) fn feature_input_support_frame(
 /// The support frame that a profile's plane reference, component frame
 /// records or explicit frame give, without its principal-plane component
 /// records. A sketch block definition takes this frame.
+#[cfg(test)]
 pub(super) fn reference_support_frame(
+    payload: &[u8],
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
+    plane_index: &CompactReferencePlaneIndex,
+    context_start: usize,
+    start: usize,
+    end: usize,
+) -> Option<SupportFrame> {
+    reference_support_frame_with_cache(
+        None,
+        payload,
+        plane_frames,
+        plane_index,
+        context_start,
+        start,
+        end,
+    )
+}
+
+pub(super) fn reference_support_frame_with_cache(
+    cached_lane: Option<&super::lane_cache::CachedLane<'_>>,
     payload: &[u8],
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
@@ -4421,9 +4541,14 @@ pub(super) fn reference_support_frame(
         });
     let component = plane_index.profile_component_frame(context_start, start, end);
     let explicit = || -> Option<(Point3, Vector3, Vector3)> {
-        let object = payload.get(start..end)?;
-        let Ok(Some((origin, normal, u_axis))) = explicit_reference_plane_frame(object) else {
-            return None;
+        let (origin, normal, u_axis) = if let Some(cached) = cached_lane {
+            cached.explicit_frame(start, end)?
+        } else {
+            let object = payload.get(start..end)?;
+            let Ok(Some(frame)) = explicit_reference_plane_frame(object) else {
+                return None;
+            };
+            frame
         };
         let finite_zero = |value: f64| {
             if value.abs() <= EPS_HOLE_EXACT_GEOMETRY {
@@ -4517,16 +4642,39 @@ pub(crate) fn coplanar_plane_frames(
     normal_distance.abs() <= EPS_HOLE_POSITION * scale
 }
 
-pub(super) fn sketch_feature_frames(
+pub(super) fn sketch_feature_frames_with_cache(
+    cache: Option<&super::lane_cache::LaneScanCache<'_>>,
+    shared_plane_frames: Option<&HashMap<usize, HashMap<u32, SketchPlaneFrame>>>,
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, SupportFrame> {
     let mut candidates = HashMap::<String, Option<SupportFrame>>::new();
     for lane in lanes {
-        let ranges = feature_object_byte_ranges(histories, lane);
-        let plane_frames = lane_sketch_plane_frames(features, histories, lane);
-        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+        let cached = cache.and_then(|cache| cache.get(lane));
+        let owned_ranges;
+        let ranges = if let Some(cached) = cached {
+            cached.feature_ranges()
+        } else {
+            owned_ranges = feature_object_byte_ranges(histories, lane);
+            &owned_ranges
+        };
+        let owned_plane_frames;
+        let plane_frames = if let Some(frames) =
+            shared_plane_frames.and_then(|map| map.get(&std::ptr::from_ref(lane).addr()))
+        {
+            frames
+        } else {
+            owned_plane_frames = lane_sketch_plane_frames(features, histories, lane);
+            &owned_plane_frames
+        };
+        let owned_plane_index;
+        let plane_index = if let Some(cached) = cached {
+            cached.plane_index()
+        } else {
+            owned_plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+            &owned_plane_index
+        };
         for feature in histories
             .iter()
             .flat_map(|history| &history.features)
@@ -4535,10 +4683,11 @@ pub(super) fn sketch_feature_frames(
             let Some(&(context_start, start, end)) = ranges.get(feature.id.as_str()) else {
                 continue;
             };
-            let Some(frame) = feature_input_support_frame(
+            let Some(frame) = feature_input_support_frame_with_cache(
+                cached,
                 &lane.native_payload,
-                &plane_frames,
-                &plane_index,
+                plane_frames,
+                plane_index,
                 context_start,
                 start,
                 end,
