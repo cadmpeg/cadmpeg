@@ -134,14 +134,18 @@ fn read_entries<T: Clone>(
     initial: T,
     mut read: impl FnMut(&mut View<'_>) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
-    let bounded = payload.counted(u64::from(count), width).ok_or_else(|| {
-        CodecError::malformed("drawing reference table count exceeds its payload")
-    })?;
-    if bounded.get().checked_mul(width) != Some(payload.remaining()) {
-        return Err(CodecError::malformed(
-            "drawing reference table has a wrong entry width",
-        ));
-    }
+    // The section length is count times the width of the surface-body
+    // reference form; any other length is a form the reader does not read.
+    let bounded = payload
+        .counted(u64::from(count), width)
+        .filter(|bounded| bounded.get().checked_mul(width) == Some(payload.remaining()))
+        .ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "drawing reference table of {count} entries holds {} bytes, not {width}-byte \
+                 entries of the surface-body reference form",
+                payload.remaining()
+            ))
+        })?;
     let mut entries =
         ctx.alloc_filled(bounded.get(), initial, "retain drawing reference entries")?;
     for target in &mut entries {

@@ -120,7 +120,9 @@ its fins, its face, and the other loops of that face with their fins. These
 give-ups charge `record.unreadable`. A loop that uses a vertexless edge with a
 null `curve` whose fins state no SP-curve, and a vertexless edge whose
 SP-curve does not sample to a model-space carrier, give up with
-`record.undecoded`.
+`record.undecoded`. When the node framing of the partition stops before its
+terminator, a face or loop give-up whose defect is a reference to a node that
+does not resolve charges `record.undecoded`: the node can lie past the stop.
 
 A swept surface (type 67) is the linear extrusion of its `section` curve
 along its unit `sweep` direction. The surface does not store the extent along

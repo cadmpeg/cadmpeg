@@ -494,7 +494,7 @@ fn walk_native_markers(
             Ok(None) => {}
             Err(error) => {
                 if let Some((_, _, end)) = read_block_frame(bytes, i) {
-                    let cause = Cause::Unreadable.of(&error);
+                    let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
                     let part = native_block_part(bytes, i, end);
                     given_up.push(ctx.give_up_part(part, cause, error)?);
                     i = end;
@@ -610,7 +610,7 @@ fn extract_streams_for_owner(
             Ok(streams)
         }
         Err(error) => {
-            let cause = Cause::Unreadable.of(&error);
+            let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
             given_up.push(ctx.give_up_part(part, cause, error)?);
             Ok(crate::parasolid::ExtractedStreams::of(Vec::new(), false))
         }
@@ -741,7 +741,7 @@ fn compound_streams(
                         bytes.len()
                     ));
                 }
-                let cause = Cause::Unreadable.of(&error);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
                 compound
                     .given_up
                     .push(ctx.give_up_part(part, cause, error)?);

@@ -54,15 +54,15 @@ impl NativeAssembly {
     }
 
     /// An assembly that transferred no structure from its component tree
-    /// sections `trees`, with its blocking loss. Each stream of the sections
-    /// is given up once, for `cause`. The section records retain the bytes.
+    /// sections `trees`, which hold at least one section. Each stream of the
+    /// sections is given up once, for `cause`, and the give-up is the one loss
+    /// of the structure. The section records retain the bytes.
     pub(super) fn structure_given_up(
         ctx: &DecodeContext<'_>,
         trees: &[TreeSection<'_>],
         cause: Cause,
-        message: String,
+        message: &str,
     ) -> Result<Self, CodecError> {
-        let why = SldprtLossCode::AssemblyStructureNotTransferred.note(message);
         let mut assembly = Self::default();
         let mut streams = BTreeSet::new();
         for tree in trees {
@@ -73,12 +73,12 @@ impl NativeAssembly {
                 .named(tree.stream.as_str())
                 .in_stream(tree.stream.clone())
                 .digest_only();
-            let error = CodecError::malformed(format_args!("{}: {}", why.code, why.message));
-            assembly
-                .given_up
-                .push(ctx.give_up_part(part, cause, error)?);
+            assembly.given_up.push(ctx.give_up_part(
+                part,
+                cause,
+                CodecError::Malformed(message.to_owned()),
+            )?);
         }
-        assembly.losses.push(why);
         Ok(assembly)
     }
 

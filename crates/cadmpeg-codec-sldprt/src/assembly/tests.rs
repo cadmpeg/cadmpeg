@@ -88,22 +88,16 @@ fn synthetic_scan(
     }
 }
 
-/// The structure loss `message`, and one part for each component tree
-/// stream of `streams` that gives the stream up as `cause`.
+/// One part for each component tree stream of `streams` that gives the
+/// stream up as `cause` and states `message`, and no other loss: the
+/// give-ups are the one loss of the structure.
 fn assert_structure_given_up(
     projection: &super::AssemblyProjection,
     message: &str,
     streams: &[&str],
     cause: cadmpeg_ir::unknown::part::Cause,
 ) {
-    let [loss] = projection.losses() else {
-        panic!("one structure loss: {:?}", projection.losses());
-    };
-    assert_eq!(
-        loss.code,
-        SldprtLossCode::AssemblyStructureNotTransferred.kind()
-    );
-    assert_eq!(loss.message, message);
+    assert!(projection.losses().is_empty(), "{:?}", projection.losses());
     assert_eq!(projection.given_up().len(), streams.len());
     for (part, stream) in projection.given_up().iter().zip(streams) {
         let given_up = part.loss();
@@ -300,15 +294,9 @@ fn a_tree_without_one_active_configuration_transfers_nothing() {
     assert!(projection.occurrences().is_empty());
     assert_eq!(
         codes(&projection),
-        [
-            SldprtLossCode::AssemblyStructureNotTransferred
-                .kind()
-                .local_code()
-                .to_string(),
-            cadmpeg_ir::unknown::part::record_undecoded_kind()
-                .local_code()
-                .to_string(),
-        ]
+        [cadmpeg_ir::unknown::part::record_undecoded_kind()
+            .local_code()
+            .to_string()]
     );
 }
 
@@ -1334,4 +1322,43 @@ fn an_instance_without_an_identity_or_with_a_repeated_one_charges_no_record() {
         .losses()
         .iter()
         .all(|loss| loss.code != cadmpeg_ir::unknown::part::record_unreadable_kind()));
+}
+
+#[test]
+fn a_tree_past_a_bound_of_the_xml_reader_is_given_up_as_undecoded() {
+    let mut attributes = String::new();
+    for index in 0..300 {
+        std::fmt::Write::write_fmt(&mut attributes, format_args!(r#" a{index}="0""#))
+            .expect("write to a string");
+    }
+    let projection = project(&ctx(), &format!("<swSolidWorks{attributes}/>")).expect("project");
+    assert!(projection.losses().is_empty(), "{:?}", projection.losses());
+    let [part] = projection.given_up() else {
+        panic!("one tree give-up: {:?}", projection.given_up());
+    };
+    let loss = part.loss();
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(
+        loss.message.contains("passes a bound of the XML reader"),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn an_active_model_whose_id_is_not_a_decimal_is_given_up_as_unreadable() {
+    let text = tree_with("", "")
+        .replace(r#"<swModel id="2""#, r#"<swModel id="2#2""#)
+        .replace(r#"swModelRef="2""#, r#"swModelRef="2#2""#);
+    let projection = project(&ctx(), &text).expect("project");
+    assert_structure_given_up(
+        &projection,
+        "The active configuration's model `2#2` has no valid identity. No occurrence is \
+         transferred.",
+        &[super::TREE_SECTION],
+        cadmpeg_ir::unknown::part::Cause::Unreadable,
+    );
 }

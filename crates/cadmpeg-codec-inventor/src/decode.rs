@@ -94,17 +94,17 @@ fn decode_container<'a>(
     let mut property_sections = Vec::new();
     let mut properties = Vec::new();
     let mut property_set_issues = Vec::new();
-    let mut unreadable_property_sets = Vec::new();
+    let mut unread_property_sets = Vec::new();
     for descriptor in &container.property_sets {
         match &descriptor.state {
-            PropertySetState::Malformed(detail) => {
+            PropertySetState::Unread { cause, detail } => {
                 admit_native_items(ctx, 1)?;
                 let issue = project_property_set_issue(
                     descriptor.stream.directory_id(),
                     &descriptor.path,
                     detail,
                 );
-                unreadable_property_sets.push((descriptor.stream, detail.clone()));
+                unread_property_sets.push((descriptor.stream, *cause, detail.clone()));
                 property_set_issues.push(issue);
             }
             PropertySetState::Parsed(property_set) => {
@@ -1046,18 +1046,20 @@ fn decode_container<'a>(
                 }
             },
         };
-        let note = InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail);
-        if let Some((part, record)) = given_up_carrier {
-            if issue_records.insert(record) {
-                given_up.push(ctx.give_up_part(
-                    part,
-                    carrier_cause,
-                    CodecError::malformed(format_args!("{}: {}", note.code, note.message)),
-                )?);
-                carrier_given_up = true;
+        // A carrier given up whole states the lost geometry in its give-up.
+        match given_up_carrier {
+            Some((part, record)) => {
+                if issue_records.insert(record) {
+                    given_up.push(ctx.give_up_part(
+                        part,
+                        carrier_cause,
+                        CodecError::Malformed(detail),
+                    )?);
+                    carrier_given_up = true;
+                }
             }
+            None => losses.push(InventorLossCode::GeometryKernelCarrierNotTransferred.note(detail)),
         }
-        losses.push(note);
     }
     if !ctx.container_only() {
         if kernel_stats.unknown_surface_faces() != 0 {
@@ -1365,20 +1367,20 @@ fn decode_container<'a>(
         }
         // A property set whose stream does not read is given up; an issue
         // of a set that reads keeps the set.
-        let kept = property_set_issues.len() - unreadable_property_sets.len();
+        let kept = property_set_issues.len() - unread_property_sets.len();
         if kept != 0 {
             losses.push(
                 InventorLossCode::PropertySetStreamMalformed
                     .note(format!("{kept} OLE property-set stream(s) are malformed.")),
             );
         }
-        for (stream, detail) in &unreadable_property_sets {
+        for (stream, cause, detail) in &unread_property_sets {
             give_up_stream(
                 ctx,
                 &container.snapshot,
                 container.snapshot.stream_by_id(*stream),
                 ("property-set", &[ArenaClass::Model]),
-                (Cause::Unreadable, detail),
+                (*cause, detail),
                 &mut given_up,
             )?;
         }
@@ -1506,7 +1508,10 @@ fn decode_container<'a>(
                     ("ufrx-stream", &[ArenaClass::Model]),
                     (
                         Cause::Undecoded,
-                        &format!("unsupported UFRxDoc schema {schema}: {detail}"),
+                        &format!(
+                            "UFRxDoc schema {schema} holds a form that the decoder does not read: \
+                             {detail}"
+                        ),
                     ),
                     &mut given_up,
                 )?;
@@ -1526,7 +1531,7 @@ fn decode_container<'a>(
                     .map(|(cause, count)| (*cause, count.get()))
                     .collect::<BTreeMap<_, _>>();
                 for (_, cause) in &assembly_projection.unbuilt_placements {
-                    if let Some(count) = kept.get_mut(cause) {
+                    if let Some(count) = kept.get_mut(&cause.unresolved()) {
                         if let Some(left) = count.checked_sub(1) {
                             *count = left;
                         }
@@ -1547,7 +1552,7 @@ fn decode_container<'a>(
                             cause.give_up_cause(),
                             format_args!(
                                 "an assembly occurrence placement is not transferred: {}",
-                                cause.description()
+                                cause.unresolved().description()
                             ),
                         )
                         .loss(),

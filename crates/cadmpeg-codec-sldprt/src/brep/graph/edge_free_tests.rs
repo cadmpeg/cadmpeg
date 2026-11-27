@@ -161,10 +161,7 @@ fn a_spherical_face_whose_loop_record_is_missing_keeps_a_partial_loop_list() {
     };
     assert!(face.loops.is_partial());
     assert_eq!(face.loops.stated().count(), 0);
-    assert_eq!(
-        given_up(&out, crate::test_support::topology::FACE_WITHHELD),
-        0
-    );
+    assert_eq!(given_up(&out, &[crate::brep::graph::FACE_WITHHELD]), 0);
 }
 
 fn indexed(geometry: SolvedCurveGeometry) -> super::IndexedCurve {
@@ -234,10 +231,7 @@ fn a_reciprocal_ellipse_ring_keeps_its_sheet_face() {
         out.edges[0].param_range().unwrap().get(),
         [0.0, std::f64::consts::TAU]
     );
-    assert_eq!(
-        given_up(&out, crate::test_support::topology::RING_EDGE_WITHHELD),
-        0
-    );
+    assert_eq!(given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]), 0);
 }
 
 #[test]
@@ -248,10 +242,7 @@ fn an_ellipse_ring_without_a_mutual_partner_stays_withheld() {
     };
     assert!(face.loops.is_partial());
     assert!(out.edges.is_empty());
-    assert_eq!(
-        given_up(&out, crate::test_support::topology::RING_EDGE_WITHHELD),
-        1
-    );
+    assert_eq!(given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]), 1);
 }
 
 #[test]
@@ -340,7 +331,7 @@ fn a_bounded_ellipse_ring_requires_one_complete_revolution() {
         };
         assert_eq!(face.loops.is_partial(), !admitted);
         assert_eq!(
-            given_up(&out, crate::test_support::topology::RING_EDGE_WITHHELD),
+            given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]),
             usize::from(!admitted)
         );
     }
@@ -368,13 +359,16 @@ fn a_vertexless_ring_recovers_a_canonical_boundary_dummy() {
     );
     assert_eq!(out.stats.withheld_fin_partners, 0);
     assert_eq!(
-        given_up(&out, crate::test_support::topology::FIN_PARTNER_UNRESOLVED),
+        given_up(
+            &out,
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
+        ),
         0
     );
-    assert_eq!(
-        given_up(&out, crate::test_support::topology::RING_EDGE_WITHHELD),
-        0
-    );
+    assert_eq!(given_up(&out, &[crate::brep::graph::RING_EDGE_WITHHELD]), 0);
 }
 
 #[test]
@@ -482,7 +476,6 @@ fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
         vertex_loops: Vec::new(),
         unresolved_loop: None,
         unresolved_fins: Vec::new(),
-        withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
         lost_loops: Vec::new(),
         chain_cut: false,
@@ -611,7 +604,13 @@ fn a_loop_whose_unrecorded_edge_has_an_unresolved_end_names_the_vertex() {
         out.dropped
     );
     assert_eq!(
-        given_up(&out, crate::test_support::topology::FIN_PARTNER_UNRESOLVED),
+        given_up(
+            &out,
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
+        ),
         0
     );
 }

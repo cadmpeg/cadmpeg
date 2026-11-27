@@ -517,26 +517,28 @@ fn objects_outside_a_body_and_repeated_ids_give_up_their_own_records() {
     s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
     s.raw(b"z");
     let result = decode(&part_package(s.bytes()));
-    let given_up = charges(&result);
-    let offsets: Vec<u64> = given_up
-        .iter()
-        .map(|message| {
-            let tail = message
-                .strip_prefix("part model-object stream=\"eModel\" offset=")
-                .unwrap_or_else(|| panic!("an object part: {message}"));
-            tail.split_once(' ').unwrap().0.parse().unwrap()
-        })
-        .collect();
-    let [kept, later] = offsets.as_slice() else {
-        panic!("two object parts: {given_up:?}");
+    let offset = |message: &str| -> u64 {
+        let tail = message
+            .strip_prefix("part model-object stream=\"eModel\" offset=")
+            .unwrap_or_else(|| panic!("an object part: {message}"));
+        tail.split_once(' ').unwrap().0.parse().unwrap()
     };
-    assert!(kept < later, "{given_up:?}");
-    assert!(given_up
-        .iter()
-        .any(|message| message.contains("outside every library body")));
-    assert!(given_up
-        .iter()
-        .any(|message| message.contains("an earlier object has the id 0")));
+    let [orphan] = undecoded(&result)[..] else {
+        panic!("one record.undecoded: {:?}", result.report().losses);
+    };
+    assert!(
+        orphan.message.contains("outside every library body"),
+        "{}",
+        orphan.message
+    );
+    let [repeated] = charges(&result)
+        .try_into()
+        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    assert!(
+        repeated.contains("an earlier object has the id 0"),
+        "{repeated}"
+    );
+    assert!(offset(&orphan.message) < offset(&repeated));
 }
 
 /// The `record.undecoded` charges of `result`.
@@ -577,6 +579,25 @@ fn a_pinned_decode_accepts_a_body_past_the_coordinate_bound() {
 }
 
 #[test]
+fn a_body_whose_shells_hold_no_triangle_is_undecoded() {
+    let items = vec![Item::Shell {
+        points: vec![[0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        strips: vec![vec![0, 1]],
+    }];
+    let result = decode(&part_package(&model_of(items, None).stream()));
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert!(charges(&result).is_empty(), "{:?}", result.report().losses);
+    let [given_up] = undecoded(&result)[..] else {
+        panic!("one record.undecoded: {:?}", result.report().losses);
+    };
+    assert!(
+        given_up.message.contains("mesh has no triangles"),
+        "{}",
+        given_up.message
+    );
+}
+
+#[test]
 fn an_instance_without_a_library_body_is_charged() {
     let mut s = Stream::new();
     s.open("includes")
@@ -590,12 +611,13 @@ fn an_instance_without_a_library_body_is_charged() {
         codes(&result),
         [
             EdrawingsLossCode::ModelNoGeometry.kind(),
-            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+            cadmpeg_ir::unknown::part::record_undecoded_kind(),
         ]
     );
-    let [given_up] = charges(&result)
-        .try_into()
-        .unwrap_or_else(|charges: Vec<String>| panic!("one record.unreadable: {charges:?}"));
+    let [given_up] = undecoded(&result)[..] else {
+        panic!("one record.undecoded: {:?}", result.report().losses);
+    };
+    let given_up = &given_up.message;
     assert!(
         given_up.starts_with("part tree-node stream=\"eModel\" offset="),
         "{given_up}"

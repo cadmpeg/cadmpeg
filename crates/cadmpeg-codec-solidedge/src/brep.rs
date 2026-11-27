@@ -179,18 +179,36 @@ fn vertex_point(nodes: &Nodes<'_>, vertex: u32) -> Option<FinitePoint3> {
     ))
 }
 
+/// The link at which an ownership chain stops.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChainDefect {
+    /// The link repeats a node of the chain.
+    Cyclic,
+    /// The link names a node that the partition does not hold.
+    Unresolved,
+}
+
+impl ChainDefect {
+    const fn text(self) -> &'static str {
+        match self {
+            Self::Cyclic => "cyclic Parasolid ownership chain",
+            Self::Unresolved => "unresolved Parasolid ownership chain",
+        }
+    }
+}
+
 /// The nodes of an ownership chain, ending at the first link that does not
 /// resolve or that repeats a node. The second value names that defect.
-fn chain(nodes: &Nodes<'_>, start: Option<u32>, link: &str) -> (Vec<u32>, Option<&'static str>) {
+fn chain(nodes: &Nodes<'_>, start: Option<u32>, link: &str) -> (Vec<u32>, Option<ChainDefect>) {
     let mut result = Vec::new();
     let mut seen = BTreeSet::new();
     let mut current = start;
     while let Some(index) = current {
         if !seen.insert(index) {
-            return (result, Some("cyclic Parasolid ownership chain"));
+            return (result, Some(ChainDefect::Cyclic));
         }
         let Some(node) = nodes.get(&index).copied() else {
-            return (result, Some("unresolved Parasolid ownership chain"));
+            return (result, Some(ChainDefect::Unresolved));
         };
         result.push(index);
         current = ptr(node, link);
@@ -198,10 +216,11 @@ fn chain(nodes: &Nodes<'_>, start: Option<u32>, link: &str) -> (Vec<u32>, Option
     (result, None)
 }
 
-fn chain_losses(defect: Option<&'static str>, owner: &str, losses: &mut Vec<LossNote>) {
+fn chain_losses(defect: Option<ChainDefect>, owner: &str, losses: &mut Vec<LossNote>) {
     if let Some(defect) = defect {
         losses.push(SolidEdgeLossCode::ChainTruncated.note(format!(
-            "{defect} of {owner}; the records after the defect are not transferred"
+            "{} of {owner}; the records after the defect are not transferred",
+            defect.text()
         )));
     }
 }
@@ -260,12 +279,26 @@ struct EdgeRead {
 
 type EdgeReads = BTreeMap<u32, Result<EdgeRead, Unread>>;
 
-/// Why a loop or an edge does not read: the cause of its give-up, and the
-/// text that states it.
+/// Why a loop or an edge does not read: the cause of its give-up, the text
+/// that states it, and whether a reference to a node that the partition
+/// does not hold stops the read.
 #[derive(Clone, Copy)]
 struct Unread {
     cause: Cause,
     reason: &'static str,
+    unresolved: bool,
+}
+
+impl Unread {
+    /// The cause of the give-up in a partition whose node framing stopped
+    /// early (`stopped`): a node that does not resolve can lie past the stop.
+    const fn cause(self, stopped: bool) -> Cause {
+        if stopped && self.unresolved {
+            Cause::Undecoded
+        } else {
+            self.cause
+        }
+    }
 }
 
 /// A loop or an edge whose nodes break the Parasolid topology rules.
@@ -273,6 +306,28 @@ const fn broken(reason: &'static str) -> Unread {
     Unread {
         cause: Cause::Unreadable,
         reason,
+        unresolved: false,
+    }
+}
+
+/// A loop or an edge with a reference to a node that the partition does not
+/// hold.
+const fn unresolved(reason: &'static str) -> Unread {
+    Unread {
+        cause: Cause::Unreadable,
+        reason,
+        unresolved: true,
+    }
+}
+
+/// Why the vertex `vertex` has no position: its vertex node or the point
+/// node it names does not resolve, or its vertex names no point or a point
+/// that is not finite.
+fn position_defect(nodes: &Nodes<'_>, vertex: u32, reason: &'static str) -> Unread {
+    match nodes.get(&vertex).map(|vertex| ptr(*vertex, "point")) {
+        None => unresolved(reason),
+        Some(Some(point)) if !nodes.contains_key(&point) => unresolved(reason),
+        Some(_) => broken(reason),
     }
 }
 
@@ -294,18 +349,27 @@ fn loop_fin<'a>(nodes: &Nodes<'a>, start: Node<'a>) -> Option<(Node<'a>, Node<'a
 }
 
 fn read_edge(nodes: &Nodes<'_>, edge: u32) -> Result<EdgeRead, Unread> {
-    let node = *nodes.get(&edge).ok_or(broken("unresolved edge"))?;
-    let halfedge = ptr(node, "halfedge")
-        .and_then(|index| nodes.get(&index))
-        .copied()
-        .ok_or(broken("edge has no resolved fin"))?;
+    let node = *nodes.get(&edge).ok_or(unresolved("unresolved edge"))?;
+    let halfedge = match ptr(node, "halfedge") {
+        Some(index) => nodes
+            .get(&index)
+            .copied()
+            .ok_or(unresolved("edge has no resolved fin"))?,
+        None => return Err(broken("edge has no resolved fin")),
+    };
     let (first, previous) =
-        loop_fin(nodes, halfedge).ok_or(broken("edge fin has no resolved predecessor"))?;
+        loop_fin(nodes, halfedge).ok_or(unresolved("edge fin has no resolved predecessor"))?;
     let endpoints = match (ptr(previous, "vertex"), ptr(first, "vertex")) {
         (Some(start), Some(end)) => {
             let sense = sense(first).ok_or(broken("edge fin has an invalid sense"))?;
-            if vertex_position(nodes, start).is_none() || vertex_position(nodes, end).is_none() {
-                return Err(broken("edge vertex has no resolved position"));
+            for vertex in [start, end] {
+                if vertex_position(nodes, vertex).is_none() {
+                    return Err(position_defect(
+                        nodes,
+                        vertex,
+                        "edge vertex has no resolved position",
+                    ));
+                }
             }
             Some(if sense == Sense::Forward {
                 [start, end]
@@ -319,14 +383,15 @@ fn read_edge(nodes: &Nodes<'_>, edge: u32) -> Result<EdgeRead, Unread> {
     let named = ptr(node, "curve");
     let curve = named.filter(|index| nodes.contains_key(index));
     if endpoints.is_none() && curve.is_none() && crate::sp_curve::locate(nodes, first).is_none() {
-        let cause = if named.is_some() {
-            Cause::Unreadable
+        let reason = "vertexless edge has no carrier";
+        return Err(if named.is_some() {
+            unresolved(reason)
         } else {
-            Cause::Undecoded
-        };
-        return Err(Unread {
-            cause,
-            reason: "vertexless edge has no carrier",
+            Unread {
+                cause: Cause::Undecoded,
+                reason,
+                unresolved: false,
+            }
         });
     }
     Ok(EdgeRead {
@@ -355,7 +420,9 @@ fn read_loop(
     edges: &mut EdgeReads,
     loop_index: u32,
 ) -> Result<LoopShape, Unread> {
-    let loop_ = *nodes.get(&loop_index).ok_or(broken("unresolved loop"))?;
+    let loop_ = *nodes
+        .get(&loop_index)
+        .ok_or(unresolved("unresolved loop"))?;
     let first = ptr(loop_, "halfedge").ok_or(broken("loop has no fin"))?;
     let mut current = first;
     let mut ring = Vec::new();
@@ -364,7 +431,7 @@ fn read_loop(
         if !seen.insert(current) {
             return Err(broken("fin ring has a secondary cycle"));
         }
-        let fin = *nodes.get(&current).ok_or(broken("unresolved fin"))?;
+        let fin = *nodes.get(&current).ok_or(unresolved("unresolved fin"))?;
         if fin.char("sense") == Some(b'?')
             && ptr(fin, "forward") == Some(current)
             && ptr(fin, "backward") == Some(current)
@@ -372,7 +439,11 @@ fn read_loop(
         {
             let vertex = ptr(fin, "vertex").ok_or(broken("pole fin has no vertex"))?;
             if vertex_position(nodes, vertex).is_none() {
-                return Err(broken("pole vertex has no resolved position"));
+                return Err(position_defect(
+                    nodes,
+                    vertex,
+                    "pole vertex has no resolved position",
+                ));
             }
             return Ok(LoopShape::Pole(vertex));
         }
@@ -421,6 +492,7 @@ pub(crate) fn project(
             return Err(malformed("duplicate Parasolid node index"));
         }
     }
+    let stopped = !records.is_terminated();
     let mut ir = CadIr::empty();
     let mut selected_shells = BTreeMap::new();
     let mut stored_resolutions = BTreeMap::new();
@@ -621,7 +693,7 @@ pub(crate) fn project(
                     losses.push(origin.given_up(
                         loop_id(stream, loop_index),
                         nodes.get(&loop_index).copied(),
-                        unread.cause,
+                        unread.cause(stopped),
                         format_args!("a loop does not read: {}", unread.reason),
                     ));
                     drop_fins(&nodes, stream, loop_index, losses);
@@ -635,11 +707,19 @@ pub(crate) fn project(
                 chain_losses(defect, "a face's loops", losses);
                 losses.push(dropped_with(&id, loop_id(stream, loop_index)));
             } else if let Some(defect) = defect {
+                let cause = if stopped && defect == ChainDefect::Unresolved {
+                    Cause::Undecoded
+                } else {
+                    Cause::Unreadable
+                };
                 losses.push(origin.given_up(
                     &id,
                     Some(face),
-                    Cause::Unreadable,
-                    format_args!("{defect} of a face's loops; the face is not transferred"),
+                    cause,
+                    format_args!(
+                        "{} of a face's loops; the face is not transferred",
+                        defect.text()
+                    ),
                 ));
             }
             drop_loops(

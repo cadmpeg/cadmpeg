@@ -249,14 +249,14 @@ pub(crate) fn read(
             ctx,
             &trees,
             Cause::Undecoded,
-            format!(
+            &format!(
                 "The document holds different `{TREE_SECTION}` sections. No occurrence is \
                  transferred."
             ),
         )?,
         Some(Some(text)) => native_project(ctx, &text, &trees, &virtual_sections)?,
         Some(None) => {
-            NativeAssembly::structure_given_up(ctx, &trees, Cause::Unreadable, unreadable)?
+            NativeAssembly::structure_given_up(ctx, &trees, Cause::Unreadable, &unreadable)?
         }
         None => NativeAssembly::structure_lost(unreadable),
     };
@@ -341,12 +341,23 @@ fn native_project(
     let document = match ctx.parse_xml(text, "parse SolidWorks component instance tree") {
         Ok(document) => document,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(CodecError::NotImplemented(detail)) => {
+            return NativeAssembly::structure_given_up(
+                ctx,
+                trees,
+                Cause::Undecoded,
+                &format!(
+                    "The `{TREE_SECTION}` section passes a bound of the XML reader: {detail}. \
+                     No occurrence is transferred."
+                ),
+            );
+        }
         Err(_) => {
             return NativeAssembly::structure_given_up(
                 ctx,
                 trees,
                 Cause::Unreadable,
-                format!(
+                &format!(
                     "The `{TREE_SECTION}` section is not well-formed XML. No occurrence is \
                      transferred."
                 ),
@@ -359,7 +370,7 @@ fn native_project(
             ctx,
             trees,
             Cause::Undecoded,
-            format!(
+            &format!(
                 "The `{TREE_SECTION}` section root is `{}`. No occurrence is transferred.",
                 root.tag_name().name()
             ),
@@ -411,7 +422,7 @@ fn native_project(
             ctx,
             trees,
             Cause::Unreadable,
-            format!(
+            &format!(
                 "The component tree repeats the `{element}` id `{id}`. No occurrence is \
                  transferred."
             ),
@@ -428,7 +439,7 @@ fn native_project(
             ctx,
             trees,
             Cause::Undecoded,
-            format!(
+            &format!(
                 "The component tree names {} active configurations. No occurrence is \
                  transferred.",
                 active.len()
@@ -441,7 +452,7 @@ fn native_project(
             ctx,
             trees,
             Cause::Unreadable,
-            format!(
+            &format!(
                 "The active configuration names model `{root_model}`, which the component \
                  tree does not define. No occurrence is transferred."
             ),
@@ -484,8 +495,8 @@ fn native_project(
         return NativeAssembly::structure_given_up(
             ctx,
             trees,
-            Cause::Undecoded,
-            format!(
+            Cause::Unreadable,
+            &format!(
                 "The active configuration's model `{root_model}` has no valid identity. No \
                  occurrence is transferred."
             ),
@@ -907,7 +918,7 @@ impl<'a> Walk<'_, 'a> {
                     self.given_up.push(GivenUpInstance {
                         occurrence: instance.1,
                         name,
-                        cause: Cause::Undecoded,
+                        cause: Cause::Unreadable,
                         why: format!("places model `{child}`, which has no valid identity"),
                         below,
                     });

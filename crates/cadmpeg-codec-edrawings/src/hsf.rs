@@ -99,7 +99,7 @@ pub(crate) fn decode_body(
             &scene,
             OBJECT_PART,
             stored.span,
-            Cause::Unreadable,
+            Cause::Undecoded,
             CodecError::malformed(format_args!(
                 "{code}: the shell slot that places the object lies outside every library body"
             )),

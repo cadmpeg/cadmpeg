@@ -406,6 +406,7 @@ pub(super) fn emit(
         };
         let mut mesh = MeshData::default();
         let mut failed_shell: Option<UnknownId> = None;
+        let mut names_absent_object = false;
         for &slot in &library.slots {
             if let Err(error) = append_shell(
                 scene,
@@ -438,6 +439,7 @@ pub(super) fn emit(
                 }
                 let part = shell_parts.get(&slot).cloned().flatten();
                 if part.is_none() {
+                    names_absent_object = true;
                     shell_failure_count += 1;
                     if shell_failures.len() < MAX_LISTED {
                         shell_failures.push(format!("object {slot} of {name}: {}", error.text()));
@@ -490,11 +492,15 @@ pub(super) fn emit(
             }
             Err(error) => {
                 let body = body_id(scope);
+                let cause = match error {
+                    MeshBrepError::Empty if names_absent_object => Cause::Unreadable,
+                    _ => error.cause(),
+                };
                 losses.push(match (&error, &failed_shell) {
                     (MeshBrepError::Empty, Some(shell)) => dropped_with(&body, shell),
                     _ => GivenUpRecord::new(
                         &body,
-                        error.cause(),
+                        cause,
                         format_args!("body {name} could not be built: {error}"),
                     )
                     .loss(),
@@ -527,7 +533,7 @@ pub(super) fn emit(
             scene,
             super::NODE_PART,
             node.span,
-            Cause::Unreadable,
+            Cause::Undecoded,
             CodecError::malformed(format_args!("{code}: the instance names no library body")),
         )?);
     }

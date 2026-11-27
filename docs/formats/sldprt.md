@@ -402,10 +402,15 @@ valid identity or no definition, and when the document holds two different
 trees. Each tree section is then given up as a `component-tree` part. The
 loss is `record.unreadable` when the tree text has no UTF-16 byte-order mark
 and is not UTF-8, when its XML is not well formed, when it repeats a model or file id, and when its
-active model has no definition. The loss is `record.undecoded` when the
+active model has no valid identity or no definition. A valid identity is a
+decimal `id` (§11.1). The loss is `record.undecoded` when the
 document holds two different trees, when the root element is not
 `swSolidWorks`, when the tree names no active configuration or more than one,
-and when the active model has no valid identity. The
+and when the tree passes a bound of the XML reader: more than 256 attributes
+on one element, more than 256 namespace prefixes, or more nodes than the
+reader holds. The give-up is the one loss of the tree. The loss
+`assembly.structure-not-transferred` records an assembly document that holds
+no component tree section. The
 section that the decoder reads is also kept whole, so the part keeps only
 the length and digest of its bytes.
 
@@ -421,13 +426,13 @@ and offset where the decoder holds them. Such records are a B-rep face that
 names no loop and does not cover a whole closed surface, a B-rep loop whose
 ring or vertex does not decode, a B-rep edge that the topology walk
 withholds, a component instance that has a valid identity and no proper
-rigid placement, no model, or a model with no valid identity, a PMI
+rigid placement or no model, a PMI
 dimension map that does not parse, a feature-input sketch whose face
 projects no edge to a sketch entity, and a sketch entity whose edge projects
 to no entity and no profile. The loss text tells why the decoder dropped the
 record. A component instance that names a model the component tree does not
-define, or a model that contains the instance, is given up with the loss
-`record.unreadable`. A record of an alternate configuration is named by its id with the
+define, a model that contains the instance, or a model with no valid
+identity is given up with the loss `record.unreadable`. A record of an alternate configuration is named by its id with the
 `@<site>` suffix of that configuration.
 
 A record that the decoder drops only because it needs a given-up record is
@@ -3661,7 +3666,7 @@ The `id` values of `swModel` and `swReference` elements are decimal numbers, dis
 
 The placement is relative to the assembly model that contains the `swReference`. The world placement of an occurrence is the product of the placements on its path from the root model.
 
-An instance with a valid, unrepeated identity is given up by its occurrence id when it names no model, when its model is not defined, when its `swTransform` is not a proper rigid motion, or when its model contains the instance. Where the model of a given-up instance has no valid identity, the `record.unreadable` loss lists as dropped the instances that this model places. Every other model of a given-up or omitted sub-assembly instance is kept as a definition that no occurrence places, with the instances it places. An instance with no valid identity, an instance that repeats an earlier identity, and an instance with a mirrored placement are omitted, and the loss `assembly.placement-unresolved` records each of them.
+An instance with a valid, unrepeated identity is given up by its occurrence id. The loss is `record.undecoded` when it names no model or when its `swTransform` is not a proper rigid motion. The loss is `record.unreadable` when its model is not defined, when its model contains the instance, or when its model has no valid identity. Where the model of a given-up instance has no valid identity, the `record.unreadable` loss lists as dropped the instances that this model places. Every other model of a given-up or omitted sub-assembly instance is kept as a definition that no occurrence places, with the instances it places. An instance with no valid identity, an instance that repeats an earlier identity, and an instance with a mirrored placement are omitted, and the loss `assembly.placement-unresolved` records each of them.
 
 ### 11.3 Mate lists
 

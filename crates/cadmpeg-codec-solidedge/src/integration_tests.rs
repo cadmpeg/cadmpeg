@@ -612,6 +612,47 @@ fn missing_terminator_keeps_framed_body_nodes() {
             .code));
 }
 
+/// A fin names an edge node that the partition does not hold. The loop is
+/// unreadable in a partition whose node framing ends at its terminator, and
+/// undecoded in one whose framing stops before it: the node can lie past the
+/// stop.
+#[test]
+fn a_loop_with_an_unresolved_edge_is_undecoded_after_an_early_stop() {
+    let mut partition = test_support::cube_partition();
+    let records = cadmpeg_parasolid::records::PrimaryRecords::read(&partition)
+        .unwrap()
+        .unwrap();
+    let range = records
+        .nodes()
+        .find(|node| node.kind() == cadmpeg_parasolid::records::node_type::FIN)
+        .unwrap()
+        .field_range("edge")
+        .unwrap();
+    partition[range].copy_from_slice(&4000u16.to_be_bytes());
+    let mut stopped = partition.clone();
+    stopped.truncate(stopped.len() - 4);
+    for (stream, expected) in [
+        (
+            partition,
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
+        ),
+        (stopped, cadmpeg_ir::unknown::part::record_undecoded_kind()),
+    ] {
+        let result = decode_partition(stream);
+        let loops: Vec<_> = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.message
+                    .contains("a loop does not read: unresolved edge")
+            })
+            .collect();
+        assert!(!loops.is_empty(), "{:?}", result.report().losses);
+        assert!(loops.iter().all(|loss| loss.code == expected), "{loops:?}");
+    }
+}
+
 #[test]
 fn carrier_reference_order_preserves_a_closed_cube() {
     let bytes = test_support::with_partitions(&[test_support::cube_partition()]);

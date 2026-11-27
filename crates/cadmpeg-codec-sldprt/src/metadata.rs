@@ -13,7 +13,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
-use cadmpeg_ir::unknown::part::{Cause, DecodeParts as _, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{DecodeParts as _, GivenUpPart, Part};
 use cadmpeg_ir::Exactness;
 
 use crate::layout::{
@@ -121,7 +121,7 @@ fn give_up_carrier(
     .named(stream.as_str())
     .in_stream(stream.clone())
     .digest_only();
-    let cause = Cause::Unreadable.of(&error);
+    let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
     given_up.push(ctx.give_up_part(part, cause, error)?);
     Ok(())
 }

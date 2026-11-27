@@ -46,6 +46,7 @@ use cadmpeg_container::compound::CompoundPrefixProbe;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
+use cadmpeg_ir::unknown::part::Cause;
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{report::check::Finding, CadIr};
 
@@ -55,6 +56,17 @@ fn issue_detail(error: CodecError) -> Result<String, CodecError> {
     } else {
         Ok(error.to_string())
     }
+}
+
+/// The give-up cause and text of a unit that does not read. A form that the
+/// decoder does not read, or a count above its bound, is undecoded; any other
+/// refusal breaks the unit's framing or grammar.
+fn issue(error: CodecError) -> Result<(Cause, String), CodecError> {
+    let cause = match &error {
+        CodecError::NotImplemented(_) | CodecError::UnsupportedDialect { .. } => Cause::Undecoded,
+        _ => Cause::Unreadable,
+    };
+    Ok((cause, issue_detail(error)?))
 }
 
 /// Read-only Autodesk Inventor IPT and IAM codec.

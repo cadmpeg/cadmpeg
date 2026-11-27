@@ -172,7 +172,7 @@ The range block comes before the face tag. A block with another head, a non-zero
 
 ### 3.7 Shell instances
 
-An `&` record has the opcode, a `u64` source id, a `u64` own id, one byte (1), and a matrix. The source is a shell. The instance uses the strips of the source and applies the matrix to its points. The matrix is local to the body. The matrices can have a negative determinant, and then a change of the winding makes the body inconsistent. The decoder never changes the winding of an instance. The decoder resolves one level. An instance of an instance is invalid. An own id above 32 bits is an error.
+An `&` record has the opcode, a `u64` source id, a `u64` own id, one byte (1), and a matrix. The source is a shell. The instance uses the strips of the source and applies the matrix to its points. The matrix is local to the body. The matrices can have a negative determinant, and then a change of the winding makes the body inconsistent. The decoder never changes the winding of an instance. The decoder resolves one level. An instance of an instance is invalid. The decoder holds object ids in 32 bits. A larger own id stops the walk with the loss `record.undecoded` (§4.1).
 
 ### 3.8 Matrices
 
@@ -302,8 +302,10 @@ The cause of a give-up sets its code. The charge is the one loss of the given-up
 | A shell mesh is above the mesh size caps, or a body has a coordinate too large for the weld grid or fails in the B-rep builder for a reason other than its triangles and points. | `record.undecoded` |
 | The zlib stream does not open, or a record of the model stream breaks its length rule or its fixed bytes. | `record.unreadable` |
 | A shell refers to an object that the store does not hold or that is not a shell, or its face list or strip indices are invalid. | `record.unreadable` |
-| A body mesh has no triangles, every triangle is degenerate, a triangle names a point that does not exist, or a point is not finite. | `record.unreadable` |
-| An object repeats an earlier id, a shell slot lies outside every library body, or an instance node names no library body. | `record.unreadable` |
+| A body mesh has a triangle that names a point that does not exist, or a point that is not finite. Every triangle of a body mesh repeats a point index or has three collinear stored points. A body has no triangle because a shell slot of the body names an object that the store does not hold. | `record.unreadable` |
+| A body has no shell slot, or its shells hold no triangle. The weld and the repairs of the B-rep builder (§4) leave no triangle of a body mesh. | `record.undecoded` |
+| An object repeats an earlier id. | `record.unreadable` |
+| A shell slot lies outside every library body, or an instance node names no library body. The library body rule of §3.5 holds for the include path forms of open item EDR-10, and a slot or include of another path form is a form that the decoder does not read. | `record.undecoded` |
 
 ## 5. Detection
 

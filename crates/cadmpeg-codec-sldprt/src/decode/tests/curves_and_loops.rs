@@ -384,7 +384,10 @@ fn dummy_partner_mismatch_withholds_the_edge() {
     assert_eq!(
         super::given_up(
             &result,
-            crate::test_support::topology::FIN_PARTNER_UNRESOLVED
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
         ),
         1
     );
@@ -411,7 +414,10 @@ fn dummy_partner_null_nose_withholds_the_edge() {
     assert_eq!(
         super::given_up(
             &result,
-            crate::test_support::topology::FIN_PARTNER_UNRESOLVED
+            &[
+                crate::brep::graph::FIN_PARTNERS_UNCORROBORATED,
+                crate::brep::graph::LOOP_FIN_UNREAD,
+            ]
         ),
         1
     );
@@ -433,14 +439,19 @@ fn nonreciprocal_backward_link_withholds_the_ring() {
     };
     assert!(face.loops.is_partial());
     assert_eq!(face.loops.stated().count(), 0);
+    // The give-up of the loop is the one loss of the ring.
+    let ring_losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("reciprocal backward link"))
+        .collect::<Vec<_>>();
+    let [loss] = ring_losses[..] else {
+        panic!("one loss states the ring: {ring_losses:#?}");
+    };
     assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code.local_code() == "topology.fin-link-unresolved")
-            .count(),
-        1
+        loss.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
     );
 }
 
@@ -470,7 +481,7 @@ fn vertexless_ring_edge_without_reciprocal_partner_is_withheld() {
     };
     assert!(face.loops.is_partial());
     assert_eq!(
-        super::given_up(&result, crate::test_support::topology::RING_EDGE_WITHHELD),
+        super::given_up(&result, &[crate::brep::graph::RING_EDGE_WITHHELD]),
         1
     );
 }
@@ -497,7 +508,7 @@ fn a_face_whose_loop_ring_breaks_keeps_a_partial_loop_list() {
     assert_eq!(face.loops.stated().count(), 0);
     assert!(result.ir().geometry.loops.is_empty());
     assert_eq!(
-        super::given_up(&result, crate::test_support::topology::FACE_WITHHELD),
+        super::given_up(&result, &[crate::brep::graph::FACE_WITHHELD]),
         0
     );
     assert_eq!(
@@ -536,7 +547,7 @@ fn a_face_that_stores_no_loop_covers_its_sphere() {
         carrier
     };
     let withheld = |result: &cadmpeg_ir::codec::DecodeResult| {
-        super::given_up(result, crate::test_support::topology::FACE_WITHHELD) == 1
+        super::given_up(result, &[crate::brep::graph::FACE_WITHHELD]) == 1
     };
 
     for (bridge_marker, sense) in [(0x2d, Sense::Forward), (0x2b, Sense::Reversed)] {

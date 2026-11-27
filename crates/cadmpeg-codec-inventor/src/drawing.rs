@@ -211,14 +211,14 @@ pub(crate) fn inventory(
                     inventory.reference_tables.push(table);
                 }
                 Err(error) => {
-                    let detail = crate::issue_detail(error)?;
+                    let (cause, detail) = crate::issue(error)?;
                     ctx.charge_entities(1, "retain Inventor drawing reference-table refusal")?;
                     let token = segment.pair.token.as_str();
                     let id = format!("inventor:drawing:reference-tables#{token}");
                     inventory.refusals.push(
                         GivenUpRecord::new(
                             cadmpeg_ir::ids::Identity::new(&id)?,
-                            Cause::Unreadable,
+                            cause,
                             format_args!("drawing reference tables do not read: {detail}"),
                         )
                         .loss(),

@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which native field distinguishes a FIN forward link that names no reciprocal same-loop backward link from a valid ring closure?
 
-**Known.** `decode.rs` withholds a ring through `TopologyFinLinkUnresolved` when a FIN forward link names no reciprocal same-loop backward link; the ring stays unwalked (#517).
+**Known.** `brep/graph.rs` withholds a ring when a FIN forward link names no reciprocal same-loop backward link: the loop is given up as `record.undecoded` and the ring stays unwalked (#517).
 
 **Need.** We must know the link grammar that walks such a ring.
 

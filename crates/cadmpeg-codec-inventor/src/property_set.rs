@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStreamId};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::Cause;
 
 const BYTE_ORDER_LE: u16 = 0xfffe;
 const MAX_STREAM_SIZE: usize = 2_097_152;
@@ -31,7 +32,12 @@ pub(crate) struct PropertySetDescriptor<'a> {
 #[derive(Debug)]
 pub(crate) enum PropertySetState<'a> {
     Parsed(PropertySetStream<'a>),
-    Malformed(String),
+    /// The stream does not read: `cause` tells a break of its framing from a
+    /// form that the decoder does not read.
+    Unread {
+        cause: Cause,
+        detail: String,
+    },
 }
 
 #[derive(Debug)]
@@ -153,7 +159,10 @@ pub(crate) fn inventory<'a>(
         }
         let state = match parse_property_set_stream(ctx, view) {
             Ok(property_set) => PropertySetState::Parsed(property_set),
-            Err(error) => PropertySetState::Malformed(crate::issue_detail(error)?),
+            Err(error) => {
+                let (cause, detail) = crate::issue(error)?;
+                PropertySetState::Unread { cause, detail }
+            }
         };
         property_sets.push(PropertySetDescriptor {
             stream: stream.id(),
@@ -259,7 +268,7 @@ fn parse_section<'a>(
             "OLE property-set section size does not match its range".into(),
         ));
     }
-    let property_count = cursor.count("property count", MAX_PROPERTIES)?;
+    let property_count = cursor.bounded("property count", MAX_PROPERTIES)?;
     let directory_end = 8_usize
         .checked_add(property_count.checked_mul(8).ok_or_else(|| {
             CodecError::Malformed("OLE property directory length overflows".into())
@@ -380,7 +389,7 @@ fn parse_dictionary(
     code_page: Option<u16>,
 ) -> Result<BTreeMap<u32, String>, CodecError> {
     let mut cursor = Cursor::new(source, "OLE property dictionary");
-    let count = cursor.count("entry count", MAX_PROPERTIES)?;
+    let count = cursor.bounded("entry count", MAX_PROPERTIES)?;
     let mut names = BTreeMap::new();
     let mut folded_names = BTreeSet::new();
     for _ in 0..count {
@@ -431,7 +440,7 @@ fn parse_vector<'a>(
     element_type: u16,
     code_page: Option<u16>,
 ) -> Result<PropertyValue<'a>, CodecError> {
-    let count = cursor.count("vector element count", MAX_PROPERTIES)?;
+    let count = cursor.bounded("vector element count", MAX_PROPERTIES)?;
     let mut values = Vec::new();
     for _ in 0..count {
         if element_type == VT_VARIANT {
@@ -830,6 +839,19 @@ impl<'a> Cursor<'a> {
         Ok(value)
     }
 
+    /// A count that the format does not bound and the decoder caps at
+    /// `maximum`: a larger count is a form the decoder does not read.
+    fn bounded(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
+        let value = self.offset(field)?;
+        if value > maximum {
+            return Err(CodecError::NotImplemented(format!(
+                "{} {field} {value} is above the decoder's bound {maximum}",
+                self.scope
+            )));
+        }
+        Ok(value)
+    }
+
     fn offset(&mut self, field: &'static str) -> Result<usize, CodecError> {
         usize::try_from(self.u32(field)?)
             .map_err(|_| CodecError::malformed(format_args!("{} {field} is too large", self.scope)))
@@ -932,7 +954,7 @@ mod tests {
             .expect("malformed property set remains an inventory entry");
         assert!(matches!(
             inventory.first().map(|entry| &entry.state),
-            Some(super::PropertySetState::Malformed(_))
+            Some(super::PropertySetState::Unread { .. })
         ));
     }
 

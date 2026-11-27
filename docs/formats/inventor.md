@@ -79,7 +79,7 @@ Segment major versions 15 through 22 use a 17-byte footer. Segment major version
 
 Kernel bytes beginning with `ASM BinaryFile4` or `ASM BinaryFile8` use the ASM header and SAB grammar in [asm.md](asm.md). Kernel bytes beginning with `ACIS BinaryFile` use the 32-bit ACIS header and SAB grammar in [asm.md](asm.md) at every save format. Save-format majors 217 and 218 are the verified bands. A kernel signature validates the already typed record. It is not a record locator.
 
-The reader gives up a carrier that it cannot read. When the record envelope does not parse, the part is an `rse-record` part over the record payload. When the kernel header or the kernel stream does not decode, the part is a `kernel-carrier` part over the kernel bytes. Each part is in the expanded bulk stream of its segment, and its stub links to the RSe record that frames the carrier.
+The reader gives up a carrier that it cannot read. When the record envelope does not parse, the part is an `rse-record` part over the record payload. When the kernel header or the kernel stream does not decode, the part is a `kernel-carrier` part over the kernel bytes. Each part is in the expanded bulk stream of its segment, and its stub links to the RSe record that frames the carrier. The give-up is the one loss of the carrier's geometry. The loss `geometry.kernel-carrier-not-transferred` records a part whose geometry is not transferred and whose carrier is not given up.
 
 ## 6. OLE properties and preview
 
@@ -193,7 +193,7 @@ The remaining bytes of a visibility-off record are retained. A visibility-off re
 
 A `UFRxDoc` occurrence joins the `AmDc` and `AmGraphics` records through `occurrence_id`. It joins its external prototype through `reference_id`: the one external reference with the same `reference_id` is the prototype. Copies of one file keep its document identifier, so the document identifier alone does not select a copy. When the occurrence stores a first-section document identifier, the prototype must store the same document identifier. Otherwise, and when no reference or several references have the `reference_id`, the occurrence is unresolved. The external-reference occurrence count equals the number of joined `UFRxDoc` occurrences. Each occurrence in the current document is a root placement. A referenced assembly remains an unresolved external prototype; its internal occurrences are not inserted into the current document.
 
-Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An occurrence that the active design-view representation hides has `visible = false`. A grounded occurrence maps to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence, in the frame of its placement. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss. The reader gives up each occurrence that it does not transfer once, by its occurrence id. An occurrence id that another `UFRxDoc` occurrence transfers is not given up.
+Inventor placement translations use centimetres. Neutral occurrence translations use millimetres, so the first three elements in matrix column 3 are multiplied by 10. The remaining matrix coefficients are unchanged. External-reference state bit `0x2000` marks its occurrence as suppressed. A suppressed occurrence has `visible = false`; when it has no graphics placement, its neutral transform is identity. An occurrence that the active design-view representation hides has `visible = false`. A grounded occurrence maps to a neutral `AssemblyJoint` with `JointOperands::Grounded` and one connector on the occurrence, in the frame of its placement. An active occurrence without a finite affine graphics placement is not transferred and produces an assembly-placement loss. The reader gives up each occurrence that it does not transfer once, by its occurrence id. An occurrence id that another `UFRxDoc` occurrence transfers is not given up. A later occurrence that repeats the id of an earlier one is counted in the loss `assembly.placement-not-transferred`, because the earlier occurrence transfers that id.
 
 ## 10. Part appearance assignments
 
@@ -1715,17 +1715,18 @@ The decoder gives up a part or a record (CADIR §3.3) in these cases:
 | `kernel-carrier` | The kernel decode does not read the framed records, or the decode passes a resource limit. | `record.undecoded` |
 | `history-chain` | The `delta_state` chain does not close (§13.10). | `record.unreadable` |
 | `history-chain` | The state scan passes its work limit (§13.10). | `record.undecoded` |
-| `property-set` | An OLE property-set stream does not read (§6). | `record.unreadable` |
+| `property-set` | An OLE property-set stream breaks its framing or grammar (§6). | `record.unreadable` |
+| `property-set` | An OLE property-set stream names a code page that the decoder has no table for, or a property, dictionary entry, or vector element count above 65536, the decoder's bound (§6). | `record.undecoded` |
 | `protein-stream` | The `Protein` stream does not read as a package (§7). | `record.unreadable` |
 | `protein-stream` | The schema catalog of the package does not decode (§7). | `record.undecoded` |
 | Protein record | A Protein native record or asset record does not admit. The record is given up by its id. | `record.undecoded` |
-| `ufrx-stream` | The `UFRxDoc` stream does not read (§8). | `record.unreadable` |
-| `ufrx-stream` | The `UFRxDoc` stream declares a schema that the decoder does not read (§8). | `record.undecoded` |
+| `ufrx-stream` | A `UFRxDoc` stream of schema 11 through 15 breaks its framing or a value that §8 states. | `record.unreadable` |
+| `ufrx-stream` | The `UFRxDoc` stream declares a schema outside 11 through 15 whose bytes the 11-15 grammar does not read, holds a form of §8 that the decoder does not read, or holds a count above the decoder's bound for that count (§8). | `record.undecoded` |
 | `UFRxDoc` record | A model state, external reference, embedded reference, or occurrence does not admit. The record is given up by its id. | `record.undecoded` |
 | Occurrence | The placement transform of an occurrence is not affine after unit conversion (§9). | `record.unreadable` |
-| Occurrence | The external reference, `AmDc` occurrence, or `AmGraphics` placement of an occurrence is missing or ambiguous, or its occurrence id is duplicated (§9). | `record.undecoded` |
+| Occurrence | The external reference, `AmDc` occurrence, or `AmGraphics` placement of an occurrence is missing or ambiguous (§9). | `record.undecoded` |
 | `rse-record` | A typed drawing record does not parse (§15). | `record.undecoded` |
-| Drawing reference tables | Metadata sections 6, 7, and 9 of a segment do not read as reference tables (§15). | `record.unreadable` |
+| Drawing reference tables | The length of metadata section 6, 7, or 9 of a segment is not its entry count times the entry width of the surface-body reference form (§13.4, §15). | `record.undecoded` |
 | `meta-section` | The section-8 entries of a drawing segment do not read (§15). | `record.unreadable` |
 | Drawing record | The operand references or links of a drawing record do not select their targets (§15). | `record.undecoded` |
 

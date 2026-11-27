@@ -193,16 +193,19 @@ pub(crate) fn parse<'a>(
     Ok(
         match parse_stream(ctx, source, stream.id(), document_kind) {
             Ok(document) => UfrxState::Parsed(Box::new(document)),
-            Err(CodecError::NotImplemented(detail)) => {
-                let (schema, section_versions) = parse_schema_table(source)?;
-                UfrxState::Unsupported {
+            Err(CodecError::NotImplemented(detail)) => match parse_schema_table(source) {
+                Ok((schema, section_versions)) => UfrxState::Unsupported {
                     stream: stream.id(),
                     schema,
                     section_versions,
                     source,
                     detail,
-                }
-            }
+                },
+                Err(error) => UfrxState::Malformed {
+                    stream: stream.id(),
+                    detail: crate::issue_detail(error)?,
+                },
+            },
             Err(error) => UfrxState::Malformed {
                 stream: stream.id(),
                 detail: crate::issue_detail(error)?,
@@ -223,7 +226,7 @@ fn parse_stream<'a>(
         Ok(document) => Ok(document),
         Err(error) if !(11..=15).contains(&schema) => match error {
             CodecError::ResourceLimit(_) => Err(error),
-            _ => Err(CodecError::malformed(format_args!(
+            _ => Err(CodecError::NotImplemented(format!(
                 "UFRxDoc 11-15 grammar does not fit; foreign schema {schema} is the probable cause: {error}"
             ))),
         },
@@ -941,15 +944,30 @@ fn parse_levels_of_detail(
     Ok(levels)
 }
 
+/// The schema and section-version table of a stream that the decoder does
+/// not read. The u16 count bounds the table, so it takes no decoder cap.
 fn parse_schema_table(source: View<'_>) -> Result<(u16, Vec<u16>), CodecError> {
     let mut cursor = Cursor::new(source);
     let schema = cursor.u16("schema")?;
-    let section_count = cursor.count16("section-version count", 256)?;
+    let section_count = usize::from(cursor.u16("section-version count")?);
     let mut section_versions = Vec::new();
     for _ in 0..section_count {
         section_versions.push(cursor.u16("section version")?);
     }
     Ok((schema, section_versions))
+}
+
+/// A count above the decoder's cap. The format states no maximum for it, so
+/// the stream holds a form that the decoder does not read.
+fn bound(
+    field: &'static str,
+    value: impl std::fmt::Display,
+    offset: usize,
+    maximum: usize,
+) -> CodecError {
+    CodecError::NotImplemented(format!(
+        "UFRxDoc {field} value {value} at offset {offset} is above the decoder's bound {maximum}"
+    ))
 }
 
 struct Cursor<'a> {
@@ -1009,25 +1027,21 @@ impl<'a> Cursor<'a> {
     }
 
     fn count16(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
+        let offset = self.position();
         let value = usize::from(self.u16(field)?);
         if value > maximum {
-            return Err(CodecError::malformed(format_args!(
-                "UFRxDoc {field} exceeds {maximum}"
-            )));
+            return Err(bound(field, value, offset, maximum));
         }
         Ok(value)
     }
 
     fn count32(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
         let offset = self.position();
-        let value = usize::try_from(self.u32(field)?)
-            .map_err(|_| CodecError::malformed(format_args!("UFRxDoc {field} is too large")))?;
-        if value > maximum {
-            return Err(CodecError::malformed(format_args!(
-                "UFRxDoc {field} value {value} at offset {offset} exceeds {maximum}"
-            )));
+        let value = self.u32(field)?;
+        match usize::try_from(value) {
+            Ok(value) if value <= maximum => Ok(value),
+            _ => Err(bound(field, value, offset, maximum)),
         }
-        Ok(value)
     }
 
     fn utf16(
@@ -1102,7 +1116,8 @@ mod tests {
 
     #[test]
     fn malformed_ufrx_remains_an_inventory_state() {
-        let bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&[0; 2]);
+        // Schema 15 with a section-version table shorter than five entries.
+        let bytes = crate::test_support::test_fixtures::fixture_with_ufrx(&[15, 0, 3, 0]);
         let arena = DecodeArena::new();
         let (setup, root) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
@@ -1392,6 +1407,21 @@ mod tests {
     }
 
     #[test]
+    fn a_count_above_the_decoder_bound_is_an_unread_form() {
+        let mut bytes = vec![15, 0];
+        bytes.extend_from_slice(&300_u16.to_le_bytes());
+        bytes.extend(std::iter::repeat_n(1_u8, 600));
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic UFRxDoc fits policy");
+        assert!(matches!(
+            parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly),
+            Err(CodecError::NotImplemented(detail))
+                if detail.contains("section-version count value 300")
+        ));
+    }
+
+    #[test]
     fn a_foreign_schema_is_parsed_with_the_11_to_15_grammar() {
         let (bytes, _) = fixture(16);
         let arena = DecodeArena::new();
@@ -1415,7 +1445,7 @@ mod tests {
             panic!("broken foreign schema must recover as unsupported");
         };
         assert!(
-            matches!(&error, CodecError::Malformed(message)
+            matches!(&error, CodecError::NotImplemented(message)
                 if message.contains("foreign schema 16 is the probable cause")
                     && !message.contains("schema 16 is not implemented")),
             "expected an attempted-grammar recovery, found {error:?}"

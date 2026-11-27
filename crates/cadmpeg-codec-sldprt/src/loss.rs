@@ -338,10 +338,6 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN ring does not close, or a FIN forward link names no reciprocal
-    /// same-loop backward link, so its loop is withheld instead of walked on
-    /// doubt; the face keeps its other loops.
-    TopologyFinLinkUnresolved,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
     /// Referenced VERTEX records lack a complete owner-verified frame or IR-supported tolerance.
@@ -765,7 +761,6 @@ impl SldprtLossCode {
         Self::TopologyOwnershipWithheld,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
-        Self::TopologyFinLinkUnresolved,
         Self::TopologyLoopRecordAmbiguous,
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
@@ -999,7 +994,6 @@ impl SldprtLossCode {
             Self::TopologyOwnershipWithheld => "topology.ownership-withheld",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
-            Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
             Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
@@ -1305,7 +1299,6 @@ impl SldprtLossCode {
             | Self::TopologyOwnershipWithheld
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
-            | Self::TopologyFinLinkUnresolved
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
@@ -1481,7 +1474,6 @@ impl SldprtLossCode {
             Self::TopologyOwnershipWithheld
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
-            | Self::TopologyFinLinkUnresolved
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
@@ -1922,7 +1914,6 @@ mod tests {
                 "topology.ownership-withheld",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",
-                "topology.fin-link-unresolved",
                 "topology.loop-record-ambiguous",
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",

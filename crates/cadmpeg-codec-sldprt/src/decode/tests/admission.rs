@@ -413,9 +413,12 @@ fn a_pinned_decode_keeps_a_partition_whose_entity_records_build_no_geometry() {
         .expect("a salvage decode admits the given-up partition");
     assert!(!salvaged.report().geometry_transferred());
     let losses = &salvaged.report().losses;
-    assert!(losses
-        .iter()
-        .any(|note| note.code == SldprtLossCode::GeometryParasolidNotTransferred.kind()));
+    // The site give-up is the one loss of the geometry.
+    assert!(!losses.iter().any(|note| [
+        SldprtLossCode::GeometryParasolidNotTransferred.kind(),
+        SldprtLossCode::TopologyGraphNotTransferred.kind()
+    ]
+    .contains(&note.code)));
     let [site] = losses
         .iter()
         .filter(|note| gives_up(&note.code))

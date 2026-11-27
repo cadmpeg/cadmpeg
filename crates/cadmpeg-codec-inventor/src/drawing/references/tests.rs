@@ -3,6 +3,7 @@
 use super::{parse, Tables};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::serde_erase::json;
+use cadmpeg_core::CodecError;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -62,8 +63,11 @@ fn fixed_reference_forms_share_decode_and_native_validation() -> TestResult {
     Ok(())
 }
 
+/// A section whose length is not its count times the entry width of the
+/// surface-body reference form holds another form: the reader refuses it as
+/// a form that it does not read.
 #[test]
-fn every_reference_width_rejects_short_long_and_wrong_count_forms() -> TestResult {
+fn every_reference_width_refuses_short_long_and_wrong_count_forms_as_unread() -> TestResult {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for index in 0..3 {
         let valid = table()?;
@@ -82,7 +86,7 @@ fn every_reference_width_rejects_short_long_and_wrong_count_forms() -> TestResul
                     .each_ref()
                     .map(|bytes| View::over_retained(bytes))
             )
-            .is_err());
+            .is_err_and(|error| matches!(error, CodecError::NotImplemented(_))));
             assert!(!invalid.valid(&ctx)?);
         }
         for count in [0, 2, u32::MAX] {
@@ -96,7 +100,7 @@ fn every_reference_width_rejects_short_long_and_wrong_count_forms() -> TestResul
                     .each_ref()
                     .map(|bytes| View::over_retained(bytes))
             )
-            .is_err());
+            .is_err_and(|error| matches!(error, CodecError::NotImplemented(_))));
             assert!(!invalid.valid(&ctx)?);
         }
     }

@@ -376,7 +376,13 @@ pub(crate) fn histories(
             let stream = section.source_stream();
             let named = names_history(section.name());
             let Some(payload) = section.xml_payload() else {
-                if named {
+                // A wrapped member that does not inflate is given up by the
+                // container, and that give-up states the lost history.
+                let member_given_up = scan.given_up.iter().any(|part| {
+                    part.kind() == crate::container::WRAPPED_MEMBER_PART
+                        && part.stream() == Some(stream)
+                });
+                if named && !member_given_up {
                     report_unread(
                         ctx,
                         section,

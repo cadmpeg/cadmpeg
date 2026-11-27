@@ -2759,7 +2759,7 @@ fn merge_local_bodies(
                 .named(stream.header.description.as_str())
                 .in_stream(stream.source_stream().clone())
                 .digest_only();
-                let cause = Cause::Unreadable.of(&error);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
                 let error = CodecError::malformed(format_args!(
                     "an imported body stream does not decode: {error}"
                 ));
@@ -2877,7 +2877,7 @@ fn try_decode_brep(
         match ctx.run_part(|| decode_bodies(ctx, &bodies, streams[first].source_stream()))? {
             Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
             Err(error) => {
-                let cause = Cause::Unreadable.of(&error);
+                let cause = cadmpeg_ir::unknown::part::Cause::Unreadable.of(&error);
                 given_up.push(ctx.give_up_part(site_part(streams, indices), cause, error)?);
             }
         }
@@ -3338,7 +3338,6 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_topology_fins += source.stats.unresolved_topology_fins;
     target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
     target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
-    target.stats.withheld_fin_links += source.stats.withheld_fin_links;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -5129,12 +5128,6 @@ fn append_topology_record_losses(
         losses.push(SldprtLossCode::TopologyFinPartnerUnresolved.note(format!(
             "{} edge(s) with no edge record were withheld because an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints or a mutual twin FIN contradicts the ring-order endpoint; no dummy enters a public face loop.",
             stats.withheld_fin_partners,
-        )));
-    }
-    if stats.withheld_fin_links > 0 {
-        losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
-            "{} ring(s) were withheld because a FIN forward link names no reciprocal same-loop backward link; the ring is not walked on doubt.",
-            stats.withheld_fin_links,
         )));
     }
 }
@@ -7078,30 +7071,40 @@ fn build_container_report(
             .count();
     let payload_sources = scan.blocks.len() + scan.compound_streams.len();
 
-    let mut losses = vec![
-        SldprtLossCode::GeometryParasolidNotTransferred.note(format!(
+    // A given-up Parasolid site, or a given-up section that the choice of
+    // the active partition needs, states the lost geometry in its give-up.
+    let geometry_given_up = scan
+        .given_up
+        .iter()
+        .any(|part| part.kind() == PARASOLID_SITE_PART)
+        || !container::unread_active_partition_sections(scan).is_empty();
+    let mut losses = Vec::new();
+    if !geometry_given_up {
+        losses.push(
+            SldprtLossCode::GeometryParasolidNotTransferred.note(format!(
             "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
              into a topology graph. {payload_sources} payload source(s) were enumerated, \
              {parasolid_sources} carrying Parasolid streams."
         )),
-        SldprtLossCode::TopologyGraphNotTransferred.note(
+        );
+        losses.push(SldprtLossCode::TopologyGraphNotTransferred.note(
             "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built \
              for this file."
                 .to_string(),
-        ),
-        if display_meshes > 0 {
-            SldprtLossCode::MaterialMetadataNotTransferred.note(format!(
-                "Body-bound appearances were not transferred because no body graph exists; \
+        ));
+    }
+    losses.push(if display_meshes > 0 {
+        SldprtLossCode::MaterialMetadataNotTransferred.note(format!(
+            "Body-bound appearances were not transferred because no body graph exists; \
                  {display_meshes} DisplayLists mesh(es) retained without owners."
-            ))
-        } else {
-            SldprtLossCode::MaterialMetadataNotTransferred.note(
-                "Body-bound appearances and tessellation were not transferred because no body graph \
+        ))
+    } else {
+        SldprtLossCode::MaterialMetadataNotTransferred.note(
+            "Body-bound appearances and tessellation were not transferred because no body graph \
                  exists."
-                    .to_string(),
-            )
-        },
-    ];
+                .to_string(),
+        )
+    });
 
     // A given-up part that holds or can hold a Parasolid stream carries its
     // own loss; the container is not stated to lack one.
