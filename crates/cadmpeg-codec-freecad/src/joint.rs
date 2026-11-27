@@ -122,6 +122,7 @@ pub(crate) fn transfer(
                     | "Detach1"
                     | "Detach2"
                     | "Suppressed"
+                    | "Activated"
             )
         }) {
             if let Some(value) = scalar_parameter(property)? {
@@ -226,14 +227,14 @@ pub(crate) fn transfer_neutral(
         .map_err(CodecError::malformed)?;
         let distance = scalar("Distance");
         let distance2 = scalar("Distance2");
-        let angle = scalar("Angle")
-            .or_else(|| match &record.body {
-                JointBody::Pair { kind, .. } if kind.as_str().eq_ignore_ascii_case("angle") => {
-                    distance
-                }
-                _ => None,
-            })
-            .map(|value| solved_angle(value.get()));
+        let angle = match &record.body {
+            JointBody::Pair { kind, .. } if kind.as_str().eq_ignore_ascii_case("angle") => {
+                scalar("Angle")
+                    .or(distance)
+                    .map(|value| solved_angle(value.get()))
+            }
+            _ => scalar("Angle").map(|value| value.get().to_radians()),
+        };
         let angular_limits = enabled_limits(
             "AngleMin",
             "AngleMax",
@@ -310,7 +311,7 @@ pub(crate) fn transfer_neutral(
                 )
             }
         };
-        joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
+        joint.suppressed = parameters.suppressed() == Some(true);
         joint.native_ref = Some(record.id().to_owned());
 
         output.push(joint);
@@ -533,7 +534,7 @@ fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecEr
         "Angle" | "AngleMin" | "AngleMax" => ("App::PropertyAngle", "Float"),
         "Distance" | "Distance2" | "LengthMin" | "LengthMax" => ("App::PropertyLength", "Float"),
         "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
-        | "Detach2" | "Suppressed" => ("App::PropertyBool", "Bool"),
+        | "Detach2" | "Suppressed" | "Activated" => ("App::PropertyBool", "Bool"),
         _ => return Ok(None),
     };
     let float_scalar = expected_tag == "Float" && property.type_name == "App::PropertyFloat";
@@ -822,6 +823,82 @@ pub(crate) mod tests {
             assert!(
                 (angle.expect("angle").get() - solved.to_radians()).abs() < EPS_JOINT_SCALAR,
                 "{stored}: {angle:?}"
+            );
+        }
+    }
+
+    /// The neutral joint that `document`, holding one joint `Inclination`
+    /// of family `family` with the property `property`, states.
+    fn sole_joint(family: &str, property: &str) -> cadmpeg_ir::products::AssemblyJoint {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Inclination"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object>
+<Object name="Inclination"><Properties Count="4">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="{family}"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+{property}
+</Properties></Object></ObjectData></Document>"#
+        );
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .expect("joint");
+        assert_valid_document(decoded.ir());
+        let [joint] = decoded.ir().model.assembly_joints.as_slice() else {
+            panic!("{:?}", decoded.ir().model.assembly_joints)
+        };
+        joint.clone()
+    }
+
+    #[test]
+    fn another_familys_angle_is_its_signed_stored_value() {
+        for family in ["Fixed", "Revolute", "Cylindrical"] {
+            for stored in [-30.0_f64, 270.0] {
+                let joint = sole_joint(
+                    family,
+                    &format!(
+                        r#"<Property name="Angle" type="App::PropertyAngle"><Float value="{stored}"/></Property>"#
+                    ),
+                );
+                let angle = match wire::field(&joint, "operands") {
+                    cadmpeg_ir::products::JointOperands::Pair {
+                        kind:
+                            PairedJointKind::Fixed { angle, .. }
+                            | PairedJointKind::Revolute { angle, .. }
+                            | PairedJointKind::Cylindrical { angle, .. },
+                        ..
+                    } => angle,
+                    other => panic!("{other:?}"),
+                };
+                assert!(
+                    (angle.expect("angle").get() - stored.to_radians()).abs() < EPS_JOINT_SCALAR,
+                    "{family} {stored}: {angle:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_joint_stored_deactivated_is_suppressed() {
+        let flag = |name: &str, value: bool| {
+            format!(
+                r#"<Property name="{name}" type="App::PropertyBool"><Bool value="{value}"/></Property>"#
+            )
+        };
+        for (property, suppressed) in [
+            (flag("Activated", false), true),
+            (flag("Activated", true), false),
+            (flag("Suppressed", true), true),
+            (String::new(), false),
+        ] {
+            assert_eq!(
+                sole_joint("Revolute", &property).suppressed,
+                suppressed,
+                "{property}"
             );
         }
     }

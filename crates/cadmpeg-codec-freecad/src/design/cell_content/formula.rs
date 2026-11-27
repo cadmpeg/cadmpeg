@@ -104,12 +104,23 @@ pub(in crate::design) enum Python {
     Unsettled,
     /// A `QuantityPy`, a `str`, or another object.
     Object,
-    /// `None` or a `tuple`, which `FreeCAD`'s operators refuse, or a value
-    /// whose evaluation raises.
+    /// `None`, a `tuple`, or a `set`: a value that is no number, which
+    /// `FreeCAD`'s operators refuse and an aggregate passes over.
     Refused,
+    /// A value whose evaluation raises.
+    Raises,
+    /// A value of a type the file does not state, which `FreeCAD`'s
+    /// operators can refuse: a Python object property, or a conditional
+    /// with one branch refused or raising.
+    Opaque,
 }
 
 impl Python {
+    /// The value is one that `FreeCAD`'s operators can refuse.
+    const fn refused(self) -> bool {
+        matches!(self, Self::Refused | Self::Raises | Self::Opaque)
+    }
+
     /// The type of the plain number `value`: an `int` where it is whole
     /// (`pyFromQuantity`, `essentiallyInteger`).
     pub(in crate::design) fn of(value: f64) -> Self {
@@ -245,8 +256,12 @@ impl<'a> Node<'a> {
                 let operand = operand.value(scope);
                 match numeric(operand.kind) {
                     Some(quantity) => Value::new(Kind::Quantity(quantity), operand.python),
-                    None if operand.kind == Kind::Unknown => operand,
-                    None => Value::new(Kind::Unknown, Python::Refused),
+                    None if operand.kind == Kind::Unknown
+                        && !matches!(operand.python, Python::Refused | Python::Raises) =>
+                    {
+                        operand
+                    }
+                    None => Value::new(Kind::Unknown, Python::Raises),
                 }
             }
             Node::Group(inner) => inner.value(scope),
@@ -265,8 +280,8 @@ impl<'a> Node<'a> {
                 };
                 let python = match (then.python, otherwise.python) {
                     (then, otherwise) if then == otherwise => then,
-                    (Python::Object | Python::Refused, _)
-                    | (_, Python::Object | Python::Refused) => Python::Object,
+                    (then, otherwise) if then.refused() || otherwise.refused() => Python::Opaque,
+                    (Python::Object, _) | (_, Python::Object) => Python::Object,
                     _ => Python::Unsettled,
                 };
                 Value::new(kind, python)
@@ -286,7 +301,7 @@ impl<'a> Node<'a> {
                 (None, Python::Int) => Python::Int,
                 _ => Python::Unsettled,
             },
-            Kind::Unknown if value.python == Python::Refused => Python::Refused,
+            Kind::Unknown if value.python.refused() => value.python,
             Kind::Unknown => Python::Unsettled,
             Kind::Quantity(_) | Kind::Text => Python::Object,
         }
@@ -333,6 +348,7 @@ impl<'a> Node<'a> {
         match self {
             Node::Number { text, unit: None } => text.replace(',', ".").parse().ok(),
             Node::Constant { name, value } => (*name != "None").then_some(*value),
+            Node::Call { name, args } => fold(name, args),
             Node::Negate(operand) => operand.constant().map(|value| -value),
             Node::Plus(operand) | Node::Group(operand) => operand.constant(),
             Node::Binary { op, left, right } => {
@@ -360,12 +376,13 @@ fn unit_kind(unit: &Unit) -> Kind {
 }
 
 /// `left op right` (`OperatorExpression`, `calc`, Python's number
-/// protocol). `calc` refuses a `None` or `tuple` operand, except the right
-/// operand of a string's `%`. A bool is an `int`. `==` and `!=` give a bool
-/// for any two other values; an ordering gives a bool for two texts, two
-/// numbers of one quantity, a bool and a number, and a quantity and a plain
-/// number. A string times an `int` repeats the string. An operator of two
-/// values of known kinds whose result has no kind raises.
+/// protocol). `calc` refuses a `None`, `tuple`, or `set` operand, except the
+/// right operand of a string's `%`. A bool is an `int`. `==` and `!=` give a
+/// bool for any two other values; an ordering gives a bool for two texts,
+/// two numbers of one quantity, a bool and a number, and a quantity and a
+/// plain number. A string times an `int` repeats the string. A quantity's
+/// `%` keeps its unit, and a plain number's `%` of a quantity raises. An
+/// operator of two values of known kinds whose result has no kind raises.
 fn binary(
     op: Operator,
     left: Value,
@@ -378,8 +395,12 @@ fn binary(
     if let (Operator::Remainder, Kind::Text) = (op, left.kind) {
         return Value::new(Kind::Text, Python::Object);
     }
-    if left.python == Python::Refused || right.python == Python::Refused {
-        return Value::new(Kind::Unknown, Python::Refused);
+    let raising = |python: Python| matches!(python, Python::Refused | Python::Raises);
+    if raising(left.python) || raising(right.python) {
+        return Value::new(Kind::Unknown, Python::Raises);
+    }
+    if op == Operator::Equal && (left.python.refused() || right.python.refused()) {
+        return Value::new(Kind::Unknown, Python::Opaque);
     }
     let kind = match (op, left.kind, right.kind) {
         (Operator::Add, Kind::Text, Kind::Text) => Kind::Text,
@@ -398,14 +419,17 @@ fn binary(
         }
         (Operator::Order, _, _) => Kind::Unknown,
         _ => match (numeric(left.kind), numeric(right.kind)) {
-            (Some(left), Some(right)) => match op {
-                Operator::Add | Operator::Subtract => quantity((left == right).then_some(left)),
-                Operator::Multiply => quantity(combine(left, right, 1)),
-                Operator::Divide => quantity(combine(left, right, -1)),
-                Operator::Remainder => {
-                    quantity((left != Quantity::REAL || right == Quantity::REAL).then_some(left))
+            (Some(left_quantity), Some(right_quantity)) => match op {
+                Operator::Add | Operator::Subtract => {
+                    quantity((left_quantity == right_quantity).then_some(left_quantity))
                 }
-                Operator::Power => power(left, right, exponent),
+                Operator::Multiply => quantity(combine(left_quantity, right_quantity, 1)),
+                Operator::Divide => quantity(combine(left_quantity, right_quantity, -1)),
+                Operator::Remainder => quantity(
+                    (left.python == Python::Object || right.python != Python::Object)
+                        .then_some(left_quantity),
+                ),
+                Operator::Power => power(left_quantity, right_quantity, exponent),
                 Operator::Equal | Operator::Order => Kind::Unknown,
             },
             _ => Kind::Unknown,
@@ -418,7 +442,7 @@ fn binary(
         Kind::Text => Python::Object,
         Kind::Boolean => Python::Int,
         Kind::Unknown if left.kind != Kind::Unknown && right.kind != Kind::Unknown && !deferred => {
-            Python::Refused
+            Python::Raises
         }
         Kind::Quantity(_) | Kind::Unknown => arithmetic(op, left.python, right.python, exponent),
     };
@@ -435,7 +459,9 @@ fn repeated(python: Python, scope: &mut dyn Scope) -> Kind {
             scope.assume_integer();
             Kind::Text
         }
-        Python::Float | Python::Object | Python::Refused => Kind::Unknown,
+        Python::Float | Python::Object | Python::Refused | Python::Raises | Python::Opaque => {
+            Kind::Unknown
+        }
     }
 }
 
@@ -444,14 +470,17 @@ fn repeated(python: Python, scope: &mut dyn Scope) -> Kind {
 /// exponent.
 fn arithmetic(op: Operator, left: Python, right: Python, exponent: Option<f64>) -> Python {
     let both = match (left, right) {
-        (Python::Refused, _) | (_, Python::Refused) => Python::Refused,
+        (Python::Refused | Python::Raises, _) | (_, Python::Refused | Python::Raises) => {
+            Python::Raises
+        }
+        (Python::Opaque, _) | (_, Python::Opaque) => Python::Opaque,
         (Python::Object, _) | (_, Python::Object) => Python::Object,
         (Python::Float, _) | (_, Python::Float) => Python::Float,
         (Python::Int, Python::Int) => Python::Int,
         _ => Python::Unsettled,
     };
     match (op, both) {
-        (_, Python::Refused | Python::Object) => both,
+        (_, Python::Raises | Python::Opaque | Python::Object) => both,
         (Operator::Divide, _) => Python::Float,
         (Operator::Power, Python::Int) => match exponent {
             Some(exponent) if exponent < 0.0 => Python::Float,
@@ -511,22 +540,44 @@ fn scaled(quantity: Quantity, factor: f64) -> Option<Quantity> {
     ))
 }
 
+/// The functions that take each of their first three arguments as a number
+/// (`pyToQuantity`) and check its unit (`FunctionExpression::evaluate`).
+const NUMERIC: [&str; 25] = [
+    "cos", "sin", "tan", "acos", "asin", "atan", "exp", "log", "log10", "sinh", "tanh", "cosh",
+    "round", "trunc", "ceil", "floor", "abs", "sqrt", "cbrt", "atan2", "mod", "pow", "hypot",
+    "cath", "not",
+];
+
 /// The value of a call, by `FunctionExpression`'s unit rules: an aggregate
-/// and `count`, `and`, and `or` go through `pyFromQuantity`, and every other
-/// function returns a `QuantityPy`.
+/// and `count`, `and`, and `or` go through `pyFromQuantity`, `tuple` gives
+/// a tuple, and every other function returns a `QuantityPy`. A numeric
+/// function raises on an argument that is no number and on a unit it does
+/// not take.
 fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
     const ANGLE: Kind = Kind::Quantity(Quantity::ANGLE);
     const LENGTH: Kind = Kind::Quantity(Quantity::LENGTH);
-    let value = |index: usize, scope: &mut dyn Scope| match args.get(index) {
-        Some(Argument::Value(node)) => node.value(scope),
-        Some(Argument::Range(..)) | None => Value::new(Kind::Unknown, Python::Object),
-    };
     if matches!(name, "sum" | "min" | "max" | "average" | "stddev") {
         return aggregate(name, args, scope);
     }
-    let first = value(0, scope);
+    let values = args
+        .iter()
+        .map(|arg| match arg {
+            Argument::Value(node) => node.value(scope),
+            Argument::Range(..) => Value::new(Kind::Unknown, Python::Object),
+        })
+        .collect::<Vec<_>>();
+    let value = |index: usize| {
+        values
+            .get(index)
+            .copied()
+            .unwrap_or(Value::new(Kind::Unknown, Python::Object))
+    };
+    let first = value(0);
     if matches!(name, "href" | "hiddenref") {
         return first;
+    }
+    if name == "tuple" {
+        return Value::new(Kind::Unknown, Python::Refused);
     }
     let first_quantity = numeric(first.kind);
     let kind = match name {
@@ -561,13 +612,13 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
             .and_then(|quantity| scaled(quantity, 1.0 / 3.0))
             .map_or(Kind::Unknown, Kind::Quantity),
         "atan2" => {
-            if first_quantity.is_some() && numeric(value(1, scope).kind) == first_quantity {
+            if first_quantity.is_some() && numeric(value(1).kind) == first_quantity {
                 ANGLE
             } else {
                 Kind::Unknown
             }
         }
-        "mod" => match (first_quantity, numeric(value(1, scope).kind)) {
+        "mod" => match (first_quantity, numeric(value(1).kind)) {
             (Some(left), Some(right))
                 if left == right || left == Quantity::REAL || right == Quantity::REAL =>
             {
@@ -575,15 +626,15 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
             }
             _ => Kind::Unknown,
         },
-        "pow" => match (first_quantity, numeric(value(1, scope).kind), args.get(1)) {
+        "pow" => match (first_quantity, numeric(value(1).kind), args.get(1)) {
             (Some(base), Some(exponent), Some(Argument::Value(node))) => {
                 power(base, exponent, node.constant())
             }
             _ => Kind::Unknown,
         },
         "hypot" | "cath" => {
-            let rest = (1..args.len().max(2))
-                .all(|index| numeric(value(index, scope).kind) == first_quantity);
+            let rest =
+                (1..args.len().max(2)).all(|index| numeric(value(index).kind) == first_quantity);
             if let (Some(quantity), true) = (first_quantity, rest) {
                 Kind::Quantity(quantity)
             } else {
@@ -596,6 +647,22 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
         "vlinedist" | "vplanedist" => LENGTH,
         _ => Kind::Unknown,
     };
+    if NUMERIC.contains(&name) {
+        let checked = &values[..values.len().min(3)];
+        // A power of a quantity by a dimensionless value the file does not
+        // store takes its unit at run time.
+        let deferred = name == "pow"
+            && value(1).kind == REAL
+            && matches!(args.get(1), Some(Argument::Value(node)) if node.constant().is_none());
+        let raises = checked.iter().any(|value| {
+            value.kind == Kind::Text || matches!(value.python, Python::Refused | Python::Raises)
+        }) || (kind == Kind::Unknown
+            && !deferred
+            && checked.iter().all(|value| value.kind != Kind::Unknown));
+        if raises {
+            return Value::new(Kind::Unknown, Python::Raises);
+        }
+    }
     let python = match name {
         "count" | "and" | "or" => Python::Int,
         _ => Python::Object,
@@ -604,43 +671,44 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
 }
 
 /// The value of an aggregate: the quantity its values share. It passes over
-/// a text value and counts a bool as a dimensionless `int`; a text or bool
-/// cell of a range has no quantity, and `FreeCAD` raises on it and on values
-/// of different quantities. A dimensionless `sum`, `min`, or `max` of `int`
-/// values is an `int`.
+/// a value that is no number (`pyToQuantity`) and counts a bool as a
+/// dimensionless `int`; a text, bool, or `None` cell of a range has no
+/// quantity, and `FreeCAD` raises on it, on an argument that raises, and on
+/// values of different quantities. A dimensionless `sum`, `min`, or `max` of
+/// `int` values is an `int`, and an aggregate of constants is its value.
 fn aggregate(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
+    let raises = Value::new(Kind::Unknown, Python::Raises);
+    let unknown = Value::new(Kind::Unknown, Python::Object);
     let mut found: Option<Quantity> = None;
     let mut whole = true;
     for arg in args {
         let values = match arg {
-            Argument::Value(node) => match node.value(scope) {
-                Value {
-                    kind: Kind::Text, ..
-                } => Vec::new(),
-                Value {
-                    kind: Kind::Boolean,
-                    ..
-                } => vec![Value::new(REAL, Python::Int)],
-                value => vec![value],
-            },
+            Argument::Value(node) => {
+                let value = node.value(scope);
+                match (value.kind, value.python) {
+                    (_, Python::Raises) => return raises,
+                    (Kind::Text, _) | (_, Python::Refused) => continue,
+                    (Kind::Boolean, _) => vec![Value::new(REAL, Python::Int)],
+                    _ => vec![value],
+                }
+            }
             Argument::Range(from, to) => {
                 let Some(values) = scope.range(from, to) else {
-                    return Value::new(Kind::Unknown, Python::Object);
+                    return unknown;
                 };
                 values
             }
         };
         for value in values {
-            let refused = Value::new(Kind::Unknown, Python::Refused);
             let quantity = match value.kind {
                 Kind::Quantity(quantity) => quantity,
-                Kind::Unknown if value.python != Python::Refused => {
-                    return Value::new(Kind::Unknown, Python::Object);
+                Kind::Unknown if !matches!(value.python, Python::Refused | Python::Raises) => {
+                    return unknown;
                 }
-                Kind::Unknown | Kind::Text | Kind::Boolean => return refused,
+                Kind::Unknown | Kind::Text | Kind::Boolean => return raises,
             };
             if found.is_some_and(|found| found != quantity) {
-                return refused;
+                return raises;
             }
             found = Some(quantity);
             whole &= value.python == Python::Int;
@@ -649,12 +717,35 @@ fn aggregate(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value 
     let quantity = found.unwrap_or(Quantity::REAL);
     let python = if quantity != Quantity::REAL {
         Python::Object
+    } else if let Some(value) = fold(name, args) {
+        Python::of(value)
     } else if whole && matches!(name, "sum" | "min" | "max") {
         Python::Int
     } else {
         Python::Unsettled
     };
     Value::new(Kind::Quantity(quantity), python)
+}
+
+/// The value of `sum`, `min`, `max`, or `average` of constants
+/// (`SumCollector`, `MinCollector`, `MaxCollector`, `AverageCollector`).
+fn fold(name: &str, args: &[Argument<'_>]) -> Option<f64> {
+    let values = args
+        .iter()
+        .map(|arg| match arg {
+            Argument::Value(node) => node.constant(),
+            Argument::Range(..) => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let (first, rest) = values.split_first()?;
+    let sum = || values.iter().sum::<f64>();
+    match name {
+        "sum" => Some(sum()),
+        "average" => Some(sum() / f64::from(u32::try_from(values.len()).ok()?)),
+        "min" => Some(rest.iter().fold(*first, |least, value| least.min(*value))),
+        "max" => Some(rest.iter().fold(*first, |most, value| most.max(*value))),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone)]

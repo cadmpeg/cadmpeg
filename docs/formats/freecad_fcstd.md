@@ -649,13 +649,21 @@ rules, with the cells it references read first in dependency order:
   yaw, pitch, or roll, `pi`, `e`, a quotient, and a sum, a difference, or a product with a `float`
   are `float` values. Every other function returns a quantity object. Where the product of a
   string and a dimensionless number has a number of unstated value, such as a formula cell whose
-  result is not a constant or an aggregate of numbers that are not all `int` values, the number is
-  an `int`, the result is text, and the parameter emits
-  `parameter.integer-assumed`.
+  result is not a constant or an aggregate of numbers that are not all `int` values or constants,
+  the number is an `int`, the result is text, and the parameter emits
+  `parameter.integer-assumed`. A parameter whose expression references that parameter takes its
+  text and emits no `parameter.integer-assumed` of its own. A `sum`, `min`, `max`, or `average` of
+  constants is its value.
 - `True`, `False`, a comparison, and a reference to an `App::PropertyBool` property or to a
   Boolean cell are Boolean. `==` and `!=` compare any two values that `FreeCAD` evaluates and
-  admits as operands; `None`, a tuple (an `App::PropertyLinkSub` value, a link that stores a
-  sub-name, a color), and an operand that raises are refused. `<`, `<=`, `>`, and `>=` compare
+  admits as operands. Refused operands are `None` (a link that stores no target), a tuple (an
+  `App::PropertyLinkSub` value, a link that stores a sub-name, a color, `tuple()`), a set (an
+  `App::PropertyIntegerSet` value), an `App::PropertyPythonObject` value, a conditional with a
+  refused branch, and an operand that raises. An operand raises where it is an operator with a
+  refused operand, or where it is `cos`, `sin`, `tan`, `acos`, `asin`, `atan`, `exp`, `log`,
+  `log10`, `sinh`, `tanh`, `cosh`, `round`, `trunc`, `ceil`, `floor`, `abs`, `sqrt`, `cbrt`,
+  `atan2`, `mod`, `pow`, `hypot`, `cath`, or `not` with an argument that is text or refused or whose
+  unit the function does not take. `<`, `<=`, `>`, and `>=` compare
   two strings, two values of one quantity, a Boolean and a number, and a quantity and a
   dimensionless `int` or `float`. In arithmetic and in a function argument, a Boolean is a
   dimensionless number.
@@ -664,12 +672,14 @@ rules, with the cells it references read first in dependency order:
   a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
   property names are text, where the link stores no sub-name.
 - Addition and subtraction of equal quantities keep the quantity; a
-  product and a quotient add and subtract the exponents of the units;
+  product and a quotient add and subtract the exponents of the units; the remainder of a quantity
+  keeps its quantity, and the remainder of a plain number by a quantity raises;
   `x ^ n` and `pow(x, n)` multiply each exponent by the constant `n` where each product is an
   integer.
 - `abs`, `round`, `trunc`, `ceil`, `floor`, `mod`, `hypot`, `cath`, `href`, `sum`, `min`, `max`,
-  `average`, and `stddev` keep the quantity of their values, and an aggregate passes over a text
-  argument and stops at a text cell of a range; `sqrt` and `cbrt` divide its
+  `average`, and `stddev` keep the quantity of their values, and an aggregate passes over an
+  argument that is no number (text, `None`, a tuple, a set) and stops at a text, Boolean, or `None`
+  cell of a range and at an argument that raises; `sqrt` and `cbrt` divide its
   exponents; `cos`, `sin`, `tan`, `exp`, `log`, `log10`, `sinh`, `cosh`, `tanh`, `not`, `and`, `or`,
   `count`, and `vdot` give a real; `acos`, `asin`, `atan`, `atan2`, and `vangle` give an angle; and
   `vlinedist` and `vplanedist` give a length.
@@ -879,9 +889,10 @@ or multiple targets are malformed. `Angle`, `AngleMin`, and `AngleMax` are
 that an `Angle` joint's `Distance` of type `App::PropertyFloat` is the joint angle in degrees: that
 is the form that precedes the `Angle` property, which `FreeCAD` migrates by the property type.
 `EnableAngleMin`,
-`EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, and `Suppressed`
-are `App::PropertyBool` properties with one `Bool` value. Wrong runtime types, root value tags,
-missing values, and duplicate values are malformed.
+`EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, `Suppressed`, and
+`Activated` are `App::PropertyBool` properties with one `Bool` value. `Activated` is the form that
+precedes `Suppressed`, and `FreeCAD`'s migration sets `Suppressed` to its negation. Wrong runtime
+types, root value tags, missing values, and duplicate values are malformed.
 Each connector-frame and connector-offset carrier is an `App::PropertyPlacement` property with at
 most one `PropertyPlacement` value and the same representation discriminator, null-axis fallback,
 and finite position and rotation-component rules as product placements.
@@ -892,9 +903,11 @@ parallel, perpendicular, angle, rack-pinion, screw, gears, belt, and grounded fa
 an unfamiliar future family remains explicitly native. Connector frames, connector attachment
 offset frames, suppression and detach flags, linear offsets, and enabled limit intervals are
 independent fields.
-Persisted degree values convert to radians for neutral angles and angular limits. A joint angle is
-the magnitude of the stored angle reflected into a half turn, the angle that the solver holds by
-its cosine. Validation checks
+Persisted degree values convert to radians for neutral angles and angular limits. An angle joint's
+angle is the magnitude of the stored angle reflected into a half turn, the angle that the solver
+holds by its cosine. The angular offset of a fixed, revolute, or cylindrical joint is its signed
+stored `Angle`. A joint's suppression is the negation of `Activated`, and `Suppressed` where the
+joint stores no `Activated`. Validation checks
 operand/frame cardinality, component references, finite values, and ordered intervals.
 
 Each paired joint is a v11 `Joint` feature whose identity is the assembly joint's identity. The
@@ -926,8 +939,8 @@ joints are couplings whose pitch radius,
 pitch, or radii are `Distance` and `Distance2`. The solver drops a screw or rack-pinion joint where
 no slider joint shares a moving part with it along a colinear z axis; the joint states its stored
 coupling. Another family is a native kind with its source
-label. `Suppressed` is the feature's suppression. Each other stored joint value is a source setting
-under its property name, `fcstd:<name>` (Rule N case (b)): a value the kind does not use, a limit
+label. The joint's suppression is the feature's suppression. Each other stored joint value is a
+source setting under its property name, `fcstd:<name>` (Rule N case (b)): a value the kind does not use, a limit
 whose enable flag is false and that flag, an angle outside zero to a half turn whose reflection is
 the joint angle, and
 `Detach1` and `Detach2`. An angle is an `Angle` option in radians, a length a `Length` option in

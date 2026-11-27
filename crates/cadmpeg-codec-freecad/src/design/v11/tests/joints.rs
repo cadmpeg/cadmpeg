@@ -888,3 +888,42 @@ fn a_driven_joint_value_binds_a_parameter_of_the_joint() {
         ("$0 * 2".to_owned(), vec![gap_id.to_owned()])
     );
 }
+
+/// `FreeCAD` 1.0 stores a joint's state as `Activated`; its migration sets
+/// `Suppressed` to the negation.
+#[test]
+fn a_joint_stored_deactivated_is_a_suppressed_joint_feature() {
+    use cadmpeg_ir::design::dimension::Dimension;
+
+    let suppressed =
+        r#"<Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>"#;
+    assert!(ASSEMBLY.contains(suppressed));
+    for (activated, expected) in [("false", true), ("true", false)] {
+        let ir = decode(
+            &archive(&ASSEMBLY.replace(
+                suppressed,
+                &format!(r#"<Property name="Activated" type="App::PropertyBool"><Bool value="{activated}"/></Property>"#),
+            )),
+            DecodeDepth::Design,
+        );
+        let (feature, hinge) = joint_feature(&ir, "Hinge");
+        assert_eq!(
+            feature.suppressed,
+            Some(Dimension::Literal(expected)),
+            "{activated}"
+        );
+        assert_eq!(option(&hinge.source_settings, "Activated"), None);
+        let legacy = ir
+            .model
+            .assembly_joints
+            .iter()
+            .find(|joint| {
+                joint
+                    .native_ref
+                    .as_deref()
+                    .is_some_and(|native| native.ends_with("Hinge"))
+            })
+            .unwrap_or_else(|| panic!("{:?}", ir.model.assembly_joints));
+        assert_eq!(legacy.suppressed, expected, "{activated}");
+    }
+}

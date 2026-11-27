@@ -273,10 +273,7 @@ pub(super) fn project(
                         .names
                         .get(record.object())
                         .map(|name| (*name).to_owned()),
-                    suppressed: record
-                        .parameters()
-                        .bool_value("Suppressed")
-                        .map(Dimension::Literal),
+                    suppressed: record.parameters().suppressed().map(Dimension::Literal),
                     definition: FeatureDefinition {
                         operation: FeatureOperation::Joint(Box::new(joint)),
                         assembly: None,
@@ -336,7 +333,7 @@ fn joint(
         bindings,
         bound: BTreeSet::new(),
         derived: BTreeSet::new(),
-        used: BTreeSet::from(["Suppressed"]),
+        used: BTreeSet::from(["Suppressed", "Activated"]),
         degrees: if old_angle {
             &["Angle", "AngleMin", "AngleMax", "Distance"]
         } else {

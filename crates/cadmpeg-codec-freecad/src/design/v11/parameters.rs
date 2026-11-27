@@ -199,9 +199,10 @@ struct Catalog<'a> {
     features: HashMap<&'a str, FeatureId>,
     /// The type of each property, by its owner's id and its name.
     types: HashMap<(&'a str, &'a str), &'a str>,
-    /// The `XLink` properties that store a sub-name, by owner's id and name:
-    /// their value is a tuple.
-    subnamed: HashSet<(&'a str, &'a str)>,
+    /// The link properties whose value is a tuple or `None`, by owner's id
+    /// and name: an `XLink` that stores a sub-name, and a link that stores no
+    /// target.
+    refused: HashSet<(&'a str, &'a str)>,
     /// Each parameter by its owner and a name a path gives it: a
     /// property's name, `Constraints.<name>`, and a cell's alias and
     /// address. A name that two parameters share names neither.
@@ -235,7 +236,7 @@ impl<'a> Catalog<'a> {
             objects: HashMap::new(),
             features: HashMap::new(),
             types: HashMap::new(),
-            subnamed: HashSet::new(),
+            refused: HashSet::new(),
             named: HashMap::new(),
             cells: HashMap::new(),
         };
@@ -257,15 +258,29 @@ impl<'a> Catalog<'a> {
                 (property.owner.as_str(), property.name.as_str()),
                 property.type_name.as_str(),
             );
-            if property.type_name == "App::PropertyXLink"
-                && property.values().iter().any(|value| {
-                    value.tag == "XLink"
-                        && (value.attributes.contains_key("sub")
-                            || value.attributes.contains_key("count"))
+            let empty = |tag: &str, key: &str| {
+                property.values().iter().any(|value| {
+                    value.tag == tag && value.attributes.get(key).is_some_and(String::is_empty)
                 })
-            {
+            };
+            let refused = match property.type_name.as_str() {
+                "App::PropertyXLink" => {
+                    empty("XLink", "name")
+                        || property.values().iter().any(|value| {
+                            value.tag == "XLink"
+                                && (value.attributes.contains_key("sub")
+                                    || value.attributes.contains_key("count"))
+                        })
+                }
+                "App::PropertyLink"
+                | "App::PropertyLinkChild"
+                | "App::PropertyLinkGlobal"
+                | "App::PropertyLinkHidden" => empty("Link", "value"),
+                _ => false,
+            };
+            if refused {
                 catalog
-                    .subnamed
+                    .refused
                     .insert((property.owner.as_str(), property.name.as_str()));
             }
             let label = (property.name == "Label" && property.type_name == "App::PropertyString")
@@ -370,7 +385,7 @@ impl<'a> Catalog<'a> {
             );
         }
         if self
-            .subnamed
+            .refused
             .contains(&(object.id().as_str(), property.as_str()))
         {
             return Target::Property(Value::new(Kind::Unknown, Python::Refused));
@@ -448,7 +463,8 @@ fn property_kind(type_name: &str, sub: &[String]) -> Kind {
 
 /// The Python type of the value of a property of type `type_name`, or of its
 /// component `sub` (`getPyObject`, `getPyPathValue`): a link with sub-names
-/// and a color are tuples.
+/// and a color are tuples, an integer set is a `set`, and a Python object
+/// property holds an object of any type.
 fn property_python(type_name: &str, sub: &[String]) -> Python {
     let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
     match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
@@ -461,10 +477,11 @@ fn property_python(type_name: &str, sub: &[String]) -> Python {
         (
             Some(
                 "LinkSub" | "LinkSubChild" | "LinkSubGlobal" | "LinkSubHidden" | "XLinkSub"
-                | "XLinkSubHidden" | "Color",
+                | "XLinkSubHidden" | "Color" | "IntegerSet",
             ),
             [],
         ) => Python::Refused,
+        (Some("PythonObject"), []) => Python::Opaque,
         _ => Python::Object,
     }
 }

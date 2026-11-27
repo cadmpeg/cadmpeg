@@ -188,7 +188,7 @@ fn text_times_a_number_repeats_only_for_an_int() {
 fn text_times_a_number_of_unstated_value_takes_it_as_an_int() {
     for text in [
         "<<a>> * Cell",
-        "<<a>> * average(2; 3)",
+        "<<a>> * average(Cell; 3)",
         "<<a>> * max(Cell; 2)",
         "<<a>> * 2^Cell",
         "<<a>> * (Cell > 1 ? 2 : Cell)",
@@ -198,6 +198,130 @@ fn text_times_a_number_of_unstated_value_takes_it_as_an_int() {
         assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
         assert!(scope.assumed, "{text:?}");
     }
+}
+
+#[test]
+fn an_aggregate_of_constants_is_its_value() {
+    let mut scope = Names::default();
+    // `average(2; 3)` is 2.5, a `float`, and Python refuses text times a
+    // `float`.
+    assert_eq!(kind_in("<<a>> * average(2; 3)", &mut scope), Kind::Unknown);
+    for text in [
+        "<<a>> * average(2; 4)",
+        "<<a>> * sum(1.5; 1.5)",
+        "<<a>> * max(1; 2.0)",
+    ] {
+        assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
+    }
+    assert!(!scope.assumed);
+}
+
+#[test]
+fn a_tuple_is_refused_by_a_comparison() {
+    for text in ["tuple(1; 2) == 1", "1 != tuple(1; 2)"] {
+        assert_eq!(kind(text), Kind::Unknown, "{text:?}");
+    }
+    assert_eq!(kind("list(1; 2) == 1"), Kind::Boolean);
+}
+
+#[test]
+fn a_function_that_raises_is_refused_by_a_comparison() {
+    let mut scope = Names::default();
+    scope.insert("A1", LENGTH, Python::Object);
+    scope.insert("Cell", REAL, Python::Unsettled);
+    for text in [
+        "cos(5 mm) == 1",
+        "sqrt(2 mm) != 1",
+        "acos(1 mm) == 1",
+        "cos(<<a>>) == 1",
+        "abs(<<a>>) == 1",
+        "atan2(1 mm; 2 °) == 1",
+        "pow(2; 1 mm) == 1",
+        "not(None) == 1",
+        "hypot(3 mm; 4 °) == 1",
+    ] {
+        assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
+    }
+    // A function of a value of unknown kind, and a power of a quantity by a
+    // number the file does not store, evaluate.
+    for text in [
+        "cos(30 °) == 1",
+        "round(Shape) == 1",
+        "pow(A1; Cell) == 1",
+        "not(5 mm) == 1",
+    ] {
+        assert_eq!(kind_in(text, &mut scope), Kind::Boolean, "{text:?}");
+    }
+}
+
+#[test]
+fn a_property_freecad_refuses_is_refused_by_a_comparison() {
+    let mut scope = Names::default();
+    scope.insert("Empty", Kind::Unknown, Python::Refused);
+    scope.insert("Ids", Kind::Unknown, Python::Refused);
+    scope.insert("Proxy", Kind::Unknown, Python::Opaque);
+    for text in ["Empty == 1", "Ids != 1", "Proxy == 1", "-Proxy == 1"] {
+        assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
+    }
+}
+
+#[test]
+fn a_conditional_with_a_refused_branch_is_refused_by_a_comparison() {
+    let mut scope = Names::default();
+    scope.insert("Flag", Kind::Boolean, Python::Int);
+    for text in [
+        "(Flag ? None : 1) == 1",
+        "(Flag ? 1 : tuple(1; 2)) != 1",
+        "(Flag ? cos(5 mm) : 1) == 1",
+    ] {
+        assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
+    }
+    assert_eq!(kind_in("(Flag ? 2 : 1) == 1", &mut scope), Kind::Boolean);
+}
+
+#[test]
+fn an_aggregate_passes_over_a_value_that_is_no_number() {
+    let mut scope = Names::default();
+    scope.insert("Part", Kind::Unknown, Python::Refused);
+    scope.insert("Proxy", Kind::Unknown, Python::Opaque);
+    for (text, expected) in [
+        ("sum(Part; 2 mm)", LENGTH),
+        ("sum(None; tuple(1; 2); 3 mm)", LENGTH),
+        ("max(<<a>>; 2)", REAL),
+        // An argument of unknown kind, and one that raises.
+        ("sum(Shape; 2 mm)", Kind::Unknown),
+        ("sum(Proxy; 2 mm)", Kind::Unknown),
+        ("sum(1 mm + 2 °; 3 mm)", Kind::Unknown),
+        ("sum(-None; 3 mm)", Kind::Unknown),
+    ] {
+        assert_eq!(kind_in(text, &mut scope), expected, "{text:?}");
+    }
+    // A Boolean, a `None`, or a raising cell of a range raises.
+    scope.range = Some(vec![
+        Value::new(LENGTH, Python::Object),
+        Value::new(Kind::Unknown, Python::Refused),
+    ]);
+    assert_eq!(kind_in("sum(A1:A2)", &mut scope), Kind::Unknown);
+    assert_eq!(kind_in("sum(A1:A2) == 1", &mut scope), Kind::Unknown);
+}
+
+#[test]
+fn a_quantitys_remainder_keeps_its_unit() {
+    let mut scope = Names::default();
+    scope.insert("Flag", Kind::Boolean, Python::Int);
+    for (text, expected) in [
+        ("cos(0) % 2 mm", REAL),
+        ("7 mm % 2", LENGTH),
+        ("7 mm % 2 °", LENGTH),
+        ("7 % 2", REAL),
+        // A plain number's remainder by a quantity object raises.
+        ("7 % 2 mm", Kind::Unknown),
+        ("2 % cos(0)", Kind::Unknown),
+        ("Flag % 2 mm", Kind::Unknown),
+    ] {
+        assert_eq!(kind_in(text, &mut scope), expected, "{text:?}");
+    }
+    assert_eq!(kind_in("(2 % cos(0)) == 1", &mut scope), Kind::Unknown);
 }
 
 #[test]

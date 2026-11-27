@@ -48,7 +48,7 @@ fn parameter_kind(name: &str) -> ParameterKind {
         "Angle" | "AngleMin" | "AngleMax" | "Distance" | "Distance2" | "LengthMin"
         | "LengthMax" => ParameterKind::Scalar,
         "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
-        | "Detach2" | "Suppressed" => ParameterKind::Boolean,
+        | "Detach2" | "Suppressed" | "Activated" => ParameterKind::Boolean,
         _ => ParameterKind::Native,
     }
 }
@@ -114,6 +114,15 @@ impl JointParameters {
             Some(JointParameter::Boolean { value, .. }) => Some(*value),
             _ => None,
         }
+    }
+
+    /// The joint's suppression: the negation of `Activated`, the flag that
+    /// `Suppressed` replaces and that `FreeCAD`'s migration writes over it,
+    /// and `Suppressed` where the joint stores no `Activated`.
+    pub(crate) fn suppressed(&self) -> Option<bool> {
+        self.bool_value("Activated")
+            .map(|activated| !activated)
+            .or_else(|| self.bool_value("Suppressed"))
     }
 
     pub(crate) fn scalar_value(&self, name: &str) -> Option<FiniteReal> {

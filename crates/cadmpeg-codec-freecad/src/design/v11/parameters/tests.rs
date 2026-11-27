@@ -591,7 +591,7 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
 <Property name="Other" type="App::PropertyXLink" status="1"><XLink file="" name="Steel"/></Property>
 <Property name="Part" type="App::PropertyXLink" status="1"><XLink file="" name="Steel" sub=""/></Property>
 </Properties></Object>
-<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="32">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="33">
 <Cell address="A1" content="5 mm"/>
 <Cell address="B1" content="=str(A1) * Vars.Flag + &lt;&lt;-&gt;&gt; * (1 - Vars.Flag)"/>
 <Cell address="B2" content="=Vars.Material.Label"/>
@@ -621,6 +621,7 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
 <Cell address="G4" content="=str(A1) * Vars.Ratio"/>
 <Cell address="G5" content="=Vars.Part == 1"/>
 <Cell address="G6" content="=F3 == 1"/>
+<Cell address="G7" content="=G3 + &lt;&lt;!&gt;&gt;"/>
 <Cell address="F1" content="3"/>
 <Cell address="F2" content="=F1 / 3"/>
 <Cell address="F3" content="=None"/>
@@ -659,6 +660,11 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
     assert_eq!(cell("G3").kind, ValueKind::Text);
     assert!(!assumed("G3"), "{losses:?}");
     assert!(integer("G3"), "{losses:?}");
+    // The cell that takes the number as an `int` carries the one charge; a
+    // cell that references it takes its text.
+    assert_eq!(cell("G7").kind, ValueKind::Text);
+    assert!(!assumed("G7"), "{losses:?}");
+    assert!(!integer("G7"), "{losses:?}");
 
     // A comparison, a truth constant, and a Bool property are bools. `==`
     // compares any two values `FreeCAD` evaluates.
@@ -689,6 +695,67 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
             "{address}"
         );
         assert!(assumed(address), "{address}: {losses:?}");
+    }
+}
+
+#[test]
+fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/></Objects>
+<ObjectData Count="2">
+<Object name="Vars"><Properties Count="4">
+<Property name="Empty" type="App::PropertyLink" status="1"><Link value=""/></Property>
+<Property name="Gone" type="App::PropertyXLink" status="1"><XLink file="" stamp="" name=""/></Property>
+<Property name="Proxy" type="App::PropertyPythonObject" status="1"><Python value="bnVsbA==" encoded="yes"/></Property>
+<Property name="Ids" type="App::PropertyIntegerSet" status="1"><IntegerSet count="2"><I v="1"/><I v="2"/></IntegerSet></Property>
+</Properties></Object>
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="12">
+<Cell address="A1" content="5 mm"/>
+<Cell address="H1" content="=tuple(1; 2) == 1"/>
+<Cell address="H2" content="=cos(5 mm) == 1"/>
+<Cell address="H3" content="=Vars.Empty == 1"/>
+<Cell address="H4" content="=Vars.Gone != 1"/>
+<Cell address="H5" content="=Vars.Proxy == 1"/>
+<Cell address="H6" content="=Vars.Ids == 1"/>
+<Cell address="H7" content="=(A1 &gt; 2 ? None : 1) == 1"/>
+<Cell address="J1" content="=sum(Vars.Empty; Vars.Ids; 2 mm)"/>
+<Cell address="J2" content="=sum(Vars.Proxy; 2 mm)"/>
+<Cell address="J3" content="=sum(1 mm + 2 °; 2 mm)"/>
+<Cell address="K1" content="=cos(0) % 2 mm"/>
+</Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let (ir, losses) = decode_with_losses(document);
+    let id = |address: &str| format!("fcstd:design:parameter#Sheet:cell:{address}");
+    let cell = |address: &str| parameter(&ir, &id(address));
+    let assumed = |address: &str| {
+        charged(
+            &losses,
+            crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+            &id(address),
+        )
+    };
+
+    // `FreeCAD` refuses `None`, a tuple, a set, and a Python object as an
+    // operand of `==`, and a function with a unit error raises: the cell is
+    // in error and holds no value.
+    for address in ["H1", "H2", "H3", "H4", "H5", "H6", "H7", "J2", "J3"] {
+        assert_eq!(
+            cell(address).kind,
+            ValueKind::Quantity(Quantity::REAL),
+            "{address}"
+        );
+        assert!(assumed(address), "{address}: {losses:?}");
+    }
+
+    // An aggregate passes over a value that is no number; a quantity object
+    // keeps its unit under `%`.
+    for (address, quantity) in [("J1", Quantity::LENGTH), ("K1", Quantity::REAL)] {
+        assert_eq!(
+            cell(address).kind,
+            ValueKind::Quantity(quantity),
+            "{address}"
+        );
+        assert!(!assumed(address), "{address}: {losses:?}");
     }
 }
 
