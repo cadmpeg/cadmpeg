@@ -79,3 +79,33 @@ fn unreadable_slots_are_left_out() {
     };
     assert!(native_options.is_empty());
 }
+
+#[test]
+fn the_closure_code_is_a_native_option() {
+    for closure in [103_i32, 104] {
+        let result = decode(&[
+            (124, Slot::Double(f64::from(closure))),
+            (152, Slot::Double(232.0)),
+        ]);
+        let FeatureOperation::Native { native_options, .. } =
+            &result.ir().design.features[0].definition.operation
+        else {
+            panic!("expected a native operation");
+        };
+        let get = |name: &str| {
+            native_options
+                .iter()
+                .find(|(key, _)| key.as_str() == format!("solidedge:{name}").as_str())
+                .map(|(_, value)| value)
+        };
+        let expected = i64::from(closure);
+        assert!(matches!(
+            get("corner_closure_code"),
+            Some(NativeOption::Integer(Dimension::Literal(code))) if *code == expected
+        ));
+        assert!(matches!(
+            get("corner_relief_code"),
+            Some(NativeOption::Integer(Dimension::Literal(232)))
+        ));
+    }
+}

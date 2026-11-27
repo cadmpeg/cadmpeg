@@ -720,17 +720,30 @@ object identifiers after the end of its function name (§4.2):
 | ---: | --- |
 | 68 | the `CLSID_JMTopologyProxy` edge selection (§7.6) |
 | 96 | `Double Value Object` form code |
-| 208 | `Double Value Object`, a length that depends on the form |
-| 236 | `Double Value Object`, a length that depends on the form |
+| 124 | `Double Value Object` bend side code |
+| 208 | `Double Value Object` inner bend radius |
+| 236 | `Double Value Object` length of the straight part |
+| 264 | `Double Value Object`, half the sheet thickness |
+| 292 | `Double Value Object`, four times the sheet thickness |
+| 376 | `Double Value Object`, the sheet thickness |
+| 404 | `Double Value Object`, the sheet thickness |
 
-The form code is `208` for a single hem, `209` for a double hem, `210` for a
-teardrop hem and `212` for a rolled hem. For form code `208` the value at
-offset 208 is the inner bend radius, which is half the gap between the hem
-and the face, and the value at offset 236 is the length of the straight part
-of the fold, measured from the plane through the fold axis to the free end.
-The entered hem length is the value at offset 236 plus the inner bend radius
-plus a further offset. The edge proxy selects the end edge of the wall; the
-side to which the hem folds changes the selected edge and no other slot.
+The form code is `207` for a closed hem, `208` for an open hem, `209` for an
+S-flange, `210` for a curl and `212` for a closed loop. Every form stores the
+inner bend radius at offset 208 and the straight length at offset 236. The
+inner bend radius is half the gap between the hem and the face. The
+straight length is measured from the plane through the fold axis to the free
+end. The entered hem length is the straight length plus the inner bend radius
+plus the sheet thickness. Lengths are metres.
+
+The bend side code at offset 124 is `1` when the bend lies on the material
+outside, `2` when it lies on the material inside and `9` when it lies on the
+bend outside. The slots at offsets 152 and 180 hold `44` in every form and
+side. The value at offset 432 is `0.44`. The values at offsets 320, 348 and
+488 are zero.
+
+The edge proxy selects the free edge of the wall on the picked face of the
+sheet. The side code does not change the edge proxy.
 
 ### 10.5 Base contour flange
 
@@ -768,11 +781,18 @@ these object identifiers after the end of its function name:
 | Bytes after the name | Object |
 | ---: | --- |
 | 68 | the `CLSID_JMTopologyProxy` selection of the corner |
-| 124 | `Double Value Object`, `103` |
-| 152 | `Double Value Object` relief form: `107` round, `222` square, `106` tear |
+| 124 | `Double Value Object` closure code |
+| 152 | `Double Value Object` treatment code |
 | 180 | `Double Value Object` relief size |
 | 244 | `CLSID_JDim` corner gap |
+| 272 | `Double Value Object`, `0` for closure `103` and `0.5` for closure `104` |
 | 420 | `Double Value Object` that repeats the relief size |
+
+The closure code is `103` for closed faces and `104` for overlapped faces.
+The treatment code is `105` for no treatment, `106` for intersect, `107` for
+a circular cutout, `220` for a U cutout, `221` for a V cutout, `222` for a
+square cutout and `232` for a miter. The slots at offsets 300, 336, 364 and
+392 hold `2`, `1`, `0` and pi / 4 in every close corner.
 
 Lengths are metres.
 

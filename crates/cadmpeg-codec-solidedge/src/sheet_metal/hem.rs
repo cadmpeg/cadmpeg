@@ -4,6 +4,9 @@
 //! stored straight length gives depends on the sheet thickness and is not
 //! stated.
 //!
+//! The inner radius, the straight length and the side code are native options
+//! of every form. A side slot that does not read is left out.
+//!
 //! A slot that does not read adds `sheet-metal.hem-field-unread` and leaves its
 //! field unstated; the hem is still stated. Stored lengths are metres; the
 //! design states millimetres.
@@ -34,6 +37,7 @@ const EDGE_AFTER_NAME: usize = 68;
 const FORM_AFTER_NAME: usize = 96;
 const RADIUS_AFTER_NAME: usize = 208;
 const STRAIGHT_AFTER_NAME: usize = 236;
+const SIDE_AFTER_NAME: usize = 124;
 
 /// The form code of a single hem.
 const FORM_SINGLE: f64 = 208.0;
@@ -112,22 +116,32 @@ pub(crate) fn project(
                     if let Some(key) = option_key("hem_form_code") {
                         native_options.insert(key, NativeOption::Integer(Dimension::Literal(n)));
                     }
-                    if is(code, FORM_SINGLE) {
-                        for (name, after, what) in [
-                            ("hem_inner_radius", RADIUS_AFTER_NAME, "inner radius"),
-                            (
-                                "hem_straight_length",
-                                STRAIGHT_AFTER_NAME,
-                                "straight length",
-                            ),
-                        ] {
-                            match double_slot(cluster, types, &object, end, after, what) {
-                                Ok(metres) => {
-                                    length_option(&mut native_options, name, metres, losses, entry);
-                                }
-                                Err(reason) => unread(losses, entry, &reason),
+                    for (name, after, what) in [
+                        ("hem_inner_radius", RADIUS_AFTER_NAME, "inner radius"),
+                        (
+                            "hem_straight_length",
+                            STRAIGHT_AFTER_NAME,
+                            "straight length",
+                        ),
+                    ] {
+                        match double_slot(cluster, types, &object, end, after, what) {
+                            Ok(metres) => {
+                                length_option(&mut native_options, name, metres, losses, entry);
                             }
+                            Err(reason) => unread(losses, entry, &reason),
                         }
+                    }
+                    if let Some(side) =
+                        double_slot(cluster, types, &object, end, SIDE_AFTER_NAME, "side")
+                            .ok()
+                            .and_then(code_of)
+                    {
+                        if let Some(key) = option_key("hem_side_code") {
+                            native_options
+                                .insert(key, NativeOption::Integer(Dimension::Literal(side)));
+                        }
+                    }
+                    if is(code, FORM_SINGLE) {
                         "solidedge:hem-single".to_owned()
                     } else {
                         format!("solidedge:hem-form-{n}")

@@ -160,3 +160,46 @@ fn a_non_positive_stored_length_is_unread() {
     assert!(option(options, "hem_straight_length").is_some());
     assert_eq!(codes(&result).len(), 2);
 }
+
+#[test]
+fn every_form_states_its_radius_straight_length_and_side_code() {
+    for (form, side) in [(207_i32, 1_i32), (209, 2), (210, 9), (212, 1)] {
+        let result = decode(
+            &Operand::Edge(EdgeSpec::default()),
+            &[
+                (96, Slot::Double(f64::from(form))),
+                (124, Slot::Double(f64::from(side))),
+                (208, Slot::Double(0.003)),
+                (236, Slot::Double(0.008)),
+            ],
+        );
+        let (_, options) = hem(&result);
+        let Some(NativeOption::Length(Dimension::Literal(radius))) =
+            option(options, "hem_inner_radius")
+        else {
+            panic!("expected the inner radius");
+        };
+        assert!((radius.get() - 3.0).abs() <= EPS_VALUE);
+        let Some(NativeOption::Length(Dimension::Literal(straight))) =
+            option(options, "hem_straight_length")
+        else {
+            panic!("expected the straight length");
+        };
+        assert!((straight.get() - 8.0).abs() <= EPS_VALUE);
+        let expected = i64::from(side);
+        assert!(matches!(
+            option(options, "hem_side_code"),
+            Some(NativeOption::Integer(Dimension::Literal(code))) if *code == expected
+        ));
+    }
+}
+
+#[test]
+fn an_unreadable_side_slot_leaves_the_side_code_out() {
+    let result = decode(
+        &Operand::Edge(EdgeSpec::default()),
+        &[(96, Slot::Double(208.0))],
+    );
+    let (_, options) = hem(&result);
+    assert!(option(options, "hem_side_code").is_none());
+}

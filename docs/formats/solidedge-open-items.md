@@ -128,13 +128,13 @@
 
 **Need.** Flanges with the side reversed, each other relief type, each other measure-point and material-side option, and the corner relief option, and a flange of each kind with its radius, relief width and relief length set on the flange.
 
-### DR-1059. Hem forms, length offset and side
+### DR-1059. Open-loop and centered-loop hems
 
-**Question.** Which sheet dimension offsets the straight length of a hem from the entered hem length, which slots hold the dimensions of the double, teardrop and rolled forms, and which field states the side a hem folds to?
+**Question.** Which form codes do the open-loop hem and the centered-loop hem store at offset 96 of §10.4, and which slots hold their dimensions?
 
-**Known.** The single hem (form code 208) stores its inner bend radius at offset 208 and its straight length at offset 236 of §10.4. The entered length exceeds the straight length by the inner radius and a further offset. The form codes 209, 210 and 212 store a value at each of offsets 208 and 236 that no field of the single hem explains. Reversing the side of a hem changes the stored edge selection and no other slot.
+**Known.** The closed, open, S-flange, curl and closed-loop forms store the codes `207`, `208`, `209`, `210` and `212`.
 
-**Need.** Single hems on sheets of at least two other thicknesses, each other form saved with two different gaps and lengths, and the same hem folded to each side on one edge with the edge selections compared against the stored geometry.
+**Need.** A hem of each of the two forms.
 
 ### DR-1056. Base contour flange extent direction and fields
 
@@ -152,11 +152,11 @@
 
 **Need.** Unfolds and refolds of several bends with the stationary face moved, and a topology proxy parser that reads a face selection.
 
-### DR-1058. Close corner slots
+### DR-1058. Close corners between flanges at other angles
 
-**Question.** What do the closure type at offset 124, the slots at offsets 272, 300, 336, 364 and 392, and the relief form codes other than 106, 107 and 222 of §10.7 state?
+**Question.** Which slots of §10.7 change for a corner between flanges at an angle other than a right angle, and what does the slot at offset 272 state?
 
-**Known.** The slot at offset 124 holds 103, and the slot at offset 392 holds pi / 4 in every stored close corner. The corner gap, the relief form and the relief size change with the entered values.
+**Known.** The slot at offset 272 holds `0` for closure `103` and `0.5` for closure `104` in every stored close corner.
 
-**Need.** Close corners with each closure type, with each relief form and with a corner between flanges of an angle other than a right angle.
+**Need.** A close corner between flanges at an angle other than a right angle, and a close corner of each closure with a different value at offset 272.
 

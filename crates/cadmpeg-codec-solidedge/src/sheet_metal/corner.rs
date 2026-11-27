@@ -2,7 +2,8 @@
 //! Close corners (`docs/formats/solidedge.md` §10.7): the IR holds no
 //! operation that closes the corner between two flanges, so a
 //! `JMCloseCornerAssocFunction` feature stays a native operation and the
-//! stored relief type, relief size and corner gap are its native options.
+//! stored closure code, relief code, relief size and corner gap are its native
+//! options.
 //! Stored lengths are metres; the design states millimetres.
 
 use cadmpeg_ir::design::dimension::Dimension;
@@ -19,6 +20,7 @@ use crate::psm::{Cluster, TypeTable};
 const FUNCTION: &str = "JMCloseCornerAssocFunction";
 
 /// Bytes after the function name of each slot (§10.7).
+const CLOSURE_AFTER_NAME: usize = 124;
 const RELIEF_AFTER_NAME: usize = 152;
 const SIZE_AFTER_NAME: usize = 180;
 const GAP_AFTER_NAME: usize = 244;
@@ -28,6 +30,15 @@ const GAP_AFTER_NAME: usize = 244;
 pub(crate) fn project(cluster: &Cluster<'_>, types: &TypeTable, listed: &[Listed], ir: &mut CadIr) {
     for (entry, object, end) in features_of(cluster, types, listed, FUNCTION) {
         let mut found = Vec::new();
+        if let Some(code) = double_slot(cluster, types, &object, end, CLOSURE_AFTER_NAME, "closure")
+            .ok()
+            .and_then(code_of)
+        {
+            found.push((
+                "corner_closure_code",
+                NativeOption::Integer(Dimension::Literal(code)),
+            ));
+        }
         if let Some(code) = double_slot(cluster, types, &object, end, RELIEF_AFTER_NAME, "relief")
             .ok()
             .and_then(code_of)
