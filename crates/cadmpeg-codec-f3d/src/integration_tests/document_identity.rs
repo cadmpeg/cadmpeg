@@ -220,12 +220,43 @@ fn api_export_with_placements(linked: bool, terminal: Option<(u8, &str)>) -> Vec
     api_export_with_identity_fields(linked, terminal, None)
 }
 
+/// A manifest reference extension that states an empty reference run, with
+/// no Redirections entry, gives up the extension's bytes in `Manifest.dat`;
+/// no loss names an id that no record carries.
+#[test]
+fn an_unreadable_manifest_reference_extension_is_given_up_in_the_manifest() {
+    // A reference role that is no GUID: the extension does not read.
+    let bytes = api_export_archive(
+        &[("child-role", "ChildKey", "child.f3d")],
+        None,
+        None,
+        false,
+    );
+    let head = "part manifest-references stream=\"Manifest.dat\" offset=";
+    let decoded = EditableDecodeResult::from(
+        F3dCodec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .expect("an unreadable reference extension remains a reported decode"),
+    );
+    crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    assert!(
+        !decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("f3d:archive:entry#")),
+        "{:#?}",
+        decoded.report().losses
+    );
+    crate::test_support::assert_pinned_refusal(bytes, head);
+}
+
 fn api_export_with_identity_fields(
     linked: bool,
     terminal: Option<(u8, &str)>,
     blank: Option<&str>,
 ) -> Vec<u8> {
-    api_export_build(linked, terminal, blank, false, "child.f3d")
+    api_export_build(linked, terminal, blank, false)
 }
 
 fn api_export_build(
@@ -233,16 +264,13 @@ fn api_export_build(
     terminal: Option<(u8, &str)>,
     blank: Option<&str>,
     keep_redirections: bool,
-    child_path: &str,
 ) -> Vec<u8> {
-    api_export_build_placed(
-        linked,
-        terminal,
-        blank,
-        keep_redirections,
-        child_path,
-        crate::xref::IDENTITY_ROWS,
-    )
+    let references: &[(&str, &str, &str)] = if linked {
+        &[(XREF_ROLE, "ChildKey", "child.f3d")]
+    } else {
+        &[]
+    };
+    api_export_archive(references, terminal, blank, keep_redirections)
 }
 
 fn api_export_build_placed(
@@ -253,7 +281,32 @@ fn api_export_build_placed(
     child_path: &str,
     placement: [[f64; 4]; 4],
 ) -> Vec<u8> {
-    use std::io::Read;
+    let target = [(XREF_ROLE, "ChildKey", child_path)];
+    let references: &[(&str, &str, &str)] = if linked { &target } else { &[] };
+    api_export_archive_placed(references, terminal, blank, keep_redirections, placement)
+}
+
+/// The identity-xref archive whose `Manifest.dat` reference extension states
+/// `references`, without `RedirectionsStream.dat` unless `keep_redirections`.
+fn api_export_archive(
+    references: &[(&str, &str, &str)],
+    terminal: Option<(u8, &str)>,
+    blank: Option<&str>,
+    keep_redirections: bool,
+) -> Vec<u8> {
+    let bytes = f3d_with_identity_xrefs("assembly-design", "root.f3d", &[("child.f3d", XREF_ROLE)]);
+    api_export_rewrite(bytes, references, terminal, blank, keep_redirections)
+}
+
+/// `api_export_archive` over an archive whose child is `child_path` and whose
+/// occurrence carries `placement`.
+fn api_export_archive_placed(
+    references: &[(&str, &str, &str)],
+    terminal: Option<(u8, &str)>,
+    blank: Option<&str>,
+    keep_redirections: bool,
+    placement: [[f64; 4]; 4],
+) -> Vec<u8> {
     let bytes = crate::test_support::assembly_test::f3d_without_brep_with_xref_placement(
         "assembly-design",
         "root.f3d",
@@ -261,6 +314,17 @@ fn api_export_build_placed(
         XREF_ROLE,
         placement,
     );
+    api_export_rewrite(bytes, references, terminal, blank, keep_redirections)
+}
+
+fn api_export_rewrite(
+    bytes: Vec<u8>,
+    references: &[(&str, &str, &str)],
+    terminal: Option<(u8, &str)>,
+    blank: Option<&str>,
+    keep_redirections: bool,
+) -> Vec<u8> {
+    use std::io::Read;
     let mut source = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -274,13 +338,8 @@ fn api_export_build_placed(
         entry.read_to_end(&mut bytes).unwrap();
         if name == "Manifest.dat" {
             let manifest = crate::manifest::parse_top_level(&bytes).unwrap();
-            let target = [(XREF_ROLE, "ChildKey", child_path)];
             let mut extension =
-                crate::test_support::manifest_test::api_reference_extension(if linked {
-                    &target
-                } else {
-                    &[]
-                });
+                crate::test_support::manifest_test::api_reference_extension(references);
             if let Some(field) = blank {
                 let mut key = Vec::new();
                 crate::test_support::lp_utf16(&mut key, field);
@@ -408,7 +467,7 @@ fn api_export_manifest_terminal_lineage_identifies_root() {
 #[test]
 fn api_export_terminal_lineage_wins_over_design_zero_and_charges_loss() {
     const TERMINAL: &str = "urn:adsk.wipprod:dm.lineage:TerminalKey";
-    let bytes = api_export_build(false, Some((1, TERMINAL)), None, true, "child.f3d");
+    let bytes = api_export_build(false, Some((1, TERMINAL)), None, true);
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
@@ -435,7 +494,7 @@ fn api_export_terminal_lineage_wins_over_design_zero_and_charges_loss() {
 
 #[test]
 fn api_export_without_terminal_takes_design_zero_lineage() {
-    let bytes = api_export_build(false, None, None, true, "child.f3d");
+    let bytes = api_export_build(false, None, None, true);
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();

@@ -66,6 +66,50 @@ use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
 mod body_placement;
+
+macro_rules! test_ctx {
+    ($ctx:ident) => {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let $ctx = cadmpeg_core::decode::DecodeContext::new(
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+            cadmpeg_core::decode::DecodeDepth::Full,
+        );
+    };
+}
+
+/// Synthesizes `ir` in one encode session under the desktop limits.
+fn synthesize(ir: &CadIr, version: IgesVersion) -> Result<super::Synthesis, super::Unwritten> {
+    crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy {
+            limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+        },
+        |ctx| super::synthesize(ctx, ir, version),
+    )
+}
+
+/// The file synthesized from `ir` with its losses and native dispositions,
+/// under desktop limits.
+pub(super) fn synthesis_and_dispositions(
+    ir: &CadIr,
+    version: IgesVersion,
+) -> Result<
+    (
+        super::Synthesis,
+        cadmpeg_ir::codec::write::NativeDispositions,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy {
+            limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+        },
+        |ctx| super::target::synthesis_and_dispositions(ctx, ir, version),
+    )
+}
+
 mod cages;
 mod closed_edge_range;
 mod covered_uses;
@@ -88,7 +132,6 @@ fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTax
     matches!(
         taxonomy,
         cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
-            | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::ProceduralReduced
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
             | cadmpeg_ir::report::loss::LossTaxonomy::AttributesNotTransferred
@@ -99,7 +142,6 @@ fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxon
     matches!(
         taxonomy,
         cadmpeg_ir::report::loss::LossTaxonomy::PassthroughRecordOmitted
-            | cadmpeg_ir::report::loss::LossTaxonomy::PreservedSourceUnavailable
             | cadmpeg_ir::report::loss::LossTaxonomy::MetadataNotTransferred
             | cadmpeg_ir::report::loss::LossTaxonomy::AttributesNotTransferred
     )
@@ -157,8 +199,9 @@ fn completes_a_mixed_unclassified_plane_boundary_with_computed_parameter_curves(
 
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the representable part is written");
     let losses = &plan.report().losses;
@@ -285,6 +328,7 @@ fn number_preserves_distinct_finite_values() {
 
 #[test]
 fn generated_resolution_covers_large_coordinate_endpoint_admission() {
+    test_ctx!(ctx);
     let point_start = PointId::mint("test:model:point#start").expect("identity grammar");
     let point_end = PointId::mint("test:model:point#end").expect("identity grammar");
     let vertex_start = VertexId::mint("test:model:vertex#start").expect("identity grammar");
@@ -346,7 +390,7 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
     assert!(
-        (generated_minimum_resolution(&TopologyIndex::new(&ir))
+        (generated_minimum_resolution(&ctx, &TopologyIndex::new(&ir))
             .expect("compute the generated minimum resolution")
             - expected)
             .abs()
@@ -366,8 +410,9 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
 
     let plan = crate::IgesCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("NURBS curve has a supported semantic writer profile");
     let mut written = Vec::new();
@@ -470,8 +515,9 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
 
     let plan = crate::IgesCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("neutral tolerance floor is writable");
     let mut written = Vec::new();
@@ -505,8 +551,9 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
 
     let plan = crate::IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("source resolution witness is writable");
     let mut written = Vec::new();
@@ -641,8 +688,9 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
             .expect("fixture decodes");
         let plan = IgesCodec
             .plan(
-                EncodeInput::new(decoded.ir(), None),
-                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+                EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+                    IgesVersion::V5_3.descriptor().id.as_str(),
+                )),
             )
             .expect("fixture has a semantic writer profile");
         let mut written = Vec::new();
@@ -831,6 +879,7 @@ fn torus_radii_outside_iges_interval_are_not_implemented() {
 
 #[test]
 fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
+    test_ctx!(ctx);
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
         cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
             Point3::new(1.0, 2.0, 3.0),
@@ -859,7 +908,7 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
         .expect("end evaluates")
         .get(),
     };
-    let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed, IgesVersion::V5_3)
+    let entity = oriented_curve_entity(&ctx, &geometry, &span, Sense::Reversed, IgesVersion::V5_3)
         .expect("a bounded hyperbola can be reversed exactly");
     assert_eq!((entity.type_code, entity.form), (104, 2));
     assert_eq!(
@@ -994,6 +1043,7 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
 
 #[test]
 fn generated_full_circle_has_lexically_identical_endpoints() {
+    test_ctx!(ctx);
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1004,6 +1054,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
         .expect("valid CircleCurve fixture"),
     ));
     let entity = curve_entity(
+        &ctx,
         geometry.solved().expect("solved carrier"),
         None,
         IgesVersion::V5_3,
@@ -1019,6 +1070,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
 
 #[test]
 fn generated_circle_refuses_a_zero_length_edge_span() {
+    test_ctx!(ctx);
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -1034,6 +1086,7 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
         end: Point3::new(0.0, 0.0, 0.0),
     };
     let Err(error) = curve_entity(
+        &ctx,
         geometry.solved().expect("solved carrier"),
         Some(&span),
         IgesVersion::V5_3,
@@ -1224,6 +1277,7 @@ fn conic_coefficients_preserve_extreme_finite_radii() {
 
 #[test]
 fn unrepresentable_conic_coefficients_are_not_implemented() {
+    test_ctx!(ctx);
     let ellipse = cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
@@ -1234,6 +1288,7 @@ fn unrepresentable_conic_coefficients_are_not_implemented() {
     .expect("the IR admits finite ordered positive ellipse radii");
     assert!(matches!(
         curve_entity(
+            &ctx,
             &SolvedCurveGeometry::Ellipse(ellipse),
             None,
             IgesVersion::V5_3
@@ -1244,6 +1299,7 @@ fn unrepresentable_conic_coefficients_are_not_implemented() {
 
 #[test]
 fn negative_nurbs_weights_are_not_implemented() {
+    test_ctx!(ctx);
     let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -1254,6 +1310,7 @@ fn negative_nurbs_weights_are_not_implemented() {
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         curve_entity(
+            &ctx,
             &SolvedCurveGeometry::Nurbs(curve),
             Some(&CurveSpan {
                 range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
@@ -1334,6 +1391,7 @@ fn numerical_ranges_hyperbola_endpoint_scales_finite_products() {
 
 #[test]
 fn hyperbola_endpoint_overflow_is_not_implemented() {
+    test_ctx!(ctx);
     let hyperbola = cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
@@ -1349,6 +1407,7 @@ fn hyperbola_endpoint_overflow_is_not_implemented() {
     };
     assert!(matches!(
         curve_entity(
+            &ctx,
             &SolvedCurveGeometry::Hyperbola(hyperbola),
             Some(&span),
             IgesVersion::V5_3
@@ -1359,6 +1418,7 @@ fn hyperbola_endpoint_overflow_is_not_implemented() {
 
 #[test]
 fn parabola_endpoint_overflow_is_not_implemented() {
+    test_ctx!(ctx);
     let parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
@@ -1373,6 +1433,7 @@ fn parabola_endpoint_overflow_is_not_implemented() {
     };
     assert!(matches!(
         curve_entity(
+            &ctx,
             &SolvedCurveGeometry::Parabola(parabola),
             Some(&span),
             IgesVersion::V5_3
@@ -1383,6 +1444,7 @@ fn parabola_endpoint_overflow_is_not_implemented() {
 
 #[test]
 fn zero_conic_parameter_span_is_not_implemented() {
+    test_ctx!(ctx);
     let parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
@@ -1408,7 +1470,7 @@ fn zero_conic_parameter_span_is_not_implemented() {
         SolvedCurveGeometry::Hyperbola(hyperbola),
     ] {
         assert!(matches!(
-            curve_entity(&geometry, Some(&span), IgesVersion::V5_3),
+            curve_entity(&ctx, &geometry, Some(&span), IgesVersion::V5_3),
             Err(CodecError::NotImplemented(_))
         ));
     }
@@ -1417,6 +1479,7 @@ fn zero_conic_parameter_span_is_not_implemented() {
 #[test]
 fn decreasing_polyline_parameters_are_not_implemented() {
     use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    test_ctx!(ctx);
 
     let vertices = vec![
         PolylineVertex {
@@ -1434,6 +1497,7 @@ fn decreasing_polyline_parameters_are_not_implemented() {
         .expect("the IR admits finite strictly decreasing polyline parameters");
     assert!(matches!(
         curve_entity(
+            &ctx,
             &SolvedCurveGeometry::Polyline(polyline),
             Some(&CurveSpan {
                 range: cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite test range"),
@@ -1452,6 +1516,7 @@ fn decreasing_polyline_parameters_are_not_implemented() {
 /// written as `-inf`, which is no IGES real.
 #[test]
 fn parabola_coefficient_that_overflows_is_not_implemented() {
+    test_ctx!(ctx);
     let parabola = cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
@@ -1465,6 +1530,7 @@ fn parabola_coefficient_that_overflows_is_not_implemented() {
         end: Point3::new(0.0, 0.0, 0.0),
     };
     let written = curve_entity(
+        &ctx,
         &SolvedCurveGeometry::Parabola(parabola),
         Some(&span),
         IgesVersion::V5_3,

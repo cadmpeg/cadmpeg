@@ -8,6 +8,7 @@ use super::{
     TopologyIndex,
 };
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::geometry::analytic::PlaneSurface;
@@ -35,10 +36,11 @@ use std::f64::consts::TAU;
 /// circle that lies on one parameter line of the support, followed, where
 /// the next coedge starts at another parameter of the same pole or apex, by
 /// the parameter line along that pole. Each is exact.
-pub(super) fn state_pcurves(
-    ir: &CadIr,
+pub(super) fn state_pcurves<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
     admitted: impl Fn(&str) -> bool,
-) -> Result<Cow<'_, CadIr>, CodecError> {
+) -> Result<Cow<'ir, CadIr>, CodecError> {
     if ir
         .geometry
         .coedges
@@ -82,10 +84,11 @@ pub(super) fn state_pcurves(
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => plane,
             SurfaceGeometry::Solved(geometry) => {
                 if let Some(form) = Revolved::of(geometry).filter(|_| unstated) {
-                    if let Some(segments) = revolved_loop_segments(&index, surface, &form, &loops)?
+                    if let Some(segments) =
+                        revolved_loop_segments(ctx, &index, surface, &form, &loops)?
                     {
                         if let Some(pcurves) =
-                            revolved_pcurves(&index, surface, &form, face.sense, segments)?
+                            revolved_pcurves(ctx, &index, surface, &form, face.sense, segments)?
                         {
                             computed.extend(pcurves);
                         }
@@ -102,7 +105,7 @@ pub(super) fn state_pcurves(
             if !coedge.pcurves.is_empty() {
                 continue;
             }
-            if let Some(pcurve) = plane_pcurve(&index, plane, coedge) {
+            if let Some(pcurve) = plane_pcurve(ctx, &index, plane, coedge) {
                 computed.push((coedge.id.clone(), vec![pcurve]));
             }
         }
@@ -134,6 +137,7 @@ pub(super) fn state_pcurves(
 
 /// The parameter curve of `coedge` on `plane`, in the coedge's traversal.
 fn plane_pcurve(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     plane: &PlaneSurface,
     coedge: &Coedge,
@@ -142,7 +146,7 @@ fn plane_pcurve(
     let edge = index.edges.get(coedge.edge.as_str()).copied()?;
     let curve = index.curves.get(edge.curve()?.as_str()).copied()?;
     let geometry = flatten_curve(solved_curve(curve).ok()?).ok()?;
-    let span = edge_span(index, edge, &geometry).ok()?;
+    let span = edge_span(ctx, index, edge, &geometry).ok()?;
     let nurbs = nurbs_form(&geometry, span.range)?;
     let (nurbs, range) = if coedge.sense == Sense::Reversed {
         reverse_nurbs(&nurbs, span.range).ok()?
@@ -244,6 +248,7 @@ struct Candidates<'ir> {
 }
 
 fn segment_candidates<'ir>(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'ir>,
     form: &Revolved,
     coedge: &'ir Coedge,
@@ -251,7 +256,7 @@ fn segment_candidates<'ir>(
     let edge = index.edges.get(coedge.edge.as_str()).copied()?;
     let curve = index.curves.get(edge.curve()?.as_str()).copied()?;
     let geometry = flatten_curve(solved_curve(curve).ok()?).ok()?;
-    let span = edge_span(index, edge, &geometry).ok()?;
+    let span = edge_span(ctx, index, edge, &geometry).ok()?;
     let range = span.range.finite_components().map(FiniteReal::get);
     let mid = 0.5 * (range[0] + range[1]);
     let tolerance = effective_topology_tolerance(topology_edge_explicit_tolerance(index, edge));
@@ -315,12 +320,13 @@ fn segment_candidates<'ir>(
 /// The edge line or circle of `coedge` stated on one parameter line of
 /// `form`, checked by evaluating the support at samples of the edge.
 fn revolved_segment<'ir>(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'ir>,
     surface: &Surface,
     form: &Revolved,
     coedge: &'ir Coedge,
 ) -> Result<Option<Segment<'ir>>, CodecError> {
-    let Some(candidates) = segment_candidates(index, form, coedge) else {
+    let Some(candidates) = segment_candidates(ctx, index, form, coedge) else {
         return Ok(None);
     };
     'candidates: for segment in candidates.segments {
@@ -330,7 +336,7 @@ fn revolved_segment<'ir>(
                 (end - start).mul_add(f64::from(step) / f64::from(SEGMENT_SAMPLES), start);
             let uv = segment.at(parameter);
             let point = finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
                 &index.model,
                 &surface.geometry,
                 uv.u,
@@ -350,6 +356,7 @@ fn revolved_segment<'ir>(
 /// The checked parameter line of each coedge in `loops`, by loop, or none
 /// where an edge is not a parameter line of the support.
 fn revolved_loop_segments<'ir>(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'ir>,
     surface: &Surface,
     form: &Revolved,
@@ -362,7 +369,7 @@ fn revolved_loop_segments<'ir>(
             let Some(coedge) = index.coedges.get(coedge_id.as_str()).copied() else {
                 return Ok(None);
             };
-            let Some(segment) = revolved_segment(index, surface, form, coedge)? else {
+            let Some(segment) = revolved_segment(ctx, index, surface, form, coedge)? else {
                 return Ok(None);
             };
             loop_segments.push(segment);
@@ -426,6 +433,7 @@ enum Join {
 /// The join from `from` to `to` on `surface`, checked by evaluating the
 /// straight parameter line between them against the point at `from`.
 fn join(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     surface: &Surface,
     from: Point2,
@@ -437,7 +445,7 @@ fn join(
     }
     let at = |uv: Point2| {
         finite_or_refusal(cadmpeg_ir::eval::model_surface_point(
-            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx),
             &index.model,
             &surface.geometry,
             uv.u,
@@ -464,6 +472,7 @@ fn join(
 /// ends, joined along a pole or apex where they meet there, or none where
 /// the loop does not close in the parameter plane.
 fn closed_chain<'ir>(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     surface: &Surface,
     periods: impl Fn(Point2) -> Point2,
@@ -477,7 +486,7 @@ fn closed_chain<'ir>(
             let shift = periods(Point2::new(end.u - start.u, end.v - start.v));
             segment.mid_uv = Point2::new(segment.mid_uv.u + shift.u, segment.mid_uv.v + shift.v);
             let [start, _] = segment.ends();
-            match join(index, surface, end, start, previous.segment.tolerance)? {
+            match join(ctx, index, surface, end, start, previous.segment.tolerance)? {
                 Join::Coincident => {}
                 Join::Pole => previous.pole = Some([end, start]),
                 Join::Open => return Ok(None),
@@ -495,7 +504,7 @@ fn closed_chain<'ir>(
     let [_, end] = last.segment.ends();
     let turns = periods(Point2::new(start.u - end.u, start.v - end.v));
     let target = Point2::new(start.u - turns.u, start.v - turns.v);
-    let pole = match join(index, surface, end, target, last.segment.tolerance)? {
+    let pole = match join(ctx, index, surface, end, target, last.segment.tolerance)? {
         Join::Coincident => None,
         Join::Pole => Some([end, target]),
         Join::Open => return Ok(None),
@@ -521,6 +530,7 @@ fn closed_chain<'ir>(
 /// face. None where a loop does not close in the parameter plane or the
 /// loops do not bound the face.
 fn revolved_pcurves(
+    ctx: &DecodeContext<'_>,
     index: &TopologyIndex<'_>,
     surface: &Surface,
     form: &Revolved,
@@ -540,7 +550,7 @@ fn revolved_pcurves(
     };
     let mut chains = Vec::new();
     for segments in loops.into_iter().filter(|segments| !segments.is_empty()) {
-        let Some(chain) = closed_chain(index, surface, periods, segments)? else {
+        let Some(chain) = closed_chain(ctx, index, surface, periods, segments)? else {
             return Ok(None);
         };
         chains.push(chain);

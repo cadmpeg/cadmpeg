@@ -21,10 +21,12 @@ categories = ["encoding", "parser-implementations", "graphics"]
 
 [dependencies]
 cadmpeg-core.workspace = true
+cadmpeg-derive.workspace = true
 cadmpeg-ir.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-parasolid.workspace = true
 flate2.workspace = true
+memchr.workspace = true
 roxmltree.workspace = true
 serde.workspace = true
 serde_json.workspace = true

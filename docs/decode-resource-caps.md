@@ -125,26 +125,44 @@ chokepoints are:
 
 Expansion output from `begin_expand` is charged as decompressed bytes, not
 again as retained bytes. Parse trees, indexes, caches, and other working
-storage are not retained bytes; per-input bounds, entity charges, and local
-work caps bound them. A new copy of bytes that the decoded document keeps
-must call `retain_bytes` before the copy. A native record's text may be
+storage are not retained bytes; the expanded-bytes charge of an XML or JSON
+parse, per-input bounds, entity charges, and local work caps bound them. A new
+copy of bytes that the decoded document keeps must call `retain_bytes`
+before the copy. A native record's text may be
 counted twice toward retained bytes, once by the codec before attach and
 once by the IR at attach (Rhino link bytes and `from_typed_for_decode`
 JSON copies), so the retained ceiling is conservative by at most that
 text.
 
 `parse_xml`, `parse_json_value` and `parse_json` scan the text before they
-parse it, charge its depth to the session, and bound the tree's storage by
-the per-expansion allowance. For XML, the scan counts what roxmltree 0.21.1
-allocates: the node and attribute slots that it reserves for every `<` and
-`=` in the text, the texts and attribute values that it copies (those with
-references, carriage returns, CDATA, tabs or line breaks), the merged text
-pieces, the per-level parser state, and the namespaces. The rest of the
-allowance becomes roxmltree's node limit. The depth is charged before
-roxmltree parses, because roxmltree recurses once per element level. A JSON
-tree is estimated from its delimiter counts as a `serde_json::Value` tree,
-also for typed parses. A tree that could exceed the allowance is
-`NotImplemented` and does not set the fuse.
+parse it and charge its depth to the session. The depth is charged before
+the parser runs, because roxmltree recurses once per element level.
+
+For XML, the scan counts what roxmltree 0.21.1 allocates: the node and
+attribute slots that it reserves for every `<` and `=` in the text, the
+texts and attribute values that it copies (those with references, carriage
+returns, CDATA, tabs or line breaks), the merged text pieces, the per-level
+parser state, the temporary attributes of the widest tag, the namespaces,
+and three node slots for each node it can make: the root, one for each
+`<`, and one text node after each `<`. It also counts the name comparisons
+that roxmltree makes, one byte each: each attribute with the earlier
+attributes of its tag, and the name of each tag and prefixed attribute with
+the namespaces in scope. The session charges that count to the
+decompressed-bytes dimension before roxmltree parses, against the caller's
+`max_decompressed_bytes_total` with no allowance that scales with the
+input, and adds it to the other expanded bytes of the session. The
+scan's set of namespace prefixes is admitted against the same ceiling as it
+grows. A refusal is `ResourceLimit` of `scope: Session` whose `additional`
+is the count, `u64::MAX` where the count passes `u64`, and it sets the
+fuse. For a text that `parse_input_xml` reads, each attribute, a namespace
+declaration included, and each distinct namespace prefix is an entity
+charged to the session before roxmltree parses.
+
+A JSON tree is estimated from its delimiter counts as a `serde_json::Value`
+tree, also for typed parses. The session charges that estimate to the
+decompressed-bytes dimension before the parse, against the same ceiling as
+an XML parse, and a refusal is the same `ResourceLimit` with the estimate
+as `additional`.
 
 ## Retained-byte availability
 
@@ -213,8 +231,6 @@ report a loss; a caller may report a general failure for the same item.
 | Crate                    | File                                               | Constant                                  | Value                                                   | Kind | Enforcement                                                                                                                                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first checks each frame's buffered output (its window, or its declared content size when that is smaller) against the per-expansion allowance as a per-input bound: excess is `NotImplemented` for that stream, names the allowance, and does not set the fuse. A declared window above this constant is also `NotImplemented` and does not set the fuse. |
-| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_TAG_ATTRIBUTES`                  | `256`                                                   | 2    | Attributes in one XML tag, counted by the scan before `parse_xml`. roxmltree compares each attribute with the earlier ones in its tag. Excess is `NotImplemented` for that text and does not set the fuse.                                                                  |
-| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_NAMESPACE_PREFIXES`              | `256`                                                   | 2    | Distinct namespace prefixes declared in one XML text, counted by the same scan. roxmltree searches the namespaces in scope per element and copies them into each declaring element. Excess is `NotImplemented` and does not set the fuse.                                  |
 | `cadmpeg-ir`             | `src/native/mod.rs`                                | `MAX_NATIVE_NESTING_DEPTH`                | `256`                                                   | 1    | CADIR native field nesting. `NativeRecord::new`, replay and canonical text refuse a deeper field with `FieldNestsTooDeep`.                                                                                                                                                   |
 | `cadmpeg-ir` | `src/document/read.rs` | `MAX_REPAIRS` | `64` | 2 | Refusals one record's repairs take in `CadIr::read`. Exhaustion gives the record up as a part and charges `decode/record.unreadable`. |
 | `cadmpeg-ir` | `src/document/read.rs` | `MAX_COLLECTION_SITES` | `16` | 2 | Objects of one record tried as the home of one omitted collection in `CadIr::read`. A record that no tried site repairs is given up as a part and charges `decode/record.unreadable`. |
@@ -276,6 +292,10 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE`     | `16`, plus `EXPANDED_PAYLOAD_BASE` (16 MiB)             | 4    | String, binary and name octets that the anchor pass, and separately the REFERENCE pass, may copy out of anchors, per input byte. Copies that an omitted item discards stay charged. An item whose copy does not fit is omitted with its exact source and `parse.expansion-bounded`, naming this constant. Recorded anchor and reference outcomes carry their octets, so a later item that cannot fit is decided before anything is copied. Working storage, not `retain_bytes`. |
 | `cadmpeg-codec-step`     | `src/reader/tessellation.rs`                       | `MAX_ITEM_PLACEMENTS`                     | `64`                                                    | 4    | Distinct inherited placements that one association walk follows into a tessellated item. Past it the item and the items it contains keep source coordinates, and `tessellation.placement-ambiguous` names the limit.                                                        |
 | `cadmpeg-codec-step`     | `src/reader/product.rs`                            | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the NAUO graph. At the limit expansion stops and `occurrence.expansion-output-truncated` is reported. A NAUO path of `max_recursion_depth` usages stops that branch with `occurrence.expansion-depth-truncated`.                                   |
+| `cadmpeg-codec-alibre`   | `src/part21.rs`                                    | `MAX_DEPTH`                               | `16`                                                    | 2    | List nesting of one `STEP_DATA` parameter. A deeper list leaves the history unread and reports `alibre/history.stream-unread`; the body still decodes. |
+| `cadmpeg-codec-alibre`   | `src/part21.rs`                                    | `MAX_STRING_OCTETS`                       | `32_767`                                                | 2    | Octets of one `STEP_DATA` string, as the STEP codec admits. A longer string leaves the history unread and reports `alibre/history.stream-unread`; the body still decodes. |
+| `cadmpeg-codec-alibre`   | `src/part21.rs`                                    | `MAX_INSTANCE_PARAMETERS`                 | `65_536`                                                | 2    | Parameters, list elements and typed parameters together in one `STEP_DATA` entity instance. More leave the history unread and report `alibre/history.stream-unread`; the body still decodes. Every admitted parameter is also charged to `max_entities`. |
+| `cadmpeg-codec-alibre`   | `src/history.rs`                                   | `MAX_LOSS_EXAMPLES`                       | `8`                                                     | 4    | Examples that one aggregated history loss (`alibre/history.state-unread`, `alibre/history.state-index-mismatch`) names. The count stays in the message and the rest are summarised as "and N more".                                                      |
 | `cadmpeg-codec-pvz`      | `src/decode.rs`                                    | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the structure definition graph, roots included; child occurrences that close a cycle count toward it. At the limit expansion stops, and a path of `max_recursion_depth` definitions stops its branch; both report `structure.occurrence-expansion-truncated`. |
 | `cadmpeg-codec-pvz`      | `src/brep/records.rs`                              | `MAX_BSPLINE_DEGREE`                      | `20`                                                    | 1    | Admitted degree of an exact-stream B-spline surface, edge curve or pcurve, as for ASM `MAX_NURBS_DEGREE`. A record of a higher order refuses the exact stream as malformed; the member keeps its tessellation and `geometry.exact-undecoded` is reported. |
 | `cadmpeg-codec-pvz`      | `src/brep/topology.rs`                             | `MAX_TOPOLOGY_WORK`                       | `1 << 24`                                               | 4    | Floor of the derived-search `WorkBudget` of one exact stream; the allowance is the larger of this floor and 1,024 times its face, loop, coedge and edge records. Face-region nesting charges one unit per polygon sample of each containment test, and coincident-edge pairing one unit per candidate test. A face whose nesting finds the budget empty keeps one unclassified region; pairing stops; each skip is reported as `exact.topology-work-exhausted`. |
@@ -525,6 +545,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-solidedge` | `src/trace.rs` | `MAX_SNAP_ITERATIONS` | `64` | 4 | Alternating projections applied to one intersection-chart point. A point that has not reached both supports at the limit leaves the chart unrefined, and the edge states the chart's measured departure as its tolerance. |
 | `cadmpeg-codec-solidedge` | `src/trace.rs` | `MAX_TRACE_POINTS` | `16_384` | 4 | Points of one refined intersection chart, counting the points of the segments not yet refined. A segment still outside the target at the limit is kept, and the edge states its departure as its tolerance. A chart that holds the limit before refinement is not subdivided. |
 | `cadmpeg-codec-solidedge` | `src/trace.rs` | `MAX_TRACE_DEPTH` | `16` | 4 | Midpoint bisections of one intersection-chart segment. A segment still outside the target at the limit is kept, and the edge states its departure as its tolerance. |
+| `cadmpeg-codec-ironcad`  | `src/placement.rs`                                 | `MAX_PROPERTY_NAME`                       | `256`                                                   | 1    | Byte length of one `Public Access` property name. A longer length is not a property, and the scan continues at the next marker. |
 | `cadmpeg-codec-catia`    | `src/families/standard/topology.rs`                | `MAX_DUPLICATE_FACE_OPERATIONS`           | `65_536`                                                | 4    | Branch operations of the duplicate-face edge search; its depth stops at the budget's recursion guard. Exhaustion also exhausts the enclosing topology `WorkBudget`, so the decode reports the topology search failure. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_SAMPLE_PAIRS` | `32` | 2 | Paired samples stored in a typed scalar map. A larger array leaves the record untyped. |
 | `cadmpeg-codec-catia` | `src/families/consolidated/records/class25.rs` | `MAX_B_SAMPLE_PAIRS` | `12` | 1 | The one-byte B-family payload length permits at most twelve source and target pairs after the fixed fields. |

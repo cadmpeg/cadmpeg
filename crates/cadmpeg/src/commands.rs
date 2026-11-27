@@ -9,7 +9,6 @@ use reporting::{
     print_source_diff, write_command_report, write_json_report, CommandReportBody, Payload,
 };
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -337,7 +336,7 @@ pub(crate) fn inspect(
 
 fn inspect_unrecognized(path: &Path) -> anyhow::Error {
     anyhow!(
-        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, eDrawings easm/eprt, OpenUSD usda/usd; use --input-format to override detection",
+        "no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, Inventor IPT/IAM, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP, Creo View pvz, eDrawings easm/eprt, Alibre AD_PRT, OpenUSD usda/usd; use --input-format to override detection",
         path.display()
     )
 }
@@ -380,8 +379,8 @@ pub(crate) fn dump(
         let encoder = build_encoder(Format::Cadir);
         let plan = encoder
             .plan(
-                cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity()),
-                TargetRequest::Unnamed,
+                cadmpeg_ir::codec::write::EncodeInput::new(&loaded.ir, loaded.fidelity())
+                    .with_limits(args.options().policy.limits),
             )
             .map_err(|error| ApplicationError::from(error).at_stage(RefusalStage::Plan))?;
         let emission = emit_export_plan(plan, Format::Cadir, &destination, &loaded.origin)
@@ -496,6 +495,14 @@ pub(crate) fn convert(
         };
         let prepared = transcoder::prepare(inputs, &source, target, &policy)?;
         let planned = prepared.plan()?;
+        if let DestinationPolicy::File(destination) = &policy.destination {
+            artifact_store::check_plan_outputs(
+                path,
+                destination,
+                conversion.report.as_ref(),
+                &planned.output_paths(),
+            )?;
+        }
 
         let (decode_report, validation) = {
             let prepared = planned.prepared();

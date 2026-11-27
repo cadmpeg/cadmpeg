@@ -404,13 +404,22 @@ impl CarrierRefusal {
 }
 
 pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
-    let lanes = cadmpeg_parasolid::records::PrimaryRecords::read(bytes)
+    let primary = cadmpeg_parasolid::records::PrimaryRecords::read(bytes)
         .ok()
-        .flatten()
+        .flatten();
+    parse_with_graph_and_primary(bytes, graph, primary.as_ref())
+}
+
+pub(crate) fn parse_with_graph_and_primary(
+    bytes: &[u8],
+    graph: &Graph,
+    primary: Option<&cadmpeg_parasolid::records::PrimaryRecords<'_>>,
+) -> Parsed {
+    let lanes = primary
         .filter(|primary| primary.is_terminated() && nodes::has_lane_fields(primary))
         .map_or_else(
             || scanned_lanes(bytes, graph),
-            |primary| nodes::lanes(bytes, &primary),
+            |primary| nodes::lanes(bytes, primary),
         );
     let mut refusals = Vec::new();
     Parsed {
@@ -688,6 +697,21 @@ pub(crate) fn counted_lane_extents(bytes: &[u8]) -> Vec<Range<usize>> {
                 .map(|record| record.extent)
                 .or_else(|| surface_payload_at(bytes, pos).map(|(_, _, lanes)| lanes))
                 .or_else(|| curve_payload_at(bytes, pos).map(|(_, _, lanes)| lanes))
+        })
+        .collect()
+}
+
+/// The span of each NURBS array, control-value, and descriptor record that
+/// starts at or past `from`.
+pub(crate) fn record_extents(bytes: &[u8], from: usize) -> Vec<Range<usize>> {
+    (from..bytes.len())
+        .filter_map(|pos| {
+            array_record_at(bytes, pos)
+                .map(|record| record.extent)
+                .or_else(|| surface_payload_at(bytes, pos).map(|(_, _, lanes)| pos..lanes.end))
+                .or_else(|| curve_payload_at(bytes, pos).map(|(_, _, lanes)| pos..lanes.end))
+                .or_else(|| surface_descriptor_at(bytes, pos).map(|(_, _, end)| pos..end))
+                .or_else(|| curve_descriptor_at(bytes, pos, true).map(|(_, _, end)| pos..end))
         })
         .collect()
 }

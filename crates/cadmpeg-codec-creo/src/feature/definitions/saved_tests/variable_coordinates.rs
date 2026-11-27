@@ -372,6 +372,7 @@ fn nonfinite_full_width_coordinate_is_opaque_and_cannot_use_duplicate_value() {
     let mut duplicate = row.clone();
     duplicate.value = ScalarLane::Value(3.5);
     let table = FeatureVariableTable {
+        rows_end: 0,
         declared_count: 2,
         entity_ref: None,
         rows: vec![row, duplicate],

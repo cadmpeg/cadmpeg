@@ -79,8 +79,16 @@ fn body_linear_resolutions(primary: &PrimaryRecords<'_>, graph: &Graph) -> BTree
 impl Graph {
     /// Use primary record ownership when the header is supported.
     pub(crate) fn parse_source(stream: &[u8]) -> Result<Self, CodecError> {
+        Self::parse_source_with_primary(stream).map(|(graph, _)| graph)
+    }
+
+    /// Use primary record ownership when the header is supported, also returning
+    /// the parsed [`PrimaryRecords`] so downstream stream consumers avoid re-framing.
+    pub(crate) fn parse_source_with_primary(
+        stream: &[u8],
+    ) -> Result<(Self, Option<PrimaryRecords<'_>>), CodecError> {
         let Some(primary) = PrimaryRecords::read(stream)? else {
-            return Ok(Self::parse(stream));
+            return Ok((Self::parse(stream), None));
         };
         let limit_term_use = crate::intersection::limit_term_use(&primary);
         let frames = PrimaryFrames {
@@ -95,21 +103,21 @@ impl Graph {
                 let mut graph = selection.materialize(stream);
                 graph.primary_node_refusals = supported
                     .into_iter()
-                    .filter(|&(kind, start)| {
+                    .filter(|(kind, _, range)| {
                         graph
                             .by_pos
-                            .get(&start)
-                            .is_none_or(|(selected, _)| *selected != kind)
+                            .get(&range.start)
+                            .is_none_or(|(selected, _)| selected != kind)
                     })
                     .collect();
                 let refusals = frames
                     .edges
                     .iter()
-                    .map(|frame| frame.range.start)
-                    .filter(|start| {
+                    .map(|frame| (u32::from(frame.xmt), frame.range.clone()))
+                    .filter(|(_, range)| {
                         graph
                             .by_pos
-                            .get(start)
+                            .get(&range.start)
                             .is_none_or(|(kind, _)| *kind != NodeKind::Edge)
                     })
                     .collect();
@@ -122,7 +130,7 @@ impl Graph {
                     .edges
                     .iter()
                     .filter(|frame| Self::primary_edge_candidate(stream, frame).is_none())
-                    .map(|frame| frame.range.start)
+                    .map(|frame| (u32::from(frame.xmt), frame.range.clone()))
                     .collect();
                 graph
             }
@@ -131,7 +139,7 @@ impl Graph {
         graph.primary_records = frames.terminated_records().map(<[_]>::to_vec);
         graph.primary_limit_term_use = limit_term_use;
         graph.body_linear_resolutions = body_linear_resolutions(&primary, &graph);
-        Ok(graph)
+        Ok((graph, Some(primary)))
     }
 
     /// The stored `res_linear` (metres) of each BODY node the primary
@@ -153,12 +161,48 @@ impl Graph {
             })
     }
 
-    pub(crate) fn primary_edge_refusals(&self) -> &[usize] {
+    /// The XMT index and range of each framed EDGE record the graph leaves
+    /// out.
+    pub(crate) fn primary_edge_refusals(&self) -> &[(u32, Range<usize>)] {
         &self.primary_edge_refusals
     }
 
-    pub(crate) fn primary_node_refusals(&self) -> &[(NodeKind, usize)] {
+    /// The kind, XMT index, and range of each supported non-EDGE node of a
+    /// terminated sequence that the graph leaves out.
+    pub(crate) fn primary_node_refusals(&self) -> &[(NodeKind, u32, Range<usize>)] {
         &self.primary_node_refusals
+    }
+
+    /// Each span past the stop of the primary framing that no node of the
+    /// graph and no span of `held` covers.
+    pub(crate) fn unread_spans(
+        &self,
+        stream_len: usize,
+        held: impl IntoIterator<Item = Range<usize>>,
+    ) -> Vec<Range<usize>> {
+        let Some(stop) = self.primary_unread_from else {
+            return Vec::new();
+        };
+        let mut covered = self
+            .nodes
+            .values()
+            .map(|node| node.pos..node.end)
+            .chain(held)
+            .filter(|span| span.end > stop && span.start < stream_len)
+            .collect::<Vec<_>>();
+        covered.sort_unstable_by_key(|span| span.start);
+        let mut gaps = Vec::new();
+        let mut at = stop;
+        for span in covered {
+            if span.start > at {
+                gaps.push(at..span.start);
+            }
+            at = at.max(span.end);
+        }
+        if at < stream_len {
+            gaps.push(at..stream_len);
+        }
+        gaps
     }
 
     pub(crate) fn primary_unread_from(&self) -> Option<usize> {
@@ -198,7 +242,10 @@ impl Graph {
 fn node_selection(
     stream: &[u8],
     primary: &PrimaryRecords<'_>,
-) -> (FixedRecordSelection, Vec<(NodeKind, usize)>) {
+) -> (
+    FixedRecordSelection,
+    Vec<(NodeKind, u32, std::ops::Range<usize>)>,
+) {
     let mut typed = Vec::new();
     let mut ownership = Vec::new();
     let mut supported = Vec::new();
@@ -211,7 +258,7 @@ fn node_selection(
         };
         let range = node.range();
         if kind != NodeKind::Edge {
-            supported.push((kind, range.start));
+            supported.push((kind, node.index(), range.clone()));
         }
         if !node.has_base_layout() {
             continue;

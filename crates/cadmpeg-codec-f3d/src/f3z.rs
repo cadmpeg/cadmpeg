@@ -17,6 +17,7 @@ use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
 
 mod archive;
+mod combine_tools;
 mod member_keys;
 pub(crate) mod merge;
 pub(crate) mod observer;
@@ -164,6 +165,7 @@ fn compose(
     report.notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
+    combine_tools::bind(ctx, &mut ir, &mut report.losses)?;
     crate::scene::bind(
         ctx,
         &mut ir,
