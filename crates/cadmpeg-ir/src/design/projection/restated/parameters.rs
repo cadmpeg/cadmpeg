@@ -14,6 +14,7 @@ use crate::features::parameters::{
     DesignParameter as ModelParameter, DimensionDisplay as ModelDisplay,
     ParameterValue as ModelValue,
 };
+use crate::ids::ProductDefinitionId;
 
 use super::super::fields::{Field, ModelParameterField};
 use super::{json_strings, Restatements, Restater};
@@ -22,6 +23,10 @@ use super::{json_strings, Restatements, Restater};
 /// value that marks the parameter driven and the one that marks it driving.
 const DRIVEN_FLAGS: [(&str, &str, &str); 2] =
     [("is_driving", "0", "1"), ("driven", "true", "false")];
+
+/// The model property that keeps the name a source stores for a parameter
+/// whose model name the decoder generated.
+const SOURCE_NAME: &str = "source_name";
 
 /// The fields each model parameter of `ir` that `compared` accepts leaves
 /// out of the design parameter of its identity.
@@ -35,6 +40,12 @@ pub(super) fn parameter_cuts<'ir>(
         .iter()
         .map(|parameter| (parameter.id.as_str(), parameter))
         .collect::<HashMap<_, _>>();
+    let components = ir
+        .design
+        .features
+        .iter()
+        .filter_map(|feature| Some((feature.id.as_str(), feature.component.as_ref()?)))
+        .collect::<HashMap<_, _>>();
     let pairs = ir
         .model
         .parameters
@@ -47,9 +58,19 @@ pub(super) fn parameter_cuts<'ir>(
         .into_iter()
         .map(|(model, design)| {
             let id = model.id.as_str();
+            let component = match &design.owner {
+                Some(ParameterOwner::Feature(feature)) => components.get(feature.as_str()).copied(),
+                Some(ParameterOwner::Container(_) | ParameterOwner::Attribute(_)) | None => None,
+            };
             (
                 id,
-                parameter_cut(model, design, misplaced.contains(id), &ir.model.restated),
+                parameter_cut(
+                    model,
+                    design,
+                    component,
+                    misplaced.contains(id),
+                    &ir.model.restated,
+                ),
             )
         })
         .collect()
@@ -57,7 +78,9 @@ pub(super) fn parameter_cuts<'ir>(
 
 /// The parameters of `models` whose position by `ordinal` among the
 /// parameters of their definition and owner differs from their position in
-/// identity order, the order of the design parameter arena.
+/// the numbered order of their identities. The design parameter arena holds
+/// no order but its identities', and an identity carries the source
+/// position as a number.
 fn misplaced<'ir>(models: impl Iterator<Item = &'ir ModelParameter>) -> HashSet<&'ir str> {
     let mut groups = BTreeMap::<_, Vec<&ModelParameter>>::new();
     for model in models {
@@ -71,24 +94,71 @@ fn misplaced<'ir>(models: impl Iterator<Item = &'ir ModelParameter>) -> HashSet<
         groups.entry(key).or_default().push(model);
     }
     let mut misplaced = HashSet::new();
-    for mut members in groups.into_values() {
-        let mut by_id = members.clone();
-        by_id.sort_by_key(|model| model.id.as_str());
-        members.sort_by_key(|model| (model.ordinal, model.id.as_str()));
-        for (by_ordinal, by_id) in members.iter().zip(&by_id) {
-            if by_ordinal.id != by_id.id {
-                misplaced.insert(by_ordinal.id.as_str());
+    for members in groups.into_values() {
+        let mut by_id = members
+            .iter()
+            .map(|model| (numbered(model.id.as_str()), model.id.as_str()))
+            .collect::<Vec<_>>();
+        by_id.sort_unstable();
+        let mut by_ordinal = members
+            .iter()
+            .map(|model| {
+                (
+                    model.ordinal,
+                    numbered(model.id.as_str()),
+                    model.id.as_str(),
+                )
+            })
+            .collect::<Vec<_>>();
+        by_ordinal.sort_unstable();
+        for ((_, _, at_ordinal), (_, at_id)) in by_ordinal.iter().zip(&by_id) {
+            if at_ordinal != at_id {
+                misplaced.insert(*at_ordinal);
             }
         }
     }
     misplaced
 }
 
-/// The fields `design` leaves out of `model`. `misplaced`: the design
-/// parameter arena does not hold `model`'s position.
+/// A run of an identity in numbered order: digits, by their number and
+/// then by their length, before other characters, by code point.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Run<'a> {
+    /// A run of digits: the count of its digits after leading zeros, those
+    /// digits, and the count of all its digits.
+    Number(usize, &'a str, usize),
+    /// A run of other characters.
+    Text(&'a str),
+}
+
+/// The runs of `id`, which order identities by the numbers they carry.
+fn numbered(id: &str) -> Vec<Run<'_>> {
+    let mut runs = Vec::new();
+    let mut rest = id;
+    while let Some(first) = rest.chars().next() {
+        let digits = first.is_ascii_digit();
+        let end = rest
+            .find(|unit: char| unit.is_ascii_digit() != digits)
+            .unwrap_or(rest.len());
+        let (run, after) = rest.split_at(end);
+        runs.push(if digits {
+            let value = run.trim_start_matches('0');
+            Run::Number(value.len(), value, run.len())
+        } else {
+            Run::Text(run)
+        });
+        rest = after;
+    }
+    runs
+}
+
+/// The fields `design` leaves out of `model`. `component`: the definition
+/// the design states for the feature that owns `design`. `misplaced`: the
+/// design parameter arena does not hold `model`'s position.
 pub(super) fn parameter_cut(
     model: &ModelParameter,
     design: &DesignParameter,
+    component: Option<&ProductDefinitionId>,
     misplaced: bool,
     restated: &Restatements,
 ) -> BTreeSet<&'static str> {
@@ -103,20 +173,24 @@ pub(super) fn parameter_cut(
         model
             .product_definition
             .as_ref()
-            .is_none_or(|definition| *definition == design.scope),
+            .is_none_or(|definition| *definition == design.scope || Some(definition) == component),
     );
     leave(
         ModelParameterField::Owner,
         owner_carried(model, design, restated),
     );
     leave(ModelParameterField::Ordinal, !misplaced);
+    let source_name = model
+        .properties
+        .iter()
+        .find(|(key, _)| key.as_str() == SOURCE_NAME)
+        .map(|(_, name)| name.as_str());
     leave(
         ModelParameterField::Name,
         model.name.trim().is_empty()
-            || design
-                .name
-                .as_ref()
-                .is_some_and(|name| name.as_str() == model.name),
+            || design.name.as_ref().is_some_and(|name| {
+                name.as_str() == model.name || Some(name.as_str()) == source_name
+            }),
     );
     leave(
         ModelParameterField::Display,

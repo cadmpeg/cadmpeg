@@ -11,6 +11,7 @@ use crate::design::units::ValueKind;
 use crate::features::parameters::DesignParameter as ModelParameter;
 use crate::features::serialization::FeatureWriteWire;
 use crate::ids::ProductDefinitionId;
+use crate::sketches::Sketch as ModelSketch;
 
 /// A field of a record, named by its wire key.
 pub trait Field: Copy + Ord + 'static {
@@ -277,6 +278,61 @@ model_fields! {
         native_ref => NativeRef,
     }
 }
+
+/// A field of a model sketch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelSketchField {
+    /// `name`
+    Name,
+    /// `configuration`
+    Configuration,
+    /// `visible`
+    Visible,
+    /// `placement`
+    Placement,
+    /// `profiles`
+    Profiles,
+    /// `native_ref`
+    NativeRef,
+}
+
+model_fields! {
+    ModelSketchField of ModelSketch {
+        name => Name,
+        configuration => Configuration,
+        visible => Visible,
+        placement => Placement,
+        profiles => Profiles,
+        native_ref => NativeRef,
+    }
+}
+
+/// A field of a model sketch entity. The type keeps its identity private,
+/// so the serialization test checks these keys.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ModelSketchEntityField {
+    /// `sketch`
+    Sketch,
+    /// `construction`
+    Construction,
+    /// `native_ref`
+    NativeRef,
+    /// `geometry_ref`
+    GeometryRef,
+    /// `endpoint_refs`
+    EndpointRefs,
+    /// `geometry`
+    Geometry,
+}
+
+field_keys!(ModelSketchEntityField {
+    sketch => Sketch,
+    construction => Construction,
+    native_ref => NativeRef,
+    geometry_ref => GeometryRef,
+    endpoint_refs => EndpointRefs,
+    geometry => Geometry,
+});
 
 #[cfg(test)]
 mod tests;
