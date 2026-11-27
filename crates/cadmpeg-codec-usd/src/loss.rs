@@ -112,7 +112,8 @@ pub(crate) enum UsdLossCode {
     /// holds an edge or a vertex, so it states no extent. The face is stated
     /// partial.
     TopologyFaceBoundaryUnstated,
-    /// A joint whose bodies or frames do not resolve was not transferred.
+    /// A joint whose bodies, frames, or coupled joints do not resolve was not
+    /// transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
     JointPropertyNotTransferred,

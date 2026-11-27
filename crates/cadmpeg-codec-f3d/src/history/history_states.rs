@@ -41,6 +41,129 @@ pub(crate) fn effective_scope_previous_history_state_id(
     })
 }
 
+/// The history state a scope produces and the state it follows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ScopeStates {
+    pub(crate) state_id: i64,
+    pub(crate) previous: PreviousState,
+}
+
+/// The state that a scope's history state follows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PreviousState {
+    /// The stored previous state, else the one state to which the histories
+    /// link the history state.
+    Linked(i64),
+    /// No history holds the history state.
+    Unheld,
+    /// The histories that hold the history state link it to no state.
+    Unnamed,
+    /// The histories link the history state to more than one state.
+    Conflicting(StateConflict),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StateConflict {
+    /// Two histories link the state to these two states.
+    Histories(i64, i64),
+    /// One history links the state to the first state by its transition and
+    /// to the second by its header.
+    TransitionAndHeader(i64, i64),
+    /// One history holds the state twice.
+    HeldTwice,
+}
+
+/// What one history that holds a state links it to.
+enum HistoryLink {
+    Names(i64),
+    Abstains,
+    Contradicts(StateConflict),
+}
+
+fn history_link(history: &AsmHistory, state_id: i64) -> Option<HistoryLink> {
+    let mut states = history
+        .states()
+        .iter()
+        .filter(|state| state.state_id == state_id);
+    let state = states.next()?;
+    if states.next().is_some() {
+        return Some(HistoryLink::Contradicts(StateConflict::HeldTwice));
+    }
+    let transition = state
+        .transition
+        .as_ref()
+        .and_then(|transition| transition.previous_state_id);
+    Some(
+        match (transition, header_previous_state_id(history, state)) {
+            (Some(transition), Some(header)) if transition != header => {
+                HistoryLink::Contradicts(StateConflict::TransitionAndHeader(transition, header))
+            }
+            (Some(previous_state_id), _) | (None, Some(previous_state_id)) => {
+                HistoryLink::Names(previous_state_id)
+            }
+            (None, None) => HistoryLink::Abstains,
+        },
+    )
+}
+
+/// The state to which `histories` link `state_id`. A history that links it
+/// to no state abstains.
+fn linked_previous_state<'h>(
+    histories: impl Iterator<Item = &'h AsmHistory>,
+    state_id: i64,
+) -> PreviousState {
+    histories
+        .filter_map(|history| history_link(history, state_id))
+        .fold(PreviousState::Unheld, |previous, link| {
+            match (previous, link) {
+                (PreviousState::Conflicting(_), _) => previous,
+                (_, HistoryLink::Contradicts(conflict)) => PreviousState::Conflicting(conflict),
+                (PreviousState::Linked(first), HistoryLink::Names(second)) if first != second => {
+                    PreviousState::Conflicting(StateConflict::Histories(first, second))
+                }
+                (PreviousState::Linked(_), HistoryLink::Names(_) | HistoryLink::Abstains) => {
+                    previous
+                }
+                (PreviousState::Unheld | PreviousState::Unnamed, HistoryLink::Names(state)) => {
+                    PreviousState::Linked(state)
+                }
+                (PreviousState::Unheld | PreviousState::Unnamed, HistoryLink::Abstains) => {
+                    PreviousState::Unnamed
+                }
+            }
+        })
+}
+
+/// Read the scope's states. Its previous state is the stored one, else the
+/// state to which the histories with the scope's bound history id link its
+/// state, else the state to which every history that holds its state links
+/// it.
+pub(crate) fn scope_states(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    scope_histories: &HashMap<String, String>,
+    histories: &[AsmHistory],
+) -> Option<ScopeStates> {
+    let state_id = scope.history_state_id()?;
+    let previous = match scope.previous_history_state_id() {
+        Some(previous_state_id) => PreviousState::Linked(previous_state_id),
+        None => {
+            let bound = scope_histories.get(&scope.id);
+            match linked_previous_state(
+                histories
+                    .iter()
+                    .filter(|history| Some(&history.id) == bound),
+                state_id,
+            ) {
+                linked @ (PreviousState::Linked(_) | PreviousState::Conflicting(_)) => linked,
+                PreviousState::Unheld | PreviousState::Unnamed => {
+                    linked_previous_state(histories.iter(), state_id)
+                }
+            }
+        }
+    };
+    Some(ScopeStates { state_id, previous })
+}
+
 /// Read the scope's predecessor, else its history header predecessor.
 /// History reads use only `state_id`, `node_index`, and `next_ref`, so the
 /// result does not depend on history binding.
