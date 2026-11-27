@@ -172,6 +172,41 @@ fn assert_paste_inserts_its_copies(
     assert_eq!(feature.name.as_deref(), Some("CopyPasteBodies 1"));
 }
 
+/// The timeline item of the paste object has the feature of the `Base Feature`
+/// scope the object owns, not a native placeholder, and no loss names a match
+/// by position.
+fn assert_paste_item_keeps_its_feature(
+    result: &cadmpeg_ir::DecodeResult,
+    native: &crate::native::F3dNative,
+) {
+    use cadmpeg_ir::design::feature::FeatureOperation;
+    let scope = paste_scope(native);
+    let model = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+        .expect("the paste's feature");
+    let member = result
+        .ir()
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.id == model.id)
+        .expect("the paste's timeline member");
+    assert!(
+        !matches!(member.definition.operation, FeatureOperation::Native { .. }),
+        "{:?}",
+        member.definition.operation
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != F3dLossCode::HistoryItemMatchedByPosition.kind()));
+}
+
 /// Each corpus file decodes once for both checks.
 #[test]
 fn a_paste_inserts_its_copies_and_each_copy_names_its_source() {
@@ -203,6 +238,7 @@ fn a_paste_inserts_its_copies_and_each_copy_names_its_source() {
         let result = decoded(bytes);
         let native = crate::test_support::native_test::f3d_native(result.ir());
         assert_paste_inserts_its_copies(result.ir(), &native, copies);
+        assert_paste_item_keeps_its_feature(&result, &native);
         if volumes_pair_sources {
             assert_each_copy_has_its_source_volume(result.ir(), &native, copies);
         }

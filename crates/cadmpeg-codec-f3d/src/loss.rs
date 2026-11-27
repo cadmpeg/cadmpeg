@@ -680,6 +680,10 @@ pub(crate) enum F3dLossCode {
     HistoryRollbackUnread,
     /// An unread timeline item precedes the first rolled-back item; the rollback marker can stand before it.
     HistoryRollbackBoundUnread,
+    /// A timeline item matches its v10 feature by its position in its Design stream because no scope record states the pairing.
+    HistoryItemMatchedByPosition,
+    /// An archive member's feature does not name the component that owns it, because the member's scope does not span the owner's definition.
+    HistoryMemberComponentUnstated,
     /// A coordinate frame retains its source construction references and expressions.
     CoordinateSystemConstructionNative,
     /// A coordinate frame transfers without its source construction references and expressions.
@@ -1865,6 +1869,8 @@ impl F3dLossCode {
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
         Self::HistoryRollbackBoundUnread,
+        Self::HistoryItemMatchedByPosition,
+        Self::HistoryMemberComponentUnstated,
         Self::CoordinateSystemConstructionNative,
         Self::CoordinateSystemConstructionDropped,
         Self::CoordinateSystemFrameUnresolved,
@@ -2922,6 +2928,8 @@ impl F3dLossCode {
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryRollbackBoundUnread => "history.rollback-bound-unread",
+            Self::HistoryItemMatchedByPosition => "history.item-matched-by-position",
+            Self::HistoryMemberComponentUnstated => "history.member-component-unstated",
             Self::CoordinateSystemConstructionNative => {
                 "feature.coordinate-system-construction-native"
             }
@@ -4006,6 +4014,8 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
@@ -4802,6 +4812,8 @@ impl F3dLossCode {
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryRollbackBoundUnread
+            | Self::HistoryItemMatchedByPosition
+            | Self::HistoryMemberComponentUnstated
             | Self::CoordinateSystemConstructionNative
             | Self::CoordinateSystemConstructionDropped
             | Self::CoordinateSystemFrameUnresolved
