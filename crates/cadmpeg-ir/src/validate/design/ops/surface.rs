@@ -19,7 +19,7 @@ use super::super::records::DesignRecords;
 
 pub(super) fn check_patch(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     patch: &Patch,
     findings: &mut Vec<Finding>,
 ) {
@@ -60,7 +60,7 @@ pub(super) fn check_patch(
 
 pub(super) fn check_knit(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     knit: &Knit,
     findings: &mut Vec<Finding>,
 ) {
@@ -91,7 +91,7 @@ pub(super) fn check_knit(
     options::check_sheet_output(index, site, &knit.output, findings);
 }
 
-pub(super) fn check_unsew(site: Site<'_>, unsew: &Unsew, findings: &mut Vec<Finding>) {
+pub(super) fn check_unsew(site: Site<'_, '_>, unsew: &Unsew, findings: &mut Vec<Finding>) {
     if picks::is_empty(&unsew.edges) {
         error(
             findings,
@@ -115,7 +115,12 @@ pub(super) fn check_unsew(site: Site<'_>, unsew: &Unsew, findings: &mut Vec<Find
 }
 
 /// `UpTo` limits select points, faces, or planes.
-fn check_up_to(site: Site<'_>, field: &str, selection: &SetSelection, findings: &mut Vec<Finding>) {
+fn check_up_to(
+    site: Site<'_, '_>,
+    field: &str,
+    selection: &SetSelection,
+    findings: &mut Vec<Finding>,
+) {
     let allowed = |class| picks::is_point(class) || picks::is_plane(class);
     if let Some(class) = picks::refused(selection, allowed) {
         error(
@@ -131,7 +136,7 @@ fn check_up_to(site: Site<'_>, field: &str, selection: &SetSelection, findings: 
 
 pub(super) fn check_extend(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     extend: &Extend,
     findings: &mut Vec<Finding>,
 ) {
@@ -161,7 +166,7 @@ fn law_values<T>(law: &Law<T>) -> Vec<&Dimension<T>> {
 
 pub(super) fn check_implicit_sweep(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     sweep: &ImplicitSweep,
     findings: &mut Vec<Finding>,
 ) {
@@ -270,7 +275,7 @@ pub(super) fn check_implicit_sweep(
 
 pub(super) fn check_boundary_fill(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     fill: &BoundaryFill,
     findings: &mut Vec<Finding>,
 ) {
@@ -291,7 +296,7 @@ pub(super) fn check_boundary_fill(
 
 pub(super) fn check_curve(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     curve: &CurveFeature,
     findings: &mut Vec<Finding>,
 ) {
@@ -350,7 +355,7 @@ pub(super) fn check_curve(
     }
 }
 
-pub(super) fn check_form(site: Site<'_>, form: &Form, findings: &mut Vec<Finding>) {
+pub(super) fn check_form(site: Site<'_, '_>, form: &Form, findings: &mut Vec<Finding>) {
     let cage = &form.cage;
     if cage.subds.is_empty() || cage.entity_count() != cage.subds.len() {
         error(
@@ -376,7 +381,7 @@ pub(super) fn check_form(site: Site<'_>, form: &Form, findings: &mut Vec<Finding
 
 pub(super) fn check_mesh(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     mesh: &MeshFeature,
     findings: &mut Vec<Finding>,
 ) {

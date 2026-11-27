@@ -12,6 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue, PostStep};
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
@@ -23,6 +25,9 @@ use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::ops::assembly::{Place, PlaceSet, PlacementBase};
 use cadmpeg_ir::design::ops::body::ScaleFactors;
+use cadmpeg_ir::design::projection::restated::{
+    restate_features, restate_tree_nodes, NodeStatement, Restater,
+};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -44,7 +49,7 @@ use cadmpeg_ir::units::UnitVector3;
 use crate::loss::FreecadLossCode;
 use crate::native::frame::FiniteFrame;
 use crate::native::{ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord};
-use crate::product::UnresolvedLink;
+use crate::product::{ProductNodes, UnresolvedLink};
 
 mod parameters;
 pub(crate) mod states;
@@ -53,16 +58,22 @@ pub(crate) mod states;
 /// the root definition `definition`. A record the projection cannot state in
 /// full is stated as far as it is read, with a loss in `losses` (§3.3). The
 /// scope's `unproduced` bodies are stated once the root owns its bodies
-/// ([`state_unproduced`]).
+/// ([`state_unproduced`]). Each Body container restates the Body's model
+/// feature, and each design feature the model feature of its id, without
+/// the fields it does not hold.
+///
+/// # Errors
+///
+/// A resource refusal while the restatements are stated.
 pub(crate) fn project(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     definition: ProductDefinitionId,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-    links: &[ProductNodeRecord],
-    unresolved: &[UnresolvedLink],
+    nodes: &ProductNodes,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), CodecError> {
     let source = Source::of(objects, properties);
     let history = History::of(&ir.model.features, &source);
     let mut features = history
@@ -76,14 +87,15 @@ pub(crate) fn project(
         .filter(|id| !history.contained.contains(**id))
         .map(|id| Member::Feature((*id).clone()))
         .collect::<BTreeSet<_>>();
-    let mut places = places(ir, &definition, objects, links, losses);
-    places.extend(unresolved_places(objects, unresolved));
+    let mut places = places(ir, &definition, objects, &nodes.records, losses);
+    places.extend(unresolved_places(objects, &nodes.unresolved));
     grouped.extend(places.iter().map(|place| Member::Feature(place.id.clone())));
     features.extend(places);
     let mut containers = Vec::new();
     let mut body_containers = BTreeMap::new();
     let mut roots = Vec::new();
     let mut current = Vec::new();
+    let mut nodes = Vec::new();
     for body in &history.bodies {
         let id = ContainerId::from(
             Identity::from(body.feature.clone())
@@ -129,6 +141,17 @@ pub(crate) fn project(
                 .map_or(EvaluationStatus::Current, |object| source.status(object)),
             native_ref: body.native_ref.clone(),
         });
+        nodes.push((
+            body.feature.clone(),
+            Restater::Record(id.as_str().to_owned()),
+            NodeStatement {
+                members: body.members.clone(),
+                active: body.tip.clone(),
+                name: None,
+                suppressed: false,
+                bodies: body.outputs.clone(),
+            },
+        ));
         roots.push(id.clone());
         body_containers.insert(body.feature.clone(), id.clone());
         containers.push(Container::Ordered {
@@ -170,7 +193,7 @@ pub(crate) fn project(
         losses,
     );
     if features.is_empty() && parameters.is_empty() {
-        return;
+        return Ok(());
     }
     ir.design.containers = containers;
     ir.design.features = features;
@@ -208,6 +231,8 @@ pub(crate) fn project(
         current,
         unproduced: BTreeSet::new(),
     });
+    restate_tree_nodes(ir, nodes);
+    restate_features(ctx, ir)
 }
 
 /// List as unproduced each body that a definition the scope spans owns and

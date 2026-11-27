@@ -179,7 +179,7 @@ pub(crate) struct DesignFilletMidpoint {
 }
 
 /// Parameter records defining one Fillet group's radius law.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DesignFilletRadiusLawWire {
     /// One radius applies along the complete edge group.

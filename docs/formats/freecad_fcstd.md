@@ -895,6 +895,7 @@ payload record. A persistent element name binds a record of the current geometry
 selection of an intermediate shape's sub-element keeps its source property. A free feature
 outside a body retains the GUI visibility of its own `Shape`.
 
+An axis link to an `App::Line` resolves to the local X axis of the line's placement, which is the line's base direction (1, 0, 0). The origin lines X_Axis, Y_Axis, and Z_Axis carry the identity placement and the 120-degree rotations about (1, 1, 1) and (1, -1, 1) that carry X onto Y and Z. A `PartDesign::Line` resolves to the local Z axis of its placement.
 Revolution and groove operations retain their linked profile, explicit base point and axis,
 one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
 constant radius, and chamfers distinguish equal-distance, two-distance, and distance-angle laws.
@@ -945,7 +946,7 @@ Pad and Pocket also persist the boolean carriers `Midplane`, `UseCustomVector`, 
 `Midplane=false` leaves the `SideType` value in force. `UseCustomVector=true` selects `Direction` for the sweep axis;
 false selects the reference axis or profile normal. For a blind `Length` termination, `AlongSketchNormal=true` measures
 the stored length along the profile normal and false measures it along the sweep axis. `Reversed=true` reverses the
-resolved sweep direction. `AllowMultiFace=true` permits a profile with multiple faces. A present carrier with another
+resolved sweep direction. A Pad sweeps along the profile normal and a Pocket sweeps against it. A custom `Direction` is the stored sweep direction for both, and a Pocket `ReferenceAxis` direction is stored already negated, so only a profile-normal Pocket sweep is the negated profile normal. A symmetric extent has no sweep side to negate. `AllowMultiFace=true` permits a profile with multiple faces. A present carrier with another
 runtime type, without exactly one direct `Bool`, or with any other value does not select a neutral Pad or Pocket; the
 operation remains native.
 Part `Extrusion` `DirMode` is an `App::PropertyEnumeration` whose indices `0`, `1`, and `2` mean

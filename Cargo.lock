@@ -210,6 +210,7 @@ dependencies = [
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-registry",
@@ -244,10 +245,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadmpeg-codec-alibre"
+version = "0.6.12"
+dependencies = [
+ "cadmpeg-asm",
+ "cadmpeg-codec-step",
+ "cadmpeg-container",
+ "cadmpeg-core",
+ "cadmpeg-ir",
+ "cadmpeg-measure",
+ "cadmpeg-test-support",
+]
+
+[[package]]
 name = "cadmpeg-codec-catia"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-test-support",
@@ -288,6 +303,7 @@ dependencies = [
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-protein",
@@ -308,6 +324,7 @@ dependencies = [
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-test-support",
@@ -339,6 +356,7 @@ dependencies = [
  "cadmpeg-asm",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-protein",
  "cadmpeg-test-support",
@@ -368,10 +386,12 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "flate2",
+ "memchr",
  "roxmltree",
  "serde",
  "serde_json",
@@ -444,6 +464,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-parasolid",
@@ -587,6 +608,7 @@ name = "cadmpeg-parasolid"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-test-support",
  "serde",
@@ -599,6 +621,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-test-support",
  "flate2",
@@ -612,6 +635,7 @@ dependencies = [
 name = "cadmpeg-registry"
 version = "0.6.12"
 dependencies = [
+ "cadmpeg-codec-alibre",
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
  "cadmpeg-codec-edrawings",
