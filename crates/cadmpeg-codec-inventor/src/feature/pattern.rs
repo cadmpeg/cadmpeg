@@ -9,6 +9,7 @@ use super::{
 use crate::layout::{
     pm_dc_content_header as header, pm_dc_content_header_v28 as header_v28,
     pm_dc_pattern_cached_edge_body as cached_edge, pm_dc_pattern_cached_line_body as cached_line,
+    pm_dc_pattern_cached_line_chain_entry as chain_entry,
     pm_dc_pattern_selection_control_body as selection_control,
     pm_dc_pattern_suppression_pair as suppression_pair,
     pm_dc_pattern_suppression_prefix as suppression,
@@ -386,6 +387,9 @@ fn parse(
             } else {
                 cached_line::LEN
             };
+            if chain && zero != cached_edge::ZERO_VALUE {
+                return Ok(Operand::Unresolved);
+            }
             if (!chain && body_len != expected_len) || zero != cached_edge::ZERO_VALUE {
                 return Err(CodecError::malformed(
                     "Inventor pattern line selection prefix is invalid",
@@ -453,13 +457,9 @@ fn parse(
 fn chain_segments(selection_form: u32, body_len: usize) -> Option<u32> {
     let extra = usize::try_from(selection_form.checked_sub(1)?)
         .ok()?
-        .checked_mul(CHAIN_ENTRY_LEN)?;
+        .checked_mul(chain_entry::LEN)?;
     (body_len == cached_line::LEN.checked_add(extra)?).then_some(selection_form)
 }
-
-/// Length of a cached line entry after the first: `zero:u16`, `curve_form:u32`, origin and span.
-const CHAIN_ENTRY_LEN: usize =
-    std::mem::size_of::<u16>() + std::mem::size_of::<u32>() + 2 * 3 * std::mem::size_of::<f64>();
 
 fn is_straight_chain(entries: &[(Vector3, Vector3)]) -> bool {
     let norm =
@@ -511,7 +511,7 @@ fn operand_length(version: u8, type_id: [u8; 16], operand: &Operand) -> Option<u
         Operand::Line { segments, .. } => {
             let extra = usize::try_from(segments.checked_sub(1)?)
                 .ok()?
-                .checked_mul(CHAIN_ENTRY_LEN)?;
+                .checked_mul(chain_entry::LEN)?;
             prefix
                 + extra
                 + if type_id == EDGE_DIRECTION_TYPE {

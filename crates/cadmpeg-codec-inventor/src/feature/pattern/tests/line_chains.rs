@@ -169,3 +169,55 @@ fn chain_segments_survive_the_native_record_round_trip() {
     let wire = json::to_value(&single).expect("serializable");
     assert!(wire.get("segments").is_none());
 }
+
+#[test]
+fn a_chain_with_a_bad_first_entry_value_is_unresolved_not_an_error() {
+    let entries = [
+        ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        ([1.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+    ];
+    let mut bytes = chain(19, &entries);
+    let header = content_at(2, 19, &[]).len();
+    bytes[header + 16] = 1;
+    assert!(matches!(
+        with_bytes(&bytes, |ctx, source| parse(
+            ctx,
+            LINE_DIRECTION_TYPE,
+            source,
+            19
+        )),
+        Ok(Operand::Unresolved)
+    ));
+    let mut single = chain(19, &entries[..1]);
+    single[header + 16] = 1;
+    assert!(with_bytes(&single, |ctx, source| parse(
+        ctx,
+        LINE_DIRECTION_TYPE,
+        source,
+        19
+    ))
+    .is_err());
+}
+
+#[test]
+fn one_entry_takes_the_single_line_path() {
+    let operand = parse_chain(19, &[([0.0, 0.0, 0.0], [0.0, 4.0, 0.0])]);
+    assert!(matches!(
+        operand,
+        Operand::Line { segments: 1, span, .. } if span == Vector3::new(0.0, 4.0, 0.0)
+    ));
+}
+
+#[test]
+fn chain_joins_and_angles_are_accepted_within_their_tolerances() {
+    let first = ([0.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+    for (second, accepted) in [
+        (([2.0, 5.0e-10, 0.0], [2.0, 0.0, 0.0]), true),
+        (([2.0, 0.0, 0.0], [2.0, 1.0e-9, 0.0]), true),
+        (([2.0, 2.0e-9, 0.0], [2.0, 0.0, 0.0]), false),
+        (([2.0, 0.0, 0.0], [2.0, 5.0e-9, 0.0]), false),
+    ] {
+        let straight = matches!(parse_chain(19, &[first, second]), Operand::Line { .. });
+        assert_eq!(straight, accepted);
+    }
+}
