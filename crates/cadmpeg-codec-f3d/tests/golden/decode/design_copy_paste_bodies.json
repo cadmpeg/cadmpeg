@@ -1541,40 +1541,6 @@
           "kind": "namespaced",
           "value": {
             "namespace": "f3d",
-            "code": "sketch.curve-record-undecoded",
-            "kind": "geometry_not_transferred"
-          }
-        },
-        "severity": "warning",
-        "message": "Sketch curve record 1500 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity",
-        "provenance": {
-          "format": "f3d",
-          "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
-          "offset": 3278
-        }
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "namespace": "f3d",
-            "code": "sketch.curve-record-undecoded",
-            "kind": "geometry_not_transferred"
-          }
-        },
-        "severity": "warning",
-        "message": "Sketch curve record 1700 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity",
-        "provenance": {
-          "format": "f3d",
-          "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
-          "offset": 3347
-        }
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "namespace": "f3d",
             "code": "feature.body-history-unread",
             "kind": "feature_history_retained"
           }
@@ -1635,13 +1601,12 @@
           "kind": "namespaced",
           "value": {
             "namespace": "decode",
-            "code": "record.unreadable",
-            "kind": "decode_diagnostic",
-            "strict_floor": "error"
+            "code": "record.undecoded",
+            "kind": "decode_diagnostic"
           }
         },
-        "severity": "error",
-        "message": "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=3278 length=36 record=f3d:source:part#5178e2ffdaf0fe43a906d9a47c59fde25c1e25f892b1c14bd3f74c44dfdaf9fd: malformed container: f3d/sketch.curve-record-undecoded: Sketch curve record 1500 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity; dropped=[]",
+        "severity": "warning",
+        "message": "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=3278 length=36 record=f3d:source:part#5178e2ffdaf0fe43a906d9a47c59fde25c1e25f892b1c14bd3f74c44dfdaf9fd: malformed container: Sketch curve record 1500 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity; dropped=[]",
         "provenance": {
           "format": "f3d",
           "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
@@ -1654,13 +1619,12 @@
           "kind": "namespaced",
           "value": {
             "namespace": "decode",
-            "code": "record.unreadable",
-            "kind": "decode_diagnostic",
-            "strict_floor": "error"
+            "code": "record.undecoded",
+            "kind": "decode_diagnostic"
           }
         },
-        "severity": "error",
-        "message": "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=3347 length=50 record=f3d:source:part#5af6ce8eb2e91eb96e2e6362540e5bed053c6fe4626be77ddfb0f8f13faf6c1b: malformed container: f3d/sketch.curve-record-undecoded: Sketch curve record 1700 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity; dropped=[]",
+        "severity": "warning",
+        "message": "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=3347 length=50 record=f3d:source:part#5af6ce8eb2e91eb96e2e6362540e5bed053c6fe4626be77ddfb0f8f13faf6c1b: malformed container: Sketch curve record 1700 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity; dropped=[]",
         "provenance": {
           "format": "f3d",
           "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",

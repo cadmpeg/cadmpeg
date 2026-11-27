@@ -1093,27 +1093,25 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
+            "code": "record.undecoded",
             "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
+            "namespace": "decode"
           }
         },
         "message": "record catia:standard:face#0 given up: catia/topology.boundary-graph-not-emitted: the curve support table is absent or empty; dropped=[]",
-        "severity": "error"
+        "severity": "warning"
       },
       {
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "record.unreadable",
+            "code": "record.undecoded",
             "kind": "decode_diagnostic",
-            "namespace": "decode",
-            "strict_floor": "error"
+            "namespace": "decode"
           }
         },
         "message": "record catia:standard:face#1 given up: catia/topology.boundary-graph-not-emitted: the curve support table is absent or empty; dropped=[]",
-        "severity": "error"
+        "severity": "warning"
       }
     ],
     "notes": [
