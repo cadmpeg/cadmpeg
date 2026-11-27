@@ -2725,11 +2725,13 @@ pub(crate) fn project_geometry(
 
     let (structure_projection, placement_rejections) = super::structure::project(
         ir,
-        directory,
-        parameters,
-        trailing_pointer_analysis,
-        global,
-        limits,
+        super::structure::ProjectInputs {
+            directory,
+            parameters,
+            trailing_pointer_analysis,
+            global,
+            limits,
+        },
         ctx,
         &mut sequences,
     )?;

@@ -1301,6 +1301,7 @@ pub(crate) fn limit_term_use(primary: &cadmpeg_parasolid::records::PrimaryRecord
 /// # Errors
 ///
 /// Returns an error when the node sequence's embedded schema does not read.
+#[cfg(test)]
 pub(crate) fn stream_term_use_records(
     stream: &[u8],
     layout: ChartPointLayout,

@@ -408,6 +408,7 @@ fn referenced_value_xmts(bytes: &[u8], primary: Option<&PrimaryRecords<'_>>) -> 
 }
 
 /// Decode counted type-99 attribute field-name records.
+#[cfg(test)]
 pub(crate) fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
     field_names_records_in(bytes, terminated_nodes(bytes).as_ref())
 }
@@ -456,6 +457,7 @@ fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord
 }
 
 /// Decode framed type-81 entity/attribute-list records.
+#[cfg(test)]
 pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
     entity_51_records_in(bytes, terminated_nodes(bytes).as_ref())
 }
@@ -691,6 +693,7 @@ fn attribute_identifiers(bytes: &[u8]) -> BTreeMap<u32, Option<AttributeIdentifi
 ///
 /// Candidate field codes overlap, but codes are 0 through 10 and a type-80 tag
 /// is `00 50`, so a field-code check stops before the next candidate's tag.
+#[cfg(test)]
 pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
     attribute_definitions_in(bytes, terminated_nodes(bytes).as_ref())
 }

@@ -1315,16 +1315,24 @@ pub(super) fn emit_topology(
             .and_then(Node::face_fields)
             .is_some_and(|fields| fields.loop_xmt.is_none());
         if loops.is_empty() && !boundary_failed && has_null_loop_ref {
-            loops = whole_sphere_pole_loops(
-                ir,
-                annotations,
-                &scope,
-                source_stream,
-                face_node,
-                &pending.id,
-                &pending.surface,
-                &surface_indices,
-            )?;
+            if let Some(sphere) = surface_indices
+                .get(&pending.surface)
+                .and_then(|&index| ir.geometry.surfaces[index].geometry.solved())
+                .and_then(|solved| match solved {
+                    SolvedSurfaceGeometry::Sphere(sphere) => Some(*sphere),
+                    _ => None,
+                })
+            {
+                loops = whole_sphere_pole_loops(
+                    ir,
+                    annotations,
+                    &scope,
+                    source_stream,
+                    face_node,
+                    &pending.id,
+                    &sphere,
+                )?;
+            }
         }
 
         let partial = boundary_failed
@@ -1678,20 +1686,9 @@ fn whole_sphere_pole_loops(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     node: Option<&Node>,
     face: &FaceId,
-    surface: &SurfaceId,
-    surface_indices: &std::collections::HashMap<SurfaceId, usize>,
+    sphere: &cadmpeg_ir::geometry::analytic::SphereSurface,
 ) -> Result<Vec<LoopId>, CodecError> {
     let Some(node) = node else {
-        return Ok(Vec::new());
-    };
-    let Some(sphere) = surface_indices
-        .get(surface)
-        .and_then(|&index| ir.geometry.surfaces[index].geometry.solved())
-        .and_then(|solved| match solved {
-            SolvedSurfaceGeometry::Sphere(sphere) => Some(sphere),
-            _ => None,
-        })
-    else {
         return Ok(Vec::new());
     };
     let center = sphere.center().get();
