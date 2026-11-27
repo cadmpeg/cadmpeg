@@ -836,8 +836,8 @@ that bounds the edge.
 The values at offsets 296, 324, 380, 408, 832, 860 and 888 are variable
 objects of the flange, each a `Double Value Object` that holds the value of the
 flange. A flange variable follows the document variable of the same name
-(§10.1) when one `Assoc subsystem Standard Relation implementation` object of
-161 bytes relates them. The `u32` at object offset 99
+(§10.1) when the two are related by one `Assoc subsystem Standard
+Relation implementation` object of 161 bytes. The `u32` at object offset 99
 is the identifier of the flange object. The `u32` at object offset 127 is
 the identifier of the document variable object (§10.1). A variable that has a
 relation follows the document variable and holds its value. A variable that
