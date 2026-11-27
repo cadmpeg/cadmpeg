@@ -132,12 +132,9 @@ fn a_source_whose_design_intent_was_contained_regenerates_instead_of_patching() 
     let contained = decode(design_archive());
     let edited = moved_first_point(&contained);
     inject_failure(malformed_design);
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &edited,
         Some(contained.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "design intent was not decoded",
     );
 }

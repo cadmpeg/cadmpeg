@@ -541,7 +541,7 @@ fn check_chains(
         }
     }
     match crate::validate::state_chain_refusal(max_chain_depth, deepest) {
-        Some(refusal) => Err(refusal),
+        Some(refusal) => Err(CodecError::ResourceLimit(refusal)),
         None => Ok(()),
     }
 }

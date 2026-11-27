@@ -2,6 +2,7 @@
 
 use std::f64::consts::TAU;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, EllipseCurve, LineCurve};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -11,6 +12,11 @@ use cadmpeg_ir::topology::{Edge, EdgeCarrier};
 use cadmpeg_test_support::solids::closed_edge;
 
 use super::super::closed_edge_traversal;
+
+fn desktop_context() -> DecodeContext<'static> {
+    let arena = Box::leak(Box::new(DecodeArena::new()));
+    DecodeContext::new(arena, &DecodePolicy::default(), DecodeDepth::Full)
+}
 
 fn solved(geometry: SolvedCurveGeometry) -> CurveGeometry {
     CurveGeometry::Solved(geometry)
@@ -55,13 +61,13 @@ fn square_loop(periodic: bool) -> CurveGeometry {
 }
 
 fn traversal(edge: &Edge, carrier: &CurveGeometry, vertex: Point3) -> Option<[f64; 2]> {
-    closed_edge_traversal(edge, carrier, vertex, 0.0).ok()
+    closed_edge_traversal(edge, carrier, vertex, 0.0, &desktop_context()).ok()
 }
 
 fn assert_refused(edge: &Edge, carrier: &CurveGeometry, vertex: Point3) {
     assert!(
         matches!(
-            closed_edge_traversal(edge, carrier, vertex, 0.0),
+            closed_edge_traversal(edge, carrier, vertex, 0.0, &desktop_context()),
             Err(CodecError::NotImplemented(_))
         ),
         "an edge with no closed traversal is refused"
@@ -134,7 +140,8 @@ fn edge_tolerance_admits_a_vertex_near_the_domain_start() {
     let vertex = Point3::new(10.0, 0.001, 0.0);
     assert_refused(&edge, &circle(), vertex);
     assert_eq!(
-        closed_edge_traversal(&edge, &circle(), vertex, 0.01).expect("the circle evaluates"),
+        closed_edge_traversal(&edge, &circle(), vertex, 0.01, &desktop_context())
+            .expect("the circle evaluates"),
         [0.0, TAU]
     );
 }

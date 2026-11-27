@@ -7,7 +7,7 @@ use std::io::Cursor;
 use std::num::NonZeroI8;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, MissingStateForm};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, MissingStateForm};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
@@ -206,10 +206,7 @@ fn write_bytes(ir: &CadIr) -> (ExportReport, CadIr, Vec<u8>) {
 fn write_bytes_as(ir: &CadIr, missing_states: MissingStateForm) -> (ExportReport, CadIr, Vec<u8>) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(
-            EncodeInput::new(ir, None).with_missing_states(missing_states),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(ir, None).with_missing_states(missing_states))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");
     let decoded = F3dCodec
@@ -1435,12 +1432,15 @@ fn a_base_feature_design_checks_a_body_visibility_before_it_rekeys_the_bodies() 
         .unwrap()];
     let mut bytes = Cursor::new(Vec::new());
     super::super::attempt(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
-        false,
-        true,
-        MissingStateForm::GeometryTrue,
-        &super::Fallback::default(),
-        &super::super::reduce::DroppedRecords::default(),
+        &super::super::AttemptForm {
+            write_design: false,
+            write_neutral: true,
+            missing_states: MissingStateForm::GeometryTrue,
+            fallback: &super::Fallback::default(),
+            dropped: &super::super::reduce::DroppedRecords::default(),
+        },
         &mut bytes,
     )
     .expect("the Base Feature design is written with the native visibility");

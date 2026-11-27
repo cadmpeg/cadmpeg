@@ -3,7 +3,6 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
 
@@ -77,7 +76,7 @@ pub(crate) fn assert_revision_surface_round_trip(smbh: Vec<u8>, expected_kind: &
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less revision surface encode");
     let round_trip = F3dCodec
@@ -142,7 +141,13 @@ pub(crate) fn with_manifest_version(archive: &[u8], version: &str) -> Vec<u8> {
         }
         let payload = if crate::zip_write::is_zstd_member(&mut source, index).unwrap() {
             let mut entry = source.by_index_raw(index).unwrap();
-            crate::zip_write::expand_zstd_member(&mut entry, &name, archive_len).unwrap()
+            crate::zip_write::expand_zstd_member(
+                &mut entry,
+                &name,
+                archive_len,
+                cadmpeg_core::decode::ResourceLimits::default(),
+            )
+            .unwrap()
         } else {
             let mut payload = Vec::new();
             source

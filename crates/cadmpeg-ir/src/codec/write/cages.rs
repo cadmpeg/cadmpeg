@@ -13,6 +13,7 @@ use std::collections::BTreeSet;
 
 use crate::document::{CadIr, Topology};
 use crate::ids::{BodyId, RegionId, ShellId};
+use crate::products::RepresentationContent;
 use crate::topology::ShellMember;
 
 /// The shells whose members are subdivision cages only and that no face
@@ -106,11 +107,24 @@ pub fn remove_cage_bodies(ir: &mut CadIr) -> Vec<BodyId> {
         .regions
         .retain(|region| !regions.contains(&region.id));
     geometry.shells.retain(|shell| !shells.contains(&shell.id));
+    forget_bodies(ir, &removed);
+    bodies
+}
+
+/// Removes each reference to a body of `removed` from a product definition,
+/// its instances' bodies and representations, a design configuration, and a
+/// design scope's current states and unproduced bodies.
+pub(super) fn forget_bodies(ir: &mut CadIr, removed: &BTreeSet<&BodyId>) {
     let kept = |body: &BodyId| !removed.contains(body);
     for definition in &mut ir.model.product_definitions {
         definition.bodies.retain(kept);
         for instance in &mut definition.instance_bodies {
             instance.bodies.retain(kept);
+        }
+        for representation in &mut definition.representations {
+            if let RepresentationContent::Bodies(bodies) = &mut representation.content {
+                bodies.retain(kept);
+            }
         }
     }
     for configuration in &mut ir.model.configurations {
@@ -124,7 +138,6 @@ pub fn remove_cage_bodies(ir: &mut CadIr) -> Vec<BodyId> {
         }
         scope.unproduced.retain(kept);
     }
-    bodies
 }
 
 /// What a loss that names omitted subdivision cages appends to name

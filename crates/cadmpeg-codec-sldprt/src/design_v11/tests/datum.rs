@@ -85,8 +85,12 @@ fn part() -> (CadIr, SldprtNative) {
             ("moRefPlane_c", "Plane5", 37),
         ],
     );
-    let native =
-        SldprtNative::load(ir.native.namespace("sldprt").unwrap(), ir.tolerances.linear).unwrap();
+    let native = SldprtNative::load_under(
+        ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
     let plane1 = ir
         .model
         .features
