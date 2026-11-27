@@ -370,11 +370,7 @@ pub(crate) fn restate(
         }
         out.rows.push(restated);
     }
-    let mut ordinal = rows
-        .iter()
-        .map(|row| row.ordinal.saturating_add(1))
-        .max()
-        .unwrap_or(0);
+    let mut added = Vec::new();
     for record in &design.configurations {
         if held.contains(&record.id) {
             continue;
@@ -388,7 +384,7 @@ pub(crate) fn restate(
         }
         let mut row = LegacyConfiguration {
             id: record.id.clone(),
-            ordinal,
+            ordinal: 0,
             active: false,
             source_index: None,
             name: Some(record.name.clone()),
@@ -400,7 +396,6 @@ pub(crate) fn restate(
             bodies: None,
             native_ref: record.native_ref.clone(),
         };
-        ordinal = ordinal.saturating_add(1);
         let input = Scoped {
             scope: &record.scope,
             features: &features,
@@ -409,10 +404,11 @@ pub(crate) fn restate(
             active: &active,
         };
         overlay(&mut row, record, &input, &mut out.unstated);
-        out.rows.push(row);
+        added.push(row);
     }
     out.rows
         .sort_by(|left, right| (left.ordinal, &left.id).cmp(&(right.ordinal, &right.id)));
+    out.rows.extend(added);
     for (at, row) in (0_u32..).zip(&mut out.rows) {
         row.ordinal = at;
     }
