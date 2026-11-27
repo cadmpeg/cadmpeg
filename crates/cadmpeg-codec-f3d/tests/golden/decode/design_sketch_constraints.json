@@ -628,7 +628,15 @@
               ]
             }
           },
-          "native_options": {},
+          "native_options": {
+            "f3d:instance_name": {
+              "kind": "text",
+              "value": {
+                "kind": "literal",
+                "value": "Linear Dimension-1"
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-companion#4070"
         },
@@ -679,7 +687,15 @@
               "values": []
             }
           },
-          "native_options": {},
+          "native_options": {
+            "f3d:native_state": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 16
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#33"
         },
@@ -703,7 +719,15 @@
               "values": []
             }
           },
-          "native_options": {},
+          "native_options": {
+            "f3d:native_state": {
+              "kind": "integer",
+              "value": {
+                "kind": "literal",
+                "value": 4
+              }
+            }
+          },
           "source_settings": {},
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-relation#44"
         }
@@ -2410,6 +2434,42 @@
         },
         "severity": "warning",
         "message": "1 sketch dimension(s) retain native operands because no unique neutral dimension was resolved."
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "design.sketch-relation-native",
+            "kind": "decode_diagnostic"
+          }
+        },
+        "severity": "warning",
+        "message": "sketch relation f3d:model:sketch-constraint#dimension:59:52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat120112:recipe-group has no typed relation of its operands and value; it states its native kind"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "design.sketch-relation-native",
+            "kind": "decode_diagnostic"
+          }
+        },
+        "severity": "warning",
+        "message": "sketch relation f3d:model:sketch-constraint#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@33 has no typed relation of its operands and value; it states its native kind"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "design.sketch-relation-native",
+            "kind": "decode_diagnostic"
+          }
+        },
+        "severity": "warning",
+        "message": "sketch relation f3d:model:sketch-constraint#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@44 has no typed relation of its operands and value; it states its native kind"
       }
     ],
     "notes": [
