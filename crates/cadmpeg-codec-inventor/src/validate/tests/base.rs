@@ -11,9 +11,7 @@ use crate::feature::history_states::{
     Binding, FeatureHistoryState, StateRef, UnboundReason, BASE_TAG, DERIVED_TAG, NATIVE_BASE_KIND,
     SPLIT_TAG,
 };
-use crate::test_support::base_envelope::{
-    decoded, derived_at_version, state_model, DERIVED_RESULT_KEY, RESULT_KEY,
-};
+use crate::test_support::base_envelope::{decoded, derived_at_version, state_model, RESULT_KEY};
 use crate::InventorCodec;
 fn bound(ir: &CadIr, key: i64) -> Vec<FeatureHistoryState> {
     let namespace = ir.native.namespace("inventor").expect("native namespace");
@@ -124,8 +122,8 @@ fn validation_accepts_a_derived_result_only_on_a_body_creating_state() {
     let (design, base) = derived_at_version(false, 19);
     let ir = decoded(&design, &base).into_parts().0;
     assert!(!ir.geometry.bodies.is_empty());
-    // The result link of the derived fixture has entity key DERIVED_RESULT_KEY.
-    let key = DERIVED_RESULT_KEY;
+    // The derived fixture's result link has the result key of the Base fixture.
+    let key = RESULT_KEY;
     // The states are recorded with the kind of their own feature.
     let derived = |states: &mut Vec<FeatureHistoryState>| {
         for state in states.iter_mut() {
