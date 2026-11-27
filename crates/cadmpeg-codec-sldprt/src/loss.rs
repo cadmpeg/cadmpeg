@@ -600,7 +600,7 @@ pub(crate) enum SldprtLossCode {
     DesignConfigurationStateUnplaced,
     /// Configurations that are not active state no suppression of their
     /// own: the decoder reads one suppression per feature, from the feature
-    /// tree, which every configuration shares (DI-97).
+    /// tree, which every configuration shares (DI-110).
     DesignConfigurationSuppressionUnread,
     /// Features whose definition in a configuration that is not active
     /// differs from the active configuration's state no definition override:

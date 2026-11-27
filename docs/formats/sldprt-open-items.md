@@ -929,7 +929,7 @@ resolve a seed feature?
 
 **Note.** Each primary cause retains its unresolved extent and decode loss until its ownership and geometry checks succeed.
 
-### DI-97. Suppression of a feature in one configuration
+### DI-110. Suppression of a feature in one configuration
 
 **Question.** Which stored field states that a feature is suppressed in one configuration and built in another?
 
