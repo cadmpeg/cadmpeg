@@ -382,7 +382,7 @@ fn chordal_fillet_sets_pair_lengths_and_weights_by_explicit_owner() {
 }
 
 fn treatment_group(record_index: u32, member: u32) -> DesignConstructionOperandGroup {
-    cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
         "id": format!("{STREAM}:construction-operand-group#{record_index}"),
         "scope_record_index": 90,
         "scope_reference_ordinal": 0,
@@ -415,7 +415,7 @@ fn treatment_group(record_index: u32, member: u32) -> DesignConstructionOperandG
 fn transition_identity(record_index: u32, group_record_index: u32) -> DesignEdgeIdentityOperand {
     let transition = [101, 102, 103, 104, 105];
     let identity: DesignEdgeIdentityOperand =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "id": format!("{STREAM}:edge-identity#{record_index}"),
             "scope_record_index": 90,
             "group_record_index": group_record_index,
@@ -432,7 +432,7 @@ fn transition_identity(record_index: u32, group_record_index: u32) -> DesignEdge
             "context_id_offset": 117,
             "transition_edge_candidates": transition,
             "treatment_radius_candidates": transition
-                .map(|edge| serde_json::json!({ "edge_slot": edge, "radius": 3.0 })),
+                .map(|edge| cadmpeg_core::json!({ "edge_slot": edge, "radius": 3.0 })),
         }))
         .expect("edge identity");
     let mut draft = identity.into_draft();

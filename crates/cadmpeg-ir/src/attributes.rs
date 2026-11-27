@@ -64,7 +64,7 @@ pub enum AttributeTarget {
     /// Attribute is owned by an occurrence.
     Occurrence(OccurrenceId),
     /// Attribute is owned by a tessellation, by its id.
-    Tessellation(String),
+    Tessellation(crate::tessellation::TessellationId),
     /// Attribute is owned by a PMI annotation.
     Pmi(PmiId),
     /// Attribute is owned by a semantic annotation.
@@ -83,7 +83,7 @@ pub enum AttributeTarget {
         /// The arena's field name.
         arena: NonBlankString,
         /// The record's id.
-        id: String,
+        id: crate::ids::Identity,
     },
 }
 
@@ -245,13 +245,14 @@ mod tests {
         let target = AttributeTarget::Configuration(
             crate::features::ConfigurationId::mint("test:design:configuration#large").unwrap(),
         );
-        let wire = serde_json::json!({"kind": "configuration", "value": "test:design:configuration#large"});
+        let wire = cadmpeg_core::json!({"kind": "configuration", "value": "test:design:configuration#large"});
         assert_eq!(json::to_value(&target).unwrap(), wire);
         assert_eq!(json::from_value::<AttributeTarget>(wire).unwrap(), target);
         let value = super::AttributeValue::Parameter(
             crate::features::ParameterId::mint("test:design:parameter#mass").unwrap(),
         );
-        let wire = serde_json::json!({"kind": "parameter", "value": "test:design:parameter#mass"});
+        let wire =
+            cadmpeg_core::json!({"kind": "parameter", "value": "test:design:parameter#mass"});
         assert_eq!(json::to_value(&value).unwrap(), wire);
         assert_eq!(
             json::from_value::<super::AttributeValue>(wire).unwrap(),

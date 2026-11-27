@@ -2422,7 +2422,7 @@ mod printable_value_wire_tests {
 
     #[test]
     fn object_record_requires_identity_and_its_offset() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "record", "object_id": 1, "object_id_source_offset": 10,
             "section_ordinal": 0, "record_ordinal": 0, "section_offset": 0,
             "byte_len": 1, "sha256": "d04b98f48e8f8bcc15c6ae5ac050801cd6dcfd428fb5f9e65c4e16e7807340fa", "source_entry": "entry", "source_offset": 20

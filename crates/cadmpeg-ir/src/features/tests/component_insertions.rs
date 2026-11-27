@@ -12,19 +12,19 @@ fn component_insertions_round_trip_native_partial_and_complete_membership() {
     let cases = [
         (
             InsertedComponents::native("fixture:scope#10".into()).unwrap(),
-            serde_json::json!({"kind":"native","native":"fixture:scope#10"}),
+            cadmpeg_core::json!({"kind":"native","native":"fixture:scope#10"}),
             false,
             0,
         ),
         (
             InsertedComponents::partial(vec![first.clone()], "fixture:scope#10".into()).unwrap(),
-            serde_json::json!({"kind":"partial","native":"fixture:scope#10","occurrences":["fixture:model:occurrence#1"]}),
+            cadmpeg_core::json!({"kind":"partial","native":"fixture:scope#10","occurrences":["fixture:model:occurrence#1"]}),
             false,
             1,
         ),
         (
             InsertedComponents::resolved(vec![second, first], "fixture:scope#10".into()).unwrap(),
-            serde_json::json!({"kind":"resolved","native":"fixture:scope#10","occurrences":["fixture:model:occurrence#2","fixture:model:occurrence#1"]}),
+            cadmpeg_core::json!({"kind":"resolved","native":"fixture:scope#10","occurrences":["fixture:model:occurrence#2","fixture:model:occurrence#1"]}),
             true,
             2,
         ),
@@ -38,7 +38,7 @@ fn component_insertions_round_trip_native_partial_and_complete_membership() {
         let wire = json::to_value(&definition).unwrap();
         assert_eq!(
             wire,
-            serde_json::json!({"kind":"operation","value":{"kind":"insert_components","value":{"components":expected}}})
+            cadmpeg_core::json!({"kind":"operation","value":{"kind":"insert_components","value":{"components":expected}}})
         );
         assert_eq!(
             json::from_value::<FeatureDefinition>(wire).unwrap(),

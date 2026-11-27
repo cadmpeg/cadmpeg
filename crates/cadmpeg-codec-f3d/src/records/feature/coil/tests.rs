@@ -118,11 +118,11 @@ fn coil_secondary_identity_wire_refuses_a_null_identity() {
         secondary: Option<crate::records::identity::DesignSecondaryIdentity<u64>>,
     }
     for key in ["secondary_identity", "curve_secondary_identity"] {
-        let mut wire = serde_json::json!({});
+        let mut wire = cadmpeg_core::json!({});
         wire[key] = serde_json::Value::Null;
         assert!(json::from_value::<Probe>(wire.clone()).is_err(), "{wire}");
     }
-    let absent: Probe = json::from_value(serde_json::json!({})).unwrap();
+    let absent: Probe = json::from_value(cadmpeg_core::json!({})).unwrap();
     assert!(absent.secondary.is_none());
 }
 
@@ -134,11 +134,11 @@ fn coil_recipe_design_wire_refuses_a_null_design_key() {
         design: Option<crate::records::recipes::ConstructionRecipeDesign<String>>,
     }
     for key in ["design_id", "design_selector"] {
-        let mut wire = serde_json::json!({});
+        let mut wire = cadmpeg_core::json!({});
         wire[key] = serde_json::Value::Null;
         assert!(json::from_value::<Probe>(wire.clone()).is_err(), "{wire}");
     }
-    let absent: Probe = json::from_value(serde_json::json!({})).unwrap();
+    let absent: Probe = json::from_value(cadmpeg_core::json!({})).unwrap();
     assert!(absent.design.is_none());
 }
 

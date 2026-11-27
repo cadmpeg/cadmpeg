@@ -118,9 +118,9 @@ fn changed(value: &Value) -> Value {
     match value {
         Value::Bool(flag) => Value::Bool(!flag),
         Value::Number(number) => match (number.as_u64(), number.as_i64()) {
-            (Some(integer), _) if !number.is_f64() => serde_json::json!(integer + 1),
-            (_, Some(integer)) if !number.is_f64() => serde_json::json!(integer + 1),
-            _ => serde_json::json!(number.as_f64().unwrap() + 1.0),
+            (Some(integer), _) if !number.is_f64() => cadmpeg_core::json!(integer + 1),
+            (_, Some(integer)) if !number.is_f64() => cadmpeg_core::json!(integer + 1),
+            _ => cadmpeg_core::json!(number.as_f64().unwrap() + 1.0),
         },
         other => other.clone(),
     }
@@ -203,8 +203,11 @@ fn run(
     let written = match read_back {
         Some(written) => written,
         None => std::sync::Arc::new(
-            crate::decode::decode_for_read_back(&output)
-                .map_err(|error| format!("{label}: output does not decode: {error}"))?,
+            crate::decode::decode_for_read_back(
+                &output,
+                cadmpeg_core::decode::ResourceLimits::desktop(),
+            )
+            .map_err(|error| format!("{label}: output does not decode: {error}"))?,
         ),
     };
     let read = named(&written.ir().model.features, &job.feature);

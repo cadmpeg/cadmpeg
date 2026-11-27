@@ -14,7 +14,7 @@ fn core() -> Vec<u8> {
     b
 }
 fn wire(bytes: Vec<u8>) -> serde_json::Value {
-    serde_json::json!({"kind":"copy_face","bytes":NativeBytes::from(bytes)})
+    cadmpeg_core::json!({"kind":"copy_face","bytes":NativeBytes::from(bytes)})
 }
 #[test]
 fn face_copy_admits_signed_recipe_and_complete_wire_with_exact_limits() {
@@ -35,7 +35,7 @@ fn face_copy_admits_signed_recipe_and_complete_wire_with_exact_limits() {
     };
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({"id":"nx:feature:core#0","core":value}),
+        cadmpeg_core::json!({"id":"nx:feature:core#0","core":value}),
     );
     for end in 0..bytes.len() {
         assert!(read(&bytes[..end]).is_none(), "prefix {end}");

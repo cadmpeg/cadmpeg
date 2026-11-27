@@ -4533,7 +4533,13 @@ mod tests {
         assert_eq!(decoded.ir().geometry.faces.len(), 1);
         assert_eq!(decoded.ir().geometry.loops.len(), 1);
         assert_eq!(decoded.ir().geometry.coedges.len(), 3);
-        let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            decoded.ir(),
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let original = scan(&body);
         assert_eq!(original.edge_uses.len(), 3);
         let edge = original

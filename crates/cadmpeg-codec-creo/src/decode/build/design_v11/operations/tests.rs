@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::design::construction::FrameValue;
 use cadmpeg_ir::design::dimension::Dimension;
@@ -11,7 +12,7 @@ use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::*;
 

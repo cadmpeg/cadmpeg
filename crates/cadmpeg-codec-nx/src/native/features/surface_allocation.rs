@@ -540,7 +540,7 @@ mod tests {
                 *payload
             );
             let mut bad = value.clone();
-            bad["block_source_offsets"][1] = serde_json::json!(0);
+            bad["block_source_offsets"][1] = cadmpeg_core::json!(0);
             assert!(json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
             let mut bad = value.clone();
             bad["data_blocks"][1] = bad["data_blocks"][0].clone();
@@ -554,10 +554,10 @@ mod tests {
             ] {
                 bad[field].as_array_mut().unwrap().pop();
             }
-            bad["byte_len"] = serde_json::json!(expected_blocks - 1);
+            bad["byte_len"] = cadmpeg_core::json!(expected_blocks - 1);
             assert!(json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
             let mut bad = value.clone();
-            bad["construction_branches"] = serde_json::json!([]);
+            bad["construction_branches"] = cadmpeg_core::json!([]);
             assert!(json::from_value::<FeatureSurfaceConstructionPayload>(bad).is_err());
             if kind == "studio_surface" {
                 let mut bad = value.clone();
@@ -606,15 +606,15 @@ mod tests {
             for (field, value) in [
                 (
                     "data_blocks",
-                    serde_json::json!("nx:om-data-blocks-0:block#29"),
+                    cadmpeg_core::json!("nx:om-data-blocks-0:block#29"),
                 ),
-                ("block_byte_lengths", serde_json::json!(1)),
-                ("block_payload_offsets", serde_json::json!(28)),
-                ("block_source_offsets", serde_json::json!(start + 1)),
+                ("block_byte_lengths", cadmpeg_core::json!(1)),
+                ("block_payload_offsets", cadmpeg_core::json!(28)),
+                ("block_source_offsets", cadmpeg_core::json!(start + 1)),
             ] {
                 surplus[field].as_array_mut().unwrap().push(value);
             }
-            surplus["byte_len"] = serde_json::json!(29);
+            surplus["byte_len"] = cadmpeg_core::json!(29);
             assert!(json::from_value::<FeatureSurfaceConstructionPayload>(surplus.clone()).is_ok());
             namespace
                 .set_arena(ctx, "feature_surface_construction_payloads", &[surplus])
@@ -634,7 +634,7 @@ mod tests {
             }
             let mut shifted = original.clone();
             for offset in shifted["block_source_offsets"].as_array_mut().unwrap() {
-                *offset = serde_json::json!(offset.as_u64().unwrap() + 1);
+                *offset = cadmpeg_core::json!(offset.as_u64().unwrap() + 1);
             }
             namespace
                 .set_arena(ctx, "feature_surface_construction_payloads", &[shifted])

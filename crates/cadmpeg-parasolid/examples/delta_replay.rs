@@ -5,9 +5,10 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::json;
 use cadmpeg_parasolid::deltas::replay::{MainLine, Replay};
 use cadmpeg_parasolid::records::{DeltasRecords, PrimaryRecords};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 /// The variant name of an error's `Debug` form.
 fn kind(error: &impl std::fmt::Debug) -> String {
@@ -40,7 +41,7 @@ fn replay(partition: &[u8], deltas: &[u8]) -> Value {
             return json!({ "error": format!("deltas: {error}"), "error_kind": "DeltasRead" })
         }
     };
-    let end = serde_json::to_value(records.end()).unwrap_or(Value::Null);
+    let end = cadmpeg_core::serde_erase::json::to_value(records.end()).unwrap_or(Value::Null);
     let line = match MainLine::read(&records) {
         Ok(line) => line,
         Err(error) => {

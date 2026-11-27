@@ -25,10 +25,10 @@ pub(super) fn check_semantic_annotations(
         let native = |target: &str| {
             super::annotations_native::native_link_resolves(ir, |id| all_ids.contains(id), target)
         };
-        let mut refs_valid = native(&annotation.object) && native(&annotation.native_ref);
+        let mut refs_valid = native(annotation.object.as_str()) && native(&annotation.native_ref);
         if refs_valid {
             for id in &annotation.assets {
-                if !native(id) {
+                if !native(id.as_str()) {
                     refs_valid = false;
                     break;
                 }
@@ -144,7 +144,7 @@ mod tests {
             "test:model:semantic-annotation#second",
         ] {
             ir.model.semantic_annotations.push(
-                json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": id, "object": "test:source:unknown#record", "kind": "text",
                     "runtime_type": "Test", "order": 7, "native_ref": "test:source:unknown#record",
                     "text": [], "references": {}, "reference_anchors": [], "text_style": {},

@@ -239,24 +239,24 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
         value["payload"]["decode_digest"],
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
-    assert_eq!(value["payload"]["file_digests"], serde_json::json!({}));
+    assert_eq!(value["payload"]["file_digests"], cadmpeg_core::json!({}));
     assert_eq!(
         value["payload"]["content_digest"],
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
     assert_eq!(
         value["payload"]["codec_digests"],
-        serde_json::json!({
+        cadmpeg_core::json!({
             "sldprt_native_history_sha256":
                 "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         })
     );
     assert_eq!(
         value["payload"]["unrepresented"],
-        serde_json::json!(["model", "design"])
+        cadmpeg_core::json!(["model", "design"])
     );
     assert_eq!(
         value["payload"]["retained_records"][1]["untyped"],
-        serde_json::json!(["model"])
+        cadmpeg_core::json!(["model"])
     );
 }

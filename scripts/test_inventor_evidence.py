@@ -425,8 +425,8 @@ class EvidenceTest(unittest.TestCase):
             document = evidence.locate_document(path.read_bytes(), 0, 1 << 20)
             result = evidence.cli_sweep(path, document.ordinal, cadmpeg, 30)
         self.assertEqual(len(result["runs"]), 4)
-        # inventor.md states no strict floor (CADIR §3.2), so --no-salvage
-        # admits the synthetic file's losses as salvage does.
+        # The synthetic file's kernel carrier is empty, so the decoder gives
+        # no record up (CADIR §3.3) and --no-salvage admits its losses.
         self.assertTrue(
             all(
                 run["inspect"]["status"] == 0

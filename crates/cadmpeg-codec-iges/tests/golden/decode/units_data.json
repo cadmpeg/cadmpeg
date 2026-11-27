@@ -527,18 +527,6 @@
         "product_occurrences": [],
         "product_properties": [],
         "properties": [],
-        "quarantined_directory_records": [],
-        "quarantined_parameter_records": [
-          {
-            "bytes": "3331362c332c36484c454e4754482c31484d2c313030302c344854494d452c3148532c312c3548504c414e452c3148442c302e303137343533323932353139392020202020202033502020202020203234333239353b2020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020335020202020202033",
-            "cards": 2,
-            "defect": "numeric-crosses-card",
-            "id": "iges:quarantine:parameter#3",
-            "section": "parameter-data",
-            "sequence": 3,
-            "source_offset": 648
-          }
-        ],
         "rectangular_arrays": [],
         "segmented_visibility": [],
         "selected_components": [],
@@ -558,6 +546,12 @@
             ],
             "source_entity": "iges:entity:directory#3",
             "units": []
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "iges:source:part#2ea974184421eb8236b41580ce23c6ce80e5c6db95d702ac9dac2384ea79f58c",
+            "links": []
           }
         ],
         "view_visibility": [],
@@ -654,8 +648,7 @@
           "value": {
             "code": "parameter.data-quarantined",
             "kind": "noncanonical_source_syntax",
-            "namespace": "iges",
-            "strict_floor": "warning"
+            "namespace": "iges"
           }
         },
         "message": "IGES Parameter Data of D3 (P2 through P3) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
@@ -666,6 +659,24 @@
           "tag": "D3:parameter"
         },
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part parameter-data \"D3\" stream=\"\" offset=648 length=161 record=iges:source:part#2ea974184421eb8236b41580ce23c6ce80e5c6db95d702ac9dac2384ea79f58c: malformed container: iges/parameter.data-quarantined: IGES Parameter Data of D3 (P2 through P3) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted; dropped=[]",
+        "provenance": {
+          "format": "iges",
+          "offset": 648,
+          "tag": "parameter-data"
+        },
+        "severity": "error"
       }
     ],
     "notes": [
@@ -702,8 +713,8 @@
         {
           "outcome": {
             "kind": "retained",
-            "note": "quarantined parameter data retained; tokens were not recovered",
-            "target": "iges:quarantine:parameter#3"
+            "note": "quarantined parameter data given up; its part keeps the cards",
+            "target": "iges:source:part#2ea974184421eb8236b41580ce23c6ce80e5c6db95d702ac9dac2384ea79f58c"
           },
           "source": "D3:parameter"
         }
@@ -728,8 +739,21 @@
         "offset": 0,
         "stream": "iges",
         "untyped": []
+      },
+      "iges:source:part#2ea974184421eb8236b41580ce23c6ce80e5c6db95d702ac9dac2384ea79f58c": {
+        "bytes": {
+          "data": "MzE2LDMsNkhMRU5HVEgsMUhNLDEwMDAsNEhUSU1FLDFIUywxLDVIUExBTkUsMUhELDAuMDE3NDUzMjkyNTE5OSAgICAgICAzUCAgICAgIDIKNDMyOTU7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDM=",
+          "kind": "inline"
+        },
+        "offset": 648,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model"
+    ]
   }
 }

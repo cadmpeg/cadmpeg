@@ -1037,7 +1037,6 @@ fn a_write_to_another_format_names_the_solidworks_application_element() {
 #[cfg(all(feature = "f3d", feature = "sldprt"))]
 #[test]
 fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
-    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     for format in ["f3d", "sldprt"] {
         let native = dir.path().join(format!("source.{format}"));
@@ -1110,16 +1109,11 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
                 "--reject-lossy",
             ])
             .assert();
-        // Without its retained part, a SolidWorks document writes a lossy
-        // native skeleton, which `--reject-lossy` refuses before the write.
-        refused_command.failure().stderr(
-            predicate::str::contains("Preserved")
-                .or(predicate::str::contains("source image is unavailable"))
-                .or(predicate::str::contains("read from CADIR"))
-                .or(predicate::str::contains(
-                    "the write's strictness refuses sldprt/writer.native-skeleton-unlaid-runs",
-                )),
-        );
+        // Without its sidecar, each document writes a lossy synthesis, which
+        // `--reject-lossy` refuses before the write.
+        refused_command
+            .failure()
+            .stderr(predicate::str::contains("the write's strictness refuses"));
         assert!(!refused.exists());
     }
 }
@@ -1341,6 +1335,60 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
     assert_ne!(fs::read(&upgraded).unwrap(), original_bytes);
 }
 
+#[test]
+#[cfg(feature = "iges")]
+fn a_same_format_synthesis_prints_why_the_patch_was_declined_once() {
+    let dir = tempdir().unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("cadir:model:point#declined").expect("identity grammar"),
+        cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+            1.0, 2.0, 3.0,
+        ))
+        .expect("a finite position is a point"),
+        None,
+    ));
+    let input = fixture(dir.path(), "point.cadir.json", &ir);
+    let original = dir.path().join("v51.igs");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            original.to_str().unwrap(),
+            "--to",
+            "5.1",
+        ])
+        .assert()
+        .success();
+    let upgraded = dir.path().join("upgraded.igs");
+    let report = dir.path().join("upgraded.report.json");
+    let stderr = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            original.to_str().unwrap(),
+            "-o",
+            upgraded.to_str().unwrap(),
+            "--to",
+            "5.3",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stderr
+        .clone();
+    let stderr = String::from_utf8(stderr).unwrap();
+    let report: serde_json::Value = json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let reason = report["export"]["synthesis_cause"]["reason"]
+        .as_str()
+        .unwrap_or_else(|| panic!("a patch-declined reason: {report}"));
+    assert_eq!(stderr.matches(reason).count(), 1, "{stderr}");
+}
+
 /// A `--to` that names only a format states no dialect, so a same-format
 /// conversion still inherits.
 ///
@@ -1405,7 +1453,7 @@ fn a_to_that_names_only_the_format_still_inherits() {
 fn a_cadir_read_keeps_the_text_of_a_given_up_record_in_the_written_sidecar() {
     let dir = tempdir().unwrap();
     let mut value = json::to_value(unit_cube().expect("unit cube fixture is admitted")).unwrap();
-    value["geometry"]["points"][0]["position"] = serde_json::json!("not a point");
+    value["geometry"]["points"][0]["position"] = cadmpeg_core::json!("not a point");
     let text =
         cadmpeg_ir::hash::finite_json::to_canonical_json_string(&value["geometry"]["points"][0])
             .unwrap();

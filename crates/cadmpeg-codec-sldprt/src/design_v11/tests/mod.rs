@@ -665,8 +665,9 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
             ("moExtrusion_c", "Boss", 7),
         ],
     );
-    let native = crate::native::SldprtNative::load(
+    let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -698,12 +699,12 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
     let sketch = "sldprt:model:sketch#test";
     let entity = |key: &str| format!("sldprt:model:sketch-entity#test:{key}");
     let point = |key: &str, u: f64, v: f64| {
-        serde_json::json!({"id": entity(key), "sketch": sketch, "construction": false,
+        cadmpeg_core::json!({"id": entity(key), "sketch": sketch, "construction": false,
             "native_ref": format!("native:{key}"), "endpoint_refs": [],
             "geometry": {"kind": "point", "position": {"u": u, "v": v}}})
     };
     let line = |key: &str, from: (&str, f64, f64), to: (&str, f64, f64)| {
-        serde_json::json!({"id": entity(key), "sketch": sketch, "construction": false,
+        cadmpeg_core::json!({"id": entity(key), "sketch": sketch, "construction": false,
             "endpoint_refs": [format!("native:{}", from.0), format!("native:{}", to.0)],
             "geometry": {"kind": "line", "start": {"u": from.1, "v": from.2},
                 "end": {"u": to.1, "v": to.2}}})
@@ -722,18 +723,18 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
         let to = corners[(index + 1) % corners.len()];
         entities.push(line(&format!("l{index}"), *from, to));
     }
-    entities.push(serde_json::json!({"id": entity("hole"), "sketch": sketch,
+    entities.push(cadmpeg_core::json!({"id": entity("hole"), "sketch": sketch,
         "construction": false, "endpoint_refs": [],
         "geometry": {"kind": "circle", "center": {"u": 25.0, "v": 15.0}, "radius": 5.0}}));
     ir.model.sketch_entities = json::from_value(serde_json::Value::Array(entities)).unwrap();
-    ir.model.sketches = json::from_value(serde_json::json!([{
+    ir.model.sketches = json::from_value(cadmpeg_core::json!([{
         "id": sketch, "name": "Sketch1",
         "placement": {"kind": "resolved", "frame": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
             "normal": {"x": 0.0, "y": 1.0, "z": 0.0}, "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}}},
         "profiles": []
     }]))
     .unwrap();
-    ir.model.sketch_constraints = json::from_value(serde_json::json!([
+    ir.model.sketch_constraints = json::from_value(cadmpeg_core::json!([
         {"id": "sldprt:model:sketch-constraint#test:0", "sketch": sketch,
             "definition": {"kind": "coincident_loci", "loci": [
                 {"kind": "end", "value": entity("l0")}, {"kind": "start", "value": entity("l1")}]}},
@@ -758,10 +759,10 @@ fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNati
     .unwrap();
     for feature in &mut ir.model.features {
         let definition = if feature.id == sketch_feature {
-            serde_json::json!({"kind": "operation", "value": {"kind": "sketch",
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "sketch",
                 "value": {"sketch": {"kind": "planar", "sketch": sketch}}}})
         } else if feature.id == boss {
-            serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
+            cadmpeg_core::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
                 "profile": {"kind": "planar", "value": {"kind": "feature",
                     "value": sketch_feature.as_str()}},
                 "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
@@ -867,6 +868,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
@@ -1024,6 +1026,7 @@ fn typed_timeline<'a>(
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     (timeline, entries, typed)
@@ -1111,7 +1114,7 @@ fn a_two_sided_extrude_binds_only_the_depth_its_record_lists() {
         .unwrap()
         .id
         .clone();
-    let definition = json::from_value(serde_json::json!({"kind": "operation",
+    let definition = json::from_value(cadmpeg_core::json!({"kind": "operation",
         "value": {"kind": "extrude", "value": {
             "profile": {"kind": "planar", "value": {"kind": "feature",
                 "value": sketch_feature.as_str()}},
@@ -1212,7 +1215,7 @@ fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_unresolved
             for constraint in constraints.as_array_mut().unwrap() {
                 if constraint["id"].as_str().unwrap().ends_with(":1") {
                     constraint["definition"]["parameter"] =
-                        serde_json::json!("sldprt:model:parameter#unlisted");
+                        cadmpeg_core::json!("sldprt:model:parameter#unlisted");
                 }
             }
             ir.model.sketch_constraints = json::from_value(constraints).unwrap();
@@ -1222,7 +1225,7 @@ fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_unresolved
     assert_sketch_unresolved(
         |ir| {
             ir.model.sketch_entities.push(
-                json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": "sldprt:model:sketch-entity#test:text",
                     "sketch": "sldprt:model:sketch#test",
                     "construction": false, "endpoint_refs": [],
@@ -1251,11 +1254,12 @@ fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
         .iter_mut()
         .find(|constraint| constraint["id"].as_str().unwrap().ends_with(":4"))
         .unwrap();
-    hole_constraint["driving"] = serde_json::json!(false);
+    hole_constraint["driving"] = cadmpeg_core::json!(false);
     let hole_parameter = hole_constraint["definition"]["parameter"].clone();
     let mut reference = hole_constraint.clone();
-    reference["id"] = serde_json::json!(format!("{}:reference", reference["id"].as_str().unwrap()));
-    reference["definition"]["parameter"] = serde_json::json!(MINTED);
+    reference["id"] =
+        cadmpeg_core::json!(format!("{}:reference", reference["id"].as_str().unwrap()));
+    reference["definition"]["parameter"] = cadmpeg_core::json!(MINTED);
     constraints_list.push(reference);
     ir.model.sketch_constraints = json::from_value(constraints).unwrap();
     let mut parameters = json::to_value(&ir.model.parameters).unwrap();
@@ -1265,8 +1269,8 @@ fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
         .find(|parameter| parameter["id"] == hole_parameter)
         .unwrap()
         .clone();
-    minted["id"] = serde_json::json!(MINTED);
-    minted["name"] = serde_json::json!("D9");
+    minted["id"] = cadmpeg_core::json!(MINTED);
+    minted["name"] = cadmpeg_core::json!("D9");
     parameters_list.push(minted);
     ir.model.parameters = json::from_value(parameters).unwrap();
     change(&mut ir);
@@ -1421,6 +1425,7 @@ fn members_follow_the_features_they_depend_on() {
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
         },
     );
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
@@ -1435,8 +1440,9 @@ fn members_follow_the_features_they_depend_on() {
 #[test]
 fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let ir = part_with_history(BRACKET, BRACKET_CLASSES);
-    let native = crate::native::SldprtNative::load(
+    let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -1568,6 +1574,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 }
 
 mod configuration_states;
+mod datum;
 mod dimension_curves;
 mod parameters;
 mod pattern;

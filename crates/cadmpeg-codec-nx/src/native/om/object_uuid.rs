@@ -210,7 +210,7 @@ mod tests {
         let value: ObjectUuidValue = serde_json::from_str(json).unwrap();
         assert_eq!(json::to_string(&value).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["records"] = serde_json::json!([]);
+        wire["records"] = cadmpeg_core::json!([]);
         assert!(json::from_value::<ObjectUuidValue>(wire)
             .unwrap_err()
             .to_string()

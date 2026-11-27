@@ -250,7 +250,7 @@ fn unchanged_corner_requires_one_edge_complete_names_and_the_exact_control_branc
 
 #[test]
 fn unplaced_suppressed_and_flat_pattern_features_cannot_supply_an_unchanged_proof() {
-    let mut feature: Feature = json::from_value(serde_json::json!({
+    let mut feature: Feature = json::from_value(cadmpeg_core::json!({
         "id":"test:model:feature#corner", "ordinal":3,
         "suppressed":false, "definition":{"kind": "operation", "value": {"kind": "native", "value": {"kind":"SheetMetalCorner", "parameters": {}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
     .expect("synthetic history feature");

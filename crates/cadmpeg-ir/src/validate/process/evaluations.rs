@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
 use super::records::ProcessRecords;
@@ -21,7 +21,8 @@ use crate::report::check::Finding;
 use crate::validate::design::evaluations::{
     check_position, check_resulting_position, state_chains,
 };
-use crate::validate::design::records::{MemberKey, PositionKey};
+use crate::validate::design::records::{DesignRecords, MemberKey, PositionKey};
+use crate::validate::design::resolved::visit::{visit_states, StateView};
 
 pub(super) fn check_evaluations(
     records: &ProcessRecords<'_>,
@@ -540,7 +541,7 @@ fn check_chains(
         }
     }
     match crate::validate::state_chain_refusal(max_chain_depth, deepest) {
-        Some(refusal) => Err(refusal),
+        Some(refusal) => Err(CodecError::ResourceLimit(refusal)),
         None => Ok(()),
     }
 }
@@ -593,6 +594,25 @@ pub(super) fn check_resolved_states(
         ids,
         |state| setup_of_state(records, state).and_then(|setup| records.scope_of_setup(setup)),
         findings,
+    )
+}
+
+/// Visits the resolved state of each evaluation and each process state of
+/// `ir` with content, as the checks of resolved states resolve it
+/// ([`visit_states`]).
+pub(crate) fn visit_resolved_states(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    visit: &mut dyn FnMut(StateView<'_, '_>) -> Result<(), ResourceLimit>,
+) -> Result<(), ResourceLimit> {
+    let design = DesignRecords::new(ir);
+    let records = ProcessRecords::new(&design);
+    visit_states(
+        ctx,
+        &design,
+        &ModelIndex::build(ir),
+        |state| setup_of_state(&records, state).and_then(|setup| records.scope_of_setup(setup)),
+        visit,
     )
 }
 

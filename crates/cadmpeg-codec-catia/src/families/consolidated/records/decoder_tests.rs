@@ -1597,7 +1597,7 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
 fn class23_scalar_deserialization_requires_nine_values() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
     for count in 0..=11 {
-        let wire = serde_json::json!({"kind": "scalar23", "operands": [1, 2, 3], "values": vec![0.0; count]});
+        let wire = cadmpeg_core::json!({"kind": "scalar23", "operands": [1, 2, 3], "values": vec![0.0; count]});
         let result = json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
         assert_eq!(result.is_ok(), count == 9, "scalar23 {count}");
     }
