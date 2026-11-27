@@ -61,10 +61,9 @@ pub(crate) trait ResultStates {
     /// the listing state is the oldest.
     fn before(
         &self,
-        ctx: &DecodeContext<'_>,
-        source_index: u32,
+        _ctx: &DecodeContext<'_>,
+        _source_index: u32,
     ) -> Result<Rc<StateModel>, CodecError> {
-        let _ = (ctx, source_index);
         Ok(Rc::new(StateModel::Unavailable))
     }
 }
