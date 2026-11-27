@@ -195,11 +195,12 @@ fn the_state_before_a_split_is_an_evaluation_that_carries_its_history_body() {
     assert_eq!(read.design.evaluations, ir.design.evaluations);
 }
 
-/// The state after the last feature is the current state: it has no
-/// evaluation, the decode charges its history body, and a CADIR write names
-/// the body as omitted.
+/// The state after the last feature is the current state, so it has no
+/// evaluation. Where the decoded state differs from the current geometry,
+/// the decode charges its history body and a CADIR write names the body as
+/// omitted.
 #[test]
-fn a_state_the_current_geometry_holds_is_charged_and_stays_omitted() {
+fn a_current_state_that_differs_from_the_current_geometry_is_charged() {
     let mut ir = part(
         vec![extrude("a", 0), extrude("base", 1)],
         vec![history_body("base", 0, false, 9)],
@@ -210,11 +211,45 @@ fn a_state_the_current_geometry_holds_is_charged_and_stays_omitted() {
         panic!("one loss: {losses:?}");
     };
     assert_eq!(loss.code.local_code(), "feature.history-state-unplaced");
+    assert!(
+        loss.message
+            .ends_with("the state differs from the current geometry."),
+        "{}",
+        loss.message
+    );
     let nest = ir.model.history_bodies[0].id.as_str().to_owned();
     assert!(loss.message.contains(&nest), "{}", loss.message);
     let (omitted, _) = write(&ir);
     assert!(
         omitted.iter().any(|message| message.contains(&nest)),
+        "{omitted:?}"
+    );
+}
+
+/// A Base feature whose state is the current geometry record for record
+/// restates its history body through its stored bodies.
+#[test]
+fn a_base_state_the_current_geometry_holds_is_restated_by_its_feature() {
+    let mut ir = part(
+        vec![extrude("a", 0), extrude("base", 1)],
+        vec![history_body("base", 0, false, 7)],
+    );
+    let mut states = states();
+    states.get_mut(&0).expect("state").geometry.bodies = vec![body(7)];
+    let losses = project_part(&mut ir, &states);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert!(ir.design.evaluations.is_empty());
+    let nest = ir.model.history_bodies[0].id.as_str().to_owned();
+    assert_eq!(
+        ir.model
+            .restated()
+            .get(&nest)
+            .map(cadmpeg_ir::design::projection::restated::Restating::by),
+        Some(&Restater::Record("inventor:design:feature#base".to_owned()))
+    );
+    let (omitted, _) = write(&ir);
+    assert!(
+        !omitted.iter().any(|message| message.contains(&nest)),
         "{omitted:?}"
     );
 }

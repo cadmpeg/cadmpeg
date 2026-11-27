@@ -44,8 +44,9 @@ struct Planned {
 }
 
 /// State each decoded history state that holds a history body as the
-/// evaluation of its timeline position, and charge each history body whose
-/// state has no such position.
+/// evaluation of its timeline position, restate the body of a Base feature
+/// whose state is the current geometry by that feature, and charge each
+/// other history body.
 ///
 /// # Errors
 ///
@@ -76,6 +77,7 @@ pub(crate) fn project(
     };
     let current = member_index(&members, &at);
     let mut planned = BTreeMap::<Option<usize>, Planned>::new();
+    let mut held = Vec::new();
     for body in &ir.model.history_bodies {
         let placed = match place(ir, &container, &members, body) {
             Ok(placed) => placed,
@@ -84,19 +86,19 @@ pub(crate) fn project(
                 continue;
             }
         };
-        if placed.index >= current {
-            unplaced.push((
-                body,
-                if placed.index == current {
-                    "the current geometry holds the state"
-                } else {
-                    "the state is after the rollback position"
-                },
-            ));
-            continue;
-        }
         if !states.contains_key(&placed.ordinal) {
             unplaced.push((body, "the state is not decoded"));
+            continue;
+        }
+        if placed.index > current {
+            unplaced.push((body, "the state is after the rollback position"));
+            continue;
+        }
+        if placed.index == current {
+            match &body.produced_by {
+                Some(feature) => held.push((body, feature, placed.ordinal)),
+                None => unplaced.push((body, "the current geometry holds the state")),
+            }
             continue;
         }
         let entry = planned.entry(placed.index).or_insert_with(|| Planned {
@@ -110,11 +112,10 @@ pub(crate) fn project(
             unplaced.push((body, "another history state holds the position"));
         }
     }
-    charge(&unplaced, losses);
-    if planned.is_empty() {
+    if planned.is_empty() && held.is_empty() {
+        charge(&unplaced, losses);
         return Ok(());
     }
-    let mut base = StateBase::Current(at.clone());
     let mut records = match ir.resolved_current_state(&scope, &at) {
         Ok(state) => state.records().clone(),
         Err(error) => {
@@ -123,8 +124,28 @@ pub(crate) fn project(
             )))
         }
     };
-    let mut evaluations = Vec::with_capacity(planned.len());
     let mut restated = Vec::new();
+    // A Base feature whose state is the current state restates its body
+    // through its stored bodies where the decoded state is the current
+    // geometry record for record.
+    for (body, feature, ordinal) in held {
+        let same = states.get(&ordinal).is_some_and(|state| {
+            StateDelta::between(&records, &state.geometry) == StateDelta::default()
+        });
+        let written = ir
+            .design
+            .features
+            .binary_search_by(|item| item.id.cmp(feature))
+            .is_ok();
+        match (same, written) {
+            (true, true) => restated.push((body.id.clone(), feature.as_str().to_owned())),
+            (false, _) => unplaced.push((body, "the state differs from the current geometry")),
+            (true, false) => unplaced.push((body, "the feature has no design record")),
+        }
+    }
+    charge(&unplaced, losses);
+    let mut base = StateBase::Current(at.clone());
+    let mut evaluations = Vec::with_capacity(planned.len());
     for Planned {
         position,
         ordinal,
@@ -138,7 +159,11 @@ pub(crate) fn project(
         ctx.charge_entities(1, "state an Inventor history state")?;
         let id = EvaluationId::mint(format!("inventor:design:evaluation#{ordinal}"))
             .map_err(CodecError::malformed)?;
-        restated.extend(bodies.into_iter().map(|body| (body, id.clone())));
+        restated.extend(
+            bodies
+                .into_iter()
+                .map(|body| (body, id.as_str().to_owned())),
+        );
         evaluations.push(Evaluation {
             id: id.clone(),
             scope: scope.clone(),
@@ -153,12 +178,10 @@ pub(crate) fn project(
     }
     ir.design.evaluations.extend(evaluations);
     ir.design.evaluations.sort_by(|a, b| a.id.cmp(&b.id));
-    for (body, evaluation) in restated {
-        ir.model.restated_mut().record(
-            body.as_str(),
-            Restater::Record(evaluation.as_str().to_owned()),
-            [],
-        );
+    for (body, by) in restated {
+        ir.model
+            .restated_mut()
+            .record(body.as_str(), Restater::Record(by), []);
     }
     Ok(())
 }
