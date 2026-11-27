@@ -63,7 +63,11 @@ fn collection_links_support_both_versions_and_local_reference_forms() {
     }
 }
 
-fn typed_member_collection(version: u32, member_types: [Option<&str>; 2]) -> Vec<u8> {
+fn typed_member_collection(
+    version: u32,
+    targets: [u64; 2],
+    member_types: [Option<&str>; 2],
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend(3u32.to_le_bytes());
     bytes.extend(b"256");
@@ -78,7 +82,7 @@ fn typed_member_collection(version: u32, member_types: [Option<&str>; 2]) -> Vec
         bytes.extend([2, 0, 0, 0, 1, 0]);
     }
     bytes.extend(2u32.to_le_bytes());
-    for (target, member_type) in [5u64, 6].into_iter().zip(member_types) {
+    for (target, member_type) in targets.into_iter().zip(member_types) {
         bytes.push(1);
         bytes.extend(target.to_le_bytes());
         if let Some(member_type) = member_type {
@@ -93,13 +97,14 @@ fn typed_member_collection(version: u32, member_types: [Option<&str>; 2]) -> Vec
 #[test]
 fn version_three_run_references_carry_the_sketch_container_type() {
     let container = super::SKETCH_CONTAINER_TYPE_GUID;
-    let parse = |version, member_types| {
+    let parse_targets = |version, targets, member_types| {
         parse_collection(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            View::over_retained(&typed_member_collection(version, member_types)),
+            View::over_retained(&typed_member_collection(version, targets, member_types)),
             version,
         )
     };
+    let parse = |version, member_types| parse_targets(version, [5, 6], member_types);
     let collection = parse(3, [Some(container), Some(container)]).expect("typed version-3 run");
     assert_eq!(collection.members, [5, 6]);
     assert_eq!(collection.owner, Some(7));
@@ -108,6 +113,7 @@ fn version_three_run_references_carry_the_sketch_container_type() {
     assert!(parse(3, [None, Some(container)]).is_err());
     let other = "11111111-2222-4333-8444-555555555555";
     assert!(parse(3, [Some(other), Some(other)]).is_err());
+    assert!(parse_targets(3, [5, 0], [Some(container), Some(container)]).is_err());
 }
 
 #[test]
