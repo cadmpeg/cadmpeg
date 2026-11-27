@@ -222,9 +222,22 @@ pub(crate) fn project(
             losses,
         );
     }
+    let curves = namespace
+        .arena_as_for_decode::<crate::records::sketch_geometry::SketchCurveIdentity>(
+            ctx,
+            "sketch_curve_identities",
+        )?;
+    let points = namespace.arena_as_for_decode::<crate::records::sketch_geometry::SketchPoint>(
+        ctx,
+        "sketch_points",
+    )?;
     let incidence = sketch::Incidence::new(
-        &namespace.arena_as_for_decode::<sketch::CurveRecord>(ctx, "sketch_curve_identities")?,
-        &namespace.arena_as_for_decode::<sketch::PointRecord>(ctx, "sketch_points")?,
+        curves
+            .iter()
+            .map(|curve| (curve.id.as_str(), curve.record_index)),
+        points
+            .iter()
+            .map(|point| (point.id.as_str(), point.companion().incident_curves)),
     );
     let mut spans = span(&ir.model.product_definitions, &placers, &scopes);
     let mut sketches = sketch::Sketches::default();

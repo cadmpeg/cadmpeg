@@ -485,7 +485,7 @@ fn a_native_dimension_binds_its_parameter_and_a_reference_dimension_binds_a_driv
     list.push(
         cadmpeg_core::json!({"id": constraint("native"), "sketch": SKETCH,
         "definition": {"kind": "native", "native_kind": "Linear Dimension",
-            "native_properties": {}, "entities": [entity("line")],
+            "native_state": 5, "native_properties": {}, "entities": [entity("line")],
             "parameter": parameter_id("width"), "operands": []}}),
     );
     list.push(
@@ -527,6 +527,27 @@ fn a_native_dimension_binds_its_parameter_and_a_reference_dimension_binds_a_driv
         F3dLossCode::DesignSketchDimensionUnbound,
         &constraint("native")
     ));
+    assert!(names(
+        &losses,
+        F3dLossCode::DesignSketchRelationNative,
+        &constraint("native")
+    ));
+    let native = out
+        .constraints
+        .iter()
+        .find(|candidate| candidate.id.as_str() == constraint("native"))
+        .unwrap();
+    assert_eq!(
+        native
+            .native_options
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.clone()))
+            .collect::<Vec<_>>(),
+        [(
+            "f3d:native_state",
+            cadmpeg_ir::design::options::NativeOption::Integer(Dimension::Literal(5))
+        )]
+    );
 
     let gap = ParameterId::mint(parameter_id("gap")).unwrap();
     let SketchRelation::Distance { value, .. } = relation("gap") else {
@@ -739,8 +760,10 @@ fn a_relation_on_the_start_of_a_circle_states_the_circle_and_is_charged() {
 }
 
 /// The point records of [`model`] with native records, a construction arc
-/// about `p0` from `p1`, and a point `stray` at `p0` that no curve names.
-fn stored_points_model() -> (Model, super::Incidence) {
+/// about `p0` from `p1`, a point `stray` at `p0` whose record names no
+/// curve, and a coincidence of the line's start and the arc's center. The
+/// points `p0` and `p1` name the curves `incident` gives them.
+fn stored_points_model(incident: [&[u32]; 2]) -> (Model, super::Incidence) {
     let mut model = model();
     let mut entities = json::to_value(&model.sketch_entities).unwrap();
     let list = entities.as_array_mut().unwrap();
@@ -767,49 +790,65 @@ fn stored_points_model() -> (Model, super::Incidence) {
             "definition": {"kind": "point_on_object",
                 "point": {"kind": locus, "value": entity(curve)}, "entity": entity("circle")}}));
     }
+    list.push(cadmpeg_core::json!({
+        "id": constraint("same"), "sketch": SKETCH,
+        "definition": {"kind": "coincident_loci", "loci": [
+            {"kind": "start", "value": entity("line")},
+            {"kind": "center", "value": entity("arc")}]}}));
     model.sketch_constraints = json::from_value(constraints).unwrap();
-    let curve = |index: u32| super::CurveRecord {
-        id: format!("{STREAM}:sketch-curve#{index}"),
-        record_index: index,
-    };
-    let point = |index: u32, incident_curves: Vec<u32>| super::PointRecord {
-        id: format!("{STREAM}:sketch-point#{index}"),
-        companion: super::PointCompanion { incident_curves },
-    };
+    let curves = [10, 11].map(|index| (format!("{STREAM}:sketch-curve#{index}"), index));
+    let points = [1, 2, 3].map(|index| format!("{STREAM}:sketch-point#{index}"));
     let incidence = super::Incidence::new(
-        &[curve(10), curve(11)],
-        &[
-            point(1, vec![10, 11]),
-            point(2, vec![10, 11]),
-            point(3, Vec::new()),
-        ],
+        curves.iter().map(|(id, index)| (id.as_str(), *index)),
+        points
+            .iter()
+            .map(String::as_str)
+            .zip([incident[0], incident[1], &[]]),
     );
     (model, incidence)
 }
 
-#[test]
-fn a_line_with_stored_end_points_and_an_arc_with_a_stored_center_name_those_points() {
-    let (model, incidence) = stored_points_model();
+/// The sketch of `model` restated with `incidence`, and its losses.
+fn restated(model: &Model, incidence: &super::Incidence) -> (super::Sketches, Vec<LossNote>) {
     let mut features = [unresolved_sketch(OWNER)];
     let mut out = super::Sketches::default();
     let mut losses = Vec::new();
     super::project(
-        &scope_with(&model, &incidence, &BTreeSet::new(), &[]),
+        &scope_with(model, incidence, &BTreeSet::new(), &[]),
         &mut features,
         &mut out,
         &mut losses,
     )
     .expect("the session admits the evaluation");
+    (out, losses)
+}
+
+/// The roles of the entity `key` of `out`.
+fn roles_of(
+    out: &super::Sketches,
+    key: &str,
+) -> Vec<EntityRole<cadmpeg_ir::design::ops::sketch::Planar>> {
+    out.entities
+        .iter()
+        .find(|candidate| candidate.id.as_str() == entity(key))
+        .unwrap()
+        .roles
+        .clone()
+}
+
+fn role(of: &str, role: DefiningRole) -> EntityRole<cadmpeg_ir::design::ops::sketch::Planar> {
+    EntityRole {
+        of: cadmpeg_ir::sketches::SketchEntityId::mint(entity(of)).unwrap(),
+        role,
+    }
+}
+
+#[test]
+fn a_line_with_stored_end_points_and_an_arc_with_a_stored_center_name_those_points() {
+    let (model, incidence) = stored_points_model([&[10, 11], &[10, 11]]);
+    let (out, losses) = restated(&model, &incidence);
     let id = |key: &str| cadmpeg_ir::sketches::SketchEntityId::mint(entity(key)).unwrap();
-    let roles = |key: &str| {
-        out.entities
-            .iter()
-            .find(|candidate| candidate.id == id(key))
-            .unwrap()
-            .roles
-            .clone()
-    };
-    let role = |of: &str, role| EntityRole { of: id(of), role };
+    let roles = |key: &str| roles_of(&out, key);
     assert_eq!(
         roles("p0"),
         vec![
@@ -853,20 +892,62 @@ fn a_line_with_stored_end_points_and_an_arc_with_a_stored_center_name_those_poin
         F3dLossCode::DesignSketchLocusUnplaced,
         &constraint("center")
     ));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::DesignSketchLocusAmbiguous.kind()));
+    assert!(out
+        .constraints
+        .iter()
+        .all(|candidate| candidate.id.as_str() != constraint("same")));
+    assert!(names(
+        &losses,
+        F3dLossCode::DesignSketchRelationSinglePoint,
+        &constraint("same")
+    ));
 }
 
 #[test]
-fn two_points_at_a_center_that_no_point_record_names_leave_it_to_a_minted_point() {
-    let (model, _) = stored_points_model();
-    let mut features = [unresolved_sketch(OWNER)];
-    let mut out = super::Sketches::default();
-    super::project(
-        &scope(&model, &BTreeSet::new(), &[]),
-        &mut features,
-        &mut out,
-        &mut Vec::new(),
-    )
-    .expect("the session admits the evaluation");
+fn a_point_that_names_no_curve_holds_the_end_no_point_names() {
+    let (model, incidence) = stored_points_model([&[10], &[]]);
+    let (out, losses) = restated(&model, &incidence);
+    assert_eq!(
+        roles_of(&out, "p0"),
+        vec![role("line", DefiningRole::Start)]
+    );
+    assert_eq!(
+        roles_of(&out, "p1"),
+        vec![
+            role("arc", DefiningRole::Start),
+            role("line", DefiningRole::End)
+        ]
+    );
+    assert_eq!(
+        roles_of(&out, "stray"),
+        vec![role("arc", DefiningRole::Center)]
+    );
+    assert_eq!(
+        out.entities.len(),
+        7,
+        "no point is minted: {:#?}",
+        out.entities
+    );
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::DesignSketchLocusAmbiguous.kind()));
+}
+
+#[test]
+fn two_points_that_name_no_curve_at_a_center_leave_it_to_a_minted_point_with_a_loss() {
+    let (model, _) = stored_points_model([&[], &[]]);
+    let (out, losses) = restated(&model, &NO_INCIDENCE);
+    assert!(losses.iter().any(|loss| {
+        loss.code == F3dLossCode::DesignSketchLocusAmbiguous.kind()
+            && loss
+                .message
+                .contains(&format!("center of sketch curve {}", entity("arc")))
+            && loss.message.contains(&entity("p0"))
+            && loss.message.contains(&entity("stray"))
+    }));
     let center = format!("{}:center", entity("arc"));
     assert!(
         out.entities

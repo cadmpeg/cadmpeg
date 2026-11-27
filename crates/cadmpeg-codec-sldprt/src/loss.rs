@@ -620,12 +620,20 @@ pub(crate) enum SldprtLossCode {
     /// out, its dimension naming the stored curve they lie on, or states
     /// construction where no face of the solid witnesses them.
     DesignSketchDimensionCircle,
-    /// Sketch relations on an end of a closed curve, the center of a curve
-    /// that has none, or a point whose minted id another entity holds: they
-    /// state the curve.
+    /// Sketch relations on an end of a closed or unbounded curve, the center
+    /// of a curve that has none, or a point whose minted id another entity
+    /// holds: they state the curve.
     DesignSketchLocusUnplaced,
-    /// Spatial sketch relations with no typed relation of their operands and
-    /// value: they state their native kind.
+    /// Points of sketch curves where two or more point entities lie that the
+    /// source names alike: no point entity holds the role there, and a
+    /// relation on the point names a point minted there.
+    DesignSketchLocusAmbiguous,
+    /// Sketch relations that name one point entity for both operands of a
+    /// coincidence: the point states the coincidence, and the relation is
+    /// not restated.
+    DesignSketchRelationSinglePoint,
+    /// Sketch relations with no typed relation of their operands and value:
+    /// they state their native kind.
     DesignSketchRelationNative,
     /// Sketch entities with no planar curve, stated by their native kind
     /// with no solved curve.
@@ -898,6 +906,8 @@ impl SldprtLossCode {
         Self::DesignExtrudeProfileUnchecked,
         Self::DesignSketchDimensionCircle,
         Self::DesignSketchLocusUnplaced,
+        Self::DesignSketchLocusAmbiguous,
+        Self::DesignSketchRelationSinglePoint,
         Self::DesignSketchRelationNative,
         Self::DesignSketchEntityNative,
         Self::DesignSketchDimensionUnbound,
@@ -1182,6 +1192,8 @@ impl SldprtLossCode {
             Self::DesignDatumConfigurationDropped => "design.datum-configuration-dropped",
             Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
             Self::DesignSketchLocusUnplaced => "design.sketch-locus-unplaced",
+            Self::DesignSketchLocusAmbiguous => "design.sketch-locus-ambiguous",
+            Self::DesignSketchRelationSinglePoint => "design.sketch-relation-single-point",
             Self::DesignSketchRelationNative => "design.sketch-relation-native",
             Self::DesignSketchEntityNative => "design.sketch-entity-native",
             Self::DesignSketchDimensionUnbound => "design.sketch-dimension-unbound",
@@ -1404,6 +1416,8 @@ impl SldprtLossCode {
             | Self::DesignExtrudeSketchEmpty
             | Self::DesignSketchDimensionCircle
             | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchLocusAmbiguous
+            | Self::DesignSketchRelationSinglePoint
             | Self::DesignSketchRelationNative
             | Self::DesignSketchEntityNative
             | Self::DesignSketchDimensionUnbound
@@ -1534,6 +1548,8 @@ impl SldprtLossCode {
             | Self::DesignExtrudeProfileUnchecked
             | Self::DesignSketchDimensionCircle
             | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchLocusAmbiguous
+            | Self::DesignSketchRelationSinglePoint
             | Self::DesignSketchRelationNative
             | Self::DesignSketchEntityNative
             | Self::DesignSketchDimensionUnbound
@@ -2089,6 +2105,8 @@ mod tests {
                 "design.extrude-profile-unchecked",
                 "design.sketch-dimension-circle",
                 "design.sketch-locus-unplaced",
+                "design.sketch-locus-ambiguous",
+                "design.sketch-relation-single-point",
                 "design.sketch-relation-native",
                 "design.sketch-entity-native",
                 "design.sketch-dimension-unbound",
