@@ -1301,7 +1301,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             || {
                                 paste_copy::timeline_name(scope).unwrap_or_else(|| {
                                     format!(
-                                        "{} {}",
+                                        "{}{}",
                                         scope.source_kind_name(),
                                         scope.feature_ordinal
                                     )
