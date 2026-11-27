@@ -192,6 +192,8 @@ pub(crate) enum CatiaLossCode {
     DesignMembersUnread,
     /// Sets whose kind is unread are stated as unordered geometrical sets.
     DesignSetKindUnread,
+    /// Sets that no read list holds are stated as roots of the part's scope.
+    DesignSetsUnlisted,
     /// The in-work object is read and no stated rollback holds it, or a
     /// stated rollback is before a member whose record is unread.
     DesignRollbackUnread,
@@ -293,6 +295,7 @@ impl CatiaLossCode {
         Self::DesignFeaturesUngrouped,
         Self::DesignMembersUnread,
         Self::DesignSetKindUnread,
+        Self::DesignSetsUnlisted,
         Self::DesignRollbackUnread,
         Self::DesignSketchEntitiesUnread,
         Self::DesignSketchConstraintsUnstated,
@@ -393,6 +396,7 @@ impl CatiaLossCode {
             Self::DesignFeaturesUngrouped => "design.features-ungrouped",
             Self::DesignMembersUnread => "design.members-unread",
             Self::DesignSetKindUnread => "design.set-kind-unread",
+            Self::DesignSetsUnlisted => "design.sets-unlisted",
             Self::DesignRollbackUnread => "design.rollback-unread",
             Self::DesignSketchEntitiesUnread => "design.sketch-entities-unread",
             Self::DesignSketchConstraintsUnstated => "design.sketch-constraints-unstated",
@@ -522,6 +526,7 @@ impl CatiaLossCode {
             | Self::DesignFeaturesUngrouped
             | Self::DesignMembersUnread
             | Self::DesignSetKindUnread
+            | Self::DesignSetsUnlisted
             | Self::DesignRollbackUnread
             | Self::DesignSketchEntitiesUnread
             | Self::DesignSketchConstraintsUnstated => LossTaxonomy::FeatureHistoryRetained,
@@ -631,6 +636,7 @@ mod tests {
                 "design.features-ungrouped",
                 "design.members-unread",
                 "design.set-kind-unread",
+                "design.sets-unlisted",
                 "design.rollback-unread",
                 "design.sketch-entities-unread",
                 "design.sketch-constraints-unstated",

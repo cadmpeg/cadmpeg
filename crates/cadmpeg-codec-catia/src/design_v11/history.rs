@@ -79,6 +79,13 @@ pub(super) fn project(
                 identity_statement(&records),
             )));
         }
+        if !tree.unlisted.is_empty() {
+            losses.push(CatiaLossCode::DesignSetsUnlisted.note(format!(
+                "{} set(s) that no read list holds are stated as roots of the part's scope after its listed sets: {}",
+                tree.unlisted.len(),
+                identity_statement(&tree.unlisted),
+            )));
+        }
         if let (Some(current), false) = (tree.current, stated.rollback_stated) {
             stated.charges.rollbacks.push(format!(
                 "the in-work object, entity {current}, is no member of a stated body and is no stated body"

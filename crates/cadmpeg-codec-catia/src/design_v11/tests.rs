@@ -21,7 +21,8 @@ use cadmpeg_test_support::EditableDecodeResult;
 use crate::loss::CatiaLossCode;
 use crate::test_support::test_container::outer_container_catpart;
 use crate::test_support::test_feature_tree::{
-    compact, part, stream, stream_with_catalog, stream_with_sketches, SKETCH,
+    compact, escaped, part, stream, stream_with_catalog, stream_with_sketches, FTR_LIST,
+    HYBRID_BODY, PAD, SKETCH,
 };
 use crate::test_support::test_formula::standard_catpart_with_formula_relation;
 use crate::test_support::test_object_graph::{
@@ -459,6 +460,56 @@ fn a_set_whose_kind_is_unread_is_an_unordered_geometrical_set() {
         &result,
         CatiaLossCode::DesignSetKindUnread,
         "(HybridBody)"
+    ));
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+    assert_design_survives_cadir(ir);
+}
+
+/// A set that no read list holds is a root of the part's scope after its
+/// listed sets, with its members, and a loss names it.
+#[test]
+fn a_set_no_list_holds_is_a_root_after_the_listed_sets() {
+    let mut records = part();
+    let mut unlisted = vec![FTR_LIST, 0x82, 0x81, 0x8a];
+    unlisted.extend(escaped(0x3000));
+    unlisted.push(0xfe);
+    records.push((8, compact(0x08, HYBRID_BODY), unlisted));
+    records.push((9, compact(0x08, PAD), vec![0xfe]));
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    let ir = result.ir();
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one design scope");
+    };
+    assert_eq!(
+        scope
+            .roots
+            .iter()
+            .map(|id| entity(id.as_str()))
+            .collect::<Vec<_>>(),
+        [2, 3, 7, 8]
+    );
+    let Container::Unordered { kind, members, .. } =
+        container(ir, "catia:outer:feature-container", 8)
+    else {
+        panic!("the set is unordered");
+    };
+    assert_eq!(*kind, UnorderedKind::GeometricalSet);
+    assert_eq!(
+        members.iter().map(member).collect::<Vec<_>>(),
+        [("feature", 9)]
+    );
+    assert!(has_loss(
+        &result,
+        CatiaLossCode::DesignSetsUnlisted,
+        "(HybridBody)"
+    ));
+    assert!(!has_loss(
+        &result,
+        CatiaLossCode::DesignTreeRecordsUnstated,
+        "no set lists it"
     ));
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);

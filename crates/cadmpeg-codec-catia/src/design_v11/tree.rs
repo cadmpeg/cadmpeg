@@ -21,12 +21,14 @@ pub(super) struct Tree<'a> {
     /// Members the root lists outside every set, other than records that
     /// hold no operation.
     pub(super) group: Vec<Item<'a>>,
-    /// The root's sets, in list order.
+    /// The root's sets in list order, then the sets no read list holds.
     pub(super) sets: Vec<Set<'a>>,
     /// The entity the root's `CurrentFeature` selects: the in-work object.
     pub(super) current: Option<u32>,
     /// Tree records the projection does not state.
     pub(super) unstated: Vec<Unstated>,
+    /// The sets among `sets` that no read list holds.
+    pub(super) unlisted: Vec<String>,
 }
 
 /// A body or a geometrical set and its members in stored order.
@@ -134,6 +136,38 @@ pub(super) fn read<'a>(
             None => {}
         }
     }
+    let listed_anywhere = containers
+        .values()
+        .filter_map(|container| member_list(container))
+        .flatten()
+        .map(|member| member.entity_id)
+        .collect::<BTreeSet<_>>();
+    let mut unlisted_sets = containers
+        .values()
+        .copied()
+        .filter(|container| {
+            !walk.placed.contains(&container.entity_id)
+                && !listed_anywhere.contains(&container.entity_id)
+        })
+        .collect::<Vec<_>>();
+    unlisted_sets.sort_by(|a, b| a.object_record.cmp(&b.object_record));
+    let mut unlisted = Vec::new();
+    for container in unlisted_sets {
+        walk.placed.insert(container.entity_id);
+        match walk.set(container) {
+            Some(set) => {
+                unlisted.push(format!(
+                    "{} ({})",
+                    container.object_record, container.class.name
+                ));
+                sets.push(set);
+            }
+            None => walk.unstated.push(Unstated {
+                record: container.object_record.clone(),
+                reason: "no set lists it, and its member list is unread",
+            }),
+        }
+    }
     for container in containers.values() {
         if !walk.placed.contains(&container.entity_id) {
             walk.unstated.push(Unstated {
@@ -150,6 +184,7 @@ pub(super) fn read<'a>(
         sets,
         current: token(root, "CurrentFeature").map(|reference| reference.entity_id),
         unstated: walk.unstated,
+        unlisted,
     }))
 }
 
@@ -189,11 +224,18 @@ impl<'a> Walk<'a, '_> {
                 }),
             };
         };
-        let Some(listed) = member_list(container) else {
-            return unread("is a set whose member list is unread");
-        };
+        match self.set(container) {
+            Some(set) => Some(Item::Set(set)),
+            None => unread("is a set whose member list is unread"),
+        }
+    }
+
+    /// The set a container states, or `None` where its member list is unread.
+    fn set(&mut self, container: &'a CatiaFeatureContainer) -> Option<Set<'a>> {
+        let listed = member_list(container)?;
         let kind = if container.class.name == ORDERED_BODY_CLASS
-            || (container.class.name == MAIN_BODY_CLASS && self.main == Some(record))
+            || (container.class.name == MAIN_BODY_CLASS
+                && self.main == Some(container.object_record.as_str()))
         {
             SetKind::Body
         } else {
@@ -203,11 +245,11 @@ impl<'a> Walk<'a, '_> {
             .into_iter()
             .filter_map(|member| self.item(member))
             .collect();
-        Some(Item::Set(Set {
+        Some(Set {
             container,
             kind,
             members,
-        }))
+        })
     }
 }
 
