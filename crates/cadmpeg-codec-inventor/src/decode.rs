@@ -809,14 +809,17 @@ fn decode_container<'a>(
         needs_parameter = needs;
     }
     let mut stored_body_losses = Vec::new();
-    if delivered >= DecodeDepth::Design && !body_keys.is_empty() {
+    if delivered >= DecodeDepth::Design && (!body_keys.is_empty() || result_states.is_some()) {
         let projection = crate::feature::base::project(
             ctx,
-            &container.rse,
-            &feature_inventory,
-            &design_inventory,
-            &sketch_inventory.transforms,
-            &body_keys,
+            &crate::feature::base::Inputs {
+                document: &container.rse,
+                inventory: &feature_inventory,
+                design: &design_inventory,
+                transforms: &sketch_inventory.transforms,
+                keys: &body_keys,
+                states: result_states,
+            },
             &mut ir,
         )?;
         unresolved.features = unresolved

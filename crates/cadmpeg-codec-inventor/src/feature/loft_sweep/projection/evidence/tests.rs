@@ -640,6 +640,10 @@ impl ResultStates for FixedStates {
         self.asked.borrow_mut().push(source_index);
         Ok(Rc::new((self.outcome)(&self.model)))
     }
+
+    fn introduces(&self, _: u32, _: i64) -> bool {
+        false
+    }
 }
 
 fn proof(final_model: Option<&CadIr>, states: Option<&dyn ResultStates>) -> Result<(), Unproved> {
@@ -1598,6 +1602,10 @@ impl ResultStates for PairStates {
     fn before(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
         Ok(Rc::new((self.before.1)(&self.before.0)))
     }
+
+    fn introduces(&self, _: u32, _: i64) -> bool {
+        false
+    }
 }
 
 fn join_proof(states: Option<&dyn ResultStates>) -> Result<(), Unproved> {
@@ -1846,6 +1854,10 @@ fn a_joined_loft_whose_source_no_state_lists_stays_unproved() {
     impl ResultStates for Unlisted {
         fn after(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
             Ok(Rc::new(StateModel::Unavailable))
+        }
+
+        fn introduces(&self, _: u32, _: i64) -> bool {
+            false
         }
     }
     assert!(matches!(join_proof(Some(&Unlisted)), Err(Unproved::Result)));
