@@ -51,7 +51,7 @@ impl From<ChamferAngle> for PositiveAngle {
 }
 
 /// Distances or distance and angle that define the two-support construction.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum ChamferDefinition {
     TwoLengths {

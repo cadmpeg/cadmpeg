@@ -1444,18 +1444,6 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** Controlled exports that vary evaluation time, operation order, and the relevant Boolean state must separate the scalar unit, ordinal allocation rule, flag meaning, and flag-width selector. A neutral Form writer also needs an explicit tracking-member-to-cage identity join.
 
-### DR-324. Cage order of a Form bound through body records
-
-**Question.** In which order does a Form scope that several Form body records name hold its cages?
-
-**Known.** `f3d.md` §1.1.1 "**Form body-record cage join.**" binds each cage to its owning Form scope through one Form body record. The scope's reference table holds a result-owner record and a Form selection group, and its selection members are tracking records. The decoder orders the cages by ascending body-record index and reports `feature.form-cage-order-assumed` for each such Form with two or more cages.
-
-**Need.** Controlled saves of one Form session that creates two bodies in one order and then changes the first body, to compare the body order of the session with the body-record index order.
-
-**Conflict.** None.
-
-**Note.** None.
-
 ### DR-645. Legacy sole-scope serializer membership and order
 
 **Question.** Which native relations establish complete cage membership and order in the sole-scope legacy Form envelope?
@@ -2038,13 +2026,13 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 
 **Question.** Which edge does a standard Chamfer recipe select when its first side carries three non-null face references, and how does a group with several members that keep the same two candidate edges select its edge set?
 
-**Known.** A member whose first side names two face references selects an edge that both reference lanes hold among the changed edges of the owning transition. The edges that the transition deletes include every selected edge. A member whose first side names three references has an empty intersection of the three lanes' changed-edge sets. Such a member can occur in a group together with members that resolve by two references; the group then keeps its resolved edges as a partial selection. Members that keep the same two candidate edges are interchangeable, and the pair of edges they cover is the same under both assignments. A recipe's selector contexts can exclude the edge that the first-side lane intersection proves, so they do not corroborate the lane intersection for these members.
+**Known.** A member whose first side names two face references selects an edge that both reference lanes hold among the changed edges of the owning transition. The edges that the transition deletes include every selected edge. A member whose first side names three references has an empty intersection of the three lanes' changed-edge sets. Such a member can occur in a group together with members that resolve by two references; the group then keeps its resolved edges as a partial selection. Members that keep the same two candidate edges are interchangeable, and the pair of edges they cover is the same under both assignments. The local topology references of a three-reference member start with its three first-side reference numbers in first-side order. Two of its three faces share one transition-deleted edge, and the third face shares one transition-deleted edge with one of the other two. In a group of two-reference and three-reference members, the members with one candidate edge can leave exactly one assignment of distinct edges; the decoder then selects that assignment and charges `history.edge-selection-first-side-pair-assumed`. In the assigned instances, the selected edge is the edge that the faces of the first two prefix references share. A recipe's selector contexts can exclude the edge that the first-side lane intersection proves, so they do not corroborate the lane intersection for these members.
 
 **Need.** A controlled Chamfer whose selected edges bound faces that persistent names bind to several fragments, with edge sets chosen so that exactly one assignment of three-reference members to edges exists. The role of the third first-side reference in the selector.
 
 **Conflict.** None.
 
-**Note.** The group retains its resolved edges and the unresolved member identities as a partial selection, and a feature that needs edge samples reports `history.edge-midpoints-unresolved`.
+**Note.** A group with more than one assignment retains its resolved edges and the unresolved member identities as a partial selection, and a feature that needs edge samples reports `history.edge-midpoints-unresolved`.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
@@ -2287,6 +2275,16 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 **Conflict.** None.
 
 **Note.** The decoder reports this selection with `design.flagged-base-feature-body-selected`. The `Base Feature` of such a design has no history partition, so its output state chain stays unbound and the decoder reports `feature.output-state-chain-unbound`.
+
+### DR-1080. Two-sided distance Extrude with distances of opposite sign, with a draft or a wall thickness
+
+**Question.** Where does a two-sided distance Extrude with distances of opposite sign put its solid when a side has a draft, and when it has a wall thickness?
+
+**Known.** `f3d.md` §3.1 states that the two distances place the solid's ends at `AlongDistance` and at the negated `AgainstDistance` on the profile normal, with the solid between them. A controlled save confirms this for solid Extrudes with every sign pair (+20/−5, −20/+5, −20/−5 and +20/+5 mm give final bodies spanning 5…20, −20…−5, −20…5 and −5…20 mm), and two Extrudes of another design agree. The decoder reads distances of opposite sign as a one-sided Extrude from an offset profile plane at the nearer end. In the same save, an Extrude of −20/+5 mm with a 5° draft on side one spans −20…0 mm: the solid reaches the profile plane. Wall-thickness Extrudes of open chains of +20/−5 and −20/+5 mm span 5…20 and −20…−5 mm, but a wall-thickness Extrude of a closed profile of 50/−2 mm in another design records a body centre 25 mm above its profile plane. Recorded body centres are bounding-box centres in the controlled save, so that body spans 0…50 mm, not 2…50 mm; its parameter roles and extent form equal those of the open-chain Extrudes. The decoder keeps both forms native.
+
+**Need.** Saves of drafted Extrudes with distances of opposite sign, with the draft on either side and with several drafts, and wall-thickness Extrudes with distances of opposite sign of a closed profile and of an open chain, with each wall location.
+
+**Conflict.** None.
 
 ### DR-646. Entry order of a multi-body suffix result-body frame
 
@@ -3372,6 +3370,18 @@ The bounded-face programs of these groups have 13, 23, and 12 nodes. The first t
 
 **Note.** None.
 
+### DR-1068. Edges of a native group in a shared treatment transition
+
+**Question.** Does the one native group of a constant-radius `Fillet` scope take exactly the transition edges that the other groups of the scope do not take, and which of those edges does each member name?
+
+**Known.** The scope stores two or more groups with the same constant radius. The native group has role `0x0000001000000000`. Each of its members is a full-layout class-313 edge identity whose local identity names the member's own bounded-face recipe record. Each recipe stores the same historical support contexts as the other members: every preceding face that the transition changes, each with its full boundary. The recipe references of a member start with one or two design references that differ between members and end with the same design references for every member. Every identity of every group in the scope carries the same transition edge set and the same radius candidates; each candidate has the group radius. Each transition edge lies on one support face and on one other preceding face. The other faces of the leftover edges are as many as the native group's members, and each holds two leftover edges. The edges that the sibling groups take lie between two support faces. A sibling one-member group with role `0x0000000800000000` has a recipe whose deleted and changed boundary sets equal the transition set; its member can be a lost reference. The decoder gives the native group the leftover set in increasing stable-slot order and charges `history.edge-selection-leftover-assumed`. A whole-face member selects every coedge edge of every loop of the preceding face that its first recipe reference names, in the transition edge set. This selection includes edges that an edge group of the same scope selects. The decoder resolves such a member from the named face and gives its group the full selection.
+
+**Need.** A Fusion save of a `Fillet` with two edge sets of one radius: the first set picks one edge, the second set picks the faces that hold two edges each. Save it again with each face of the second set removed in turn, and compare the member recipes and the treated edges in the input topology.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-376. Stored name of a Sketch renamed in the timeline
 
 **Question.** Where does a Sketch renamed in the timeline store its name?
@@ -3662,13 +3672,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** Which edges do two bounded-face members of a Chamfer edge group select, and how do their boundary nodes assign the transition edges to each member?
 
-**Known.** A Chamfer edge group with role `0x0000001000000000` can name two members. The compact identity prefix of each member names a local record. Each local record carries `bounded_face_recipe_data`, followed by a counted program with twenty parsed nodes. Both operands retain the same four preceding candidate faces. Their prefix references also name eleven further faces. References with two of the Design values have empty candidate lanes. The input topology has fifteen faces and thirty-eight edges. Each compact identity retains the same twenty-two transition edge candidates, in five runs of consecutive edge slots of five, three, six, three, and five slots, with one slot between adjacent runs. Each selected-face candidate has a four-edge preceding loop. The group has a 0.4 mm equal-distance Chamfer specification.
+**Known.** A Chamfer edge group with role `0x0000001000000000` can name two members. The compact identity prefix of each member names a local record. Each local record carries `bounded_face_recipe_data`, followed by a counted program with twenty parsed nodes. Both operands retain the same four preceding candidate faces. Their prefix references also name eleven further faces. References with two of the Design values have empty candidate lanes. The input topology has fifteen faces and thirty-eight edges. Each compact identity retains the same twenty-two transition edge candidates, in five runs of consecutive edge slots of five, three, six, three, and five slots, with one slot between adjacent runs. Each selected-face candidate has a four-edge preceding loop. The group has a 0.4 mm equal-distance Chamfer specification. A Chamfer can also store a role-`0x0000001000000000` group of nine full-layout bounded-face identities beside a role-`0x0000000800000000` edge group of thirty-two recipe members, each group in its own Chamfer set with the same distance. The first prefix reference of each bounded-face recipe has a one-face candidate lane, and the nine named faces are distinct. One member names a face bounded by the other eight faces; its support contexts are those nine faces. Each of the other eight members names a face bounded by that first face, two of the eight faces, and three further faces; its support contexts exclude its named face. Every transition-deleted boundary edge of the nine named faces is an edge of the sibling edge group. A whole-face full-layout member of a Chamfer group selects every coedge edge of every loop of the preceding face that its first recipe reference names, in the transition edge set, except each loop edge at which the face meets its neighbour with tangent continuity. When the continuity of a loop edge is undetermined, the decoder keeps the edge and charges `history.edge-continuity-assumed-sharp`. Two members that name two adjacent faces together select every edge of both faces, and each member keeps the edge that the two faces share.
 
-**Need.** Independent Chamfer designs with bounded-face members, including one selected face, two adjacent selected faces, and a face whose boundary splits before the operation. Establish the selected boundary, the treatment of tangent boundary edges, and the binding of empty prefix lanes.
+**Need.** Independent Chamfer designs with bounded-face members, including one selected face, two adjacent selected faces, and a face whose boundary splits before the operation. Establish the selected boundary and the binding of empty prefix lanes.
 
 **Conflict.** A complete twenty-node program, four face candidates, and a shared transition set permit several member assignments. Selecting every transition candidate assumes a group-level rule.
 
-**Note.** The decoder retains the bounded-face operands and compact identity candidates. The group stays native with `feature.edge-selection-native`. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set. The same form also occurs as a Chamfer group with two bounded-face members and 13 transition candidates. A Chamfer can also retain one unresolved bounded-face group beside a resolved edge group.
+**Note.** The decoder retains the bounded-face operands and compact identity candidates. DR-224 tracks Fillet transition ambiguities; DR-244 tracks treatment groups whose transitions supply no candidate set. The same form also occurs as a Chamfer group with two bounded-face members and 13 transition candidates. A Chamfer can also retain one unresolved bounded-face group beside a resolved edge group.
 
 ### DR-482. Source binding of timeline-owned Base Feature results
 
@@ -3865,17 +3875,17 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The decoder assumes the null names no item and reports `feature.timeline-null-slot-assumed`.
 
-### DR-530. Body frame of object-prelude occurrence snapshots
+### DR-530. Placement of object-prelude occurrences that no component path names
 
-**Question.** How does the closing placement of an object-prelude occurrence map the solved BREP body frame into its containing component?
+**Question.** What gives the local placement of an object-prelude occurrence, whose carrier GUID follows the ordinal directly, when no component-path record names it as its target?
 
-**Known.** An occurrence carrier can have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Its carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. A chain of three such carriers gives one solved body a Y axis with its XZ center at (-4.3,13.5) mm; the axis of the mating body is near (0,0) mm. A single such carrier rotates the X axis of a solved body to Z; the mating body has axis X. In both cases the CommonData stream has zero admitted component paths. A carrier with a two-byte prefix and a source marker is placed from its closing matrix under the assumption that the matrix is in the component frame. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
+**Known.** An occurrence carrier can have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Its carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. A component-path record that names such an occurrence as its target stores a world pose that differs from the closing matrix. In a stream with a component-path record, where every record is read as a local path form and names one unique expanded occurrence, the closing matrices of the object-prelude occurrences that no record names place their solved bodies coaxially with the bodies they mate with. A single such carrier in a stream with no component-path record rotates the X axis of a solved body to Z; the mating body has axis X. A carrier with a two-byte prefix and a source marker is placed from its closing matrix under the assumption that the matrix is in the component frame. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
 
-**Need.** A controlled object-prelude save with a moved component, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement.
+**Need.** A controlled object-prelude save with a moved component, with and without a component-path record for it, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement in a stream with no component-path record.
 
-**Conflict.** Treating the closing matrix of an object-prelude carrier whose GUID follows the ordinal directly as a solved-body local placement gives the two incorrect mating placements above.
+**Conflict.** Treating the closing matrix of an object-prelude carrier whose GUID follows the ordinal directly as a solved-body local placement, in a stream with no component-path record, gives the incorrect mating placement above.
 
-**Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence whose carrier GUID follows the ordinal directly requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve. An object-prelude occurrence whose two-byte prefix carries a source marker (flag 0 or 1) is placed from its closing matrix without that proof, with the assumption loss `assembly.local-occurrence-marked-prelude-assumed`.
+**Note.** The decoder retains the native carrier. It assumes the closing matrix is the local placement in the component frame of the owner, and records `assembly.local-occurrence-object-prelude-assumed`, only when the carrier's Design stream stores at least one component-path record, every component-path record of that stream is read as a local path form, every one names one unique expanded occurrence (a pose chosen among several instances does not), and none names the carrier as its target. Otherwise the matrix-bearing occurrence keeps its stored body frames and the existing `assembly.local-occurrence-unplaced` loss. The condition applies to each Design stream separately. Identity frames retain their definition frame. Ancestor placement must also resolve. An object-prelude occurrence whose two-byte prefix carries a source marker (flag 0 or 1) is placed from its closing matrix without that proof, with the assumption loss `assembly.local-occurrence-marked-prelude-assumed`. A carrier that an assembly alignment operand path names, with no frame sense, is placed from its closing matrix and carries the same assumption loss; an occurrence that an assembly operation places from an operation matrix does not.
 
 ### SM-03. ContourFlange travel, thickness side and rule entries
 
@@ -4252,3 +4262,13 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
 **Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
+
+### DR-1079. Document body of a keyless pattern copy
+
+**Question.** Does the document list a pattern or Mirror copy body whose ASM body record stores no body key?
+
+**Known.** The active record stream of the `.smbh` member that the modern body map names holds the body record of the copy with ASM body key `-1`, its own lump and shell, and the faces of the copy. The terminal history state holds the slot. The modern body map stores no pair for the slot. The Body container lists more Body entities than the body map stores pairs. A copy body that the body map names stores a nonnegative ASM body key. A feature Mirror of a hidden New Body seed, and a feature Mirror whose New Body copy is coincident with the boss that its Join seed copy adds, each store the copy with a nonnegative key and a body-map pair, and the Fusion browser lists the copy as a body.
+
+**Need.** A save whose copy body stores key `-1`, with a Fusion readback of its body list. The forms above do not give that key, so the save needs another construction of the copy, for example a Mirror edited after a later feature or a design saved by an earlier Fusion version. Compare the body record keys, the body-map pairs, and the Body container entities with the bodies that the Fusion browser lists.
+
+**Note.** The decoder omits the body from the model and reports `feature.pattern-copy-body-omitted` (`f3d.md` "Each copy that a feature pattern or a feature Mirror makes").

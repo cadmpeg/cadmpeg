@@ -63,10 +63,19 @@ field, or the end of the payload. It includes the magic, every frame, and the
 section's zero padding. Each frame inflates to exactly `uncompressed_size`;
 the declared member extent is the complete zlib member. Concatenating the
 inflated frames of one section in payload order produces one complete
-Parasolid stream. The concatenation occurs before stream-header parsing and
+Parasolid stream. A frame whose uncompressed byte count or zlib-member byte
+count is zero adds no bytes to the concatenation, and the next frame starts
+after its declared member. The concatenation occurs before stream-header parsing and
 record scanning, so records may cross frame boundaries. Every section is
 extracted independently, including partition and deltas sections. A section
 with one frame is the degenerate chained form.
+
+A frame whose member does not inflate to `uncompressed_size`, a frame whose
+member runs past the section, or bytes after the frames that are neither a
+frame nor zero padding cut the section at that frame. The frames before the
+cut concatenate to the section's stream, which then ends early; the bytes from
+the cut to the section end are given up. A section cut at its first frame holds
+no stream and is given up whole.
 
 ### 1.1 Outer header and block frame
 
@@ -368,7 +377,7 @@ The part kind names the part in a `record.unreadable` loss.
 | `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) |
 | `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) |
 | `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) |
-| `wrapped-member` | One ZLB-wrapped zlib member whose inflated size is not its declared size | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) |
+| `wrapped-member` | One ZLB wrapper or chained section whose frames do not read: a zlib member whose inflated size is not its declared size or whose declared size passes the frame ceiling, or a frame that runs past its section | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) |
 | `property-carrier` | One default-property or configuration-property carrier whose content is malformed | The block or compound stream that holds the carrier (§1) |
 
 A compound stream's bytes are the sectors its chain reaches through the
@@ -379,17 +388,18 @@ bytes of the sectors its chain reached before it stopped. A native block
 that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
 given up; the directory and its other members are read.
 
-A Parasolid site whose streams frame entity records that build no geometry is
-given up as a `parasolid-site` part. A component tree gives no occurrence
-when its XML does not parse, when it repeats a model or file id, when it
+A Parasolid site whose streams frame entity records that build no face,
+surface, point or body is given up as a `parasolid-site` part. A site that
+states a body whose faces are all lost keeps that body. A component tree
+gives no occurrence when its XML does not parse, when it repeats a model or
+file id, when it
 names no active configuration or more than one, when its active model has no
 valid identity or no definition, and when the document holds two different
 trees. Each tree section is then given up as a `component-tree` part. The
 section that the decoder reads is also kept whole, so the part keeps only
 the length and digest of its bytes.
 
-The decoder gives up a wrapped member only when its declared size is within
-the frame ceiling. A property carrier that stores its properties in a form
+A property carrier that stores its properties in a form
 that the decoder does not read is kept with the loss
 `metadata.default-carrier-unsupported` or
 `metadata.configuration-property-carrier-unsupported`.
@@ -1006,7 +1016,7 @@ An `moCompFace_c` body starts with its class token and `02 00 00 00`. A followin
 
 A zero-flag face-supported reference-plane body may contain a nested `moFaceRef_c` class declaration before its component path. When that declaration is present, the component-path marker begins 84 bytes after the `moCompFace_c` body start. The nested declaration occupies the interval before that marker. Relative to the `moCompFace_c` body, this fixed prefix has the class token at `+0`, u32 `2` at `+2`, zero flags at `+6`, the nested declaration region at `+8..+83`, the component marker at `+84`, and a zero marker tail at `+100..+101`; the variable path follows. The marker uses the same counted component-path grammar and identifies the supporting face.
 
-The legacy face-alias body used by an offset reference plane begins with a non-null class token and `02 00 00 00`. Bytes `+6..+41` are zero, bytes `+42..+44` are zero, bytes `+45..+60` are `ff`, and bytes `+61..+68` are zero. The u32 at `+69` is `2`; `+73` holds a nonzero four-byte type identity; bytes `+77..+90` are `00 00 03 00 00 00 01 00 00 00 00 00 00 00`. The u32 at `+91` identifies the native object that owns the selected face. Bytes `+95..+98` are zero, the u32 at `+99` is `3`, bytes `+103..+106` are zero, and two `c7 cf ff ff` handles terminate the record. When the owner is a projected feature, its component-face selection is the support face.
+The legacy face-alias body used by an offset reference plane begins with a non-null class token and `02 00 00 00`. Bytes `+6..+41` are zero, bytes `+42..+44` are zero, bytes `+45..+60` are `ff`, and bytes `+61..+68` are zero. The u32 at `+69` is `2`; `+73` holds a nonzero four-byte type identity; bytes `+77..+90` are `00 00 03 00 00 00 01 00 00 00 00 00 00 00`. The u32 at `+91` identifies the native object that owns the selected face. Bytes `+95..+98` are zero, the u32 at `+99` is `3`, bytes `+103..+106` are zero, and two `c7 cf ff ff` handles terminate the record. When the owner is a projected feature, its component-face selection is the support face. The CADIR native name (v11 §5.9) of the alias reference is the integer name `[identity, owner]`: the u32 type identity at `+73` and the u32 owner identifier at `+91`.
 
 The sketch-surface component-path variant stores u32 count `5`, a component-vector selector whose byte 1 is `03`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero, four opaque bytes, the component-path marker, and two zero bytes. The count includes two implicit root slots; three 20-byte heterogeneous component entries follow. A two-byte zero alignment word may precede the third entry. A selector whose byte 1 is `02` uses a nonzero selector in the four bytes before the marker and terminates the entries with an ownership trailer. The trailer contains u32 `1`, one zero u32, one nonzero owner u32, and three zero u32 words. It is preceded by 8 or 20 zero bytes, or by one nonzero u32 and 8 zero bytes.
 
@@ -1922,7 +1932,7 @@ An identity-representation object writes u16 `0`, then a `moFR_c` object written
 | --- | --- |
 | `moSimpleSurfIdRep_c`, `moFromSktEntSurfIdRep_c`, `moFilletSurfIdRep_c`, `moThinOffsetSurfIdRep_c`, `moSimpleEdgeIdRep_c` | a little-endian u32 |
 | `moEndFaceSurfIdRep_c`, `moThinClosingSurfIdRep_c`, `moUnBendSurfIdRep_c`, `moBendEndSurfIdRep_c`, `moWzdHoleSurfIdRep_c`, `moSegmLeftTrimEdgeIdRep_c`, `moSegmRightTrimEdgeIdRep_c` | two little-endian u32 |
-| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c` | three little-endian u32 |
+| `moFromSktEnt3IntSurfIdRep_c`, `moEndFace3IntSurfIdRep_c`, `moSideFace3IntSurfIdRep_c` | three little-endian u32 |
 | `moSurfaceIdRep_c`, `moIndirectSurfIdRep_c` | none |
 | `moLPatternSurfIdRep_c`, `moCirPatternSurfIdRep_c`, `moCirPatternSurfIdRep2_c` | an object pointer to the hop it repeats, then little-endian u32 instance number and u32 `0` |
 | `moMirPatternSurfIdRep_c` | an object pointer to the hop it mirrors |
@@ -2673,7 +2683,10 @@ The loss `geometry.carrier-approximated` counts intersection chart curves, fitte
 A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
 A vertex loop decodes to a vertex boundary on its vertex-use. A vertex loop whose vertex-use does not resolve is given up with the loss `topology.vertex-loop-withheld`; its FACE keeps its other loops in the partial form.
 A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.
-The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. One loss note gives the count for each kind.
+The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body, region and shell counts cover the nodes in that hierarchy set; the region count leaves out a void REGION that owns no face in a BODY with a solid REGION or a REGION that owns a face. One loss note gives the count for each kind.
+A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut`.
+A SHELL that lists a FACE the decode does not state states its members in the partial form. A SHELL with none of its faces stated is kept in that form with no face, so no SHELL, REGION or BODY is dropped for a child it lost: the REGION lists the SHELL, and the BODY keeps the kind it stores. A SHELL whose stated faces fall into pieces that share no edge, as where a lost face joined them, is stated as one shell per piece. A REGION with more than one shell, where one SHELL holds no stated face or is stated as several pieces, leaves its shells unclassified, since no stored field says which bounds the outside. This holds for a REGION that the decode states and that gains such a SHELL from the typed ownership nodes.
+Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body and one region, with one shell per piece of faces that share edges (`topology.body-hierarchy-derived`). A derived region of more than one shell leaves its shells unclassified, since no node says which bounds the outside. The derived body takes the kind that the BODY nodes linked to a REGION state when they agree, and is classified from its faces otherwise. A BODY node is linked to a REGION when that REGION names it in its body field. Where merged streams or sites derive bodies whose kinds come from different sources, one note names each source. A BODY node linked to no REGION, such as one that owns only vertices, says nothing of the faces' body. Once a face is given up, or a typed FACE node is not stated, each derived shell states its members in the partial form, since no node says which shell held that face.
 
 ### 4.1 XT ownership nodes
 
@@ -3167,14 +3180,23 @@ A face belongs to a body only when this closure is complete:
 FACE.refs[3] → SHELL.refs[6] → REGION.refs[1] → BODY
 ```
 
-The BODY region-chain head is the first REGION attribute or a null-like
-predecessor sentinel. In the sentinel form, exactly one REGION has
-`previous_region` equal to the stored head. Follow `next_region` and require
-the following REGION's `previous_region` to equal the current REGION. The
+The BODY region-chain head is the attribute of its first REGION, whose
+`previous_region` is null-like; a null-like head names no REGION. Follow
+`next_region` and require the following REGION's `previous_region` to equal
+the current REGION. The
 chain ends at a null-like value and may not repeat an attribute. A SHELL's
 region and body links must agree with the REGION closure. A shell with a
 non-null-like body reference must name that same BODY; a null-like shell body
 reference is valid for a void-region shell.
+
+The first REGION of a solid BODY is the infinite void. Each FACE names its
+solid shell in the back-side links and its void shell in the front-side
+links. Reciprocal face chains pair the shells on the two sides of each
+boundary. In a complete tree of these boundaries rooted at the infinite
+void, the shell toward the root encloses the other shells of its solid
+region. The REGION shell chain records membership. When the reciprocal
+chains leave the enclosing boundary unresolved, the decode states the
+region's shells unclassified.
 
 The BODY `body_type` byte is the body kind: `1` solid, `2` wire, `3` sheet,
 and `6` general. The kind is not inferred from an ATTRIBUTE list, a chain

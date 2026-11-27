@@ -242,16 +242,6 @@ pub(crate) fn give_up_retained(
     )
 }
 
-/// The owner of the retained records that the decoder keeps from the file's
-/// own bytes. The root owner names the same bytes.
-pub(crate) const FILE_OWNER: &str = "rhino";
-
-/// Whether the retained records of owners `a` and `b` index one byte space.
-fn same_bytes(a: &str, b: &str) -> bool {
-    let in_file = |owner: &str| owner.is_empty() || owner == FILE_OWNER;
-    a == b || (in_file(a) && in_file(b))
-}
-
 /// Commits each part of `given_up` to `ir` and `fidelity` and returns its
 /// loss. A part keeps the bytes of `data` it spans where no retained record
 /// of its stream keeps them. Where those bytes pass the caller's
@@ -275,7 +265,7 @@ pub(crate) fn commit_given_up(
         let (start, end, length) = (record.offset(), record.end_offset(), record.byte_len());
         let covered = fidelity.retained_records().iter().any(|(_, kept)| {
             kept.data().is_some()
-                && same_bytes(kept.stream(), record.stream())
+                && kept.stream() == record.stream()
                 && kept.offset() <= start
                 && end <= kept.end_offset()
         });

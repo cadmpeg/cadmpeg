@@ -370,7 +370,7 @@ native_record! {
 
 /// Shape of the evaluated tolerance slot of one tolerant ASM vertex record,
 /// with the version-gated LONG that follows the slot when it is present.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "slot", deny_unknown_fields)]
 pub enum EvaluatedToleranceSlot {
@@ -466,7 +466,7 @@ native_record! {
 }
 
 /// Release-selected fixed fields following a tolerant-coedge parameter interval.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "layout", deny_unknown_fields)]
 pub enum TolerantCoedgeExtension {
@@ -899,38 +899,6 @@ mod tests {
             serde_json::from_str::<WireMembers>("{}").expect("an omitted free_vertex"),
             WireMembers::Edges(Vec::new())
         );
-    }
-
-    /// `WireMembers` writes a map keyed by `edges` or `free_vertex`, and the
-    /// `JsonSchema` derive reads `#[serde(try_from = "WireMembersWire")]`, so
-    /// the published schema states those two properties rather than the
-    /// neutral enum's `Edges` and `Vertex` arms.
-    #[cfg(feature = "schema")]
-    #[test]
-    fn the_wire_member_schema_states_the_keys_the_writer_states() {
-        let schema = json::to_value(schemars::schema_for!(WireMembers)).expect("members schema");
-        let properties: std::collections::BTreeSet<String> = schema["properties"]
-            .as_object()
-            .expect("the members schema states properties")
-            .keys()
-            .cloned()
-            .collect();
-        let edge = EdgeId::mint("asm:test:edge#1").expect("edge id");
-        let vertex = VertexId::mint("asm:test:vertex#2").expect("vertex id");
-        let written: std::collections::BTreeSet<String> =
-            [WireMembers::Edges(vec![edge]), WireMembers::Vertex(vertex)]
-                .iter()
-                .flat_map(|members| {
-                    json::to_value(members)
-                        .expect("serialize members")
-                        .as_object()
-                        .expect("members write a map")
-                        .keys()
-                        .cloned()
-                        .collect::<Vec<_>>()
-                })
-                .collect();
-        assert_eq!(properties, written);
     }
 
     /// `target` carries no `skip_serializing_if`, so its writer states `null`

@@ -257,6 +257,26 @@ pub(super) fn edge(
     }
 }
 
+/// The support face of an oriented chamfer: the one face that its input state
+/// holds beside the selected edge.
+pub(super) fn support_face(
+    edges: &EdgeSelection,
+    inputs: &[FeatureInputTopology],
+) -> Projected<SetSelection> {
+    let EdgeSelection::Historical { state, .. } = edges else {
+        return Err("the chamfer support side has no v11 reference selection");
+    };
+    let mut states = inputs.iter().filter(|input| &input.id == state);
+    let input = states.next().ok_or("the selected edge state is absent")?;
+    if states.next().is_some() {
+        return Err("the selected edge state is ambiguous");
+    }
+    let [face] = input.faces.as_slice() else {
+        return Err("the chamfer support side has no v11 reference selection");
+    };
+    selection(vec![source_pick(face.as_str())?])
+}
+
 pub(super) fn bodies(value: &BodySelection) -> Projected<OrderedSelection> {
     match value {
         BodySelection::Native(text) => native(text),

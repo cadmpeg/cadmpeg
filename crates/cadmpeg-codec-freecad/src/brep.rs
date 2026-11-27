@@ -1551,7 +1551,7 @@ struct TextTShapeWire {
     children: Vec<TextShapeUse>,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum TextTShapeGeometryWire {
     Vertex {
@@ -1868,7 +1868,7 @@ pub(crate) struct NurbsCurve2d {
 const MAX_GEOMETRY_NESTING_DEPTH: usize = 64;
 
 /// One exact parameter-space curve record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TextCurve2d {
     /// Infinite line.
@@ -1997,7 +1997,7 @@ pub(crate) struct TextLocation {
 }
 
 /// Supported byte-exact 3D curve records from the text carrier table.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TextCurve {
     /// Infinite line.
@@ -2109,7 +2109,7 @@ impl Serialize for NestedCurve {
 }
 
 /// Supported byte-exact surface records from the text carrier table.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum TextSurface {
     /// Infinite plane.

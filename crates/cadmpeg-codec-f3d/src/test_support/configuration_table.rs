@@ -378,6 +378,37 @@ impl Natives {
         }
     }
 
+    /// Run the decoder's design attachment over `documents` and these
+    /// records: the configurations it states, with the neutral features in
+    /// the state that it leaves them.
+    pub(crate) fn attach(
+        &mut self,
+        documents: &[crate::records::configuration::DesignConfiguration],
+    ) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
+        let native = crate::native::F3dNative {
+            design_configurations: documents.to_vec(),
+            design_parameters: self.parameters.clone(),
+            design_parameter_owners: self.owners.clone(),
+            design_parameter_scopes: self.scopes.clone(),
+            ..Default::default()
+        };
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.parameters = self.neutral_parameters.clone();
+        ir.model.features = std::mem::take(&mut self.neutral_features);
+        let archive = super::zip_test::f3d_with_configurations(
+            &super::smbh_geometry_test::synthetic_geometry_smbh(),
+            &[],
+        );
+        super::zip_test::with_scan(&archive, |scan| {
+            super::with_decode_context(|ctx| {
+                crate::decode::attach_design(ctx, scan, &native, &mut ir, &mut Vec::new())
+            })
+        })
+        .unwrap();
+        self.neutral_features = ir.model.features;
+        ir.model.configurations
+    }
+
     pub(crate) fn targets(&self) -> ConfigurationTargets<'_> {
         ConfigurationTargets {
             parameters: &self.parameters,

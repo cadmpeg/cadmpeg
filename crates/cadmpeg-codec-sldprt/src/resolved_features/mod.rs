@@ -95,6 +95,8 @@ mod helix;
 
 pub(crate) mod holes;
 
+pub(crate) mod lane_cache;
+
 pub(crate) mod markers;
 
 pub(crate) mod names;

@@ -16,6 +16,7 @@ use cadmpeg_parasolid::pointer::read_at as read_ref;
 
 pub(super) mod nodes;
 pub(super) mod schema;
+mod shell_containment;
 
 const BODY_TAG: [u8; 2] = [0x00, 0x0c];
 const SHELL_TAG: [u8; 2] = [0x00, 0x0d];
@@ -80,6 +81,17 @@ impl BodyCandidate {
             end: self.end,
         }
     }
+}
+
+/// What the BODY records that link to a stored REGION say of a body's kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum StoredBodyKind {
+    /// No BODY record links to a stored REGION.
+    Absent,
+    /// The linked BODY records state more than one kind.
+    Disagree,
+    /// Every linked BODY record states this kind.
+    Agreed(BodyKind),
 }
 
 impl BodyNode {
@@ -157,6 +169,8 @@ pub(super) struct FaceNode {
     pub(super) node_id: u32,
     /// `[next_face, previous_face, loop, shell, surface]`.
     pub(super) refs: [u32; 5],
+    /// `[next_front, previous_front, front_shell]` from the complete FACE.
+    pub(super) front: Option<[u32; 3]>,
     /// Stored face sense marker.
     pub(super) sense: Sense,
     /// Byte offset of the node tag.
@@ -182,6 +196,27 @@ type OwnershipMaps = (
 );
 
 impl Facts {
+    /// The kind the BODY records that link to a stored REGION state. A BODY
+    /// links when a REGION names it as its body. A BODY that links to no
+    /// region, such as one that owns only vertices, says nothing of the
+    /// faces' body.
+    pub(super) fn stored_body_kind(&self) -> StoredBodyKind {
+        let links = |body: &&BodyNode| {
+            self.regions
+                .iter()
+                .any(|region| region.refs[1] == body.attr)
+        };
+        let mut kinds = self.bodies.iter().filter(links).map(|body| body.kind);
+        let Some(first) = kinds.next() else {
+            return StoredBodyKind::Absent;
+        };
+        if kinds.all(|kind| kind == first) {
+            StoredBodyKind::Agreed(first)
+        } else {
+            StoredBodyKind::Disagree
+        }
+    }
+
     /// Ownership classes claimed for each stream-local transmit index.
     fn topology_class_masks(&self) -> HashMap<u32, u8> {
         let mut classes = HashMap::new();
@@ -648,41 +683,20 @@ fn region_chain_from_head(
         return Some(Vec::new());
     }
 
-    // A BODY may store either the first REGION attribute or the predecessor
-    // sentinel used by the REGION doubly-linked list.  Both forms carry the
-    // same closure: the first region's previous reference is the stored head
-    // in the sentinel form, and each later region points back to its source.
-    let (mut next, first_previous) =
-        if let Some(attr) = node_ref(head).filter(|attr| regions.contains_key(attr)) {
-            let first = regions.get(&attr)?;
-            // A direct region head names the first node.  A later region in
-            // the chain is not another valid head: its previous pointer must
-            // point back to the preceding region.  The sentinel form below
-            // is the only form that admits a non-null first previous link.
-            (first.refs[3] <= 1).then_some((attr, None))?
-        } else {
-            let mut candidates = regions
-                .values()
-                .filter(|region| region.refs[3] == head)
-                .map(|region| region.attr);
-            let attr = candidates.next()?;
-            if candidates.next().is_some() {
-                return None;
-            }
-            (attr, Some(head))
-        };
-
+    // The BODY names its first REGION, whose previous reference is null.
+    let first = node_ref(head).and_then(|attr| regions.get(&attr))?;
+    if first.refs[3] > 1 {
+        return None;
+    }
+    let mut next = first.attr;
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    let mut expected_previous = first_previous;
     loop {
         if !seen.insert(next) {
             return None;
         }
         let region = regions.get(&next)?;
-        if region.refs[1] != body.attr
-            || expected_previous.is_some_and(|previous| region.refs[3] != previous)
-        {
+        if region.refs[1] != body.attr {
             return None;
         }
         let following = region.refs[2];
@@ -695,7 +709,6 @@ fn region_chain_from_head(
         if following_region.refs[3] != region.attr {
             return None;
         }
-        expected_previous = Some(region.attr);
         next = following_attr;
     }
     Some(out)
@@ -712,12 +725,13 @@ pub(in crate::brep) struct Hierarchy {
 }
 
 pub(super) fn topology_owner_attrs_for_streams<'a>(
-    streams: impl IntoIterator<Item = (&'a Facts, &'a [u8], bool)>,
+    streams: impl IntoIterator<Item = (&'a Facts, &'a super::topology::ScopedBody<'a>)>,
 ) -> HashSet<u32> {
     let mut selected = HashMap::<u32, (bool, u8)>::new();
-    for (facts, bytes, deltas) in streams {
+    for (facts, stream) in streams {
+        let deltas = stream.prefixed;
         let mut classes = facts.topology_class_masks();
-        for point in super::topology::point_class_attrs(bytes, deltas) {
+        for point in super::topology::point_class_attrs(stream) {
             *classes.entry(point).or_insert(0) |= 16;
         }
         for (attr, mask) in classes {
@@ -960,13 +974,16 @@ fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Face
     if refs[3] <= 1 {
         return None;
     }
+    let end = at + 1;
+    let front = super::topology::face_front_refs(bytes, payload, end);
     Some(FaceNode {
         attr,
         node_id,
         refs,
+        front,
         sense,
         offset,
-        end: at + 1,
+        end,
     })
 }
 
@@ -1045,13 +1062,14 @@ fn resolve_framing<T>(
     });
 }
 
+#[cfg(test)]
 pub(super) fn scan(bytes: &[u8]) -> Facts {
-    scan_with_payload_exclusions(bytes, false)
+    scan_with_payload_exclusions(&super::topology::ScopedBody::new(bytes, false))
 }
 
-pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Facts {
-    let scopes = super::topology::topology_scopes(bytes, prefixed);
-    let payload_ranges = &scopes.excluded_starts;
+pub(super) fn scan_with_payload_exclusions(stream: &super::topology::ScopedBody<'_>) -> Facts {
+    let bytes = stream.body;
+    let payload_ranges = &stream.scopes.excluded_starts;
     let mut payload_index = 0;
     let mut facts = Facts::default();
     let mut body_offsets = HashSet::new();
@@ -1207,6 +1225,7 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
             }
         }
     }
+    let scopes = &stream.scopes;
     let outside_payload = |start: usize, end: usize| {
         let index = scopes.payloads.partition_point(|range| range.end <= start);
         let start_index = scopes
@@ -1283,6 +1302,7 @@ mod tests {
         read_refs, region_chain, scan, BodyNode, FaceNode, Facts, RegionKind, RegionNode,
         ShellNode, BODY_TAG, FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
     };
+    use crate::brep::topology::ScopedBody;
     use crate::test_support::container::sldprt_with_body;
     use crate::test_support::parasolid::triangle_body;
     use crate::SldprtCodec;
@@ -1820,7 +1840,7 @@ mod tests {
         bytes.extend(500u16.to_be_bytes());
         bytes.extend(&payload);
         for prefixed in [false, true] {
-            let facts = super::scan_with_payload_exclusions(&bytes, prefixed);
+            let facts = super::scan_with_payload_exclusions(&ScopedBody::new(&bytes, prefixed));
             assert!(!facts.topology_owner_attrs().contains(&3));
             assert!(!facts.bodies.iter().any(|node| node.attr == 3));
         }
@@ -1847,14 +1867,19 @@ mod tests {
         schema_pointer(&mut bytes, &[b'a'; 40], 82);
         bytes.push(b'Z');
         let payload = bytes.len();
-        assert!(
-            super::super::topology::point_class_attrs(&bytes[fake_point..], false).contains(&3)
-        );
+        assert!(super::super::topology::point_class_attrs(&ScopedBody::new(
+            &bytes[fake_point..],
+            false
+        ))
+        .contains(&3));
         bytes.extend(body_node(3, 1006, 1));
         bytes.extend([0, 1, 0, 1, 0, 0, 0, 0, 0, 1]);
         let scopes = super::super::topology::topology_scopes(&bytes, false);
         assert!(scopes.payloads.is_empty());
-        assert!(!super::super::topology::point_class_attrs(&bytes, false).contains(&3));
+        assert!(
+            !super::super::topology::point_class_attrs(&ScopedBody::new(&bytes, false))
+                .contains(&3)
+        );
         let facts = scan(&bytes);
         assert!(facts
             .bodies
@@ -1862,7 +1887,9 @@ mod tests {
             .any(|node| node.offset == payload && node.attr == 3));
         assert!(facts.topology_owner_attrs().contains(&3));
         bytes.extend(crate::test_support::parasolid::world_point(3, [0.0; 3]));
-        assert!(super::super::topology::point_class_attrs(&bytes, false).contains(&3));
+        assert!(
+            super::super::topology::point_class_attrs(&ScopedBody::new(&bytes, false)).contains(&3)
+        );
     }
 
     #[test]
@@ -2062,6 +2089,7 @@ mod tests {
                 attr: 100,
                 node_id: 55,
                 refs: [1, 1, 1, 8, 12],
+                front: None,
                 sense: Sense::Forward,
                 offset: 9,
                 end: 10,
@@ -2161,6 +2189,7 @@ mod tests {
                     attr: 100,
                     node_id: 55,
                     refs: [1, 1, 1, 65_536, 12],
+                    front: None,
                     sense: Sense::Forward,
                     offset: 7,
                     end: 8,
@@ -2169,6 +2198,7 @@ mod tests {
                     attr: 101,
                     node_id: 56,
                     refs: [1, 1, 1, 8, 12],
+                    front: None,
                     sense: Sense::Forward,
                     offset: 9,
                     end: 10,
@@ -2273,8 +2303,10 @@ mod tests {
         assert!(facts.hierarchies(&HashSet::new()).is_none());
     }
 
+    /// A region-chain head that names no REGION selects no REGION, also
+    /// where a REGION's previous reference holds that value (§6).
     #[test]
-    fn region_chain_accepts_body_predecessor_sentinel() {
+    fn a_region_chain_head_that_names_no_region_selects_no_chain() {
         let body = BodyNode {
             attr: 3,
             node_id: 7,
@@ -2296,11 +2328,7 @@ mod tests {
                 end: 4,
             },
         )]);
-        let chain = region_chain(&body, &regions).expect("sentinel-linked region");
-        assert_eq!(
-            chain.iter().map(|region| region.attr).collect::<Vec<_>>(),
-            vec![35]
-        );
+        assert_eq!(region_chain(&body, &regions), Some(Vec::new()));
     }
 
     #[test]
@@ -2371,7 +2399,7 @@ mod tests {
         bytes.extend(710u16.to_be_bytes());
         bytes.extend(payload);
         for prefixed in [false, true] {
-            let facts = super::scan_with_payload_exclusions(&bytes, prefixed);
+            let facts = super::scan_with_payload_exclusions(&ScopedBody::new(&bytes, prefixed));
             assert!(facts.bodies.is_empty());
             assert!(!facts.topology_owner_attrs().contains(&900));
         }
@@ -2388,12 +2416,14 @@ mod tests {
             u16::try_from(owner).unwrap(),
             [0.0; 3],
         );
-        assert!(super::super::topology::point_class_attrs(&point, true).contains(&owner));
+        assert!(
+            super::super::topology::point_class_attrs(&ScopedBody::new(&point, true))
+                .contains(&owner)
+        );
         for reverse in [false, true] {
-            let mut streams = vec![
-                (&partition, &[][..], false),
-                (&delta, point.as_slice(), true),
-            ];
+            let partition_stream = ScopedBody::new(&[], false);
+            let delta_stream = ScopedBody::new(point.as_slice(), true);
+            let mut streams = vec![(&partition, &partition_stream), (&delta, &delta_stream)];
             if reverse {
                 streams.reverse();
             }
@@ -2411,8 +2441,8 @@ mod tests {
         shell.attr = owner;
         partition.shells.push(shell);
         assert!(!super::topology_owner_attrs_for_streams([
-            (&partition, &[][..], false),
-            (&delta, &[][..], true)
+            (&partition, &ScopedBody::new(&[][..], false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
     }
@@ -2435,8 +2465,8 @@ mod tests {
         delta.bodies.push(source.bodies[0].clone());
         let empty = Facts::default();
         assert!(super::topology_owner_attrs_for_streams([
-            (&empty, &[][..], false),
-            (&delta, &[][..], true)
+            (&empty, &ScopedBody::new(&[][..], false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
         let mut partition = Facts::default();
@@ -2444,15 +2474,15 @@ mod tests {
         face.attr = owner;
         partition.faces.push(face);
         assert!(!super::topology_owner_attrs_for_streams([
-            (&partition, &[][..], false),
-            (&delta, &[][..], true)
+            (&partition, &ScopedBody::new(&[][..], false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
         let point =
             crate::test_support::parasolid::world_point(u16::try_from(owner).unwrap(), [0.0; 3]);
         assert!(!super::topology_owner_attrs_for_streams([
-            (&empty, point.as_slice(), false),
-            (&delta, &[][..], true)
+            (&empty, &ScopedBody::new(point.as_slice(), false)),
+            (&delta, &ScopedBody::new(&[][..], true))
         ])
         .contains(&owner));
     }
@@ -2465,6 +2495,7 @@ mod tests {
             attr,
             node_id: attr,
             refs: [next, 1, 1, 5, 1],
+            front: None,
             sense: Sense::Forward,
             offset: 0,
             end: 0,
@@ -2498,6 +2529,7 @@ mod tests {
             attr,
             node_id: attr,
             refs: [next, 1, 1, 5, 1],
+            front: None,
             sense: Sense::Forward,
             offset: 0,
             end: 0,
