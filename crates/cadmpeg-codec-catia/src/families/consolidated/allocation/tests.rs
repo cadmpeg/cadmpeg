@@ -129,3 +129,39 @@ fn allocation_invalid_compact_headers_preserve_the_known_prefix() {
     }
     assert_eq!(journal.resolve_owned_child(0, 0), Some(&records[1]));
 }
+
+#[test]
+fn allocation_with_sources_bridges_skipped_width4_flag13_frames() {
+    let first = frame(0x27, 1);
+    // A width-4 Flag13 allocation frame (`b5 13 5b`, payload_len=0, compact 3-byte
+    // operand `0x0c 0x00 0x01 0x00` => increment 256) omitted between `first` and `second`.
+    let skipped_flag13 = [0xb5u8, 0x13, 0x5b, 0x00, 0x0c, 0x00, 0x01, 0x00];
+    let second = frame(0x25, 2);
+    let data = [
+        first.as_slice(),
+        skipped_flag13.as_slice(),
+        second.as_slice(),
+    ]
+    .concat();
+    let sources = vec![vec![crate::wire::records::SourceExtent::whole(&data)]];
+    let all_records =
+        consolidated_records_in_range_sources(&data, [std::iter::once(0..data.len())]);
+    let records = vec![
+        all_records.first().expect("first record").clone(),
+        all_records.last().expect("second record").clone(),
+    ];
+    assert!(records[1].source_range().start > records[0].source_range().end);
+
+    // Without source gap bridging, the logical gap starts a new run and breaks
+    // absolute address continuity across the gap.
+    let unbridged = AllocationJournal::new(&records);
+    assert_eq!(unbridged.absolute_address(0), Some(1));
+    assert!(unbridged.absolute_address(1).is_none());
+    assert!(unbridged.resolve_weighted_distance(1, 258).is_none());
+
+    // With source bytes, the skipped width-4 frame increment is accumulated cleanly.
+    let bridged = AllocationJournal::with_sources(&data, &sources, &records);
+    assert_eq!(bridged.absolute_address(0), Some(1));
+    assert_eq!(bridged.absolute_address(1), Some(259));
+    assert_eq!(bridged.resolve_weighted_distance(1, 258), Some(&records[0]));
+}

@@ -61,7 +61,7 @@ pub(in crate::families) fn recover_missing_plane_normals(
     surface_records: &[StandardSurfaceRecord],
     normals: &mut HashMap<u32, FiniteVector<3>>,
 ) {
-    let journal = AllocationJournal::new(records);
+    let journal = AllocationJournal::with_sources(data, sources, records);
     let face_carriers = unique_5f_carriers(data, sources, records, &journal);
     let b2_planes: HashMap<_, _> = b2_plane_carriers_from_records(data, records)
         .into_iter()
@@ -162,7 +162,7 @@ pub(in crate::families) fn bind_journal_standard_surfaces(
     a5_carriers: &[FreeformSurface],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<usize, CodecError> {
-    let journal = AllocationJournal::new(records);
+    let journal = AllocationJournal::with_sources(data, sources, records);
     let face_carriers = unique_5f_carriers(data, sources, records, &journal);
     if face_carriers.is_empty() {
         return Ok(0);
@@ -279,14 +279,14 @@ impl<'a> CarrierResolver<'a> {
                 .get(&carrier.byte_offset())
                 .map(|surface| SolvedSurfaceGeometry::Nurbs((*surface).clone()))
                 .or_else(|| {
-                    crate::families::a5a8::records::a5_owned_surfaces_from_records(
+                    crate::families::a5a8::records::a5_owned_surface_from_record_in_sources(
                         self.data,
-                        std::slice::from_ref(carrier),
+                        self.sources,
+                        carrier,
                         refusal,
                     )
-                    .ok()?
-                    .into_iter()
-                    .next()
+                    .ok()
+                    .flatten()
                     .map(|surface| SolvedSurfaceGeometry::Nurbs(surface.geometry))
                 })
                 .or_else(|| {
@@ -433,38 +433,8 @@ impl<'a> CarrierResolver<'a> {
             directrix_record.source_index(),
             directrix_record.source_range().start,
         )?;
-        let (curve_record, curve_index, v_range) = if directrix_record.family()
-            == ConsolidatedFamily::B
-            && directrix_record.class() == 0x24
-        {
-            let dpl = directrix_record.payload_bytes(self.data, self.sources)?;
-            if dpl.first() != Some(&0x81) {
-                return None;
-            }
-            let mut dat = 1;
-            let cref = allocation_reference(&dpl, &mut dat)?;
-            let mut dview = View::over_retained(dpl.get(dat..)?);
-            let range = match dview.u8()? {
-                0x0f => {
-                    let lo = dview.f64_le()?;
-                    let hi = dview.f64_le()?;
-                    if !dview.is_empty() {
-                        return None;
-                    }
-                    Some(IncreasingParameterInterval::new([lo, hi])?.endpoints())
-                }
-                _ => None,
-            };
-            let target = resolve_ref(self.journal, directrix_index, cref)?;
-            let target_index = self
-                .journal
-                .index(target.source_index(), target.source_range().start)?;
-            (target, target_index, range)
-        } else {
-            (directrix_record, directrix_index, None)
-        };
-
-        let curve_3d = self.decode_3d_curve(curve_index, curve_record, v_range, refusal, depth)?;
+        let curve_3d =
+            self.decode_3d_curve(directrix_index, directrix_record, None, refusal, depth)?;
         extrude_nurbs_curve(&curve_3d, direction, u_bounds)
     }
 
@@ -480,6 +450,86 @@ impl<'a> CarrierResolver<'a> {
             return None;
         }
         match (record.family(), record.class()) {
+            (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x24 | 0x25) => {
+                let dpl = record.payload_bytes(self.data, self.sources)?;
+                match dpl.first().copied()? {
+                    0x81 => {
+                        let mut dat = 1;
+                        let cref = allocation_reference(&dpl, &mut dat)?;
+                        let mut dview = View::over_retained(dpl.get(dat..)?);
+                        let range = match dview.u8()? {
+                            0x0f => {
+                                let lo = dview.f64_le()?;
+                                let hi = dview.f64_le()?;
+                                if !dview.is_empty() {
+                                    return None;
+                                }
+                                Some(IncreasingParameterInterval::new([lo, hi])?.endpoints())
+                            }
+                            _ => None,
+                        };
+                        let target = resolve_ref(self.journal, curve_index, cref)?;
+                        let target_index = self
+                            .journal
+                            .index(target.source_index(), target.source_range().start)?;
+                        self.decode_3d_curve(
+                            target_index,
+                            target,
+                            explicit_range.or(range),
+                            refusal,
+                            depth + 1,
+                        )
+                    }
+                    0x82 => {
+                        let mut dat = 1;
+                        let ref1 = allocation_reference(&dpl, &mut dat)?;
+                        let ref2 = allocation_reference(&dpl, &mut dat)?;
+                        let mut dview = View::over_retained(dpl.get(dat..)?);
+                        if dview.take(3)? != [0x0a, 0x05, 0x00] {
+                            return None;
+                        }
+                        let r1_lo = dview.f64_le()?;
+                        let r1_hi = dview.f64_le()?;
+                        let _gap = dview.f64_le()?;
+                        let r2_lo = dview.f64_le()?;
+                        let r2_hi = dview.f64_le()?;
+                        let range1 = IncreasingParameterInterval::new([r1_lo, r1_hi])?.endpoints();
+                        let range2 = IncreasingParameterInterval::new([r2_lo, r2_hi])?.endpoints();
+                        let t1 = resolve_ref(self.journal, curve_index, ref1)?;
+                        let t1_idx = self
+                            .journal
+                            .index(t1.source_index(), t1.source_range().start)?;
+                        let t2 = resolve_ref(self.journal, curve_index, ref2)?;
+                        let t2_idx = self
+                            .journal
+                            .index(t2.source_index(), t2.source_range().start)?;
+                        let c1 =
+                            self.decode_3d_curve(t1_idx, t1, Some(range1), refusal, depth + 1)?;
+                        let c2 =
+                            self.decode_3d_curve(t2_idx, t2, Some(range2), refusal, depth + 1)?;
+                        // Cross-check both dual-carrier representations agree at their endpoints.
+                        let eval_end = |curve: &NurbsCurve, t: f64| -> Option<Point3> {
+                            let cg = cadmpeg_ir::geometry::CurveGeometry::Solved(
+                                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve.clone()),
+                            );
+                            eval::decode::curve_point(EvaluationAdmission::Standard, &cg, t)
+                                .ok()
+                                .map(|p| p.get())
+                        };
+                        let p1a = eval_end(&c1, range1[0])?;
+                        let p1b = eval_end(&c1, range1[1])?;
+                        let p2a = eval_end(&c2, range2[0])?;
+                        let p2b = eval_end(&c2, range2[1])?;
+                        const DUAL_ENDPOINT_TOL_MM: f64 = 0.05;
+                        let same_dir = p1a.distance(p2a) <= DUAL_ENDPOINT_TOL_MM
+                            && p1b.distance(p2b) <= DUAL_ENDPOINT_TOL_MM;
+                        let opp_dir = p1a.distance(p2b) <= DUAL_ENDPOINT_TOL_MM
+                            && p1b.distance(p2a) <= DUAL_ENDPOINT_TOL_MM;
+                        (same_dir || opp_dir).then_some(c1)
+                    }
+                    _ => None,
+                }
+            }
             (ConsolidatedFamily::A | ConsolidatedFamily::B, 0x16) => self
                 .b2_nurbs_curves
                 .get(&record.byte_offset())
@@ -655,8 +705,12 @@ fn decode_u32_bspline_pcurve_payload(
     if !matches!(degree, 1 | 3 | 5) || !(2..=MAX_BSPLINE_PCURVE_KNOTS).contains(&nknots) {
         return None;
     }
-    if view.u8()? != 0x04 {
-        return None;
+    match view.u8()? {
+        0x04 => {}
+        0x00 => {
+            let _flag = view.u32_le()?;
+        }
+        _ => return None,
     }
     let mut distinct = Vec::with_capacity(nknots);
     for _ in 0..nknots {
@@ -665,17 +719,48 @@ fn decode_u32_bspline_pcurve_payload(
     if !cadmpeg_ir::geometry::nurbs::knots_strictly_increasing(&distinct) {
         return None;
     }
-    if view.u8()? != 0x01 {
+    let deg_usize = usize::try_from(degree).ok()?;
+    let multiplicities: Vec<usize> = match view.u8()? {
+        0x01 => {
+            let interior_mult = match degree {
+                _ if nknots == 2 => 1usize,
+                5 => 3usize,
+                1..=3 => 1usize,
+                _ => return None,
+            };
+            (0..nknots)
+                .map(|index| {
+                    if index == 0 || index + 1 == nknots {
+                        deg_usize + 1
+                    } else {
+                        interior_mult
+                    }
+                })
+                .collect()
+        }
+        0x00 => {
+            if nknots.checked_mul(4)? > view.remaining() {
+                return None;
+            }
+            let mut mults = Vec::with_capacity(nknots);
+            for _ in 0..nknots {
+                let mult = usize::try_from(view.u32_le()?).ok()?;
+                if mult == 0 || mult > deg_usize + 1 {
+                    return None;
+                }
+                mults.push(mult);
+            }
+            mults
+        }
+        _ => return None,
+    };
+    let total_knots = multiplicities
+        .iter()
+        .try_fold(0usize, |acc, &m| acc.checked_add(m))?;
+    let pole_count = total_knots.checked_sub(deg_usize.checked_add(1)?)?;
+    if pole_count <= deg_usize || pole_count.checked_mul(16)? > view.remaining() {
         return None;
     }
-    let interior_mult = match degree {
-        5 => 3usize,
-        _ => 1usize,
-    };
-    let pole_count = usize::try_from(degree)
-        .ok()?
-        .checked_add(1)?
-        .checked_add(interior_mult.checked_mul(nknots - 2)?)?;
     let mut poles = Vec::with_capacity(pole_count);
     for _ in 0..pole_count {
         let u = view.f64_le()?;
@@ -685,13 +770,8 @@ fn decode_u32_bspline_pcurve_payload(
         }
         poles.push(Point2::new(u, v));
     }
-    let mut knots = Vec::with_capacity(pole_count + usize::try_from(degree).ok()? + 1);
-    for (index, &knot) in distinct.iter().enumerate() {
-        let mult = if index == 0 || index + 1 == nknots {
-            usize::try_from(degree).ok()? + 1
-        } else {
-            interior_mult
-        };
+    let mut knots = Vec::with_capacity(total_knots);
+    for (&knot, &mult) in distinct.iter().zip(&multiplicities) {
         knots.extend(std::iter::repeat_n(knot, mult));
     }
     let range = [*distinct.first()?, *distinct.last()?];
@@ -725,8 +805,12 @@ fn decode_u32_jet_pcurve_payload(
     if degree != 5 || !(2..=MAX_BSPLINE_PCURVE_KNOTS).contains(&nknots) {
         return None;
     }
-    if view.u8()? != 0x04 {
-        return None;
+    match view.u8()? {
+        0x04 => {}
+        0x00 => {
+            let _flag = view.u32_le()?;
+        }
+        _ => return None,
     }
     let mut knots = Vec::with_capacity(nknots);
     for _ in 0..nknots {

@@ -958,7 +958,7 @@ pub(in crate::families) fn attach(
         sources,
         records,
     } = consolidated;
-    let journal = AllocationJournal::new(records);
+    let journal = AllocationJournal::with_sources(data, sources, records);
     let mut nodes = HashMap::new();
     let mut four_ref_nodes = HashMap::new();
     for (index, record) in records.iter().enumerate() {

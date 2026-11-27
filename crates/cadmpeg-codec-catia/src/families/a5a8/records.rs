@@ -1800,6 +1800,33 @@ pub(in crate::families) fn a5_owned_surfaces_from_records(
 
 const TERMINAL_SPAN_DOMAIN_TOLERANCE: f64 = 1.0e-6;
 
+/// Decode one owned `A_34` NURBS surface record, including records whose
+/// payload spans multiple physical extents in `sources`.
+pub(in crate::families) fn a5_owned_surface_from_record_in_sources(
+    data: &[u8],
+    sources: &[Vec<crate::wire::records::SourceExtent>],
+    record: &ConsolidatedRecord,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<FreeformSurface>, CodecError> {
+    if record.family() != ConsolidatedFamily::A || record.class() != 0x34 {
+        return Ok(None);
+    }
+    let Some(payload) = record.payload_bytes(data, sources) else {
+        return Ok(None);
+    };
+    let frame = ConsolidatedFrame {
+        pos: 0,
+        payload: 0,
+        end: payload.len(),
+        header_token: record.header_token(),
+    };
+    let Some(mut surface) = a5_surface(&payload, frame, refusal, true)? else {
+        return Ok(None);
+    };
+    surface.pos = record.byte_offset();
+    Ok(Some(surface))
+}
+
 fn a5_surfaces_in_scope(
     data: &[u8],
     records: &[ConsolidatedRecord],
