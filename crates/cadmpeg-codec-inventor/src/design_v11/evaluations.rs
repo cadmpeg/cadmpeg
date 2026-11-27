@@ -54,9 +54,10 @@ struct Placed {
 }
 
 /// One evaluation to state, and the history bodies its state holds.
-struct Planned {
+struct Planned<'a> {
     position: Position,
     ordinal: u32,
+    state: &'a StateRecords,
     identifier: i64,
     bodies: Vec<HistoryBodyId>,
     /// The undecoded records of the state that its records reference.
@@ -100,7 +101,7 @@ pub(crate) fn project(
         return Ok(());
     };
     let current = state_index(ir, &members, &at);
-    let mut planned = BTreeMap::<Option<usize>, Planned>::new();
+    let mut planned = BTreeMap::<Option<usize>, Planned<'_>>::new();
     let mut held = Vec::new();
     for body in &ir.model.history_bodies {
         let placed = match place(ir, &container, &members, body) {
@@ -110,17 +111,17 @@ pub(crate) fn project(
                 continue;
             }
         };
-        if !states.contains_key(&placed.ordinal) {
+        let Some(state) = states.get(&placed.ordinal) else {
             unplaced.push((body, "the state is not decoded"));
             continue;
-        }
+        };
         if placed.index > current {
             unplaced.push((body, "the state is after the rollback position"));
             continue;
         }
         if placed.index == current {
             match &body.produced_by {
-                Some(feature) => held.push((body, feature, placed.ordinal)),
+                Some(feature) => held.push((body, feature, state)),
                 None => unplaced.push((body, "the current geometry holds the state")),
             }
             continue;
@@ -128,6 +129,7 @@ pub(crate) fn project(
         let entry = planned.entry(placed.index).or_insert_with(|| Planned {
             position: placed.position,
             ordinal: placed.ordinal,
+            state,
             identifier: body.state.identifier,
             bodies: Vec::new(),
             unknowns: Vec::new(),
@@ -146,10 +148,8 @@ pub(crate) fn project(
     // A Base feature whose state is the current state restates its body
     // through its stored bodies where the decoded state is the current
     // geometry record for record.
-    for (body, feature, ordinal) in held {
-        let same = states.get(&ordinal).is_some_and(|state| {
-            StateDelta::between(&records, &state.geometry) == StateDelta::default()
-        });
+    for (body, feature, state) in held {
+        let same = StateDelta::between(&records, &state.geometry) == StateDelta::default();
         let written = ir
             .design
             .features
@@ -169,12 +169,9 @@ pub(crate) fn project(
     let mut open = Vec::new();
     let mut claimed = BTreeMap::<&str, &UnknownRecord>::new();
     for (index, plan) in planned.iter_mut().rev() {
-        let Some(state) = states.get(&plan.ordinal) else {
-            continue;
-        };
-        let targets = ir.open_references(ctx, &state.geometry)?;
+        let targets = ir.open_references(ctx, &plan.state.geometry)?;
         let mut kept = BTreeMap::new();
-        for record in &state.unknowns {
+        for record in &plan.state.unknowns {
             let id = record.id().as_str();
             if targets.contains(id)
                 && claimed
@@ -211,14 +208,12 @@ pub(crate) fn project(
     for Planned {
         position,
         ordinal,
+        state,
         identifier,
         bodies,
         unknowns: kept,
     } in planned.into_values().rev()
     {
-        let Some(state) = states.get(&ordinal) else {
-            continue;
-        };
         let delta = StateDelta::between(&records, &state.geometry);
         ctx.charge_entities(1, "state an Inventor history state")?;
         let repeat = minted.entry(ordinal).or_default();
