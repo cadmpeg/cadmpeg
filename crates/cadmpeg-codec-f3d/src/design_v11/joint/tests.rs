@@ -685,6 +685,70 @@ fn a_group_with_one_occurrence_member_stays_unresolved() {
 }
 
 #[test]
+fn a_feature_of_an_operand_component_states_paths_from_the_scope_definition() {
+    let fixed_pair = joint(
+        "pair",
+        82,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("c"), STORED)],
+    );
+    let mut feature = unresolved("pair");
+    feature.component = Some(definition("part-b"));
+    let mut features = [feature];
+    let losses = restate(
+        &mut features,
+        &[legacy("pair", &fixed_pair)],
+        &[fixed_pair],
+        &[(82, Source::default())],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(features[0].component, None);
+    let contexts = the_joint(&features[0])
+        .connectors
+        .iter()
+        .map(|connector| only_pick(construction(connector)).context.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        contexts,
+        [
+            Some(PickContext::Occurrence(path(&["a"]))),
+            Some(PickContext::Occurrence(path(&["a", "c"]))),
+        ]
+    );
+}
+
+#[test]
+fn a_joint_on_an_occurrence_of_no_definition_stays_unresolved() {
+    let dangling = joint(
+        "dangling",
+        83,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("z"), STORED)],
+    );
+    let mut features = [unresolved("dangling")];
+    let losses = restate(
+        &mut features,
+        &[legacy("dangling", &dangling)],
+        &[dangling],
+        &[(83, Source::default())],
+    );
+    assert_eq!(
+        features[0].definition.operation,
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Joint
+        }
+    );
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert!(
+        loss.message.contains("f3d:model:feature#dangling"),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
 fn a_motion_link_couples_the_features_of_its_two_revolute_joints() {
     let hinge = |name: &str, ordinal: u32| {
         joint(

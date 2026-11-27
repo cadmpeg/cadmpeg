@@ -96,18 +96,23 @@ impl<'a> Places<'a> {
     }
 
     /// The path from `owner` to `occurrence`: the chain of parents from the
-    /// first occurrence `owner` lists, else from the outermost occurrence.
-    fn path(&self, occurrence: &OccurrenceId, owner: &ProductDefinitionId) -> OccurrencePath {
+    /// first occurrence `owner` lists. `None` where no occurrence of the
+    /// chain is one that `owner` lists.
+    fn path(
+        &self,
+        occurrence: &OccurrenceId,
+        owner: &ProductDefinitionId,
+    ) -> Option<OccurrencePath> {
         let mut chain = vec![occurrence.clone()];
         let mut at = occurrence;
-        while self.owners.get(at) != Some(&owner) && chain.len() <= self.occurrences.len() {
-            let Some(parent) = self.parents.get(at) else {
-                break;
-            };
-            chain.push(parent.clone());
-            at = parent;
+        while self.owners.get(at) != Some(&owner) {
+            if chain.len() > self.occurrences.len() {
+                return None;
+            }
+            at = self.parents.get(at)?;
+            chain.push(at.clone());
         }
-        OccurrencePath(
+        Some(OccurrencePath(
             chain
                 .into_iter()
                 .rev()
@@ -116,7 +121,7 @@ impl<'a> Places<'a> {
                     configuration: None,
                 })
                 .collect(),
-        )
+        ))
     }
 
     /// The occurrence that `occurrence` and the residual native keys `path`
@@ -207,18 +212,27 @@ pub(super) fn project(
         let Some(joint) = inputs.bound.get(feature.id.as_str()) else {
             continue;
         };
-        let site = Site {
-            owner: feature.component.as_ref().unwrap_or(owner),
+        let site = |owner| Site {
+            owner,
             ids: &ids,
             inputs,
         };
+        let component = feature.component.as_ref().filter(|component| {
+            inputs
+                .joints
+                .get(joint)
+                .is_some_and(|joint| site(component).roots(joint))
+        });
         let projected = inputs
             .joints
             .get(joint)
             .ok_or("its assembly joint is absent")
-            .and_then(|joint| site.operation(joint));
+            .and_then(|joint| site(component.unwrap_or(owner)).operation(joint));
         match projected {
             Ok(operation) => {
+                if component.is_none() {
+                    feature.component = None;
+                }
                 let stated = match (&operation, inputs.joints.get(joint)) {
                     (FeatureOperation::RigidGroup(_), Some(joint)) => joint
                         .native_ref
@@ -267,15 +281,63 @@ struct Site<'s, 'a> {
     inputs: &'s Inputs<'a>,
 }
 
-impl Site<'_, '_> {
-    /// The design operation of `joint`.
-    fn operation(&self, joint: &AssemblyJoint) -> Result<FeatureOperation, &'static str> {
-        let source = joint
+impl<'a> Site<'_, 'a> {
+    /// What the scope record of `joint` states.
+    fn source(&self, joint: &AssemblyJoint) -> Source<'a> {
+        joint
             .native_ref
             .as_deref()
             .and_then(|scope| self.inputs.sources.get(scope))
             .copied()
-            .unwrap_or_default();
+            .unwrap_or_default()
+    }
+
+    /// The connectors `joint` places: its own two, and for a rigid group
+    /// the second connector of each other joint of its scope.
+    fn placed<'j>(
+        &self,
+        joint: &'j AssemblyJoint,
+    ) -> Result<Vec<&'j products::JointConnector>, &'static str>
+    where
+        'a: 'j,
+    {
+        let mut connectors = pair(joint)?.iter().collect::<Vec<_>>();
+        if self.source(joint).group {
+            let group = joint
+                .native_ref
+                .as_deref()
+                .and_then(|scope| self.inputs.scoped.get(scope))
+                .ok_or("its scope states no joints")?;
+            for member in group.iter().filter(|member| member.id != joint.id) {
+                connectors.push(&pair(member)?[1]);
+            }
+        }
+        Ok(connectors)
+    }
+
+    /// Whether the definition at `owner` has a path to each occurrence that
+    /// the connectors `joint` places name.
+    fn roots(&self, joint: &AssemblyJoint) -> bool {
+        self.placed(joint).map_or(true, |connectors| {
+            connectors
+                .iter()
+                .all(|connector| match &connector.operand.container {
+                    OperandContainer::Occurrence {
+                        occurrence,
+                        occurrence_path,
+                    } => {
+                        let (occurrence, _) =
+                            self.inputs.places.descend(occurrence, occurrence_path);
+                        self.inputs.places.path(&occurrence, self.owner).is_some()
+                    }
+                    OperandContainer::Root {} | OperandContainer::External { .. } => true,
+                })
+        })
+    }
+
+    /// The design operation of `joint`.
+    fn operation(&self, joint: &AssemblyJoint) -> Result<FeatureOperation, &'static str> {
+        let source = self.source(joint);
         let JointOperands::Pair {
             kind, connectors, ..
         } = joint.operands()
@@ -430,7 +492,7 @@ impl Site<'_, '_> {
             } => {
                 let (occurrence, keys) = self.inputs.places.descend(occurrence, occurrence_path);
                 let context = Some(PickContext::Occurrence(
-                    self.inputs.places.path(&occurrence, self.owner),
+                    self.inputs.places.path(&occurrence, self.owner)?,
                 ));
                 let native = native_name(
                     keys.iter()
@@ -482,16 +544,7 @@ impl Site<'_, '_> {
     /// its joints connect, with each member's locator frame and each
     /// unresolved member as native options.
     fn rigid_group(&self, joint: &AssemblyJoint) -> Result<RigidGroup, &'static str> {
-        let group = joint
-            .native_ref
-            .as_deref()
-            .and_then(|scope| self.inputs.scoped.get(scope))
-            .ok_or("its scope states no joints")?;
-        let [first, second] = pair(joint)?;
-        let mut connectors = vec![first, second];
-        for member in group.iter().filter(|member| member.id != joint.id) {
-            connectors.push(&pair(member)?[1]);
-        }
+        let connectors = self.placed(joint)?;
         let mut members = BTreeSet::new();
         let mut native_options = NativeOptions::new();
         for (ordinal, connector) in connectors.into_iter().enumerate() {
@@ -505,6 +558,7 @@ impl Site<'_, '_> {
                         self.inputs.places.descend(occurrence, occurrence_path);
                     keys.is_empty()
                         .then(|| self.inputs.places.path(&occurrence, self.owner))
+                        .flatten()
                 }
                 OperandContainer::Root {} | OperandContainer::External { .. } => None,
             };
