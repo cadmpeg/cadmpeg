@@ -23,9 +23,9 @@ def offset_hours(t):
     m = STAMP.search(t)
     if not m:
         return 0
-    sign, hh, mm = m.group(3)[:1], int(m.group(3)[1:3]), int(m.group(3)[4:6])
-    assert mm == 0, 'fractional-hour offset not handled'
-    return hh if sign == b'-' else -hh
+    sign, hours, minutes = m.group(3)[:1], int(m.group(3)[1:3]), int(m.group(3)[4:6])
+    assert minutes == 0, 'fractional-hour offset not handled'
+    return hours if sign == b'-' else -hours
 
 
 def step_utc(t, hours):

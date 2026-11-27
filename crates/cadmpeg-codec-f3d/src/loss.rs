@@ -1329,8 +1329,6 @@ pub(crate) enum F3dLossCode {
     NurbsSurfaceCarrier,
     /// Procedural curve records were decoded into NURBS carriers from cache.
     NurbsCurveCarrier,
-    /// Faces were omitted because their required surface reference was dangling.
-    FaceSurfaceReferenceDangling,
     /// Faces rest on spline or procedural surfaces whose shape was not decoded.
     SurfaceShapeNotDecoded,
     /// Faces use zero-payload `mesh_surface` sentinels; exact surfaces are absent.
@@ -2254,7 +2252,6 @@ impl F3dLossCode {
         Self::NurbsSurfaceCarrier,
         Self::SketchRegionBodyOmitted,
         Self::NurbsCurveCarrier,
-        Self::FaceSurfaceReferenceDangling,
         Self::SurfaceShapeNotDecoded,
         Self::MeshSurfaceSentinel,
         Self::ProceduralCurveUndecoded,
@@ -3501,7 +3498,6 @@ impl F3dLossCode {
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
             Self::SketchRegionBodyOmitted => "geometry.sketch-region-body-omitted",
             Self::NurbsCurveCarrier => "geometry.nurbs-curve-carrier",
-            Self::FaceSurfaceReferenceDangling => "geometry.face-surface-dangling",
             Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
             Self::ProceduralCurveUndecoded => "geometry.procedural-curve-undecoded",
@@ -4382,7 +4378,6 @@ impl F3dLossCode {
             | Self::JointPlacedOccurrenceUnsolved
             | Self::MeshVertexPrecisionReduced
             | Self::MeshBodyIdentityAssumed
-            | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
             | Self::ProceduralSupportChartUnresolved
@@ -5200,7 +5195,6 @@ impl F3dLossCode {
             | Self::SketchGeometryGroupMemberUnlisted
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::DesignBodyBindingUnresolved
-            | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::SketchNameComposedFromFeatureOrdinal
             | Self::ReferenceImageNativeRetained
@@ -6187,7 +6181,6 @@ mod tests {
                 "geometry.nurbs-surface-carrier",
                 "geometry.sketch-region-body-omitted",
                 "geometry.nurbs-curve-carrier",
-                "geometry.face-surface-dangling",
                 "geometry.surface-shape-not-decoded",
                 "geometry.mesh-surface-sentinel",
                 "geometry.procedural-curve-undecoded",

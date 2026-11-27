@@ -142,9 +142,10 @@ enum Reached {
 /// Adds the occurrences each definition places, walking the definition graph
 /// from its roots (§3.11). A definition reached from a root lists its child
 /// occurrences once, in stored order; a child occurrence of a definition on
-/// the path to it closes a cycle and is left out. The walk adds no
-/// occurrence after `max_occurrences` occurrences; it walks on only to name
-/// the child occurrences it drops.
+/// the path to it closes a cycle and is left out. The expansion adds no
+/// occurrence after `max_occurrences` occurrences; it walks on only to count
+/// the occurrences it would add, which it gives up by the occurrence ids they
+/// would hold.
 pub(crate) fn occurrences(
     ctx: &DecodeContext<'_>,
     structure: &Structure,
@@ -165,9 +166,7 @@ pub(crate) fn occurrences(
     let mut admitted = u64_from_index(ir.entity_count());
     let mut emitted = 0_usize;
     let mut cycles = Vec::new();
-    let mut stopped = false;
-    let mut stopped_at = None;
-    let mut cut = Vec::new();
+    let mut unplaced = 0_usize;
     let mut past_depth = Vec::new();
     let mut not_similar = 0_usize;
     let mut invalid = 0_usize;
@@ -185,8 +184,8 @@ pub(crate) fn occurrences(
                 ProductDefinition::root(crate::ids::document(), ExternalDocument::default());
             for root in roots.iter().copied() {
                 if emitted >= max_occurrences {
-                    stopped = true;
-                    break;
+                    unplaced += 1;
+                    continue;
                 }
                 let id = crate::ids::occurrence(emitted);
                 let mut occurrence = Occurrence::new(
@@ -214,9 +213,6 @@ pub(crate) fn occurrences(
     }
     let mut reached = vec![Reached::No; definitions.len()];
     for root in roots.iter().copied() {
-        if stopped && stopped_at.is_none() {
-            break;
-        }
         // Each frame is a definition, its depth, and its next child.
         let mut stack = vec![(root, 1_usize, 0_usize)];
         reached[root] = Reached::OnPath;
@@ -239,17 +235,12 @@ pub(crate) fn occurrences(
                 continue;
             };
             frame.2 += 1;
-            let counting = stopped_at.is_some();
-            if !counting && emitted >= max_occurrences {
-                stopped = true;
-                stopped_at = Some((parent_definition, next));
-            } else if reached.get(child.definition) == Some(&Reached::OnPath) {
+            if reached.get(child.definition) == Some(&Reached::OnPath) {
                 cycles.push((parent_definition, next));
                 continue;
-            } else if counting {
-                cut.push((parent_definition, next));
             }
-            if stopped_at.is_some() {
+            if emitted >= max_occurrences {
+                unplaced += 1;
                 if reached.get(child.definition) == Some(&Reached::No) {
                     reached[child.definition] = Reached::OnPath;
                     stack.push((child.definition, depth + 1, 0));
@@ -321,7 +312,7 @@ pub(crate) fn occurrences(
         }));
     }
     let mut truncation = Vec::new();
-    if stopped {
+    if unplaced > 0 {
         truncation.push(format!(
             "decoding stopped at the limit of {max_occurrences} occurrences"
         ));
@@ -337,18 +328,15 @@ pub(crate) fn occurrences(
         losses.push(PvzLossCode::StructureOccurrenceTruncated.note(truncation.join("; ")));
     }
     let code = PvzLossCode::StructureOccurrenceTruncated.kind();
-    if let Some((definition, occurrence)) = stopped_at {
+    if unplaced > 0 {
         let loss = GivenUpRecord::new(
-            child_occurrence(definition, occurrence),
+            crate::ids::occurrence(emitted),
             format_args!(
-                "{code}: decoding stopped at this child occurrence, at the limit of \
+                "{code}: decoding stopped at this occurrence, at the limit of \
                  {max_occurrences} occurrences"
             ),
         )
-        .dropping(
-            cut.iter()
-                .map(|&(definition, occurrence)| child_occurrence(definition, occurrence)),
-        )
+        .dropping((emitted + 1..emitted + unplaced).map(crate::ids::occurrence))
         .loss();
         ctx.retain_bytes(
             u64_from_index(loss.message.len()),
