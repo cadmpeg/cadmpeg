@@ -14,7 +14,7 @@ use cadmpeg_ir::sketches::{Sketch, SketchEntity};
 
 use super::Projected;
 
-pub(super) mod trimmed;
+use cadmpeg_ir::design::regions;
 
 /// The planar sketches of the feature layer and their entities, and the
 /// arrangements built from them so far. Without a cache, each use builds its
@@ -23,17 +23,17 @@ pub(super) mod trimmed;
 pub(super) struct SketchData<'a> {
     pub(super) sketches: &'a [Sketch],
     pub(super) entities: &'a [SketchEntity],
-    pub(super) arrangements: Option<&'a trimmed::Arrangements>,
+    pub(super) arrangements: Option<&'a regions::Arrangements>,
 }
 
 impl SketchData<'_> {
     fn arrangement(
         self,
         sketch: &cadmpeg_ir::sketches::SketchId,
-    ) -> Projected<std::rc::Rc<trimmed::Arrangement>> {
+    ) -> Projected<std::rc::Rc<regions::Arrangement>> {
         match self.arrangements {
             Some(cache) => cache.get(self.entities, sketch),
-            None => trimmed::Arrangement::new(self.entities, sketch).map(std::rc::Rc::new),
+            None => regions::Arrangement::new(self.entities, sketch).map(std::rc::Rc::new),
         }
     }
 }
@@ -195,18 +195,7 @@ fn historical_edges<'a>(
             if samples.next().is_some() {
                 return Err("the selected edge sample is ambiguous");
             }
-            pick.witness = Some(cadmpeg_ir::design::selection::Witness {
-                point: Some(sample.interior),
-                direction: sample.tangent,
-                endpoints: sample
-                    .start
-                    .zip(sample.end)
-                    .map(|(start, end)| [start, end]),
-                frame: None,
-                curves: Vec::new(),
-                surface: None,
-                body: None,
-            });
+            pick.witness = Some(cadmpeg_ir::design::selection::Witness::edge_sample(sample));
         }
         picks.push(pick);
     }
@@ -361,7 +350,7 @@ pub(super) fn planar(
             Err("the selected loops have no explicit region nesting")
         }
         PlanarProfileRef::SketchRegions { sketch, regions } => {
-            let mut arrangement: Option<std::rc::Rc<trimmed::Arrangement>> = None;
+            let mut arrangement: Option<std::rc::Rc<regions::Arrangement>> = None;
             let mut picks = Vec::new();
             for region in regions.iter() {
                 picks.push(match region {

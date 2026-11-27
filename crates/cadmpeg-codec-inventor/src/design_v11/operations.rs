@@ -30,7 +30,7 @@ pub(super) fn project(
         return Ok(());
     }
     // One arrangement per sketch serves every feature that cuts it.
-    let arrangements = selections::trimmed::Arrangements::default();
+    let arrangements = cadmpeg_ir::design::regions::Arrangements::default();
     for source in &ir.model.features {
         if !projects(source.evaluation.definition().operation()) {
             continue;
