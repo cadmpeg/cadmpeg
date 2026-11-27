@@ -56,16 +56,6 @@
 
 **Need.** Documents that differ in one suppression, with the final word read before and after each change.
 
-### DR-1020. Second side word of extruded features
-
-**Question.** What does the `Double Value Object` 156 bytes after the function name of an extruded or revolved feature state?
-
-**Known.** The slot holds no object in the first feature of a document. In every later extruded protrusion and cutout of the controlled saves it holds `1`, for each side value `1`, `2` and `3` and for both boolean operations.
-
-**Conflict.** Other documents hold `2` in later protrusions, `1` in cutouts, and `1` in four further protrusions. The boolean operation and the side value do not separate them.
-
-**Need.** A document whose later extruded feature holds `2`, and a pair of saves that differ only in the setting that changes it.
-
 ### DR-1021. Topology proxy selections
 
 **Question.** What do the `f64` values after the axis of a circular-edge proxy store, which face of a two-setback chamfer is its reference face, and where does a thin wall with several open faces store the faces after the first?
@@ -82,6 +72,14 @@
 
 **Need.** Tapped holes of two thread sizes, with and without a counterbore.
 
+### DR-1025. Round set kinds
+
+**Question.** What do the blend shape and the setback of a round set store?
+
+**Known.** Set kind `1` is a constant radius and set kind `2` is a variable radius (§7.3). A corner round with unequal radii holds one set of kind `1` for each edge.
+
+**Need.** A round with a conic or G2 blend shape and a round with a setback, each with a copy that differs in one value, saved from the Solid Edge user interface.
+
 ### DR-1023. Swept, lofted and thin-wall operands
 
 **Question.** Where do swept, lofted and thin-wall features store their paths, sections, thicknesses and open faces?
@@ -97,11 +95,3 @@
 **Known.** Every read circular pattern fills a full turn. Every read mirror has one seed and stores its plane at object offset 329 (§8.2).
 
 **Need.** A circular pattern of three instances 30 degrees apart, and a mirror of two features.
-
-### DR-1025. Round set kinds
-
-**Question.** What do the blend shape and the setback of a round set store?
-
-**Known.** Set kind `1` is a constant radius and set kind `2` is a variable radius (§7.3). A corner round with unequal radii holds one set of kind `1` for each edge.
-
-**Need.** A round with a conic or G2 blend shape and a round with a setback, each with a copy that differs in one value, saved from the Solid Edge user interface.
