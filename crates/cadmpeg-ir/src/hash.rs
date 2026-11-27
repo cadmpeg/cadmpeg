@@ -575,10 +575,23 @@ struct PrettyRecords<'a, 'input> {
 
 impl Serialize for PrettyRecords<'_, '_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_seq(self.records.iter().map(|record| DigestNativeRecord {
-            ctx: self.ctx,
-            record,
-        }))
+        if self
+            .records
+            .windows(2)
+            .all(|pair| pair[0].id() <= pair[1].id())
+        {
+            serializer.collect_seq(self.records.iter().map(|record| DigestNativeRecord {
+                ctx: self.ctx,
+                record,
+            }))
+        } else {
+            let mut sorted: Vec<&NativeRecord> = self.records.iter().collect();
+            sorted.sort_by(|left, right| left.id().cmp(right.id()));
+            serializer.collect_seq(sorted.into_iter().map(|record| DigestNativeRecord {
+                ctx: self.ctx,
+                record,
+            }))
+        }
     }
 }
 

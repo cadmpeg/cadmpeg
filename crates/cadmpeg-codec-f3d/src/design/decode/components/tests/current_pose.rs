@@ -38,6 +38,33 @@ fn local_component_path_carrier(
     bytes
 }
 
+const TRANSLATION_HALF: [[f64; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.5],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
+
+#[test]
+fn a_current_stream_reads_a_two_element_path_closed_without_the_tagged_run() {
+    let magic = Some(crate::metastream::MODERN_SERIALIZER_MAGIC);
+    let carrier = local_component_path_carrier(11, 159, 10, TRANSLATION_HALF);
+    // Remove the tagged run: tag byte, u32 count, one u32 value, one reference.
+    let closing = local_reference(3).len() + local_reference(6).len();
+    let tagged_len = 1 + 4 + 4 + local_reference(8).len();
+    let end = carrier.len() - closing;
+    let mut plain = carrier[..end - tagged_len].to_vec();
+    plain.extend_from_slice(&carrier[end..]);
+    for body in [&carrier, &plain] {
+        let pose = crate::xref::local_component_path_pose(body, magic).expect("local pose");
+        assert_eq!(
+            (pose.component_record_index, pose.occurrence_record_index),
+            (159, 10)
+        );
+        assert_eq!(pose.transform, Some(TRANSLATION_HALF));
+    }
+}
+
 #[test]
 fn a_local_component_path_carrier_supplies_a_local_occurrence_pose() {
     use crate::records::feature::assembly_features::{
