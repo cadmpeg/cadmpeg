@@ -244,8 +244,8 @@ pub(in crate::native) fn admit(
 mod tests {
     use super::*;
     use crate::test_support::with_decode_context;
+    use cadmpeg_core::json;
     use cadmpeg_core::serde_erase::json;
-    use serde_json::json;
 
     fn map() -> serde_json::Value {
         json!({"id":"nx:s0:deltas-metadata#100", "stream_ordinal":0, "inflated_offset":100,

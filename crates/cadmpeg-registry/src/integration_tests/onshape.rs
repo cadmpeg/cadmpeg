@@ -11,10 +11,7 @@ fn onshape_is_registered_as_a_reader_with_composed_step_identity() {
     let mut step = Vec::new();
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     cadmpeg_codec_step::StepCodec::default()
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit("step:ap214"),
-        )
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("step:ap214")))
         .unwrap()
         .write_to(&mut step)
         .unwrap();

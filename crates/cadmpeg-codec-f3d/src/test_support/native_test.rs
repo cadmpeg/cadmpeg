@@ -3,7 +3,6 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::io::Write;
@@ -64,17 +63,17 @@ impl TestEncode for F3dCodec {
         output: &mut dyn Write,
     ) -> Result<cadmpeg_ir::report::export::ExportReport, cadmpeg_ir::codec::write::EncodeError>
     {
-        self.plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-            TargetRequest::Unnamed,
-        )?
-        .write_to(output)
+        self.plan(cadmpeg_ir::codec::write::EncodeInput::new(ir, None))?
+            .write_to(output)
     }
 }
 
 pub(crate) fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> crate::native::F3dNative {
-    crate::native::F3dNative::load(ir.native.namespace("f3d").expect("F3D native namespace"))
-        .unwrap()
+    crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        ir.native.namespace("f3d").expect("F3D native namespace"),
+    )
+    .unwrap()
 }
 
 pub(crate) struct F3dNativeMut<'a> {
@@ -111,7 +110,12 @@ pub(crate) fn f3d_native_mut(ir: &mut cadmpeg_ir::document::CadIr) -> F3dNativeM
     let native = ir
         .native
         .namespace("f3d")
-        .map(crate::native::F3dNative::load)
+        .map(|namespace| {
+            crate::native::F3dNative::load_inner(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                namespace,
+            )
+        })
         .transpose()
         .unwrap()
         .unwrap_or_default();
@@ -147,7 +151,7 @@ pub(crate) fn reject_changed_id<T: Serialize + DeserializeOwned + std::fmt::Debu
     assert_eq!(json::to_value(restored).unwrap(), wire);
     for id in alternatives {
         let mut invalid = wire.clone();
-        invalid["id"] = serde_json::json!(id);
+        invalid["id"] = cadmpeg_core::json!(id);
         let error = json::from_value::<T>(invalid).expect_err("invalid id");
         assert!(error.to_string().contains("id"), "{error}");
     }

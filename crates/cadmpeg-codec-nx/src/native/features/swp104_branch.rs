@@ -313,7 +313,7 @@ mod tests {
                         branch
                     );
                     let mut invalid = wire;
-                    invalid["members"][0]["raw_object_index"] = serde_json::json!("01");
+                    invalid["members"][0]["raw_object_index"] = cadmpeg_core::json!("01");
                     assert!(json::from_value::<FeatureSwp104LeadingBranch>(invalid).is_err());
                     assert!(from_source_for_test(
                         "branch".to_owned(),

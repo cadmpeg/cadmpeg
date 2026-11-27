@@ -6,7 +6,7 @@ use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::num::NonZeroI8;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::fixtures::{self, feature, id, length, parameter_ref, picked};
 use super::{read_desktop, refuses, to_value};

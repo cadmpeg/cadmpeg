@@ -57,7 +57,8 @@ fn decode(bytes: Vec<u8>) -> DecodeResult {
 }
 
 fn decode_read_back(bytes: &[u8]) -> DecodeResult {
-    crate::decode::decode_for_read_back(bytes).unwrap()
+    crate::decode::decode_for_read_back(bytes, cadmpeg_core::decode::ResourceLimits::desktop())
+        .unwrap()
 }
 
 fn messages(report: &ExportReport, code: SldprtLossCode) -> Vec<&str> {
@@ -421,8 +422,8 @@ fn a_declined_history_write_charges_each_native_arena_by_id() {
     let mut output = Vec::new();
     let report = SldprtCodec
         .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit("sldprt:unknown"),
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+                .with_target(TargetRequest::Explicit("sldprt:unknown")),
         )
         .unwrap()
         .write_to(&mut output)
@@ -454,7 +455,7 @@ fn a_declined_history_write_charges_each_native_arena_by_id() {
         let message = naming[0];
         assert!(
             message.contains(&format!("of `sldprt` arena `{arena}`"))
-                && message.contains("because the patch of the document")
+                && message.contains("because the patch declined the document")
                 && ids.iter().all(|id| names(message, id)),
             "{message}"
         );
@@ -745,7 +746,7 @@ fn bump_first_real(value: &mut serde_json::Value) -> bool {
             let Some(real) = number.as_f64().filter(|real| *real != 0.0) else {
                 return false;
             };
-            *value = serde_json::json!(real + 1.0);
+            *value = cadmpeg_core::json!(real + 1.0);
             true
         }
         Value::Array(items) => items.iter_mut().any(bump_first_real),
@@ -835,7 +836,7 @@ fn a_kept_fillet_does_not_name_the_radius_its_parameter_carries() {
     const EDITED: f64 = 6.35;
     let mut decoded = ftc_08_with_fillet_selection_edited(|fillet| {
         edit_definition(fillet, |wire| {
-            *wire.pointer_mut(RADIUS).unwrap() = serde_json::json!(EDITED);
+            *wire.pointer_mut(RADIUS).unwrap() = cadmpeg_core::json!(EDITED);
         });
     });
     let name = {
@@ -1007,8 +1008,9 @@ fn a_datum_axis_origin_edit_the_records_do_not_state_is_named() {
         unwritten[0]
     );
     let record = |ir: &CadIr| {
-        crate::native::SldprtNative::load(
+        crate::native::SldprtNative::load_under(
             ir.native.namespace("sldprt").unwrap(),
+            cadmpeg_core::decode::ResourceLimits::default(),
             ir.tolerances.linear,
         )
         .unwrap()
@@ -1302,6 +1304,7 @@ fn an_unedited_lane_is_written_as_stored() {
         Some(&lane),
         &native.feature_histories,
         &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
@@ -1312,6 +1315,7 @@ fn an_unedited_lane_is_written_as_stored() {
         Some(&decoded_lane),
         &native.feature_histories,
         &[],
+        cadmpeg_core::decode::ResourceLimits::service(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap_err();
@@ -1364,7 +1368,7 @@ fn edit_definition_at(
 }
 
 fn plus_one(value: &mut serde_json::Value) {
-    *value = serde_json::json!(value.as_f64().unwrap() + 1.0);
+    *value = cadmpeg_core::json!(value.as_f64().unwrap() + 1.0);
 }
 
 /// `Sketch4` is placed on `Plane3`, and a `Plane3` distance edit written as
@@ -1448,7 +1452,7 @@ fn a_held_back_edit_names_only_its_own_feature() {
 fn a_variant_edit_names_the_parameter_its_record_gains() {
     let mut decoded = EditableDecodeResult::from(ftc_08().clone());
     let (cut, _) = edit_definition_at(&mut decoded, "Cut-Extrude2", "/termination", |value| {
-        *value = serde_json::json!({"kind": "blind", "length": 5.0});
+        *value = cadmpeg_core::json!({"kind": "blind", "length": 5.0});
     });
 
     let (report, output, read_back) = write(&decoded);
@@ -1565,7 +1569,7 @@ fn a_depth_edit_beside_a_removed_hole_is_carried() {
         edit_definition(extrusion, |wire| {
             let leaf = first_depth(wire).unwrap();
             depth = leaf.as_f64().unwrap() + 1.0;
-            *leaf = serde_json::json!(depth);
+            *leaf = cadmpeg_core::json!(depth);
         });
         depth
     };

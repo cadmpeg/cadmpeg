@@ -5119,7 +5119,7 @@ mod tests {
     /// The same record read as a tangent relation.
     fn as_tangent(relation: &PmDcSketchConstraint) -> PmDcSketchConstraint {
         let mut wire = json_wire::to_value(relation).expect("relation wire");
-        wire["kind"] = serde_json::json!({
+        wire["kind"] = cadmpeg_core::json!({
             "form": "tangent",
             "first": wire["kind"]["first"].clone(),
             "second": wire["kind"]["second"].clone(),
@@ -5372,8 +5372,8 @@ mod tests {
     }
     #[test]
     fn point_tail_wire_requires_both_fields() {
-        let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
-        let mut wire = serde_json::json!({
+        let list = cadmpeg_core::json!({"marker": 2, "metadata": null, "references": []});
+        let mut wire = cadmpeg_core::json!({
             "form": "point", "position": [0.0, 0.0],
             "endpoint_of": list.clone(), "center_of": list.clone(),
             "state": null, "associations": null
@@ -5384,7 +5384,7 @@ mod tests {
             json_wire::to_value(point).expect("paired point fixture round-trips"),
             wire
         );
-        wire["state"] = serde_json::json!(0);
+        wire["state"] = cadmpeg_core::json!(0);
         assert!(json_wire::from_value::<PmDcSketchEntityKind>(wire.clone()).is_err());
         wire["associations"] = list;
         let point: PmDcSketchEntityKind =
@@ -5408,7 +5408,7 @@ mod tests {
             json_wire::to_value(transform).expect("constant-prefix transform fixture is valid");
         for (prefix, present) in [
             (serde_json::Value::Null, false),
-            (serde_json::json!(515), true),
+            (cadmpeg_core::json!(515), true),
         ] {
             wire["prefix"] = prefix;
             let parsed: PmDcTransformPayload = json_wire::from_value(wire.clone())
@@ -5419,7 +5419,7 @@ mod tests {
                 wire
             );
         }
-        wire["prefix"] = serde_json::json!(516);
+        wire["prefix"] = cadmpeg_core::json!(516);
         assert!(json_wire::from_value::<PmDcTransformPayload>(wire.clone()).is_err());
         wire.as_object_mut()
             .expect("constant-prefix transform fixture is valid")

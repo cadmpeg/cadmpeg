@@ -46,7 +46,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match RhinoCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
             Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
-            Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+            Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
 }
@@ -59,13 +59,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "ir": json::to_value(result.ir()).expect("serialize ir"),
                 "report": json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -105,8 +105,8 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
     let mut encoded = Vec::new();
     let written = Encoder::plan(
         &RhinoCodec,
-        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity()))
+            .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
     )
     .and_then(|plan| plan.write_to(&mut encoded));
     Some(match written {

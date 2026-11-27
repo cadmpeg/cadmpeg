@@ -9,7 +9,11 @@ fn reopened(native: &crate::native::F3dNative) -> crate::native::F3dNative {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
-    crate::native::F3dNative::load(&namespace).unwrap()
+    crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &namespace,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -117,7 +121,11 @@ fn reject_mutation_of(config: Config, arena: &str, mutate: impl FnOnce(&mut serd
         .set_arena(&ctx, arena, values.as_array().unwrap())
         .unwrap();
     assert!(
-        crate::native::F3dNative::load(&namespace).is_err(),
+        crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &namespace
+        )
+        .is_err(),
         "native mutation in {arena}"
     );
 }
@@ -173,13 +181,13 @@ fn pipe_native_load_rejects_cross_record_tampering() {
             .as_array_mut()
             .unwrap()
             .iter_mut()
-            .find(|row| row["role"] == serde_json::json!(4_u64 << 32))
+            .find(|row| row["role"] == cadmpeg_core::json!(4_u64 << 32))
             .unwrap();
         body["role"] = (5_u64 << 32).into();
     });
     reject_mutation("design_construction_operand_groups", |rows| {
-        rows[0]["members"] = serde_json::json!([]);
-        rows[0]["member_offsets"] = serde_json::json!([]);
+        rows[0]["members"] = cadmpeg_core::json!([]);
+        rows[0]["member_offsets"] = cadmpeg_core::json!([]);
     });
     reject_mutation("design_parameter_owners", |rows| {
         rows[0]["evaluated_value"] = serde_json::Value::Null;
@@ -207,7 +215,7 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
         "value_offsets",
     ] {
         let mut bad = wire.clone();
-        bad[key] = serde_json::json!(0);
+        bad[key] = cadmpeg_core::json!(0);
         assert!(
             json::from_value::<super::super::DesignPipeConstruction>(bad).is_err(),
             "deleted {key}"
@@ -229,9 +237,9 @@ fn pipe_wire_rejects_every_deleted_key_and_incomplete_current_fields() {
     }
     for bytes in [
         serde_json::Value::Null,
-        serde_json::json!("01"),
-        serde_json::json!("010101"),
-        serde_json::json!([1, 1]),
+        cadmpeg_core::json!("01"),
+        cadmpeg_core::json!("010101"),
+        cadmpeg_core::json!([1, 1]),
     ] {
         let mut bad = wire.clone();
         bad["opaque_post_operation"] = bytes;
@@ -264,7 +272,10 @@ fn pipe_new_body_rejects_a_body_role_with_complete_generic_links() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     assert!(matches!(
-        crate::native::F3dNative::load(&namespace),
+        crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &namespace
+        ),
         Err(cadmpeg_ir::NativeConvertError::InvalidCollection(_))
     ));
 }
@@ -279,7 +290,10 @@ fn pipe_native_load_rejects_an_empty_new_body_path() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&ctx, &mut namespace).unwrap();
     assert!(matches!(
-        crate::native::F3dNative::load(&namespace),
+        crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &namespace
+        ),
         Err(cadmpeg_ir::NativeConvertError::InvalidCollection(_))
     ));
 }
@@ -301,6 +315,6 @@ fn pipe_native_load_rejects_a_misplaced_section_shape() {
     };
     reject_mutation_of(pointed, "design_parameter_scopes", |rows| {
         rows[0]["path_feature_construction"]["section"] =
-            serde_json::json!({ "shape_value": 1, "shape_offset": 95 });
+            cadmpeg_core::json!({ "shape_value": 1, "shape_offset": 95 });
     });
 }

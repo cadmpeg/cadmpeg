@@ -81,7 +81,7 @@ fn sparse_long_identity_edits_admit_thousands_without_binary_tree_overbilling() 
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut transaction = annotations.sparse_transaction();
     for index in 0..COUNT {
-        transaction.exactness(&identity(index), Exactness::Inferred);
+        transaction.exactness(identity(index), Exactness::Inferred);
     }
     transaction.prepare().apply(&mut annotations);
     assert_eq!(annotations.exactness().len(), COUNT);

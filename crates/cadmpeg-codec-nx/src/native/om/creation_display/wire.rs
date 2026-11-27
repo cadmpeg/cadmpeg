@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn creation_display_rejects_fields_inconsistent_with_its_row() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "creation", "ordinal": 0,
             "first_index": 1, "raw_first_index": "8001",
             "first_index_source_offset": 8,
@@ -312,10 +312,10 @@ mod tests {
         let row: RmCreationDisplayDataRelation = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(row).unwrap(), wire);
         for (field, value) in [
-            ("class_name", serde_json::json!("other")),
-            ("target_object_id", serde_json::json!("object")),
-            ("first_index_source_offset", serde_json::json!(9)),
-            ("source_offset", serde_json::json!(u64::MAX)),
+            ("class_name", cadmpeg_core::json!("other")),
+            ("target_object_id", cadmpeg_core::json!("object")),
+            ("first_index_source_offset", cadmpeg_core::json!(9)),
+            ("source_offset", cadmpeg_core::json!(u64::MAX)),
         ] {
             let mut invalid = wire.clone();
             invalid[field] = value;
@@ -352,7 +352,7 @@ mod tests {
             let relation: RmCreationDisplayDataRelation = serde_json::from_str(&json).unwrap();
             assert_eq!(json::to_string(&relation).unwrap(), json);
             let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
-            wire["encoding"]["raw_indices"][0] = serde_json::json!("ff");
+            wire["encoding"]["raw_indices"][0] = cadmpeg_core::json!("ff");
             let error = json::from_value::<RmCreationDisplayDataRelation>(wire).unwrap_err();
             assert!(error.to_string().contains("raw_indices"), "{error}");
         }

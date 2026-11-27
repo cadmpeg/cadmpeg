@@ -3,7 +3,8 @@
 use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Read, Write};
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use crate::reader::{self, id, query, topology};
 use crate::test_support::projection::{base_fixture, changed, changed_fixture, selected};

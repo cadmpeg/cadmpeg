@@ -330,7 +330,7 @@ fn measures_cylinder_body() {
     // their two axes are undetermined; the axial one is measured.
     assert_eq!(
         document["unavailable"],
-        serde_json::json!({"undefined": {"mass.principal-axes-degenerate": 2}}),
+        cadmpeg_core::json!({"undefined": {"mass.principal-axes-degenerate": 2}}),
         "{document:#}"
     );
     assert_eq!(document["work"]["exhausted"], false);
@@ -590,7 +590,7 @@ fn surface_rows_hold_carrier_parameters_only() {
     assert_eq!(surfaces.len(), 1);
     let row = &surfaces[0];
     assert_eq!(row["surface"], "step:data:surface#16");
-    assert_eq!(row["placement"], serde_json::json!({"space": "model"}));
+    assert_eq!(row["placement"], cadmpeg_core::json!({"space": "model"}));
     assert_eq!(row["carrier"]["kind"], "cylinder");
     assert_measured(&row["carrier"]["parameters"]["radius"], 10.0, 10.0);
     assert_measured(&row["carrier"]["parameters"]["diameter"], 20.0, 10.0);
@@ -599,7 +599,7 @@ fn surface_rows_hold_carrier_parameters_only() {
         [0.0, 0.0, 1.0],
         1.0,
     );
-    assert_eq!(row["faces"], serde_json::json!(["step:data:face#46"]));
+    assert_eq!(row["faces"], cadmpeg_core::json!(["step:data:face#46"]));
     assert_eq!(row["bodies"].as_array().unwrap().len(), 1);
     assert!(row.get("area").is_none() && row.get("bbox").is_none());
     assert_eq!(row["status"], "measured");
@@ -980,7 +980,7 @@ fn orientation_conflict_is_visible() {
     assert!((candidate("loop_winding") - 1000.0).abs() <= TEST_ABSOLUTE_FLOOR * 1000.0);
     assert_eq!(
         body["orientation"]["inconsistent_faces"],
-        serde_json::json!([flipped])
+        cadmpeg_core::json!([flipped])
     );
     let unavailable = &report["measure"]["document"]["unavailable"]["input"];
     assert!(

@@ -210,7 +210,7 @@ where
     emit_arena(ctx, ir, annotations, key, records, |annotations, record| {
         annotate(
             annotations,
-            record.id(),
+            super::super::native::native_key(record.id())?,
             legacy_source_stream(scan, record.offset),
             cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
@@ -238,7 +238,7 @@ pub(super) fn emit_legacy_arenas(
         |annotations, record| {
             annotate(
                 annotations,
-                record.id(),
+                super::super::native::native_key(record.id())?,
                 legacy_source_stream(scan, record.offset),
                 cadmpeg_core::decode::u64_from_index(record.offset),
                 "legacy_type_0_object",
@@ -347,7 +347,7 @@ pub(super) fn emit_legacy_arenas(
             |annotations, record| {
                 annotate(
                     annotations,
-                    record.id(),
+                    super::super::native::native_key(record.id())?,
                     legacy_source_stream(scan, record.offset),
                     cadmpeg_core::decode::u64_from_index(record.offset),
                     "legacy_configuration_driver_table",

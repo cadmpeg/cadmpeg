@@ -238,3 +238,18 @@ fn a_projection_boundary_must_reference_a_shape_aspect() {
         .iter()
         .any(|loss| loss.code.local_code() == "pmi.zone-unresolved"));
 }
+
+#[test]
+fn a_zone_whose_owner_is_no_geometric_tolerance_is_given_up() {
+    let source = ZONES.replace("(#10),#21", "(#6),#21");
+    let result = decode_inline(&source);
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.message.contains("tolerance zone #20"))
+        .count();
+    assert_eq!(charges, 1, "{:?}", result.report().losses);
+    assert!(constraints(&result, "profile").zones.is_empty());
+}

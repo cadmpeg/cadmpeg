@@ -50,7 +50,7 @@ pub(super) fn transfer(
         if annotation.kind != cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension {
             continue;
         }
-        let owner = &annotation.object;
+        let owner = annotation.object.as_str();
         if property(properties, owner, "SavedGeometry")?
             .is_some_and(|saved| empty_cache(saved, entries))
         {
@@ -182,7 +182,7 @@ fn exact_reference(
     {
         return Ok(None);
     }
-    if !is_false(properties, &view.object, "Perspective")? {
+    if !is_false(properties, view.object.as_str(), "Perspective")? {
         return Ok(None);
     }
     let Some(saved) = property(properties, owner, "SavedGeometry")? else {
@@ -236,7 +236,7 @@ fn exact_reference(
         };
         curves.push((curve, *parameter_range));
     }
-    let Some(source) = property(properties, &view.object, "Source")? else {
+    let Some(source) = property(properties, view.object.as_str(), "Source")? else {
         return Ok(None);
     };
     let Some(owners) = source

@@ -65,7 +65,7 @@ fn paired_point_tail_has_two_scalars_and_two_operands() {
         let point_wire = json::to_value(&point.kind).expect("paired point wire");
         assert!(point_wire.get("links").is_none());
         let mut invalid = point_wire.clone();
-        invalid["links"] = serde_json::json!({
+        invalid["links"] = cadmpeg_core::json!({
             "marker": 2, "metadata": null, "references": []
         });
         assert!(json::from_value::<PmDcSketchEntityKind>(invalid).is_err());
@@ -108,33 +108,33 @@ fn paired_point_tail_has_two_scalars_and_two_operands() {
         };
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": wire}),
+            cadmpeg_core::json!({"id": record.id, "value": wire}),
         );
         let mut invalid = wire.clone();
-        invalid["state"] = serde_json::json!(0);
+        invalid["state"] = cadmpeg_core::json!(0);
         assert!(json::from_value::<PointTail>(invalid).is_err());
         let mut invalid = wire.clone();
-        invalid["paired"]["scalars"] = serde_json::json!([0.25]);
+        invalid["paired"]["scalars"] = cadmpeg_core::json!([0.25]);
         assert!(json::from_value::<PointTail>(invalid).is_err());
         let mut invalid = wire.clone();
-        invalid["paired"]["operands"] = serde_json::json!([]);
+        invalid["paired"]["operands"] = cadmpeg_core::json!([]);
         assert!(json::from_value::<PointTail>(invalid).is_err());
         for field in ["scalar_metadata", "operand_metadata"] {
             let mut invalid = wire.clone();
-            invalid["paired"][field] = serde_json::json!([0]);
+            invalid["paired"][field] = cadmpeg_core::json!([0]);
             assert!(json::from_value::<PointTail>(invalid).is_err());
         }
         let mut invalid = wire.clone();
         invalid["paired"]["scalars"][0] = serde_json::Value::Null;
         assert!(json::from_value::<PointTail>(invalid).is_err());
         let mut invalid = wire.clone();
-        invalid["paired"]["operands"][0]["index"] = serde_json::json!(0x8000_0000u32);
+        invalid["paired"]["operands"][0]["index"] = cadmpeg_core::json!(0x8000_0000u32);
         assert!(json::from_value::<PointTail>(invalid).is_err());
         let mut invalid = wire.clone();
         invalid["paired"] = serde_json::Value::Null;
         assert!(json::from_value::<PointTail>(invalid).is_err());
         let mut invalid = wire;
-        invalid["associations"] = serde_json::json!({
+        invalid["associations"] = cadmpeg_core::json!({
             "marker": 2, "metadata": null, "references": []
         });
         assert!(json::from_value::<PointTail>(invalid).is_err());
@@ -143,14 +143,14 @@ fn paired_point_tail_has_two_scalars_and_two_operands() {
 
 #[test]
 fn ordinary_and_absent_point_wires_keep_their_shape() {
-    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+    let list = cadmpeg_core::json!({"marker": 2, "metadata": null, "references": []});
     for (state, associations, links) in [
         (serde_json::Value::Null, serde_json::Value::Null, None),
-        (serde_json::json!(0), list.clone(), None),
-        (serde_json::json!(2), list.clone(), None),
-        (serde_json::json!(0), list.clone(), Some(list.clone())),
+        (cadmpeg_core::json!(0), list.clone(), None),
+        (cadmpeg_core::json!(2), list.clone(), None),
+        (cadmpeg_core::json!(0), list.clone(), Some(list.clone())),
     ] {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "form": "point", "position": [0.0, 0.0],
             "endpoint_of": list, "center_of": list,
             "state": state, "associations": associations
@@ -164,7 +164,7 @@ fn ordinary_and_absent_point_wires_keep_their_shape() {
         wire["paired"] = serde_json::Value::Null;
         assert!(json::from_value::<PmDcSketchEntityKind>(wire).is_err());
     }
-    let mut absent = serde_json::json!({
+    let mut absent = cadmpeg_core::json!({
         "form": "point", "position": [0.0, 0.0],
         "endpoint_of": list, "center_of": list,
         "state": null, "associations": null, "links": list
@@ -290,7 +290,7 @@ fn point_entity_deserialization_checks_versioned_tail_forms() {
         parse_entity(SketchEntityTag::Point, source, 25).expect("paired point")
     });
     let paired = json::to_value(&point).expect("point wire");
-    let list = serde_json::json!({"marker": 2, "metadata": null, "references": []});
+    let list = cadmpeg_core::json!({"marker": 2, "metadata": null, "references": []});
     for version in [19, 22, 23, 25, 28, 31] {
         for state in [0, 1, 2, 3] {
             for links in [false, true] {

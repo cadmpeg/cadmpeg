@@ -201,7 +201,7 @@ fn serialized_length_must_match_payload() {
     let mut wire = json::to_value(&block).unwrap();
     assert_eq!(wire["declared_len"], 8);
     assert_eq!(json::from_value::<ValueBlock>(wire.clone()).unwrap(), block);
-    wire["declared_len"] = serde_json::json!(7);
+    wire["declared_len"] = cadmpeg_core::json!(7);
     assert!(json::from_value::<ValueBlock>(wire).is_err());
 }
 
@@ -209,13 +209,13 @@ fn serialized_length_must_match_payload() {
 fn serialized_inline_code_must_match_the_inline_byte_count() {
     let bytes = InlineBytes::try_from(vec![1, 2, 3]).unwrap();
     let mut wire = json::to_value(&bytes).unwrap();
-    assert_eq!(wire["code"], serde_json::json!(0xea));
+    assert_eq!(wire["code"], cadmpeg_core::json!(0xea));
     assert_eq!(
         json::from_value::<InlineBytes>(wire.clone()).unwrap(),
         bytes
     );
 
-    wire["code"] = serde_json::json!(0xeb);
+    wire["code"] = cadmpeg_core::json!(0xeb);
     let error = json::from_value::<InlineBytes>(wire)
         .expect_err("inline code disagreeing with the byte count");
     assert!(error.to_string().contains("code"), "{error}");

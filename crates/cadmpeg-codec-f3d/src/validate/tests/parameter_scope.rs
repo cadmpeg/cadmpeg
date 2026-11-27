@@ -466,6 +466,7 @@ fn operand_list_combine_requires_its_own_offsets() {
                     first: DesignCombineBodySelection {
                         record_index: 302,
                         external_identity: None,
+                        legacy_external_identity: None,
                         body_node: None,
                     },
                     additional: Vec::new(),
@@ -600,7 +601,7 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let operation = json::from_value(serde_json::json!({
+    let operation = json::from_value(cadmpeg_core::json!({
         "edge_wrapper_record_indices":[51,61], "edge_group_record_indices":[52,62],
         "edge_operand_record_indices":[55,65], "aggregate_group_record_index":101,
         "aggregate_operand_record_indices":[104,108], "height_owner_record_index":81,

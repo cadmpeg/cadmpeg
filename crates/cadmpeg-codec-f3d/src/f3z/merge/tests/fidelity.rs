@@ -17,8 +17,18 @@ fn archive_digest() -> Sha256Digest {
 fn source(stream: &str) -> SourceFidelity {
     let mut annotations = AnnotationBuilder::new();
     let handle = StreamHandle::new(cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap());
-    annotations.note(ID, &handle, 7, Some("retained"));
-    annotations.derived(ID, "geometry").unwrap();
+    annotations.note(
+        cadmpeg_ir::ids::Identity::new(ID).expect("identity grammar"),
+        &handle,
+        7,
+        Some("retained"),
+    );
+    annotations
+        .derived(
+            cadmpeg_ir::ids::Identity::new(ID).expect("identity grammar"),
+            "geometry",
+        )
+        .unwrap();
     let mut fidelity = SourceFidelity::with_annotations(annotations.build(), member_digest());
     fidelity
         .insert_retained_record(
@@ -81,7 +91,12 @@ fn occurrence_and_stream_boundaries_cannot_alias() {
 fn source_rescoping_preserves_absent_provenance_tag() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
-    builder.note(ID, &stream, 7, None);
+    builder.note(
+        cadmpeg_ir::ids::Identity::new(ID).expect("identity grammar"),
+        &stream,
+        7,
+        None,
+    );
     let output = rescope_fidelity(
         SourceFidelity::with_annotations(builder.build(), member_digest()),
         "part",

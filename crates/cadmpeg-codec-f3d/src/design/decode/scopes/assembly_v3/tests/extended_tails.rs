@@ -205,7 +205,7 @@ fn typed_extended_tails_admit_scope_metadata_and_shift_previous_history() {
             parsed.previous_history_state_id_offset()
         );
         wire["previous_history_state_id_offset"] =
-            serde_json::json!(scope.feature_ordinal_offset() + 122);
+            cadmpeg_core::json!(scope.feature_ordinal_offset() + 122);
         assert!(json::from_value::<DesignParameterScope>(wire).is_err());
         if extended {
             let mut damaged = bytes.clone();

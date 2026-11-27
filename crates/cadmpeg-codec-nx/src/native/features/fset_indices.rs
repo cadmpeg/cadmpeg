@@ -213,19 +213,19 @@ mod tests {
     #[test]
     fn fset_lane_wire_rejects_value_count_and_source_position_changes() {
         for (path, value) in [
-            ("/parameter_class_index", serde_json::json!(0)),
-            ("/source_offset", serde_json::json!(u64::MAX)),
-            ("/layout/declared_count", serde_json::json!(4)),
-            ("/layout/members/0/value", serde_json::json!(133)),
-            ("/layout/members/0/raw_index", serde_json::json!("8517ff")),
-            ("/layout/members/1/source_offset", serde_json::json!(124)),
+            ("/parameter_class_index", cadmpeg_core::json!(0)),
+            ("/source_offset", cadmpeg_core::json!(u64::MAX)),
+            ("/layout/declared_count", cadmpeg_core::json!(4)),
+            ("/layout/members/0/value", cadmpeg_core::json!(133)),
+            ("/layout/members/0/raw_index", cadmpeg_core::json!("8517ff")),
+            ("/layout/members/1/source_offset", cadmpeg_core::json!(124)),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(COUNTED).unwrap();
             *wire.pointer_mut(path).unwrap() = value;
             assert!(json::from_value::<FeatureFsetIndexLane>(wire).is_err());
         }
         let mut wire: serde_json::Value = serde_json::from_str(EMPTY).unwrap();
-        wire["layout"]["declared_count"] = serde_json::json!(1);
+        wire["layout"]["declared_count"] = cadmpeg_core::json!(1);
         assert!(json::from_value::<FeatureFsetIndexLane>(wire).is_err());
     }
 }

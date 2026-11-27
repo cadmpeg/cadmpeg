@@ -993,20 +993,20 @@ fn snapshot(bytes: &[u8]) -> String {
     let decode = match NxCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "ir": json::to_value(result.ir()).expect("serialize ir"),
                 "report": json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(err) => serde_json::json!({ "decode_error": err.to_string() }),
+        Err(err) => cadmpeg_core::json!({ "decode_error": err.to_string() }),
     };
     let inspect =
         match NxCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
             Ok(summary) => json::to_value(&summary).expect("serialize inspect"),
-            Err(err) => serde_json::json!({ "inspect_error": err.to_string() }),
+            Err(err) => cadmpeg_core::json!({ "inspect_error": err.to_string() }),
         };
-    snapshot_text(&serde_json::json!({ "decode": decode, "inspect": inspect }))
+    snapshot_text(&cadmpeg_core::json!({ "decode": decode, "inspect": inspect }))
 }
 
 #[test]

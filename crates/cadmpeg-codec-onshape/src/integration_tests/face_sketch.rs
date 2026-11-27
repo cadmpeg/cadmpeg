@@ -3,7 +3,8 @@
 use cadmpeg_core::serde_erase::json;
 use std::io::{Cursor, Write};
 
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 use super::projection::{face_sketch_bundle, kinds, read};
 
@@ -133,7 +134,7 @@ fn face_sketch_without_a_usable_attachment_row_keeps_the_sketch_native() {
     );
     assert_native(
         &with_sketches_bytes(base(), b"not json"),
-        "the member bytes",
+        "omitted the member",
     );
 }
 

@@ -131,10 +131,10 @@ fn named_combine_preserves_middle_reference_and_scope_identity() {
     let roundtrip: super::DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(json::to_value(roundtrip).unwrap(), wire);
     let mut wrong_offset = wire.clone();
-    wrong_offset["combine_named_tail"]["middle"]["offset"] = serde_json::json!(214);
+    wrong_offset["combine_named_tail"]["middle"]["offset"] = cadmpeg_core::json!(214);
     assert!(json::from_value::<super::DesignParameterScope>(wrong_offset).is_err());
     let mut wrong_kind = wire;
-    wrong_kind["kind"] = serde_json::json!("SplitFace");
+    wrong_kind["kind"] = cadmpeg_core::json!("SplitFace");
     assert!(json::from_value::<super::DesignParameterScope>(wrong_kind).is_err());
 }
 
@@ -1127,11 +1127,11 @@ fn integer_offsets_are_locations_and_float_offsets_stay_compared() {
         value
     };
     let standard = |offset: u64| {
-        serde_json::json!({"hole_extent": {"standard": {
+        cadmpeg_core::json!({"hole_extent": {"standard": {
             "offset": offset, "standard": "ISO", "fit": "Normal",
             "size": "M6", "fastener": "Socket head cap screw"}}})
     };
     assert_eq!(stripped(standard(120)), stripped(standard(480)));
-    let alignment = |x: f64| serde_json::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
+    let alignment = |x: f64| cadmpeg_core::json!({"alignment": {"offset": [x, 0.0, 0.0]}});
     assert_ne!(stripped(alignment(1.0)), stripped(alignment(2.0)));
 }

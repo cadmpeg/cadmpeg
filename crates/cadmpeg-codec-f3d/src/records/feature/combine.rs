@@ -18,6 +18,11 @@ cadmpeg_core::named_optional_field!(
     DesignCombineExternalBodyIdentity,
     "external_identity"
 );
+cadmpeg_core::named_optional_field!(
+    deserialize_legacy_external_identity,
+    DesignCombineLegacyExternalBodyIdentity,
+    "legacy_external_identity"
+);
 cadmpeg_core::named_optional_field!(deserialize_body_node, DesignCombineBodyNode, "body_node");
 cadmpeg_core::named_optional_field!(
     deserialize_external_property_key,
@@ -488,6 +493,38 @@ impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdenti
     }
 }
 
+/// Cross-document body identity of a `Combine` tool selector whose body
+/// reference is a legacy target reference to a browser node of the
+/// referenced design.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignCombineLegacyExternalBodyIdentity {
+    /// Asset GUID of the enclosing body selector.
+    pub(crate) selector_asset_id: DesignRelaxedGuidText,
+    /// Byte offset of `selector_asset_id`.
+    pub(crate) selector_asset_id_offset: u64,
+    /// Context GUID of the enclosing body selector.
+    pub(crate) selector_context_id: DesignRelaxedGuidText,
+    /// Byte offset of `selector_context_id`.
+    pub(crate) selector_context_id_offset: u64,
+    /// Same-segment occurrence reference preceding the external body reference.
+    pub(crate) occurrence_reference: u64,
+    /// Byte offset of `occurrence_reference`.
+    pub(crate) occurrence_reference_offset: u64,
+    /// Entity ID of the body-visibility browser node in the referenced design.
+    pub(crate) browser_node_entity: u64,
+    /// Byte offset of `browser_node_entity`.
+    pub(crate) browser_node_entity_offset: u64,
+    /// Source occurrence identity of the inserting occurrence placement.
+    pub(crate) source_occurrence_identity: u64,
+    /// Byte offset of `source_occurrence_identity`.
+    pub(crate) source_occurrence_identity_offset: u64,
+    /// Raw selection stamp and binary64 evaluation-scalar bits, separated by the epoch.
+    pub(crate) tail_values: [u64; 2],
+    /// Byte offsets of `tail_values` in source order.
+    pub(crate) tail_value_offsets: [u64; 2],
+}
+
 /// One target or tool body selector owned by a `Combine` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignCombineBodySelection {
@@ -500,6 +537,13 @@ pub(crate) struct DesignCombineBodySelection {
         deserialize_with = "deserialize_external_identity"
     )]
     pub(crate) external_identity: Option<DesignCombineExternalBodyIdentity>,
+    /// Complete external body identity of a legacy cross-document selector.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_legacy_external_identity"
+    )]
+    pub(crate) legacy_external_identity: Option<DesignCombineLegacyExternalBodyIdentity>,
     /// Browser node that the selector names in the operand-list form.
     #[serde(
         default,
@@ -626,6 +670,7 @@ impl Serialize for DesignCombineOperation {
             target: DesignCombineBodySelection {
                 record_index: self.target_record_index,
                 external_identity: None,
+                legacy_external_identity: None,
                 body_node: self.target_body_node,
             },
             tools: DesignCombineToolsRef(&self.tools),
@@ -688,6 +733,9 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
         if wire.target.external_identity.is_some() {
             return Err("target.external_identity must be absent".into());
         }
+        if wire.target.legacy_external_identity.is_some() {
+            return Err("target.legacy_external_identity must be absent".into());
+        }
         let mut tools = wire.tools.into_iter();
         let first = tools
             .next()
@@ -724,6 +772,7 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
             target: DesignCombineBodySelection {
                 record_index: operation.target_record_index,
                 external_identity: None,
+                legacy_external_identity: None,
                 body_node: operation.target_body_node,
             },
             tools: std::iter::once(operation.tools.first)
@@ -783,8 +832,8 @@ mod tests {
         value.created_body_nodes = vec![541, 546];
         value.consumed_body_nodes = vec![510];
         let wire = json::to_value(&value).unwrap();
-        assert_eq!(wire["created_body_nodes"], serde_json::json!([541, 546]));
-        assert_eq!(wire["consumed_body_nodes"], serde_json::json!([510]));
+        assert_eq!(wire["created_body_nodes"], cadmpeg_core::json!([541, 546]));
+        assert_eq!(wire["consumed_body_nodes"], cadmpeg_core::json!([510]));
         assert_eq!(
             json::from_value::<DesignCombineOperation>(wire).unwrap(),
             value
@@ -793,7 +842,7 @@ mod tests {
     }
 
     fn external_identity(version: bool) -> DesignCombineExternalBodyIdentity {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "selector_asset_id": "00000004-1111-4111-8111-111111111111",
             "selector_asset_id_offset": 44,
             "selector_context_id": "00000005-1111-4111-8111-111111111111",
@@ -813,17 +862,17 @@ mod tests {
         });
         if version {
             wire["external_property_key"] =
-                serde_json::json!("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
-            wire["external_property_key_offset"] = serde_json::json!(327);
-            wire["external_version_urn"] = serde_json::json!("urn");
-            wire["external_version_urn_offset"] = serde_json::json!(403);
-            wire["tail_value_offsets"] = serde_json::json!([415, 427]);
+                cadmpeg_core::json!("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+            wire["external_property_key_offset"] = cadmpeg_core::json!(327);
+            wire["external_version_urn"] = cadmpeg_core::json!("urn");
+            wire["external_version_urn_offset"] = cadmpeg_core::json!(403);
+            wire["tail_value_offsets"] = cadmpeg_core::json!([415, 427]);
         }
         json::from_value(wire).unwrap()
     }
 
     fn operation(version: bool) -> DesignCombineOperation {
-        json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "form": "standard",
             "operation": "join",
             "operation_offset": 20,
@@ -872,6 +921,7 @@ mod tests {
         let selection = DesignCombineBodySelection {
             record_index: 363,
             external_identity: None,
+            legacy_external_identity: None,
             body_node: Some(node),
         };
         let wire = json::to_value(&selection).unwrap();
@@ -885,13 +935,13 @@ mod tests {
             ..selection
         };
         let wire = json::to_value(&without).unwrap();
-        assert_eq!(wire, serde_json::json!({ "record_index": 363 }));
+        assert_eq!(wire, cadmpeg_core::json!({ "record_index": 363 }));
         assert_eq!(
             json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
             without
         );
 
-        let error = json::from_value::<DesignCombineBodySelection>(serde_json::json!({
+        let error = json::from_value::<DesignCombineBodySelection>(cadmpeg_core::json!({
             "record_index": 363,
             "body_node": null,
         }))

@@ -191,15 +191,16 @@ fn placement_modern_versions_decode_explicit_and_identity_frames() {
                 }
                 let mut wrong_version = wire.clone();
                 wrong_version["type_version"] =
-                    serde_json::json!(if version == 16 { 15 } else { 16 });
+                    cadmpeg_core::json!(if version == 16 { 15 } else { 16 });
                 assert!(json::from_value::<DesignPlacementConstruction>(wrong_version).is_err());
                 if version == 16 {
                     let mut wrong_offset = wire.clone();
-                    wrong_offset["fields"]["periodic_face_mode"]["offset"] = serde_json::json!(47);
+                    wrong_offset["fields"]["periodic_face_mode"]["offset"] =
+                        cadmpeg_core::json!(47);
                     assert!(json::from_value::<DesignPlacementConstruction>(wrong_offset).is_err());
                 }
                 let mut invalid = wire.clone();
-                invalid["type_version"] = serde_json::json!(17);
+                invalid["type_version"] = cadmpeg_core::json!(17);
                 assert!(json::from_value::<DesignPlacementConstruction>(invalid).is_err());
                 let mut invalid = bytes.clone();
                 let identity_offset =

@@ -1915,7 +1915,7 @@ mod tests {
             derived: reference(0, false),
         };
         let wire = json::to_value(&unit).expect("valid test fixture");
-        assert_eq!(wire["numerator_metadata"], serde_json::json!([3, 7]));
+        assert_eq!(wire["numerator_metadata"], cadmpeg_core::json!([3, 7]));
         assert_eq!(
             json::from_value::<PmDcUnitKind>(wire.clone()).expect("valid test fixture"),
             unit
@@ -1924,7 +1924,7 @@ mod tests {
         missing_metadata["numerator_metadata"] = serde_json::Value::Null;
         assert!(json::from_value::<PmDcUnitKind>(missing_metadata).is_err());
         let mut orphan_metadata = wire;
-        orphan_metadata["denominator_metadata"] = serde_json::json!([3, 7]);
+        orphan_metadata["denominator_metadata"] = cadmpeg_core::json!([3, 7]);
         assert!(json::from_value::<PmDcUnitKind>(orphan_metadata).is_err());
     }
 

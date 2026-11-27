@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::features::sheet_metal_forms::{SheetMetalRelief, SheetMetalTransition};
 use crate::features::FeatureOperation;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 #[test]
 fn relief_and_transition_preserve_evaluated_lengths_and_default_forms() {

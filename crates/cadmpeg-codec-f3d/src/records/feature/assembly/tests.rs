@@ -126,7 +126,7 @@ fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
 
 #[test]
 fn component_placement_preserves_wire_and_rejects_partial_location() {
-    let base = serde_json::json!({
+    let base = cadmpeg_core::json!({
         "id": "occurrence", "class_tag": "327", "record_index": 7, "byte_offset": 0,
         "component_record_index": 8, "component_guid": "00000001-1111-4111-8111-111111111111", "component_guid_offset": 48,
         "occurrence_guid": "00000002-1111-4111-8111-111111111111", "occurrence_guid_offset": 124, "occurrence_ordinal": 1,
@@ -135,7 +135,7 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
     assert_relaxed_guid_fields::<
         crate::records::feature::assembly_features::DesignComponentOccurrence,
     >(&base, &["component_guid", "occurrence_guid"], |_, _| {});
-    let transform = serde_json::json!([
+    let transform = cadmpeg_core::json!([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
@@ -145,8 +145,8 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
         let mut wire = base.clone();
         if placed {
             wire["transform"] = transform.clone();
-            wire["transform_offset"] = serde_json::json!(209);
-            wire["owner_entity_offset"] = serde_json::json!(347);
+            wire["transform_offset"] = cadmpeg_core::json!(209);
+            wire["owner_entity_offset"] = cadmpeg_core::json!(347);
         }
         let record: crate::records::feature::assembly_features::DesignComponentOccurrence =
             json::from_value(wire.clone()).unwrap();
@@ -154,7 +154,7 @@ fn component_placement_preserves_wire_and_rejects_partial_location() {
     }
     for (field, value) in [
         ("transform", transform),
-        ("transform_offset", serde_json::json!(209)),
+        ("transform_offset", cadmpeg_core::json!(209)),
     ] {
         let mut wire = base.clone();
         wire[field] = value;
@@ -331,7 +331,7 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             assert!(error.to_string().contains("operand_frames"));
         }
         let mut invalid = serde_json::from_str::<serde_json::Value>(&wire).unwrap();
-        invalid["value_offsets"] = serde_json::json!([11]);
+        invalid["value_offsets"] = cadmpeg_core::json!([11]);
         let error =
             json::from_value::<crate::records::feature::assembly::DesignAssemblyAlignment>(invalid)
                 .unwrap_err()
@@ -471,8 +471,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
         assert_eq!(value.get("operand_frames").is_some(), frames_field_present);
         for (field, replacement) in [
-            ("construction_record_index", serde_json::json!(99)),
-            ("construction_byte_offset", serde_json::json!(99)),
+            ("construction_record_index", cadmpeg_core::json!(99)),
+            ("construction_byte_offset", cadmpeg_core::json!(99)),
             ("frame", json::to_value(&frames[1]).unwrap()),
         ] {
             let mut invalid = value.clone();
@@ -497,7 +497,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         );
         if frames_field_present {
             let mut invalid = value;
-            invalid["operand_frames"][0]["transform"][0][3] = serde_json::json!(99.0);
+            invalid["operand_frames"][0]["transform"][0][3] = cadmpeg_core::json!(99.0);
             assert!(
                 json::from_value::<crate::records::feature::assembly::DesignAssemblyAlignment>(
                     invalid
@@ -517,7 +517,7 @@ fn assembly_path_wire_pairs_guid_locations() {
             .map(|index| format!("{index:08}-1111-4111-8111-111111111111"))
             .collect();
         let offsets: Vec<_> = (0..count).map(|index| 400 + index * 80).collect();
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "link": {
                 "locator_reference_offset": 11, "locator_record_index": 10,
                 "locator_class_tag": "363", "locator_byte_offset": 100,
@@ -531,8 +531,8 @@ fn assembly_path_wire_pairs_guid_locations() {
         for identities in [false, true] {
             let mut wire = wire.clone();
             if identities {
-                wire["identity_guids"] = serde_json::json!(vec![values[0].clone(); 4]);
-                wire["identity_guid_offsets"] = serde_json::json!([700, 780, 860, 940]);
+                wire["identity_guids"] = cadmpeg_core::json!(vec![values[0].clone(); 4]);
+                wire["identity_guid_offsets"] = cadmpeg_core::json!([700, 780, 860, 940]);
             }
             let path: crate::records::feature::assembly::DesignAssemblyOperandPath =
                 json::from_value(wire.clone()).unwrap();
@@ -548,7 +548,7 @@ fn assembly_path_wire_pairs_guid_locations() {
                     .and_then(serde_json::Value::as_array)
                     .cloned()
                     .unwrap_or_default();
-                bad_offsets.push(serde_json::json!(999));
+                bad_offsets.push(cadmpeg_core::json!(999));
                 invalid[offset_field] = serde_json::Value::Array(bad_offsets);
                 let error = json::from_value::<
                     crate::records::feature::assembly::DesignAssemblyOperandPath,
@@ -563,7 +563,7 @@ fn assembly_path_wire_pairs_guid_locations() {
 }
 
 fn borrowed_assembly_path(with_identity: bool) -> super::DesignAssemblyOperandPath {
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "link": {
             "locator_reference_offset": 11, "locator_record_index": 10,
             "locator_class_tag": "363", "locator_byte_offset": 100,
@@ -576,13 +576,13 @@ fn borrowed_assembly_path(with_identity: bool) -> super::DesignAssemblyOperandPa
         "occurrence_guid_offsets": [400]
     });
     if with_identity {
-        wire["identity_guids"] = serde_json::json!([
+        wire["identity_guids"] = cadmpeg_core::json!([
             "11111111-1111-4111-8111-111111111111",
             "22222222-2222-4222-8222-222222222222",
             "33333333-3333-4333-8333-333333333333",
             "44444444-4444-4444-8444-444444444444"
         ]);
-        wire["identity_guid_offsets"] = serde_json::json!([500, 580, 660, 740]);
+        wire["identity_guid_offsets"] = cadmpeg_core::json!([500, 580, 660, 740]);
     }
     json::from_value(wire).unwrap()
 }
@@ -691,7 +691,7 @@ fn assert_relaxed_guid_fields<T: serde::de::DeserializeOwned + serde::Serialize>
     for field in fields {
         for guid in ["g".repeat(36), "_".repeat(38), "invalid".into()] {
             let mut changed = wire.clone();
-            changed[field] = serde_json::json!(guid);
+            changed[field] = cadmpeg_core::json!(guid);
             complete_edit(&mut changed, field);
             let decoded = json::from_value::<T>(changed.clone());
             if guid == "invalid" {
@@ -779,7 +779,7 @@ fn assembly_alignment_native_writer_refuses_retained_limit_before_record_complet
     };
     cadmpeg_test_support::native_serialization::assert_native_limit(
         &record,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": record.id,
             "alignment": {
                 "angle": 1.0,
@@ -796,7 +796,7 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
     use crate::records::feature::assembly::{
         DesignAssemblyOperandPath, DesignAssemblyOperandPathLink,
     };
-    let link: DesignAssemblyOperandPathLink = json::from_value(serde_json::json!({
+    let link: DesignAssemblyOperandPathLink = json::from_value(cadmpeg_core::json!({
         "locator_reference_offset": 11, "locator_record_index": 10,
         "locator_class_tag": "451", "locator_byte_offset": 100,
         "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
@@ -841,16 +841,16 @@ fn assembly_path_admission_checks_class_arity_and_guid_order() {
         ("identity_guid_offsets", vec![299, 640, 720, 800]),
     ] {
         let mut invalid = wire.clone();
-        invalid[field] = serde_json::json!(offsets);
+        invalid[field] = cadmpeg_core::json!(offsets);
         assert!(json::from_value::<DesignAssemblyOperandPath>(invalid).is_err());
     }
     let mut empty = wire.clone();
-    empty["occurrence_guids"] = serde_json::json!([]);
-    empty["occurrence_guid_offsets"] = serde_json::json!([]);
+    empty["occurrence_guids"] = cadmpeg_core::json!([]);
+    empty["occurrence_guid_offsets"] = cadmpeg_core::json!([]);
     assert!(json::from_value::<DesignAssemblyOperandPath>(empty).is_err());
     let mut wrong_class = wire;
-    wrong_class["link"]["locator_class_tag"] = serde_json::json!("363");
-    wrong_class["class_tag"] = serde_json::json!("386");
+    wrong_class["link"]["locator_class_tag"] = cadmpeg_core::json!("363");
+    wrong_class["class_tag"] = cadmpeg_core::json!("386");
     assert!(json::from_value::<DesignAssemblyOperandPath>(wrong_class).is_err());
 }
 
@@ -866,21 +866,21 @@ fn complete_combine_field_edit(wire: &mut serde_json::Value, field: &str) {
             + 2 * u64_from_index(wire[value].as_str().unwrap().encode_utf16().count())
     };
     wire["selector_context_id_offset"] =
-        serde_json::json!(end(wire, "selector_asset_id", "selector_asset_id_offset") + 4);
+        cadmpeg_core::json!(end(wire, "selector_asset_id", "selector_asset_id_offset") + 4);
     wire["occurrence_reference_offset"] =
-        serde_json::json!(end(wire, "selector_context_id", "selector_context_id_offset") + 13);
+        cadmpeg_core::json!(end(wire, "selector_context_id", "selector_context_id_offset") + 13);
     wire["external_body_reference_offset"] =
-        serde_json::json!(wire["occurrence_reference_offset"].as_u64().unwrap() + 15);
+        cadmpeg_core::json!(wire["occurrence_reference_offset"].as_u64().unwrap() + 15);
     wire["external_segment_offset"] =
-        serde_json::json!(wire["external_body_reference_offset"].as_u64().unwrap() + 9);
+        cadmpeg_core::json!(wire["external_body_reference_offset"].as_u64().unwrap() + 9);
     wire["external_asset_id_offset"] =
-        serde_json::json!(wire["external_segment_offset"].as_u64().unwrap() + 8);
+        cadmpeg_core::json!(wire["external_segment_offset"].as_u64().unwrap() + 8);
     wire["external_link_name_offset"] =
-        serde_json::json!(end(wire, "external_asset_id", "external_asset_id_offset") + 5);
+        cadmpeg_core::json!(end(wire, "external_asset_id", "external_asset_id_offset") + 5);
     let link_end = end(wire, "external_link_name", "external_link_name_offset");
     let tail = if wire.get("external_property_key").is_some() {
-        wire["external_property_key_offset"] = serde_json::json!(link_end + 5);
-        wire["external_version_urn_offset"] = serde_json::json!(
+        wire["external_property_key_offset"] = cadmpeg_core::json!(link_end + 5);
+        wire["external_version_urn_offset"] = cadmpeg_core::json!(
             end(
                 wire,
                 "external_property_key",
@@ -891,7 +891,7 @@ fn complete_combine_field_edit(wire: &mut serde_json::Value, field: &str) {
     } else {
         link_end + 7
     };
-    wire["tail_value_offsets"] = serde_json::json!([tail, tail + 12]);
+    wire["tail_value_offsets"] = cadmpeg_core::json!([tail, tail + 12]);
 }
 
 #[test]
@@ -1041,7 +1041,7 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
             recipe_record_byte_offset: 500,
             recipe_id: "recipe".into(),
             recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
-            recipe_references: vec![json::from_value(serde_json::json!({
+            recipe_references: vec![json::from_value(cadmpeg_core::json!({
                 "selector": 1, "selector_offset": 1, "token": "f3d:model:face#one", "token_offset": 2,
                 "design_reference": 1, "design_reference_offset": 3,
                 "candidate_faces": ["f3d:model:face#one"], "candidate_edges": ["f3d:model:edge#one"],
@@ -1165,13 +1165,14 @@ fn guids<T: TryFrom<String, Error = String>>(
 fn root_operand_paths_refuse_continuations() {
     let path = |root, shift| {
         let mut wire = json::to_value(borrowed_assembly_path(true)).unwrap();
-        wire["type_guid"] = serde_json::json!(super::TYPED_OCCURRENCE_PATH_TYPE_GUID);
-        wire["byte_offset"] = serde_json::json!(300 + shift);
-        wire["occurrence_guid_offsets"] = serde_json::json!([400 + shift]);
+        wire["type_guid"] = cadmpeg_core::json!(super::TYPED_OCCURRENCE_PATH_TYPE_GUID);
+        wire["byte_offset"] = cadmpeg_core::json!(300 + shift);
+        wire["occurrence_guid_offsets"] = cadmpeg_core::json!([400 + shift]);
         wire["identity_guid_offsets"] =
-            serde_json::json!([500 + shift, 580 + shift, 660 + shift, 740 + shift]);
+            cadmpeg_core::json!([500 + shift, 580 + shift, 660 + shift, 740 + shift]);
         if root {
-            wire["occurrence_guids"] = serde_json::json!(["00000000-0000-0000-0000-000000000000"]);
+            wire["occurrence_guids"] =
+                cadmpeg_core::json!(["00000000-0000-0000-0000-000000000000"]);
             wire["identity_guids"].as_array_mut().unwrap().truncate(2);
             wire["identity_guid_offsets"]
                 .as_array_mut()

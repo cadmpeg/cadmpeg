@@ -46,7 +46,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match IgesCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
             Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
-            Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+            Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
 }
@@ -58,13 +58,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
         Ok(result) => {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "ir": json::to_value(result.ir()).expect("serialize ir"),
                 "report": json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -79,15 +79,16 @@ fn encode_snapshot(bytes: &[u8]) -> String {
         match IgesCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
             Ok(result) => result,
             Err(error) => {
-                return snapshot_text(&serde_json::json!({
+                return snapshot_text(&cadmpeg_core::json!({
                     "decode_error": error.to_string()
                 }))
             }
         };
     let outcome = Encoder::plan(
         &IgesCodec,
-        EncodeInput::new(decoded.ir(), None),
-        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        EncodeInput::new(decoded.ir(), None).with_target(TargetRequest::Explicit(
+            IgesVersion::V5_3.descriptor().id.as_str(),
+        )),
     )
     .and_then(|plan| {
         let mut produced = Vec::new();
@@ -97,12 +98,12 @@ fn encode_snapshot(bytes: &[u8]) -> String {
     match outcome {
         Ok((report, produced)) => {
             let output = elide_generation_timestamps(&String::from_utf8_lossy(&produced));
-            snapshot_text(&serde_json::json!({
+            snapshot_text(&cadmpeg_core::json!({
                 "report": report,
                 "output": output,
             }))
         }
-        Err(error) => snapshot_text(&serde_json::json!({
+        Err(error) => snapshot_text(&cadmpeg_core::json!({
             "encode_error": error.to_string()
         })),
     }

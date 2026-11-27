@@ -6,29 +6,27 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::rc::Rc;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use super::selections::{check_path, moved_occurrences};
-use crate::design::evaluation::{Evaluation, EvaluationStatus, StateBase, StateDelta};
+use crate::design::evaluation::{Evaluation, EvaluationStatus};
 use crate::design::feature::FeatureOperation;
 use crate::design::names::{NameEntry, NameKind};
 use crate::design::refs::{EntityRef, RecordRef};
-use crate::design::selection::OccurrencePath;
 use crate::document::Topology;
 use crate::features::ConfigurationId;
-use crate::ids::{BodyId, ProductDefinitionId};
-use crate::index::identities::IdentitySet;
+use crate::ids::BodyId;
 use crate::index::ModelIndex;
-use crate::process::state::{ProcessBase, ProcessState};
+use crate::process::state::ProcessState;
 use crate::report::check::{Check, Finding};
 use crate::schema::EntitySchema;
 use crate::topology::ChildLists;
-use crate::transform::Transform;
-use state_topology::{StateKey, StateRules};
+use state::{Closure, State};
+use state_topology::StateRules;
+use walk::{Bottom, Forest, Stored};
 
 macro_rules! topology_arenas {
     ($target:ident) => {
@@ -167,38 +165,11 @@ struct Located<'a> {
     index: usize,
 }
 
-/// One state with every delta of its chain applied.
-#[derive(Default, Clone)]
-struct ResolvedState<'a> {
+/// The records that a current state's bodies reach, and their name entries.
+struct Extent<'a> {
     records: BTreeMap<&'a str, Located<'a>>,
     names: BTreeMap<&'a EntityRef, &'a NameEntry>,
-    owners: BTreeMap<&'a BodyId, &'a ProductDefinitionId>,
-    members: BTreeMap<&'a str, &'a ProductDefinitionId>,
-    instance_bodies: BTreeMap<&'a OccurrencePath, &'a [BodyId]>,
-    poses: BTreeMap<&'a OccurrencePath, &'a Transform>,
 }
-
-impl ResolvedState<'_> {
-    fn holds(&self, arena: Arena, id: &str) -> bool {
-        self.records
-            .get(id)
-            .is_some_and(|located| located.arena == arena)
-    }
-
-    /// The state's records, as a `Topology` of their own.
-    fn topology(&self) -> Topology {
-        let mut topology = Topology::default();
-        for located in self.records.values() {
-            located.copy_into(&mut topology);
-        }
-        topology.finalize();
-        topology
-    }
-}
-
-/// A resolved state that the records resting on it share; `None` where the
-/// chain of bases does not resolve.
-type Shared<'a> = Option<Rc<ResolvedState<'a>>>;
 
 /// Each record of `topology`, by identity, keeping the first of a repeated one.
 fn locate(topology: &Topology) -> BTreeMap<&str, Located<'_>> {
@@ -247,15 +218,19 @@ impl<'a> Resolver<'a, '_, '_> {
         }
     }
 
-    /// The extent of a scope's current state at `position`: its bodies and the
-    /// records of the current geometry they reach, through references and
-    /// through the derived child lists, their name entries, and its poses.
-    /// `None` where the scope has no current state there.
-    fn extent(
+    /// The state a chain of bases ends on: nothing, or the extent of a
+    /// scope's current state at a position, its bodies and the records of the
+    /// current geometry they reach, through references and through the
+    /// derived child lists, their name entries, and its poses. `None` where
+    /// the scope has no current state there.
+    fn bottom(
         &self,
-        scope: &str,
-        position: PositionKey<'_>,
-    ) -> Result<Option<ResolvedState<'a>>, CodecError> {
+        closure: &Closure<'_, 'a, '_, '_>,
+        bottom: Bottom<'a>,
+    ) -> Result<Option<State<'a>>, CodecError> {
+        let Bottom::Current(scope, position) = bottom else {
+            return Ok(Some(State::default()));
+        };
         let Some(current) = self.index.scopes.get(scope).and_then(|scope| {
             scope
                 .current
@@ -264,9 +239,14 @@ impl<'a> Resolver<'a, '_, '_> {
         }) else {
             return Ok(None);
         };
-        let mut state = self.geometry_extent(&current.bodies)?;
-        state.poses = current.poses.iter().collect();
-        Ok(Some(state))
+        let extent = self.geometry_extent(&current.bodies)?;
+        State::bottom(
+            closure,
+            extent.records,
+            extent.names,
+            current.poses.iter().collect(),
+        )
+        .map(Some)
     }
 
     /// The topology records that `bodies` reach through the derived child
@@ -274,8 +254,8 @@ impl<'a> Resolver<'a, '_, '_> {
     fn geometry_extent(
         &self,
         bodies: impl IntoIterator<Item = &'a BodyId>,
-    ) -> Result<ResolvedState<'a>, CodecError> {
-        let mut state = ResolvedState::default();
+    ) -> Result<Extent<'a>, CodecError> {
+        let mut records: BTreeMap<&'a str, Located<'a>> = BTreeMap::new();
         let mut pending: Vec<&'a str> = bodies
             .into_iter()
             .filter_map(|body| {
@@ -288,295 +268,44 @@ impl<'a> Resolver<'a, '_, '_> {
             let Some(located) = self.geometry.get(id).copied() else {
                 continue;
             };
-            if state.records.insert(id, located).is_some() {
+            if records.insert(id, located).is_some() {
                 continue;
             }
             pending.extend(self.derived_children(located));
             located.visit_references(self.ctx, &mut |target| {
                 if let Some((target, _)) = self.geometry.get_key_value(target) {
-                    if !state.records.contains_key(target) {
+                    if !records.contains_key(target) {
                         pending.push(target);
                     }
                 }
                 Ok(())
             })?;
         }
+        let mut names = BTreeMap::new();
         for (entity, entry) in self.index.ir.design.names.entries() {
             let (arena, id) = Arena::of_entity(entity);
-            if state.holds(arena, id) {
-                state.names.insert(entity, entry);
+            if records
+                .get(id)
+                .is_some_and(|located| located.arena == arena)
+            {
+                names.insert(entity, entry);
             }
         }
-        Ok(state)
-    }
-
-    /// The state an evaluation's `Empty` or `Current` base names. `None`
-    /// where a `Current` base names no current state.
-    fn below_evaluation(&self, evaluation: &'a Evaluation) -> Result<Shared<'a>, CodecError> {
-        let Some(content) = &evaluation.content else {
-            return Ok(None);
-        };
-        match &content.base {
-            StateBase::Empty => Ok(Some(Rc::default())),
-            StateBase::Current(position) => Ok(self
-                .extent(evaluation.scope.as_str(), PositionKey::of(position))?
-                .map(Rc::new)),
-            StateBase::Evaluation(_) => Ok(None),
-        }
+        Ok(Extent { records, names })
     }
 }
 
-/// A record whose content is a delta on a base: an evaluation or a process
-/// state.
-trait Stored {
-    fn id(&self) -> &str;
-    /// The delta of the record's content; `None` without content.
-    fn delta(&self) -> Option<&StateDelta>;
-    /// The id of the record of the same arena that the content's base names.
-    fn base(&self) -> Option<&str>;
-}
-
-impl Stored for Evaluation {
-    fn id(&self) -> &str {
-        self.id.as_str()
+/// The ids of every `Topology` of the document: the current geometry's and
+/// those of the deltas of `deltas`.
+fn topology_ids<'a>(
+    geometry: &BTreeMap<&'a str, Located<'a>>,
+    deltas: impl Iterator<Item = &'a crate::design::evaluation::StateDelta>,
+) -> BTreeSet<&'a str> {
+    let mut topology: BTreeSet<&str> = geometry.keys().copied().collect();
+    for delta in deltas {
+        topology.extend(records(&delta.records).into_iter().map(|(_, id, _)| id));
     }
-
-    fn delta(&self) -> Option<&StateDelta> {
-        self.content.as_ref().map(|content| &content.delta)
-    }
-
-    fn base(&self) -> Option<&str> {
-        match &self.content.as_ref()?.base {
-            StateBase::Evaluation(base) => Some(base.as_str()),
-            StateBase::Empty | StateBase::Current(_) => None,
-        }
-    }
-}
-
-impl Stored for ProcessState {
-    fn id(&self) -> &str {
-        self.id.as_str()
-    }
-
-    fn delta(&self) -> Option<&StateDelta> {
-        self.content.as_ref().map(|content| &content.delta)
-    }
-
-    fn base(&self) -> Option<&str> {
-        match &self.content.as_ref()?.base {
-            ProcessBase::State(base) => Some(base.as_str()),
-            ProcessBase::Design(_) => None,
-        }
-    }
-}
-
-/// The resolved states of the records of one arena. Each record's state is
-/// resolved once, from the resolved state of its base, and is kept while a
-/// record that names it as base is still to be checked.
-struct Chain<'a, R> {
-    /// Each record by id; the first of a repeated id.
-    by_id: BTreeMap<&'a str, &'a R>,
-    /// For each id, the number of records still to be checked whose base
-    /// names it, while that number is above zero.
-    pending: BTreeMap<&'a str, usize>,
-    /// The kept states; `None` where the chain of bases does not resolve.
-    states: BTreeMap<&'a str, Shared<'a>>,
-}
-
-impl<'a, R: Stored> Chain<'a, R> {
-    /// The chains of `records`. `bases` holds the id that the base of each
-    /// record still to be checked names.
-    fn new(records: &'a [R], bases: impl IntoIterator<Item = &'a str>) -> Self {
-        let mut by_id = BTreeMap::new();
-        for record in records {
-            by_id.entry(record.id()).or_insert(record);
-        }
-        let mut pending: BTreeMap<&'a str, usize> = BTreeMap::new();
-        for base in bases {
-            *pending.entry(base).or_default() += 1;
-        }
-        Self {
-            by_id,
-            pending,
-            states: BTreeMap::new(),
-        }
-    }
-
-    fn is_first(&self, record: &R) -> bool {
-        self.by_id
-            .get(record.id())
-            .is_some_and(|first| std::ptr::eq(*first, record))
-    }
-
-    /// The resolved state of `record`'s base, which `below` gives where the
-    /// base lies outside the arena. `None` where the chain of bases does not
-    /// resolve (an absent base, a base with no content, a cycle, a chain
-    /// through the record's own id, or a base `below` does not resolve),
-    /// which the evaluation rules report. Releases the base.
-    fn base_state(
-        &mut self,
-        record: &'a R,
-        mut below: impl FnMut(&'a R) -> Result<Shared<'a>, CodecError>,
-    ) -> Result<Shared<'a>, CodecError> {
-        let Some(base) = record.base() else {
-            return below(record);
-        };
-        let through_own_id = !self.is_first(record) && self.reaches(base, record.id());
-        let state = if through_own_id {
-            None
-        } else {
-            self.state(base, &mut below)?
-        };
-        self.release(base);
-        Ok(state)
-    }
-
-    /// Records that a record whose base names `id` is checked, and drops the
-    /// kept state of `id` when no record still to be checked names it.
-    fn release(&mut self, id: &str) {
-        let Some(count) = self.pending.get_mut(id) else {
-            return;
-        };
-        *count -= 1;
-        if *count == 0 {
-            self.pending.remove(id);
-            self.states.remove(id);
-        }
-    }
-
-    /// Whether the chain of bases from the record `from` reaches `id`.
-    fn reaches(&self, from: &str, id: &str) -> bool {
-        let mut at = from;
-        for _ in 0..=self.by_id.len() {
-            if at == id {
-                return true;
-            }
-            let Some(base) = self.by_id.get(at).and_then(|&record| record.base()) else {
-                return false;
-            };
-            at = base;
-        }
-        false
-    }
-
-    /// The resolved state of the record `id`: down its chain of bases to a
-    /// kept state or to the state `below` gives, then each delta applied.
-    /// Keeps the state of each record of the chain that a record still to be
-    /// checked names as base.
-    fn state(
-        &mut self,
-        id: &'a str,
-        mut below: impl FnMut(&'a R) -> Result<Shared<'a>, CodecError>,
-    ) -> Result<Shared<'a>, CodecError> {
-        let mut chain: Vec<&'a R> = Vec::new();
-        let mut walked = BTreeSet::new();
-        let mut at = id;
-        let mut state = loop {
-            if let Some(state) = self.states.get(at) {
-                break state.clone();
-            }
-            let Some(&record) = self.by_id.get(at) else {
-                break None;
-            };
-            if !walked.insert(at) {
-                break None;
-            }
-            chain.push(record);
-            if record.delta().is_none() {
-                break None;
-            }
-            match record.base() {
-                Some(base) => at = base,
-                None => break below(record)?,
-            }
-        };
-        for record in chain.into_iter().rev() {
-            if let (Some(resolved), Some(delta)) = (&mut state, record.delta()) {
-                apply(Rc::make_mut(resolved), delta, None);
-            }
-            if self.pending.contains_key(record.id()) {
-                self.states.insert(record.id(), state.clone());
-            }
-        }
-        Ok(state)
-    }
-
-    /// Keeps `state` as the resolved state of `record` where `record` is the
-    /// first of its id and a record still to be checked names it as base.
-    fn keep(&mut self, record: &'a R, state: ResolvedState<'a>) {
-        let id = record.id();
-        if self.is_first(record) && self.pending.contains_key(id) {
-            self.states
-                .entry(id)
-                .or_insert_with(|| Some(Rc::new(state)));
-        }
-    }
-}
-
-/// Applies `delta` to `state`. With `report`, a record of the delta whose
-/// identity another record of the delta holds, or a base record of another
-/// arena holds, is reported against the named evaluation.
-fn apply<'a>(
-    state: &mut ResolvedState<'a>,
-    delta: &'a StateDelta,
-    mut report: Option<(&str, &mut Vec<Finding>)>,
-) {
-    for removed in &delta.removed {
-        let (arena, id) = Arena::of_record(removed);
-        if state.holds(arena, id) {
-            state.records.remove(id);
-        }
-    }
-    let mut inserted = BTreeSet::new();
-    for (arena, id, index) in records(&delta.records) {
-        let previous = state.records.insert(
-            id,
-            Located {
-                arena,
-                topology: &delta.records,
-                index,
-            },
-        );
-        let repeated = !inserted.insert(id);
-        let clash = previous.filter(|previous| repeated || previous.arena != arena);
-        if let (Some(previous), Some((evaluation, findings))) = (clash, report.as_mut()) {
-            super::error(
-                findings,
-                evaluation,
-                crate::rule!("design.two-records-resolved-state-share-id", 
-                    "two records of the resolved state share id {id}: a {} record and a {arena} record",
-                    previous.arena
-                ),
-            );
-        }
-    }
-    merge(&mut state.names, &delta.names, |entry| entry.as_ref());
-    merge(&mut state.owners, &delta.owners, |owner| owner.as_ref());
-    for (occurrence, owner) in &delta.members {
-        match owner {
-            Some(owner) => state.members.insert(occurrence.as_str(), owner),
-            None => state.members.remove(occurrence.as_str()),
-        };
-    }
-    merge(
-        &mut state.instance_bodies,
-        &delta.instance_bodies,
-        |bodies| bodies.as_deref(),
-    );
-    merge(&mut state.poses, &delta.poses, |pose| pose.as_ref());
-}
-
-fn merge<'a, K: Ord, V, T: ?Sized>(
-    into: &mut BTreeMap<&'a K, &'a T>,
-    entries: &'a BTreeMap<K, V>,
-    value: impl Fn(&'a V) -> Option<&'a T>,
-) {
-    for (key, entry) in entries {
-        match value(entry) {
-            Some(value) => into.insert(key, value),
-            None => into.remove(key),
-        };
-    }
+    topology
 }
 
 pub(super) fn check_resolved_states(
@@ -632,67 +361,55 @@ pub(super) fn check_resolved_states(
     if !has_evaluations {
         return Ok(());
     }
-    let mut topology: BTreeSet<&str> = resolver.geometry.keys().copied().collect();
-    for evaluation in &ir.design.evaluations {
-        if let Some(content) = &evaluation.content {
-            topology.extend(
-                records(&content.delta.records)
-                    .into_iter()
-                    .map(|(_, id, _)| id),
-            );
-        }
-    }
     let evaluations = &ir.design.evaluations;
-    let mut chain = Chain::new(evaluations, evaluations.iter().filter_map(Stored::base));
-    let mut rules = StateRules::new(ctx, ids.native_view());
-    for evaluation in evaluations {
-        let Some(content) = &evaluation.content else {
-            continue;
-        };
-        let Some(base) = chain.base_state(evaluation, |below| resolver.below_evaluation(below))?
-        else {
-            continue;
-        };
-        let id = evaluation.id.as_str();
-        let mut state = (*base).clone();
-        apply(&mut state, &content.delta, Some((id, &mut *findings)));
-        for body in &unproduced {
-            if state.holds(Arena::Body, body.as_str()) {
-                super::error(
-                    findings,
-                    id,
-                    crate::rule!(
-                        "design.evaluation-states-unproduced-body",
-                        "evaluation states unproduced body {}",
-                        body.as_str()
-                    ),
-                );
+    let topology = topology_ids(
+        &resolver.geometry,
+        evaluations
+            .iter()
+            .filter_map(|evaluation| evaluation.content.as_ref().map(|content| &content.delta)),
+    );
+    let closure = Closure {
+        ctx,
+        topology: &topology,
+        ids,
+    };
+    let moved = moved_occurrences(ir);
+    let rules = StateRules::new(ctx, ids.native_view());
+    let forest = Forest::of_evaluations(evaluations);
+    let mut found: Vec<Vec<Finding>> = vec![Vec::new(); evaluations.len()];
+    forest.walk(
+        ctx,
+        |bottom| resolver.bottom(&closure, bottom),
+        |at, record, state| {
+            let (Stored::Evaluation(evaluation), Some(delta)) = (record, record.delta()) else {
+                return Ok(());
+            };
+            let id = evaluation.id.as_str();
+            let findings = &mut found[at];
+            let applied = state.apply(&closure, delta, Some((id, &mut *findings)))?;
+            for body in &unproduced {
+                if state.holds(Arena::Body, body.as_str()) {
+                    super::error(
+                        findings,
+                        id,
+                        crate::rule!(
+                            "design.evaluation-states-unproduced-body",
+                            "evaluation states unproduced body {}",
+                            body.as_str()
+                        ),
+                    );
+                }
             }
-        }
-        check_entries(index, &state, Some(evaluation.scope.as_str()), id, findings);
-        check_closure(ctx, &state, &topology, ids, id, findings)?;
-        let base_key = match &content.base {
-            StateBase::Empty => StateKey::Empty,
-            StateBase::Current(position) => {
-                StateKey::Current(evaluation.scope.as_str(), PositionKey::of(position))
-            }
-            StateBase::Evaluation(base) => StateKey::Evaluation(base.as_str()),
-        };
-        rules.check(
-            (base_key, &*base),
-            (
-                chain
-                    .is_first(evaluation)
-                    .then_some(StateKey::Evaluation(id)),
-                &state,
-            ),
-            id,
-            evaluation.status == EvaluationStatus::Current,
-            findings,
-        )?;
-        check_stored_bodies(index, evaluation, &state, findings);
-        chain.keep(evaluation, state);
-    }
+            let root = Some(evaluation.scope.as_str());
+            check_entries(index, state, root, &moved, id, findings);
+            check_closure(state, id, findings);
+            let caches = evaluation.status == EvaluationStatus::Current;
+            rules.check(state, &applied, id, caches, findings)?;
+            check_stored_bodies(index, evaluation, state, findings);
+            Ok(())
+        },
+    )?;
+    findings.extend(found.into_iter().flatten());
     Ok(())
 }
 
@@ -725,24 +442,22 @@ fn check_current_names(
 /// `root`, the definition of the state's scope.
 fn check_entries(
     index: &DesignRecords<'_>,
-    state: &ResolvedState<'_>,
+    state: &State<'_>,
     root: Option<&str>,
+    moved: &BTreeSet<&str>,
     evaluation: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let moved = moved_occurrences(index.ir);
-    for entity in state.names.keys() {
+    for entity in &state.unheld {
         let (arena, id) = Arena::of_entity(entity);
-        if !state.holds(arena, id) {
-            super::error(
-                findings,
-                evaluation,
-                crate::rule!(
-                    "design.name-entry-names-no-record-resolved",
-                    "name entry names {id}, which is no record of the resolved state's {arena}"
-                ),
-            );
-        }
+        super::error(
+            findings,
+            evaluation,
+            crate::rule!(
+                "design.name-entry-names-no-record-resolved",
+                "name entry names {id}, which is no record of the resolved state's {arena}"
+            ),
+        );
     }
     for (body, owner) in &state.owners {
         if !state.holds(Arena::Body, body.as_str()) {
@@ -792,7 +507,7 @@ fn check_entries(
         }
     }
     for (path, bodies) in &state.instance_bodies {
-        check_path(index, root, path, &moved, evaluation, findings);
+        check_path(index, root, path, moved, evaluation, findings);
         for body in *bodies {
             if !state.holds(Arena::Body, body.as_str()) {
                 super::error(
@@ -808,7 +523,7 @@ fn check_entries(
         }
     }
     for path in state.poses.keys() {
-        check_path(index, root, path, &moved, evaluation, findings);
+        check_path(index, root, path, moved, evaluation, findings);
     }
 }
 
@@ -816,34 +531,14 @@ fn check_entries(
 /// state: a reference to an id that the state does not hold is reported
 /// unless the id is a record of the document outside every `Topology`, which
 /// the reference checks resolve.
-fn check_closure(
-    ctx: &DecodeContext<'_>,
-    state: &ResolvedState<'_>,
-    topology: &BTreeSet<&str>,
-    ids: &ModelIndex<'_>,
-    evaluation: &str,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
-    for (id, located) in &state.records {
-        let mut outside = None;
-        located.visit_references(ctx, &mut |target| {
-            if outside.is_none()
-                && !state.records.contains_key(target)
-                && (topology.contains(target) || !IdentitySet::contains(ids, target))
-            {
-                outside = Some(target.to_owned());
-            }
-            Ok(())
-        })?;
-        if let Some(target) = outside {
-            super::error(
-                findings,
-                evaluation,
-                crate::rule!("design.record-resolved-state-references-state-does", "record {id} of the resolved state references {target}, which the state does not hold"),
-            );
-        }
+fn check_closure(state: &State<'_>, evaluation: &str, findings: &mut Vec<Finding>) {
+    for (id, target) in &state.open {
+        super::error(
+            findings,
+            evaluation,
+            crate::rule!("design.record-resolved-state-references-state-does", "record {id} of the resolved state references {target}, which the state does not hold"),
+        );
     }
-    Ok(())
 }
 
 /// Where the state after a stored-geometry feature is stored, it holds each
@@ -852,7 +547,7 @@ fn check_closure(
 fn check_stored_bodies(
     index: &DesignRecords<'_>,
     evaluation: &Evaluation,
-    state: &ResolvedState<'_>,
+    state: &State<'_>,
     findings: &mut Vec<Finding>,
 ) {
     let OfKey::State(PositionKey::After(MemberKey::Feature(feature))) = OfKey::of(&evaluation.of)
@@ -912,115 +607,59 @@ pub(in crate::validate) fn check_process_states<'a>(
         geometry: locate(&ir.geometry),
         children: ir.geometry.child_lists(),
     };
-    let mut topology: BTreeSet<&str> = resolver.geometry.keys().copied().collect();
-    let deltas = ir
-        .design
-        .evaluations
-        .iter()
-        .filter_map(|evaluation| evaluation.content.as_ref().map(|content| &content.delta))
-        .chain(
-            states
-                .iter()
-                .filter_map(|state| state.content.as_ref().map(|content| &content.delta)),
-        );
-    for delta in deltas {
-        topology.extend(records(&delta.records).into_iter().map(|(_, id, _)| id));
-    }
-    let mut evaluations = Chain::new(
-        &ir.design.evaluations,
-        states.iter().filter_map(design_base),
+    let topology = topology_ids(
+        &resolver.geometry,
+        ir.design
+            .evaluations
+            .iter()
+            .filter_map(|evaluation| evaluation.content.as_ref().map(|content| &content.delta))
+            .chain(
+                states
+                    .iter()
+                    .filter_map(|state| state.content.as_ref().map(|content| &content.delta)),
+            ),
     );
-    let mut chain = Chain::new(states, states.iter().filter_map(Stored::base));
-    let mut rules = StateRules::new(ctx, ids.native_view());
-    let mut process_findings = Vec::new();
-    for state in states {
-        let Some(content) = &state.content else {
-            continue;
-        };
-        let base = chain.base_state(state, |below| {
-            below_process_state(&resolver, &mut evaluations, &scope, below)
-        })?;
-        if let Some(evaluation) = design_base(state) {
-            evaluations.release(evaluation);
-        }
-        let Some(base) = base else { continue };
-        let id = state.id.as_str();
-        let mut resolved = (*base).clone();
-        apply(
-            &mut resolved,
-            &content.delta,
-            Some((id, &mut process_findings)),
-        );
-        check_entries(index, &resolved, scope(state), id, &mut process_findings);
-        check_closure(ctx, &resolved, &topology, ids, id, &mut process_findings)?;
-        let base_key = match &content.base {
-            ProcessBase::State(base) => Some(StateKey::Process(base.as_str())),
-            ProcessBase::Design(StateBase::Empty) => Some(StateKey::Empty),
-            ProcessBase::Design(StateBase::Current(position)) => {
-                scope(state).map(|scope| StateKey::Current(scope, PositionKey::of(position)))
-            }
-            ProcessBase::Design(StateBase::Evaluation(base)) => {
-                Some(StateKey::Evaluation(base.as_str()))
-            }
-        };
-        if let Some(base_key) = base_key {
-            rules.check(
-                (base_key, &*base),
-                (
-                    chain.is_first(state).then_some(StateKey::Process(id)),
-                    &resolved,
-                ),
-                id,
-                state.status == EvaluationStatus::Current,
-                &mut process_findings,
-            )?;
-        }
-        chain.keep(state, resolved);
-    }
-    findings.extend(process_findings.into_iter().map(|finding| Finding {
+    let closure = Closure {
+        ctx,
+        topology: &topology,
+        ids,
+    };
+    let moved = moved_occurrences(ir);
+    let rules = StateRules::new(ctx, ids.native_view());
+    let forest = Forest::of_process_states(&ir.design.evaluations, states, &scope);
+    let mut found: Vec<Vec<Finding>> = vec![Vec::new(); states.len()];
+    let offset = ir.design.evaluations.len();
+    forest.walk(
+        ctx,
+        |bottom| resolver.bottom(&closure, bottom),
+        |at, record, state| {
+            let Some(delta) = record.delta() else {
+                return Ok(());
+            };
+            let Stored::Process(process) = record else {
+                state.apply(&closure, delta, None)?;
+                return Ok(());
+            };
+            let id = process.id.as_str();
+            let findings = &mut found[at - offset];
+            let applied = state.apply(&closure, delta, Some((id, &mut *findings)))?;
+            check_entries(index, state, scope(process), &moved, id, findings);
+            check_closure(state, id, findings);
+            let caches = process.status == EvaluationStatus::Current;
+            rules.check(state, &applied, id, caches, findings)?;
+            Ok(())
+        },
+    )?;
+    findings.extend(found.into_iter().flatten().map(|finding| Finding {
         check: Check::Process,
         ..finding
     }));
     Ok(())
 }
 
-/// The evaluation that a process state's design base names.
-fn design_base(state: &ProcessState) -> Option<&str> {
-    match &state.content.as_ref()?.base {
-        ProcessBase::Design(StateBase::Evaluation(base)) => Some(base.as_str()),
-        ProcessBase::Design(StateBase::Empty | StateBase::Current(_)) | ProcessBase::State(_) => {
-            None
-        }
-    }
-}
-
-/// The state that a process state's design base names. `scope` gives the
-/// design scope of a state's setup, which a `Current` base reads. `None`
-/// where the base does not resolve.
-fn below_process_state<'a>(
-    resolver: &Resolver<'a, '_, '_>,
-    evaluations: &mut Chain<'a, Evaluation>,
-    scope: &impl Fn(&ProcessState) -> Option<&'a str>,
-    state: &'a ProcessState,
-) -> Result<Shared<'a>, CodecError> {
-    let Some(ProcessBase::Design(base)) = state.content.as_ref().map(|content| &content.base)
-    else {
-        return Ok(None);
-    };
-    match base {
-        StateBase::Empty => Ok(Some(Rc::default())),
-        StateBase::Current(position) => match scope(state) {
-            Some(scope) => Ok(resolver
-                .extent(scope, PositionKey::of(position))?
-                .map(Rc::new)),
-            None => Ok(None),
-        },
-        StateBase::Evaluation(base) => evaluations.state(base.as_str(), |evaluation| {
-            resolver.below_evaluation(evaluation)
-        }),
-    }
-}
-
+mod state;
 mod state_topology;
 #[cfg(test)]
 mod tests;
+pub(crate) mod visit;
+mod walk;

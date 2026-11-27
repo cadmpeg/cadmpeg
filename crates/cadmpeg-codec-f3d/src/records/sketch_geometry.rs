@@ -2520,8 +2520,8 @@ impl SketchNurbsPoles {
 #[cfg(test)]
 mod tests {
     use super::{SketchCurveGeometry, SketchPoint, SketchSurface, SketchText};
+    use cadmpeg_core::json;
     use cadmpeg_core::serde_erase::json;
-    use serde_json::json;
 
     #[test]
     fn point_closure_preserves_selector_one_state_one() {

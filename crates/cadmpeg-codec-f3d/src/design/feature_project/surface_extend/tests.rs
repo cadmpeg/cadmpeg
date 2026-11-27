@@ -57,7 +57,7 @@ fn operand_with(
     preceding_faces: &[&str],
     changed_boundary_edges: &[i64],
 ) -> DesignEdgeOperand {
-    let mut value = serde_json::json!({
+    let mut value = cadmpeg_core::json!({
         "id": format!("{stream}:design-edge-operand#{record}"),
         "scope_record_index": scope_record,
         "scope_reference_ordinal": 2,
