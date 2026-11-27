@@ -66,10 +66,10 @@ fn a_carrier_with_a_reversed_range_or_a_referencing_curve_is_refused_on_wire() {
         range: ParameterInterval::new([0.0, 1.0]).unwrap(),
     })))
     .unwrap();
-    json["carrier"]["range"] = serde_json::json!([1.0, 0.0]);
+    json["carrier"]["range"] = cadmpeg_core::json!([1.0, 0.0]);
     assert!(json::from_value::<HistoricalEdgeGeometry>(json.clone()).is_err());
-    json["carrier"]["range"] = serde_json::json!([0.0, 1.0]);
-    json["carrier"]["curve"] = serde_json::json!({
+    json["carrier"]["range"] = cadmpeg_core::json!([0.0, 1.0]);
+    json["carrier"]["curve"] = cadmpeg_core::json!({
         "kind": "composite",
         "segments": [{"curve": "test:model:curve#one", "same_sense": true, "transition": "continuous"}],
     });

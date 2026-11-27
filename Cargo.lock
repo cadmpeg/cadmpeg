@@ -298,7 +298,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "tempfile",
  "zip",
 ]
 
@@ -315,7 +314,6 @@ dependencies = [
  "roxmltree",
  "serde",
  "serde_json",
- "tempfile",
  "zip",
 ]
 
@@ -355,6 +353,7 @@ name = "cadmpeg-codec-ironcad"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-asm",
+ "cadmpeg-codec-sldprt",
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
@@ -373,6 +372,7 @@ dependencies = [
  "cadmpeg-parasolid",
  "cadmpeg-test-support",
  "flate2",
+ "memchr",
  "roxmltree",
  "serde",
  "serde_json",
@@ -426,7 +426,6 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
- "tempfile",
 ]
 
 [[package]]

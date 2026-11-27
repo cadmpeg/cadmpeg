@@ -243,11 +243,13 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
                 first: DesignCombineBodySelection {
                     record_index: 92,
                     external_identity: None,
+                    legacy_external_identity: None,
                     body_node: None,
                 },
                 additional: vec![DesignCombineBodySelection {
                     record_index: 94,
                     external_identity: None,
+                    legacy_external_identity: None,
                     body_node: None,
                 },]
             },

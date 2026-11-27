@@ -584,3 +584,101 @@ fn synthetic_datum_tag_array_with_unread_duplicate() -> Vec<u8> {
     bytes.extend_from_slice(b"\xe3\xa0\x01\x0f\xe3\x80\xdb\xe3\x3e\x12A\0\xe3\x3e\x12\0");
     bytes
 }
+
+/// The one `record.unreadable` of `kind` in `result`, the stub it names, and
+/// the offset and end of the `NeuPrtSld` section of `bytes`.
+fn neutral_part_charge(
+    bytes: &[u8],
+    result: &cadmpeg_ir::codec::DecodeResult,
+    kind: &str,
+) -> (String, cadmpeg_ir::NativeUnknownRecord, usize, usize) {
+    let scan = crate::container::scan_bytes_ok(bytes.to_vec());
+    let section = scan
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "NeuPrtSld")
+        .expect("the neutral section");
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.message.starts_with(&format!("part {kind} ")))
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    let message = charges[0].message.clone();
+    let stub = result
+        .ir()
+        .native_unknowns("creo")
+        .expect("native unknowns")
+        .into_iter()
+        .find(|record| message.contains(&format!(" record={}: ", record.id)))
+        .expect("the charge names its part stub");
+    assert_eq!(
+        stub.links,
+        [cadmpeg_ir::ids::Identity::try_from(format!(
+            "creo:NeuPrtSld:section#{}",
+            section.offset()
+        ))
+        .expect("section id")]
+    );
+    assert!(result
+        .source_fidelity()
+        .retained_record(stub.id.as_str())
+        .is_some_and(|record| record.data().is_none()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss
+            .message
+            .split_whitespace()
+            .any(|token| token.starts_with("NeuPrtSld@")
+                || token.starts_with("creo:NeuPrtSld:section#"))));
+    (message, stub, section.offset(), section.end())
+}
+
+fn decode_neutral(payload: Vec<u8>) -> (Vec<u8>, cadmpeg_ir::codec::DecodeResult) {
+    let bytes = crate::test_support::build_prt_raw("test", &[("NeuPrtSld", payload)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode the neutral section");
+    (bytes, result)
+}
+
+#[test]
+fn an_unread_neutral_attribute_table_is_given_up_as_a_part_of_its_section() {
+    let (bytes, result) = decode_neutral(b"PTC_GTOL_TYPE\0".to_vec());
+    let (message, _, offset, end) = neutral_part_charge(&bytes, &result, "neutral-section");
+    assert!(
+        message.starts_with(&format!(
+            "part neutral-section stream=\"\" offset={offset} length={} record=",
+            end - offset
+        )),
+        "{message}"
+    );
+}
+
+#[test]
+fn an_ownerless_tolerance_type_row_is_given_up_as_a_part_of_its_section() {
+    let prototype = b"\xe3\xe0\x0aname\0PART_NUMBER\0\xe0\x00value\0\xe2\xe0\x01type\0\x33\xe0\x0avalue(s_val)\0PART\0\xe0\x01ref_id\0\xf1\xf6\xe0\x01ref_type\0\x02\xe0\x0aref_name\0\xe1\xe0\x0aunit\0\xe1\xe0\x01designated\0\x01\xf1\xf7\x1b";
+    let ownerless = b"\xe3PTC_GTOL_TYPE\0\xe2\x33\xf7\x1fPOSITION\0\xf6\x03\xe1\xe1\x00";
+    let mut payload = b"\xe0\x00attributes\0\xf4\x05\xf8\x02\xf7\x1b\xfb".to_vec();
+    payload.extend_from_slice(prototype);
+    payload.extend_from_slice(ownerless);
+    let (bytes, result) = decode_neutral(payload);
+    let row = bytes
+        .windows(ownerless.len())
+        .position(|window| window == ownerless)
+        .expect("the ownerless row");
+    let (message, _, _, _) = neutral_part_charge(&bytes, &result, "pmi-attribute-row");
+    assert!(
+        message.starts_with(&format!(
+            "part pmi-attribute-row stream=\"\" offset={row} length={} record=",
+            ownerless.len()
+        )),
+        "{message}"
+    );
+    assert!(message.contains(": the geometric-tolerance type attribute row names no owner"));
+}

@@ -3,8 +3,9 @@
 use std::cell::Cell;
 
 use super::{normalise, object_at_mut, probe_key, sweep, Probed, Step, UNKNOWN_KEY};
+use cadmpeg_core::json;
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -944,12 +944,12 @@ mod tests {
     #[test]
     fn metadata_section_numbers_have_a_closed_numeric_wire_form() {
         for number in 0..=u8::MAX {
-            let parsed = json::from_value::<super::MetaSectionNumber>(serde_json::json!(number));
+            let parsed = json::from_value::<super::MetaSectionNumber>(cadmpeg_core::json!(number));
             if (1..=11).contains(&number) {
                 assert_eq!(
                     json::to_value(parsed.expect("section number is in 1..=11"))
                         .expect("section number is in 1..=11"),
-                    serde_json::json!(number)
+                    cadmpeg_core::json!(number)
                 );
             } else {
                 assert!(parsed.is_err());

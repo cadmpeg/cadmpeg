@@ -316,9 +316,9 @@ fn occurrence_lists_keep_their_lengths_through_the_wire_form() {
         .unwrap()
         .expect("typed path with two lists");
     let wire = json::to_value(&path).unwrap();
-    assert_eq!(wire["occurrence_list_lengths"], serde_json::json!([2, 3]));
+    assert_eq!(wire["occurrence_list_lengths"], cadmpeg_core::json!([2, 3]));
     let mut overflowing = wire.clone();
-    overflowing["occurrence_list_lengths"] = serde_json::json!([usize::MAX, 2]);
+    overflowing["occurrence_list_lengths"] = cadmpeg_core::json!([usize::MAX, 2]);
     assert!(
         json::from_value::<crate::records::feature::assembly::DesignAssemblyOperandPath>(
             overflowing
@@ -908,13 +908,13 @@ fn typed_path_keeps_its_identity_pair_words() {
     }
     let path = read(&with_words(1, 0), Some(TYPED_OCCURRENCE_PATH_TYPE_GUID)).unwrap();
     let wire = json::to_value(&path).unwrap();
-    assert_eq!(wire["identity_pair_words"], serde_json::json!([1, 0]));
+    assert_eq!(wire["identity_pair_words"], cadmpeg_core::json!([1, 0]));
     let round: crate::records::feature::assembly::DesignAssemblyOperandPath =
         json::from_value(wire.clone()).unwrap();
     assert_eq!(round, path);
     for (field, value) in [
-        ("identity_pair_words", serde_json::json!([2, 0])),
-        ("identity_pair_word_offsets", serde_json::json!([1])),
+        ("identity_pair_words", cadmpeg_core::json!([2, 0])),
+        ("identity_pair_word_offsets", cadmpeg_core::json!([1])),
     ] {
         let mut invalid = wire.clone();
         invalid[field] = value;

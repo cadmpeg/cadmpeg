@@ -6,8 +6,8 @@
 //! so hosts cannot disagree about the identity of the same declaration.
 //! [`records`] reads the neutral-binary node sequence through the base and
 //! embedded schema field lists, [`deltas`] owns the Deltas-stream grammar,
-//! [`topology`] classifies topology node fields, and [`xmt`] carries
-//! stream-local node identity.
+//! [`topology`] classifies topology node fields, [`precision`] states a part's
+//! modeller tolerances, and [`xmt`] carries stream-local node identity.
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
@@ -22,6 +22,8 @@ include!("registry_ids.rs");
 
 pub mod deltas;
 pub mod geometry;
+pub mod native;
+pub mod precision;
 pub mod records;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

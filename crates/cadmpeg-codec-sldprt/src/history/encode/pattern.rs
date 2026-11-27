@@ -433,14 +433,14 @@ mod tests {
     /// A mirror whose stored record states its seeds while the decoder binds
     /// none, and whose plane is resolved: the plane a lane binds.
     fn unbound_mirror() -> (crate::records::Feature, cadmpeg_ir::features::Feature) {
-        let record: crate::records::Feature = json::from_value(serde_json::json!({
+        let record: crate::records::Feature = json::from_value(cadmpeg_core::json!({
             "id":"native", "parent":"history", "ordinal":0,
             "name":"Reflect", "kind":"Mirror", "xml_tag":"Mirror",
             "input_class":"moMirrorPattern_c", "parameters":{},
             "properties":{"PlaneOrigin":"5mm,0mm,0mm", "PlaneNormal":"1,0,0"}
         }))
         .expect("synthetic feature record");
-        let history: crate::records::FeatureHistory = json::from_value(serde_json::json!({
+        let history: crate::records::FeatureHistory = json::from_value(cadmpeg_core::json!({
             "id":"history", "features":[record.clone()]
         }))
         .expect("synthetic history");

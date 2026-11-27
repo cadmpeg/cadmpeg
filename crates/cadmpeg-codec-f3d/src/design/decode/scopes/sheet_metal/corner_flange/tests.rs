@@ -67,7 +67,7 @@ fn corner_flange_decodes_both_class_pairs_and_round_trips() {
             json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(decoded).unwrap(), wire);
         let mut invalid = wire;
-        invalid["reference_side_code"] = serde_json::json!(3);
+        invalid["reference_side_code"] = cadmpeg_core::json!(3);
         assert!(
             json::from_value::<crate::records::feature::sheet_metal::DesignEdgeFlangeOperation>(
                 invalid

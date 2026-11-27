@@ -185,7 +185,7 @@ fn a_configuration_pass_binds_the_dimensioned_stream_circle_to_its_feature() {
     let mut builder = cadmpeg_ir::AnnotationBuilder::new();
     let stream =
         cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
-    builder.note(stream_id.as_str(), &stream, 2, Some("profile"));
+    builder.note(&stream_id, &stream, 2, Some("profile"));
     let mut annotations = builder.build();
 
     bind_sketch_profiles(

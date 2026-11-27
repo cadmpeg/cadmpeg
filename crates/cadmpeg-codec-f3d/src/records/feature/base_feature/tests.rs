@@ -2,8 +2,8 @@
 //! Base-feature construction wire and native admission.
 
 use super::{DesignBaseFeatureConstruction, DesignBaseFeatureConstructionWire};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 fn construction_wires() -> Vec<serde_json::Value> {
     vec![

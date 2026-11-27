@@ -3,9 +3,9 @@ use crate::geometry::lofts::CompoundLoftDirection;
 use crate::geometry::revision_forms::RevisionCompoundLoftTail;
 use crate::ids::CurveId;
 use crate::math::Vector3;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct TailWire {

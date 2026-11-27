@@ -4,11 +4,11 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
+use cadmpeg_core::json;
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef, SketchProfileRegion};
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchPlacement};
-use serde_json::json;
 
 use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::{

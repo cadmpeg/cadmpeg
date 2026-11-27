@@ -45,3 +45,11 @@ pub(crate) mod kernel_record_header {
     /// Offset of `reserved` (`u32`, little-endian). Spec §3.
     pub(crate) const RESERVED: usize = 24;
 }
+
+/// Byte offsets for the `scene_record_matrix` record.
+///
+/// Spec §5. Record length 169 B.
+pub(crate) mod scene_record_matrix {
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §5.
+    pub(crate) const MATRIX: usize = 41;
+}

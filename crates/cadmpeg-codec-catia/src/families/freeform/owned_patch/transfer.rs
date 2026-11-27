@@ -580,11 +580,11 @@ fn append_component(
             .map_err(CodecError::malformed)?
         };
     }
-    let mut admit = |id: &str, offset: usize, role: &str| {
+    let mut admit = |key: cadmpeg_ir::annotations::AnnotationKey, offset: usize, role: &str| {
         admission.charge()?;
         annotate(
             annotations,
-            id,
+            key,
             "consolidated_owned_face",
             u64_from_index(offset),
             role,
@@ -602,21 +602,39 @@ fn append_component(
         .iter()
         .any(|candidate| candidate.id == body_id);
     if new_body {
-        for id in [body_id.as_str(), region.as_str()] {
-            admit(id, root, "bounded_face_subset")?;
+        for key in [
+            cadmpeg_ir::annotations::AnnotationKey::from(&body_id),
+            cadmpeg_ir::annotations::AnnotationKey::from(&region),
+        ] {
+            admit(key, root, "bounded_face_subset")?;
         }
     }
-    admit(shell.as_str(), body, "bounded_face_subset")?;
+    admit(
+        cadmpeg_ir::annotations::AnnotationKey::from(&shell),
+        body,
+        "bounded_face_subset",
+    )?;
     let tolerance = cadmpeg_ir::scalar::PositiveLength::new(GAP_MM);
     for (vertex, point) in vertices {
         let point_id = id!(PointId, "point", vertex);
         let vertex_id = id!(VertexId, "vertex", vertex);
         let point = FinitePoint3::new(point)
             .ok_or_else(|| CodecError::malformed("CATIA patch vertex is non-finite"))?;
-        admit(point_id.as_str(), vertex, "lifted_boundary_vertex")?;
-        admit(vertex_id.as_str(), vertex, "boundary_vertex")?;
+        admit(
+            cadmpeg_ir::annotations::AnnotationKey::from(&point_id),
+            vertex,
+            "lifted_boundary_vertex",
+        )?;
+        admit(
+            cadmpeg_ir::annotations::AnnotationKey::from(&vertex_id),
+            vertex,
+            "boundary_vertex",
+        )?;
         if affine_vertices.contains(&vertex) {
-            inferred_fields.push((point_id.to_string(), "position"));
+            inferred_fields.push((
+                cadmpeg_ir::annotations::AnnotationKey::from(&point_id),
+                "position",
+            ));
         }
         ir.geometry
             .points
@@ -632,8 +650,16 @@ fn append_component(
         let side = uses[0].1;
         let curve = id!(CurveId, "curve", edge);
         let edge_id = id!(EdgeId, "edge", edge);
-        admit(curve.as_str(), edge, "fitted_boundary_curve")?;
-        admit(edge_id.as_str(), edge, "boundary_edge")?;
+        admit(
+            cadmpeg_ir::annotations::AnnotationKey::from(&curve),
+            edge,
+            "fitted_boundary_curve",
+        )?;
+        admit(
+            cadmpeg_ir::annotations::AnnotationKey::from(&edge_id),
+            edge,
+            "boundary_edge",
+        )?;
         let mut edge_accuracy_mm = GAP_MM;
         for (_, occurrence) in uses {
             if occurrence.lift_error_mm > GAP_MM {
@@ -641,12 +667,19 @@ fn append_component(
                     CodecError::malformed("CATIA repaired edge has no inferred accuracy")
                 })?;
                 edge_accuracy_mm = edge_accuracy_mm.max(accuracy.bound_mm + GAP_MM);
-                admit(edge_id.as_str(), accuracy.source, "parameter_map_accuracy")?;
+                admit(
+                    cadmpeg_ir::annotations::AnnotationKey::from(&edge_id),
+                    accuracy.source,
+                    "parameter_map_accuracy",
+                )?;
             }
         }
         let tolerance = cadmpeg_ir::scalar::PositiveLength::new(edge_accuracy_mm);
         if edge_accuracy_mm > GAP_MM {
-            inferred_fields.push((edge_id.to_string(), "tolerance"));
+            inferred_fields.push((
+                cadmpeg_ir::annotations::AnnotationKey::from(&edge_id),
+                "tolerance",
+            ));
         }
         ir.geometry.curves.push(Curve {
             id: curve.clone(),
@@ -675,9 +708,21 @@ fn append_component(
         let face = id!(FaceId, "face", patch.face);
         let ring = id!(LoopId, "loop", patch.face);
         let surface = id!(SurfaceId, "surface", patch.face);
-        admit(face.as_str(), patch.face, "roster_face")?;
-        admit(ring.as_str(), patch.face, "outer_boundary")?;
-        admit(surface.as_str(), patch.face, "face_surface")?;
+        admit(
+            cadmpeg_ir::annotations::AnnotationKey::from(&face),
+            patch.face,
+            "roster_face",
+        )?;
+        admit(
+            cadmpeg_ir::annotations::AnnotationKey::from(&ring),
+            patch.face,
+            "outer_boundary",
+        )?;
+        admit(
+            cadmpeg_ir::annotations::AnnotationKey::from(&surface),
+            patch.face,
+            "face_surface",
+        )?;
         ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(patch.surface.clone()),
@@ -697,7 +742,11 @@ fn append_component(
             start = end;
             let ring = if index != 0 {
                 let id = id!(LoopId, "inner-loop", format_args!("{}:{index}", patch.face));
-                admit(id.as_str(), patch.face, "inner_boundary")?;
+                admit(
+                    cadmpeg_ir::annotations::AnnotationKey::from(&id),
+                    patch.face,
+                    "inner_boundary",
+                )?;
                 inner_rings.push(id.clone());
                 id
             } else {
@@ -718,13 +767,21 @@ fn append_component(
                 } else {
                     id.clone()
                 };
-                admit(id.as_str(), side.edge, "boundary_occurrence")?;
+                admit(
+                    cadmpeg_ir::annotations::AnnotationKey::from(&id),
+                    side.edge,
+                    "boundary_occurrence",
+                )?;
                 let pcurve = id!(
                     PcurveId,
                     "pcurve",
                     format_args!("{}:{}", patch.face, side.edge)
                 );
-                admit(pcurve.as_str(), side.edge, "boundary_surface_curve")?;
+                admit(
+                    cadmpeg_ir::annotations::AnnotationKey::from(&pcurve),
+                    side.edge,
+                    "boundary_surface_curve",
+                )?;
                 ir.geometry.pcurves.push(Pcurve {
                     id: pcurve.clone(),
                     geometry: side.pcurve.clone(),

@@ -87,6 +87,6 @@ fn the_flattened_historical_binding_names_the_null_key_it_refuses() {
     for key in ["historical_entity_kind", "historical_entity_ref"] {
         states_the_key(key, &refusal::<Probe>(key));
     }
-    let absent: Probe = json::from_value(serde_json::json!({})).unwrap();
+    let absent: Probe = json::from_value(cadmpeg_core::json!({})).unwrap();
     assert!(absent.binding.is_none());
 }

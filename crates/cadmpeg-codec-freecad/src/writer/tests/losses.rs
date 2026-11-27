@@ -369,7 +369,7 @@ fn an_unreadable_entry_is_named_once() {
         entry["name"].as_str().expect("entry name").to_owned(),
     );
     let data = entry["data"].as_str().expect("entry hex bytes");
-    entry["data"] = serde_json::json!(format!("{data}00"));
+    entry["data"] = cadmpeg_core::json!(format!("{data}00"));
     replace_arena(&mut ir, "entries", &entries);
     let spans = payload_spans(&ir, &stale_name);
     assert!(!spans.is_empty());

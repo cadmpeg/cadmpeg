@@ -11,7 +11,7 @@ use crate::feature::{
 };
 use crate::pmdc::{type_id_string, PmDcReference};
 
-use super::{LOFT_MODE_TYPE, SECTION_CONDITION_TYPE, SECTION_TYPE};
+use super::{FACE_LOOP_PARTICIPANT_TYPE, LOFT_MODE_TYPE, SECTION_CONDITION_TYPE, SECTION_TYPE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeReason {
@@ -67,16 +67,104 @@ impl NativeReason {
     }
 }
 
+/// One admitted loft section: its link, the section's own source index, and
+/// its `source_value` field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AdmittedSection {
+    /// The loft-section selection record in the section list.
+    pub(crate) record: PmDcReference,
+    pub(crate) entity_link: PmDcReference,
+    pub(crate) source_index: u32,
+    pub(crate) source_value: u32,
+}
+
+/// The result and operation slots that distinguish the two loft classes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Form {
+    /// Part operation value 1; slot 13 holds one result body.
+    Solid,
+    /// Part operation value 5; slot 6 holds the result surface-body wrapper.
+    Surface,
+}
+
+impl Form {
+    fn operation_value(self) -> u16 {
+        match self {
+            Self::Solid => 1,
+            Self::Surface => 5,
+        }
+    }
+
+    fn result_slot(self) -> usize {
+        match self {
+            Self::Solid => 13,
+            Self::Surface => 6,
+        }
+    }
+}
+
 pub(crate) fn sections<'a>(
     source: &PmDcFeature,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
 ) -> Result<[PmDcReference; 2], NativeReason> {
+    let admitted = admit(source, Form::Solid, property, parameter)?;
+    Ok(admitted.map(|section| section.entity_link))
+}
+
+/// The two sections of a positional surface loft: the section that selects a
+/// sketch wire, with `source_value` 1, and the face-loop section, whose
+/// `source_value` equals its own content-header source index. Either can be
+/// first; `sketch_first` states the stored order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SurfaceSections {
+    pub(crate) sketch: AdmittedSection,
+    pub(crate) face_loop: AdmittedSection,
+    pub(crate) sketch_first: bool,
+}
+
+pub(crate) fn surface_sections<'a>(
+    source: &PmDcFeature,
+    property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+    parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
+) -> Result<SurfaceSections, NativeReason> {
+    let [first, last] = admit(source, Form::Surface, property, parameter)?;
+    // A section whose own source index is 1 stores `source_value` 1 in both
+    // forms, so the two forms cannot be told apart: the pair is refused.
+    if first.source_index == 1 || last.source_index == 1 {
+        return Err(NativeReason::SectionRecord);
+    }
+    let is_loop = |section: &AdmittedSection| section.source_value == section.source_index;
+    let is_sketch = |section: &AdmittedSection| section.source_value == 1 && !is_loop(section);
+    if is_sketch(&first) && is_loop(&last) {
+        Ok(SurfaceSections {
+            sketch: first,
+            face_loop: last,
+            sketch_first: true,
+        })
+    } else if is_loop(&first) && is_sketch(&last) {
+        Ok(SurfaceSections {
+            sketch: last,
+            face_loop: first,
+            sketch_first: false,
+        })
+    } else {
+        Err(NativeReason::SectionRecord)
+    }
+}
+
+fn admit<'a>(
+    source: &PmDcFeature,
+    form: Form,
+    property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+    parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
+) -> Result<[AdmittedSection; 2], NativeReason> {
     let slots = source.properties.references();
+    let result_slot = form.result_slot();
     if slots.len() != 14
         || source.properties.marker() != 2
         || slots.iter().enumerate().any(|(slot, reference)| {
-            reference.index() != 0 && ![0, 1, 2, 9, 10, 13].contains(&slot)
+            reference.index() != 0 && ![0, 1, 2, 9, 10, result_slot].contains(&slot)
         })
     {
         return Err(NativeReason::Controls);
@@ -86,8 +174,8 @@ pub(crate) fn sections<'a>(
         PmDcFeaturePropertyKind::Enumeration {
             family: PmDcFeatureEnumFamily::PartOperation,
             type_value: 5,
-            value: 1,
-        }
+            value,
+        } if value == form.operation_value()
     ) {
         return Err(NativeReason::Slot(1));
     }
@@ -105,17 +193,31 @@ pub(crate) fn sections<'a>(
     ) {
         return Err(NativeReason::Slot(10));
     }
-    let PmDcFeaturePropertyKind::References {
-        family: PmDcFeatureReferenceFamily::ObjectCollection,
-        items: result,
-    } = &property(slots[13])
-        .ok_or(NativeReason::ResultCollection)?
-        .kind
-    else {
-        return Err(NativeReason::ResultCollection);
-    };
-    if result.references().len() != 1 {
-        return Err(NativeReason::ResultCollection);
+    match form {
+        Form::Solid => {
+            let PmDcFeaturePropertyKind::References {
+                family: PmDcFeatureReferenceFamily::ObjectCollection,
+                items: result,
+            } = &property(slots[13])
+                .ok_or(NativeReason::ResultCollection)?
+                .kind
+            else {
+                return Err(NativeReason::ResultCollection);
+            };
+            if result.references().len() != 1 {
+                return Err(NativeReason::ResultCollection);
+            }
+        }
+        Form::Surface => {
+            if !matches!(
+                property(slots[6])
+                    .ok_or(NativeReason::ResultCollection)?
+                    .kind,
+                PmDcFeaturePropertyKind::SurfaceBody { .. }
+            ) {
+                return Err(NativeReason::ResultCollection);
+            }
+        }
     }
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::LoftSections,
@@ -134,7 +236,12 @@ pub(crate) fn sections<'a>(
         property(*first).ok_or(NativeReason::SectionRecord)?,
         property(*last).ok_or(NativeReason::SectionRecord)?,
     ];
-    let mut links = [PmDcReference::from_packed(0); 2];
+    let mut admitted = [AdmittedSection {
+        record: PmDcReference::from_packed(0),
+        entity_link: PmDcReference::from_packed(0),
+        source_index: 0,
+        source_value: 0,
+    }; 2];
     for (ordinal, section) in sections.into_iter().enumerate() {
         if section.identity.type_id.as_str() != type_id_string(SECTION_TYPE) {
             return Err(NativeReason::SectionRecord);
@@ -145,12 +252,17 @@ pub(crate) fn sections<'a>(
             condition,
             parameters,
             map_value: 0,
-            source_value: 1,
+            source_value,
             option,
         } = section.kind
         else {
             return Err(NativeReason::SectionRecord);
         };
+        // The solid loft stores `source_value` 1 in both sections; this check
+        // stays ahead of every later section check.
+        if form == Form::Solid && source_value != 1 {
+            return Err(NativeReason::SectionRecord);
+        }
         if entity_link.index() == 0 {
             return Err(NativeReason::SectionRecord);
         }
@@ -168,7 +280,12 @@ pub(crate) fn sections<'a>(
         {
             return Err(NativeReason::SectionOption);
         }
-        links[ordinal] = entity_link;
+        admitted[ordinal] = AdmittedSection {
+            record: [*first, *last][ordinal],
+            entity_link,
+            source_index: section.header.source_index,
+            source_value,
+        };
         let (first, first_value) =
             parameter(parameters[0]).ok_or(NativeReason::SectionParameters)?;
         let (second, second_value) =
@@ -183,7 +300,7 @@ pub(crate) fn sections<'a>(
             return Err(NativeReason::SectionParameters);
         }
     }
-    Ok(links)
+    Ok(admitted)
 }
 
 fn zero_control(property: &PmDcFeatureProperty, type_id: [u8; 16]) -> bool {
@@ -196,6 +313,92 @@ fn zero_control(property: &PmDcFeatureProperty, type_id: [u8; 16]) -> bool {
                 value: 0,
             }
         )
+}
+
+/// Whether the second participant of a surface-loft label is the face-loop
+/// participant record: a record of type `7ca882b3f445b9fffe4a7486104813a4`
+/// other than the sketch participant. `type_at` gives the record type string
+/// of a record ordinal in the feature's segment.
+pub(crate) fn face_loop_participant<'a>(
+    label: &crate::feature::PmDcFeatureLabel,
+    sketch_ordinal: u32,
+    type_at: impl Fn(u32) -> Option<&'a str>,
+) -> bool {
+    let [first, last] = label.participants.references() else {
+        return false;
+    };
+    let others = [first, last]
+        .into_iter()
+        .filter_map(|reference| reference.record_ordinal())
+        .filter(|ordinal| *ordinal != sketch_ordinal)
+        .collect::<Vec<_>>();
+    let [other] = others.as_slice() else {
+        return false;
+    };
+    type_at(*other) == Some(type_id_string(FACE_LOOP_PARTICIPANT_TYPE).as_str())
+}
+
+/// Whether the surface-body wrapper in slot 6 of `source` is already named by
+/// an earlier feature, so that this loft did not create it. `position` gives
+/// the history position of a feature; a feature without one cannot be ordered
+/// and counts as an earlier user.
+pub(crate) fn wrapper_used_earlier(
+    source: &PmDcFeature,
+    features: &[PmDcFeature],
+    position: impl Fn(&PmDcFeature) -> Option<u64>,
+) -> bool {
+    let Some(wrapper) = source
+        .properties
+        .references()
+        .get(Form::Surface.result_slot())
+        .and_then(|reference| reference.record_ordinal())
+    else {
+        return true;
+    };
+    let Some(own) = position(source) else {
+        return true;
+    };
+    features
+        .iter()
+        .filter(|other| {
+            other.identity.segment_token == source.identity.segment_token
+                && other.identity.record_ordinal != source.identity.record_ordinal
+        })
+        .filter(|other| {
+            other
+                .properties
+                .references()
+                .iter()
+                .any(|reference| reference.record_ordinal() == Some(wrapper))
+        })
+        .any(|other| position(other).is_none_or(|at| at < own))
+}
+
+/// Whether `definition` is a surface loft that keeps a native section
+/// selection.
+pub(crate) fn has_native_section(definition: &FeatureDefinition) -> bool {
+    use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
+    matches!(definition,
+        FeatureDefinition::Operation(FeatureOperation::Loft { sections, solid: false, .. })
+            if sections.iter().any(|section| matches!(section,
+                LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(_))))))
+}
+
+/// Whether `definition` is the neutral form of a positional surface loft.
+pub(crate) fn matches_surface_definition(definition: &FeatureDefinition) -> bool {
+    matches!(definition,
+        FeatureDefinition::Operation(FeatureOperation::Loft {
+            sections,
+            guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
+            op: cadmpeg_ir::features::operation_settings::BooleanOp::NewBody,
+            closed: false,
+            solid: false,
+            ruled: false,
+            linearize: false,
+            max_degree: None,
+            allow_multi_profile_faces: None,
+        }) if sections.len() == 2 && guides.is_empty()
+    )
 }
 
 pub(crate) fn matches_definition(definition: &FeatureDefinition) -> bool {

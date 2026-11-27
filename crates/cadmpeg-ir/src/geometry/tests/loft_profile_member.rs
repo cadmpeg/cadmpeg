@@ -27,7 +27,10 @@ fn a_loft_profile_member_nests_its_curve_and_refuses_unknown_keys() {
     let value = member();
     let wire = json::to_value(&value).expect("serializes");
     assert_eq!(wire["profile"]["curve"], "test:model:curve#loft");
-    assert_eq!(wire["profile"]["endpoints"], serde_json::json!([0.0, 1.0]));
+    assert_eq!(
+        wire["profile"]["endpoints"],
+        cadmpeg_core::json!([0.0, 1.0])
+    );
     assert!(wire.get("curve").is_none());
     assert_eq!(
         json::from_value::<LoftProfileMember>(wire.clone()).expect("round trip"),
@@ -35,7 +38,7 @@ fn a_loft_profile_member_nests_its_curve_and_refuses_unknown_keys() {
     );
 
     let mut beside = wire.clone();
-    beside["zz_bogus"] = serde_json::json!(1);
+    beside["zz_bogus"] = cadmpeg_core::json!(1);
     let error = json::from_value::<LoftProfileMember>(beside)
         .unwrap_err()
         .to_string();
@@ -45,7 +48,7 @@ fn a_loft_profile_member_nests_its_curve_and_refuses_unknown_keys() {
     );
 
     let mut inside = wire;
-    inside["profile"]["zz_bogus"] = serde_json::json!(1);
+    inside["profile"]["zz_bogus"] = cadmpeg_core::json!(1);
     let error = json::from_value::<LoftProfileMember>(inside)
         .unwrap_err()
         .to_string();
@@ -62,7 +65,7 @@ fn a_loft_profile_member_nests_its_curve_and_refuses_unknown_keys() {
 fn classic_loft_profile_data_states_only_its_own_fields() {
     use crate::geometry::lofts::ClassicLoftProfileData;
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "surface": "test:model:surface#loft",
         "first_flag": true,
         "asm_extension": 3,
@@ -82,9 +85,12 @@ fn classic_loft_profile_data_states_only_its_own_fields() {
     // `deny_unknown_fields` names them all in the refusal.
     let declared = "`surface`, `pcurve`, `first_flag`, `asm_extension`, `subdata`, `direction`";
     for (key, value) in [
-        ("support_bounds", serde_json::json!([null, null, null, 2.0])),
-        ("secondary_pcurve", serde_json::json!(null)),
-        ("zz_bogus", serde_json::json!(true)),
+        (
+            "support_bounds",
+            cadmpeg_core::json!([null, null, null, 2.0]),
+        ),
+        ("secondary_pcurve", cadmpeg_core::json!(null)),
+        ("zz_bogus", cadmpeg_core::json!(true)),
     ] {
         let mut orphan = wire.clone();
         orphan[key] = value;

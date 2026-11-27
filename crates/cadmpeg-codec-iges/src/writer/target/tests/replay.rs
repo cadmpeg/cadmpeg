@@ -20,13 +20,13 @@ use cadmpeg_ir::CadIr;
 use cadmpeg_ir::Codec;
 use std::io::Cursor;
 
-/// Reads the degradation reason from `plan`, or panics with the resolution.
-fn degraded_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {
-    match &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
-        plan.report().write_path(),
-        "fidelity",
-    ) {
-        FidelityResolution::Degraded { reason } => reason.clone(),
+/// Reads the reason of the declined patch from `plan`, or panics with the
+/// cause.
+fn declined_reason(plan: &cadmpeg_ir::codec::write::ExportPlan, context: &str) -> String {
+    match plan.report().synthesis_cause() {
+        Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason }) => {
+            reason.clone()
+        }
         other => panic!("{context}: {other:?}"),
     }
 }
@@ -48,8 +48,9 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .expect("decoded source has a dialect");
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_2.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())).with_target(
+                TargetRequest::Explicit(IgesVersion::V5_2.descriptor().id.as_str()),
+            ),
         )
         .expect("explicit target plans");
 
@@ -93,7 +94,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     let source = unclassified.source.take().expect("decoded source exists");
     let format = source.format().to_owned();
     unclassified.source = Some(
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))
@@ -101,8 +102,9 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     );
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(&unclassified, Some(decoded.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&unclassified, Some(decoded.source_fidelity())).with_target(
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            ),
         )
         .expect("explicit target plans");
 
@@ -128,8 +130,9 @@ fn a_replayed_export_states_the_preserved_dialect_as_its_target() {
     );
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())).with_target(
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            ),
         )
         .expect("explicit target plans");
     assert!(matches!(
@@ -173,8 +176,8 @@ fn a_synthesized_export_states_the_target_it_wrote() {
         ));
         let plan = IgesCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .expect("explicit target plans");
         let mut written = Vec::new();
@@ -209,10 +212,10 @@ fn an_unrepresented_source_replays_and_is_reported() {
         )
         .expect("the decode retains its source image");
     let plan = IgesCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .expect("an unrepresented source plans");
     assert!(matches!(
         plan.report().write_path(),
@@ -240,7 +243,7 @@ fn an_unrepresented_source_replays_and_is_reported() {
 }
 
 #[test]
-fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
+fn encode_reports_a_digest_mismatch_as_a_declined_patch() {
     let decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
@@ -255,8 +258,9 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
     ));
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())).with_target(
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            ),
         )
         .expect("explicit target plans");
 
@@ -264,6 +268,6 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
         plan.report().write_path(),
         WritePath::Synthesized { .. }
     ));
-    let reason = degraded_reason(&plan, "an edited model must degrade");
+    let reason = declined_reason(&plan, "an edited model must decline the patch");
     assert!(reason.contains("digest"), "{reason}");
 }

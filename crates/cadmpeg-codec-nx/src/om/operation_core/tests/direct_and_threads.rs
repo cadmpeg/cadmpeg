@@ -103,7 +103,7 @@ fn direct_and_physical_thread_cores_require_complete_storage_and_owning_classes(
                 id: "nx:feature:core#0",
                 core,
             },
-            serde_json::json!({"id":"nx:feature:core#0", "core":value}),
+            cadmpeg_core::json!({"id":"nx:feature:core#0", "core":value}),
         );
         for end in 0..bytes.len() {
             assert!(
