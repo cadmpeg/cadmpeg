@@ -253,17 +253,19 @@ pub(crate) fn project(
     Ok(())
 }
 
-/// The component a feature names: `owner`, where it stands in the document
-/// that holds the feature. The span above counts the definitions each
-/// document hosts, which does not match the span of an archive member's own
-/// scope, so the owner a member's feature shares with no definition of its
-/// document is not named.
+/// The component a feature names: `owner`, for a feature of the root
+/// document. The span above counts the definitions each document hosts, which
+/// does not match the span of an archive member's own scope: naming the owner
+/// of a member's feature, even one that stands in the member's own document,
+/// makes the checker read the scope as spanning the files its occurrences
+/// place. A member's feature names no component.
 fn member_component(feature: &Feature, owner: &ProductDefinitionId) -> Option<ProductDefinitionId> {
     let stream = feature
         .native_ref
         .as_deref()
         .and_then(crate::ids::native_stream)?;
-    (timeline::document_prefix(owner.as_str()) == timeline::document_prefix(stream))
+    timeline::document_prefix(stream)
+        .is_empty()
         .then(|| owner.clone())
 }
 

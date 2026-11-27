@@ -1977,20 +1977,15 @@ fn a_matched_feature_with_no_stored_suppression_takes_the_items_state() {
 }
 
 #[test]
-fn a_feature_names_its_owner_as_component_only_within_its_own_document() {
+fn only_a_feature_of_the_root_document_names_its_owner_as_component() {
     let own =
         ProductDefinitionId::mint("f3d:0574d3e0-934b-4a4e-a78b-7f54f53c2287.f3d@model:component#c")
             .unwrap();
-    let placed = ProductDefinitionId::mint(
-        "f3d:outer.f3d@xref:product-definition#0574d3e0-934b-4a4e-a78b-7f54f53c2287.f3d",
-    )
-    .unwrap();
-    let flags = super::timeline::TailFlags::new();
-    let hosted = items_of(MEMBER, &[keyed(MEMBER, "Extrude", 10, 0)], &[10], &flags).remove(0);
-    assert_eq!(super::member_component(&hosted, &own), Some(own.clone()));
-    assert_eq!(super::member_component(&hosted, &placed), None);
     let root = ProductDefinitionId::mint("f3d:model:component#a").unwrap();
+    let flags = super::timeline::TailFlags::new();
+    let member = items_of(MEMBER, &[keyed(MEMBER, "Extrude", 10, 0)], &[10], &flags).remove(0);
+    assert_eq!(super::member_component(&member, &own), None);
+    assert_eq!(super::member_component(&member, &root), None);
     let hosted = items_of(STREAM, &[keyed(STREAM, "Extrude", 10, 0)], &[10], &flags).remove(0);
     assert_eq!(super::member_component(&hosted, &root), Some(root.clone()));
-    assert_eq!(super::member_component(&hosted, &own), None);
 }
