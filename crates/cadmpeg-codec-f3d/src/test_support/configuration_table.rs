@@ -204,7 +204,12 @@ pub(crate) const ROOT_RECORD: u32 = 349;
 /// `archive` with a `FusionDesignSegmentType1` segment whose one primary record
 /// is `root`, which must carry class tag `256` and index [`ROOT_RECORD`].
 pub(crate) fn with_root_segment(archive: Vec<u8>, root: Vec<u8>) -> Vec<u8> {
-    use std::io::{Read, Write};
+    with_root_segment_in(archive, "FusionDesignSegmentType1", root)
+}
+
+/// [`with_root_segment`] with the segment folder `segment`.
+pub(crate) fn with_root_segment_in(archive: Vec<u8>, segment: &str, root: Vec<u8>) -> Vec<u8> {
+    use std::io::Write;
 
     let metadata = crate::test_support::streams_test::design_metastream_with_records(
         &[(
@@ -220,19 +225,12 @@ pub(crate) fn with_root_segment(archive: Vec<u8>, root: Vec<u8>) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     for index in 0..source.len() {
-        let mut entry = source.by_index(index).unwrap();
-        let name = entry.name().unwrap().into_owned();
-        let mut payload = Vec::new();
-        entry.read_to_end(&mut payload).unwrap();
-        zip.start_file(name, stored).unwrap();
-        zip.write_all(&payload).unwrap();
+        zip.raw_copy_file(source.by_index_raw(index).unwrap())
+            .unwrap();
     }
     for (name, payload) in [("BulkStream.dat", root), ("MetaStream.dat", metadata)] {
-        zip.start_file(
-            format!("FusionAssetName[Active]/FusionDesignSegmentType1/{name}"),
-            stored,
-        )
-        .unwrap();
+        zip.start_file(format!("FusionAssetName[Active]/{segment}/{name}"), stored)
+            .unwrap();
         zip.write_all(&payload).unwrap();
     }
     zip.finish().unwrap().into_inner()

@@ -219,18 +219,26 @@ fn an_active_configuration_with_no_written_row_is_charged() {
 }
 
 #[test]
-fn an_active_configuration_no_table_holds_is_charged_once() {
+fn an_active_configuration_of_an_empty_table_document_is_named_in_its_new_table() {
     let empty = vec![DesignConfiguration::try_new(
         TABLE.into(),
         DesignConfigurationKind::Table,
         serde_json::Map::new(),
     )
     .unwrap()];
-    let (root, losses) = planned(&document(&documents(), &[id("large")], &[]), &empty);
-    assert!(root.is_none());
-    assert_eq!(losses.len(), 1, "{losses:#?}");
-    assert_eq!(losses[0].0, "export/edit.dropped");
-    assert!(losses[0].1.contains(id("large").as_str()));
+    let (plan, written) = planning(&document(&documents(), &[id("large")], &[]), &empty);
+    let table = &written[0].tables()[0];
+    let root = plan.root.expect("a root record");
+    assert_eq!(
+        (root.table_id.as_str(), root.row_id.as_str()),
+        (table.id.as_str(), "large")
+    );
+    assert_eq!(plan.losses.len(), 1, "{:#?}", plan.losses);
+    assert_eq!(
+        plan.losses[0].code.to_string(),
+        "export/record.residual-unavailable"
+    );
+    assert!(plan.losses[0].message.contains("DR-1069"));
 }
 
 #[test]

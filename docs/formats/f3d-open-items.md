@@ -30,6 +30,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The writer registers the record under a type GUID it generates, the version-8 UUID `deterministic_guid("type", "DesignConfigurationRoot")` that `ROOT_TYPE` in `writer/generate/configuration_root.rs` holds, with the base type, type version and add-in of the serializer trigger records, and charges `export:record.residual-unavailable` naming the configuration whose row the record names, or the configuration table document whose stated row it names.
 
+### DR-1069. Members of a configuration table created in an empty table document
+
+**Question.** When a save adds the first table to a `DesignConfigurationTable` document whose payload is the empty object `{}`, which table id, `tableName`, `tableType`, document and table asset `id` and `revisionId`, `cachedRevIds` and `testRowData` does the document store?
+
+**Known.** A table document holds an `asset` of type `configuration-1.0.0` with a `tableVersion` component, a `tables` array, `cachedRevIds` and `testRowData` (`f3d.md` §1.2). Each table holds an `asset` of type `configurationTable-1.1.0` whose attribute `pim:configuration:tableId` equals the `id` of its `tableDefinition` component, a `rows` array, and a `tableView` whose `columnOrder` and `rowOrder` list the column and row ids. A document that holds no table is stored as `{}`. A `DesignConfigurationRoot` record names a row by table id and row id.
+
+**Need.** A save of a design with no configuration, then the same design saved after the first configuration is added. Compare the table document of the two saves: the table id, the `tableName` and `tableType` of the `tableDefinition`, the asset ids and revision ids, `cachedRevIds`, and `testRowData`.
+
+**Note.** The writer creates the table with the `tableName` and `tableType` `Configurations`, a table id and asset ids it generates as version-8 UUIDs from the entry name, `tableVersion` `1`, empty `cachedRevIds` and `testRowData`, and charges `export:record.residual-unavailable` naming the table document.
+
 ### DR-1014. Order of a body-override appearance and the body's material assignment
 
 **Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?

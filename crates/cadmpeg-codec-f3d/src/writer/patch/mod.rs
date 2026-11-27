@@ -50,6 +50,41 @@ use records::{
     patch_tolerant_coedge_parameters, patch_transform_hints, patch_wire_topologies,
 };
 
+/// `target` with the configuration table documents that state its
+/// configurations, where the stored documents project others and a patch
+/// can carry the rewritten documents (cadir-v11.md §5.11).
+/// Whether the v10 configurations of `target` state its design
+/// configurations whole, so that the configuration tables the patch writes
+/// from them carry the design configurations too.
+fn states_design_configurations(target: &CadIr) -> bool {
+    let restated = crate::design_v11::configurations::restate(
+        &target.model.configurations,
+        &target.design,
+        &target.model.product_definitions,
+        &target.model.features,
+    );
+    restated.unstated.is_empty() && restated.rows == target.model.configurations
+}
+
+fn restated_tables(
+    target: &CadIr,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Option<CadIr>, CodecError> {
+    let Some(native) = f3d_native(target)? else {
+        return Ok(None);
+    };
+    let Some(documents) = crate::writer::generate::configuration_table::patched(target, &native)?
+    else {
+        return Ok(None);
+    };
+    let mut restated = target.clone();
+    restated
+        .native
+        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
+        .set_arena(ctx, "design_configurations", &documents)?;
+    Ok(Some(restated))
+}
+
 /// Apply supported semantic edits to a retained F3D archive.
 ///
 /// `source_image` must match the F3D source represented by `target`. The
@@ -85,6 +120,8 @@ pub(crate) fn write_semantic(
         &arena,
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )?;
+    let restated = restated_tables(target, &encode_ctx)?;
+    let target = restated.as_ref().unwrap_or(target);
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
         if !projects(
@@ -384,6 +421,24 @@ pub(crate) fn write_semantic(
         .model
         .configurations
         .clone_from(&target.model.configurations);
+    if states_design_configurations(target) {
+        supported_target
+            .design
+            .configurations
+            .clone_from(&target.design.configurations);
+        for scope in &mut supported_target.design.scopes {
+            if let Some(stated) = target
+                .design
+                .scopes
+                .iter()
+                .find(|stated| stated.definition == scope.definition)
+            {
+                scope
+                    .active_configuration
+                    .clone_from(&stated.active_configuration);
+            }
+        }
+    }
     if let (Some(mut supported), Some(target_native)) =
         (baseline_native.clone(), target_native.as_ref())
     {

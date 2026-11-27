@@ -3,13 +3,15 @@
 //! Where the neutral configurations differ from the configurations that the
 //! documents project, the neutral record wins (cadir-v11.md §3.4, W2; §5.14):
 //! the write regenerates the rows of the table, their cells and order, and
-//! the targets of the rules from the configurations (f3d.md §1.2).
+//! the targets of the rules from the configurations (f3d.md §1.2). A
+//! parameter or feature with no column gets a column, and an
+//! empty table document gets a table (cadir-v11.md §5.11).
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{edit_dropped, value_unwritable};
+use cadmpeg_ir::codec::write::{edit_dropped, record_residual_unavailable, value_unwritable};
 use cadmpeg_ir::features::parameters::{
     ConfigurationFeatureState, DesignConfiguration as Configuration, ParameterValue,
 };
@@ -17,18 +19,24 @@ use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::schema::EntityKind;
+use cadmpeg_ir::CadIr;
 use serde_json::{Map, Value};
 
 use super::presentation::deterministic_guid;
 use crate::design::configurations::{table_at, ConfigurationTargets, Projection};
 use crate::design::feature_project::DESIGN_LENGTH_TO_MILLIMETRE;
 use crate::ids::neutral_configuration_id;
+use crate::native::F3dNative;
 use crate::records::configuration::table::{
-    new_row, push_row, remove_row, set_cell, set_row_name, set_row_order, CellData, ColumnTarget,
-    ConfigurationColumn, ConfigurationRow, ConfigurationTable, ConfiguredValue, RowGuids,
+    new_document, new_row, push_column, push_row, remove_row, set_cell, set_row_name,
+    set_row_order, AdmittedTables, CellData, ColumnTarget, ConfigurationColumn, ConfigurationRow,
+    ConfigurationTable, ConfiguredValue, RowGuids, TableNames,
 };
-use crate::records::configuration::DesignConfiguration;
-use crate::writer::primitives::{bases, differences, projection, reconciled, same_row, Difference};
+use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
+use crate::writer::primitives::{
+    bases, configuration_targets, decoded_configurations, differences, projection, projects,
+    reconciled, same_row, Difference,
+};
 
 /// The configuration documents the write holds, and what they read back as.
 pub(super) struct Written<'a> {
@@ -45,6 +53,11 @@ pub(super) struct Written<'a> {
     expected: BTreeMap<String, &'a Configuration>,
 }
 
+/// The `tableName` and the `tableType` of a table the write creates in an
+/// empty table document (f3d-open-items.md DR-1069).
+const NEW_TABLE_NAME: &str = "Configurations";
+const NEW_TABLE_TYPE: &str = "Configurations";
+
 /// Write `documents` with the rows, cells, row order and rule targets of
 /// `configurations`, where they differ from `decoded`, the configurations
 /// that `documents` project. Return the written documents, and the losses
@@ -58,13 +71,35 @@ pub(super) fn regenerate<'a>(
     let mut payloads = vec![None; documents.len()];
     let mut losses = Vec::new();
     let bases = bases(targets.neutral_features);
-    let host = host(documents, decoded.table);
+    let stored = host(documents, decoded.table);
+    let created = match stored {
+        None if !configurations.is_empty() => created(documents),
+        _ => None,
+    };
+    if let Some((index, payload, _)) = &created {
+        payloads[*index] = Some(payload.clone());
+        losses.extend(record_residual_unavailable(
+            "F3D",
+            &format!(
+                "writes a table into this empty configuration table document with the table name {NEW_TABLE_NAME:?} and the table type {NEW_TABLE_TYPE:?}, a table id and asset ids the writer generates, and an empty testRowData: f3d-open-items.md DR-1069 leaves these members of a new table open"
+            ),
+            [documents[*index].id()],
+        ));
+    }
+    let host = stored
+        .map(|(index, table)| (index, documents[index].payload(), table))
+        .or_else(|| {
+            created
+                .as_ref()
+                .map(|(index, payload, table)| (*index, payload, table))
+        });
     let expected = match host {
-        Some((index, table)) => Rows {
+        Some((index, source, table)) => Rows {
             entry: documents[index].entry_name(),
-            source: documents[index].payload(),
+            source,
             payload: &mut payloads[index],
             table,
+            columns: table.columns.clone(),
             targets,
             bases: &bases,
         }
@@ -191,6 +226,61 @@ fn host(
     (tables.next().is_none() && first.1.rows.is_empty()).then_some(first)
 }
 
+/// The configuration documents of `target`, whose native records are
+/// `native`, rewritten to state its configurations where the stored
+/// documents project others: the documents a patch of the retained archive
+/// carries. `None` where the documents project the configurations, or the
+/// rewrite adds a row, moves the active row, or states a configuration
+/// otherwise than `target`.
+pub(in crate::writer) fn patched(
+    target: &CadIr,
+    native: &F3dNative,
+) -> Result<Option<Vec<DesignConfiguration>>, CodecError> {
+    let targets = configuration_targets(target, native);
+    let configurations = &target.model.configurations;
+    let documents = &native.design_configurations;
+    if projects(configurations, documents, &targets)? {
+        return Ok(None);
+    }
+    let decoded = decoded_configurations(documents, &targets)?;
+    let (written, losses) = regenerate(documents, &decoded, configurations, &targets)?;
+    if !losses.is_empty()
+        || !written.generated.is_empty()
+        || !projects(configurations, &written.documents, &targets)?
+    {
+        return Ok(None);
+    }
+    Ok(Some(written.documents.into_owned()))
+}
+
+/// The only table document of `documents`, where it is the empty object, as
+/// a document that holds one table with no column and no row: its position,
+/// payload and table.
+fn created(
+    documents: &[DesignConfiguration],
+) -> Option<(usize, Map<String, Value>, ConfigurationTable)> {
+    let mut tables = documents
+        .iter()
+        .enumerate()
+        .filter(|(_, document)| document.kind() == DesignConfigurationKind::Table);
+    let (index, document) = tables.next()?;
+    if tables.next().is_some() || !document.payload().is_empty() {
+        return None;
+    }
+    let entry = document.entry_name();
+    let id = deterministic_guid("configuration table", entry);
+    let payload = new_document(
+        &TableNames {
+            id: &id,
+            name: NEW_TABLE_NAME,
+            kind: NEW_TABLE_TYPE,
+        },
+        |domain| deterministic_guid(domain, entry),
+    );
+    let table = AdmittedTables::admit(&payload).tables.into_iter().next()?;
+    Some((index, payload, table))
+}
+
 /// The payload of a document the write changes, from a copy of `source`.
 fn edit<'p>(
     payload: &'p mut Option<Map<String, Value>>,
@@ -206,6 +296,8 @@ struct Rows<'s, 'p> {
     source: &'s Map<String, Value>,
     payload: &'p mut Option<Map<String, Value>>,
     table: &'s ConfigurationTable,
+    /// The columns of `table` and the columns the write adds.
+    columns: Vec<ConfigurationColumn>,
     targets: &'s ConfigurationTargets<'s>,
     /// The state of each feature in a configuration that states none.
     bases: &'s BTreeMap<&'s FeatureId, ConfigurationFeatureState>,
@@ -318,6 +410,7 @@ impl Rows<'_, '_> {
         stored: Option<&ConfigurationRow>,
         configuration: &Configuration,
     ) {
+        self.grow(configuration);
         let name = configuration.name.as_deref().unwrap_or_default();
         if stored.is_some_and(|row| row.name != name) {
             set_row_name(
@@ -327,7 +420,7 @@ impl Rows<'_, '_> {
                 name,
             );
         }
-        for column in &self.table.columns {
+        for column in &self.columns {
             let value = stored
                 .and_then(|row| row.cells.iter().find(|cell| cell.column_id == column.id))
                 .map(|cell| &cell.value);
@@ -344,6 +437,88 @@ impl Rows<'_, '_> {
                 data.as_ref(),
             );
         }
+    }
+
+    /// Add a column for each parameter `configuration` overrides, and for
+    /// each feature whose state it sets otherwise than the feature's own
+    /// where it is not the active configuration, that no column names.
+    fn grow(&mut self, configuration: &Configuration) {
+        let targets = self.targets;
+        let parameters = self
+            .columns
+            .iter()
+            .filter_map(|column| column_parameter(&column.target, targets))
+            .collect::<BTreeSet<_>>();
+        let features = self
+            .columns
+            .iter()
+            .filter_map(|column| match column.target {
+                ColumnTarget::Feature(record) => Some(&targets.feature(record)?.id),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        let mut added = Vec::new();
+        for id in configuration
+            .parameter_overrides
+            .keys()
+            .filter(|id| !parameters.contains(*id))
+        {
+            if let Some(target) = targets.parameter_column(id) {
+                let title = targets
+                    .neutral_parameters
+                    .iter()
+                    .find(|parameter| parameter.id == *id)
+                    .map_or(id.as_str(), |parameter| parameter.name.as_str());
+                added.push((id.to_string(), title.to_owned(), target));
+            }
+        }
+        if !configuration.active {
+            for (id, state) in &configuration.feature_states {
+                let own = self
+                    .bases
+                    .get(id)
+                    .map(|base| base.evaluation.is_suppressed());
+                if features.contains(id) || own == Some(state.evaluation.is_suppressed()) {
+                    continue;
+                }
+                if let Some(target) = targets.feature_column(id) {
+                    let title = targets
+                        .neutral_features
+                        .iter()
+                        .find(|feature| feature.id == *id)
+                        .and_then(|feature| feature.name.as_deref())
+                        .unwrap_or(id.as_str());
+                    added.push((id.to_string(), title.to_owned(), target));
+                }
+            }
+        }
+        for (key, title, target) in added {
+            let id = deterministic_guid("configuration column", &key);
+            if self.columns.iter().any(|column| column.id == id) {
+                continue;
+            }
+            if push_column(
+                edit(self.payload, self.source),
+                self.table.position,
+                &id,
+                &title,
+                &target,
+            ) {
+                self.columns.push(ConfigurationColumn { id, target });
+            }
+        }
+    }
+}
+
+/// The neutral parameter that a column of `target` names.
+fn column_parameter(
+    target: &ColumnTarget,
+    targets: &ConfigurationTargets<'_>,
+) -> Option<ParameterId> {
+    match target {
+        ColumnTarget::Parameter(record) => targets.parameter(*record, None),
+        ColumnTarget::OwnedParameter(record) => targets.owned_parameter(*record),
+        ColumnTarget::Property(_) | ColumnTarget::Feature(_) => None,
     }
 }
 

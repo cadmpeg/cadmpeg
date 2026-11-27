@@ -2,6 +2,7 @@
 //! Source-less F3D archive generation: assemble a ZIP archive from a neutral
 //! `CadIr` with no retained source.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Seek, SeekFrom, Write};
 
@@ -19,7 +20,7 @@ use crate::writer::primitives::{
 };
 mod attributes;
 pub(in crate::writer) mod configuration_root;
-mod configuration_table;
+pub(in crate::writer) mod configuration_table;
 mod design;
 mod index;
 mod native_bytes;
@@ -242,10 +243,13 @@ fn attempt<W: Write + Seek>(
     };
     let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;
+    let mut projected = None;
     if write_design {
-        let native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
+        let mut native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
             validate_source_less_history_graph(target, &native)?;
-            let parameters = design::parameters::native_or_neutral(target, &native)?;
+            let projection = design::parameters::native_projection(&native)?;
+            let parameters = design::parameters::native_or_neutral(target, &projection.parameters);
+            projected = Some(projection);
             validate_source_less_design_ownership(&native)?;
             validate_source_less_sketch_graph(&native)?;
             validate_source_less_recipes(&native)?;
@@ -335,14 +339,35 @@ fn attempt<W: Write + Seek>(
     let mut root = None;
     let mut table_losses = Vec::new();
     if write_design {
-        let targets = configuration_targets(target, &native);
+        // A document read from CADIR holds its configurations in its
+        // `design` records, and its features and parameters in the native
+        // records.
+        let held = target.model.omitted_arenas_held();
+        let mut targets = configuration_targets(target, &native);
+        if let (false, Some(projected)) = (held, &projected) {
+            targets.neutral_parameters = &projected.parameters;
+            targets.neutral_features = &projected.features;
+        }
         let decoded = decoded_configurations(&native.design_configurations, &targets)
             .map_err(Failure::design)?;
-        let neutral = if target.model.omitted_arenas_held() {
-            target.model.configurations.as_slice()
+        let neutral = if held {
+            Cow::Borrowed(target.model.configurations.as_slice())
         } else {
-            decoded.configurations.as_slice()
+            let restated = crate::design_v11::configurations::restate(
+                &decoded.configurations,
+                &target.design,
+                &target.model.product_definitions,
+                targets.neutral_features,
+            );
+            table_losses.extend(cadmpeg_ir::codec::write::edit_dropped(
+                cadmpeg_ir::schema::EntityKind::DesignConfiguration,
+                "F3D",
+                "drops these configuration edits, which a row of the configuration table cannot state",
+                restated.unstated,
+            ));
+            Cow::Owned(restated.rows)
         };
+        let neutral = neutral.as_ref();
         let (written, losses) = configuration_table::regenerate(
             &native.design_configurations,
             &decoded,
@@ -357,7 +382,7 @@ fn attempt<W: Write + Seek>(
             &written,
             neutral,
         );
-        table_losses = losses;
+        table_losses.extend(losses);
         table_losses.extend(
             written
                 .read_back(plan.active(), &targets)

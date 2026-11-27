@@ -605,10 +605,14 @@ fn ordinals_the_row_order_cannot_hold_are_charged() {
 }
 
 #[test]
-fn configurations_with_no_table_to_hold_their_rows_are_charged_dropped() {
+fn configurations_with_an_empty_table_document_are_written_into_a_new_table() {
     let natives = natives();
     let documents = documents();
     let decoded = project(&documents, &natives.targets()).unwrap();
+    let mut configurations = decoded.configurations;
+    for configuration in &mut configurations {
+        configuration.properties.clear();
+    }
     let empty = vec![DesignConfiguration::try_new(
         ENTRY.into(),
         DesignConfigurationKind::Table,
@@ -618,13 +622,34 @@ fn configurations_with_no_table_to_hold_their_rows_are_charged_dropped() {
     let (written, losses) = write(
         &empty,
         &crate::design::configurations::Projection::default(),
-        &decoded.configurations,
+        &configurations,
         &natives,
     );
-    assert!(matches!(written.documents, Cow::Borrowed(_)));
     assert_eq!(losses.len(), 1, "{losses:#?}");
-    assert_eq!(losses[0].code.to_string(), "export/edit.dropped");
-    assert!(losses[0].message.contains(id("tall").as_str()));
+    assert_eq!(
+        losses[0].code.to_string(),
+        "export/record.residual-unavailable"
+    );
+    assert!(losses[0].message.contains("DR-1069"));
+    let tables = written.documents[0].tables();
+    assert_eq!(tables.len(), 1);
+    let mut rows = tables[0]
+        .rows
+        .iter()
+        .map(|row| row.id.as_str())
+        .collect::<Vec<_>>();
+    rows.sort_unstable();
+    assert_eq!(rows, ["c1", "tall"]);
+    assert!(projects(&configurations, &written.documents, &natives.targets()).unwrap());
+    for configuration in &configurations {
+        let read = written
+            .projection
+            .configurations
+            .iter()
+            .find(|read| read.id == configuration.id)
+            .unwrap();
+        assert_eq!(read.parameter_overrides, configuration.parameter_overrides);
+    }
 }
 
 #[test]
