@@ -14,14 +14,21 @@ pub(crate) enum IronCadLossCode {
     KernelUnrecognized,
     KernelPrologueUnreadable,
     KernelUnverified,
-    BodiesPending,
     BodyUnreadable,
+    ParasolidBodyPartial,
     BodyRecordsRetained,
     BodyExtensionsRetained,
     BodyPartitionUnread,
     FeatureShapeRetained,
     FaceBoundaryUnstated,
     SurfaceUntyped,
+    PlacementBoundByOrder,
+    PlacementUnbound,
+    AssemblyFlattened,
+    AssemblyBoundByOrder,
+    PropertyUnread,
+    UnitsUnrecognized,
+    UnitsScaleConflict,
     SceneStreamsPending,
 }
 
@@ -49,7 +56,10 @@ impl IronCadLossCode {
                 LossTaxonomy::SourceDialectUnverified,
             ),
             Self::KernelUnverified => ("kernel.unverified", LossTaxonomy::SourceDialectUnverified),
-            Self::BodiesPending => ("body.decode-pending", LossTaxonomy::GeometryNotTransferred),
+            Self::ParasolidBodyPartial => (
+                "body.parasolid-partial",
+                LossTaxonomy::GeometryNotTransferred,
+            ),
             Self::BodyUnreadable => ("body.unreadable", LossTaxonomy::GeometryNotTransferred),
             Self::BodyRecordsRetained => ("body.records-retained", LossTaxonomy::RecordNotTyped),
             Self::BodyExtensionsRetained => (
@@ -69,6 +79,23 @@ impl IronCadLossCode {
                 LossTaxonomy::TopologyNotTransferred,
             ),
             Self::SurfaceUntyped => ("surface.untyped", LossTaxonomy::GeometryNotTransferred),
+            Self::PlacementBoundByOrder => {
+                ("placement.bound-by-order", LossTaxonomy::DecodeDiagnostic)
+            }
+            Self::PlacementUnbound => (
+                "placement.unbound",
+                LossTaxonomy::AssemblyPlacementsNotTransferred,
+            ),
+            Self::AssemblyFlattened => (
+                "assembly.flattened",
+                LossTaxonomy::AssemblyPlacementsNotTransferred,
+            ),
+            Self::UnitsUnrecognized => ("units.unrecognized", LossTaxonomy::MetadataNotTransferred),
+            Self::UnitsScaleConflict => ("units.scale-conflict", LossTaxonomy::DecodeDiagnostic),
+            Self::PropertyUnread => ("property.unread", LossTaxonomy::MetadataNotTransferred),
+            Self::AssemblyBoundByOrder => {
+                ("assembly.bound-by-order", LossTaxonomy::DecodeDiagnostic)
+            }
             Self::SceneStreamsPending => (
                 "scene.decode-pending",
                 LossTaxonomy::ObjectRecordsUntransferred,
