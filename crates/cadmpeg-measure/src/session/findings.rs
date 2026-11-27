@@ -613,9 +613,7 @@ impl<'ir> Measurer<'ir> {
 
         let mut faces: HashMap<&'ir str, FaceResult<'ir>> =
             HashMap::with_capacity(geometry.faces.len());
-        let parallel_workers = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .min(6);
+        let parallel_workers = cadmpeg_core::parallelism().min(6);
         let pass_remaining = pass.remaining();
         let face_limit = pass.face_limit();
         let edge_limit = pass.edge_limit();

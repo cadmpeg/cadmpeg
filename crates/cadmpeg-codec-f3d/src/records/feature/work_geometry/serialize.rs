@@ -213,6 +213,7 @@ impl Serialize for DesignWorkPlaneConstruction {
 #[cfg(test)]
 mod tests {
     use super::{DesignVertexRecipe, DesignWorkPlaneConstruction, DesignWorkPointInput};
+    use cadmpeg_core::serde_erase::json;
     use serde::Serialize;
 
     #[derive(Serialize)]
@@ -222,7 +223,7 @@ mod tests {
     }
 
     fn vertex_recipe() -> DesignVertexRecipe {
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "record_index": 2,
             "byte_offset": 10,
             "class_tag": "369",
@@ -247,8 +248,8 @@ mod tests {
         let recipe = vertex_recipe();
         let owned = super::super::DesignVertexRecipeWire::from(recipe.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&recipe).expect("borrowed wire"),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned wire")
+            json::to_vec(&recipe).expect("borrowed wire"),
+            json::to_vec(&owned).expect("owned wire")
         );
     }
 
@@ -263,7 +264,7 @@ mod tests {
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
@@ -280,8 +281,8 @@ mod tests {
         .expect("work point input");
         let owned = super::super::DesignWorkPointInputWire::from(input.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&input).expect("borrowed wire"),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned wire")
+            json::to_vec(&input).expect("borrowed wire"),
+            json::to_vec(&owned).expect("owned wire")
         );
         let record = Record {
             id: "f3d:design:work-point-input#1",
@@ -290,7 +291,7 @@ mod tests {
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
@@ -303,8 +304,8 @@ mod tests {
             .expect("three unresolved vertex recipes");
         let owned = super::super::DesignWorkPlaneConstructionWire::from(plane.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&plane).expect("borrowed wire"),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned wire")
+            json::to_vec(&plane).expect("borrowed wire"),
+            json::to_vec(&owned).expect("owned wire")
         );
         let record = Record {
             id: "f3d:design:work-plane-construction#1",
@@ -313,7 +314,7 @@ mod tests {
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id": record.id, "value": owned}),
+            cadmpeg_core::json!({"id": record.id, "value": owned}),
         );
         super::super::WORK_GEOMETRY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

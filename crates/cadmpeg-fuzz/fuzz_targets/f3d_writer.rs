@@ -33,7 +33,7 @@ fuzz_target!(|data: &[u8]| {
     let codec = F3dCodec;
     let mut encoded = Vec::new();
     if codec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut encoded))
         .is_ok()
     {

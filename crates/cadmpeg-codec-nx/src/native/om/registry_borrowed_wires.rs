@@ -65,11 +65,12 @@ impl Serialize for FieldDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
     fn class_registry_reference_roundtrip_and_source_bounds() {
-        let reference = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+        let reference = json::from_value(cadmpeg_core::json!({
             "name": "UGS::OM::Meta", "code": 2, "source_offset": 1475
         }))
         .unwrap();
@@ -85,7 +86,7 @@ mod tests {
             source_entry: "/Root/FastLoad/RMFastLoad".to_owned(),
             source_offset: 2007,
         };
-        let value = cadmpeg_core::serde_erase::json::to_value(&class).unwrap();
+        let value = json::to_value(&class).unwrap();
         assert_eq!(value["registry_reference"], 1);
         assert_eq!(
             value["registry_reference_declaration"]["name"],
@@ -96,32 +97,29 @@ mod tests {
         assert!(value.get("layout_prefix").is_none());
         assert!(value.get("layout_terminal").is_none());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<ClassDefinition>(value.clone()).unwrap(),
+            json::from_value::<ClassDefinition>(value.clone()).unwrap(),
             class
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&class).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&super::super::ClassDefinitionWire::from(
-                class.clone()
-            ))
-            .unwrap()
+            json::to_vec(&class).unwrap(),
+            json::to_vec(&super::super::ClassDefinitionWire::from(class.clone())).unwrap()
         );
         assert_native_limit(&class, value.clone());
         let mut invalid = value.clone();
         invalid["registry_reference_declaration"]["source_offset"] = 2007.into();
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ClassDefinition>(invalid).is_err());
+        assert!(json::from_value::<ClassDefinition>(invalid).is_err());
         invalid = value.clone();
         invalid["registry_reference_declaration"]["name"] = "unframed name".into();
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ClassDefinition>(invalid).is_err());
+        assert!(json::from_value::<ClassDefinition>(invalid).is_err());
         invalid = value.clone();
         invalid["registry_reference_declaration"]["unexpected"] = true.into();
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ClassDefinition>(invalid).is_err());
+        assert!(json::from_value::<ClassDefinition>(invalid).is_err());
         invalid = value.clone();
         invalid["registry_reference_declaration"] = serde_json::Value::Null;
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ClassDefinition>(invalid).is_err());
+        assert!(json::from_value::<ClassDefinition>(invalid).is_err());
         invalid = value;
         invalid["schema_fingerprint"] = "b14ba5fe911bf679".into();
-        assert!(cadmpeg_core::serde_erase::json::from_value::<ClassDefinition>(invalid).is_err());
+        assert!(json::from_value::<ClassDefinition>(invalid).is_err());
     }
 
     #[test]
@@ -144,16 +142,11 @@ mod tests {
                 source_entry: "entry".to_owned(),
                 source_offset: 1,
             };
-            let borrowed = cadmpeg_core::serde_erase::json::to_vec(&class).unwrap();
-            let owned = cadmpeg_core::serde_erase::json::to_vec(
-                &super::super::ClassDefinitionWire::from(class.clone()),
-            )
-            .unwrap();
+            let borrowed = json::to_vec(&class).unwrap();
+            let owned =
+                json::to_vec(&super::super::ClassDefinitionWire::from(class.clone())).unwrap();
             assert_eq!(borrowed, owned);
-            assert_native_limit(
-                &class,
-                cadmpeg_core::serde_erase::json::to_value(&class).unwrap(),
-            );
+            assert_native_limit(&class, json::to_value(&class).unwrap());
         }
     }
 
@@ -176,16 +169,11 @@ mod tests {
                 source_entry: "entry".to_owned(),
                 source_offset: 1,
             };
-            let borrowed = cadmpeg_core::serde_erase::json::to_vec(&field).unwrap();
-            let owned = cadmpeg_core::serde_erase::json::to_vec(
-                &super::super::FieldDefinitionWire::from(field.clone()),
-            )
-            .unwrap();
+            let borrowed = json::to_vec(&field).unwrap();
+            let owned =
+                json::to_vec(&super::super::FieldDefinitionWire::from(field.clone())).unwrap();
             assert_eq!(borrowed, owned);
-            assert_native_limit(
-                &field,
-                cadmpeg_core::serde_erase::json::to_value(&field).unwrap(),
-            );
+            assert_native_limit(&field, json::to_value(&field).unwrap());
         }
     }
 }

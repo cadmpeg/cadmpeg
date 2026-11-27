@@ -488,6 +488,7 @@ mod tests {
         AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, PairedJointKind,
     };
     use crate::transform::Transform;
+    use cadmpeg_core::serde_erase::json;
 
     fn root_operand(object: &str) -> JointOperand {
         JointOperand::root(object, Vec::new())
@@ -584,14 +585,13 @@ mod tests {
             "test:model:product#placed".try_into().unwrap(),
             Some(Transform::identity()),
         ));
-        let mut wire = cadmpeg_core::serde_erase::json::to_value(&ir.model.assembly_joints[0])
-            .expect("joint wire");
+        let mut wire = json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
         wire["operands"]["value"]["connectors"][0]["operand"]["occurrence"] =
-            serde_json::json!(occurrence.as_str());
-        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
+            cadmpeg_core::json!(occurrence.as_str());
+        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = cadmpeg_core::json!({
             "path": "external.f3d"
         });
-        assert!(cadmpeg_core::serde_erase::json::from_value::<AssemblyJoint>(wire).is_err());
+        assert!(json::from_value::<AssemblyJoint>(wire).is_err());
     }
 
     #[test]

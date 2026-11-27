@@ -935,6 +935,34 @@ End-of-ACIS-data\n";
     );
 }
 
+/// The stub of the part of `kind` that `losses` give up over the source
+/// record `record`, whose bytes stand once in `source`, for the codec loss
+/// `code`.
+fn given_up_part(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    source: &[u8],
+    kind: &str,
+    record: &[u8],
+    code: SatLossCode,
+) -> Option<String> {
+    let offset = source
+        .windows(record.len())
+        .position(|window| window == record)
+        .unwrap();
+    let head = format!(
+        "part {kind} stream=\"\" offset={offset} length={} record=",
+        record.len()
+    );
+    let code = code.kind().to_string();
+    losses.iter().find_map(|loss| {
+        if loss.code != cadmpeg_ir::unknown::part::record_unreadable_kind() {
+            return None;
+        }
+        let (stub, error) = loss.message.strip_prefix(&head)?.split_once(": ")?;
+        error.contains(&code).then(|| stub.to_owned())
+    })
+}
+
 #[test]
 fn standalone_face_is_retained_when_the_ir_requires_a_shell_owner() {
     let source = b"201 0 1 0\n1 T 4 ACIS 1 D\n1 0.01 0.001\n\
@@ -948,14 +976,25 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 forward_v I I I I #\nEnd-of-ACIS-data\n";
         .losses
         .iter()
         .any(|loss| loss.code == SatLossCode::TopologyFaceOwnerUnprojected.kind()));
+    let record = b"face $-1 $-1 $-1 $-1 $-1 $1 forward single #";
+    let stub = given_up_part(
+        &result.report().losses,
+        source,
+        "face",
+        record,
+        SatLossCode::TopologyFaceOwnerUnprojected,
+    )
+    .expect("the face is given up as a part");
+    let retained = result.source_fidelity().retained_record(&stub).unwrap();
+    assert_eq!(retained.data(), None);
     assert_eq!(
-        result
-            .source_fidelity()
-            .retained_record("sat:brep:face#0")
-            .unwrap()
-            .data(),
-        Some(b"face $-1 $-1 $-1 $-1 $-1 $1 forward single #".as_slice())
+        retained.byte_len(),
+        cadmpeg_core::decode::u64_from_index(record.len())
     );
+    assert!(result
+        .source_fidelity()
+        .retained_record("sat:brep:face#0")
+        .is_none());
     assert_eq!(
         result
             .source_fidelity()
@@ -1027,14 +1066,26 @@ plane-surface $-1 0 0 0 0 0 1 1 0 0 0 #\nEnd-of-ACIS-data\n";
         .losses
         .iter()
         .any(|loss| loss.code == SatLossCode::TopologyShellUnprojected.kind()));
+    let stub = given_up_part(
+        &result.report().losses,
+        source,
+        "shell",
+        b"shell $-1 $3 $-1 $-1 $1 #",
+        SatLossCode::TopologyShellUnprojected,
+    )
+    .expect("the shell is given up as a part");
     assert_eq!(
         result
             .source_fidelity()
-            .retained_record("sat:brep:shell#2")
+            .retained_record(&stub)
             .unwrap()
             .data(),
         Some(b"shell $-1 $3 $-1 $-1 $1 #".as_slice())
     );
+    assert!(result
+        .source_fidelity()
+        .retained_record("sat:brep:shell#2")
+        .is_none());
 }
 
 #[test]
@@ -1090,7 +1141,13 @@ fn omitted_use_curve_interval_has_a_sat_loss_code() {
     let result = super::build_result(
         &ctx,
         cadmpeg_ir::hash::digest::Sha256Digest::digest(&bytes),
-        Some(graph),
+        Some((
+            graph,
+            super::Unprojected {
+                whole_stream: false,
+                face_children: std::collections::BTreeMap::new(),
+            },
+        )),
         BTreeMap::new(),
         &header,
         Some(stream.terminator),

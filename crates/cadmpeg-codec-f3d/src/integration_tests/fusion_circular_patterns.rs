@@ -2,6 +2,7 @@
 //! CC0 Fusion saves of circular patterns: each Compute option, and
 //! suppressed instances.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -19,8 +20,7 @@ fn decoded(bytes: &[u8]) -> (serde_json::Value, Vec<String>) {
     assert!(validation.is_ok(), "{validation:#?}");
     let mut codes = Vec::new();
     loss_codes(
-        &cadmpeg_core::serde_erase::json::to_value(&result.report().losses)
-            .expect("serialize the losses"),
+        &json::to_value(&result.report().losses).expect("serialize the losses"),
         &mut codes,
     );
     assert!(!codes.is_empty(), "the report names loss codes");
@@ -132,7 +132,7 @@ fn a_one_sided_circular_pattern_leaves_out_its_suppressed_instances() {
     assert_eq!(pattern["kind"], "circular_angles", "{pattern}");
     assert_eq!(
         pattern["axis_dir"],
-        serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
+        cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0})
     );
     let angles = pattern["angles"]
         .as_array()
@@ -158,7 +158,10 @@ fn a_symmetric_circular_pattern_keeps_and_charges_its_suppressed_instances() {
         .iter()
         .find_map(|scope| scope["circular_pattern_construction"]["suppressed"]["value"].as_array())
         .expect("suppressed keys");
-    assert_eq!(suppressed, &[serde_json::json!(2), serde_json::json!(5)]);
+    assert_eq!(
+        suppressed,
+        &[cadmpeg_core::json!(2), cadmpeg_core::json!(5)]
+    );
     let pattern = circular_pattern(&ir);
     assert_eq!(pattern["kind"], "circular", "{pattern}");
     assert_eq!(pattern["count"], 5, "{pattern}");

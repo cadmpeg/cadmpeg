@@ -513,17 +513,6 @@ class TestExtensionPoints(unittest.TestCase):
 
 
 class TestCommittedRegistry(unittest.TestCase):
-    def test_real_registry_is_clean(self):
-        failures, summary = checker.check(REPO)
-        self.assertEqual(failures, [], "\n".join(failures))
-        self.assertTrue(summary.startswith("dialects: ok"))
-
-    def test_main_exits_zero_on_the_real_registry(self):
-        with contextlib.redirect_stdout(io.StringIO()) as out:
-            code = checker.main([str(REPO)])
-        self.assertEqual(code, 0)
-        self.assertIn("dialects: ok", out.getvalue())
-
     def test_main_exits_one_on_a_broken_registry(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

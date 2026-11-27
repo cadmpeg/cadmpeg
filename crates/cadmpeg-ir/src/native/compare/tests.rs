@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::NativeRecord;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use serde::Serialize;
 
 #[test]
@@ -69,7 +70,7 @@ fn borrowed_comparison_preserves_every_json_shape_and_rejects_drift() {
     assert!(stored
         .matches_typed_for_decode(&super::super::test_ctx(), &expected)
         .unwrap());
-    let json = cadmpeg_core::serde_erase::json::to_value(&stored).unwrap();
+    let json = json::to_value(&stored).unwrap();
     for changed in [
         {
             let mut value = json.clone();
@@ -78,21 +79,21 @@ fn borrowed_comparison_preserves_every_json_shape_and_rejects_drift() {
         },
         {
             let mut value = json.clone();
-            value["extra"] = serde_json::json!(1);
+            value["extra"] = cadmpeg_core::json!(1);
             value
         },
         {
             let mut value = json.clone();
-            value["variants"][2]["Tuple"][1] = serde_json::json!(false);
+            value["variants"][2]["Tuple"][1] = cadmpeg_core::json!(false);
             value
         },
         {
             let mut value = json.clone();
-            value["map"]["7"] = serde_json::json!(true);
+            value["map"]["7"] = cadmpeg_core::json!(true);
             value
         },
     ] {
-        let changed: NativeRecord = cadmpeg_core::serde_erase::json::from_value(changed).unwrap();
+        let changed: NativeRecord = json::from_value(changed).unwrap();
         assert!(!changed
             .matches_typed_for_decode(&super::super::test_ctx(), &expected)
             .unwrap());
@@ -127,7 +128,7 @@ fn borrowed_comparison_handles_raw_record_roots_and_rejects_duplicate_keys() {
 
 #[test]
 fn borrowed_comparison_enforces_native_depth_even_when_the_actual_record_differs() {
-    let stored = NativeRecord::from_typed(&serde_json::json!({
+    let stored = NativeRecord::from_typed(&cadmpeg_core::json!({
         "id": "test:native:record#depth", "data": null,
     }))
     .unwrap();
@@ -135,7 +136,7 @@ fn borrowed_comparison_enforces_native_depth_even_when_the_actual_record_differs
     for _ in 0..=super::super::MAX_NATIVE_NESTING_DEPTH {
         data = serde_json::Value::Array(vec![data]);
     }
-    let expected = serde_json::json!({ "id": stored.id(), "data": data });
+    let expected = cadmpeg_core::json!({ "id": stored.id(), "data": data });
     assert!(stored
         .matches_typed_for_decode(&super::super::test_ctx(), &expected)
         .is_err());
@@ -149,9 +150,8 @@ fn borrowed_comparison_refuses_at_the_depth_limit_and_rejects_a_nonfinite_expect
         value: f64,
     }
 
-    let expected = serde_json::json!({ "id": "test:native:record#limits", "data": [1,2,3] });
-    let stored: NativeRecord =
-        cadmpeg_core::serde_erase::json::from_value(expected.clone()).unwrap();
+    let expected = cadmpeg_core::json!({ "id": "test:native:record#limits", "data": [1,2,3] });
+    let stored: NativeRecord = json::from_value(expected.clone()).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 0;

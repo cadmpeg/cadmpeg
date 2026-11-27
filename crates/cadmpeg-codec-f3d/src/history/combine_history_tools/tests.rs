@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
 use cadmpeg_ir::features::operation_settings::BooleanKind;
 use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers};
@@ -65,6 +66,7 @@ fn combine_scope(tools: &[(u32, u32)]) -> DesignParameterScope {
     let selection = |(entity, creator): (u32, u32), record_index| DesignCombineBodySelection {
         record_index,
         external_identity: None,
+        legacy_external_identity: None,
         body_node: Some(DesignCombineBodyNode {
             record_index: entity + 1,
             body_entity_suffix: entity,
@@ -138,7 +140,12 @@ fn history_only_tools_become_generated_bodies_of_their_creating_features() {
         feature("combine", 3, &scope_id(400)),
     ];
     let bindings = [pair(150, true), pair(250, true)];
-    let (losses, _) = bind(&mut features, &scopes, &bindings);
+    let (losses, _) = bind(
+        &mut features,
+        &scopes,
+        &bindings,
+        (&[], &std::collections::HashMap::new()),
+    );
     assert!(losses.is_empty(), "{losses:?}");
     let BodySelection::Generated { bodies, native } = tools_of(&features[2]) else {
         panic!("generated tools");
@@ -193,7 +200,12 @@ fn a_tool_that_is_not_proven_leaves_every_tool_native_and_reports_the_reason() {
         }),
     ];
     for (bindings, mut features) in cases {
-        let (losses, _) = bind(&mut features, &scopes(), &bindings);
+        let (losses, _) = bind(
+            &mut features,
+            &scopes(),
+            &bindings,
+            (&[], &std::collections::HashMap::new()),
+        );
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code.local_code(),
@@ -221,7 +233,12 @@ fn a_derived_base_creator_stays_native_and_the_proven_tool_keeps_its_generator()
         feature("instance", 2, &scope_id(380)),
         feature("combine", 4, &scope_id(400)),
     ];
-    let (losses, _) = bind(&mut features, &scopes, &[pair(150, true), pair(360, true)]);
+    let (losses, _) = bind(
+        &mut features,
+        &scopes,
+        &[pair(150, true), pair(360, true)],
+        (&[], &std::collections::HashMap::new()),
+    );
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert_eq!(
         losses[0].code.local_code(),
@@ -259,7 +276,12 @@ fn every_proven_tool_records_its_generator() {
         feature("second", 2, &scope_id(200)),
         feature("combine", 3, &scope_id(400)),
     ];
-    let (losses, _) = bind(&mut features, &scopes, &[pair(150, true), pair(250, true)]);
+    let (losses, _) = bind(
+        &mut features,
+        &scopes,
+        &[pair(150, true), pair(250, true)],
+        (&[], &std::collections::HashMap::new()),
+    );
     assert!(losses.is_empty(), "{losses:?}");
     let properties = features[2]
         .source_properties
@@ -291,7 +313,12 @@ fn a_combine_whose_tools_name_no_history_only_pair_is_left_alone() {
         feature("first", 1, &scope_id(100)),
         feature("combine", 3, &scope_id(400)),
     ];
-    let (losses, _) = bind(&mut features, &scopes, &[pair(150, false)]);
+    let (losses, _) = bind(
+        &mut features,
+        &scopes,
+        &[pair(150, false)],
+        (&[], &std::collections::HashMap::new()),
+    );
     assert!(losses.is_empty());
     assert!(matches!(
         tools_of(&features[1]),
@@ -325,7 +352,12 @@ fn a_captured_base_feature_generates_the_second_combine_tool() {
                 },
             },
         ));
-    let (losses, _) = bind(&mut features, &scopes, &[pair(150, true), pair(250, true)]);
+    let (losses, _) = bind(
+        &mut features,
+        &scopes,
+        &[pair(150, true), pair(250, true)],
+        (&[], &std::collections::HashMap::new()),
+    );
     assert!(losses.is_empty(), "{losses:?}");
     let BodySelection::Generated { bodies: tools, .. } = tools_of(&features[2]) else {
         panic!("generated tools")
@@ -375,7 +407,12 @@ fn bound_two_tool_combine() -> (Vec<Feature>, Vec<super::ReplacedTools>) {
         feature("second", 2, &scope_id(200)),
         feature("combine", 3, &scope_id(400)),
     ];
-    let (losses, replaced) = bind(&mut features, &scopes, &[pair(150, true), pair(250, true)]);
+    let (losses, replaced) = bind(
+        &mut features,
+        &scopes,
+        &[pair(150, true), pair(250, true)],
+        (&[], &std::collections::HashMap::new()),
+    );
     assert!(losses.is_empty(), "{losses:?}");
     (features, replaced)
 }
@@ -402,5 +439,114 @@ fn a_tool_absent_from_a_several_body_result_state_restores_the_native_tools() {
     assert!(!matches!(
         tools_of(&features[2]),
         BodySelection::Generated { .. }
+    ));
+}
+
+const TOOL_HISTORY: &str = "f3d:asset/Breps.BlobParts/BREP.tool.smbh:asm-history#2";
+
+fn live_pair(entity_suffix: u64) -> DesignBodyBinding {
+    let mut value = json::to_value(pair(entity_suffix, false)).unwrap();
+    value["body"] = "f3d:brep:body#7".into();
+    json::from_value(value).unwrap()
+}
+
+/// A component history whose state 1 inserts body slot 7, then the given
+/// later topologies.
+fn tool_history(later: &[&[i64]]) -> crate::history_records::AsmHistory {
+    let topologies = [&[][..], &[7][..]]
+        .into_iter()
+        .chain(later.iter().copied())
+        .collect::<Vec<_>>();
+    let rows = topologies
+        .iter()
+        .enumerate()
+        .rev()
+        .map(|(id, bodies)| {
+            let id = i64::try_from(id).unwrap();
+            (
+                crate::history_records::AsmDeltaState {
+                    id: format!("{TOOL_HISTORY}:asm-delta-state#{id}"),
+                    parent: TOOL_HISTORY.into(),
+                    byte_offset: 0,
+                    state_id: id,
+                    version_flag: 1,
+                    state_flag: 0,
+                    previous_ref: None,
+                    next_ref: None,
+                    node_index: id,
+                    partner_ref: None,
+                    owner_ref: 0,
+                    bulletin_boards: Vec::new(),
+                    records: Vec::new(),
+                    transition: None,
+                },
+                Some(crate::history_records::AsmHistoricalTopology {
+                    bodies: bodies.to_vec(),
+                    ..Default::default()
+                }),
+                Vec::new(),
+            )
+        })
+        .collect();
+    crate::test_support::history::history(TOOL_HISTORY.into(), 0, None, false, rows)
+}
+
+fn component_scope() -> DesignParameterScope {
+    let mut creator = scope(DesignFeatureKind::Extrude, 100);
+    creator
+        .try_edit(|draft| {
+            draft.history_state_id = Some(1);
+            draft.previous_history_state_id = Some(0);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    creator
+}
+
+fn bind_component_tool(
+    history: &crate::history_records::AsmHistory,
+) -> (Vec<Feature>, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let scopes = vec![component_scope(), combine_scope(&[(150, 100)])];
+    let mut features = vec![
+        feature("first", 1, &scope_id(100)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let scope_histories =
+        std::collections::HashMap::from([(scope_id(100), TOOL_HISTORY.to_owned())]);
+    let (losses, _) = bind(
+        &mut features,
+        &scopes,
+        &[live_pair(150)],
+        (std::slice::from_ref(history), &scope_histories),
+    );
+    (features, losses)
+}
+
+#[test]
+fn a_live_tool_of_another_history_selects_its_model_body() {
+    let (features, losses) = bind_component_tool(&tool_history(&[]));
+    assert!(losses.is_empty(), "{losses:?}");
+    let BodySelection::Resolved { bodies, native } = tools_of(&features[1]) else {
+        panic!("model-body tools: {:?}", tools_of(&features[1]));
+    };
+    assert_eq!(
+        bodies
+            .iter()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect::<Vec<_>>(),
+        ["f3d:brep:body#7"]
+    );
+    assert_eq!(native.as_str(), scope_id(400));
+    assert!(features[1].dependencies.contains(&features[0].id));
+}
+
+#[test]
+fn a_live_tool_that_a_later_transition_changes_stays_native() {
+    let (features, losses) = bind_component_tool(&tool_history(&[&[]]));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].message.contains("later transition"), "{losses:?}");
+    assert!(matches!(
+        tools_of(&features[1]),
+        BodySelection::NativeSet(_)
     ));
 }

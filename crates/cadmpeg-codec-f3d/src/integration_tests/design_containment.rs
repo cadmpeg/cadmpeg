@@ -97,6 +97,10 @@ fn strict_mode_refuses_a_contained_design_intent_failure() {
         rejection.loss().code,
         F3dLossCode::DesignIntentUndecoded.kind()
     );
+    assert!(rejection
+        .loss()
+        .message
+        .contains("injected design-intent failure"));
 }
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
@@ -532,7 +536,14 @@ fn an_unread_primary_header_is_a_loss_at_geometry_and_design_depth() {
         };
         assert_eq!(
             rejection.loss().code,
-            F3dLossCode::PrimaryRecordUndecoded.kind()
+            cadmpeg_ir::unknown::part::record_unreadable_kind()
+        );
+        assert!(
+            rejection.loss().message.starts_with(
+                "part design-record stream=\"FusionAssetName[Active]/FusionDesignSegmentType2/BulkStream.dat\" offset="
+            ),
+            "{}",
+            rejection.loss().message
         );
     }
 }

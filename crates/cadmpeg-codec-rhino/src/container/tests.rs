@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::disallowed_methods)]
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
@@ -1133,16 +1134,10 @@ fn optional_properties_tables_do_not_control_independent_objects() {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("framed optional tables");
-            let canonical = cadmpeg_core::serde_erase::json::to_string(&(
-                &expected.ir().geometry,
-                &expected.ir().model,
-            ))
-            .expect("model");
-            let actual = cadmpeg_core::serde_erase::json::to_string(&(
-                &decoded.ir().geometry,
-                &decoded.ir().model,
-            ))
-            .expect("model");
+            let canonical =
+                json::to_string(&(&expected.ir().geometry, &expected.ir().model)).expect("model");
+            let actual =
+                json::to_string(&(&decoded.ir().geometry, &decoded.ir().model)).expect("model");
             let expected_offset = expected.ir().geometry.points[0]
                 .id
                 .as_str()
@@ -1175,16 +1170,10 @@ fn optional_properties_tables_do_not_control_independent_objects() {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("misplaced metadata is opaque");
-        let canonical = cadmpeg_core::serde_erase::json::to_string(&(
-            &expected.ir().geometry,
-            &expected.ir().model,
-        ))
-        .expect("model");
-        let actual = cadmpeg_core::serde_erase::json::to_string(&(
-            &decoded.ir().geometry,
-            &decoded.ir().model,
-        ))
-        .expect("model");
+        let canonical =
+            json::to_string(&(&expected.ir().geometry, &expected.ir().model)).expect("model");
+        let actual =
+            json::to_string(&(&decoded.ir().geometry, &decoded.ir().model)).expect("model");
         let expected_offset = expected.ir().geometry.points[0]
             .id
             .as_str()
@@ -1218,4 +1207,190 @@ fn optional_properties_tables_do_not_control_independent_objects() {
         assert_eq!(scan.metadata.properties.writer_version, None);
         assert!(!scan.opaque_records.is_empty());
     }
+}
+
+/// Asserts that `losses` holds one `record.unreadable` for the given-up part
+/// of `kind` at `offset`, that `ir` holds its `unknowns` stub linked to the
+/// document record `link` (or to no record), and that `fidelity` keeps only
+/// the digest of the part, whose bytes the retained record `keeper` keeps.
+pub(crate) fn assert_part_given_up(
+    ir: &cadmpeg_ir::document::CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    kind: &str,
+    offset: usize,
+    link: Option<&str>,
+    keeper: &str,
+) {
+    let head = format!("part {kind} stream=\"\" offset={offset} ");
+    let charges = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(&head)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{losses:?}");
+    let stub = charges[0]
+        .message
+        .split_once(" record=")
+        .and_then(|(_, rest)| rest.split_once(": "))
+        .map(|(stub, _)| stub)
+        .expect("the charge names its stub");
+    let unknowns = &ir
+        .native
+        .namespace("rhino")
+        .expect("Rhino namespace")
+        .arenas()["unknowns"];
+    let record = unknowns
+        .iter()
+        .find(|record| record.id() == stub)
+        .expect("the document holds the stub");
+    let links = link.into_iter().collect::<Vec<_>>();
+    assert_eq!(record.field("links"), Some(cadmpeg_core::json!(links)));
+    let retained = fidelity
+        .retained_record(stub)
+        .expect("the part's digest is retained");
+    assert_eq!(
+        retained.offset(),
+        cadmpeg_core::decode::u64_from_index(offset)
+    );
+    assert!(retained.data().is_none());
+    assert!(fidelity
+        .retained_record(keeper)
+        .is_some_and(|keeper| keeper.data().is_some()));
+}
+
+/// A given-up record that no other record retains keeps its bytes; past the
+/// caller's retained-bytes ceiling it keeps their length and digest, and its
+/// charge names that ceiling.
+#[test]
+fn a_given_up_record_past_the_caller_ceiling_keeps_its_digest() {
+    let data = vec![0x5a_u8; 4096];
+    let why =
+        crate::loss::RhinoLossCode::PresentationRecordDropped.note(format_args!("invented record"));
+    let charge = |max_retained_bytes: u64| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root");
+        let part = super::give_up_retained(
+            &ctx,
+            &data,
+            super::TABLE_RECORD_PART,
+            0..data.len(),
+            None,
+            &why,
+        )
+        .expect("give up the record");
+        let stub = part.id().as_str().to_owned();
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let mut fidelity =
+            cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]));
+        let [loss] = <[_; 1]>::try_from(
+            super::commit_given_up(&ctx, &data, &mut ir, &mut fidelity, vec![part])
+                .expect("commit the part"),
+        )
+        .expect("one charge");
+        let retained = fidelity
+            .retained_record(&stub)
+            .expect("the part is retained")
+            .data()
+            .map(<[u8]>::to_vec);
+        (loss.message, retained)
+    };
+    let (message, retained) = charge(2048);
+    assert!(message.contains("max_retained_bytes"), "{message}");
+    assert_eq!(retained, None);
+    let (message, retained) = charge(1 << 20);
+    assert!(!message.contains("max_retained_bytes"), "{message}");
+    assert_eq!(retained, Some(data.clone()));
+}
+
+/// A given-up record whose bytes fit the caller's retained-bytes ceiling when
+/// it is given up, and no longer fit when the decode keeps them, keeps their
+/// length and digest, and its charge names that ceiling.
+#[test]
+fn a_given_up_record_that_outgrows_the_remaining_ceiling_names_it() {
+    let data = vec![0x5a_u8; 4096];
+    let why =
+        crate::loss::RhinoLossCode::PresentationRecordDropped.note(format_args!("invented record"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 8192;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let part = super::give_up_retained(
+        &ctx,
+        &data,
+        super::TABLE_RECORD_PART,
+        0..data.len(),
+        None,
+        &why,
+    )
+    .expect("give up the record");
+    ctx.retain_bytes(6144, "other retained content")
+        .expect("the other content fits");
+    let stub = part.id().as_str().to_owned();
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut fidelity =
+        cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]));
+    let [loss] = <[_; 1]>::try_from(
+        super::commit_given_up(&ctx, &data, &mut ir, &mut fidelity, vec![part])
+            .expect("commit the part"),
+    )
+    .expect("one charge");
+    let retained = fidelity
+        .retained_record(&stub)
+        .expect("the part is retained");
+    assert!(retained.data().is_none());
+    assert!(
+        loss.message.contains("max_retained_bytes"),
+        "{}",
+        loss.message
+    );
+}
+
+/// A retained record of another stream that spans the same offsets as a
+/// given-up record keeps none of the record's bytes, so the part keeps them.
+#[test]
+fn a_record_of_another_stream_does_not_cover_a_given_up_record() {
+    let data = vec![0x5a_u8; 64];
+    let why =
+        crate::loss::RhinoLossCode::PresentationRecordDropped.note(format_args!("invented record"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let part = super::give_up_retained(
+        &ctx,
+        &data,
+        super::TABLE_RECORD_PART,
+        0..data.len(),
+        None,
+        &why,
+    )
+    .expect("give up the record");
+    let stub = part.id().as_str().to_owned();
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let mut fidelity =
+        cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]));
+    let other = cadmpeg_ir::StreamName::try_from("other".to_owned()).expect("a stream name");
+    fidelity
+        .insert_retained_record(
+            cadmpeg_ir::ids::UnknownId::mint("rhino:source:other#0".to_owned())
+                .expect("the id parses"),
+            cadmpeg_ir::RetainedSourceRecord::whole(other, vec![0_u8; 64]),
+        )
+        .expect("retain the other stream");
+    super::commit_given_up(&ctx, &data, &mut ir, &mut fidelity, vec![part])
+        .expect("commit the part");
+    assert_eq!(
+        fidelity
+            .retained_record(&stub)
+            .expect("the part is retained")
+            .data(),
+        Some(data.as_slice())
+    );
 }

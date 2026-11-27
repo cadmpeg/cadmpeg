@@ -266,7 +266,6 @@ dependencies = [
  "cadmpeg-test-support",
  "memchr",
  "serde",
- "serde-value",
  "serde_json",
 ]
 
@@ -310,7 +309,6 @@ dependencies = [
  "memchr",
  "roxmltree",
  "serde",
- "serde-value",
  "serde_json",
  "sha2",
  "tempfile",

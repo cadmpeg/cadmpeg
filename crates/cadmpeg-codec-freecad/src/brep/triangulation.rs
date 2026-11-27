@@ -217,6 +217,7 @@ impl TryFrom<TextTriangulationWire> for TextTriangulation {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use super::{TextTriangulation, TextTriangulationWire};
@@ -244,15 +245,15 @@ mod tests {
                     .unwrap_err();
             assert!(error.contains("chordal_deflection must be finite and non-negative"));
         }
-        let mut json = serde_json::json!({
+        let mut json = cadmpeg_core::json!({
             "deflection": 0.5,
             "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}],
             "uv_nodes": null,
             "triangles": [],
             "normals": null,
         });
-        json["deflection"] = serde_json::json!(-1.0);
-        assert!(cadmpeg_core::serde_erase::json::from_value::<TextTriangulation>(json).is_err());
+        json["deflection"] = cadmpeg_core::json!(-1.0);
+        assert!(json::from_value::<TextTriangulation>(json).is_err());
     }
 
     #[test]
@@ -310,7 +311,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(value.triangles(), [[0, 1, 2], [2, 1, 0]]);
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "deflection": 0.5,
             "nodes": [
                 {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -325,14 +326,8 @@ mod tests {
                 {"x": 0.0, "y": 1.0, "z": 0.0}
             ]
         });
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&value).unwrap(),
-            wire
-        );
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<TextTriangulation>(wire).unwrap(),
-            value
-        );
+        assert_eq!(json::to_value(&value).unwrap(), wire);
+        assert_eq!(json::from_value::<TextTriangulation>(wire).unwrap(), value);
     }
 
     #[test]
@@ -357,20 +352,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(value.uv_nodes().unwrap().len(), value.nodes().len());
-        let wire = cadmpeg_core::serde_erase::json::to_value(&value).unwrap();
+        let wire = json::to_value(&value).unwrap();
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<TextTriangulation>(wire.clone()).unwrap(),
+            json::from_value::<TextTriangulation>(wire.clone()).unwrap(),
             value
         );
         for field in ["uv_nodes", "normals"] {
             let mut invalid = wire.clone();
-            invalid[field] = serde_json::json!([]);
-            assert!(
-                cadmpeg_core::serde_erase::json::from_value::<TextTriangulation>(invalid)
-                    .unwrap_err()
-                    .to_string()
-                    .contains(field)
-            );
+            invalid[field] = cadmpeg_core::json!([]);
+            assert!(json::from_value::<TextTriangulation>(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
     }
 }

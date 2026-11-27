@@ -3,15 +3,16 @@
 //! written, read back strictly, and written again; the stated wire forms; and
 //! the schema of each type.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, SchemaGenerator};
 use serde::de::DeserializeOwned;
-use serde_json::json;
 
 use super::*;
 use crate::design::construction::{
@@ -206,12 +207,10 @@ fn settings() -> NativeOptions {
 fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
     value: &T,
 ) -> Result<(), String> {
-    let first =
-        cadmpeg_core::serde_erase::json::to_string(value).map_err(|error| error.to_string())?;
+    let first = json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second =
-        cadmpeg_core::serde_erase::json::to_string(&back).map_err(|error| error.to_string())?;
+    let second = json::to_string(&back).map_err(|error| error.to_string())?;
     if first != second {
         return Err(format!("{first} wrote back as {second}"));
     }
@@ -222,7 +221,7 @@ fn round_trip<T: Serialize + DeserializeOwned + PartialEq + Debug>(
 }
 
 fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    cadmpeg_core::serde_erase::json::to_value(value).unwrap()
+    json::to_value(value).unwrap()
 }
 
 fn reads<T: DeserializeOwned + Debug>(text: &str) -> T {
@@ -958,7 +957,7 @@ fn places() -> Vec<Place> {
 fn a_place_states_the_scale_composed_with_its_placement() {
     let place = places().remove(2);
     let value = to_value(&place);
-    let text = cadmpeg_core::serde_erase::json::to_string(&place).unwrap();
+    let text = json::to_string(&place).unwrap();
     let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
     assert!(at("placement") < at("scale") && at("scale") < at("base"));
     assert_eq!(
@@ -1423,7 +1422,7 @@ fn rigid_group_members_are_a_sorted_set_that_refuses_repeats() {
 
 #[test]
 fn a_native_option_key_stated_twice_is_refused() {
-    let wire = cadmpeg_core::serde_erase::json::to_string(&places().remove(0)).unwrap();
+    let wire = json::to_string(&places().remove(0)).unwrap();
     let entry = "\"f3d:item_kind\":{\"kind\":\"text\",\"value\":{\"kind\":\"literal\",\"value\":\"insert\"}}";
     let twice = wire.replacen(entry, &format!("{entry},{entry}"), 1);
     assert_ne!(twice, wire);

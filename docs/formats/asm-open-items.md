@@ -435,7 +435,7 @@ projection.
 
 **Question.** What native record layout does each recovered SAT source extent carry, and which stream owns each rebased reference?
 
-**Known.** `asm.md` §2.3 "Other pure ACIS and SpaceClaim SAB envelopes use" states that the byte layouts in §§5–6 cover the named ACIS bands. A SAT text-grammar section is still missing. The SAT decoder recovers independently headed concatenated streams with rebased entity tables, retains record extensions and legacy spline contexts natively, and withholds a later stream with an unreadable or different native layout. These behaviours carry the loss codes `SourceConcatenatedStreamsRecovered`, `SourceRecordExtensionsUnprojected`, and `SourceStreamLayoutUnprojected`. The SAT goldens are code-built streams with no source stream file, so they test that the decoder follows these rules on synthetic streams.
+**Known.** `asm.md` §2.3 "SpaceClaim SAB envelopes use" states that the byte layouts in §§5–6 cover the named ACIS bands. A SAT text-grammar section is still missing. The SAT decoder recovers independently headed concatenated streams with rebased entity tables, retains record extensions and legacy spline contexts natively, and withholds a later stream with an unreadable or different native layout. These behaviours carry the loss codes `SourceConcatenatedStreamsRecovered`, `SourceRecordExtensionsUnprojected`, and `SourceStreamLayoutUnprojected`. The SAT goldens are code-built streams with no source stream file, so they test that the decoder follows these rules on synthetic streams.
 
 **Need.** Native SAT specimens with concatenated streams, record extensions, legacy contexts, and divergent later-stream layouts must settle each recovered extent's grammar and reference ownership. Until then the recovered extents stay unprojected.
 
@@ -461,3 +461,29 @@ projection.
 
 **Note.** The schema-row map and the residual rule live in `crates/cadmpeg-parasolid/src/lib.rs:179-192`. This item tracks the layer without adding a facade or codec.
 
+
+## 8. Interned binary encoding
+
+### BE-01. Header extension of an interned ACIS binary stream
+
+**Question.** What do the boolean and the string of the header extension encode (`asm.md` §2.4 "An interned ACIS binary stream")?
+
+**Known.** The header extension stores the token `0x0A` and one `0x07` string of 77 bytes. The string holds uppercase ASCII letters, digits, and `_`. Two streams of one kernel record pair store the same string. The framer also reads the token `0x0B` alone as a header extension. The decoder reads the tokens and projects neither.
+
+**Need.** Save one model in two sessions and on two installations, and save a model with the extension boolean false if a save option selects it. Compare the boolean and the string, and the bytes that follow a `0x0B` extension.
+
+### BE-02. Extension integers of the interned entity prefix
+
+**Question.** What do the extension integer of the extended entity prefix and the `body` integer before the first lump encode (`asm.md` §2.4 "A record whose fields 1 and 2")?
+
+**Known.** The extension integer is `-1` in each record that carries the extended prefix. A `transform` record stores the attribute reference and the entity-id integer, then its matrix. The `body` integer is `0`. The decoder removes both integers before it reads the §5.2 fields, retains the kernel record, and charges `ironcad.body.extensions-retained`.
+
+**Need.** Save a body with a pattern, a body with several lumps, and a body after a boolean operation. Compare the extension integers and the `body` integer.
+
+### BE-03. Record tails of an interned ACIS binary stream
+
+**Question.** What do the record tails of `asm.md` §2.4 "In `body`, `lump`, `shell`" encode?
+
+**Known.** The first tail boolean is `TRUE` with two positions in each tail of some streams, and `FALSE` with no positions in each tail of other streams. The two positions are the low and high corners of the axis-aligned box of the record's geometry in model units: a face on a cone and a full-circle edge store boxes wider than their vertices. The second `face` boolean is `FALSE`, or `TRUE` with four doubles that are the parameter extents of the face on its surface: `-5`, `5`, `-2.5`, `2.5` on the top face of a 10 × 5 × 2 cm block, `-2.5`, `2.5`, `-2.5`, `2.5` on the cap of a cylinder of radius 2.5 cm, and `0`, `2`, `-π`, `π` on the side face of that cylinder. The `loop` enumeration value takes `0`, `1`, and `4`. The decoder reads the tails and projects none.
+
+**Need.** Save one body with the box option of the save toggled, a face with two loops, and a stream after a move without a recompute. Compare the tail booleans, boxes, face doubles, and loop enumeration values and references.

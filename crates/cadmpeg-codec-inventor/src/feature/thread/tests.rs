@@ -4,6 +4,7 @@
 use super::*;
 use crate::test_support::thread::definition_bytes;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
@@ -227,9 +228,9 @@ fn thread_definition_requires_unique_typed_feature_owner_and_supported_versions(
             .diameter
             .is_none()
     );
-    let mut wrong = cadmpeg_core::serde_erase::json::to_value(&label)?;
-    wrong["class_id"] = serde_json::json!("00000000000000000000000000000000");
-    let wrong = cadmpeg_core::serde_erase::json::from_value(wrong)?;
+    let mut wrong = json::to_value(&label)?;
+    wrong["class_id"] = cadmpeg_core::json!("00000000000000000000000000000000");
+    let wrong = json::from_value(wrong)?;
     assert!(fields(&source, &wrong, &[definition]).diameter.is_none());
     Ok(())
 }

@@ -76,6 +76,7 @@ impl EntityReferences {
 #[cfg(test)]
 mod tests {
     use super::{EntityReferences, FieldPosition};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn field_positions_cover_only_the_bounded_trailing_lane() {
@@ -83,10 +84,7 @@ mod tests {
             let position = FieldPosition::try_from(reference).unwrap();
             let wire = reference.to_string();
             assert_eq!(position.field_ordinal(), reference - 5);
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&position).unwrap(),
-                wire
-            );
+            assert_eq!(json::to_string(&position).unwrap(), wire);
             assert_eq!(
                 serde_json::from_str::<FieldPosition>(&wire).unwrap(),
                 position

@@ -18,14 +18,14 @@ fn flattened_scope_payloads_propagate_invalid_field_errors() {
         (DesignFeatureKind::Loft, "path_feature_construction"),
     ] {
         let mut wire = empty_scope(kind);
-        wire[field] = serde_json::json!(17);
+        wire[field] = cadmpeg_core::json!(17);
         assert!(json_wire::from_value::<DesignParameterScope>(wire).is_err());
     }
 }
 
 #[test]
 fn flattened_scope_frames_reject_partial_value_offset_pairs() {
-    let transform = serde_json::json!([
+    let transform = cadmpeg_core::json!([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
@@ -37,9 +37,9 @@ fn flattened_scope_frames_reject_partial_value_offset_pairs() {
     ] {
         for (suffix, value) in [
             ("transform", transform.clone()),
-            ("transform_offset", serde_json::json!(10)),
-            ("reference", serde_json::json!(2)),
-            ("reference_offset", serde_json::json!(20)),
+            ("transform_offset", cadmpeg_core::json!(10)),
+            ("reference", cadmpeg_core::json!(2)),
+            ("reference_offset", cadmpeg_core::json!(20)),
         ] {
             let field = format!("{prefix}_{suffix}");
             let mut wire = empty_scope(kind.clone());
@@ -50,9 +50,9 @@ fn flattened_scope_frames_reject_partial_value_offset_pairs() {
         }
         let mut wire = empty_scope(kind);
         wire[format!("{prefix}_transform")] = transform.clone();
-        wire[format!("{prefix}_transform_offset")] = serde_json::json!(10);
-        wire[format!("{prefix}_reference")] = serde_json::json!(2);
-        wire[format!("{prefix}_reference_offset")] = serde_json::json!(20);
+        wire[format!("{prefix}_transform_offset")] = cadmpeg_core::json!(10);
+        wire[format!("{prefix}_reference")] = cadmpeg_core::json!(2);
+        wire[format!("{prefix}_reference_offset")] = cadmpeg_core::json!(20);
         let decoded: DesignParameterScope =
             json_wire::from_value(wire.clone()).expect("complete frame");
         assert_eq!(json_wire::to_value(decoded).expect("serialize frame"), wire);
@@ -62,9 +62,9 @@ fn flattened_scope_frames_reject_partial_value_offset_pairs() {
 #[test]
 fn flattened_sketch_entity_requires_all_identity_fields() {
     for (field, value) in [
-        ("entity_id", serde_json::json!("entity:2")),
-        ("entity_suffix", serde_json::json!(2)),
-        ("entity_reference_offset", serde_json::json!(20)),
+        ("entity_id", cadmpeg_core::json!("entity:2")),
+        ("entity_suffix", cadmpeg_core::json!(2)),
+        ("entity_reference_offset", cadmpeg_core::json!(20)),
     ] {
         let mut wire = empty_scope(DesignFeatureKind::Sketch);
         wire[field] = value;
@@ -423,7 +423,7 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
                 }
                 for field in ["body_reference_records", "body_reference_record_offsets"] {
                     let mut invalid = value.clone();
-                    invalid[field][0] = serde_json::json!(999);
+                    invalid[field][0] = cadmpeg_core::json!(999);
                     let error = json_wire::from_value::<
                         crate::records::feature::base_feature::DesignBaseFeatureConstruction,
                     >(invalid)
@@ -432,7 +432,7 @@ fn legacy_base_feature_form_owns_its_compact_mode() {
                     assert!(error.contains(field));
                 }
                 let mut invalid = value;
-                invalid["tag_body_based_on_faces"] = serde_json::json!(false);
+                invalid["tag_body_based_on_faces"] = cadmpeg_core::json!(false);
                 let error = json_wire::from_value::<
                     crate::records::feature::base_feature::DesignBaseFeatureConstruction,
                 >(invalid)
@@ -567,9 +567,9 @@ fn base_feature_result_rows_preserve_complete_and_unrepeated_runs() {
                 let array = invalid[field].as_array_mut().expect("result array");
                 if count == 0 {
                     array.push(if field.ends_with("fields") {
-                        serde_json::json!("000000000000")
+                        cadmpeg_core::json!("000000000000")
                     } else {
-                        serde_json::json!(1)
+                        cadmpeg_core::json!(1)
                     });
                 } else {
                     array.pop();
@@ -583,7 +583,7 @@ fn base_feature_result_rows_preserve_complete_and_unrepeated_runs() {
                 );
             }
             let mut invalid = value;
-            invalid["repeated_reference_fields"] = serde_json::json!(vec![
+            invalid["repeated_reference_fields"] = cadmpeg_core::json!(vec![
                     cadmpeg_ir::native::bytes::NativeBytes::from([0; 6]);
                     count + 1
                 ]);
@@ -624,7 +624,7 @@ fn copied_body_rows_preserve_wire_and_reject_unequal_runs() {
             invalid[field]
                 .as_array_mut()
                 .expect("copy array")
-                .resize(length, serde_json::json!(1));
+                .resize(length, cadmpeg_core::json!(1));
             let error = json_wire::from_value::<
                 crate::records::feature::body_ops::DesignCopyPasteBodiesOperation,
             >(invalid)
@@ -690,14 +690,14 @@ fn scale_center_preserves_wire_and_rejects_partial_location() {
 
 #[test]
 fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
-    let transform = serde_json::json!([
+    let transform = cadmpeg_core::json!([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0]
     ]);
     for count in [0, 1, 3] {
-        let value = serde_json::json!({
+        let value = cadmpeg_core::json!({
             "record_indices": (0..count).collect::<Vec<u32>>(),
             "transforms": (0..count).map(|_| transform.clone()).collect::<Vec<_>>(),
             "transform_offsets": (0..count).map(|index| u64::from(index) * 100).collect::<Vec<_>>()
@@ -711,7 +711,7 @@ fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
         assert_eq!(json_wire::to_string(&native).unwrap(), expected);
         if count != 0 {
             let mut component = value.clone();
-            component["component_occurrences"] = serde_json::json!({
+            component["component_occurrences"] = cadmpeg_core::json!({
                 "component_guid": "00000001-1111-4111-8111-111111111111", "seed_occurrence_guid": "00000003-1111-4111-8111-111111111111",
                 "generated_occurrence_guids": (1..count).map(|index| format!("{index:08}-2222-4222-8222-222222222222")).collect::<Vec<_>>()
             });
@@ -721,11 +721,12 @@ fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
             let native: crate::records::feature::patterns::DesignRectangularPatternInstances =
                 serde_json::from_str(&expected).unwrap();
             assert_eq!(json_wire::to_string(&native).unwrap(), expected);
-            component["component_occurrences"]["generated_occurrence_guids"] = serde_json::json!([
-                "99999999-9999-4999-8999-999999999999",
-                "99999999-9999-4999-8999-999999999999",
-                "99999999-9999-4999-8999-999999999999"
-            ]);
+            component["component_occurrences"]["generated_occurrence_guids"] =
+                cadmpeg_core::json!([
+                    "99999999-9999-4999-8999-999999999999",
+                    "99999999-9999-4999-8999-999999999999",
+                    "99999999-9999-4999-8999-999999999999"
+                ]);
             assert!(json_wire::from_value::<
                 crate::records::feature::patterns::DesignRectangularPatternInstances,
             >(component)
@@ -741,7 +742,7 @@ fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
                 .push(if field == "transforms" {
                     transform.clone()
                 } else {
-                    serde_json::json!(0)
+                    cadmpeg_core::json!(0)
                 });
             assert!(json_wire::from_value::<
                 crate::records::feature::patterns::DesignRectangularPatternInstances,
@@ -751,7 +752,7 @@ fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
             .contains(field));
         }
     }
-    let empty_component = serde_json::json!({
+    let empty_component = cadmpeg_core::json!({
         "record_indices": [], "transforms": [], "transform_offsets": [],
         "component_occurrences": { "component_guid": "00000001-1111-4111-8111-111111111111", "seed_occurrence_guid": "00000003-1111-4111-8111-111111111111", "generated_occurrence_guids": [] }
     });
@@ -922,7 +923,7 @@ fn edge_flange_rows_preserve_wire_and_reject_parallel_mismatch() {
             invalid[field]
                 .as_array_mut()
                 .unwrap()
-                .push(serde_json::json!(999));
+                .push(cadmpeg_core::json!(999));
             assert!(json_wire::from_value::<
                 crate::records::feature::sheet_metal::DesignEdgeFlangeOperation,
             >(invalid)
@@ -1016,20 +1017,20 @@ fn scope_reference_runs_preserve_wire_and_reject_partial_locations() {
 fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
     for radius_count in [1_u32, 2, 3, 5] {
         let intermediate_count = radius_count.saturating_sub(2);
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "radii": (0..radius_count).map(|index| f64::from(index + 1)).collect::<Vec<_>>(),
             "radius_record_indexes": (0..radius_count).map(|index| 10 + index).collect::<Vec<_>>(),
             "radius_offsets": (0..radius_count).map(|index| 100 + index * 8).collect::<Vec<_>>()
         });
         if intermediate_count != 0 {
-            wire["intermediate_parameters"] = serde_json::json!((0..intermediate_count)
+            wire["intermediate_parameters"] = cadmpeg_core::json!((0..intermediate_count)
                 .map(|index| f64::from(index + 1) / 4.0)
                 .collect::<Vec<_>>());
-            wire["intermediate_parameter_record_indexes"] = serde_json::json!((0
+            wire["intermediate_parameter_record_indexes"] = cadmpeg_core::json!((0
                 ..intermediate_count)
                 .map(|index| 20 + index)
                 .collect::<Vec<_>>());
-            wire["intermediate_parameter_offsets"] = serde_json::json!((0..intermediate_count)
+            wire["intermediate_parameter_offsets"] = cadmpeg_core::json!((0..intermediate_count)
                 .map(|index| 200 + index * 8)
                 .collect::<Vec<_>>());
         }
@@ -1037,7 +1038,7 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
             let mut wire = wire.clone();
             if with_tangency {
                 wire["tangency_weight"] =
-                    serde_json::json!({ "value": 1.0, "record_index": 5, "value_offset": 50 });
+                    cadmpeg_core::json!({ "value": 1.0, "record_index": 5, "value_offset": 50 });
             }
             let group: crate::records::feature::fixed_parameters::DesignFixedFilletGroup =
                 json_wire::from_value(wire.clone()).unwrap();
@@ -1061,7 +1062,7 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
                     .and_then(serde_json::Value::as_array)
                     .cloned()
                     .unwrap_or_default();
-                column.push(serde_json::json!(1));
+                column.push(cadmpeg_core::json!(1));
                 invalid[field] = serde_json::Value::Array(column);
                 assert!(json_wire::from_value::<
                     crate::records::feature::fixed_parameters::DesignFixedFilletGroup,
@@ -1072,7 +1073,7 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
             }
             let mut invalid = wire;
             for field in ["radii", "radius_record_indexes", "radius_offsets"] {
-                invalid[field] = serde_json::json!([]);
+                invalid[field] = cadmpeg_core::json!([]);
             }
             assert!(json_wire::from_value::<
                 crate::records::feature::fixed_parameters::DesignFixedFilletGroup,
@@ -1083,7 +1084,7 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
         }
     }
     for radii in [vec![1.0], vec![1.0, 2.0, 3.0]] {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "radius_record_indexes": vec![10; radii.len()], "radius_offsets": vec![100; radii.len()], "radii": radii,
             "intermediate_parameters": [0.25, 0.5], "intermediate_parameter_record_indexes": [20, 21], "intermediate_parameter_offsets": [200, 208]
         });
@@ -1098,7 +1099,7 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
 
 #[test]
 fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows() {
-    let inline = serde_json::json!({
+    let inline = cadmpeg_core::json!({
         "kind": "inline", "origin": [1.0, 2.0, 3.0], "origin_offset": 12,
         "direction": [0.0, 0.0, 1.0], "direction_offset": 36
     });
@@ -1107,7 +1108,7 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
     assert_eq!(json_wire::to_value(axis).unwrap(), inline);
     for count in [1_u32, 2] {
         for resolved in [false, true] {
-            let mut wire = serde_json::json!({
+            let mut wire = cadmpeg_core::json!({
                 "kind": "historical_edge",
                 "wrapper_record_indices": (0..count).map(|index| 10 + index).collect::<Vec<_>>(),
                 "persistent_identities": [17],
@@ -1131,7 +1132,7 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
                 invalid[field]
                     .as_array_mut()
                     .unwrap()
-                    .push(serde_json::json!(99));
+                    .push(cadmpeg_core::json!(99));
                 assert!(json_wire::from_value::<
                     crate::records::feature::patterns::DesignCircularPatternAxis,
                 >(invalid)
@@ -1140,7 +1141,7 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
                 .contains(field));
             }
             let mut invalid = wire.clone();
-            invalid["persistent_identities"] = serde_json::json!([]);
+            invalid["persistent_identities"] = cadmpeg_core::json!([]);
             assert!(json_wire::from_value::<
                 crate::records::feature::patterns::DesignCircularPatternAxis,
             >(invalid)
@@ -1170,7 +1171,7 @@ fn circular_pattern_axis_wire_preserves_shared_identity_and_rejects_partial_rows
 
 #[test]
 fn circular_pattern_inline_axis_native_wire_refuses_zero_direction() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "inline", "origin": [1.0, 2.0, 3.0], "origin_offset": 12,
         "direction": [0.0, 0.0, 0.0], "direction_offset": 36
     });
@@ -1182,7 +1183,7 @@ fn circular_pattern_inline_axis_native_wire_refuses_zero_direction() {
 
 #[test]
 fn circular_pattern_inline_axis_native_wire_normalizes_displacement() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "inline", "origin": [1.0, 2.0, 3.0], "origin_offset": 12,
         "direction": [0.0, 0.0, 2.0], "direction_offset": 36
     });
@@ -1201,7 +1202,7 @@ fn circular_pattern_inline_axis_native_wire_normalizes_displacement() {
 
 #[test]
 fn circular_pattern_resolved_axis_native_wire_refuses_zero_direction() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "historical_edge",
         "wrapper_record_indices": [10],
         "persistent_identities": [17],
@@ -1467,14 +1468,14 @@ fn combine_requires_boolean_operation_local_target_and_nonempty_tools() {
             );
         }
     }
-    let base = serde_json::json!({
+    let base = cadmpeg_core::json!({
         "form": "standard", "operation": "join", "operation_offset": 20,
         "keep_tools": false, "keep_tools_offset": 25,
         "target": {"record_index": 1}, "tools": [{"record_index": 2}]
     });
     for (field, value) in [
-        ("operation", serde_json::json!("new_body")),
-        ("tools", serde_json::json!([])),
+        ("operation", cadmpeg_core::json!("new_body")),
+        ("tools", cadmpeg_core::json!([])),
     ] {
         let mut invalid = base.clone();
         invalid[field] = value;
@@ -1486,7 +1487,7 @@ fn combine_requires_boolean_operation_local_target_and_nonempty_tools() {
         assert!(error.to_string().contains(field));
     }
     let mut external_target = base;
-    external_target["target"]["external_identity"] = serde_json::json!({
+    external_target["target"]["external_identity"] = cadmpeg_core::json!({
         "selector_asset_id": "00000004-1111-4111-8111-111111111111", "selector_asset_id_offset": 44,
         "selector_context_id": "00000005-1111-4111-8111-111111111111", "selector_context_id_offset": 120,
         "occurrence_reference": 1, "occurrence_reference_offset": 205,
@@ -1561,7 +1562,7 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
     use crate::records::feature::work_geometry::{
         DesignVertexRecipe, DesignVertexResolution, DesignWorkPlaneConstruction,
     };
-    let base = serde_json::json!({
+    let base = cadmpeg_core::json!({
         "record_index": 2, "byte_offset": 10, "class_tag": "369",
         "paired_byte_offset": 20, "paired_class_tag": "261",
         "recipe_record_index": 5, "recipe_record_byte_offset": 30,
@@ -1599,7 +1600,7 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
                 .into();
             }
         }
-        let plane_wire = serde_json::json!({
+        let plane_wire = cadmpeg_core::json!({
             "kind": "three_point", "placement_record_index": 9,
             "inputs": plane_inputs
         });
@@ -1646,10 +1647,10 @@ fn feature_kind_classifies_nonempty_native_names_at_construction() {
         assert_eq!(kind.as_str(), name);
         assert_eq!(
             json_wire::to_value(&kind).expect("serialize kind"),
-            serde_json::json!(name)
+            cadmpeg_core::json!(name)
         );
         let decoded: DesignFeatureKind =
-            json_wire::from_value(serde_json::json!(name)).expect("decode kind");
+            json_wire::from_value(cadmpeg_core::json!(name)).expect("decode kind");
         assert_eq!(decoded, kind);
         assert_eq!(
             matches!(kind, DesignFeatureKind::Native(_)),
@@ -1657,7 +1658,7 @@ fn feature_kind_classifies_nonempty_native_names_at_construction() {
         );
     }
     assert!(DesignFeatureKind::try_from(String::new()).is_err());
-    let error = json_wire::from_value::<DesignFeatureKind>(serde_json::json!(""))
+    let error = json_wire::from_value::<DesignFeatureKind>(cadmpeg_core::json!(""))
         .expect_err("empty name rejected");
     assert!(error.to_string().contains("kind"));
 }
@@ -1720,7 +1721,7 @@ fn bend_radius_requires_a_positive_finite_value() {
     for radius in [f64::MIN_POSITIVE, 0.25, f64::MAX] {
         let value = cadmpeg_ir::scalar::PositiveReal::new(radius).expect("positive finite radius");
         assert_eq!(value.get(), radius);
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "edge_wrapper_record_index": 1, "edge_group_record_index": 2,
             "edge_operand_record_index": 5, "aggregate_group_record_index": 6,
             "aggregate_operand_record_index": 9,
@@ -1754,7 +1755,7 @@ fn rectangular_pattern_sidecar_rejects_invalid_axis_counts() {
         (1, 2, 0.0, 0.0),
         (1, 1, 1.0, 1.0),
     ] {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "u_count": u_count, "v_count": v_count,
             "u_extent": u_extent, "v_extent": v_extent,
             "owner_record_indices": [1, 2, 3, 4],
@@ -1770,7 +1771,7 @@ fn rectangular_pattern_sidecar_rejects_invalid_axis_counts() {
 #[test]
 fn rectangular_pattern_sidecar_preserves_signed_spans() {
     for (u_count, v_count, u_extent, v_extent) in [(3, 1, -10.0, 0.0), (2, 2, 1.0, -1.0)] {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "u_count": u_count, "v_count": v_count,
             "u_extent": u_extent, "v_extent": v_extent,
             "owner_record_indices": [1, 2, 3, 4],
@@ -1784,9 +1785,9 @@ fn rectangular_pattern_sidecar_preserves_signed_spans() {
 
 #[test]
 fn surface_trim_sidecar_requires_a_nonempty_cell_table() {
-    let entry = serde_json::json!({"record_index": 4, "record_reference_offset": 0,
+    let entry = cadmpeg_core::json!({"record_index": 4, "record_reference_offset": 0,
         "ordinal": 1, "ordinal_offset": 0});
-    let mut wire = serde_json::json!({"id": "trim", "scope_record_index": 1,
+    let mut wire = cadmpeg_core::json!({"id": "trim", "scope_record_index": 1,
         "chain_records": [
             {"record_index": 3, "byte_offset": 0, "class_tag": "288", "frame_length": 11},
             {"record_index": 6, "byte_offset": 11, "class_tag": "271", "frame_length": 11}
@@ -1807,7 +1808,7 @@ fn surface_trim_sidecar_requires_a_nonempty_cell_table() {
                 .is_err()
         );
     }
-    wire["cell_entries"] = serde_json::json!([]);
+    wire["cell_entries"] = cadmpeg_core::json!([]);
     assert!(json_wire::from_value::<super::surface_ops::DesignSurfaceTrimOperation>(wire).is_err());
 }
 
@@ -1835,7 +1836,7 @@ fn required_surface_operations_reject_absence() {
     ] {
         assert!(super::scope::DesignScopePayload::try_from(kind.clone()).is_err());
         let mut wire = empty_scope(DesignFeatureKind::Sketch);
-        wire["kind"] = serde_json::json!(kind.as_str());
+        wire["kind"] = cadmpeg_core::json!(kind.as_str());
         let error = json_wire::from_value::<DesignParameterScope>(wire).unwrap_err();
         assert!(error.to_string().contains(field));
     }
@@ -1880,14 +1881,14 @@ fn parameter_scope_layout_rejects_invalid_admission_and_preserves_failed_edits()
         assert_eq!(edited, scope);
     }
     for (field, value) in [
-        ("frame_length", serde_json::json!(89)),
-        ("paired_byte_offset", serde_json::json!(129)),
-        ("kind_offset", serde_json::json!(0)),
-        ("feature_ordinal_offset", serde_json::json!(49)),
-        ("previous_history_state_id", serde_json::json!(1)),
-        ("previous_history_state_id_offset", serde_json::json!(1)),
-        ("reference_count_offset", serde_json::json!(0)),
-        ("reference_member_offsets", serde_json::json!([15])),
+        ("frame_length", cadmpeg_core::json!(89)),
+        ("paired_byte_offset", cadmpeg_core::json!(129)),
+        ("kind_offset", cadmpeg_core::json!(0)),
+        ("feature_ordinal_offset", cadmpeg_core::json!(49)),
+        ("previous_history_state_id", cadmpeg_core::json!(1)),
+        ("previous_history_state_id_offset", cadmpeg_core::json!(1)),
+        ("reference_count_offset", cadmpeg_core::json!(0)),
+        ("reference_member_offsets", cadmpeg_core::json!([15])),
     ] {
         let mut wire = json_wire::to_value(&scope).unwrap();
         wire[field] = value;
@@ -1920,7 +1921,7 @@ fn parameter_scope_located_absent_history_states_remain_legal() {
 #[test]
 fn vertex_frame_rejects_displaced_indices_and_recipe_prefix() {
     use crate::records::feature::work_geometry::DesignVertexRecipe;
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "record_index": 2, "byte_offset": 10, "class_tag": "369",
         "paired_byte_offset": 20, "paired_class_tag": "261",
         "recipe_record_index": 5, "recipe_record_byte_offset": 30,

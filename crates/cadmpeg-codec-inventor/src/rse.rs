@@ -5,9 +5,11 @@ use std::collections::BTreeMap;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStreamId};
 use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zstd_exact};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::IdentityKey;
+use cadmpeg_ir::ids::{Identity, IdentityKey};
+use cadmpeg_ir::unknown::part::Part;
+use cadmpeg_ir::StreamName;
 
 use crate::database::{
     parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionTable, RseDatabase,
@@ -877,6 +879,25 @@ pub(crate) fn database_band(path: &str) -> Option<StorageBand> {
         && components.next().is_none())
     .then(|| StorageBand::parse(band))
     .flatten()
+}
+
+/// A part of `kind` holding content of the class `holds`, whose `bytes`
+/// start at `offset` in the expanded bulk stream of the segment `token`, and
+/// whose stub links to the `RSe` record `ordinal` of that segment.
+pub(crate) fn bulk_record_part<'b>(
+    kind: &'static str,
+    (token, ordinal): (&str, u32),
+    offset: u64,
+    bytes: &'b [u8],
+    holds: ArenaClass,
+) -> Result<Part<'b>, CodecError> {
+    let stream = StreamName::try_from(format!("RSeStorage/B{token}:expanded"))
+        .map_err(CodecError::malformed)?;
+    let record = Identity::try_from(format!("inventor:rse:record#{token}-{ordinal}"))
+        .map_err(CodecError::malformed)?;
+    Ok(Part::at("inventor", kind, offset, bytes, [holds])
+        .in_stream(stream)
+        .contained_in(record))
 }
 
 #[cfg(test)]

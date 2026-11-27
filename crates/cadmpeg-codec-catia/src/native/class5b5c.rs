@@ -157,6 +157,7 @@ mod tests {
     use crate::wire::records::ConsolidatedFrameFlag;
     use crate::wire::records::ConsolidatedFrameWidth;
     use crate::wire::records::ConsolidatedRawFrame;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn class5b5c_borrowed_wire_preserves_json_bytes() {
@@ -166,8 +167,8 @@ mod tests {
         for record in &native.consolidated_class5b5c_records {
             let owned: Class5b5cWire = record.clone().into();
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(record).expect("borrowed control JSON"),
-                cadmpeg_core::serde_erase::json::to_vec(&owned).expect("owned control JSON")
+                json::to_vec(record).expect("borrowed control JSON"),
+                json::to_vec(&owned).expect("owned control JSON")
             );
         }
         assert!(!native.consolidated_class5b5c_records.is_empty());
@@ -183,9 +184,7 @@ mod tests {
             .first()
             .expect("control record");
         let arena_name = "consolidated_class5b5c_records";
-        let json_len = cadmpeg_core::serde_erase::json::to_vec(record)
-            .expect("control JSON")
-            .len();
+        let json_len = json::to_vec(record).expect("control JSON").len();
         let limit = u64::try_from(json_len - 1).expect("small JSON");
         let refused = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -216,24 +215,19 @@ mod tests {
             source_offset: 42,
             class: CatiaClass5b5c::Class5b,
         };
-        let mut wire =
-            cadmpeg_core::serde_erase::json::to_value(&record).expect("serialize raw frame");
-        assert_eq!(wire["byte_offset"], serde_json::json!(42));
-        assert_eq!(wire["byte_len"], serde_json::json!(9));
-        assert_eq!(wire["payload"], serde_json::json!("000000"));
+        let mut wire = json::to_value(&record).expect("serialize raw frame");
+        assert_eq!(wire["byte_offset"], cadmpeg_core::json!(42));
+        assert_eq!(wire["byte_len"], cadmpeg_core::json!(9));
+        assert_eq!(wire["payload"], cadmpeg_core::json!("000000"));
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedClass5b5cRecord>(
-                wire.clone()
-            )
-            .expect("load raw frame"),
+            json::from_value::<CatiaConsolidatedClass5b5cRecord>(wire.clone())
+                .expect("load raw frame"),
             record
         );
-        wire["byte_len"] = serde_json::json!(8);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<CatiaConsolidatedClass5b5cRecord>(wire)
-                .expect_err("reject truncated declared frame")
-                .to_string()
-                .contains("byte_len differs")
-        );
+        wire["byte_len"] = cadmpeg_core::json!(8);
+        assert!(json::from_value::<CatiaConsolidatedClass5b5cRecord>(wire)
+            .expect_err("reject truncated declared frame")
+            .to_string()
+            .contains("byte_len differs"));
     }
 }

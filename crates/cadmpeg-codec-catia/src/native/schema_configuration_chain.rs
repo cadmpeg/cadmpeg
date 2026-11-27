@@ -323,6 +323,7 @@ pub(super) fn derive_schema_configuration_row_chains_within<'a>(
 mod tests {
     use super::super::CatiaEntityReference;
     use super::{CatiaSchemaConfigurationRowChain, CatiaSchemaConfigurationRowChainLink};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn wire_successors_follow_rows_and_keep_the_terminal() {
@@ -339,34 +340,24 @@ mod tests {
                 .to_vec(),
             terminal: CatiaEntityReference::Unresolved { entity_id: 3 },
         };
-        let wire = cadmpeg_core::serde_erase::json::to_value(&chain).expect("serialize row chain");
+        let wire = json::to_value(&chain).expect("serialize row chain");
         assert_eq!(wire["links"][0]["successor"], wire["links"][1]["row"]);
         assert_eq!(
             wire["links"][1]["successor"],
-            cadmpeg_core::serde_erase::json::to_value(&chain.terminal).expect("serialize terminal")
+            json::to_value(&chain.terminal).expect("serialize terminal")
         );
         assert_eq!(
-            cadmpeg_core::serde_erase::json::from_value::<CatiaSchemaConfigurationRowChain>(
-                wire.clone()
-            )
-            .expect("valid row chain"),
+            json::from_value::<CatiaSchemaConfigurationRowChain>(wire.clone())
+                .expect("valid row chain"),
             chain
         );
         let mut mismatched = wire.clone();
         mismatched["links"][0]["successor"] =
-            cadmpeg_core::serde_erase::json::to_value(&chain.terminal).expect("serialize terminal");
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<CatiaSchemaConfigurationRowChain>(
-                mismatched
-            )
-            .is_err()
-        );
+            json::to_value(&chain.terminal).expect("serialize terminal");
+        assert!(json::from_value::<CatiaSchemaConfigurationRowChain>(mismatched).is_err());
         let mut empty = wire;
-        empty["links"] = serde_json::json!([]);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<CatiaSchemaConfigurationRowChain>(empty)
-                .is_err()
-        );
+        empty["links"] = cadmpeg_core::json!([]);
+        assert!(json::from_value::<CatiaSchemaConfigurationRowChain>(empty).is_err());
     }
 }
 

@@ -3,7 +3,8 @@
 
 use super::DesignEntitySelectionOperand;
 use crate::records::topology::test_support::rejects_changed_fields;
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 
 fn entity_selection_wire_for_borrowed() -> serde_json::Value {
     json!({
@@ -34,12 +35,11 @@ fn entity_selection_borrowed_wire_matches_owned_wire_bytes() {
             wire["secondary_identity_offset"] = offset.into();
             wire["next_record_index"] = 11.into();
         }
-        let record: DesignEntitySelectionOperand =
-            cadmpeg_core::serde_erase::json::from_value(wire).unwrap();
+        let record: DesignEntitySelectionOperand = json::from_value(wire).unwrap();
         let owned = super::DesignEntitySelectionOperandWire::from(record.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -47,31 +47,21 @@ fn entity_selection_borrowed_wire_matches_owned_wire_bytes() {
 #[test]
 fn entity_selection_serialization_form_validates_wire() {
     let mut wire = entity_selection_wire_for_borrowed();
-    let default: DesignEntitySelectionOperand =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(default).unwrap(),
-        wire
-    );
+    let default: DesignEntitySelectionOperand = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(default).unwrap(), wire);
 
     wire["serialization_form"] = 1.into();
-    let operand: DesignEntitySelectionOperand =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(operand).unwrap(),
-        wire
-    );
+    let operand: DesignEntitySelectionOperand = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(operand).unwrap(), wire);
 
     wire["serialization_form"] = 2.into();
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignEntitySelectionOperand>(wire).is_err()
-    );
+    assert!(json::from_value::<DesignEntitySelectionOperand>(wire).is_err());
 }
 
 #[test]
 fn entity_selection_native_retained_limit_refuses_before_clone() {
     let record: DesignEntitySelectionOperand =
-        cadmpeg_core::serde_erase::json::from_value(entity_selection_wire_for_borrowed()).unwrap();
+        json::from_value(entity_selection_wire_for_borrowed()).unwrap();
     crate::test_support::native_test::assert_borrowed_native_retained_limit(
         &record,
         "design_entity_selection_operands",
@@ -102,8 +92,8 @@ fn loft_legacy_body_carrier_borrowed_wire_matches_owned_wire_bytes() {
     ] {
         let owned = super::DesignLoftLegacyBodyCarrierSerde::from(record.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -130,10 +120,7 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
         let wire = format!("{prefix}{fields}{suffix}");
         let value: super::DesignLoftLegacyBodyCarrier =
             serde_json::from_str(&wire).expect("loft carrier");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_string(&value).expect("loft carrier wire"),
-            wire
-        );
+        assert_eq!(json::to_string(&value).expect("loft carrier wire"), wire);
     }
     let error = serde_json::from_str::<super::DesignLoftLegacyBodyCarrier>(
         &format!("{prefix},\"trailing_scope_record_index\":13,\"trailing_scope_reference_offset\":88{suffix}"),
@@ -151,32 +138,27 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
     }
     let base: serde_json::Value = serde_json::from_str(&format!("{prefix}{suffix}")).unwrap();
     for (field, value) in [
-        ("owner_scope_record_index", serde_json::json!(13)),
-        ("repeated_opaque_index", serde_json::json!(2)),
-        ("flags", serde_json::json!("0001")),
+        ("owner_scope_record_index", cadmpeg_core::json!(13)),
+        ("repeated_opaque_index", cadmpeg_core::json!(2)),
+        ("flags", cadmpeg_core::json!("0001")),
     ] {
         let mut invalid = base.clone();
         invalid[field] = value;
         assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignLoftLegacyBodyCarrier>(
-                invalid
-            )
-            .expect_err("invalid derived field")
-            .to_string()
-            .contains(field)
+            json::from_value::<super::DesignLoftLegacyBodyCarrier>(invalid)
+                .expect_err("invalid derived field")
+                .to_string()
+                .contains(field)
         );
     }
     for ordinal in [0, 255, 256, u32::MAX] {
         let mut wire = base.clone();
         wire["opaque_index"] = ordinal.into();
         wire["repeated_opaque_index"] = ordinal.into();
-        let parsed = cadmpeg_core::serde_erase::json::from_value::<
-            super::DesignLoftLegacyBodyCarrier,
-        >(wire.clone());
+        let parsed = json::from_value::<super::DesignLoftLegacyBodyCarrier>(wire.clone());
         if ordinal == 255 {
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(parsed.expect("maximum ordinal"))
-                    .unwrap(),
+                json::to_value(parsed.expect("maximum ordinal")).unwrap(),
                 wire
             );
         } else {
@@ -232,13 +214,9 @@ fn paired_entity_selection_retains_independent_successor_index() {
         wire["secondary_identity_offset"] = 337.into();
         wire["next_byte_offset"] = 345.into();
         wire["next_record_index"] = next_record_index.into();
-        let operand: DesignEntitySelectionOperand =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+        let operand: DesignEntitySelectionOperand = json::from_value(wire.clone()).unwrap();
         assert_eq!(operand.next_record_index(), next_record_index);
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(&operand).unwrap(),
-            wire
-        );
+        assert_eq!(json::to_value(&operand).unwrap(), wire);
         rejects_changed_fields::<DesignEntitySelectionOperand>(
             wire,
             &[

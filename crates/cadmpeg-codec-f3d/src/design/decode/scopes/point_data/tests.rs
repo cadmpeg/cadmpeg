@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use super::exact_work_point_construction;
 use super::POINT_DATA_TYPE_GUID;
@@ -362,13 +363,12 @@ fn work_point_rule_rejects_an_incompatible_input_carrier() {
         &HashMap::new(),
     )
     .expect("work point frame");
-    let mut wire =
-        cadmpeg_core::serde_erase::json::to_value(&frame.rule).expect("serialize valid rule");
+    let mut wire = json::to_value(&frame.rule).expect("serialize valid rule");
 
-    wire["inputs"][1]["carrier"] = serde_json::json!({
+    wire["inputs"][1]["carrier"] = cadmpeg_core::json!({
         "kind": "edge_recipe", "operand_id": "f3d:native:edge-operand#wrong-role"
     });
-    assert!(cadmpeg_core::serde_erase::json::from_value::<DesignWorkPointRule>(wire).is_err());
+    assert!(json::from_value::<DesignWorkPointRule>(wire).is_err());
 }
 
 #[test]
