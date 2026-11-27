@@ -461,46 +461,15 @@ fn parameter_charge(ir: &CadIr, id: &str) -> Vec<String> {
         .message
         .split_once(" stated in part: ")
         .unwrap_or((loss.message.as_str(), ""));
-    assert!(!omitted.contains(id), "{}", loss.message);
+    assert!(
+        !omitted.split([' ', ',']).any(|token| token == id),
+        "{}",
+        loss.message
+    );
     part.split_once(&format!("{id} ("))
         .and_then(|(_, fields)| fields.split_once(')'))
         .map(|(fields, _)| fields.split(", ").map(str::to_owned).collect())
         .unwrap_or_default()
-}
-
-/// An NX expression `name` of the expression table `table`, in
-/// millimetres, with the formula `formula` and the value the decoder
-/// evaluated.
-fn expression(
-    table: &FeatureId,
-    name: &str,
-    formula: &str,
-    value: f64,
-    dependencies: &[&str],
-) -> cadmpeg_ir::features::parameters::DesignParameter {
-    let id = |name: &str| {
-        cadmpeg_ir::features::ParameterId::mint(format!("nx:om-entry-0:parameter#{name}"))
-            .expect("id")
-    };
-    cadmpeg_ir::features::parameters::DesignParameter {
-        product_definition: None,
-        id: id(name),
-        owner: Some(table.clone()),
-        ordinal: 0,
-        name: name.to_owned(),
-        expression: formula.to_owned(),
-        display: None,
-        value: Some(cadmpeg_ir::features::parameters::ParameterValue::Length(
-            cadmpeg_ir::scalar::Length::new(value).expect("length"),
-        )),
-        dependencies: dependencies.iter().map(|name| id(name)).collect(),
-        properties: BTreeMap::from([(
-            cadmpeg_core::text::NonBlankString::new("unit".to_owned()).expect("key"),
-            "millimeter".to_owned(),
-        )]),
-        pmi: None,
-        native_ref: Some(format!("nx:om-entry-0:expression#{name}")),
-    }
 }
 
 /// An NX expression is a user parameter of the part (§5.12) and states no
@@ -514,24 +483,47 @@ fn a_write_carries_the_owner_and_value_of_an_nx_expression() {
     use cadmpeg_ir::design::expr::{Expression, Neutral};
     use cadmpeg_ir::design::parameter::ParameterDefinition;
 
-    let mut ir = CadIr::empty();
-    let table = feature("equations", 0, equations());
-    ir.model.parameters = vec![
-        expression(&table.id, "p1", "10", 10.0, &[]),
-        expression(&table.id, "p2", "15", 15.0, &[]),
-        expression(&table.id, "p3", "p1 + p2", 25.0, &["p1", "p2"]),
-    ];
-    ir.model.features = vec![table, feature("a", 1, sketch())];
-    project_ir(&mut ir);
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::parameters::ParameterValue as ModelValue;
+    use cadmpeg_test_support::EditableDecodeResult;
 
-    let design = |name: &str| {
-        ir.design
+    let mut payload =
+        crate::test_support::test_om::segment_om_record_area_with_input_store_payload();
+    payload.extend_from_slice(b"hostglobalvariables");
+    for formula in ["p101: 10", "p102: 15", "p103: p101 + p102"] {
+        let text = format!("(Number [mm]) {formula}; ");
+        payload.extend_from_slice(&[0x99, 0x04, u8::try_from(text.len() + 2).expect("length")]);
+        payload.extend_from_slice(text.as_bytes());
+        payload.push(0);
+    }
+    let fixture = crate::test_support::test_prt::prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        payload,
+    )]);
+    let decoded = crate::NxCodec
+        .decode(
+            &mut std::io::Cursor::new(fixture),
+            &DecodeOptions::default(),
+        )
+        .expect("synthetic NX part");
+    let decoded = EditableDecodeResult::from(decoded);
+    let ir = decoded.ir();
+    let model = |name: &str| {
+        ir.model
             .parameters
             .iter()
-            .find(|parameter| parameter.id.as_str() == format!("nx:om-entry-0:parameter#{name}"))
-            .expect("design parameter")
+            .find(|parameter| parameter.name == name)
+            .expect("model parameter")
     };
-    let sum = design("p3");
+    let legacy_sum = model("p103");
+    assert!(legacy_sum.owner.is_some());
+    assert!(matches!(legacy_sum.value, Some(ModelValue::Length(value)) if value.get() == 25.0));
+    let sum = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == legacy_sum.id)
+        .expect("design parameter");
     assert_eq!(sum.owner, None);
     assert_eq!(sum.value, None);
     let ParameterDefinition::Expression(Expression::Neutral(Neutral(tree))) = &sum.definition
@@ -542,7 +534,11 @@ fn a_write_carries_the_owner_and_value_of_an_nx_expression() {
         let cadmpeg_ir::design::dimension::RefTarget::Parameter(target) = &reference.target else {
             return None;
         };
-        let addend = design(target.as_str().rsplit('#').next()?);
+        let addend = ir
+            .design
+            .parameters
+            .iter()
+            .find(|parameter| &parameter.id == target)?;
         match addend.value {
             Some(cadmpeg_ir::design::parameter::ParameterValue::Number(value)) => {
                 Some(Value::Number {
@@ -561,8 +557,8 @@ fn a_write_carries_the_owner_and_value_of_an_nx_expression() {
             quantity: cadmpeg_ir::design::units::Quantity::LENGTH,
         }
     );
-    for name in ["p1", "p2", "p3"] {
-        let charge = parameter_charge(&ir, &format!("nx:om-entry-0:parameter#{name}"));
+    for name in ["p101", "p102", "p103"] {
+        let charge = parameter_charge(ir, model(name).id.as_str());
         assert!(
             !charge
                 .iter()

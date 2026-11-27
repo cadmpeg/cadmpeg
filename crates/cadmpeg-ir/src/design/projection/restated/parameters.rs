@@ -7,10 +7,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::design::dimension::Dimension;
 use crate::design::expr::{Expression, ExpressionToken, Node, UnaryOp};
 use crate::design::ops::sketch::{RadialMeasure, SketchConstraint, SketchRelation, SketchSpace};
+use crate::design::options::NativeOption;
 use crate::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
-use crate::design::units::{Quantity, ValueKind};
+use crate::design::units::{Quantity, UnitSymbol, ValueKind};
 use crate::document::CadIr;
 use crate::features::parameters::{
     DesignParameter as ModelParameter, DimensionDisplay as ModelDisplay,
@@ -19,9 +20,11 @@ use crate::features::parameters::{
 use crate::features::tree::FeatureTreeNodeRole;
 use crate::features::FeatureOperation as ModelOperation;
 use crate::ids::ProductDefinitionId;
+use crate::scalar::FiniteReal;
+use crate::schema::ArenaRecord;
 
 use super::super::fields::{Field, ModelParameterField};
-use super::{json_strings, Restatements, Restater};
+use super::{json_strings, Restater};
 
 /// The property spellings of a model parameter's driven flag, each with the
 /// value that marks the parameter driven and the one that marks it driving.
@@ -36,6 +39,7 @@ const SOURCE_NAME: &str = "source_name";
 /// out of the design parameter of its identity.
 pub(super) fn parameter_cuts<'ir>(
     ir: &'ir CadIr,
+    written: &HashSet<&str>,
     compared: &dyn Fn(&str) -> bool,
 ) -> Vec<(&'ir str, BTreeSet<&'static str>)> {
     let design = ir
@@ -48,6 +52,7 @@ pub(super) fn parameter_cuts<'ir>(
         .design
         .features
         .iter()
+        .filter(|feature| written.contains(feature.id.as_str()))
         .filter_map(|feature| Some((feature.id.as_str(), feature.component.as_ref()?)))
         .collect::<HashMap<_, _>>();
     let pairs = ir
@@ -61,6 +66,7 @@ pub(super) fn parameter_cuts<'ir>(
         .design
         .spreadsheets
         .iter()
+        .filter(|sheet| written.contains(sheet.id.as_str()))
         .flat_map(|sheet| {
             sheet
                 .cells()
@@ -71,12 +77,16 @@ pub(super) fn parameter_cuts<'ir>(
         .collect::<HashMap<_, _>>();
     let misplaced = misplaced(&ir.model.parameters, &cells);
     let tables = user_tables(ir);
-    let measured = measured(ir);
-    let evaluated = if pairs
-        .iter()
-        .any(|(model, design)| model.value.is_some() && design.value.is_none())
-    {
-        ir.uncached_values()
+    let measured = measured(ir, written);
+    let evaluated = if pairs.iter().any(|(model, design)| {
+        model.value.is_some()
+            && design.value.is_none()
+            && matches!(
+                design.definition,
+                ParameterDefinition::Expression(Expression::Neutral(_))
+            )
+    }) {
+        ir.uncached_values(written)
     } else {
         BTreeMap::new()
     };
@@ -88,13 +98,31 @@ pub(super) fn parameter_cuts<'ir>(
                 Some(ParameterOwner::Feature(feature)) => components.get(feature.as_str()).copied(),
                 Some(ParameterOwner::Container(_) | ParameterOwner::Attribute(_)) | None => None,
             };
+            let owner = model
+                .owner
+                .as_ref()
+                .is_some_and(|owner| match &design.owner {
+                    Some(ParameterOwner::Feature(feature)) => feature == owner,
+                    Some(ParameterOwner::Container(container)) => {
+                        if !written.contains(container.as_str()) {
+                            return false;
+                        }
+                        ir.model
+                            .restated
+                            .get(owner.as_str())
+                            .is_some_and(|restating| {
+                                restating.restaters().any(|(by, _)| {
+                                matches!(by, Restater::Record(id) if id == container.as_str())
+                            })
+                            })
+                    }
+                    Some(ParameterOwner::Attribute(_)) => false,
+                    None => tables.contains(owner.as_str()),
+                });
             let held = Held {
                 component,
                 misplaced: misplaced.contains(id),
-                user_table: model
-                    .owner
-                    .as_ref()
-                    .is_some_and(|owner| tables.contains(owner.as_str())),
+                owner,
                 evaluated: evaluated.get(&model.id),
                 measured: model.display.as_ref().is_some_and(|display| {
                     measured
@@ -102,7 +130,7 @@ pub(super) fn parameter_cuts<'ir>(
                         .is_some_and(|displays| displays.contains(&design_display(*display)))
                 }),
             };
-            (id, parameter_cut(model, design, &held, &ir.model.restated))
+            (id, parameter_cut(model, design, &held))
         })
         .collect()
 }
@@ -115,8 +143,8 @@ pub(super) struct Held<'ir> {
     pub(super) component: Option<&'ir ProductDefinitionId>,
     /// The design does not hold the record's position.
     pub(super) misplaced: bool,
-    /// The record's owner is a table of the scope's user parameters.
-    pub(super) user_table: bool,
+    /// The written design states the model owner.
+    pub(super) owner: bool,
     /// The value the design parameter's definition evaluates to, where it
     /// states no value.
     pub(super) evaluated: Option<&'ir ParameterValue>,
@@ -153,32 +181,47 @@ fn user_tables(ir: &CadIr) -> HashSet<&str> {
 
 /// Each parameter that a diameter or radius dimension of a sketch binds,
 /// with the display the dimension measures (D7).
-fn measured(ir: &CadIr) -> HashMap<&str, Vec<DimensionDisplay>> {
-    fn bound<S: SketchSpace>(
-        constraints: &[SketchConstraint<S>],
-    ) -> impl Iterator<Item = (&str, DimensionDisplay)> {
-        constraints
-            .iter()
-            .filter_map(|constraint| match &constraint.relation {
-                SketchRelation::Radial {
-                    measure,
-                    value: Dimension::Parameter(parameter) | Dimension::Negated(parameter),
-                    ..
-                } => {
-                    let display = match measure {
-                        RadialMeasure::Diameter => DimensionDisplay::Diameter,
-                        RadialMeasure::Radius => DimensionDisplay::Radius,
-                        RadialMeasure::MajorRadius | RadialMeasure::MinorRadius => return None,
-                    };
-                    Some((parameter.as_str(), display))
-                }
-                _ => None,
-            })
-    }
-    let mut measured = HashMap::<_, Vec<_>>::new();
-    for (parameter, display) in
-        bound(&ir.design.sketch_constraints).chain(bound(&ir.design.spatial_sketch_constraints))
+fn measured<'ir>(
+    ir: &'ir CadIr,
+    written: &HashSet<&str>,
+) -> HashMap<&'ir str, Vec<DimensionDisplay>> {
+    fn bound<'ir, S: SketchSpace>(
+        constraint: &'ir SketchConstraint<S>,
+        written: &HashSet<&str>,
+    ) -> Option<(&'ir str, DimensionDisplay)>
+    where
+        SketchConstraint<S>: ArenaRecord,
     {
+        if !written.contains(constraint.record_identity()) {
+            return None;
+        }
+        let SketchRelation::Radial {
+            measure,
+            value: Dimension::Parameter(parameter) | Dimension::Negated(parameter),
+            ..
+        } = &constraint.relation
+        else {
+            return None;
+        };
+        let display = match measure {
+            RadialMeasure::Diameter => DimensionDisplay::Diameter,
+            RadialMeasure::Radius => DimensionDisplay::Radius,
+            RadialMeasure::MajorRadius | RadialMeasure::MinorRadius => return None,
+        };
+        Some((parameter.as_str(), display))
+    }
+    let planar = ir
+        .design
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| bound(constraint, written));
+    let spatial = ir
+        .design
+        .spatial_sketch_constraints
+        .iter()
+        .filter_map(|constraint| bound(constraint, written));
+    let mut measured = HashMap::<_, Vec<_>>::new();
+    for (parameter, display) in planar.chain(spatial) {
         measured.entry(parameter).or_default().push(display);
     }
     measured
@@ -247,7 +290,6 @@ pub(super) fn parameter_cut(
     model: &ModelParameter,
     design: &DesignParameter,
     held: &Held<'_>,
-    restated: &Restatements,
 ) -> BTreeSet<&'static str> {
     let mut cut = BTreeSet::new();
     let mut leave = |field: ModelParameterField, carried: bool| {
@@ -263,7 +305,7 @@ pub(super) fn parameter_cut(
     );
     leave(
         ModelParameterField::Owner,
-        owner_carried(model, design, held.user_table, restated),
+        model.owner.is_none() || held.owner,
     );
     leave(ModelParameterField::Ordinal, !held.misplaced);
     let source_name = model
@@ -296,6 +338,8 @@ pub(super) fn parameter_cut(
                 .as_ref()
                 .or(held.evaluated)
                 .is_some_and(|stated| value_carried(value, &design.kind, stated))
+                || driven_literal(design)
+                    .is_some_and(|stated| value_carried(value, &design.kind, &stated))
         }),
     );
     let expression = expression_carried(model, design);
@@ -314,32 +358,6 @@ pub(super) fn parameter_cut(
         model.native_ref.is_none() || model.native_ref == design.native_ref,
     );
     cut
-}
-
-/// Whether `design` states `model`'s owner: the feature itself, the
-/// container that restates it under another identity, or no owner where
-/// the owner is a table of user parameters (`user_table`).
-fn owner_carried(
-    model: &ModelParameter,
-    design: &DesignParameter,
-    user_table: bool,
-    restated: &Restatements,
-) -> bool {
-    let Some(owner) = &model.owner else {
-        return true;
-    };
-    match &design.owner {
-        Some(ParameterOwner::Feature(feature)) => feature == owner,
-        Some(ParameterOwner::Container(container)) => {
-            restated.get(owner.as_str()).is_some_and(|restating| {
-                restating.restaters().any(|(by, _)| {
-                    matches!(by, Restater::Record(id) if id.as_str() == container.as_str())
-                })
-            })
-        }
-        Some(ParameterOwner::Attribute(_)) => false,
-        None => user_table,
-    }
 }
 
 /// Whether two reals are equal to 15 significant digits (§5.12).
@@ -368,6 +386,32 @@ fn value_carried(value: &ModelValue, kind: &ValueKind, stated: &ParameterValue) 
             matches!(stated, ParameterValue::Text(stated) if stated == text)
         }
     }
+}
+
+fn driven_literal(design: &DesignParameter) -> Option<ParameterValue> {
+    if !matches!(design.definition, ParameterDefinition::Driven) {
+        return None;
+    }
+    let NativeOption::Text(Dimension::Literal(text)) = design.source_settings.get("f3d:literal")?
+    else {
+        return None;
+    };
+    let text = text.as_str().trim();
+    let number = text.trim_end_matches(|character: char| character.is_ascii_alphabetic());
+    let suffix = &text[number.len()..];
+    let (factor, quantity) = if suffix.is_empty() {
+        (1.0, Quantity::REAL)
+    } else {
+        UnitSymbol::ALL
+            .into_iter()
+            .find(|symbol| symbol.name() == suffix)?
+            .canonical()
+    };
+    if design.kind != ValueKind::Quantity(quantity) {
+        return None;
+    }
+    let number = number.trim_end().parse::<f64>().ok()?;
+    FiniteReal::new(number * factor).map(ParameterValue::Number)
 }
 
 /// Whether `design` states `model`'s expression text and every parameter

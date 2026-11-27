@@ -65,6 +65,14 @@ fn cuts(ir: &CadIr) -> BTreeMap<String, BTreeSet<String>> {
                 .iter()
                 .map(|constraint| constraint.id.as_str()),
         )
+        .chain(ir.design.features.iter().map(|feature| feature.id.as_str()))
+        .chain(
+            ir.design
+                .containers
+                .iter()
+                .map(|container| container.id().as_str()),
+        )
+        .chain(ir.design.spreadsheets.iter().map(|sheet| sheet.id.as_str()))
         .collect::<HashSet<_>>();
     same_id_cuts(ir, &written)
         .into_iter()
@@ -534,6 +542,8 @@ fn a_parameter_definition_is_carried_by_its_owner_feature_component() {
     let mut ir = parameter_ir(vec![model], vec![design]);
     ir.design.features.push(feature(Some(COMPONENT)));
     assert_eq!(cuts(&ir)[&id], fields([]));
+    let written = HashSet::from([id.as_str()]);
+    assert!(same_id_cuts(&ir, &written)[id.as_str()].contains("product_definition"));
     ir.design.features[0] = feature(None);
     assert_eq!(cuts(&ir)[&id], fields(["product_definition"]));
 }
@@ -577,9 +587,45 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
         )
         .unwrap(),
     );
+    let written = listed
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.as_str())
+        .collect();
+    assert!(
+        same_id_cuts(&listed, &written)[parameter_id("sheet:cell:B1").as_str()].contains("ordinal")
+    );
     let listed = cuts(&listed);
     assert_eq!(listed[parameter_id("sheet:cell:B1").as_str()], fields([]));
     assert_eq!(listed[parameter_id("sheet:cell:A2").as_str()], fields([]));
+}
+
+#[test]
+fn a_container_carries_the_model_owner_when_written() {
+    use crate::design::container::{Container, UnorderedKind};
+    use crate::design::ids::ContainerId;
+
+    let owner = FeatureId::mint("test:model:feature#node").unwrap();
+    let container = ContainerId::mint("test:design:container#group").unwrap();
+    let mut model = model_parameter("width", 0);
+    model.owner = Some(owner.clone());
+    let mut design = design_parameter("width", "width");
+    design.owner = Some(ParameterOwner::Container(container.clone()));
+    let mut ir = parameter_ir(vec![model], vec![design]);
+    ir.model.restated.record(
+        owner.as_str(),
+        super::Restater::Record(container.as_str().to_owned()),
+        [],
+    );
+    ir.design.containers.push(Container::Unordered {
+        id: container,
+        kind: UnorderedKind::Group,
+        members: BTreeSet::new(),
+    });
+    let id = parameter_id("width");
+    assert_eq!(cuts(&ir)[id.as_str()], fields([]));
+    assert!(same_id_cuts(&ir, &HashSet::from([id.as_str()]))[id.as_str()].contains("owner"));
 }
 
 /// A model feature `key` of the operation `operation`.
@@ -654,21 +700,25 @@ fn an_uncached_parameter_carries_the_value_its_definition_evaluates_to() {
             parse(text, &refs, &[]).unwrap(),
         )))
     };
-    let cut = |depth: &str| {
+    let charged_value = |depth: &str, write_width: bool| {
         let mut width = design_parameter("width", "width");
         width.definition = neutral("1[cm]", &[]);
         width.value = None;
         let mut design = design_parameter("depth", "depth");
         design.definition = neutral(depth, &["width"]);
         design.value = None;
-        cuts(&parameter_ir(
-            vec![model_parameter("depth", 0)],
-            vec![design, width],
-        ))[parameter_id("depth").as_str()]
-        .clone()
+        let ir = parameter_ir(vec![model_parameter("depth", 0)], vec![design, width]);
+        let depth = parameter_id("depth");
+        let width = parameter_id("width");
+        let mut written = HashSet::from([depth.as_str()]);
+        if write_width {
+            written.insert(width.as_str());
+        }
+        same_id_cuts(&ir, &written)[depth.as_str()].contains("value")
     };
-    assert_eq!(cut("$0 + 2[mm]"), fields([]));
-    assert_eq!(cut("$0 + 3[mm]"), fields(["value"]));
+    assert!(!charged_value("$0 + 2[mm]", true));
+    assert!(charged_value("$0 + 3[mm]", true));
+    assert!(charged_value("$0 + 2[mm]", false));
 }
 
 /// A parameter that a radial dimension binds states no display where the
@@ -678,7 +728,7 @@ fn an_uncached_parameter_carries_the_value_its_definition_evaluates_to() {
 fn a_parameter_carries_the_display_its_radial_dimension_measures() {
     use crate::design::ops::sketch::RadialMeasure;
     use crate::features::parameters::DimensionDisplay as ModelDisplay;
-    let cut = |measure| {
+    let charged_display = |measure, write_constraint| {
         let mut model = model_parameter("diameter", 0);
         model.display = Some(ModelDisplay::Diameter);
         let mut ir = parameter_ir(vec![model], vec![design_parameter("diameter", "diameter")]);
@@ -698,8 +748,14 @@ fn a_parameter_carries_the_display_its_radial_dimension_measures() {
                 source_settings: NativeOptions::new(),
                 native_ref: None,
             });
-        cuts(&ir)[parameter_id("diameter").as_str()].clone()
+        let parameter = parameter_id("diameter");
+        let mut written = HashSet::from([parameter.as_str()]);
+        if write_constraint {
+            written.insert(CONSTRAINT);
+        }
+        same_id_cuts(&ir, &written)[parameter.as_str()].contains("display")
     };
-    assert_eq!(cut(RadialMeasure::Diameter), fields([]));
-    assert_eq!(cut(RadialMeasure::Radius), fields(["display"]));
+    assert!(!charged_display(RadialMeasure::Diameter, true));
+    assert!(charged_display(RadialMeasure::Radius, true));
+    assert!(charged_display(RadialMeasure::Diameter, false));
 }

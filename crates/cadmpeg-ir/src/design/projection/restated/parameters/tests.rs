@@ -4,10 +4,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::text::NonBlankString;
 
-use super::{parameter_cut, Held, Restatements};
-use crate::design::dimension::{ParameterRef, RefTarget};
+use super::{parameter_cut, Held};
+use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::expr::{parse, Expression, ExpressionDialect, ExpressionToken, Neutral};
-use crate::design::options::NativeOptions;
+use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
 use crate::design::units::{Quantity, ValueKind};
 use crate::features::parameters::{
@@ -78,7 +78,7 @@ fn width() -> ParameterRef {
 }
 
 fn cut(model: &ModelParameter, design: &DesignParameter) -> BTreeSet<&'static str> {
-    parameter_cut(model, design, &Held::default(), &Restatements::default())
+    parameter_cut(model, design, &Held::default())
 }
 
 /// A design parameter whose tree states the expression and its reference
@@ -100,6 +100,30 @@ fn a_driven_parameter_leaves_out_the_expression_and_its_references() {
         cut(&model("width + 2"), &design(ParameterDefinition::Driven)),
         BTreeSet::from(["dependencies", "expression"])
     );
+}
+
+#[test]
+fn a_driven_fusion_parameter_carries_the_canonical_value_of_its_record_literal() {
+    let mut model = model("1.2 cm");
+    model.dependencies = DistinctMembers::default();
+    let mut design = design(ParameterDefinition::Driven);
+    design.value = Some(ParameterValue::Number(FiniteReal::new(10.0).unwrap()));
+    for (text, charged) in [
+        ("1.2 cm", false),
+        ("12mm", false),
+        ("12 deg", true),
+        ("12", true),
+        ("13mm", true),
+        ("12 + 0 mm", true),
+    ] {
+        design.source_settings.insert(
+            crate::codec_name!("f3d:literal"),
+            NativeOption::Text(Dimension::Literal(
+                NonBlankString::new(text.to_owned()).unwrap(),
+            )),
+        );
+        assert_eq!(cut(&model, &design).contains("value"), charged, "{text}");
+    }
 }
 
 /// Source tokens state the text they spell, white space aside, with a
@@ -154,8 +178,7 @@ fn a_parameter_leaves_out_each_field_it_does_not_hold() {
             &Held {
                 misplaced: true,
                 ..Held::default()
-            },
-            &Restatements::default()
+            }
         ),
         BTreeSet::from(["name", "ordinal", "value"])
     );
