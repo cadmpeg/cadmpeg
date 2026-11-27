@@ -161,10 +161,8 @@ fn the_name_table_restates_the_result_topologies_it_names() {
         ir.model
             .restated()
             .get(&format!("creo:model:feature-result-topology#{key}"))
-            .map(|restating| {
-                assert_eq!(restating.by(), &Restater::Names);
-                restating.cut().iter().copied().collect::<Vec<_>>()
-            })
+            .and_then(|restating| restating.cut_by(|by| by == &Restater::Names))
+            .map(Vec::from_iter)
     };
     assert_eq!(restated("named"), Some(Vec::new()));
     assert_eq!(restated("consumed"), Some(vec!["members"]));

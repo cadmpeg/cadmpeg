@@ -368,16 +368,45 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         records: vec![design("default"), design("short")],
         active: Some(id("default")),
     };
-    super::configurations::restate(&mut ir, &configurations);
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
     assert_eq!(ir.model.restated().get(id("default").as_str()), None);
     let short = ir.model.restated().get(id("short").as_str()).unwrap();
+    let by = Restater::Record(id("short").as_str().to_owned());
     assert_eq!(
-        short.by(),
-        &Restater::Record(id("short").as_str().to_owned())
+        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
+        Some(vec!["feature_states", "properties"])
     );
+
+    let other = FeatureId::mint("sldprt:model:feature#other").unwrap();
+    ir.model.configurations[1].properties.clear();
+    ir.model.configurations[1].feature_states = BTreeMap::from([(
+        boss.clone(),
+        ConfigurationFeatureState {
+            evaluation: ConfigurationEvaluation::Active {
+                outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+            },
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::try_from(vec![other])
+                .unwrap(),
+            definition: FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane,
+            }),
+        },
+    )]);
+    ir.model.configurations[0].feature_states = BTreeMap::from([(
+        boss.clone(),
+        state(ConfigurationEvaluation::Active {
+            outputs: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        }),
+    )]);
+    *ir.model.restated_mut() = cadmpeg_ir::design::projection::restated::Restatements::default();
+    super::configurations::restate(&mut ir, &configurations, &[], &[]);
+    let short = ir.model.restated().get(id("short").as_str()).unwrap();
     assert_eq!(
-        short.cut().iter().copied().collect::<Vec<_>>(),
-        ["feature_states", "properties"]
+        short.cut_by(|restater| restater == &by).map(Vec::from_iter),
+        Some(vec![
+            "feature_states.definition",
+            "feature_states.dependencies"
+        ])
     );
 }
 

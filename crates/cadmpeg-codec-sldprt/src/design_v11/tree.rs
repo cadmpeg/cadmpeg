@@ -14,6 +14,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::Folder;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition};
+use cadmpeg_ir::design::projection::restated::{NodeStatement, Restater};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::features::tree::FeatureTreeNodeRole;
 use cadmpeg_ir::features::FeatureId;
@@ -60,6 +61,35 @@ enum Step<'a> {
         name: &'a str,
         record: &'a str,
     },
+}
+
+impl Timeline {
+    /// Each folder node with what its `Folder` states of it, restated by
+    /// `by`: the features of its run as members and its name. A `Folder`
+    /// states no suppression and no result.
+    pub(super) fn folder_nodes(&self, by: &Restater) -> Vec<(FeatureId, Restater, NodeStatement)> {
+        self.folders
+            .iter()
+            .zip(&self.folder_records)
+            .map(|(folder, record)| {
+                let run = usize::try_from(folder.first)
+                    .ok()
+                    .zip(usize::try_from(folder.last).ok());
+                let members = run
+                    .and_then(|(first, last)| self.features.get(first..=last))
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|feature| feature.id.clone())
+                    .collect();
+                let statement = NodeStatement {
+                    members,
+                    name: folder.name.clone(),
+                    ..NodeStatement::default()
+                };
+                (record.clone(), by.clone(), statement)
+            })
+            .collect()
+    }
 }
 
 /// The timeline of every history, in history order.

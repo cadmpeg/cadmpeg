@@ -101,9 +101,9 @@ struct Charge<'ir> {
     label: &'static str,
     /// The records the write omits whole.
     omitted: Vec<&'ir str>,
-    /// The records a written record restates without some fields, with the
+    /// The records written records restate without some fields, with the
     /// fields.
-    cut: Vec<(&'ir str, &'ir BTreeSet<&'static str>)>,
+    cut: Vec<(&'ir str, BTreeSet<&'static str>)>,
 }
 
 /// What a write writes of the `design` layer.
@@ -124,23 +124,27 @@ impl<'ir> WrittenDesign<'ir> {
     /// write omits whole, and those it states in part with the fields it
     /// leaves out, sorted. A record is carried when the write writes what
     /// restates it, a written `design` record under its id where no
-    /// restatement is stated.
+    /// restatement is stated; the fields that every restater the write
+    /// writes leaves out are cut.
     fn charge<T: ArenaRecord>(
         &self,
         records: &'ir [T],
         restated: &'ir Restatements,
-    ) -> (Vec<&'ir str>, Vec<(&'ir str, &'ir BTreeSet<&'static str>)>) {
+    ) -> (Vec<&'ir str>, Vec<(&'ir str, BTreeSet<&'static str>)>) {
         let mut omitted = Vec::new();
         let mut cut = Vec::new();
         for id in records.iter().map(ArenaRecord::record_identity) {
-            match restated.get(id) {
-                Some(restating) if self.writes(restating.by()) => {
-                    if !restating.cut().is_empty() {
-                        cut.push((id, restating.cut()));
+            match restated
+                .get(id)
+                .map(|restating| restating.cut_by(|by| self.writes(by)))
+            {
+                Some(Some(fields)) => {
+                    if !fields.is_empty() {
+                        cut.push((id, fields));
                     }
                 }
                 None if self.ids.contains(id) => {}
-                Some(_) | None => omitted.push(id),
+                Some(None) | None => omitted.push(id),
             }
         }
         cut.sort_unstable_by_key(|(id, _)| *id);
