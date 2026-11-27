@@ -1,22 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Unedited writes of every configuration table shape that the synthetic
-//! archive holds, on the patch path and on the generator path. A document
-//! the decode returned, also read from CADIR, replays the source
-//! (cadir-v11.md §3.1, Rule B). The patch path declines a moved active row,
-//! which changes the root record, and the generator writes it with the
-//! source.
+//! Writes of every configuration table shape that the synthetic archive
+//! holds, on the patch path and on the generator path. A document the decode
+//! returned, also read from CADIR, replays the source (cadir-v11.md §3.1,
+//! Rule B). The patch path declines a moved active row, which changes the
+//! root record, and the generator writes it with the source.
 
 use std::io::{Cursor, Read};
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::report::export::ExportReport;
-use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::configuration_table::{
     bool_cell, object_target, project, property_target, root_record, string_cell, table_document,
-    with_root_segment, ROOT_RECORD,
+    unsourced, with_root_segment, written_on, ROOT_RECORD,
 };
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_configurations;
@@ -35,7 +31,8 @@ struct Shape {
     rule: bool,
     /// Whether a second table document holds a table with no rows.
     second_table: bool,
-    /// Whether the read moves the active row to `wide` before the write.
+    /// Whether the native records and the v10 rows move the active row to
+    /// `wide` before the write.
     moved: bool,
 }
 
@@ -132,19 +129,12 @@ fn documents(archive: &[u8]) -> Vec<(String, Vec<u8>)> {
     documents
 }
 
-/// The report and the bytes of `ir` written with `fidelity`.
-fn written(ir: &cadmpeg_ir::CadIr, fidelity: Option<&SourceFidelity>) -> (ExportReport, Vec<u8>) {
-    let mut bytes = Vec::new();
-    let report = F3dCodec
-        .plan(EncodeInput::new(ir, fidelity))
-        .and_then(|plan| plan.write_to(&mut bytes))
-        .expect("unedited write");
-    (report, bytes)
-}
-
 /// `report` charges no configuration and names no configuration document.
-fn assert_uncharged(shape: Shape, report: &ExportReport) {
-    for loss in &report.losses {
+fn assert_uncharged<'a>(
+    shape: Shape,
+    losses: impl IntoIterator<Item = &'a cadmpeg_ir::report::loss::LossNote>,
+) {
+    for loss in losses {
         let code = loss.code.to_string();
         assert!(
             ![
@@ -161,20 +151,8 @@ fn assert_uncharged(shape: Shape, report: &ExportReport) {
     }
 }
 
-/// `ir` with no source and no unknown native records.
-fn source_less(mut ir: cadmpeg_ir::CadIr) -> cadmpeg_ir::CadIr {
-    ir.source = None;
-    ir.set_native_unknowns(
-        &cadmpeg_core::decode::test_support::service_decode_context(),
-        "f3d",
-        &[],
-    )
-    .unwrap();
-    ir
-}
-
 #[test]
-fn every_table_shape_written_unedited_is_written_as_stated_with_no_charge() {
+fn every_table_shape_is_written_as_stated_with_no_charge() {
     for shape in shapes() {
         let archive = archive(shape);
         let decoded = EditableDecodeResult::from(
@@ -215,27 +193,16 @@ fn every_table_shape_written_unedited_is_written_as_stated_with_no_charge() {
         for (path, target, fidelity, expected) in [
             ("decode", &ir, fidelity, preserved),
             ("CADIR read", &read, fidelity, preserved),
-            (
-                "source-less decode",
-                &source_less(ir.clone()),
-                None,
-                "synthesized",
-            ),
+            ("source-less decode", &unsourced(&ir), None, "synthesized"),
             (
                 "source-less CADIR read",
-                &source_less(read.clone()),
+                &unsourced(&read),
                 None,
                 "synthesized",
             ),
         ] {
-            let (report, bytes) = written(target, fidelity);
-            assert_eq!(
-                report.write_path().to_string(),
-                expected,
-                "{shape:?} {path}: {:?}",
-                report.write_path()
-            );
-            assert_uncharged(shape, &report);
+            let (report, bytes) = written_on(target, fidelity, &[expected]);
+            assert_uncharged(shape, &report.losses);
             if shape.moved && fidelity.is_some() {
                 assert!(
                     matches!(

@@ -1292,7 +1292,7 @@ fn build(
                 (Some(tables.0), tables.1),
                 "f3d:history",
                 crate::ids::ID_FORMAT,
-                cadmpeg_asm::brep::DecodePurpose::Model,
+                cadmpeg_asm::brep::DecodePurpose::Inspect,
             ) {
                 Ok(brep) => brep,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -1481,7 +1481,7 @@ fn identity_body_slot(
         (Some(tables.0), tables.1),
         "f3d:history",
         crate::ids::ID_FORMAT,
-        cadmpeg_asm::brep::DecodePurpose::Model,
+        cadmpeg_asm::brep::DecodePurpose::Inspect,
     ) {
         Ok(brep) => identity_slot(&brep, identity),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),

@@ -158,7 +158,12 @@ fn decode_profile_body(
         version,
     )?;
     let header = carrier.header.as_deref().map_err(CodecError::malformed)?;
-    let decoded = crate::kernel::decode_kernel_carrier(ctx, &carrier, header)?;
+    let decoded = crate::kernel::decode_kernel_carrier(
+        ctx,
+        &carrier,
+        header,
+        cadmpeg_asm::brep::DecodePurpose::Inspect,
+    )?;
     Ok(ProfileBody {
         segment_token: segment_token.clone(),
         record_ordinal,

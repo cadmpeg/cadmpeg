@@ -3462,6 +3462,11 @@ impl<'a> F3dDecodeSession<'a> {
             materials::decode_with_body_bindings(ctx, scan, &design_body_bindings)?;
         let (mut ir, source_attributes, mut native, asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
+        crate::design::decode::up_axis::apply(
+            crate::design::decode::up_axis::decode_document_up_axis(scan),
+            &mut ir.up_axis,
+            &mut report.losses,
+        );
         geometry_admission::admit(ctx, &mut ir, &mut report.losses)?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
@@ -3560,6 +3565,11 @@ impl<'a> F3dDecodeSession<'a> {
             container_losses(scan, brep_outcome),
         )?;
         report.losses.extend(model_selection_losses);
+        crate::design::decode::up_axis::apply(
+            crate::design::decode::up_axis::decode_document_up_axis(scan),
+            &mut ir.up_axis,
+            &mut report.losses,
+        );
         let mesh_projection =
             project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report, &mut given_up)?;
         let mut untyped = std::collections::BTreeSet::new();
