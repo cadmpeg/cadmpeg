@@ -23,7 +23,9 @@ use crate::records::feature::scope::DesignParameterScope;
 /// The body of one proven tool.
 #[derive(PartialEq)]
 enum ToolBody {
-    /// The body-map pair identity of a history-only body.
+    /// The local identity of a history-only body: the slot that the creating
+    /// state of its generating feature inserts, else its body-map pair
+    /// identity.
     Generated(String),
     /// The solved model body of a live pair.
     Model(cadmpeg_ir::ids::BodyId),
@@ -467,9 +469,23 @@ pub(crate) fn bind(
     (losses, replaced, results)
 }
 
+/// Align the replaced Combine tools with the result states that `states`
+/// holds, then add the tool result states. Alignment reads only the result
+/// states that exist before this pass, so a writer row of this pass never
+/// renames or reverts a tool.
+pub(crate) fn apply_result_states(
+    features: &mut [Feature],
+    states: &mut Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
+    (results, replaced): (Vec<ToolResultState>, Vec<ReplacedTools>),
+) -> Vec<LossNote> {
+    let losses = align_with_result_states(features, states, replaced);
+    add_result_states(states, results);
+    losses
+}
+
 /// Add each tool result state to the result state of its feature. A feature
 /// with a result state for the same history state gains the missing slots.
-pub(crate) fn add_result_states(
+fn add_result_states(
     states: &mut Vec<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
     results: Vec<ToolResultState>,
 ) {
@@ -573,7 +589,7 @@ pub(crate) struct ReplacedTools {
 /// that body, so another tool that it generates is that body. A `Combine` with
 /// a tool that neither rule names, or whose tools then name one body twice,
 /// takes back its native tools.
-pub(crate) fn align_with_result_states(
+fn align_with_result_states(
     features: &mut [Feature],
     results: &[cadmpeg_ir::features::evaluation::FeatureResultTopology],
     replaced: Vec<ReplacedTools>,

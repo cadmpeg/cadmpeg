@@ -1019,8 +1019,8 @@ pub(crate) enum F3dLossCode {
     /// builds, and the generating feature is not proven.
     FeatureCombineToolBodyUnbound,
     /// A generated tool body of an operand-list Combine keeps its body-map
-    /// pair identity: the creating state of its generating feature inserts no
-    /// one body slot.
+    /// pair identity: the generating feature has no one history state, or its
+    /// creating state inserts no one body slot.
     FeatureCombineToolResultStateUnbound,
     /// The browser node of an operand-list Combine operand names no distinct
     /// body of the preceding history state, and the body recipes of the scope

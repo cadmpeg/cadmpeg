@@ -665,11 +665,10 @@ fn bind_component_chain(
         (std::slice::from_ref(&history), &scope_histories),
     );
     let mut states = Vec::new();
-    super::add_result_states(&mut states, results);
-    losses.extend(super::align_with_result_states(
+    losses.extend(super::apply_result_states(
         &mut features,
-        &states,
-        replaced,
+        &mut states,
+        (results, replaced),
     ));
     (features, losses, states)
 }
@@ -744,6 +743,26 @@ fn a_tool_result_state_joins_the_result_state_of_its_feature() {
     );
     assert_eq!(states.len(), 1);
     assert_eq!(result_bodies(&states, &generator), ["9", "7"]);
+}
+
+#[test]
+fn a_writer_result_state_of_this_pass_keeps_a_fallback_tool_identity() {
+    let (mut features, replaced) = bound_two_tool_combine();
+    let writer = super::ToolResultState {
+        feature: features[0].id.clone(),
+        state_id: 7,
+        slots: vec![3, 4],
+    };
+    let mut states = Vec::new();
+    let losses = super::apply_result_states(&mut features, &mut states, (vec![writer], replaced));
+    assert!(losses.is_empty(), "{losses:?}");
+    let BodySelection::Generated { bodies, .. } = tools_of(&features[2]) else {
+        panic!("generated tools");
+    };
+    assert_eq!(bodies[0].local_id.as_str(), pair(150, true).id());
+    assert_eq!(bodies[1].local_id.as_str(), pair(250, true).id());
+    assert_eq!(states.len(), 1);
+    assert_eq!(states[0].output_of, features[0].id);
 }
 
 #[test]

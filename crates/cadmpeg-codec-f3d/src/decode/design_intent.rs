@@ -1064,17 +1064,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.primary_brep,
             &mut losses,
         ));
-    crate::history::combine_history_tools::add_result_states(
+    losses.extend(crate::history::combine_history_tools::apply_result_states(
+        &mut model.features,
         &mut model.feature_result_topologies,
-        tool_results,
-    );
-    losses.extend(
-        crate::history::combine_history_tools::align_with_result_states(
-            &mut model.features,
-            &model.feature_result_topologies,
-            replaced_tools,
-        ),
-    );
+        (tool_results, replaced_tools),
+    ));
     // After the body selections: a Split names its input-state bodies there.
     let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,
