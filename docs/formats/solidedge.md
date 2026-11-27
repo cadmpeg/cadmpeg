@@ -366,7 +366,7 @@ as `u32` object identifiers after the end of its function name (§4.2):
 | 72 | the profile (§5.3) |
 | 100 | the extent kind |
 | 128 | the side |
-| 156 | the second side word (§6.2) |
+| 156 | the profile side |
 | 184 | the depth of an extruded feature, or the axis of a revolved feature |
 | 212 | the sweep angle of a revolved feature |
 
@@ -385,9 +385,10 @@ value `3` extends it to both sides of the profile plane. For a revolved
 feature, value `2` sweeps towards the profile normal and value `1` away
 from it.
 
-The second side word is a `Double Value Object`. The first feature of a
-document stores no object in this slot. A later extruded feature stores the
-object.
+The profile side is a `Double Value Object` of an extruded feature. Value `1`
+is the left side of the profile and value `2` is the right side. The slot
+names no object in the first feature of a document. The profile side does
+not change the extent, the side or the geometry of the feature.
 
 ### 6.3 Depth
 
