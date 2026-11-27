@@ -234,12 +234,8 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .find(|configuration| configuration.name.as_deref() == Some("Medium"))
         .expect("medium configuration")
         .active = true;
-    crate::test_support::assert_written_with_loss(
-        &inconsistent,
-        None,
-        "export/native.records-omitted",
-        "must equal the projection of native configuration tables",
-    );
+    let (_, inconsistent_round_trip) = write_and_decode(&inconsistent);
+    assert_active_row_written(&inconsistent_round_trip, &inconsistent, "medium");
     let mut rooted = source_less.clone();
     set_active_row(&mut rooted, "medium");
     let (rooted_report, rooted_round_trip) = write_and_decode(&rooted);
@@ -1887,6 +1883,7 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
 
 mod closed_edges;
 mod configuration_root;
+mod configuration_round_trip;
 mod family_changes;
 mod reversed_edges;
 mod tolerant_tails;

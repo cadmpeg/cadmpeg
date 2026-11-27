@@ -817,8 +817,11 @@ pub(super) fn combine_external_local_tools(
     let operation = scope.combine_operation()?;
     let mut bodies = Vec::new();
     for tool in operation.tools.iter() {
-        let identity = tool.external_identity.as_ref()?;
-        let id = crate::ids::neutral_combine_external_body_id(identity);
+        let id = match (&tool.external_identity, &tool.legacy_external_identity) {
+            (Some(identity), None) => crate::ids::neutral_combine_external_body_id(identity),
+            (None, Some(identity)) => crate::ids::neutral_combine_legacy_external_body_id(identity),
+            _ => return None,
+        };
 
         if bodies.iter().any(|body| body == &id) {
             return None;

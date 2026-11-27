@@ -38,7 +38,8 @@ pub mod restated;
 /// # Errors
 ///
 /// An error that ends the session: a refusal in force, a Session-scoped
-/// resource refusal, or an I/O error.
+/// resource refusal, or an I/O error; and a resource refusal while the
+/// restatements are stated.
 pub fn project_layer(
     ctx: &DecodeContext<'_>,
     codec: &str,
@@ -63,7 +64,7 @@ pub fn project_layer(
             .with_severity(Severity::Error),
         );
     } else {
-        restated::restate_features(ir);
+        restated::restate_features(ctx, ir)?;
     }
     Ok(())
 }

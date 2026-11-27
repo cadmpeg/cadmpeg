@@ -194,12 +194,232 @@ fn a_projection_states_the_fields_a_design_feature_leaves_out_of_its_model_featu
         Ok(())
     })
     .expect("projection");
-    let restating = ir.model.restated().get(FILLET).expect("restated in part");
-    assert_eq!(restating.by(), &Restater::Record(FILLET.to_owned()));
     assert_eq!(
-        restating.cut().iter().copied().collect::<Vec<_>>(),
-        ["definition", "name", "suppressed"]
+        cut_by_itself(&ir, FILLET),
+        Some(vec!["definition", "name", "suppressed"])
     );
+}
+
+/// The fields a design record of the same id leaves out of the model record
+/// `id`, where it is the record's one restater.
+fn cut_by_itself(ir: &CadIr, id: &str) -> Option<Vec<&'static str>> {
+    let restating = ir.model.restated().get(id)?;
+    let by = Restater::Record(id.to_owned());
+    assert_eq!(
+        restating
+            .restaters()
+            .map(|(restater, _)| restater)
+            .collect::<Vec<_>>(),
+        [&by]
+    );
+    restating
+        .cut_by(|restater| restater == &by)
+        .map(|cut| cut.into_iter().collect())
+}
+
+/// Runs a projection that states the design fillet's operation as
+/// `operation`, over the model fillet whose definition is `definition` and
+/// whose outputs and dependencies are `outputs` and `dependencies`.
+fn project_fillet(
+    definition: crate::features::FeatureDefinition,
+    outputs: Vec<crate::ids::BodyId>,
+    dependencies: Vec<crate::features::FeatureId>,
+    operation: crate::design::feature::FeatureOperation,
+) -> CadIr {
+    use crate::features::evaluation::FeatureEvaluation;
+
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let mut ir = restated_document();
+    let model = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.id.as_str() == FILLET)
+        .expect("model fillet");
+    model.evaluation = FeatureEvaluation::new(definition, outputs.into_iter().collect());
+    model.dependencies = dependencies.into_iter().collect();
+    let mut losses = Vec::new();
+    project_layer(&ctx, "test", &mut ir, &mut losses, |ir, _| {
+        let feature = ir
+            .design
+            .features
+            .iter_mut()
+            .find(|feature| feature.id.as_str() == FILLET)
+            .expect("design fillet");
+        feature.definition.operation = operation;
+        Ok(())
+    })
+    .expect("projection");
+    ir
+}
+
+fn body(key: &str) -> crate::ids::BodyId {
+    crate::ids::BodyId::mint(format!("test:model:body#{key}")).expect("valid id")
+}
+
+/// A typed design operation that holds fewer operands than its model
+/// operation leaves out the model definition and the dependencies that
+/// derive from it (D26); one that holds every operand states both.
+#[test]
+fn a_typed_operation_with_fewer_operands_leaves_out_its_definition_and_dependencies() {
+    use crate::design::feature::{FeatureOperation, StoredOrigin};
+    use crate::features::selections::BodySelection;
+    use crate::features::{FeatureDefinition, FeatureId, FeatureOperation as ModelOperation};
+
+    let base = || {
+        FeatureDefinition::Operation(ModelOperation::BaseFeature {
+            bodies: BodySelection::Bodies([body("a"), body("b")].into_iter().collect()),
+        })
+    };
+    let stored = |bodies: &[&str]| FeatureOperation::Stored {
+        bodies: Some(bodies.iter().map(|key| body(key)).collect()),
+        tessellations: Vec::new(),
+        origin: StoredOrigin::Base {},
+    };
+    let dependency = FeatureId::mint("test:design:feature#sketch").expect("valid id");
+    let fewer = project_fillet(base(), Vec::new(), vec![dependency.clone()], stored(&["a"]));
+    assert_eq!(
+        cut_by_itself(&fewer, FILLET),
+        Some(vec!["definition", "dependencies"])
+    );
+    let every = project_fillet(base(), Vec::new(), vec![dependency], stored(&["a", "b"]));
+    assert_eq!(cut_by_itself(&every, FILLET), None);
+}
+
+/// A model feature's outputs are carried where a design record states that
+/// the feature produced them, here the current state after the feature, and
+/// cut otherwise.
+#[test]
+fn the_outputs_of_a_feature_are_carried_only_by_a_state_after_it() {
+    use crate::design::feature::{FeatureOperation, OperationFamily};
+    use crate::features::{FeatureDefinition, FeatureOperation as ModelOperation};
+
+    let current = restated_document().design.scopes[0].current[0]
+        .bodies
+        .clone();
+    let unresolved = || {
+        FeatureDefinition::Operation(ModelOperation::Unresolved {
+            family: crate::features::UnresolvedFamily::Fillet,
+        })
+    };
+    let operation = || FeatureOperation::Unresolved {
+        family: OperationFamily::Fillet,
+    };
+    let stated = project_fillet(unresolved(), current.clone(), Vec::new(), operation());
+    assert_eq!(cut_by_itself(&stated, FILLET), None);
+    let mut more = current;
+    more.push(body("elsewhere"));
+    let unstated = project_fillet(unresolved(), more, Vec::new(), operation());
+    assert_eq!(cut_by_itself(&unstated, FILLET), Some(vec!["outputs"]));
+}
+
+/// A record restated by several restaters keeps each restater's cut apart:
+/// a write charges the fields every restater it writes leaves out, and the
+/// whole record when it writes none of them.
+#[test]
+fn a_record_with_several_restaters_is_cut_by_what_every_written_restater_leaves_out() {
+    use super::restated::Restatements;
+
+    let first = Restater::Record("test:design:container#first".to_owned());
+    let mut restatements = Restatements::default();
+    restatements.record(
+        "test:model:feature#node",
+        first.clone(),
+        ["name", "outputs"],
+    );
+    restatements.record(
+        "test:model:feature#node",
+        Restater::Names,
+        ["outputs", "suppressed"],
+    );
+    restatements.record("test:model:feature#node", first.clone(), ["definition"]);
+    let restating = restatements
+        .get("test:model:feature#node")
+        .expect("restated");
+    let cut = |writes: &dyn Fn(&Restater) -> bool| {
+        restating
+            .cut_by(writes)
+            .map(|cut| cut.into_iter().collect::<Vec<_>>())
+    };
+    assert_eq!(cut(&|_| true), Some(vec!["outputs"]));
+    assert_eq!(
+        cut(&|by| by == &first),
+        Some(vec!["definition", "name", "outputs"])
+    );
+    assert_eq!(
+        cut(&|by| by == &Restater::Names),
+        Some(vec!["outputs", "suppressed"])
+    );
+    assert_eq!(cut(&|_| false), None);
+}
+
+/// A container restates a model tree node without the children it does not
+/// hold as members, the active child it does not state, and the name and
+/// suppression it does not hold; one that holds them all restates it whole.
+#[test]
+fn a_container_restates_a_tree_node_without_what_it_does_not_hold() {
+    use super::restated::{restate_tree_nodes, NodeStatement};
+    use crate::features::evaluation::FeatureEvaluation;
+    use crate::features::tree::{FeatureTreeNodeRole, TreeChildren};
+    use crate::features::{FeatureDefinition, FeatureId, FeatureOperation as ModelOperation};
+
+    let child = |key: &str| FeatureId::mint(format!("test:model:feature#{key}")).expect("id");
+    let node = || {
+        let mut ir = restated_document();
+        let model = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.id.as_str() == FILLET)
+            .expect("model node");
+        model.name = Some("Folder1".to_owned());
+        model.suppressed = Some(false);
+        model.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            ModelOperation::TreeNode {
+                role: FeatureTreeNodeRole::FeatureFolder,
+                children: TreeChildren::new(vec![child("a"), child("b")], Some(child("b")))
+                    .expect("children"),
+            },
+        ));
+        ir
+    };
+    let container = Restater::Record("test:design:container#folder".to_owned());
+    let cut = |ir: &CadIr| {
+        ir.model
+            .restated()
+            .get(FILLET)
+            .and_then(|restating| restating.cut_by(|by| by == &container))
+            .map(|cut| cut.into_iter().collect::<Vec<_>>())
+    };
+    let mut part = node();
+    restate_tree_nodes(
+        &mut part,
+        [(
+            FeatureId::mint(FILLET).expect("id"),
+            container.clone(),
+            NodeStatement {
+                members: vec![child("a")],
+                ..NodeStatement::default()
+            },
+        )],
+    );
+    assert_eq!(cut(&part), Some(vec!["definition", "name", "suppressed"]));
+    let mut whole = node();
+    restate_tree_nodes(
+        &mut whole,
+        [(
+            FeatureId::mint(FILLET).expect("id"),
+            container.clone(),
+            NodeStatement {
+                members: vec![child("a"), child("b")],
+                active: Some(child("b")),
+                name: Some("Folder1".to_owned()),
+                suppressed: true,
+                bodies: Vec::new(),
+            },
+        )],
+    );
+    assert_eq!(cut(&whole), Some(Vec::new()));
 }
 
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {

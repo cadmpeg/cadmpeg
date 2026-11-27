@@ -253,7 +253,11 @@ fn a_base_state_the_current_geometry_holds_is_restated_by_its_feature() {
     let nest = ir.model.history_bodies[0].id.as_str().to_owned();
     let restating = ir.model.restated().get(&nest).expect("restated");
     assert_eq!(
-        restating.by(),
+        restating
+            .restaters()
+            .map(|(by, _)| by)
+            .next()
+            .expect("restater"),
         &Restater::Record("inventor:design:feature#base".to_owned())
     );
     let (omitted, _) = write(&ir);

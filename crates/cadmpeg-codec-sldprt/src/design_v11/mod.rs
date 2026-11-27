@@ -42,7 +42,7 @@ use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::NameTable;
-use cadmpeg_ir::design::projection::restated::Restater;
+use cadmpeg_ir::design::projection::restated::{restate_tree_nodes, Restater};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::units::{UnitSymbol, UnitSystem};
@@ -256,6 +256,8 @@ pub(crate) fn project(
         &names,
         losses,
     )?;
+    // The timeline restates each folder node as a `Folder` (§5.2).
+    let folders = timeline.folder_nodes(&Restater::Record(id.as_str().to_owned()));
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
@@ -264,12 +266,8 @@ pub(crate) fn project(
         rollback,
         placement: None,
     };
-    configurations::restate(ir, &configurations);
-    // The timeline restates each folder node as a `Folder` (§5.2).
-    for folder in &timeline.folder_records {
-        let by = Restater::Record(container.id().as_str().to_owned());
-        ir.model.restated_mut().record(folder.as_str(), by, []);
-    }
+    configurations::restate(ir, &configurations, &states.evaluations, &bodies);
+    restate_tree_nodes(ir, folders);
     let features = timeline.features;
     let added = 3
         + features.len()

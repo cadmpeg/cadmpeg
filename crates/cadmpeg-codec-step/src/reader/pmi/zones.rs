@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use crate::reader::give_up_instance;
+use crate::reader::{give_up_instance, instance_is_lost};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -168,7 +168,7 @@ pub(super) fn attach(
             continue;
         }
         let mut attached = false;
-        for owner in owners {
+        for &owner in &owners {
             let Some(index) = annotations.get(owner) else {
                 continue;
             };
@@ -194,10 +194,24 @@ pub(super) fn attach(
         if attached {
             typed.extend([id, form_id]);
             typed.extend(zone_projections.iter().map(|(id, _)| *id));
-        } else {
+        } else if owners
+            .iter()
+            .any(|&owner| instance_is_lost(exchange, owner))
+        {
+            // The zone is a value of the given-up tolerance, which its charge
+            // names.
             losses.push(StepLossCode::PmiZoneUnresolved.note(format!(
-                "tolerance zone #{id} has no transferred geometric tolerance"
+                "tolerance zone #{id} belongs to a given-up geometric tolerance"
             )));
+        } else {
+            losses.extend(give_up_zone(
+                exchange,
+                id,
+                zone_projections,
+                StepLossCode::PmiZoneUnresolved.note(format!(
+                    "tolerance zone #{id} names no transferred geometric tolerance"
+                )),
+            ));
         }
     }
     Ok(())

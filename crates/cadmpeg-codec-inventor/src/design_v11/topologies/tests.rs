@@ -142,8 +142,19 @@ fn a_typed_fillet_restates_its_input_state() {
     let mut ir = part(input(&[7]));
     project_part(&mut ir);
     let restating = ir.model.restated().get(STATE).expect("restated");
-    assert_eq!(restating.by(), &Restater::Record(FILLET.to_owned()));
-    assert!(restating.cut().is_empty(), "{:?}", restating.cut());
+    assert_eq!(
+        restating
+            .restaters()
+            .map(|(by, _)| by)
+            .next()
+            .expect("restater"),
+        &Restater::Record(FILLET.to_owned())
+    );
+    assert!(
+        restating.cut_by(|_| true).expect("restater").is_empty(),
+        "{:?}",
+        restating.cut_by(|_| true).expect("restater")
+    );
     let omitted = omitted(&ir);
     assert!(
         !omitted.iter().any(|message| message.contains(STATE)),
@@ -167,7 +178,12 @@ fn unpicked_edges_and_body_writers_are_stated_in_part() {
     project_part(&mut ir);
     let restating = ir.model.restated().get(STATE).expect("restated");
     assert_eq!(
-        restating.cut().iter().copied().collect::<Vec<_>>(),
+        restating
+            .cut_by(|_| true)
+            .expect("restater")
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
         ["bodies", "body_writers", "edge_geometry", "edges"]
     );
     let omitted = omitted(&ir);
@@ -282,8 +298,19 @@ fn a_result_whose_members_other_records_hold_is_restated_in_full() {
     let mut ir = generated_part(&["edge-1"]);
     restate_part(&mut ir, &[BODY, SLOT]);
     let restating = ir.model.restated().get(RESULT).expect("restated");
-    assert_eq!(restating.by(), &Restater::Record(EXTRUDE.to_owned()));
-    assert!(restating.cut().is_empty(), "{:?}", restating.cut());
+    assert_eq!(
+        restating
+            .restaters()
+            .map(|(by, _)| by)
+            .next()
+            .expect("restater"),
+        &Restater::Record(EXTRUDE.to_owned())
+    );
+    assert!(
+        restating.cut_by(|_| true).expect("restater").is_empty(),
+        "{:?}",
+        restating.cut_by(|_| true).expect("restater")
+    );
     let omitted = omitted(&ir);
     assert!(
         !omitted.iter().any(|message| message.contains(RESULT)),
@@ -299,7 +326,12 @@ fn unpicked_edges_and_unheld_slots_are_stated_in_part() {
     restate_part(&mut ir, &[BODY]);
     let restating = ir.model.restated().get(RESULT).expect("restated");
     assert_eq!(
-        restating.cut().iter().copied().collect::<Vec<_>>(),
+        restating
+            .cut_by(|_| true)
+            .expect("restater")
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
         ["members", "native_ref"]
     );
     let omitted = omitted(&ir);

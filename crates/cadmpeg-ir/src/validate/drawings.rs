@@ -25,7 +25,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
     let cyclic = on_cycles(&ir.model.drawings);
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
-        let mut refs_valid = all_ids.contains(&drawing.object)
+        let mut refs_valid = all_ids.contains(drawing.object.as_str())
             && drawing
                 .native_ref
                 .as_deref()
@@ -37,7 +37,7 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
         }
         if refs_valid {
             for id in &drawing.assets {
-                if !all_ids.contains(id) {
+                if !all_ids.contains(id.as_str()) {
                     refs_valid = false;
                     break;
                 }
@@ -338,7 +338,7 @@ mod tests {
         for (order, (name, kind)) in kinds.iter().enumerate() {
             ir.model.drawings.push(crate::drawings::Drawing::new(
                 drawing_id(name),
-                "test:source:unknown#record".to_owned(),
+                crate::ids::Identity::new("test:source:unknown#record").unwrap(),
                 kind.clone(),
                 "Test".to_owned(),
                 u32::try_from(order).unwrap(),
@@ -487,7 +487,7 @@ mod tests {
             .semantic_annotations
             .push(crate::semantic_annotations::SemanticAnnotation::new(
                 annotation.clone(),
-                "test:source:unknown#record".to_owned(),
+                crate::ids::Identity::new("test:source:unknown#record").unwrap(),
                 crate::semantic_annotations::SemanticAnnotationKind::Text,
                 "Test".to_owned(),
                 0,
