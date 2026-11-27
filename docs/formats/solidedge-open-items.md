@@ -64,17 +64,6 @@
 
 **Need.** Mirror and pattern documents that differ in one parameter, and documents of each other feature kind that differ in one parameter.
 
-
-### DR-1020. Second side word of extruded features
-
-**Question.** What does the `Double Value Object` 156 bytes after the function name of an extruded or revolved feature state?
-
-**Known.** The slot holds no object in the first feature of a document. In every later extruded protrusion and cutout of the controlled saves it holds `1`, for each side value `1`, `2` and `3` and for both boolean operations.
-
-**Conflict.** Other documents hold `2` in later protrusions, `1` in cutouts, and `1` in four further protrusions. The boolean operation and the side value do not separate them.
-
-**Need.** A document whose later extruded feature holds `2`, and a pair of saves that differ only in the setting that changes it.
-
 ### DR-1021. Topology proxy selections
 
 **Question.** What do the `f64` values after the axis of a circular-edge proxy store, which face of a two-setback chamfer is its reference face, and where does a thin wall with several open faces store the faces after the first?
