@@ -44,6 +44,7 @@ use std::collections::{HashMap, HashSet};
 
 mod crossing_loops;
 mod duplicate_identities;
+mod later_curve_boundary;
 mod loft_sketch_profile_binding;
 mod path_pattern_binding;
 mod resolution_rules;

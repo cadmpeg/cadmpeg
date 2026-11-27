@@ -64,6 +64,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A stored replacement or feature-time revision join for the absent hole circle, and a material-selection rule for the initial region and its descendants. The rule must bind the compact incidence operands to directed curve intervals and identify the selected holes.
 
+### DR-1076. Unnamed boundary curves of a counted region
+
+**Question.** Does a boundary curve of a selected face that no member of its counted list names show that the Sketch gained the curve after the feature stored the list?
+
+**Known.** A counted list can match no arrangement walk because the face boundary holds a curve with tail marker `0` that no member names. In two Fusion designs a Revolve selection names the complete outline of one face except for one curve whose persistent identity is above every named identity. The face has no island and no neighbouring face across that curve holds a named curve. The stored result body agrees with a revolve of that face alone; a revolve of every Sketch region disagrees with it.
+
+**Need.** A design whose Sketch gained a curve after a profile feature and whose stored selection predates it, and the rule that orders persistent curve identities against Sketch edits.
+
+**Note.** A Revolve whose counted list matches no walk, and which no certificate settles, takes the one atomic face that holds every named curve, when every other boundary curve has an identity above every named identity or has tail marker `1`, at least one such curve has the higher identity, no neighbouring face across a higher-identity curve holds a named curve, and the face has no island. The reading carries `feature.profile-later-curve-boundary-assumed`.
+
 ### DR-500. Counted profile incidence ordinals and curve partitions
 
 **Question.** Which curve partition does the second incidence word select, and what does the third incidence word count?

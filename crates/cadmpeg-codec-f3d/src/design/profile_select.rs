@@ -6755,7 +6755,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     {
                         Some(selected) => Some(selected),
                         None => {
-                            let resolved = region_members::resolve(
+                            let mut resolved = region_members::resolve(
                                 stream,
                                 &profile,
                                 source,
@@ -6764,6 +6764,16 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                                 scoped,
                                 false,
                             )?;
+                            if resolved.is_none() {
+                                resolved = region_members::resolve_later_curve_boundary(
+                                    stream,
+                                    &profile,
+                                    source,
+                                    resolution.curve_identities,
+                                    resolution.sketch_entities,
+                                    scoped,
+                                )?;
+                            }
                             scoped.profile_work.finish_selection();
                             resolved
                         }

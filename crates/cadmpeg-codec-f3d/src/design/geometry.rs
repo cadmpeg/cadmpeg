@@ -685,7 +685,7 @@ impl ProfileGeometryWork {
         let later_curve = self.later_curve_boundary_assumed_selections.get();
         if later_curve != 0 {
             losses.push(F3dLossCode::FeatureProfileLaterCurveBoundaryAssumed.note(format!(
-                "{later_curve} profile selection(s) took the one atomic face that every named curve bounds, although the face boundary also holds curves that the member list does not name and that the Sketch gained after the named curves. The reading assumes the selection did not change when the Sketch gained them."
+                "{later_curve} profile selection(s) took the one atomic face that every named curve bounds, although the face boundary also holds curves that the member list does not name and whose persistent identities are above every named identity. Whether the Sketch gained those curves after the selection was stored is open (DR-1076)."
             )));
         }
         let island_absence = self.island_absence_assumed_selections.get();
@@ -2186,54 +2186,82 @@ pub(super) fn atomic_sketch_regions(
     ))
 }
 
+/// The boundary curves that no member list names: curves the Sketch gained
+/// after the named ones, and curves that a member list never names.
+pub(super) struct UnnamedBoundaryCurves {
+    pub(super) later: HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    pub(super) ignored: HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+}
+
 /// The regions that counted member rings select when no face walk matches a
 /// ring because curves that the member lists do not name also bound the
 /// face. Each ring selects the one atomic face whose boundary holds every
-/// curve of the ring, where every other boundary curve is in `later`.
+/// curve of the ring, where every other boundary curve is in `later` or
+/// `ignored` and at least one is in `later`. A face does not qualify when a
+/// neighbouring face across a later boundary curve holds a curve of its ring:
+/// the later curve then split the region that the ring names.
 /// `None` when a ring is empty, a ring has no such face or several, a face
 /// has an island or can hold an unlisted curve, two rings select one face,
-/// or the work budget runs out.
+/// or the work budget runs out. The arrangement is built here and not
+/// before.
 pub(super) fn arrangement_regions_holding_named_curves(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     rings: &[HashSet<cadmpeg_ir::sketches::SketchEntityId>],
-    later: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    unnamed: &UnnamedBoundaryCurves,
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>>, CodecError> {
     use cadmpeg_ir::features::profiles::SketchProfileRegion;
 
+    let UnnamedBoundaryCurves { later, ignored } = unnamed;
     if rings.is_empty() || later.is_empty() || rings.iter().any(HashSet::is_empty) {
         return Ok(None);
     }
     let Some(faces) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
-    let mut selected = Vec::new();
-    for named in rings {
-        let mut holding = faces.iter().enumerate().filter(|(_, face)| {
-            let boundary = face
-                .boundary
+    let boundaries = faces
+        .iter()
+        .map(|face| {
+            face.boundary
                 .iter()
                 .map(|use_| &use_.entity)
-                .collect::<HashSet<_>>();
+                .collect::<HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut selected = Vec::new();
+    for named in rings {
+        let mut holding = boundaries.iter().enumerate().filter(|(_, boundary)| {
             named.iter().all(|entity| boundary.contains(entity))
-                && boundary
-                    .iter()
-                    .any(|entity| !named.contains(*entity) && later.contains(*entity))
-                && boundary
-                    .iter()
-                    .all(|entity| named.contains(*entity) || later.contains(*entity))
+                && boundary.iter().any(|entity| later.contains(*entity))
+                && boundary.iter().all(|entity| {
+                    named.contains(*entity) || later.contains(*entity) || ignored.contains(*entity)
+                })
         });
-        let Some((index, face)) = holding.next() else {
+        let Some((index, _)) = holding.next() else {
             return Ok(None);
         };
+        let face = &faces[index];
         if holding.next().is_some()
             || face.encloses_island
             || face.island_absence_assumed
             || selected.contains(&index)
         {
+            return Ok(None);
+        }
+        let split = boundaries[index]
+            .iter()
+            .filter(|entity| later.contains(**entity))
+            .any(|entity| {
+                boundaries.iter().enumerate().any(|(other, boundary)| {
+                    other != index
+                        && boundary.contains(*entity)
+                        && rings.iter().flatten().any(|named| boundary.contains(named))
+                })
+            });
+        if split {
             return Ok(None);
         }
         selected.push(index);

@@ -3,11 +3,14 @@
 use super::*;
 use std::collections::HashSet;
 
+/// The regions that rings of fixture entities select, where `later` and
+/// `ignored` list fixture entity indices.
 fn selected(
     sketch: &Sketch,
     entities: &[SketchEntity],
     rings: &[&[usize]],
     later: &[usize],
+    ignored: &[usize],
 ) -> Option<Vec<SketchProfileRegion>> {
     let ids = |indices: &[usize]| -> HashSet<SketchEntityId> {
         indices
@@ -16,12 +19,16 @@ fn selected(
             .collect()
     };
     let rings = rings.iter().map(|ring| ids(ring)).collect::<Vec<_>>();
+    let unnamed = super::super::super::UnnamedBoundaryCurves {
+        later: ids(later),
+        ignored: ids(ignored),
+    };
     crate::test_support::with_decode_context(|ctx| {
         super::super::super::arrangement_regions_holding_named_curves(
             sketch,
             entities,
             &rings,
-            &ids(later),
+            &unnamed,
             PROFILE_PROGRAM_TOLERANCE,
             &ProfileGeometryWork::new(),
             ctx,
@@ -30,39 +37,50 @@ fn selected(
     .unwrap()
 }
 
-/// A square whose right side was shortened and closed by a curve the Sketch
-/// gained afterwards, beside a second square that the selection leaves.
-fn closed_by_later_curve() -> (Sketch, Vec<SketchEntity>) {
+fn lines(sketch: &Sketch, specs: &[(&str, (f64, f64), (f64, f64))]) -> Vec<SketchEntity> {
+    specs
+        .iter()
+        .map(|(name, start, end)| {
+            SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap(),
+                sketch.id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: Point2::new(start.0, start.1),
+                    end: Point2::new(end.0, end.1),
+                })
+                .unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// A square whose right side stops at height one and is closed by two curves
+/// the Sketch gained afterwards (entities 4 and 5), beside a second square
+/// (entities 6 to 9) that no selection names.
+fn closed_by_later_curves() -> (Sketch, Vec<SketchEntity>) {
     let (sketch, _) = divided_circle(false);
-    let line = |name: &str, start: (f64, f64), end: (f64, f64)| {
-        SketchEntity::new(
-            SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap(),
-            sketch.id.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: Point2::new(start.0, start.1),
-                end: Point2::new(end.0, end.1),
-            })
-            .unwrap(),
-        )
-    };
-    let entities = vec![
-        line("bottom", (0.0, 0.0), (2.0, 0.0)),
-        line("right", (2.0, 0.0), (2.0, 1.0)),
-        line("top", (2.0, 2.0), (0.0, 2.0)),
-        line("left", (0.0, 2.0), (0.0, 0.0)),
-        line("later", (2.0, 1.0), (2.0, 2.0)),
-        line("other-bottom", (5.0, 0.0), (7.0, 0.0)),
-        line("other-right", (7.0, 0.0), (7.0, 2.0)),
-        line("other-top", (7.0, 2.0), (5.0, 2.0)),
-        line("other-left", (5.0, 2.0), (5.0, 0.0)),
-    ];
+    let entities = lines(
+        &sketch,
+        &[
+            ("bottom", (0.0, 0.0), (2.0, 0.0)),
+            ("right", (2.0, 0.0), (2.0, 1.0)),
+            ("top", (2.0, 2.0), (0.0, 2.0)),
+            ("left", (0.0, 2.0), (0.0, 0.0)),
+            ("later-a", (2.0, 1.0), (2.0, 1.5)),
+            ("later-b", (2.0, 1.5), (2.0, 2.0)),
+            ("other-bottom", (5.0, 0.0), (7.0, 0.0)),
+            ("other-right", (7.0, 0.0), (7.0, 2.0)),
+            ("other-top", (7.0, 2.0), (5.0, 2.0)),
+            ("other-left", (5.0, 2.0), (5.0, 0.0)),
+        ],
+    );
     (sketch, entities)
 }
 
 #[test]
-fn a_face_bounded_by_every_named_curve_and_a_later_curve_is_selected() {
-    let (sketch, entities) = closed_by_later_curve();
-    let regions = selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[4]).expect("one face");
+fn a_face_bounded_by_every_named_curve_and_later_curves_is_selected() {
+    let (sketch, entities) = closed_by_later_curves();
+    let regions = selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[4, 5], &[]).expect("one face");
     let [SketchProfileRegion::Trimmed {
         outer_boundary,
         hole_boundaries,
@@ -75,21 +93,106 @@ fn a_face_bounded_by_every_named_curve_and_a_later_curve_is_selected() {
         .iter()
         .map(|use_| use_.entity.clone())
         .collect::<HashSet<_>>();
-    assert_eq!(boundary.len(), 5);
+    assert_eq!(boundary.len(), 6);
     assert!(boundary.contains(entities[4].id()));
-    assert!(!boundary.contains(entities[5].id()));
+    assert!(!boundary.contains(entities[6].id()));
 }
 
 #[test]
 fn a_boundary_curve_that_is_not_later_leaves_the_selection_native() {
-    let (sketch, entities) = closed_by_later_curve();
-    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[]).is_none());
-    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[5]).is_none());
+    let (sketch, entities) = closed_by_later_curves();
+    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[], &[]).is_none());
+    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[4], &[]).is_none());
+    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[6], &[]).is_none());
 }
 
 #[test]
-fn a_named_curve_off_the_face_or_two_rings_on_one_face_define_no_selection() {
-    let (sketch, entities) = closed_by_later_curve();
-    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3, 5]], &[4]).is_none());
-    assert!(selected(&sketch, &entities, &[&[0, 1, 2], &[3, 0]], &[4]).is_none());
+fn an_ignored_curve_stays_on_the_boundary_but_is_never_later() {
+    let (sketch, entities) = closed_by_later_curves();
+    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[4], &[5]).is_some());
+    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[], &[4, 5]).is_none());
+}
+
+#[test]
+fn a_named_curve_off_the_face_defines_no_selection() {
+    let (sketch, entities) = closed_by_later_curves();
+    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3, 6]], &[4, 5], &[]).is_none());
+}
+
+#[test]
+fn an_empty_ring_or_no_ring_defines_no_selection() {
+    let (sketch, entities) = closed_by_later_curves();
+    assert!(selected(&sketch, &entities, &[], &[4, 5], &[]).is_none());
+    assert!(selected(&sketch, &entities, &[&[]], &[4, 5], &[]).is_none());
+    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3], &[]], &[4, 5], &[]).is_none());
+}
+
+#[test]
+fn two_rings_on_one_face_define_no_selection() {
+    let (sketch, entities) = closed_by_later_curves();
+    assert!(selected(
+        &sketch,
+        &entities,
+        &[&[0, 1, 2, 3], &[0, 1, 2, 3]],
+        &[4, 5],
+        &[]
+    )
+    .is_none());
+}
+
+#[test]
+fn several_qualifying_faces_define_no_selection() {
+    let (sketch, _) = divided_circle(false);
+    // Two squares share their bottom edge; every other curve is later.
+    let entities = lines(
+        &sketch,
+        &[
+            ("shared", (0.0, 0.0), (2.0, 0.0)),
+            ("up-right", (2.0, 0.0), (2.0, 2.0)),
+            ("up-top", (2.0, 2.0), (0.0, 2.0)),
+            ("up-left", (0.0, 2.0), (0.0, 0.0)),
+            ("down-right", (2.0, 0.0), (2.0, -2.0)),
+            ("down-bottom", (2.0, -2.0), (0.0, -2.0)),
+            ("down-left", (0.0, -2.0), (0.0, 0.0)),
+        ],
+    );
+    assert!(selected(&sketch, &entities, &[&[0]], &[1, 2, 3, 4, 5, 6], &[]).is_none());
+}
+
+#[test]
+fn a_face_with_an_island_defines_no_selection() {
+    let (sketch, _) = divided_circle(false);
+    let entities = lines(
+        &sketch,
+        &[
+            ("bottom", (0.0, 0.0), (4.0, 0.0)),
+            ("right", (4.0, 0.0), (4.0, 2.0)),
+            ("top", (4.0, 4.0), (0.0, 4.0)),
+            ("left", (0.0, 4.0), (0.0, 0.0)),
+            ("later", (4.0, 2.0), (4.0, 4.0)),
+            ("island-bottom", (1.0, 1.0), (2.0, 1.0)),
+            ("island-right", (2.0, 1.0), (2.0, 2.0)),
+            ("island-top", (2.0, 2.0), (1.0, 2.0)),
+            ("island-left", (1.0, 2.0), (1.0, 1.0)),
+        ],
+    );
+    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[4], &[]).is_none());
+}
+
+/// A later chord cuts a corner off the named square: the face beyond the
+/// chord holds named curves, so the chord split the named region.
+#[test]
+fn a_later_curve_that_split_the_named_region_defines_no_selection() {
+    let (sketch, _) = divided_circle(false);
+    let entities = lines(
+        &sketch,
+        &[
+            ("bottom", (0.0, 0.0), (2.0, 0.0)),
+            ("right", (2.0, 0.0), (2.0, 2.0)),
+            ("top", (2.0, 2.0), (0.0, 2.0)),
+            ("left", (0.0, 2.0), (0.0, 0.0)),
+            ("chord", (0.0, 1.5), (1.0, 2.0)),
+        ],
+    );
+    assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[4], &[]).is_none());
 }
