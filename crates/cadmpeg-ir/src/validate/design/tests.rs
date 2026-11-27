@@ -703,6 +703,58 @@ fn a_group_member_attached_to_a_stateless_member_orders_it_before_its_picks() {
     }));
 }
 
+/// `grouped_beside_a_current_state` with datum `a` moved into an ordered
+/// Body, a member of the group, whose rollback is before `a`.
+fn grouped_beside_an_unbuilt_body() -> CadIr {
+    let mut ir = grouped_beside_a_current_state();
+    let Container::Unordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.remove(&from(
+        json!({"kind": "feature", "value": key("feature", "a")}),
+    ));
+    members.insert(from(
+        json!({"kind": "container", "value": key("container", "body")}),
+    ));
+    ir.design.containers.push(from(json!({
+        "kind": "ordered",
+        "value": {
+            "id": key("container", "body"),
+            "kind": "body",
+            "members": [{"kind": "feature", "value": key("feature", "a")}],
+            "folders": [],
+            "rollback": {"kind": "before", "value": {"kind": "feature", "value": key("feature", "a")}}
+        }
+    })));
+    ir
+}
+
+#[test]
+fn a_group_member_attached_to_an_unbuilt_stateless_feature_does_not_order_it() {
+    // Only a stateless member of an unordered container depend-orders before
+    // the attached member's `Current` selections (§5.3); `a` is not built.
+    assert_finding(
+        &grouped_beside_an_unbuilt_body(),
+        Check::Design,
+        Severity::Error,
+        "does not depend-order before its anchor",
+    );
+}
+
+#[test]
+fn a_group_member_attached_to_a_suppressed_member_orders_it_before_its_picks() {
+    // A suppressed extrude is stateless (§5.4), so it has no state that the
+    // current geometry could hold.
+    let mut ir = grouped_beside_a_current_state();
+    ir.design.features[0].definition.operation = FeatureOperation::Unresolved {
+        family: crate::design::feature::OperationFamily::Extrude,
+    };
+    ir.design.features[0].suppressed = Some(crate::design::dimension::Dimension::Literal(true));
+    assert!(!findings(&ir).iter().any(|finding| finding
+        .message
+        .contains("does not depend-order before its anchor")));
+}
+
 #[test]
 fn a_group_member_is_not_pinned_after_a_container() {
     let mut ir = grouped(pinned_after("container", &key("container", "body")));

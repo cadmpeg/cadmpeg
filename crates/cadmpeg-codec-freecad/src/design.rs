@@ -2914,7 +2914,7 @@ fn parse_constraints(
                 (Some(9), -2, _) | (_, -2, 0) => OperandTarget::Frame(PrincipalEntity::YAxis),
                 (_, -1 | -2, 1) => OperandTarget::Frame(PrincipalEntity::Origin),
                 _ => resolve_operand(*entity, *position, entities)?
-                    .map_or(OperandTarget::Unresolved, OperandTarget::Locus),
+                    .map_or(OperandTarget::Unresolved(*entity), OperandTarget::Locus),
             };
             stored_operands.push(StoredOperand {
                 position: *position,

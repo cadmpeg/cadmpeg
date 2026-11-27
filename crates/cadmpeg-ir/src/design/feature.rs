@@ -326,7 +326,8 @@ impl FeatureOperation {
     /// own, a template instance, a decal, a mesh section, and an
     /// `Unresolved` operation of a family whose every operation is one of
     /// these.
-    pub(crate) fn cannot_change_state(&self) -> bool {
+    #[must_use]
+    pub fn cannot_change_state(&self) -> bool {
         match self {
             Self::Sketch(_)
             | Self::SpatialSketch(_)

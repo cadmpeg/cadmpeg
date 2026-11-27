@@ -100,8 +100,8 @@ pub(crate) enum OperandTarget {
     Frame(PrincipalEntity),
     /// A sketch entity or a point on one.
     Locus(SketchLocus),
-    /// A `GeoId` that names no entity of the sketch.
-    Unresolved,
+    /// A `GeoId`, stored here, that names no entity of the sketch.
+    Unresolved(i64),
 }
 
 /// The link and flags of one external geometry.
@@ -150,6 +150,14 @@ struct Targets {
     /// The ordered container of each feature a Body holds, and its index
     /// among the container's members.
     order: HashMap<FeatureId, (ContainerId, usize)>,
+    /// The features of the root `Group`.
+    grouped: HashSet<FeatureId>,
+    /// The features with no state or result of their own (§5.4): a sketch,
+    /// a datum, a suppressed feature.
+    stateless: HashSet<FeatureId>,
+    /// The features that place occurrences, which have no result of their
+    /// own (§5.3): a link to one has no design pick.
+    placing: HashSet<FeatureId>,
 }
 
 /// The sketch of each sketch feature among `features` and its records. Each
@@ -234,6 +242,27 @@ pub(super) fn project(
                     })
             })
             .collect(),
+        grouped: scope
+            .grouped
+            .iter()
+            .filter_map(|member| match member {
+                Member::Feature(feature) => Some(feature.clone()),
+                Member::Container(_) => None,
+            })
+            .collect(),
+        stateless: features
+            .iter()
+            .filter(|feature| {
+                feature.definition.operation.cannot_change_state()
+                    || matches!(feature.suppressed, Some(Dimension::Literal(true)))
+            })
+            .map(|feature| feature.id.clone())
+            .collect(),
+        placing: features
+            .iter()
+            .filter(|feature| places(&feature.definition.operation))
+            .map(|feature| feature.id.clone())
+            .collect(),
     };
     let mut out = Projected::default();
     for feature in features.iter_mut() {
@@ -260,7 +289,6 @@ fn sketch(
         .iter()
         .filter(|entity| entity.sketch == record.id && !builtin(entity.id()))
         .collect::<Vec<_>>();
-    let anchor = anchor(scope, targets, &feature.id, record, &entities);
     let constraints = model
         .sketch_constraints
         .iter()
@@ -295,9 +323,10 @@ fn sketch(
         points: &points,
         roles: &roles,
     };
-    let sources = sources(scope, targets, &entities, &anchor, losses);
+    let sources = sources(scope, targets, &feature.id, &entities, losses);
+    let unlinked = unlinked(targets, &feature.id);
     for entity in &entities {
-        let (definition, construction) = definition(scope, entity, &anchor, &sources, losses);
+        let (definition, construction) = definition(scope, entity, &unlinked, &sources, losses);
         out.entities.push(SketchEntity {
             id: entity.id().clone(),
             sketch: record.id.clone(),
@@ -320,10 +349,7 @@ fn sketch(
             alignment,
         } = constraint.definition.kind()
         {
-            // The role states an active, unnamed alignment.
-            if constraint.active != Some(false)
-                && constraint.name.as_deref().is_none_or(str::is_empty)
-            {
+            if states_role(constraint) {
                 continue;
             }
             alignment_relation(helper, parent, *alignment, &mut native_options)
@@ -343,6 +369,12 @@ fn sketch(
                     };
                 losses.push(FreecadLossCode::DesignSketchRelationNative.note(format!(
                     "sketch constraint {} {cause}; it states its native kind",
+                    constraint.id
+                )));
+            }
+            for (geo, position) in &stated.unresolved {
+                losses.push(FreecadLossCode::DesignSketchRelationNative.note(format!(
+                    "sketch constraint {} names GeoId {geo} at PointPos {position}, which is no geometry of its sketch; its relation leaves that operand out",
                     constraint.id
                 )));
             }
@@ -422,7 +454,6 @@ fn sketch(
         targets,
         &feature.id,
         record,
-        &anchor,
         &mut source_settings,
         losses,
     );
@@ -465,13 +496,13 @@ fn builtin(id: &SketchEntityId) -> bool {
     .any(|suffix| id.as_str().ends_with(suffix))
 }
 
-/// The roles that the active internal alignments of a sketch give their
-/// helpers.
+/// The roles that the active, unnamed internal alignments of a sketch give
+/// their helpers (`states_role`).
 fn roles(constraints: &[&LegacyConstraint]) -> BTreeMap<SketchEntityId, Vec<EntityRole<Planar>>> {
     let mut roles = BTreeMap::<_, Vec<_>>::new();
     for constraint in constraints
         .iter()
-        .filter(|constraint| constraint.active != Some(false))
+        .filter(|constraint| states_role(constraint))
     {
         let Kind::InternalAlignment {
             helper,
@@ -502,6 +533,13 @@ fn roles(constraints: &[&LegacyConstraint]) -> BTreeMap<SketchEntityId, Vec<Enti
         });
     }
     roles
+}
+
+/// Whether the entity role of an internal alignment states it: an active,
+/// unnamed one. A deactivated or named one is a relation, which keeps its
+/// state and its name (`alignment_relation`).
+fn states_role(constraint: &LegacyConstraint) -> bool {
+    constraint.active != Some(false) && constraint.name.as_deref().is_none_or(str::is_empty)
 }
 
 /// The stored form of a constraint that the decoder holds no record of.
@@ -562,6 +600,7 @@ fn alignment_relation(
         bound: false,
         unplaced: false,
         angle_at_point: None,
+        unresolved: Vec::new(),
     }
 }
 
@@ -626,7 +665,7 @@ impl View<'_> {
             OperandTarget::Frame(entity) => Some(Operand::Frame(*entity)),
             OperandTarget::Locus(SketchLocus::Entity(id)) => Some(Operand::Entity(id.clone())),
             OperandTarget::Locus(locus) => self.points.operand(locus),
-            OperandTarget::Unresolved => None,
+            OperandTarget::Unresolved(_) => None,
         }
     }
 
@@ -669,7 +708,7 @@ fn curve_of(operand: &StoredOperand) -> Option<Operand<Planar>> {
             | SketchLocus::End(id)
             | SketchLocus::Center(id),
         ) => Some(Operand::Entity(id.clone())),
-        OperandTarget::Unresolved => None,
+        OperandTarget::Unresolved(_) => None,
     }
 }
 
@@ -685,6 +724,9 @@ struct Stated {
     unplaced: bool,
     /// The angle a pointwise tangency stores.
     angle_at_point: Option<Angle>,
+    /// The `(GeoId, PointPos)` of each operand that names no geometry of
+    /// the sketch, which the relation leaves out.
+    unresolved: Vec<(i64, i64)>,
 }
 
 /// The quantity of the value of a constraint of type `code`.
@@ -699,6 +741,14 @@ fn quantity(code: i64) -> Option<Quantity> {
 
 /// The relation that states the stored constraint `stored` (§6.1).
 fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
+    let unresolved = stored
+        .operands
+        .iter()
+        .filter_map(|operand| match operand.target {
+            OperandTarget::Unresolved(geo) => Some((geo, operand.position)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let value = stored
         .code
         .and_then(quantity)
@@ -725,6 +775,7 @@ fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
             bound: value.is_some(),
             unplaced: false,
             angle_at_point,
+            unresolved,
         };
     }
     let kind = stored
@@ -752,6 +803,7 @@ fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
         bound: value.is_some(),
         unplaced: stored.operands.iter().any(|operand| view.unplaced(operand)),
         angle_at_point: None,
+        unresolved,
     }
 }
 
@@ -1069,8 +1121,8 @@ fn definition(
 fn sources<'e>(
     scope: &Scope<'_>,
     targets: &Targets,
+    holder: &FeatureId,
     entities: &[&'e LegacyEntity],
-    anchor: &Anchor,
     losses: &mut Vec<LossNote>,
 ) -> BTreeMap<&'e SketchEntityId, (OrderedSelection, Option<u32>)> {
     let mut by_link = BTreeMap::<&(String, Vec<String>), Vec<&SketchEntityId>>::new();
@@ -1086,12 +1138,13 @@ fn sources<'e>(
     }
     let mut out = BTreeMap::new();
     for (link, members) in by_link {
-        let selection = match picks(targets, std::slice::from_ref(link), anchor, Reading::Shape) {
+        let links = std::slice::from_ref(link);
+        let selection = match picks(targets, holder, links, Reading::Shape) {
             Some(selection) => selection,
             None => {
-                let native = native_source(scope, link, anchor);
+                let native = native_source(scope, links, &unlinked(targets, holder));
                 losses.push(FreecadLossCode::DesignSketchSourceUnread.note(format!(
-                    "external geometry {} links an object that no design record restates; {}",
+                    "external geometry {} links an object that no design pick restates in a state the sketch reads; {}",
                     members
                         .iter()
                         .map(|member| member.as_str())
@@ -1118,32 +1171,31 @@ fn sources<'e>(
     out
 }
 
-/// The source of an external geometry that links `link`, an object no
-/// design record restates: a `Native` pick of each subelement, or of the
-/// object, by its `FreeCAD` subelement path `Object.Subelement` (§5.8).
-/// `None` where the document holds no such object.
+/// The selection of `links`, objects no design pick restates: a `Native`
+/// pick of each subelement, or of the object, by its `FreeCAD` subelement
+/// path `Object.Subelement` (§5.8). `None` where the document holds no such
+/// object.
 fn native_source(
     scope: &Scope<'_>,
-    (object, subelements): &(String, Vec<String>),
+    links: &[(String, Vec<String>)],
     at: &Anchor,
 ) -> Option<OrderedSelection> {
-    let name = scope
-        .objects
-        .iter()
-        .find(|record| record.id() == object)?
-        .name();
-    let subelements = subelements
-        .iter()
-        .filter(|sub| !sub.is_empty())
-        .collect::<Vec<_>>();
-    let paths = if subelements.is_empty() {
-        vec![name.clone()]
-    } else {
-        subelements
+    let mut paths = Vec::new();
+    for (object, subelements) in links {
+        let name = scope
+            .objects
             .iter()
-            .map(|sub| format!("{name}.{sub}"))
-            .collect()
-    };
+            .find(|record| record.id() == object)?
+            .name();
+        let subelements = subelements
+            .iter()
+            .filter(|sub| !sub.is_empty())
+            .collect::<Vec<_>>();
+        if subelements.is_empty() {
+            paths.push(name.clone());
+        }
+        paths.extend(subelements.iter().map(|sub| format!("{name}.{sub}")));
+    }
     let picked = paths
         .into_iter()
         .map(|path| {
@@ -1171,12 +1223,13 @@ enum Reading {
     Shape,
 }
 
-/// The selection of the objects and subelements `links` name, in order, as
-/// `reading` reads each (`pick_link`). `None` where one has no pick.
+/// The selection of the sketch `holder` of the objects and subelements
+/// `links` name, in order, as `reading` reads each (`pick_link`), at the
+/// anchor its picks need (`anchor`). `None` where one has no pick.
 fn picks(
     targets: &Targets,
+    holder: &FeatureId,
     links: &[(String, Vec<String>)],
-    at: &Anchor,
     reading: Reading,
 ) -> Option<OrderedSelection> {
     let mut picked = Vec::new();
@@ -1192,7 +1245,7 @@ fn picks(
             picked.push(pick_link(targets, object, Some(sub), reading)?);
         }
     }
-    selection(at, picked)
+    selection(&anchor(targets, holder, links)?, picked)
 }
 
 /// The pick of the object `object`, or of its subelement `sub`, as `reading`
@@ -1202,7 +1255,8 @@ fn picks(
 /// its native name. A frame reading picks the XY plane of an origin plane
 /// and of a datum plane, which is the plane itself, and a plane of a
 /// sketch's frame. `None` where the link names an object that no design
-/// record restates, or one that `reading` has no pick of.
+/// record restates, a feature that places occurrences, which has no result
+/// of its own (§5.3), or one that `reading` has no pick of.
 fn pick_link(
     targets: &Targets,
     object: &str,
@@ -1226,6 +1280,9 @@ fn pick_link(
         };
     }
     let (feature, datum) = targets.features.get(object)?;
+    if targets.placing.contains(feature) {
+        return None;
+    }
     if let Some(sub) = sub {
         if matches!(reading, Reading::Frame(_)) {
             return None;
@@ -1352,49 +1409,118 @@ fn origins(scope: &Scope<'_>) -> HashMap<String, PickTarget> {
     out
 }
 
-/// The state the selections of the sketch `feature` read (§5.8): the
-/// current geometry for a member of the root `Group`. In a Body, the state
-/// after the last member the sketch links by its support or its external
-/// geometry that the Body places after the sketch, as `FreeCAD` computes an
-/// object after each object it links (§5.3); else the state entering the
-/// sketch.
+/// Whether `operation` places occurrences, which gives it no result of its
+/// own in an unordered container (§5.3).
+fn places(operation: &FeatureOperation) -> bool {
+    matches!(
+        operation,
+        FeatureOperation::Place(_)
+            | FeatureOperation::PlaceSet(_)
+            | FeatureOperation::Joint(_)
+            | FeatureOperation::RigidGroup(_)
+            | FeatureOperation::ComponentPattern(_)
+            | FeatureOperation::MirrorComponents(_)
+            | FeatureOperation::Unresolved {
+                family: OperationFamily::Place
+                    | OperationFamily::PlaceSet
+                    | OperationFamily::Joint
+                    | OperationFamily::RigidGroup
+                    | OperationFamily::ComponentPattern
+                    | OperationFamily::MirrorComponents
+            }
+    )
+}
+
+/// The anchor of a selection of the sketch `holder` that picks the objects
+/// `links` name (§5.8). `FreeCAD` computes a sketch after every object it
+/// links, in dependency order (`Document::recompute`), and reads the shape
+/// of each: a solid feature's shape is the Body's state after it, and a
+/// sketch's or a datum's is its own geometry. So:
+/// - a sketch of the root `Group` reads `Pinned(After(m))` where the
+///   selection picks only `m`, another member of the `Group` with a result
+///   of its own; else the current geometry, which holds the built features
+///   of each Body, and before whose selections each stateless member of the
+///   `Group` it picks depend-orders (§5.3);
+/// - a sketch of a Body reads the state entering it for a stateless feature
+///   that its Body lists before it, and `Pinned(After(m))` for a feature `m`
+///   with a state of its own that its Body lists before it, for a feature
+///   of another Body (as a binder's source is read), and for a member of
+///   the `Group` with a result of its own; the latest `m` where they are
+///   all in one container.
+///
+/// `None` where the spec states no anchor that holds what the selection
+/// picks and not the sketch: a feature that the sketch's Body lists after
+/// it (every state at or after it holds the sketch), a stateless member of
+/// the `Group` picked from a Body (no state holds it), and targets that no
+/// one state holds. An origin entity, a feature that places occurrences,
+/// and an object that no feature restates ask nothing of the anchor.
 fn anchor(
-    scope: &Scope<'_>,
     targets: &Targets,
-    feature: &FeatureId,
-    record: &LegacySketch,
-    entities: &[&LegacyEntity],
-) -> Anchor {
-    if scope.grouped.contains(&Member::Feature(feature.clone())) {
-        return Anchor::Current;
-    }
-    let Some((container, index)) = targets.order.get(feature) else {
-        return Anchor::Input;
-    };
-    let supports = record
-        .native_ref
-        .as_deref()
-        .map(|object| support_links(scope, object))
-        .unwrap_or_default();
-    let externals = entities.iter().filter_map(|entity| {
-        scope
-            .stored
-            .externals
-            .get(entity.id())
-            .and_then(|stored| stored.link.as_ref())
-    });
-    supports
+    holder: &FeatureId,
+    links: &[(String, Vec<String>)],
+) -> Option<Anchor> {
+    let mut linked = links
         .iter()
-        .chain(externals)
-        .filter_map(|(object, _)| {
-            let (linked, _) = targets.features.get(object)?;
-            let (within, at) = targets.order.get(linked)?;
-            (within == container && at > index).then_some((*at, linked))
-        })
-        .max_by_key(|(at, _)| *at)
-        .map_or(Anchor::Input, |(_, linked)| {
-            Anchor::Pinned(Position::After(Member::Feature(linked.clone())))
-        })
+        .filter_map(|(object, _)| targets.features.get(object).map(|(feature, _)| feature))
+        .filter(|feature| *feature != holder && !targets.placing.contains(*feature))
+        .collect::<Vec<_>>();
+    linked.sort();
+    linked.dedup();
+    let stateful = |feature: &FeatureId| !targets.stateless.contains(feature);
+    let grouped_result =
+        |feature: &FeatureId| targets.grouped.contains(feature) && stateful(feature);
+    if targets.grouped.contains(holder) {
+        return match linked.as_slice() {
+            [only] if grouped_result(only) => Some(Anchor::Pinned(Position::After(
+                Member::Feature((*only).clone()),
+            ))),
+            several if several.iter().any(|feature| grouped_result(feature)) => None,
+            _ => Some(Anchor::Current),
+        };
+    }
+    let Some((home, at)) = targets.order.get(holder) else {
+        return Some(Anchor::Input);
+    };
+    // Each feature read after itself, with its ordered container (`None`
+    // for the `Group`) and its index there; and the index of the last
+    // stateless feature of the sketch's Body, read at its input.
+    let mut after = Vec::new();
+    let mut entering = None;
+    for feature in linked {
+        match targets.order.get(feature) {
+            Some((container, index)) if container == home && index > at => return None,
+            Some((container, index)) if container == home && !stateful(feature) => {
+                entering = entering.max(Some(*index));
+            }
+            Some((container, index)) => after.push((feature, Some(container), *index)),
+            None if grouped_result(feature) => after.push((feature, None, 0)),
+            None => return None,
+        }
+    }
+    let Some(&(_, container, _)) = after.first() else {
+        return Some(Anchor::Input);
+    };
+    if after.iter().any(|(_, within, _)| *within != container) {
+        return None;
+    }
+    let (latest, _, last) = after.iter().max_by_key(|(_, _, index)| *index)?;
+    // A member of the `Group` is its own result, which holds no other
+    // feature; the state after a feature of another Body holds no feature
+    // of the sketch's Body; the state after a feature of the sketch's Body
+    // holds each feature before it.
+    let holds = match container {
+        None => after.len() == 1 && entering.is_none(),
+        Some(container) if container == home => entering.is_none_or(|index| index < *last),
+        Some(_) => entering.is_none(),
+    };
+    holds.then(|| Anchor::Pinned(Position::After(Member::Feature((*latest).clone()))))
+}
+
+/// The anchor of a selection of the sketch `holder` that picks no feature:
+/// the current geometry for a member of the root `Group`, else the state
+/// entering it.
+fn unlinked(targets: &Targets, holder: &FeatureId) -> Anchor {
+    anchor(targets, holder, &[]).unwrap_or(Anchor::Input)
 }
 
 /// The links of the support of the sketch `object`, one per subelement, as
@@ -1439,7 +1565,6 @@ fn plane(
     targets: &Targets,
     feature: &FeatureId,
     record: &LegacySketch,
-    anchor: &Anchor,
     settings: &mut NativeOptions,
     losses: &mut Vec<LossNote>,
 ) -> Construction<kinds::Frame> {
@@ -1470,7 +1595,7 @@ fn plane(
         }
         return construction;
     }
-    construction.inputs = support(targets, &links, mode, anchor, record, losses);
+    construction.inputs = support(scope, targets, feature, &links, mode, record, losses);
     let reversed = property("MapReversed").and_then(stored_bool);
     let mut source_settings = NativeOptions::new();
     match (mode, reversed) {
@@ -1531,17 +1656,20 @@ fn plane(
 ///
 /// Every other mode, and a reference these readings have no pick of, is one
 /// input with no role that picks each reference's shape (§5.9, Unread
-/// roles).
+/// roles). A reference that no design pick restates in a state the sketch
+/// reads (`anchor`) makes the support one input with no role whose
+/// selection is the native pick of each reference (`native_source`).
 fn support(
+    scope: &Scope<'_>,
     targets: &Targets,
+    feature: &FeatureId,
     links: &[(String, Vec<String>)],
     mode: &str,
-    anchor: &Anchor,
     record: &LegacySketch,
     losses: &mut Vec<LossNote>,
 ) -> Vec<ConstructionInput> {
     let read = |link: &(String, Vec<String>), reading| {
-        picks(targets, std::slice::from_ref(link), anchor, reading)
+        picks(targets, feature, std::slice::from_ref(link), reading)
     };
     let input = |role, selection| ConstructionInput {
         role,
@@ -1558,21 +1686,34 @@ fn support(
             selection,
         )
     };
-    let unread = || Selection {
-        at: anchor.clone(),
-        picks: Picks::Unread,
-        native: None,
+    // A reference with no design pick in a state the sketch reads makes the
+    // support the native pick of each reference.
+    let native = |losses: &mut Vec<LossNote>| {
+        let native = native_source(scope, links, &unlinked(targets, feature));
+        losses.push(FreecadLossCode::DesignSketchSupportUnread.note(format!(
+            "sketch {} is attached to an object that no design pick restates in a state the sketch reads; {}",
+            record.id,
+            if native.is_some() {
+                "its support is the native pick of each reference"
+            } else {
+                "its support is unread"
+            }
+        )));
+        vec![input(
+            None,
+            native.unwrap_or_else(|| Selection {
+                at: unlinked(targets, feature),
+                picks: Picks::Unread,
+                native: None,
+            }),
+        )]
     };
     let Some(shapes) = links
         .iter()
         .map(|link| read(link, Reading::Shape))
         .collect::<Option<Vec<_>>>()
     else {
-        losses.push(FreecadLossCode::DesignSketchSupportUnread.note(format!(
-            "sketch {} is attached to an object that no design record restates; its support is unread",
-            record.id
-        )));
-        return vec![input(None, unread())];
+        return native(losses);
     };
     let typed =
         match (mode, links) {
@@ -1600,20 +1741,21 @@ fn support(
                         whole(Relation::Coincident, shapes[1].clone()),
                     ]
                 }),
-            ("Folding", [_, _, _, _]) => picks(targets, links, anchor, Reading::Shape)
+            ("Folding", [_, _, _, _]) => picks(targets, feature, links, Reading::Shape)
                 .map(|selection| vec![whole(Relation::Fold, selection)]),
             _ => None,
         };
-    typed.unwrap_or_else(|| {
-        losses.push(FreecadLossCode::DesignSketchSupportUnread.note(format!(
-            "sketch {} is attached in mode {mode}, which no input role of its references states; its support input has no role",
-            record.id
-        )));
-        vec![input(
-            None,
-            picks(targets, links, anchor, Reading::Shape).unwrap_or_else(unread),
-        )]
-    })
+    if let Some(typed) = typed {
+        return typed;
+    }
+    let Some(selection) = picks(targets, feature, links, Reading::Shape) else {
+        return native(losses);
+    };
+    losses.push(FreecadLossCode::DesignSketchSupportUnread.note(format!(
+        "sketch {} is attached in mode {mode}, which no input role of its references states; its support input has no role",
+        record.id
+    )));
+    vec![input(None, selection)]
 }
 
 /// The parameters that bind the components of a sketch's `AttachmentOffset`
@@ -1651,11 +1793,16 @@ fn offset_bindings(
                 .values()
                 .iter()
                 .filter(|value| value.tag == "Expression")
-                .filter_map(|value| value.attributes.get("path"))
-                .filter_map(|path| {
+                .filter_map(|value| {
+                    let path = value.attributes.get("path")?;
                     let component = path.strip_prefix(".AttachmentOffset")?;
-                    (component.is_empty() || component.starts_with('.'))
-                        .then(|| (path.as_str(), component.trim_start_matches('.')))
+                    (component.is_empty() || component.starts_with('.')).then(|| {
+                        (
+                            path.as_str(),
+                            component.trim_start_matches('.'),
+                            value.attributes.get("expression").map(String::as_str),
+                        )
+                    })
                 })
                 .collect::<Vec<_>>()
         })
@@ -1674,7 +1821,7 @@ fn offset_bindings(
     let mut unbound = Vec::new();
     let rotations = paths
         .iter()
-        .map(|(_, component)| *component)
+        .map(|(_, component, _)| *component)
         .filter(|component| component.starts_with("Rotation"))
         .collect::<Vec<_>>();
     let euler = rotations.iter().all(|component| {
@@ -1694,7 +1841,7 @@ fn offset_bindings(
             }),
         _ => None,
     };
-    for (path, component) in &paths {
+    for (path, component, expression) in &paths {
         let slot = match *component {
             "Base.x" => Some(&mut bindings.base[0]),
             "Base.y" => Some(&mut bindings.base[1]),
@@ -1705,9 +1852,15 @@ fn offset_bindings(
             "Rotation.Angle" => axis.map(|axis| &mut bindings.rotation[axis]),
             _ => None,
         };
+        // The parameter of a component that no step states keeps the
+        // expression; the charge names the text of one with no parameter.
         match (slot, parameter(component)) {
             (Some(slot), Some(parameter)) => *slot = Some(parameter),
-            _ => unbound.push(*path),
+            (None, Some(parameter)) => unbound.push(format!("{path} (parameter {parameter})")),
+            (_, None) => unbound.push(match expression {
+                Some(expression) => format!("{path} = {expression}"),
+                None => (*path).to_owned(),
+            }),
         }
     }
     bindings.about_axis = axis.is_some() && bindings.rotation.iter().any(Option::is_some);

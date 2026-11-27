@@ -51,8 +51,8 @@ pub(super) fn check_caches(
     }
 }
 
-/// The parameters that every dimension binding them binds as the angle of a
-/// rotation step.
+/// The parameters that at least one dimension binds, each dimension binding
+/// them as the angle of a rotation step.
 fn rotations<'a>(held: &[Held<'a>]) -> HashSet<&'a str> {
     let mut rotation = HashMap::<&str, bool>::new();
     for dimension in held.iter().flat_map(|record| &record.dimensions) {
@@ -68,7 +68,7 @@ fn rotations<'a>(held: &[Held<'a>]) -> HashSet<&'a str> {
 /// expression depends on no measure, in its own tree or through the
 /// parameters it references; and an integer parameter's evaluated value is a
 /// whole number. A parameter that binds only rotations agrees with its
-/// expression to within a whole turn.
+/// expression modulo whole turns.
 fn check_parameter(
     index: &DesignRecords<'_>,
     parameter: &DesignParameter,

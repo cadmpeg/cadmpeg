@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::f64::consts::FRAC_PI_2;
+use std::fmt::Write as _;
 use std::io::Cursor;
 
 use cadmpeg_ir::design::construction::{
@@ -19,7 +20,9 @@ use cadmpeg_ir::design::ops::sketch::{
 use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::refs::{Member, Position};
-use cadmpeg_ir::design::selection::{Anchor, Ordered, PickTarget, Picks, PrincipalEntity};
+use cadmpeg_ir::design::selection::{
+    Anchor, Ordered, PickTarget, Picks, PrincipalEntity, Selection,
+};
 use cadmpeg_ir::sketches::SketchEntityId;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
@@ -483,20 +486,331 @@ fn attached_sketches(attached: &[(&str, &str, u32)]) -> String {
         .replace("</ObjectData>", &format!("{data}</ObjectData>"))
 }
 
+/// A document of `objects`, each `(type, name, properties)`.
+fn document(objects: &[(&str, &str, String)]) -> String {
+    let heads =
+        objects
+            .iter()
+            .enumerate()
+            .fold(String::new(), |mut out, (index, (kind, name, _))| {
+                write!(
+                    out,
+                    "\n <Object type=\"{kind}\" name=\"{name}\" id=\"{}\"/>",
+                    index + 1
+                )
+                .unwrap();
+                out
+            });
+    let data = objects
+        .iter()
+        .fold(String::new(), |mut out, (_, name, properties)| {
+            write!(
+                out,
+                "\n <Object name=\"{name}\"><Properties Count=\"{}\">{properties}</Properties></Object>",
+                properties.matches("<Property ").count()
+            ).unwrap();
+            out
+        });
+    let count = objects.len();
+    format!(
+        "<Document SchemaVersion=\"4\" FileVersion=\"1\">\n<Objects Count=\"{count}\">{heads}\n</Objects>\n<ObjectData Count=\"{count}\">{data}\n</ObjectData></Document>"
+    )
+}
+
+/// The properties of a Body of `members` whose `Tip` is the last.
+fn body(members: &[&str]) -> String {
+    let links = members.iter().fold(String::new(), |mut out, member| {
+        write!(out, r#"<Link value="{member}"/>"#).unwrap();
+        out
+    });
+    format!(
+        r#"<Property name="Group" type="App::PropertyLinkList"><LinkList count="{}">{links}</LinkList></Property><Property name="Tip" type="App::PropertyLink"><Link value="{}"/></Property>"#,
+        members.len(),
+        members.last().unwrap()
+    )
+}
+
+/// The properties of a sketch attached in `mode` to `support`, the
+/// `<Link>` elements of its support, with external geometry linking each of
+/// `externals`, an `(object, subelement)`.
+fn sketch_on(support: &str, mode: u32, externals: &[(&str, &str)]) -> String {
+    let mut properties = format!(
+        r#"<Property name="AttachmentSupport" type="App::PropertyLinkSubList"><LinkSubList count="{}">{support}</LinkSubList></Property><Property name="MapMode" type="App::PropertyEnumeration"><Integer value="{mode}"/></Property><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>"#,
+        support.matches("<Link ").count()
+    );
+    if !externals.is_empty() {
+        let links = externals
+            .iter()
+            .fold(String::new(), |mut out, (object, sub)| {
+                write!(out, r#"<Link obj="{object}" sub="{sub}"/>"#).unwrap();
+                out
+            });
+        let geometry = externals
+            .iter()
+            .enumerate()
+            .fold(String::new(), |mut out, (index, (object, sub))| {
+                write!(
+                    out,
+                    r#"<Geometry type="Part::GeomLineSegment" id="{}" ref="{object}.{sub}"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="{object}.{sub}" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="1" EndY="1"/></Geometry>"#,
+                    index + 1
+                ).unwrap();
+                out
+            });
+        write!(
+            properties,
+            r#"<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="{}">{links}</LinkSubList></Property><Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="{}"><Geometry type="Part::GeomLineSegment" id="-1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry><Geometry type="Part::GeomLineSegment" id="-2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>{geometry}</GeometryList></Property>"#,
+            externals.len(),
+            externals.len() + 2
+        ).unwrap();
+    }
+    properties
+}
+
+/// A support link to `object`, or to its subelement `sub`.
+fn link(object: &str, sub: &str) -> String {
+    format!(r#"<Link obj="{object}" sub="{sub}"/>"#)
+}
+
+/// The selection of the single support input of the sketch read from
+/// `object`.
+fn support_selection<'a>(ir: &'a CadIr, object: &str) -> &'a Selection<Ordered> {
+    let [input] = placement(ir, object).inputs.as_slice() else {
+        panic!("{:?}", placement(ir, object));
+    };
+    let Some(cadmpeg_ir::design::construction::InputReference::Picks(selection)) = &input.reference
+    else {
+        panic!("{input:?}");
+    };
+    selection
+}
+
+fn support_anchor(ir: &CadIr, object: &str) -> Anchor {
+    support_selection(ir, object).at.clone()
+}
+
+fn source_anchor(ir: &CadIr, object: &str, index: usize) -> Anchor {
+    source_selection(ir, object, index).at.clone()
+}
+
+/// The source of the external geometry `:external:index` of the sketch
+/// read from `object`.
+fn source_selection<'a>(ir: &'a CadIr, object: &str, index: usize) -> &'a Selection<Ordered> {
+    let suffix = format!("#{object}:external:{index}");
+    let entity = ir
+        .design
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id.as_str().ends_with(&suffix))
+        .unwrap_or_else(|| panic!("{suffix}: {:?}", ir.design.sketch_entities));
+    let EntityDefinition::Defined { form, .. } = &entity.definition else {
+        panic!("{entity:?}");
+    };
+    let EntityForm::Derived(derivation) = form.as_ref() else {
+        panic!("{entity:?}");
+    };
+    &derivation.source
+}
+
+fn after(object: &str) -> Anchor {
+    Anchor::Pinned(Position::After(Member::Feature(
+        cadmpeg_ir::features::FeatureId::mint(format!("fcstd:design:feature#{object}")).unwrap(),
+    )))
+}
+
 #[test]
-fn a_body_sketch_attached_to_a_later_member_reads_the_state_after_it() {
-    let document = attached_sketches(&[("Later", r#"<Link obj="XY_Plane" sub=""/>"#, 5)])
-        .replacen(
-            r#"<Link obj="XY_Plane" sub=""/>"#,
-            r#"<Link obj="Later" sub=""/>"#,
-            1,
-        )
-        .replace(
-            r#"<Property name="Tip" type="App::PropertyLink"><Link value="Sketch"/>"#,
-            r#"<Property name="Tip" type="App::PropertyLink"><Link value="Later"/>"#,
-        );
+fn a_body_sketch_attached_to_an_earlier_solid_feature_reads_the_state_after_it() {
+    // `FreeCAD` reads the Pad's shape, the Body's state after the Pad, not
+    // the state entering the sketch, which a Pocket between them changes.
+    let ir = decode(&document(&[
+        (
+            "PartDesign::Body",
+            "Body",
+            body(&["Pad", "Pocket", "Sketch"]),
+        ),
+        ("PartDesign::Pad", "Pad", String::new()),
+        ("PartDesign::Pocket", "Pocket", String::new()),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(&link("Pad", "Face1"), 5, &[]),
+        ),
+    ]));
+    assert_eq!(support_anchor(&ir, "Sketch"), after("Pad"));
+}
+
+#[test]
+fn a_body_sketch_reads_an_earlier_stateless_member_at_its_input_and_a_later_one_natively() {
+    // A sketch has no state of its own (§5.4). The Body lists `Later` after
+    // the sketch, and `FreeCAD` computes it first; every state that holds
+    // `Later` holds the sketch, so no design pick restates it.
+    let ir = decode(&document(&[
+        (
+            "PartDesign::Body",
+            "Body",
+            body(&["Base", "Sketch", "Later"]),
+        ),
+        ("Sketcher::SketchObject", "Base", sketch_on("", 0, &[])),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(&link("Later", ""), 5, &[("Base", "Edge1")]),
+        ),
+        ("Sketcher::SketchObject", "Later", sketch_on("", 0, &[])),
+    ]));
+    assert_eq!(
+        native_paths(&support_selection(&ir, "Sketch").picks),
+        ["Later"]
+    );
+    assert_eq!(support_anchor(&ir, "Sketch"), Anchor::Input);
+    assert_eq!(source_anchor(&ir, "Sketch", 0), Anchor::Input);
+}
+
+#[test]
+fn a_body_sketch_attached_to_a_later_solid_feature_picks_it_by_native_name() {
+    let document = document(&[
+        ("PartDesign::Body", "Body", body(&["Sketch", "Pad"])),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(&link("Pad", "Face1"), 5, &[]),
+        ),
+        ("PartDesign::Pad", "Pad", String::new()),
+    ]);
     let ir = decode(&document);
-    let later = cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Later").unwrap();
+    assert_eq!(
+        native_paths(&support_selection(&ir, "Sketch").picks),
+        ["Pad.Face1"]
+    );
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchSupportUnread,
+        "its support is the native pick of each reference"
+    ));
+}
+
+#[test]
+fn a_sketch_attached_into_another_body_reads_the_state_after_its_target() {
+    // As the spec reads a binder's source, a feature of another Body is
+    // read after itself, stateless or not.
+    let ir = decode(&document(&[
+        ("PartDesign::Body", "Body", body(&["Base", "Pad"])),
+        ("Sketcher::SketchObject", "Base", sketch_on("", 0, &[])),
+        ("PartDesign::Pad", "Pad", String::new()),
+        ("PartDesign::Body", "Body001", body(&["Sketch"])),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(&link("Pad", "Face1"), 5, &[("Base", "Edge1")]),
+        ),
+    ]));
+    assert_eq!(support_anchor(&ir, "Sketch"), after("Pad"));
+    assert_eq!(source_anchor(&ir, "Sketch", 0), after("Base"));
+}
+
+#[test]
+fn a_body_sketch_attached_to_a_group_member_reads_its_result() {
+    // A member of the `Group` with a shape of its own is read as that
+    // result (§5.3); a stateless one has none, and no state holds it.
+    let ir = decode(&document(&[
+        ("PartDesign::Body", "Body", body(&["Sketch"])),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(&link("Block", "Face1"), 5, &[("Loose", "Edge1")]),
+        ),
+        ("Part::Box", "Block", String::new()),
+        ("Sketcher::SketchObject", "Loose", sketch_on("", 0, &[])),
+    ]));
+    assert_eq!(support_anchor(&ir, "Sketch"), after("Block"));
+    assert_eq!(
+        native_paths(&source_selection(&ir, "Sketch", 0).picks),
+        ["Loose.Edge1"]
+    );
+}
+
+#[test]
+fn a_group_sketch_reads_the_result_of_the_one_group_member_it_picks() {
+    // §5.8: an operand that picks only the result of another member `m` of
+    // the same unordered container is anchored after `m`; a stateless
+    // member, or a member of a Body, is read in the current geometry.
+    let ir = decode(&document(&[
+        ("PartDesign::Body", "Body", body(&["Pad"])),
+        ("PartDesign::Pad", "Pad", String::new()),
+        ("Part::Box", "Block", String::new()),
+        ("Sketcher::SketchObject", "Loose", sketch_on("", 0, &[])),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(
+                &link("Block", "Face1"),
+                5,
+                &[("Loose", "Edge1"), ("Pad", "Edge1")],
+            ),
+        ),
+    ]));
+    assert_eq!(support_anchor(&ir, "Sketch"), after("Block"));
+    assert_eq!(source_anchor(&ir, "Sketch", 0), Anchor::Current);
+    assert_eq!(source_anchor(&ir, "Sketch", 1), Anchor::Current);
+}
+
+#[test]
+fn a_deactivated_attachment_decides_no_anchor() {
+    // The support of a deactivated sketch states no input, so it does not
+    // pin the external geometry to the state after the Pad.
+    let ir = decode(&document(&[
+        ("PartDesign::Body", "Body", body(&["Base", "Sketch", "Pad"])),
+        ("Sketcher::SketchObject", "Base", sketch_on("", 0, &[])),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(&link("Pad", "Face1"), 0, &[("Base", "Edge1")]),
+        ),
+        ("PartDesign::Pad", "Pad", String::new()),
+    ]));
+    assert!(placement(&ir, "Sketch").inputs.is_empty());
+    assert_eq!(source_anchor(&ir, "Sketch", 0), Anchor::Input);
+}
+
+#[test]
+fn sketches_attached_to_each_other_keep_their_native_definitions() {
+    // The decoder keeps each object of a dependency cycle as its native
+    // definition, so neither is a sketch record whose picks could close the
+    // cycle; the validator's Warning for a cycle of picks is the design
+    // layer's own (§5.3).
+    let ir = decode(&document(&[
+        (
+            "Sketcher::SketchObject",
+            "First",
+            sketch_on(&link("Second", ""), 5, &[]),
+        ),
+        (
+            "Sketcher::SketchObject",
+            "Second",
+            sketch_on(&link("First", ""), 5, &[]),
+        ),
+    ]));
+    assert!(ir.design.sketches.is_empty(), "{:?}", ir.design.sketches);
+}
+
+#[test]
+fn a_sketch_attached_to_an_app_link_picks_it_by_native_name() {
+    // An `App::Link` places an occurrence and has no result of its own
+    // (§5.3), so no design pick restates it.
+    let document = document(&[
+        ("PartDesign::Body", "Body", body(&["Sketch"])),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(&link("Instance", "Face1"), 5, &[("Instance", "Edge1")]),
+        ),
+        ("Part::Feature", "Prototype", String::new()),
+        (
+            "App::Link",
+            "Instance",
+            r#"<Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>"#.to_owned(),
+        ),
+    ]);
+    let ir = decode(&document);
     let [input] = placement(&ir, "Sketch").inputs.as_slice() else {
         panic!("{:?}", placement(&ir, "Sketch"));
     };
@@ -504,18 +818,13 @@ fn a_body_sketch_attached_to_a_later_member_reads_the_state_after_it() {
     else {
         panic!("{input:?}");
     };
-    assert_eq!(
-        selection.at,
-        Anchor::Pinned(Position::After(Member::Feature(later)))
-    );
-    let [input] = placement(&ir, "Later").inputs.as_slice() else {
-        panic!("{:?}", placement(&ir, "Later"));
-    };
-    let Some(cadmpeg_ir::design::construction::InputReference::Picks(selection)) = &input.reference
-    else {
-        panic!("{input:?}");
-    };
-    assert_eq!(selection.at, Anchor::Input);
+    assert_eq!(native_paths(&selection.picks), ["Instance.Face1"]);
+    assert_eq!(source_anchor(&ir, "Sketch", 0), Anchor::Input);
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchSupportUnread,
+        "its support is the native pick of each reference"
+    ));
 }
 
 #[test]
@@ -1066,7 +1375,7 @@ fn an_offset_axis_an_expression_binds_stays_its_stored_value() {
     assert!(charges(
         &document,
         crate::loss::FreecadLossCode::DesignSketchOffsetUnbound,
-        ".AttachmentOffset.Rotation.Axis.x"
+        ".AttachmentOffset.Rotation.Axis.x = 0"
     ));
 }
 
@@ -1142,5 +1451,48 @@ fn a_dimension_that_stores_no_value_names_the_missing_value() {
         &document,
         crate::loss::FreecadLossCode::DesignSketchRelationNative,
         "fcstd:design:sketch-constraint#Sketch:8 stores no readable Value"
+    ));
+}
+
+#[test]
+fn a_named_internal_alignment_is_stated_once() {
+    let document = BODY_SKETCH
+        .replace(r#"<GeometryList count="3">"#, r#"<GeometryList count="5">"#)
+        .replace(
+            "</GeometryList>",
+            r#"<Geometry type="Part::GeomEllipse"><Ellipse CenterX="20" CenterY="0" MajorRadius="4" MinorRadius="2" MajorAxisX="1" MajorAxisY="0"/><Construction value="0"/></Geometry>
+   <Geometry type="Part::GeomLineSegment"><LineSegment StartX="16" StartY="0" EndX="24" EndY="0"/><Construction value="1"/></Geometry>
+  </GeometryList>"#,
+        )
+        .replace(r#"<ConstraintList count="7">"#, r#"<ConstraintList count="8">"#)
+        .replace(
+            "</ConstraintList>",
+            r#"<Constrain Name="axis" Type="15" First="4" FirstPos="0" Second="3" SecondPos="0" InternalAlignmentType="1"/></ConstraintList>"#,
+        );
+    let ir = decode(&document);
+    assert!(entity(&ir, "5").roles.is_empty(), "{:?}", entity(&ir, "5"));
+    let constraint = ir
+        .design
+        .sketch_constraints
+        .iter()
+        .find(|constraint| matches!(&constraint.relation, SketchRelation::Native { kind, .. } if kind.as_str() == "fcstd:internal_alignment"))
+        .unwrap_or_else(|| panic!("{:?}", relations(&ir)));
+    assert_eq!(constraint.name.as_deref(), Some("axis"));
+}
+
+#[test]
+fn an_operand_that_names_no_geometry_is_charged() {
+    // Type 16 (Snell's law) has no typed relation and is stated natively
+    // without a charge; GeoId 9 names no geometry of the sketch.
+    let document = BODY_SKETCH
+        .replace(r#"<ConstraintList count="7">"#, r#"<ConstraintList count="8">"#)
+        .replace(
+            "</ConstraintList>",
+            r#"<Constrain Name="" Type="16" First="0" FirstPos="2" Second="9" SecondPos="1" Third="1" ThirdPos="0" Value="1.5"/></ConstraintList>"#,
+        );
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchRelationNative,
+        "fcstd:design:sketch-constraint#Sketch:8 names GeoId 9 at PointPos 1"
     ));
 }
