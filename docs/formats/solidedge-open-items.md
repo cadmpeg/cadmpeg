@@ -48,14 +48,6 @@
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 
-### DR-1016. Feature navigator final word after suppression
-
-**Question.** Which state raises the final word of the feature navigator object above the number of feature-tree items that are not folders, plus one, and by how much?
-
-**Known.** The word is that number plus one in every document without a suppressed feature. Suppressing an extruded cutout raises it by 2, and suppressing a mirror copy raises it by 1. Suppressing a pattern does not raise it.
-
-**Need.** Documents that differ in one suppression, with the final word read before and after each change.
-
 ### DR-1021. Topology proxy selections
 
 **Question.** Which faces does a `CLSID_JMTopologyProxy` object select, how does an edge proxy select a curved edge, what do the `f64` values after the axis of a circular-edge proxy store, which face of a two-setback chamfer is its reference face, where does a thin wall with several open faces store the faces after the first, and how does a proxy name the topology of its creating feature?
@@ -95,14 +87,6 @@
 **Known.** The bend method selects the variable and a flange can hold its own method and values (§10.3). The method and the three values do not depend on the flange angle.
 
 **Need.** The flat pattern of the same flanges under each bend method, at two flange angles.
-
-### DR-1073. Offset end of extent kind 138
-
-**Question.** From which end of the edge does the offset of extent kind `138` (§10.3) count, and do the bend method, bend deduction and bend allowance slots lie 44 bytes later than for the extent kind `134`, as they do for extent kind `140`?
-
-**Known.** The offset and the width are two `CLSID_JDim` slots at offsets 492 and 512. The relief type is at offset 540. The offset equals the remaining edge length less the width in every stored flange of this kind, so both ends have the same setback.
-
-**Need.** A flange of extent kind `138` whose offset differs from the remaining edge length less the width, on an edge of known direction.
 
 ### DR-1034. Flange constants and options
 
