@@ -2769,13 +2769,14 @@ fn scan_site(
     let mut entity_streams = Vec::new();
     for (payload, header) in &ordered {
         let body = header_body(payload, header)?;
-        entity_streams.push((body, is_deltas_stream(header)));
+        entity_streams.push(topology::ScopedBody::new(body, is_deltas_stream(header)));
     }
     let framed: Vec<_> = ordered
         .iter()
         .zip(&entity_streams)
-        .map(|((payload, _), (_, prefixed))| {
-            prefixed
+        .map(|((payload, _), stream)| {
+            stream
+                .prefixed
                 .then(|| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
                 .flatten()
         })
@@ -2800,10 +2801,10 @@ fn scan_site(
     let mut deltas_typed = Vec::new();
     let mut deltas_blends = Vec::new();
     let mut mesh_bodies = HashSet::new();
-    for (((payload, header), (body, prefixed)), deltas) in
+    for (((payload, header), stream), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
-        let node_stream = (!prefixed)
+        let node_stream = (!stream.prefixed)
             .then(|| topology::nodes::sequence(payload))
             .flatten()
             .and_then(|records| {
@@ -2890,12 +2891,12 @@ fn scan_site(
             deltas_blends.push(None);
         } else if let Some((facts, tables, carriers, blends)) = deltas_stream {
             deltas_blends.push(blends);
-            typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            typed_streams.push(typed::scan_with_payload_exclusions(stream));
             deltas_typed.push(Some(facts));
             node_attributes.push((None, None));
             node_tables.push(Some((tables, Some(carriers))));
         } else {
-            typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            typed_streams.push(typed::scan_with_payload_exclusions(stream));
             node_attributes.push((None, None));
             node_tables.push(None);
             deltas_typed.push(None);
@@ -2907,10 +2908,10 @@ fn scan_site(
     let deltas_from_nodes = entity_streams
         .iter()
         .zip(&node_tables)
-        .all(|((_, prefixed), tables)| !prefixed || tables.is_some());
+        .all(|(stream, tables)| !stream.prefixed || tables.is_some());
     if !deltas_from_nodes {
-        for ((_, prefixed), tables) in entity_streams.iter().zip(&mut node_tables) {
-            if *prefixed {
+        for (stream, tables) in entity_streams.iter().zip(&mut node_tables) {
+            if stream.prefixed {
                 *tables = None;
             }
         }
@@ -2919,8 +2920,8 @@ fn scan_site(
     // it: Deltas streams retain historical versions of the current nodes.
     if deltas_from_nodes {
         let mut partition = typed::Facts::default();
-        for (facts, (_, prefixed)) in typed_streams.iter().zip(&entity_streams) {
-            if !prefixed {
+        for (facts, stream) in typed_streams.iter().zip(&entity_streams) {
+            if !stream.prefixed {
                 partition.merge_missing(facts.clone());
             }
         }
@@ -2941,14 +2942,15 @@ fn scan_site(
         let scanned = incomplete_deltas_identities(
             ctx,
             &ordered,
+            &entity_streams,
             &deltas_records,
             &typed_streams,
             &node_tables,
             &conflicted,
         )?;
         conflicted.extend(unframed_shared(&entity_streams, &framed, scanned));
-        for (facts, (_, prefixed)) in typed_streams.iter_mut().zip(&entity_streams) {
-            if *prefixed {
+        for (facts, stream) in typed_streams.iter_mut().zip(&entity_streams) {
+            if stream.prefixed {
                 *facts = std::mem::take(facts).without(&conflicted);
             }
         }
@@ -2971,12 +2973,12 @@ fn scan_site(
     let mut deltas_edges = HashMap::<u32, Vec<u32>>::new();
     let mut deltas_bridges = Vec::new();
     let mut partition_bridges = 0;
-    for (entry, (_, prefixed)) in node_tables.iter().zip(&entity_streams) {
+    for (entry, stream) in node_tables.iter().zip(&entity_streams) {
         let Some((tables, carriers)) = entry else {
             continue;
         };
         let references = carriers.iter().flat_map(NodeCarriers::reference_edges);
-        if *prefixed {
+        if stream.prefixed {
             deltas_bridges.extend(tables.bridges().values().map(|bridge| bridge.refs[4]));
             for (from, to) in references {
                 deltas_edges.entry(from).or_default().push(to);
@@ -3098,7 +3100,7 @@ struct SiteEvidence {
 
 impl SiteEvidence {
     fn of(
-        entity_streams: &[(&[u8], bool)],
+        entity_streams: &[topology::ScopedBody<'_>],
         typed_streams: &[typed::Facts],
         plain_streams: impl Iterator<Item = bool>,
     ) -> Self {
@@ -3110,15 +3112,13 @@ impl SiteEvidence {
             entity_streams
                 .iter()
                 .zip(typed_streams)
-                .map(|((body, deltas), facts)| (facts, *body, *deltas)),
+                .map(|(stream, facts)| (facts, stream)),
         );
         let bridge_attrs = typed.valid_ownership_face_attrs();
         let looped_bridge_attrs = entity_streams
             .iter()
             .zip(plain_streams)
-            .flat_map(|((body, deltas), plain)| {
-                topology::framed_looped_bridge_attrs(body, *deltas, plain)
-            })
+            .flat_map(|(stream, plain)| topology::framed_looped_bridge_attrs(stream, plain))
             .collect();
         Self {
             typed,
@@ -3212,6 +3212,7 @@ fn stream_topology(
 fn incomplete_deltas_identities(
     ctx: &DecodeContext<'_>,
     ordered: &[&(&[u8], &StreamHeader)],
+    entity_streams: &[topology::ScopedBody<'_>],
     complete: &[Option<&cadmpeg_parasolid::records::DeltasRecords<'_>>],
     typed_streams: &[typed::Facts],
     node_tables: &[Option<(topology::Tables, Option<NodeCarriers>)>],
@@ -3223,12 +3224,8 @@ fn incomplete_deltas_identities(
     let Some(last) = ordered.iter().zip(complete).rposition(incomplete) else {
         return Ok(vec![HashSet::new(); ordered.len()]);
     };
-    let mut entity_streams = Vec::new();
-    for (payload, header) in ordered {
-        entity_streams.push((header_body(payload, header)?, is_deltas_stream(header)));
-    }
     let evidence = SiteEvidence::of(
-        &entity_streams,
+        entity_streams,
         typed_streams,
         ordered.iter().map(|(_, header)| {
             !is_deltas_stream(header) && !crate::parasolid::is_body_stream(header)
@@ -3246,7 +3243,7 @@ fn incomplete_deltas_identities(
         .enumerate()
         .take(last + 1)
     {
-        let (body, is_deltas) = entity_streams[index];
+        let (body, is_deltas) = (entity_streams[index].body, entity_streams[index].prefixed);
         let (node_tables, node_carriers) = node.clone().unzip();
         let exclude = if is_deltas { exclude } else { &no_conflicts };
         let stream_carriers =
@@ -3282,14 +3279,14 @@ fn incomplete_deltas_identities(
 /// versions establishes their agreement. `scanned` holds the identities of
 /// each incomplete Deltas stream.
 fn unframed_shared(
-    entity_streams: &[(&[u8], bool)],
+    entity_streams: &[topology::ScopedBody<'_>],
     framed: &[Option<cadmpeg_parasolid::records::DeltasRecords<'_>>],
     scanned: Vec<HashSet<u32>>,
 ) -> HashSet<u32> {
     let mut streams = HashMap::<u32, usize>::new();
     let mut unframed = HashSet::new();
-    for (((_, prefixed), framed), scanned) in entity_streams.iter().zip(framed).zip(scanned) {
-        if !prefixed {
+    for ((stream, framed), scanned) in entity_streams.iter().zip(framed).zip(scanned) {
+        if !stream.prefixed {
             continue;
         }
         let mut identities: HashSet<u32> = framed
@@ -3317,8 +3314,9 @@ fn decode_body(
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     let mut carriers = scan_carriers_for_role(ctx, body, deltas, &HashSet::new())?;
     let curve_attrs = carriers.curve_attrs();
-    let typed_facts = typed::scan(body);
-    let owner_attrs = typed::topology_owner_attrs_for_streams([(&typed_facts, body, false)]);
+    let scoped = topology::ScopedBody::new(body, false);
+    let typed_facts = typed::scan_with_payload_exclusions(&scoped);
+    let owner_attrs = typed::topology_owner_attrs_for_streams([(&typed_facts, &scoped)]);
     let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
     let typed_face_offsets = typed_facts.selected_face_offsets(typed_face_attrs.as_ref());
     let t = topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs);

@@ -156,7 +156,7 @@ pub(crate) enum DesignWorkPointInputCarrier {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DesignWorkPointInputCarrierWire {
     EdgeRecipe {
@@ -612,7 +612,7 @@ fn validate_three_point_resolutions(
 /// the native JSON, keeping room for the other `WorkPlane` constructions
 /// Fusion authors, and — unlike an internally tagged struct, which ignores
 /// the tag field — it rejects any other `kind` on deserialization.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DesignWorkPlaneConstructionWire {
     ThreePoint {
@@ -1086,7 +1086,7 @@ impl TryFrom<DesignWorkPointRuleForm> for DesignWorkPointRule {
 }
 
 /// Construction rule and exact input arity carried by a `WorkPoint` point-data record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignWorkPointRuleForm {
     /// Center of one selected circular edge.

@@ -142,7 +142,7 @@ fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(
 }
 
 /// Selection carrier used by a compact Coil placement.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignCoilSelection {
     /// Nested entity-selection frame with one or two persistent identities.

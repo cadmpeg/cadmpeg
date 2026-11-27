@@ -16,7 +16,7 @@ pub(crate) struct Entry {
     pub(crate) value: Value,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", content = "value", rename_all = "snake_case")]
 pub(crate) enum Value {
     Identifier1(NativeBytes<[u8; 16]>),

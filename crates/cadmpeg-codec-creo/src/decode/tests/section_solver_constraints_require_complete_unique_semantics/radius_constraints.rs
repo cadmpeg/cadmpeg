@@ -25,6 +25,7 @@ fn section_solver_equal_radius_requires_active_agreeing_sources() {
         });
     equal_radius_definition.variables = Some(with_points(
         crate::feature::definitions::FeatureVariableTable {
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
@@ -637,6 +638,7 @@ fn section_solver_radius_dimensions_require_circular_unique_semantics() {
         .rows
         .edit_ordinary(|rows| rows[0].vertical_horizontal = Some(1));
     relation.triples = Some(crate::feature::definitions::SolverSubtable::Declared {
+        rows_end: None,
         header: crate::feature::definitions::FeatureSolverTableHeader {
             declared_count: 1,
             entity_ref: 2,
