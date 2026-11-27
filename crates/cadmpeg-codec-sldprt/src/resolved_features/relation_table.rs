@@ -113,10 +113,7 @@ fn marker_offsets(payload: &[u8]) -> Vec<usize> {
     let finder = memchr::memmem::Finder::new(&[0xff, 0xff]);
     let mut out = Vec::new();
     let mut offset = 0;
-    while let Some(found) = payload
-        .get(offset..)
-        .and_then(|rest| finder.find(rest))
-    {
+    while let Some(found) = payload.get(offset..).and_then(|rest| finder.find(rest)) {
         let at = offset + found;
         if marker_at(payload, at) {
             out.push(at);
@@ -1103,7 +1100,13 @@ pub(super) fn project_relation_tables(
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) {
-    project_relation_tables_with_cache(None, constraints, sketches_by_feature, sketch_entities, lanes);
+    project_relation_tables_with_cache(
+        None,
+        constraints,
+        sketches_by_feature,
+        sketch_entities,
+        lanes,
+    );
 }
 
 pub(super) fn project_relation_tables_with_cache(

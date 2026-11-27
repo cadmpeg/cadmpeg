@@ -2600,6 +2600,7 @@ fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
 
 const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = minimal_plane::LEN;
 const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
+const COMPACT_FRAME_PREFILTER_MARGIN: f64 = 1.0e-6;
 const ANGLED_REFERENCE_PLANE_FRAME_LEN: usize = 121;
 const REFERENCE_PLANE_FRAME_TOLERANCE: f64 = 1.0e-9;
 
@@ -3247,7 +3248,9 @@ fn compact_reference_plane_frame_candidates(
                     scalar(bytes, 16)? * NATIVE_TO_IR,
                 );
                 let normal_xy = scalar(bytes, 24).zip(scalar(bytes, 32))?;
-                if normal_xy.0.abs() > 1.0 + 1.0e-6 || normal_xy.1.abs() > 1.0 + 1.0e-6 {
+                if normal_xy.0.abs() > 1.0 + COMPACT_FRAME_PREFILTER_MARGIN
+                    || normal_xy.1.abs() > 1.0 + COMPACT_FRAME_PREFILTER_MARGIN
+                {
                     return None;
                 }
                 let u_axis =
@@ -3270,9 +3273,9 @@ fn compact_reference_plane_frame_candidates(
                         u_axis.x * v_axis.x + u_axis.y * v_axis.y + u_axis.z * v_axis.z;
                     let approx_nx = u_axis.y * v_axis.z - u_axis.z * v_axis.y;
                     let approx_ny = u_axis.z * v_axis.x - u_axis.x * v_axis.z;
-                    if approx_dot.abs() > 1.0e-6
-                        || (approx_nx - normal_xy.0).abs() > 1.0e-6
-                        || (approx_ny - normal_xy.1).abs() > 1.0e-6
+                    if approx_dot.abs() > COMPACT_FRAME_PREFILTER_MARGIN
+                        || (approx_nx - normal_xy.0).abs() > COMPACT_FRAME_PREFILTER_MARGIN
+                        || (approx_ny - normal_xy.1).abs() > COMPACT_FRAME_PREFILTER_MARGIN
                     {
                         return None;
                     }

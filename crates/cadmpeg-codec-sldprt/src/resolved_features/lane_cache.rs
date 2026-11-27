@@ -143,7 +143,9 @@ impl<'a> CachedLane<'a> {
             .native_payload
             .get(start..end)
             .and_then(|object| explicit_reference_plane_frame(object).ok().flatten());
-        self.explicit_frames.borrow_mut().insert((start, end), frame);
+        self.explicit_frames
+            .borrow_mut()
+            .insert((start, end), frame);
         frame
     }
 }
@@ -170,4 +172,19 @@ impl<'a> LaneScanCache<'a> {
             .get(&std::ptr::from_ref(lane).addr())
             .and_then(|&index| self.entries.get(index))
     }
+}
+
+/// Optional per-pass lane scan cache and precomputed datum plane frames.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct CachedLaneContext<'cache, 'frames> {
+    pub(crate) cache: Option<&'cache LaneScanCache<'cache>>,
+    pub(crate) plane_frames:
+        Option<&'frames HashMap<usize, HashMap<u32, super::curves::SketchPlaneFrame>>>,
+}
+
+/// Feature input lanes paired with optional cached scans and plane frames.
+#[derive(Clone, Copy)]
+pub(crate) struct CachedLanes<'lanes, 'cache, 'frames> {
+    pub(crate) lanes: &'lanes [FeatureInputLane],
+    pub(crate) context: CachedLaneContext<'cache, 'frames>,
 }

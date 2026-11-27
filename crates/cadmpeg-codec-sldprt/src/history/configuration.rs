@@ -683,24 +683,24 @@ pub(crate) fn project_configuration_sketch_states(
     cadmpeg_core::CodecError,
 > {
     project_configuration_sketch_states_with_cache(
-        None,
         ctx,
         ir,
         histories,
-        lanes,
+        crate::resolved_features::lane_cache::CachedLanes {
+            lanes,
+            context: crate::resolved_features::lane_cache::CachedLaneContext::default(),
+        },
         exact,
         annotations,
         plane_bindings,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn project_configuration_sketch_states_with_cache(
-    cache: Option<&crate::resolved_features::lane_cache::LaneScanCache<'_>>,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
-    lanes: &[crate::records::FeatureInputLane],
+    input_lanes: crate::resolved_features::lane_cache::CachedLanes<'_, '_, '_>,
     exact: &crate::resolved_features::profiles::ExactProfiles,
     annotations: &mut cadmpeg_ir::Annotations,
     plane_bindings: &mut crate::resolved_features::compact_reference_planes::PlaneBindings,
@@ -711,6 +711,8 @@ pub(crate) fn project_configuration_sketch_states_with_cache(
     ),
     cadmpeg_core::CodecError,
 > {
+    let lanes = input_lanes.lanes;
+    let cache = input_lanes.context.cache;
     let mut losses = Vec::new();
     let mut relation_points =
         crate::resolved_features::relation_geometry::RelationPointNotes::default();
@@ -827,24 +829,29 @@ pub(crate) fn project_configuration_sketch_states_with_cache(
                     &scoped_lanes[0],
                 ),
             )]);
+            let cached_context = crate::resolved_features::lane_cache::CachedLaneContext {
+                cache,
+                plane_frames: Some(&shared_plane_frames),
+            };
+            let scoped_cached_lanes = crate::resolved_features::lane_cache::CachedLanes {
+                lanes: scoped_lanes,
+                context: cached_context,
+            };
             plane_bindings.extend(
                 crate::resolved_features::profiles::project_compact_sketch_profiles_with_cache(
-                    cache,
-                    Some(&shared_plane_frames),
                     ctx,
                     &mut features,
                     &mut ir.model.sketches,
                     &mut ir.model.sketch_entities,
                     histories,
-                    scoped_lanes,
+                    scoped_cached_lanes,
                     &mut losses,
                 )?,
             );
             let mut held_handles = held_handles;
             plane_bindings.extend(
                 crate::resolved_features::profiles::project_marker_backed_sketches_with_cache(
-                    cache,
-                    Some(&shared_plane_frames),
+                    cached_context,
                     ctx,
                     &mut features,
                     &mut ir.model.sketches,
@@ -976,8 +983,6 @@ pub(crate) fn project_configuration_sketch_states_with_cache(
                 },
             )?;
             crate::resolved_features::holes::project_hole_axes_with_cache(
-                cache,
-                Some(&shared_plane_frames),
                 ctx,
                 &mut features,
                 &ir.model.sketch_entities,
@@ -991,17 +996,16 @@ pub(crate) fn project_configuration_sketch_states_with_cache(
                     points: &ir.geometry.points,
                 },
                 histories,
-                scoped_lanes,
+                scoped_cached_lanes,
             )?;
             crate::resolved_features::relation_geometry::project_relation_bindings_with_cache(
-                cache,
                 ctx,
                 &mut ir.model.sketch_constraints,
                 &ir.model.sketches,
                 &features,
                 &ir.model.sketch_entities,
                 &parameters,
-                scoped_lanes,
+                scoped_cached_lanes,
             )?;
             crate::resolved_features::sweeps::bind(
                 &mut features,

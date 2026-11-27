@@ -569,32 +569,33 @@ pub(crate) fn project_compact_sketch_profiles(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<PlaneBindings, CodecError> {
     project_compact_sketch_profiles_with_cache(
-        None,
-        None,
         ctx,
         features,
         sketches,
         sketch_entities,
         histories,
-        lanes,
+        super::lane_cache::CachedLanes {
+            lanes,
+            context: super::lane_cache::CachedLaneContext::default(),
+        },
         losses,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn project_compact_sketch_profiles_with_cache(
-    cache: Option<&super::lane_cache::LaneScanCache<'_>>,
-    shared_plane_frames: Option<&HashMap<usize, HashMap<u32, super::curves::SketchPlaneFrame>>>,
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    input_lanes: super::lane_cache::CachedLanes<'_, '_, '_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<PlaneBindings, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let lanes = input_lanes.lanes;
+    let cache = input_lanes.context.cache;
+    let shared_plane_frames = input_lanes.context.plane_frames;
     let mut plane_bindings = PlaneBindings::default();
     let metadata_ids = history_metadata_ids(histories);
 
@@ -1519,14 +1520,18 @@ pub(crate) fn project_marker_backed_sketches(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<PlaneBindings, CodecError> {
     project_marker_backed_sketches_with_cache(
-        None, None, ctx, features, sketches, entities, sources, losses,
+        super::lane_cache::CachedLaneContext::default(),
+        ctx,
+        features,
+        sketches,
+        entities,
+        sources,
+        losses,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn project_marker_backed_sketches_with_cache(
-    cache: Option<&super::lane_cache::LaneScanCache<'_>>,
-    shared_plane_frames: Option<&HashMap<usize, HashMap<u32, super::curves::SketchPlaneFrame>>>,
+    cached_context: super::lane_cache::CachedLaneContext<'_, '_>,
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
@@ -1536,6 +1541,8 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
 ) -> Result<PlaneBindings, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let cache = cached_context.cache;
+    let shared_plane_frames = cached_context.plane_frames;
     let mut plane_bindings = PlaneBindings::default();
     let MarkerSketchEntities {
         projected: sketch_entities,
@@ -1580,12 +1587,17 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
         lanes,
     );
     project_detached_legacy_config_sketches_with_cache(
-        cache,
         features,
         sketches,
         sketch_entities,
         &native_features,
-        lanes,
+        super::lane_cache::CachedLanes {
+            lanes,
+            context: super::lane_cache::CachedLaneContext {
+                cache,
+                plane_frames: None,
+            },
+        },
         &feature_frames,
         &mut plane_bindings,
     );
@@ -3811,30 +3823,32 @@ fn project_detached_legacy_config_sketches(
     plane_bindings: &mut PlaneBindings,
 ) {
     project_detached_legacy_config_sketches_with_cache(
-        None,
         features,
         sketches,
         sketch_entities,
         native_features,
-        lanes,
+        super::lane_cache::CachedLanes {
+            lanes,
+            context: super::lane_cache::CachedLaneContext::default(),
+        },
         feature_frames,
         plane_bindings,
     );
 }
 
-#[allow(clippy::too_many_arguments)]
 fn project_detached_legacy_config_sketches_with_cache(
-    cache: Option<&super::lane_cache::LaneScanCache<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
     native_features: &crate::records::HistoryFeatures<'_>,
-    lanes: &[FeatureInputLane],
+    input_lanes: super::lane_cache::CachedLanes<'_, '_, '_>,
     feature_frames: &HashMap<String, SupportFrame>,
     plane_bindings: &mut PlaneBindings,
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let lanes = input_lanes.lanes;
+    let cache = input_lanes.context.cache;
 
     for lane in lanes
         .iter()

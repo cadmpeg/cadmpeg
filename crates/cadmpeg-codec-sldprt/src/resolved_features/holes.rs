@@ -3034,28 +3034,29 @@ pub(crate) fn project_hole_axes(
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
     project_hole_axes_with_cache(
-        None,
-        None,
         ctx,
         model_features,
         sketch_entities,
         topology,
         histories,
-        lanes,
+        super::lane_cache::CachedLanes {
+            lanes,
+            context: super::lane_cache::CachedLaneContext::default(),
+        },
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn project_hole_axes_with_cache(
-    cache: Option<&super::lane_cache::LaneScanCache<'_>>,
-    shared_plane_frames: Option<&HashMap<usize, HashMap<u32, SketchPlaneFrame>>>,
     ctx: &DecodeContext<'_>,
     model_features: &mut [cadmpeg_ir::features::Feature],
     sketch_entities: &[SketchEntity],
     topology: &HoleTopology<'_>,
     histories: &[crate::records::FeatureHistory],
-    lanes: &[FeatureInputLane],
+    input_lanes: super::lane_cache::CachedLanes<'_, '_, '_>,
 ) -> Result<(), CodecError> {
+    let lanes = input_lanes.lanes;
+    let cache = input_lanes.context.cache;
+    let shared_plane_frames = input_lanes.context.plane_frames;
     let has_unresolved_diameter_hole = model_features.iter().any(|feature| {
         feature.suppressed != Some(true)
             && matches!(

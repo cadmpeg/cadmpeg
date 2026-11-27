@@ -2768,28 +2768,30 @@ pub(crate) fn project_relation_bindings(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     project_relation_bindings_with_cache(
-        None,
         ctx,
         constraints,
         sketches,
         features,
         sketch_entities,
         parameters,
-        lanes,
+        super::lane_cache::CachedLanes {
+            lanes,
+            context: super::lane_cache::CachedLaneContext::default(),
+        },
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn project_relation_bindings_with_cache(
-    cache: Option<&super::lane_cache::LaneScanCache<'_>>,
     ctx: &DecodeContext<'_>,
     constraints: &mut Vec<SketchConstraint>,
     sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     sketch_entities: &[SketchEntity],
     parameters: &[cadmpeg_ir::features::parameters::DesignParameter],
-    lanes: &[FeatureInputLane],
+    input_lanes: super::lane_cache::CachedLanes<'_, '_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let lanes = input_lanes.lanes;
+    let cache = input_lanes.context.cache;
     let mut sketches_by_feature = HashMap::new();
     for feature in features {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -2965,8 +2967,7 @@ pub(crate) fn project_relation_bindings_with_cache(
                     operands,
                 }
             };
-            let has_display_scalar =
-                relation_display_scalar_for_parameter(relation, ids).is_some();
+            let has_display_scalar = relation_display_scalar_for_parameter(relation, ids).is_some();
             let Ok(definition) =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
             else {
@@ -3136,26 +3137,19 @@ fn owned_relation_parameters_with_cache<'a>(
         parameters_by_scalar.insert(native_ref, parameter);
     }
     let named = RelationParameters::new(features, parameters);
-    let owned_lane_ids = lane_refs
+    let lane_id_storage = lane_refs
         .iter()
-        .map(|lane| {
-            if cache.and_then(|cache| cache.get(lane)).is_some() {
-                None
-            } else {
-                Some(LaneIds::new(lane))
-            }
+        .map(|lane| match cache.and_then(|cache| cache.get(lane)) {
+            Some(cached) => Ok(cached.lane_ids()),
+            None => Err(LaneIds::new(lane)),
         })
         .collect::<Vec<_>>();
     let lane_ids = lane_refs
         .iter()
-        .zip(&owned_lane_ids)
-        .map(|(lane, owned_ids)| {
-            let ids = if let Some(cached) = cache.and_then(|cache| cache.get(lane)) {
-                cached.lane_ids()
-            } else {
-                owned_ids.as_ref().expect("un-cached lane has owned ids")
-            };
-            (*lane, ids)
+        .zip(&lane_id_storage)
+        .map(|(lane, slot)| match slot {
+            Ok(ids) => (*lane, *ids),
+            Err(ids) => (*lane, ids),
         })
         .collect::<Vec<_>>();
     let mut claimed = HashSet::new();

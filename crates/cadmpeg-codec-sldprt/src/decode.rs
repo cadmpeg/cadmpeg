@@ -3988,8 +3988,10 @@ fn build_geometry_ir(
     );
     plane_bindings.extend(
         crate::resolved_features::profiles::project_marker_backed_sketches_with_cache(
-            Some(&lane_cache),
-            None,
+            crate::resolved_features::lane_cache::CachedLaneContext {
+                cache: Some(&lane_cache),
+                plane_frames: None,
+            },
             ctx,
             &mut ir.model.features,
             &mut sketches,
@@ -4084,14 +4086,19 @@ fn build_geometry_ir(
         &mut pmi_losses,
     );
     crate::resolved_features::relation_geometry::project_relation_bindings_with_cache(
-        Some(&lane_cache),
         ctx,
         &mut sketch_constraints,
         &sketches,
         &ir.model.features,
         &sketch_entities,
         &ir.model.parameters,
-        sketch_lanes,
+        crate::resolved_features::lane_cache::CachedLanes {
+            lanes: sketch_lanes,
+            context: crate::resolved_features::lane_cache::CachedLaneContext {
+                cache: Some(&lane_cache),
+                plane_frames: None,
+            },
+        },
     )?;
     crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
         &mut ir.model.spatial_sketch_constraints,
@@ -4253,8 +4260,6 @@ fn build_geometry_ir(
         },
     )?;
     crate::resolved_features::holes::project_hole_axes_with_cache(
-        Some(&lane_cache),
-        None,
         ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
@@ -4268,7 +4273,13 @@ fn build_geometry_ir(
             points: &ir.geometry.points,
         },
         &histories,
-        &all_lanes,
+        crate::resolved_features::lane_cache::CachedLanes {
+            lanes: &all_lanes,
+            context: crate::resolved_features::lane_cache::CachedLaneContext {
+                cache: Some(&lane_cache),
+                plane_frames: None,
+            },
+        },
     )?;
     crate::resolved_features::holes::project_hole_topology_axes(
         ctx,
@@ -4292,14 +4303,19 @@ fn build_geometry_ir(
         &all_lanes,
     );
     crate::resolved_features::relation_geometry::project_relation_bindings_with_cache(
-        Some(&lane_cache),
         ctx,
         &mut ir.model.sketch_constraints,
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
-        &all_lanes,
+        crate::resolved_features::lane_cache::CachedLanes {
+            lanes: &all_lanes,
+            context: crate::resolved_features::lane_cache::CachedLaneContext {
+                cache: Some(&lane_cache),
+                plane_frames: None,
+            },
+        },
     )?;
     crate::resolved_features::sweeps::bind(
         &mut ir.model.features,
@@ -4322,11 +4338,16 @@ fn build_geometry_ir(
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let (configuration_losses, configuration_points) =
         crate::history::configuration::project_configuration_sketch_states_with_cache(
-            Some(&lane_cache),
             ctx,
             &mut ir,
             &histories,
-            &all_lanes,
+            crate::resolved_features::lane_cache::CachedLanes {
+                lanes: &all_lanes,
+                context: crate::resolved_features::lane_cache::CachedLaneContext {
+                    cache: Some(&lane_cache),
+                    plane_frames: None,
+                },
+            },
             &exact_profiles,
             &mut annotations,
             &mut plane_bindings,

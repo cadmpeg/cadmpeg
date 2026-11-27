@@ -27,6 +27,7 @@ const EPS_CAP_MESH_DISTANCE: f64 = 1.0e-4;
 const EPS_CAP_ALIGNMENT: f64 = 1.0e-8;
 const EPS_SOLID_SIDE: f64 = 1.0e-6;
 const MIN_TRIANGLE_DETERMINANT: f64 = 1.0e-24;
+const EPS_CAP_BOX_SCALE_MARGIN: f64 = 1.0e-6;
 const CURVE_SAMPLE_INTERVALS: u32 = 16;
 const MAX_WITNESS_WORK: usize = 2_000_000;
 
@@ -1415,7 +1416,9 @@ impl Cap {
                     || p.z < min.z
                     || p.z > max.z
             }) {
-                let _ = work.charge_by(self.triangles.len());
+                if !work.charge_by(self.triangles.len()) {
+                    return false;
+                }
                 return false;
             }
             return self
@@ -1506,7 +1509,9 @@ impl CapTriangle {
             .max(min_z.abs())
             .max(max_z.abs())
             .max(1.0);
-        let margin = 4.0 * EPS_BOUNDARY_DISTANCE + EPS_CARRIER_DISTANCE + 1.0e-6 * coord_scale;
+        let margin = 4.0 * EPS_BOUNDARY_DISTANCE
+            + EPS_CARRIER_DISTANCE
+            + EPS_CAP_BOX_SCALE_MARGIN * coord_scale;
         Self {
             origin,
             first_edge,
