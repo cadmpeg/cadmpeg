@@ -419,7 +419,7 @@ fn container_id(native: &str) -> Result<ContainerId, CodecError> {
 
 /// The definition key of the archive member that `native` was read from,
 /// and `native` as the member states it alone.
-fn member_scope(native: &str) -> (Option<&str>, std::borrow::Cow<'_, str>) {
+pub(super) fn member_scope(native: &str) -> (Option<&str>, std::borrow::Cow<'_, str>) {
     match crate::ids::member_key(native) {
         Some(key) => {
             let alone = &native[crate::ids::SCHEME_PREFIX.len() + key.len() + 1..];
@@ -432,7 +432,7 @@ fn member_scope(native: &str) -> (Option<&str>, std::borrow::Cow<'_, str>) {
     }
 }
 
-fn qualified(key: &str, id: &str) -> Result<String, CodecError> {
+pub(super) fn qualified(key: &str, id: &str) -> Result<String, CodecError> {
     crate::ids::qualify(id, key)
         .ok_or_else(|| CodecError::malformed("F3D design identity is not an f3d identity"))
 }

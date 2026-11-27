@@ -9,8 +9,12 @@
 //! §3.4), holds those bodies; the scope holds the part's parameters and
 //! configurations, and an evaluation of each other configuration's stored
 //! state. The name tables of those states come from the persistent ids of
-//! their faces and bodies. A part whose history holds no feature, or that has
-//! no history the decoder reads, states no design.
+//! their faces and bodies. Each sketch that no feature of the timeline
+//! restates is the operation of a feature of one unordered `Group`, a root of
+//! the scope after the timeline (§5.2). A part whose history holds no feature,
+//! or that has no history the decoder reads, states a scope only where it
+//! holds a sketch: that `Group` is its one root, its bodies are unproduced,
+//! and no configuration has a stated state.
 
 mod configurations;
 mod datum;
@@ -36,7 +40,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::Feature;
@@ -113,12 +117,12 @@ pub(crate) struct Projection {
 /// be stated, a sketch, extrude or revolve that cannot be typed, a parameter
 /// whose literal is a rounded display, and a dimension whose bare-number text
 /// has no value add their reasons to `losses`. A part whose timeline is empty
-/// states its configurations in a scope with no root container, whose bodies
-/// are unproduced (§5.5), and its equation-manager lines go to `losses`.
-/// Interim: a body its geometry holds outside the active configuration's
-/// bodies is one more unproduced body of that scope, and a loss names it.
-/// A feature node under a tree node that is no timeline member states no
-/// design feature, and a loss names it.
+/// states its sketches and its configurations in a scope whose bodies are
+/// unproduced (§5.5); a part that states no scope has its equation-manager
+/// lines go to `losses`. Interim: a body the geometry of such a part holds
+/// outside the active configuration's bodies is one more unproduced body of
+/// its scope, and a loss names it. A feature node under a tree node that is
+/// no timeline member states no design feature, and a loss names it.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -130,7 +134,7 @@ pub(crate) fn project(
         parameter_histories,
         lanes,
         configuration_maps,
-        bodies,
+        mut bodies,
         persistent,
         length,
         equations: managers,
@@ -153,43 +157,19 @@ pub(crate) fn project(
             skipped.count()
         )));
     }
+    let listed = !timeline.features.is_empty();
     let definition = root_definition();
-    if timeline.features.is_empty() {
+    let mut configurations =
+        configurations::configurations(histories, ir.source.as_ref(), &definition, losses)?;
+    if listed {
+        losses.extend(order::regeneration_order(&mut timeline, &ir.model));
+    } else if ir.model.sketches.is_empty()
+        && ir.model.spatial_sketches.is_empty()
+        && configurations.records.is_empty()
+    {
         losses.extend(equations::without_design(&managers, active));
-        let configurations =
-            configurations::configurations(histories, ir.source.as_ref(), &definition, losses)?;
-        if configurations.records.is_empty() {
-            return Ok(Projection::default());
-        }
-        let bodies = match configurations::unplaced(&ir.geometry.bodies, &bodies) {
-            Some(note) => {
-                losses.push(note);
-                ir.geometry
-                    .bodies
-                    .iter()
-                    .map(|body| body.id.clone())
-                    .collect()
-            }
-            None => bodies,
-        };
-        let added = 2 + configurations.records.len();
-        push_root(ir, definition.clone(), length, bodies.clone());
-        ir.design.scopes.push(DesignScope {
-            definition,
-            roots: Vec::new(),
-            active_configuration: configurations.active,
-            active_arrangements: BTreeSet::new(),
-            occurrences: BTreeMap::new(),
-            current: Vec::new(),
-            unproduced: bodies.into_iter().collect(),
-        });
-        ir.design.configurations.extend(configurations.records);
-        return Ok(Projection {
-            added,
-            retired: BTreeMap::new(),
-        });
+        return Ok(Projection::default());
     }
-    losses.extend(order::regeneration_order(&mut timeline, &ir.model));
     let entries = parameters::Entries::new(histories, parameter_histories, &timeline)?;
     losses.extend(entries.outside(&ir.model.parameters));
     let typed = typed::project(
@@ -199,12 +179,13 @@ pub(crate) fn project(
         &mut timeline,
         &entries,
         &typed::Scope {
+            ctx,
             definition: &definition,
             outside_profile,
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )?;
     losses.extend(typed.loss);
     losses.extend(typed.assumed);
     losses.extend(typed.state_construction);
@@ -218,7 +199,14 @@ pub(crate) fn project(
     losses.extend(typed.revolve_profile_differs);
     losses.extend(typed.revolve_profile_unchecked);
     losses.extend(typed.revolve_sense_assumed);
+    losses.extend(typed.sketch_notes);
     losses.extend(typed.datums);
+    let mut sketches = typed.sketches;
+    let group = group(std::mem::take(&mut sketches.outside));
+    if !listed && group.is_none() && configurations.records.is_empty() {
+        losses.extend(equations::without_design(&managers, active));
+        return Ok(Projection::default());
+    }
     let mut readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes, configuration_maps),
         length_unit: length,
@@ -244,8 +232,7 @@ pub(crate) fn project(
     };
     let (mut parameters, mut notes, mut bare) = entries.parameters(&definition, &readings);
     let entered = parameters.len();
-    let sketches = typed.sketches;
-    parameters.extend(sketches.driven);
+    parameters.extend(std::mem::take(&mut sketches.driven));
     readings.confirmed = equations::results(&parameters, &readings.manager, &linking);
     if !readings.confirmed.is_empty() {
         let driven = parameters.split_off(entered);
@@ -261,8 +248,6 @@ pub(crate) fn project(
         &ir.tolerances,
     ));
     losses.extend(equations::link(&mut parameters, &linking));
-    let mut configurations =
-        configurations::configurations(histories, ir.source.as_ref(), &definition, losses)?;
     configurations::parameter_overrides(
         &mut configurations,
         &ir.model.configurations,
@@ -274,86 +259,136 @@ pub(crate) fn project(
         &ir.model.configurations,
         &timeline.features,
     ));
-    let id = container_id(cadmpeg_ir::identity_key!("timeline"));
-    let members = timeline.members();
-    let (rollback, at) = match stated(&timeline.features, rollback) {
-        Ok((built, None)) => {
-            let (rollback, at) = built_through(&id, &members, built);
-            (Some(rollback), at)
+    let mut containers = Vec::new();
+    let mut current = Vec::new();
+    let mut unproduced = BTreeSet::new();
+    let mut table = BTreeMap::new();
+    let mut states = states::States::default();
+    if listed {
+        let id = container_id(cadmpeg_ir::identity_key!("timeline"));
+        let members = timeline.members();
+        let (rollback, at) = match stated(&timeline.features, rollback) {
+            Ok((built, None)) => {
+                let (rollback, at) = built_through(&id, &members, built);
+                (Some(rollback), at)
+            }
+            Ok((_, Some(unread))) | Err(unread) => {
+                losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
+                    "The rollback position of the feature tree is not read ({unread}); the \
+                     timeline's rollback is not stated."
+                )));
+                (None, Position::After(Member::Container(id.clone())))
+            }
+        };
+        if !bodies.is_empty() {
+            current.push(current_state(at, bodies.clone()));
         }
-        Ok((_, Some(unread))) | Err(unread) => {
-            losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
-                "The rollback position of the feature tree is not read ({unread}); the \
-                 timeline's rollback is not stated."
-            )));
-            (None, Position::After(Member::Container(id.clone())))
+        let designed = sketches
+            .entities
+            .iter()
+            .map(|entity| &entity.id)
+            .collect::<HashSet<_>>();
+        let generators = crate::resolved_features::side_generators::SideGenerators::derive(
+            &ir.model, histories, lanes,
+        )
+        .into_stated(|id| designed.contains(id));
+        let names = names::Names::new(persistent, histories, &timeline.features_by_record)
+            .with_generators(generators);
+        table = names.entries(&ir.geometry, &bodies, |_| true);
+        states = states::configuration_states(
+            ctx,
+            ir,
+            &states::Scope {
+                definition: &definition,
+                timeline: &id,
+                features: &timeline.features,
+                configurations: &configurations.records,
+                active: configurations.active.as_ref(),
+                current: &bodies,
+                given_up: given_up_configurations,
+            },
+            &names,
+            losses,
+        )?;
+        containers.push(Container::Ordered {
+            id,
+            kind: OrderedKind::Timeline,
+            members,
+            folders: timeline.folders,
+            rollback,
+            placement: None,
+        });
+    } else {
+        if let Some(note) = configurations::unplaced(&ir.geometry.bodies, &bodies) {
+            losses.push(note);
+            bodies = ir
+                .geometry
+                .bodies
+                .iter()
+                .map(|body| body.id.clone())
+                .collect();
         }
-    };
-    let current = (!bodies.is_empty())
-        .then(|| current_state(at, bodies.clone()))
-        .into_iter()
-        .collect();
-    let designed = sketches
-        .entities
+        unproduced = bodies.iter().cloned().collect();
+        for configuration in &configurations.records {
+            if Some(&configuration.id) != configurations.active.as_ref() {
+                losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
+                    "configuration {}: the part stores no feature history, so its state is \
+                     not stated.",
+                    configuration.id
+                )));
+            }
+        }
+    }
+    let mut features = timeline.features;
+    if let Some((group, members)) = group {
+        containers.push(group);
+        features.extend(members);
+    }
+    let roots = containers
         .iter()
-        .map(|entity| &entity.id)
-        .collect::<HashSet<_>>();
-    let generators = crate::resolved_features::side_generators::SideGenerators::derive(
-        &ir.model, histories, lanes,
-    )
-    .into_stated(|id| designed.contains(id));
-    let names = names::Names::new(persistent, histories, &timeline.features_by_record)
-        .with_generators(generators);
-    let table = names.entries(&ir.geometry, &bodies, |_| true);
-    let states = states::configuration_states(
-        ctx,
-        ir,
-        &states::Scope {
-            definition: &definition,
-            timeline: &id,
-            features: &timeline.features,
-            configurations: &configurations.records,
-            active: configurations.active.as_ref(),
-            current: &bodies,
-            given_up: given_up_configurations,
-        },
-        &names,
-        losses,
-    )?;
-    let container = Container::Ordered {
-        id,
-        kind: OrderedKind::Timeline,
-        members,
-        folders: timeline.folders,
-        rollback,
-        placement: None,
-    };
-    let features = timeline.features;
-    let added = 3
+        .map(|container| container.id().clone())
+        .collect::<Vec<_>>();
+    let spatial = sketches
+        .spatial
+        .iter()
+        .map(|restated| 1 + restated.entities.len() + restated.constraints.len())
+        .sum::<usize>();
+    let added = 2
+        + containers.len()
         + features.len()
         + sketches.records.len()
         + sketches.entities.len()
         + sketches.constraints.len()
+        + spatial
         + parameters.len()
         + configurations.records.len()
         + table.len()
         + states.evaluations.len()
         + states.records;
-    push_root(ir, definition.clone(), length, bodies);
+    ir.model
+        .product_definitions
+        .push(root(definition.clone(), length, bodies));
     ir.design.scopes.push(DesignScope {
         definition,
-        roots: vec![container.id().clone()],
+        roots,
         active_configuration: configurations.active,
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current,
-        unproduced: BTreeSet::default(),
+        unproduced,
     });
-    ir.design.containers.push(container);
+    ir.design.containers.extend(containers);
     ir.design.features.extend(features);
     ir.design.sketches.extend(sketches.records);
     ir.design.sketch_entities.extend(sketches.entities);
     ir.design.sketch_constraints.extend(sketches.constraints);
+    for restated in sketches.spatial {
+        ir.design.spatial_sketches.push(restated.sketch);
+        ir.design.spatial_sketch_entities.extend(restated.entities);
+        ir.design
+            .spatial_sketch_constraints
+            .extend(restated.constraints);
+    }
     ir.design.parameters.extend(parameters);
     ir.design.configurations.extend(configurations.records);
     ir.design.evaluations.extend(states.evaluations);
@@ -362,6 +397,43 @@ pub(crate) fn project(
         added,
         retired: states.retired,
     })
+}
+
+/// The unordered `Group` whose members are `features`, the owners of the
+/// sketches outside the timeline, with those features; none where there are
+/// none.
+fn group(features: Vec<Feature>) -> Option<(Container, Vec<Feature>)> {
+    if features.is_empty() {
+        return None;
+    }
+    let container = Container::Unordered {
+        id: container_id(cadmpeg_ir::identity_key!("sketches")),
+        kind: UnorderedKind::Group,
+        members: features
+            .iter()
+            .map(|feature| Member::Feature(feature.id.clone()))
+            .collect(),
+    };
+    Some((container, features))
+}
+
+/// The root definition `definition`: a part in `length` units that holds
+/// `bodies`.
+fn root(
+    definition: ProductDefinitionId,
+    length: Option<UnitSymbol>,
+    bodies: Vec<BodyId>,
+) -> ProductDefinition {
+    let mut root = ProductDefinition::root(definition, ExternalDocument::default());
+    root.kind = Some(ProductDefinitionKind::Part);
+    root.units = length.map(|length| UnitSystem {
+        length,
+        angle: UnitSymbol::Deg,
+        mass: None,
+        time: None,
+    });
+    root.bodies = bodies;
+    root
 }
 
 /// The number of leading timeline features the stored marks state built:
@@ -442,25 +514,6 @@ fn built_through(id: &ContainerId, members: &[Member], built: usize) -> (Rollbac
         .cloned()
         .map_or(Rollback::End, Rollback::Before);
     (rollback, at)
-}
-
-/// Adds the part's root definition, which owns `bodies`, to the model.
-fn push_root(
-    ir: &mut CadIr,
-    definition: ProductDefinitionId,
-    length: Option<UnitSymbol>,
-    bodies: Vec<BodyId>,
-) {
-    let mut root = ProductDefinition::root(definition, ExternalDocument::default());
-    root.kind = Some(ProductDefinitionKind::Part);
-    root.units = length.map(|length| UnitSystem {
-        length,
-        angle: UnitSymbol::Deg,
-        mass: None,
-        time: None,
-    });
-    root.bodies = bodies;
-    ir.model.product_definitions.push(root);
 }
 
 /// The root definition: the part file itself, which no occurrence places.
