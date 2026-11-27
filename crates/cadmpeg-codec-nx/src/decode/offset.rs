@@ -1749,8 +1749,9 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
                         0,
                         geometry_budget,
                     )?;
-
-                    blend_parameter_grids.insert(surface.as_str(), grid);
+                    if grid.is_some() || !geometry_budget.exhausted() {
+                        blend_parameter_grids.insert(surface.as_str(), grid);
+                    }
                 }
                 let grid = blend_parameter_grids
                     .get(surface.as_str())
