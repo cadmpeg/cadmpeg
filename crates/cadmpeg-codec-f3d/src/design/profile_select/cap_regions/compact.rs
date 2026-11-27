@@ -1040,7 +1040,7 @@ fn extent_interval(sweep: &Sweep<'_>) -> Option<(f64, f64)> {
 fn intersect_agrees(
     planes: &[PlaneSides],
     sampled: &[super::Sampled<'_>],
-    removed: &[usize],
+    removed: &HashSet<usize>,
     kept: &[usize],
 ) -> bool {
     let removed_material = removed.iter().any(|index| {
@@ -1107,7 +1107,7 @@ fn fragment(
 /// boundary curve of the remaining faces.
 fn profile_faces(
     sampled: &[super::Sampled<'_>],
-    removed: &[usize],
+    removed: &HashSet<usize>,
     named: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
 ) -> Vec<usize> {
     let mut across: HashMap<(&cadmpeg_ir::sketches::SketchEntityId, [u64; 2]), Vec<usize>> =
@@ -1259,16 +1259,17 @@ pub(in crate::design::profile_select) fn intersect_candidate(
         }
     }
     for offset in offsets {
-        if let (Some(held_before), Some(held_after)) = (
+        let (Some(held_before), Some(held_after)) = (
             plane_material(&frame, before, offset, tolerance),
             plane_material(&frame, after, offset, tolerance),
-        ) {
-            planes.push(PlaneSides {
-                offset,
-                before: held_before,
-                after: held_after,
-            });
-        }
+        ) else {
+            return Ok(None);
+        };
+        planes.push(PlaneSides {
+            offset,
+            before: held_before,
+            after: held_after,
+        });
     }
     let work = ProfileGeometryWork::new();
     let Some(regions) = atomic_sketch_regions(
@@ -1281,10 +1282,10 @@ pub(in crate::design::profile_select) fn intersect_candidate(
     else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance, &work) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, resolution.profile_work) else {
         return Ok(None);
     };
-    let mut removed = Vec::new();
+    let mut removed = HashSet::new();
     let mut retained = Vec::new();
     for (index, region) in sampled.iter().enumerate() {
         let (mut lost, mut held) = (false, false);
@@ -1299,7 +1300,9 @@ pub(in crate::design::profile_select) fn intersect_candidate(
         }
         match (lost, held) {
             (true, true) => return Ok(None),
-            (true, false) => removed.push(index),
+            (true, false) => {
+                removed.insert(index);
+            }
             (false, true) => retained.push(index),
             (false, false) => {}
         }
@@ -1308,8 +1311,9 @@ pub(in crate::design::profile_select) fn intersect_candidate(
         return Ok(None);
     }
     let kept = profile_faces(&sampled, &removed, named);
+    let kept_set: HashSet<usize> = kept.iter().copied().collect();
     if kept.is_empty()
-        || retained.iter().any(|index| !kept.contains(index))
+        || retained.iter().any(|index| !kept_set.contains(index))
         || kept
             .iter()
             .any(|index| sampled[*index].region.encloses_island)

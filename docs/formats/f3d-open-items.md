@@ -20,6 +20,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-XXXX. Island in the profile of an Intersect Extrude
+
+**Question.** Does the counted region selection of an Intersect Extrude ever name a face that encloses an island?
+
+**Known.** `f3d.md` states the faces of the profile of an Intersect from the planes parallel to the Sketch and the named curves. The boundary of a face that encloses an island lists only its outer ring, so the named curves of such a face do not show whether the island belongs to the profile.
+
+**Need.** An Intersect Extrude whose profile face encloses a closed curve, saved once with the island in the profile and once with the island excluded, with the counted member lists of each.
+
+**Conflict.** None.
+
+**Note.** The decoder leaves such a selection native.
+
 ### DR-1063. MetaStream type of the `DesignConfigurationRoot` record
 
 **Question.** Which MetaStream type row registers the `DesignConfigurationRoot` record: its type GUID, base-type GUID, type version, and add-in name?

@@ -632,6 +632,20 @@ fn run_intersect(
     named: &[&str],
     sweep: (ExtrudeStart, ExtrudeDirection, ExtrudeExtent),
 ) -> (Option<PlanarProfileRef>, [bool; 11]) {
+    run_intersect_with_gaps(lines, before, after, operation, named, sweep, &[])
+}
+
+/// `run_intersect` with the loops of the faces `gaps` removed, so that those
+/// faces have no proven cap.
+fn run_intersect_with_gaps(
+    lines: &[Line],
+    before: &[super::super::tests::PlaneFace],
+    after: &[super::super::tests::PlaneFace],
+    operation: BooleanOp,
+    named: &[&str],
+    sweep: (ExtrudeStart, ExtrudeDirection, ExtrudeExtent),
+    gaps: &[i64],
+) -> (Option<PlanarProfileRef>, [bool; 11]) {
     use super::super::tests::plane_faces;
     use crate::design::geometry::ProfileGeometryWork;
     use crate::design::profile_select::ScopedExtrudeProfileResolution;
@@ -673,7 +687,12 @@ fn run_intersect(
             )
         })
         .collect::<Vec<_>>();
-    let topologies = [plane_faces(before), plane_faces(after)];
+    let mut topologies = [plane_faces(before), plane_faces(after)];
+    for topology in &mut topologies {
+        topology
+            .face_loops
+            .retain(|relation| !gaps.contains(&relation.owner_ref));
+    }
     let empty = BTreeMap::new();
     let snapshot = |index: usize| AsmStateSnapshot {
         state_id: i64::try_from(index + 1).unwrap(),
@@ -899,7 +918,8 @@ fn an_intersect_ignores_the_planes_its_extent_does_not_reach() {
     .is_none());
 }
 
-/// A kept region that encloses an island is not dropped from the selection.
+/// A kept region that encloses an island leaves the selection native, and the
+/// same layout without the island selects the region.
 #[test]
 fn an_intersect_refuses_a_kept_region_that_encloses_an_island() {
     let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
@@ -916,6 +936,18 @@ fn an_intersect_refuses_a_kept_region_that_encloses_an_island() {
         two_down(),
     );
     assert!(selected.is_none());
+    let (selected, _) = run_intersect(
+        &rectangle("outer", 0.0, 2.0)
+            .into_iter()
+            .chain([("middle", (1.0, 0.0), (1.0, 1.0))])
+            .collect::<Vec<_>>(),
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &["middle", "right", "bottom", "top"],
+        two_down(),
+    );
+    assert_eq!(selected_curves(selected).len(), 4);
 }
 
 /// A face that the transition leaves unchanged holds material before and
@@ -952,24 +984,251 @@ fn an_intersect_reads_the_retained_material_of_an_unchanged_plane() {
     let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
     lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
     let named = ["middle", "right", "bottom", "top"];
+    let before = [strip(1, 0.0, 0.0, 1.0), strip(2, -1.0, 1.0, 2.0)];
+    let after = [strip(2, -1.0, 1.0, 2.0)];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &named,
+        two_down(),
+    );
+    let curves = selected_curves(selected);
+    assert!(curves.iter().any(|curve| curve.ends_with("#right")));
+    assert!(!curves.iter().any(|curve| curve.ends_with("#left")));
+}
+
+/// The face over the first square is deleted at `height`. Within the extent
+/// of a one-unit tool it removes the square, and beyond it the deletion is no
+/// evidence about the profile.
+#[test]
+fn a_deletion_beyond_the_extent_removes_no_region() {
+    let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
+    lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
+    let named = ["middle", "right", "bottom", "top"];
+    let one_down = || {
+        (
+            ExtrudeStart::ProfilePlane {},
+            ExtrudeDirection::ReversedProfileNormal {},
+            ExtrudeExtent::OneSided { side: blind(1.0) },
+        )
+    };
     let run = |height: f64| {
-        let before = [strip(1, 0.0, 0.0, 1.0), strip(2, height, 1.0, 2.0)];
-        let after = [strip(2, height, 1.0, 2.0)];
+        let before = [strip(1, height, 0.0, 1.0), strip(2, -0.5, 1.0, 2.0)];
+        let after = [strip(2, -0.5, 1.0, 2.0)];
         run_intersect(
             &lines,
             &before,
             &after,
             BooleanOp::Intersect,
             &named,
-            two_down(),
+            one_down(),
         )
         .0
     };
     let curves = selected_curves(run(-1.0));
     assert!(curves.iter().any(|curve| curve.ends_with("#right")));
-    assert!(!curves.iter().any(|curve| curve.ends_with("#left")));
-    // The same face beyond the extent is no evidence.
     assert!(run(-5.0).is_none());
+}
+
+fn three_squares() -> Vec<Line> {
+    let mut lines = rectangle("outer", 0.0, 3.0).to_vec();
+    lines.push(("first", (1.0, 0.0), (1.0, 1.0)));
+    lines.push(("second", (2.0, 0.0), (2.0, 1.0)));
+    lines
+}
+
+/// A region that a plane holds on both sides is retained material. A profile
+/// that does not enclose it leaves the selection native.
+#[test]
+fn an_intersect_refuses_a_held_region_outside_its_profile() {
+    let lines = three_squares();
+    let before = [
+        strip(1, 0.0, 0.0, 1.0),
+        strip(2, 0.0, 1.0, 2.0),
+        strip(3, 0.0, 2.0, 3.0),
+    ];
+    let after = [strip(2, 0.0, 1.0, 2.0), strip(3, 0.0, 2.0, 3.0)];
+    let named = ["first", "second", "bottom", "top"];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &named,
+        two_down(),
+    );
+    assert!(selected.is_none());
+    // The control without the retained third square selects the second.
+    let after = [strip(2, 0.0, 1.0, 2.0)];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &named,
+        two_down(),
+    );
+    assert!(selected.is_some());
+}
+
+/// A region that one plane loses and another holds has conflicting evidence.
+#[test]
+fn an_intersect_refuses_a_region_both_lost_and_held() {
+    let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
+    lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
+    let before = [
+        strip(1, 0.0, 0.0, 1.0),
+        strip(2, -1.0, 0.0, 1.0),
+        strip(3, -1.0, 1.0, 2.0),
+    ];
+    let after = [strip(2, -1.0, 0.0, 1.0), strip(3, -1.0, 1.0, 2.0)];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &["middle", "right", "bottom", "top"],
+        two_down(),
+    );
+    assert!(selected.is_none());
+}
+
+/// A changed face with no proven cap on a plane within the extent leaves the
+/// selection native, and one beyond the extent does not. An unchanged face
+/// with no proven cap on a plane within the extent does the same.
+#[test]
+fn a_face_without_a_proven_cap_blocks_only_the_planes_in_range() {
+    let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
+    lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
+    let named = ["middle", "right", "bottom", "top"];
+    let run = |before: &[super::super::tests::PlaneFace],
+               after: &[super::super::tests::PlaneFace],
+               gaps: &[i64]| {
+        run_intersect_with_gaps(
+            &lines,
+            before,
+            after,
+            BooleanOp::Intersect,
+            &named,
+            two_down(),
+            gaps,
+        )
+        .0
+    };
+    let kept = [strip(2, 0.0, 1.0, 2.0)];
+    // Deleted beyond the extent: ignored.
+    let before = [
+        strip(1, 0.0, 0.0, 1.0),
+        strip(2, 0.0, 1.0, 2.0),
+        strip(3, -5.0, 0.0, 2.0),
+    ];
+    assert!(run(&before, &kept, &[3]).is_some());
+    // Deleted within the extent: native.
+    let before = [
+        strip(1, 0.0, 0.0, 1.0),
+        strip(2, 0.0, 1.0, 2.0),
+        strip(3, -1.0, 1.0, 2.0),
+    ];
+    assert!(run(&before, &kept, &[3]).is_none());
+    // Unchanged within the extent: native.
+    let after = [strip(2, 0.0, 1.0, 2.0), strip(3, -1.0, 1.0, 2.0)];
+    assert!(run(&before, &after, &[3]).is_none());
+    // The same layout with a proven cap selects the region.
+    assert!(run(&before, &after, &[]).is_some());
+}
+
+/// Four squares B, A, C and D side by side with the body over B and A only.
+/// The profile names the boundary of A. D drops out because its right side is
+/// an unnamed boundary piece, and C then drops out because its piece shared
+/// with D is no longer inside.
+#[test]
+fn the_faces_of_an_intersect_profile_shrink_until_their_unnamed_pieces_are_inside() {
+    let mut lines = rectangle("outer", 0.0, 4.0).to_vec();
+    lines.push(("first", (1.0, 0.0), (1.0, 1.0)));
+    lines.push(("second", (2.0, 0.0), (2.0, 1.0)));
+    lines.push(("third", (3.0, 0.0), (3.0, 1.0)));
+    let before = [strip(1, 0.0, 0.0, 2.0), strip(2, -2.0, 0.0, 2.0)];
+    let after = [strip(3, 0.0, 1.0, 2.0), strip(4, -2.0, 1.0, 2.0)];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &["first", "second", "bottom", "top"],
+        two_down(),
+    );
+    let curves = selected_curves(selected);
+    assert!(curves.iter().any(|curve| curve.ends_with("#first")));
+    assert!(curves.iter().any(|curve| curve.ends_with("#second")));
+    assert!(!curves.iter().any(|curve| curve.ends_with("#third")));
+}
+
+#[test]
+fn the_extent_interval_follows_the_start_direction_and_sides() {
+    use cadmpeg_ir::scalar::Length;
+    let interval = |start: ExtrudeStart, direction: ExtrudeDirection, extent: ExtrudeExtent| {
+        super::extent_interval(&super::Sweep {
+            operation: &BooleanOp::Intersect,
+            start: &start,
+            direction: &direction,
+            extent: &extent,
+        })
+    };
+    let two_sided = || ExtrudeExtent::TwoSided {
+        first: blind(3.0),
+        second: blind(1.0),
+    };
+    let from_plane = || ExtrudeStart::ProfilePlane {};
+    let forward = || ExtrudeDirection::ProfileNormal {};
+    let reversed = || ExtrudeDirection::ReversedProfileNormal {};
+    let offset = |value: f64| ExtrudeStart::OffsetProfilePlane {
+        offset: Length::new(value).unwrap(),
+    };
+    assert_eq!(
+        interval(from_plane(), forward(), two_sided()),
+        Some((-1.0, 3.0))
+    );
+    assert_eq!(
+        interval(from_plane(), reversed(), two_sided()),
+        Some((-3.0, 1.0))
+    );
+    assert_eq!(
+        interval(
+            from_plane(),
+            forward(),
+            ExtrudeExtent::Symmetric { side: blind(4.0) }
+        ),
+        Some((-2.0, 2.0))
+    );
+    assert_eq!(
+        interval(
+            offset(2.0),
+            reversed(),
+            ExtrudeExtent::OneSided { side: blind(1.0) }
+        ),
+        Some((1.0, 2.0))
+    );
+    assert_eq!(
+        interval(
+            offset(-2.0),
+            forward(),
+            ExtrudeExtent::TwoSided {
+                first: blind(1.0),
+                second: blind(2.0)
+            }
+        ),
+        Some((-4.0, -1.0))
+    );
+    assert_eq!(
+        interval(
+            ExtrudeStart::Unresolved {},
+            forward(),
+            ExtrudeExtent::Symmetric { side: blind(4.0) }
+        ),
+        None
+    );
 }
 
 /// The profile names the boundary of the square A and the empty square C
