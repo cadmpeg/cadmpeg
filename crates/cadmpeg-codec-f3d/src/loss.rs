@@ -26,6 +26,13 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    /// The `AssetSettings` direction pair is neither the Y-up nor the Z-up
+    /// form, or its two copies differ; the document states no up axis.
+    SettingsUpAxisUnrecognized,
+    /// Record 0 is present in a design stream but is not a whole
+    /// `AssetSettings` record of the 494-byte type-17 form, or holds another
+    /// key; the document states no up axis.
+    SettingsUpAxisRecordUnreadable,
     DraftPartingControlsPartial,
     DraftNeutralAnchorAssumed,
     DraftSlopeOutOfRange,
@@ -1456,6 +1463,8 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::SceneOverrideRefused,
+        Self::SettingsUpAxisUnrecognized,
+        Self::SettingsUpAxisRecordUnreadable,
         Self::DraftPartingControlsPartial,
         Self::DraftNeutralAnchorAssumed,
         Self::DraftSlopeOutOfRange,
@@ -2308,6 +2317,8 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::SceneOverrideRefused => "scene.override-refused",
+            Self::SettingsUpAxisUnrecognized => "settings.up-axis-unrecognized",
+            Self::SettingsUpAxisRecordUnreadable => "settings.up-axis-record-unreadable",
             Self::DraftPartingControlsPartial => "feature.draft-parting-controls-partial",
             Self::DraftNeutralAnchorAssumed => "feature.draft-neutral-anchor-assumed",
             Self::DraftSlopeOutOfRange => "feature.draft-slope-out-of-range",
@@ -3563,7 +3574,9 @@ impl F3dLossCode {
             Self::FeatureBodyHistoryIncomplete
             | Self::FeatureBodyHistoryOwnerUnresolved
             | Self::FeatureBodyHistoryUnread => Severity::Warning,
-            Self::SceneOverrideRefused => Severity::Warning,
+            Self::SceneOverrideRefused
+            | Self::SettingsUpAxisUnrecognized
+            | Self::SettingsUpAxisRecordUnreadable => Severity::Warning,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
             | Self::BendRadiusFirstAssumed
@@ -4412,7 +4425,9 @@ impl F3dLossCode {
             Self::FeatureBodyHistoryIncomplete
             | Self::FeatureBodyHistoryOwnerUnresolved
             | Self::FeatureBodyHistoryUnread => LossTaxonomy::FeatureHistoryRetained,
-            Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
+            Self::SceneOverrideRefused
+            | Self::SettingsUpAxisUnrecognized
+            | Self::SettingsUpAxisRecordUnreadable => LossTaxonomy::RecordNotTyped,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
             | Self::BendRadiusFirstAssumed
@@ -5383,6 +5398,8 @@ mod tests {
             codes,
             [
                 "scene.override-refused",
+                "settings.up-axis-unrecognized",
+                "settings.up-axis-record-unreadable",
                 "feature.draft-parting-controls-partial",
                 "feature.draft-neutral-anchor-assumed",
                 "feature.draft-slope-out-of-range",
