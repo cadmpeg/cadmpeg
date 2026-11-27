@@ -20,7 +20,20 @@ macro_rules! rewrite_native_target {
                     _ => None,
                 },
             ),)*
-            Some("document" | "tessellation" | "record") => Ok(()),
+            Some("document") => Ok(()),
+            Some("record") => match $value.get_mut("value") {
+                Some(record) => crate::schema::rewrite::typed::native_fields::rewrite_field(
+                    $ctx,
+                    record,
+                    "id",
+                    $map,
+                    |owner: &Self| match owner {
+                        Self::Record { id, .. } => Some(id),
+                        _ => None,
+                    },
+                ),
+                None => Ok(()),
+            },
             _ => Err(CodecError::malformed(
                 "native attribute target has an invalid kind",
             )),
@@ -60,6 +73,7 @@ impl RewriteIdentities for AttributeTarget {
             "drawing" => Drawing,
             "view_presentation" => ViewPresentation,
             "configuration" => Configuration,
+            "tessellation" => Tessellation,
         )
     }
     fn visit_identity_references(

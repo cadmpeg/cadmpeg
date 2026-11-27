@@ -43,7 +43,7 @@ pub struct SemanticAnnotation {
     /// Stable semantic identity.
     pub id: SemanticAnnotationId,
     /// Application object persisting this annotation.
-    pub object: String,
+    pub object: crate::ids::Identity,
     /// Format-neutral semantic role.
     pub kind: SemanticAnnotationKind,
     /// Exact source runtime type.
@@ -152,7 +152,7 @@ pub struct SemanticAnnotation {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<NonBlankString, String>,
     /// Symbol, image, font, or other retained assets.
-    pub assets: Vec<String>,
+    pub assets: Vec<crate::ids::Identity>,
     /// Native semantic annotation record supplying this entity.
     pub native_ref: String,
 }
@@ -162,7 +162,7 @@ impl SemanticAnnotation {
     #[must_use]
     pub fn new(
         id: SemanticAnnotationId,
-        object: String,
+        object: crate::ids::Identity,
         kind: SemanticAnnotationKind,
         runtime_type: String,
         order: u32,
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn physical_text_style_roundtrips_and_names_invalid_height() {
-        let wire = cadmpeg_core::json!({"id":"test:model:annotation#text", "object":"source", "kind":"text", "runtime_type":"Text", "order":0, "native_ref":"native", "text_style":{"height":5.0,"font_family":"osifont"}, "text": [], "references": {}, "reference_anchors": [], "parameters": {}, "assets": []});
+        let wire = cadmpeg_core::json!({"id":"test:model:annotation#text", "object": "test:source:object#source", "kind":"text", "runtime_type":"Text", "order":0, "native_ref":"native", "text_style":{"height":5.0,"font_family":"osifont"}, "text": [], "references": {}, "reference_anchors": [], "parameters": {}, "assets": []});
         let annotation: SemanticAnnotation = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(annotation).unwrap(), wire);
         for height in [
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn dimension_wire_admission_names_optional_fields() {
-        let wire = cadmpeg_core::json!({"id": "synthetic:test:annotation#dimension", "object": "source", "kind": "dimension", "runtime_type": "Dimension", "order": 0, "native_ref": "native",
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:annotation#dimension", "object": "test:source:object#source", "kind": "dimension", "runtime_type": "Dimension", "order": 0, "native_ref": "native",
             "dimension_kind": {"kind": "radius"}, "value": 12.0, "format": "%.2f", "position": [4.0, 5.0, 0.0],
             "text_override": "R12", "upper_tolerance": 0.2, "lower_tolerance": -0.1, "text": [], "references": {}, "reference_anchors": [], "text_style": {}, "parameters": {}, "assets": []});
         let annotation: SemanticAnnotation = json::from_value(wire.clone()).unwrap();
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn dimension_semantics_round_trip_and_name_their_fields() {
-        let wire = cadmpeg_core::json!({"id": "synthetic:test:annotation#dimension", "object": "source", "kind": "dimension", "runtime_type": "Dimension", "order": 0, "native_ref": "native",
+        let wire = cadmpeg_core::json!({"id": "synthetic:test:annotation#dimension", "object": "test:source:object#source", "kind": "dimension", "runtime_type": "Dimension", "order": 0, "native_ref": "native",
             "dimension_kind": {"kind": "distance"}, "value": 30.0, "format": "%.2w",
             "number_format": {"prefix": "", "suffix": "", "decimals": 2, "trim_zeros": true, "unit_shown": false},
             "measured_on": "view", "basic": true, "reflex": false, "negated": true,

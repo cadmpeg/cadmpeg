@@ -32,6 +32,7 @@ use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 
 mod candidate_annotations;
 mod carrier_copy;
+mod given_up;
 mod local_limits;
 
 fn line_nurbs(start: f64, end: f64, rational: bool) -> NurbsCurve {
