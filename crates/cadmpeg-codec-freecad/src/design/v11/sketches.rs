@@ -63,8 +63,8 @@ use crate::loss::FreecadLossCode;
 use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
 
 /// The tolerance `FreeCAD`'s `Rotation::getYawPitchRoll` uses to detect the
-/// gimbal poles of a rotation.
-const EPS_GIMBAL_POLE: f64 = 16.0 * f64::EPSILON;
+/// poles of the pitch angle of a rotation.
+const EPS_PITCH_POLE: f64 = 16.0 * f64::EPSILON;
 
 /// The facts of a document's sketches that the decoded sketch records do
 /// not keep.
@@ -1282,16 +1282,16 @@ fn offset_steps(rows: [[f64; 4]; 4]) -> Vec<PostStep> {
 }
 
 /// The intrinsic Z, Y, X angles of the rotation in `rows`, as `FreeCAD`'s
-/// `Rotation::getYawPitchRoll` gives them: at a gimbal pole the yaw is zero.
+/// `Rotation::getYawPitchRoll` gives them: at a pole of the pitch the yaw is zero.
 fn yaw_pitch_roll(rows: [[f64; 4]; 4]) -> (f64, f64, f64) {
     let sine = -rows[2][0];
-    if (sine - 1.0).abs() <= EPS_GIMBAL_POLE {
+    if (sine - 1.0).abs() <= EPS_PITCH_POLE {
         (
             0.0,
             std::f64::consts::FRAC_PI_2,
             rows[0][1].atan2(rows[1][1]),
         )
-    } else if (sine + 1.0).abs() <= EPS_GIMBAL_POLE {
+    } else if (sine + 1.0).abs() <= EPS_PITCH_POLE {
         (
             0.0,
             -std::f64::consts::FRAC_PI_2,
