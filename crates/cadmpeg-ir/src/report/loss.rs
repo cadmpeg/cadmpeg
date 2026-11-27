@@ -99,8 +99,9 @@ pub enum LossTaxonomy {
     /// Named feature operations and their dependency tables were retained as
     /// native passthrough rather than replayed.
     FeatureHistoryRetained,
-    /// The part is an assembly; component geometry lives in external referenced
-    /// files, not inline.
+    /// Content of an assembly is held by a file other than this one: component
+    /// geometry in external referenced files, or a record of an encode set that
+    /// no output holds whole because it needs a record of another output.
     AssemblyComponentsExternal,
     /// Assembly component occurrence placements were not transferred.
     AssemblyPlacementsNotTransferred,

@@ -640,7 +640,7 @@
           "const": "feature_history_retained"
         },
         {
-          "description": "The part is an assembly; component geometry lives in external referenced\nfiles, not inline.",
+          "description": "Content of an assembly is held by a file other than this one: component\ngeometry in external referenced files, or a record of an encode set that\nno output holds whole because it needs a record of another output.",
           "type": "string",
           "const": "assembly_components_external"
         },

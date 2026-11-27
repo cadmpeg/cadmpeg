@@ -392,8 +392,9 @@ type PlannedOutputBody = (
 /// An output whose plan fails is not written, and the report charges
 /// `export:output.unwritten` naming its definition, while another output is
 /// written. The report charges `export:record.unheld` for each record that
-/// no output holds, or that an output holds without a record of another
-/// output it names ([`encode_set::Holdings`]). The encode refuses where no
+/// no written output holds, or that a written output holds without a record
+/// of another output it names ([`encode_set::Holdings`]), and each `target.*`
+/// loss names the output it charges. The encode refuses where no
 /// output can be written, with the first output's refusal, and where the
 /// session runs out (§3.4, Refusals).
 /// Returns the outputs written with the payload and census of each, and the
@@ -429,13 +430,12 @@ fn plan_encode_set<E: EncoderBackend>(
             encode_set::output_document(ctx, input.ir, definition, root.as_ref(), &names)
                 .map_err(EncodeError::from_backend)
                 .and_then(|(document, released)| {
-                    holdings.add(position, &document, released);
                     let fidelity = if definition == root.as_ref() {
                         input.fidelity
                     } else {
                         None
                     };
-                    plan_output(
+                    let planned = plan_output(
                         encoder,
                         ctx,
                         EncodeInput {
@@ -443,9 +443,11 @@ fn plan_encode_set<E: EncoderBackend>(
                             fidelity,
                             ..input
                         },
-                    )
+                    )?;
+                    holdings.add(position, &document, released);
+                    Ok(planned)
                 });
-        let (report, coverage, bytes, annotations) = match planned_output {
+        let (mut report, coverage, bytes, annotations) = match planned_output {
             Ok(planned_output) => planned_output,
             Err(EncodeError::ResourceLimit(limit)) => {
                 return Err(EncodeError::ResourceLimit(limit))
@@ -455,6 +457,7 @@ fn plan_encode_set<E: EncoderBackend>(
                 continue;
             }
         };
+        name_target_losses::<E>(&mut report, &output_names[position]);
         let census = report.census.clone();
         match &mut planned {
             None => {
@@ -506,16 +509,32 @@ type PlannedSet = (
     Option<crate::annotations::Annotations>,
 );
 
-/// The note that names the definition `output` holds and the write path of
-/// its `report`.
+/// Names `output`, an output of an encode set, in each `target.*` loss of
+/// its `report`, so that each states the file it charges (§3.4).
+fn name_target_losses<E: EncoderBackend>(report: &mut ExportReport, output: &str) {
+    for loss in &mut report.losses {
+        let code = loss.code.local_code();
+        if loss.code.namespace() == E::FORMAT.as_str()
+            && (code == target::SOURCE_DIALECT_DISPLACED || code == target::REQUEST_DISPLACED)
+        {
+            loss.message = format!("in the output {output:?}, {}", loss.message);
+        }
+    }
+}
+
+/// The note that names the definition `output` holds, the target its
+/// `report` states, and its write path.
 fn output_note(output: &PlannedOutput, report: &ExportReport) -> String {
     let name = output.name.as_ref().map_or("", NonBlankString::as_str);
     let definition = output
         .definition
         .as_ref()
         .map_or("", ProductDefinitionId::as_str);
+    let target = report
+        .target()
+        .map_or_else(String::new, |target| format!(", written as {target}"));
     format!(
-        "the output {name} holds definition {definition}; its write path is {}",
+        "the output {name:?} holds definition {definition}{target}; its write path is {}",
         report.write_path()
     )
 }
@@ -533,7 +552,7 @@ fn merge_output(
     if let Some(cause) = report.synthesis_cause() {
         merged
             .notes
-            .push(format!("the output {name} was synthesized: {cause}"));
+            .push(format!("the output {name:?} was synthesized: {cause}"));
     }
     if merged.census.basis == report.census.basis {
         for (key, count) in report.census.counts {
@@ -546,7 +565,7 @@ fn merge_output(
         }
     } else {
         merged.notes.push(format!(
-            "the output {name} counts its records on another basis than the root output's, \
+            "the output {name:?} counts its records on another basis than the root output's, \
              and the census counts the root output's alone"
         ));
     }

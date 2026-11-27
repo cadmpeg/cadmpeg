@@ -183,50 +183,70 @@ pub(super) fn output_document(
 
 /// What the outputs of an encode set hold of its document: the first output
 /// that holds each record, by its position, and, from the removals that
-/// planned each output, the records each named that the output left out and
-/// the records each output holds in a partial form.
+/// planned each output, the records each record named that the output left
+/// out, by output, and each record that an output holds in a partial form.
 #[derive(Default)]
 pub(super) struct Holdings {
     held: BTreeMap<String, usize>,
-    needs: BTreeMap<String, BTreeSet<String>>,
-    partial: BTreeMap<String, usize>,
+    needs: BTreeMap<usize, BTreeMap<String, BTreeSet<String>>>,
+    partial: BTreeSet<(String, usize)>,
+}
+
+/// How an entry of `export:record.unheld` stands to the output it names.
+#[derive(Clone, Copy)]
+enum Unheld {
+    /// The output left the record out.
+    Dropped,
+    /// The output holds the record in a partial form.
+    Partial,
 }
 
 impl Holdings {
-    /// Adds `document`, the document of the output at `output`, and what
-    /// planning it `released`.
+    /// Adds `document`, the document of the written output at `output`, and
+    /// what planning it `released`.
     pub(super) fn add(&mut self, output: usize, document: &CadIr, released: Released) {
-        for id in record_ids(document) {
-            self.held.entry(id).or_insert(output);
-        }
-        for (record, named) in released.needs {
-            self.needs.entry(record).or_default().extend(named);
-        }
+        let holds = record_ids(document);
         for record in released
             .marked
             .into_iter()
             .chain(released.states.into_keys().map(|(_, state)| state))
         {
-            self.partial.entry(record).or_insert(output);
+            if holds.contains(&record) {
+                self.partial.insert((record, output));
+            }
         }
+        for id in holds {
+            self.held.entry(id).or_insert(output);
+        }
+        self.needs.insert(output, released.needs);
     }
 
     /// The `export:record.unheld` losses of the outputs added so far, the
     /// output at each position named by `names`: each record of `ir` that
     /// no output holds, and each record that an output holds in a partial
-    /// form, each with the records of other outputs it needs (§3.4, Encode
-    /// sets).
+    /// form, each with the records of other outputs that it needs in each
+    /// output that left it out or holds it in part (§3.4, Encode sets).
     pub(super) fn losses(&self, format: &str, ir: &CadIr, names: &[String]) -> Vec<LossNote> {
-        let lost: Vec<String> = record_ids(ir)
+        let lost = record_ids(ir)
             .into_iter()
             .filter(|id| !self.held.contains_key(id))
-            .map(|id| self.entry(&id, None, names))
-            .collect();
+            .flat_map(|id| {
+                let entries: Vec<String> = self
+                    .needs
+                    .iter()
+                    .filter(|(_, needs)| needs.contains_key(&id))
+                    .map(|(output, _)| self.entry(&id, *output, Unheld::Dropped, names))
+                    .collect();
+                if entries.is_empty() {
+                    vec![id]
+                } else {
+                    entries
+                }
+            });
         let partial = self
             .partial
             .iter()
-            .filter(|(id, _)| self.held.contains_key(*id))
-            .map(|(id, output)| self.entry(id, Some(*output), names));
+            .map(|(id, output)| self.entry(id, *output, Unheld::Partial, names));
         super::loss::record_unheld(
             format,
             "holds these records in no output of the encode set",
@@ -241,20 +261,25 @@ impl Holdings {
         .collect()
     }
 
-    /// The entry of `record`, held in a partial form by the output at
-    /// `output` where one holds it: its id, that output's name, and each
-    /// record it needs that another output holds, with that output's name.
-    fn entry(&self, record: &str, output: Option<usize>, names: &[String]) -> String {
-        let name = |output: usize| names.get(output).map_or("", String::as_str);
-        let mut entry = match output {
-            Some(output) => format!("{record} in {}", name(output)),
-            None => record.to_owned(),
+    /// The entry of `record` at the output at `output`, which left it out or
+    /// holds it in part: its id, that output's name, and each record of
+    /// another output that it needs there, with that output's name. A
+    /// record it needs that no output holds stands for the records that one
+    /// needs in the same output.
+    fn entry(&self, record: &str, output: usize, form: Unheld, names: &[String]) -> String {
+        let name = |output: usize| format!("{:?}", names.get(output).map_or("", String::as_str));
+        let mut entry = match form {
+            Unheld::Dropped => format!("{record} from {}", name(output)),
+            Unheld::Partial => format!("{record} in {}", name(output)),
+        };
+        let Some(needs) = self.needs.get(&output) else {
+            return entry;
         };
         let mut causes = BTreeSet::new();
         let mut seen = BTreeSet::from([record]);
         let mut pending: Vec<&str> = vec![record];
         while let Some(id) = pending.pop() {
-            for named in self.needs.get(id).into_iter().flatten() {
+            for named in needs.get(id).into_iter().flatten() {
                 if !seen.insert(named.as_str()) {
                     continue;
                 }
@@ -262,7 +287,7 @@ impl Holdings {
                     Some(holder) => {
                         causes.insert(format!("{named} of {}", name(*holder)));
                     }
-                    None if self.needs.contains_key(named) => pending.push(named),
+                    None if needs.contains_key(named) => pending.push(named),
                     None => {
                         causes.insert(named.clone());
                     }
@@ -331,9 +356,11 @@ enum Reach {
 /// parameter by its product definition and by its owner feature; a history
 /// body by the feature that produced it; a sketch by each definition that
 /// lists it; a mesh of a definition, a point cloud, and a design scope by
-/// their definition; an assembly joint by the definition that lists the
-/// occurrences its connectors name, and by the root definition where they
-/// name the occurrences of no definition or of several.
+/// their definition; a record of the `assembly_joints` arena by the
+/// definition that lists the occurrences its connectors name, and by the
+/// root definition where they name the occurrences of no definition or of
+/// several. A connector on `Root {}` names the root of the document that
+/// holds the joint, whichever output that is.
 fn unheld_records(
     ir: &CadIr,
     definitions: &BTreeMap<&ProductDefinitionId, &ProductDefinition>,
@@ -428,8 +455,7 @@ fn unheld_records(
                 OperandContainer::Occurrence { occurrence, .. } => {
                     Some(placing.get(occurrence).copied())
                 }
-                OperandContainer::Root {} => Some(root),
-                OperandContainer::External { .. } => None,
+                OperandContainer::Root {} | OperandContainer::External { .. } => None,
             })
             .collect();
         let owner = match named.into_iter().collect::<Vec<_>>().as_slice() {

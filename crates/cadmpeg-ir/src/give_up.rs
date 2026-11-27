@@ -537,8 +537,9 @@ pub(crate) fn drop_records(
 /// through records of `unnamed` it keeps; then each record that needs an id
 /// of `gone`, which `ir` no longer holds, and each record that needs one of
 /// those, transitively, as [`drop_records`] removes the records that need a
-/// seed. Returns what the removals released together. The seeds go first,
-/// so that a record that needs a seed names the seed among its needs.
+/// seed; then each carrier that the removals left with no user. Returns what
+/// the removals released together. The seeds go first, so that a record that
+/// needs a seed names the seed among its needs.
 ///
 /// # Errors
 ///
@@ -566,6 +567,14 @@ pub(crate) fn drop_records_needing(
         &cascade.lazy,
         gone,
         Vec::new(),
+        &mut released,
+    )?;
+    drop_orphans(
+        ctx,
+        ir,
+        &mut cascade.references,
+        &cascade.lazy,
+        &cascade.unreached,
         &mut released,
     )?;
     Ok(released)
