@@ -269,6 +269,10 @@ pub(crate) enum F3dLossCode {
     /// Projected Design assembly joints whose activation state is assumed
     /// active because the scope-tail booleans' activation meaning is unknown.
     AssemblyJointActivationAssumed,
+    /// Design joints stated rigid where the motion record of their scope is
+    /// unread: two motion records bind the scope, or a record of freedom
+    /// entries binds no joint record of its stream.
+    AssemblyJointMotionAssumedRigid,
     /// Rotation limits retained natively because the zero-lane freedom value is unsettled.
     AssemblyJointAngularLimitsNative,
     /// Projected Design assembly joints whose operand paths carry occurrence
@@ -1601,6 +1605,7 @@ impl F3dLossCode {
         Self::AssemblyJointRestUnprojected,
         Self::AssemblyDesignJointUnprojected,
         Self::AssemblyJointActivationAssumed,
+        Self::AssemblyJointMotionAssumedRigid,
         Self::AssemblyJointAngularLimitsNative,
         Self::AssemblyOperandPathPairsNative,
         Self::AssemblyRootPathIdentitiesNative,
@@ -2506,6 +2511,7 @@ impl F3dLossCode {
             Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
             Self::AssemblyDesignJointUnprojected => "assembly.design-joint-unprojected",
             Self::AssemblyJointActivationAssumed => "assembly.joint-activation-assumed",
+            Self::AssemblyJointMotionAssumedRigid => "assembly.joint-motion-assumed-rigid",
             Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
@@ -3764,6 +3770,7 @@ impl F3dLossCode {
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyDesignJointUnprojected
             | Self::AssemblyJointActivationAssumed
+            | Self::AssemblyJointMotionAssumedRigid
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
@@ -5112,6 +5119,7 @@ impl F3dLossCode {
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyDesignJointUnprojected
             | Self::AssemblyJointActivationAssumed
+            | Self::AssemblyJointMotionAssumedRigid
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyJointSourceBindingAssumed
@@ -5517,6 +5525,7 @@ mod tests {
                 "assembly.joint-rest-unprojected",
                 "assembly.design-joint-unprojected",
                 "assembly.joint-activation-assumed",
+                "assembly.joint-motion-assumed-rigid",
                 "assembly.joint-angular-limits-native",
                 "assembly.operand-path-pairs-native",
                 "assembly.root-path-identities-native",

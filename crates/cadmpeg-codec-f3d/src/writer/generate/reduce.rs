@@ -30,6 +30,8 @@ use cadmpeg_ir::codec::write::{
     NativeDispositions,
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
@@ -615,17 +617,54 @@ impl<'a> Reduction<'a> {
     }
 
     /// Neither Design stream form holds a joint record: the source-less
-    /// generator writes the joints of no design.
+    /// generator writes the joints of no design. Where no native Design
+    /// record is written, the design losses charge each design `Joint` and
+    /// `RigidGroup` feature, and with it the joints the feature restates.
     fn drop_assembly_joints(&mut self) {
         if self.ir.model.assembly_joints.is_empty() {
             return;
         }
-        let joints = std::mem::take(&mut self.ir.to_mut().model.assembly_joints);
+        let restating = if self.writes_design() {
+            BTreeSet::new()
+        } else {
+            self.ir
+                .design
+                .features
+                .iter()
+                .filter(|feature| {
+                    matches!(
+                        feature.definition.operation,
+                        FeatureOperation::Joint(_) | FeatureOperation::RigidGroup(_)
+                    )
+                })
+                .map(|feature| feature.id.to_string())
+                .collect()
+        };
+        let restated = |id: &str| {
+            self.ir
+                .model
+                .restated()
+                .get(id)
+                .is_some_and(|restating_of| {
+                    restating_of.restaters().any(|(by, _)| {
+                    matches!(by, Restater::Record(feature) if restating.contains(feature))
+                })
+                })
+        };
+        let omitted = self
+            .ir
+            .model
+            .assembly_joints
+            .iter()
+            .map(|row| row.id.to_string())
+            .filter(|id| !restated(id))
+            .collect::<Vec<_>>();
+        self.ir.to_mut().model.assembly_joints.clear();
         self.losses.extend(named_loss(
             F3dLossCode::WriterJointOmitted,
             "assembly joint",
             "the source-less F3D Design stream holds no joint record",
-            joints.iter().map(|row| row.id.to_string()),
+            omitted,
         ));
     }
 

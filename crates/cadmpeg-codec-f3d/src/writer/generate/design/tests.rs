@@ -386,6 +386,79 @@ fn a_rigid_group_is_charged_evaluation_missing_as_no_joint_written() {
     );
 }
 
+/// A joint that a written rigid group restates is charged with the group
+/// alone; a joint no design feature restates is charged as omitted.
+#[test]
+fn a_joint_its_written_group_restates_is_charged_once() {
+    use cadmpeg_ir::design::projection::restated::Restater;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, PairedJointKind,
+    };
+
+    const GROUP: &str = "test:design:feature#group";
+    let mut ir = scoped_cube();
+    let mut group = feature(GROUP, OperationFamily::Joint);
+    let path = |name: &str| {
+        OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(
+                OccurrenceId::mint(format!("test:model:occurrence#{name}"))
+                    .expect("identity grammar"),
+            ),
+            configuration: None,
+        }])
+    };
+    group.definition.operation =
+        FeatureOperation::RigidGroup(Box::new(cadmpeg_ir::design::ops::assembly::RigidGroup {
+            members: [path("a"), path("b")].into(),
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
+        }));
+    ir.design.features.push(group);
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        panic!("the timeline")
+    };
+    members.push(Member::Feature(
+        FeatureId::mint(GROUP).expect("identity grammar"),
+    ));
+    let joint = |name: &str| {
+        let connector = || JointConnector {
+            operand: JointOperand::root(format!("{name}-origin"), Vec::new()),
+            frame: Transform::identity(),
+            detached: false,
+        };
+        AssemblyJoint::paired(
+            JointId::mint(format!("test:model:joint#{name}")).expect("identity grammar"),
+            PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [connector(), connector()],
+            None,
+        )
+    };
+    ir.model.assembly_joints = vec![joint("grouped"), joint("alone")];
+    ir.model.restated_mut().record(
+        "test:model:joint#grouped",
+        Restater::Record(GROUP.to_owned()),
+        [],
+    );
+    let (report, _) = write(&ir);
+    let omitted = loss(&report, &F3dLossCode::WriterJointOmitted.kind().to_string());
+    assert_eq!(omitted.len(), 1, "{:#?}", report.losses);
+    assert!(
+        omitted[0].contains("test:model:joint#alone"),
+        "{}",
+        omitted[0]
+    );
+    assert!(
+        !omitted[0].contains("test:model:joint#grouped"),
+        "{}",
+        omitted[0]
+    );
+}
+
 #[test]
 fn an_illegal_name_is_renamed() {
     let mut ir = scoped_cube();

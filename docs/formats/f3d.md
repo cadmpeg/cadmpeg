@@ -2414,6 +2414,8 @@ The four direct-construction 421-byte `As-built` generations use one exact class
 | `417 / 263` | `318 / 263` | `432 / 263`, `332 / 263`, `312 / 263`, `332 / 263` | `448 / 263` | 390 bytes; marker `+46..49 = 01 01 00 00`, matrix `+50`, pair `+390` | `DistanceMaximum`, `DistanceMinimum`; linear, reverse source order |
 | `457 / 258` | `418 / 258` | `296 / 258`, `264 / 258`, `363 / 258`, `264 / 258` | `297 / 258` | 385 bytes; marker `+45..48 = 01 01 00 00`, matrix `+49`, pair `+385` | `DistanceMinimum`, `DistanceMaximum`; linear |
 
+The two limit owners store evaluated values in the units of the placement owners: an angular limit in radians and a linear limit in centimetres.
+
 The class-430/262 `Assemble` generation uses class-313 parameter-owner
 records with 103-byte owner frames. Its 744-byte scope uses the compact
 operand-frame form: operand references at offsets 24 and 164, transforms at

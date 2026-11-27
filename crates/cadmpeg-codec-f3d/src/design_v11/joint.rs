@@ -11,6 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::nonblank_literal;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
     Construction, ConstructionInput, FrameAxis, FrameValue, InputReference, InputRole, PostStep,
@@ -25,10 +26,11 @@ use cadmpeg_ir::design::ops::shared::{
     JointOffset,
 };
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
+use cadmpeg_ir::design::projection::fields::{Field, ModelFeatureField};
 use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::selection::{
-    Anchor, Members, OccurrencePath, OrderedSelection, PathStep, PickContext, PickTarget, Picked,
-    Picks, Selection, StepRef,
+    Anchor, DefinitionRef, Members, OccurrencePath, OrderedSelection, PathStep, PickContext,
+    PickTarget, Picked, Picks, Selection, StepRef,
 };
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::features::{
@@ -53,6 +55,15 @@ use crate::records::feature::joint_motion::DesignJointMotion;
 /// Millimetres per stored centimetre of a translation lane.
 const MM_PER_CM: f64 = 10.0;
 
+/// The wire fields of an assembly joint a design feature leaves out.
+const OPERANDS: &str = "operands";
+const COUPLED_JOINTS: &str = "operands.coupled_joints";
+const CONNECTORS: &str = "operands.connectors";
+const SUPPRESSED: &str = "suppressed";
+const DRIVING_PARAMETER: &str = "driving_parameter";
+const DRIVES: &str = "drives";
+const NATIVE_REF: &str = "native_ref";
+
 /// What a joint's scope record states beside its assembly joint.
 #[derive(Clone, Copy, Default)]
 pub(super) struct Source<'a> {
@@ -62,6 +73,8 @@ pub(super) struct Source<'a> {
     pub(super) group: bool,
     /// The motion record that binds to the scope.
     pub(super) motion: Option<&'a DesignJointMotion>,
+    /// Whether two or more motion records bind to the scope.
+    pub(super) ambiguous: bool,
 }
 
 /// The occurrences a connector's context path walks.
@@ -181,24 +194,58 @@ impl<'a> Inputs<'a> {
             places,
         }
     }
+
+    /// What the scope record of `joint` states.
+    fn source(&self, joint: &AssemblyJoint) -> Source<'a> {
+        joint
+            .native_ref
+            .as_deref()
+            .and_then(|scope| self.sources.get(scope))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// The joints of the scope of `joint`.
+    fn group(&self, joint: &AssemblyJoint) -> Option<&[&'a AssemblyJoint]> {
+        joint
+            .native_ref
+            .as_deref()
+            .and_then(|scope| self.scoped.get(scope))
+            .map(Vec::as_slice)
+    }
+}
+
+/// A record a design feature restates, with the record's wire fields the
+/// feature leaves out.
+pub(super) struct Restated {
+    legacy: String,
+    by: String,
+    cut: Vec<&'static str>,
 }
 
 /// Restate each joint feature of `features`, a scope's features, from the
 /// assembly joint its legacy feature binds. `owner` is the scope's
 /// definition. A feature that does not restate keeps its operation, and a
-/// loss names it. Returns each assembly joint a restated feature states,
-/// with the feature's id: a rigid group states every joint of its scope.
+/// loss names it. Returns each assembly joint a restated feature states, with
+/// the feature and the joint's fields it leaves out: a rigid group states
+/// every joint of its scope.
+///
+/// A feature keeps its component. Where the connector paths do not start at
+/// the component, a joint's picks reach their occurrences through the scope's
+/// definition; a rigid group's member paths start at the scope's definition,
+/// and the group leaves out the legacy feature's `product_definition`.
 pub(super) fn project(
     features: &mut [Feature],
     owner: &ProductDefinitionId,
     inputs: &Inputs<'_>,
     losses: &mut Vec<LossNote>,
-) -> Vec<(String, String)> {
+) -> Vec<Restated> {
     let ids = features
         .iter()
         .map(|feature| feature.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let mut unprojected = Vec::new();
+    let mut assumed = Vec::new();
     let mut restated = Vec::new();
     for feature in features.iter_mut() {
         if !matches!(
@@ -209,48 +256,73 @@ pub(super) fn project(
         ) {
             continue;
         }
-        let Some(joint) = inputs.bound.get(feature.id.as_str()) else {
+        let Some(bound) = inputs.bound.get(feature.id.as_str()) else {
             continue;
         };
-        let site = |owner| Site {
+        let Some(joint) = inputs.joints.get(bound).copied() else {
+            unprojected.push(format!("{} (its assembly joint is absent)", feature.id));
+            continue;
+        };
+        let site = |owner, in_context| Site {
             owner,
+            in_context,
             ids: &ids,
             inputs,
         };
-        let component = feature.component.as_ref().filter(|component| {
-            inputs
-                .joints
-                .get(joint)
-                .is_some_and(|joint| site(component).roots(joint))
-        });
-        let projected = inputs
-            .joints
-            .get(joint)
-            .ok_or("its assembly joint is absent")
-            .and_then(|joint| site(component.unwrap_or(owner)).operation(joint));
-        match projected {
-            Ok(operation) => {
-                if component.is_none() {
-                    feature.component = None;
-                }
-                let stated = match (&operation, inputs.joints.get(joint)) {
-                    (FeatureOperation::RigidGroup(_), Some(joint)) => joint
-                        .native_ref
-                        .as_deref()
-                        .and_then(|scope| inputs.scoped.get(scope))
-                        .map(|group| group.iter().map(|member| &member.id).collect())
-                        .unwrap_or_default(),
-                    _ => vec![*joint],
-                };
-                restated.extend(
-                    stated
-                        .into_iter()
-                        .map(|id| (id.as_str().to_owned(), feature.id.as_str().to_owned())),
-                );
-                feature.definition.operation = operation;
+        let source = inputs.source(joint);
+        let component = feature.component.clone();
+        let (site, cleared) = match &component {
+            Some(component) if site(component, false).roots(joint) => {
+                (site(component, false), false)
             }
-            Err(reason) => unprojected.push(format!("{} ({reason})", feature.id)),
+            Some(_) if source.group => (site(owner, false), true),
+            Some(_) => (site(owner, true), false),
+            None => (site(owner, false), false),
+        };
+        let operation = match site.operation(joint) {
+            Ok(operation) => operation,
+            Err(reason) => {
+                unprojected.push(format!("{} ({reason})", feature.id));
+                continue;
+            }
+        };
+        let by = feature.id.as_str().to_owned();
+        if cleared {
+            feature.component = None;
+            restated.push(Restated {
+                legacy: by.clone(),
+                by: by.clone(),
+                cut: vec![ModelFeatureField::ProductDefinition.key()],
+            });
         }
+        let rigid = matches!(
+            &operation,
+            FeatureOperation::Joint(design) if matches!(
+                design.kind,
+                JointKind::Motion { motion: JointMotion::Rigid, .. }
+            )
+        );
+        if rigid && source.ambiguous {
+            assumed.push(feature.id.to_string());
+        }
+        match &operation {
+            FeatureOperation::RigidGroup(_) => {
+                let placed = site.placed(joint).unwrap_or_default();
+                for member in inputs.group(joint).unwrap_or_default() {
+                    restated.push(Restated {
+                        legacy: member.id.as_str().to_owned(),
+                        by: by.clone(),
+                        cut: member_cut(member, joint, &placed, feature),
+                    });
+                }
+            }
+            operation => restated.push(Restated {
+                legacy: joint.id.as_str().to_owned(),
+                by,
+                cut: joint_cut(joint, feature, operation),
+            }),
+        }
+        feature.definition.operation = operation;
     }
     if !unprojected.is_empty() {
         losses.push(F3dLossCode::AssemblyDesignJointUnprojected.note(format!(
@@ -259,39 +331,127 @@ pub(super) fn project(
             unprojected.join(", ")
         )));
     }
+    if !assumed.is_empty() {
+        losses.push(F3dLossCode::AssemblyJointMotionAssumedRigid.note(format!(
+            "{} Fusion joint feature(s) are stated rigid: two or more motion records bind to their scope: {}",
+            assumed.len(),
+            assumed.join(", ")
+        )));
+    }
     restated
 }
 
-/// State in `model` that each feature of `restated`, as [`project`] returns
-/// it, restates the assembly joint paired with it, whole.
-pub(super) fn record(model: &mut cadmpeg_ir::document::Model, restated: Vec<(String, String)>) {
-    for (joint, feature) in restated {
+/// State in `model` each restatement of `restated`, as [`project`] returns
+/// it.
+pub(super) fn record(model: &mut cadmpeg_ir::document::Model, restated: Vec<Restated>) {
+    for Restated { legacy, by, cut } in restated {
         model
             .restated_mut()
-            .record(&joint, Restater::Record(feature), []);
+            .record(&legacy, Restater::Record(by), cut);
     }
+}
+
+/// The fields of `joint` that `feature` leaves out beside its operation: the
+/// suppression where it differs, the driving parameter, the drives, and the
+/// scope record where the feature names another.
+fn scalar_cut(joint: &AssemblyJoint, feature: &Feature) -> Vec<&'static str> {
+    let suppressed = match &feature.suppressed {
+        None => joint.suppressed,
+        Some(Dimension::Literal(suppressed)) => *suppressed != joint.suppressed,
+        Some(Dimension::Parameter(_) | Dimension::Negated(_)) => false,
+    };
+    [
+        (SUPPRESSED, suppressed),
+        (DRIVING_PARAMETER, joint.driving_parameter.is_some()),
+        (DRIVES, !joint.drives.is_empty()),
+        (
+            NATIVE_REF,
+            joint.native_ref.is_some() && joint.native_ref != feature.native_ref,
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(field, cut)| cut.then_some(field))
+    .collect()
+}
+
+/// The fields of `joint` that the design joint `operation` of `feature`
+/// leaves out: the coupled joints where a pick names a joint no feature
+/// states, and the connectors where a connector states no frame.
+fn joint_cut(
+    joint: &AssemblyJoint,
+    feature: &Feature,
+    operation: &FeatureOperation,
+) -> Vec<&'static str> {
+    let mut cut = scalar_cut(joint, feature);
+    let FeatureOperation::Joint(design) = operation else {
+        return cut;
+    };
+    if let JointKind::Coupling {
+        joints: Some(joints),
+        ..
+    } = &design.kind
+    {
+        if let Picks::Named(picks) = &joints.picks {
+            if picks
+                .as_slice()
+                .iter()
+                .any(|pick| matches!(pick.target, PickTarget::Native { .. }))
+            {
+                cut.push(COUPLED_JOINTS);
+            }
+        }
+    }
+    let framed = |connector: &JointConnector| match connector {
+        JointConnector::Frame(construction) => {
+            construction.resolved.is_some() || !construction.after.is_empty()
+        }
+        _ => false,
+    };
+    if !design.connectors.iter().all(framed) {
+        cut.push(CONNECTORS);
+    }
+    cut
+}
+
+/// The fields of `member`, a joint of the as-built rigid group that
+/// `feature` restates from `bound`, that the group leaves out: the operands
+/// where the member is no fixed joint without limits at the group's
+/// placement, or a connector of it is none of `placed`.
+fn member_cut(
+    member: &AssemblyJoint,
+    bound: &AssemblyJoint,
+    placed: &[&products::JointConnector],
+    feature: &Feature,
+) -> Vec<&'static str> {
+    let mut cut = scalar_cut(member, feature);
+    let stated = match (unlimited_fixed(member), unlimited_fixed(bound)) {
+        (Some((kind, connectors)), Some((group_kind, _))) => {
+            kind == group_kind
+                && connectors
+                    .iter()
+                    .all(|connector| placed.contains(&connector))
+        }
+        _ => false,
+    };
+    if !stated {
+        cut.push(OPERANDS);
+    }
+    cut
 }
 
 /// The context of one joint feature.
 struct Site<'s, 'a> {
     /// The definition the feature's connector paths start at.
     owner: &'s ProductDefinitionId,
+    /// Whether the paths reach through `owner` from a feature whose
+    /// definition is another.
+    in_context: bool,
     /// The ids of the scope's features.
     ids: &'s BTreeSet<String>,
     inputs: &'s Inputs<'a>,
 }
 
 impl<'a> Site<'_, 'a> {
-    /// What the scope record of `joint` states.
-    fn source(&self, joint: &AssemblyJoint) -> Source<'a> {
-        joint
-            .native_ref
-            .as_deref()
-            .and_then(|scope| self.inputs.sources.get(scope))
-            .copied()
-            .unwrap_or_default()
-    }
-
     /// The connectors `joint` places: its own two, and for a rigid group
     /// the second connector of each other joint of its scope.
     fn placed<'j>(
@@ -301,18 +461,35 @@ impl<'a> Site<'_, 'a> {
     where
         'a: 'j,
     {
-        let mut connectors = pair(joint)?.iter().collect::<Vec<_>>();
-        if self.source(joint).group {
-            let group = joint
-                .native_ref
-                .as_deref()
-                .and_then(|scope| self.inputs.scoped.get(scope))
+        let mut connectors = pair(joint)?.1.iter().collect::<Vec<_>>();
+        if self.inputs.source(joint).group {
+            let group = self
+                .inputs
+                .group(joint)
                 .ok_or("its scope states no joints")?;
             for member in group.iter().filter(|member| member.id != joint.id) {
-                connectors.push(&pair(member)?[1]);
+                connectors.push(&pair(member)?.1[1]);
             }
         }
         Ok(connectors)
+    }
+
+    /// The context of a pick in `occurrence`: the path from `owner`, through
+    /// `owner` where the feature's definition is another.
+    fn context(&self, occurrence: &OccurrenceId) -> Option<PickContext> {
+        let path = self.inputs.places.path(occurrence, self.owner)?;
+        Some(if self.in_context {
+            PickContext::InContext {
+                assembly: DefinitionRef {
+                    definition: self.owner.clone(),
+                    configuration: None,
+                },
+                own: None,
+                target: Some(path),
+            }
+        } else {
+            PickContext::Occurrence(path)
+        })
     }
 
     /// Whether the definition at `owner` has a path to each occurrence that
@@ -337,13 +514,8 @@ impl<'a> Site<'_, 'a> {
 
     /// The design operation of `joint`.
     fn operation(&self, joint: &AssemblyJoint) -> Result<FeatureOperation, &'static str> {
-        let source = self.source(joint);
-        let JointOperands::Pair {
-            kind, connectors, ..
-        } = joint.operands()
-        else {
-            return Err("it has one connector");
-        };
+        let source = self.inputs.source(joint);
+        let (kind, connectors) = pair(joint)?;
         if source.group {
             return self
                 .rigid_group(joint)
@@ -369,7 +541,7 @@ impl<'a> Site<'_, 'a> {
                                 .map(Dimension::Literal),
                             radii: [radius(distance), radius(distance2)],
                         },
-                        joints: self.coupled(coupled_joints),
+                        joints: self.coupled(coupled_joints)?,
                     },
                     false,
                     NativeOptions::new(),
@@ -395,7 +567,7 @@ impl<'a> Site<'_, 'a> {
                 );
                 (
                     JointKind::Motion {
-                        motion: freedom.motion().ok_or("its freedom codes name no motion")?,
+                        motion: freedom.motion(),
                         axes: None,
                         offset: offset(kind),
                         limits,
@@ -411,7 +583,7 @@ impl<'a> Site<'_, 'a> {
         if source.as_built {
             insert_text(&mut native_options, "joint_mode", "As-built".to_owned());
         }
-        let [first, second] = connectors.as_ref();
+        let [first, second] = connectors;
         let connector = |connector: &products::JointConnector| {
             let frame = if unturn {
                 unturned(connector.frame).ok_or("its frame does not turn back")?
@@ -434,40 +606,63 @@ impl<'a> Site<'_, 'a> {
         Ok(FeatureOperation::Joint(Box::new(joint)))
     }
 
-    /// The `Feature` picks of the two joints a coupling acts on, where each
-    /// binds a feature of the scope.
-    fn coupled(&self, joints: &[JointId]) -> Option<OrderedSelection> {
-        let [first, second] = joints else {
-            return None;
+    /// The picks of the two joints a coupling acts on: a joint that binds a
+    /// feature of the scope by its `Feature`, another by its native name
+    /// (§3.3). `None` where the coupling acts on the connectors directly.
+    fn coupled(&self, joints: &[JointId]) -> Result<Option<OrderedSelection>, &'static str> {
+        let pair = match joints {
+            [] => return Ok(None),
+            [first, second] if first != second => [first, second],
+            _ => return Err("its coupling names other than two distinct joints"),
         };
         let pick = |joint: &JointId| {
-            let feature = *self.inputs.features.get(joint)?;
-            self.ids.contains(feature.as_str()).then(|| Picked {
-                target: PickTarget::Feature(feature.clone()),
+            let feature = self
+                .inputs
+                .features
+                .get(joint)
+                .filter(|feature| self.ids.contains(feature.as_str()));
+            let (target, native) = match feature {
+                Some(feature) => (PickTarget::Feature((*feature).clone()), None),
+                None => (
+                    PickTarget::Native { within: None },
+                    Some(native_name([joint.as_str()])?),
+                ),
+            };
+            Some(Picked {
+                target,
                 context: None,
-                native: None,
+                native,
                 domain: None,
                 witness: None,
                 resolved: None,
             })
         };
-        Some(Selection {
+        let picks = pair
+            .into_iter()
+            .map(pick)
+            .collect::<Option<Vec<_>>>()
+            .ok_or("its coupled joint names no pick")?;
+        Ok(Some(Selection {
             at: Anchor::Current,
-            picks: Picks::Named(Members::new(vec![pick(first)?, pick(second)?]).ok()?),
+            picks: Picks::Named(
+                Members::new(picks).map_err(|_| "its coupled joints bind one feature")?,
+            ),
             native: None,
-        })
+        }))
     }
 
     /// A connector on `connector`'s operand at `frame`: a joint origin's
     /// frame datum, a frame on a whole occurrence moved by `frame`, or the
-    /// native operand at `frame`.
+    /// native operand at `frame`. The frame is in the coordinates of the
+    /// document at the end of the operand's path, so a frame on an element
+    /// below the occurrence the path resolves to states no resolved value.
     fn connector(
         &self,
         connector: &products::JointConnector,
         frame: Transform,
     ) -> Option<JointConnector> {
         let operand = &connector.operand;
-        let (pick, after) = match &operand.container {
+        let (pick, after, resolved) = match &operand.container {
             OperandContainer::Root {}
                 if operand.subelements.is_empty() && self.ids.contains(&operand.object) =>
             {
@@ -484,6 +679,7 @@ impl<'a> Site<'_, 'a> {
                         resolved: None,
                     },
                     Vec::new(),
+                    true,
                 )
             }
             OperandContainer::Occurrence {
@@ -491,43 +687,35 @@ impl<'a> Site<'_, 'a> {
                 occurrence_path,
             } => {
                 let (occurrence, keys) = self.inputs.places.descend(occurrence, occurrence_path);
-                let context = Some(PickContext::Occurrence(
-                    self.inputs.places.path(&occurrence, self.owner)?,
-                ));
-                let native = native_name(
-                    keys.iter()
-                        .chain(std::iter::once(&operand.object))
-                        .chain(&operand.subelements),
-                );
-                let target = if keys.is_empty() {
-                    PickTarget::Component
-                } else {
-                    PickTarget::Native { within: None }
-                };
+                let whole = keys.is_empty() && operand.subelements.is_empty();
                 (
                     Picked {
-                        target,
-                        context,
-                        native: Some(native?),
+                        target: if whole {
+                            PickTarget::Component
+                        } else {
+                            PickTarget::Native { within: None }
+                        },
+                        context: Some(self.context(&occurrence)?),
+                        native: Some(native_name(operand_parts(&keys, operand))?),
                         domain: None,
                         witness: None,
                         resolved: None,
                     },
                     vec![PostStep::Fixed(frame)],
+                    whole,
                 )
             }
             OperandContainer::Root {} | OperandContainer::External { .. } => (
                 Picked {
                     target: PickTarget::Native { within: None },
                     context: None,
-                    native: Some(native_name(
-                        std::iter::once(&operand.object).chain(&operand.subelements),
-                    )?),
+                    native: Some(native_name(operand_parts(&[], operand))?),
                     domain: None,
                     witness: None,
                     resolved: None,
                 },
                 Vec::new(),
+                true,
             ),
         };
         Some(JointConnector::Frame(Construction {
@@ -535,7 +723,7 @@ impl<'a> Site<'_, 'a> {
             after,
             solution: None,
             mode: None,
-            resolved: frame_value(&frame),
+            resolved: if resolved { frame_value(&frame) } else { None },
             resolved_in: BTreeMap::new(),
         }))
     }
@@ -549,28 +737,24 @@ impl<'a> Site<'_, 'a> {
         let mut native_options = NativeOptions::new();
         for (ordinal, connector) in connectors.into_iter().enumerate() {
             let operand = &connector.operand;
-            let member = match &operand.container {
+            let (member, keys) = match &operand.container {
                 OperandContainer::Occurrence {
                     occurrence,
                     occurrence_path,
                 } => {
                     let (occurrence, keys) =
                         self.inputs.places.descend(occurrence, occurrence_path);
-                    keys.is_empty()
+                    let member = (keys.is_empty() && operand.subelements.is_empty())
                         .then(|| self.inputs.places.path(&occurrence, self.owner))
-                        .flatten()
+                        .flatten();
+                    (member, keys)
                 }
-                OperandContainer::Root {} | OperandContainer::External { .. } => None,
+                OperandContainer::Root {} | OperandContainer::External { .. } => (None, Vec::new()),
             };
             let named = match &member {
                 Some(path) => steps(path),
                 None => {
-                    let listing = [&operand.object]
-                        .into_iter()
-                        .chain(&operand.subelements)
-                        .map(String::as_str)
-                        .collect::<Vec<_>>()
-                        .join("/");
+                    let listing = operand_parts(&keys, operand).collect::<Vec<_>>().join("/");
                     insert_text(
                         &mut native_options,
                         &format!("unresolved_member.{ordinal}"),
@@ -591,15 +775,14 @@ impl<'a> Site<'_, 'a> {
         if members.len() < 2 {
             return Err("fewer than two of its members resolve to occurrences");
         }
-        if let JointOperands::Pair {
-            kind:
-                PairedJointKind::Fixed {
-                    angle,
-                    translation_offset,
-                    ..
-                },
-            ..
-        } = joint.operands()
+        if let Ok((
+            PairedJointKind::Fixed {
+                angle,
+                translation_offset,
+                ..
+            },
+            _,
+        )) = pair(joint)
         {
             for (name, value) in ["offset_x", "offset_y", "offset_z"]
                 .into_iter()
@@ -624,11 +807,31 @@ impl<'a> Site<'_, 'a> {
     }
 }
 
-/// The two connectors of a paired joint.
-fn pair(joint: &AssemblyJoint) -> Result<&[products::JointConnector; 2], &'static str> {
+/// The kind and the connectors of a fixed joint without limits.
+fn unlimited_fixed(
+    joint: &AssemblyJoint,
+) -> Option<(&PairedJointKind, &[products::JointConnector; 2])> {
+    pair(joint).ok().filter(|(kind, _)| {
+        matches!(
+            kind,
+            PairedJointKind::Fixed {
+                angular_limits: None,
+                linear_limits: None,
+                ..
+            }
+        )
+    })
+}
+
+/// The kind and the two connectors of a paired joint.
+fn pair(
+    joint: &AssemblyJoint,
+) -> Result<(&PairedJointKind, &[products::JointConnector; 2]), &'static str> {
     match joint.operands() {
-        JointOperands::Pair { connectors, .. } => Ok(connectors.as_ref()),
-        JointOperands::Grounded { .. } => Err("a member joint has one connector"),
+        JointOperands::Pair {
+            kind, connectors, ..
+        } => Ok((kind, connectors.as_ref())),
+        JointOperands::Grounded { .. } => Err("a joint has one connector"),
     }
 }
 
@@ -639,17 +842,18 @@ enum Freedom {
     Rigid,
     Rotation(FrameAxis),
     Translation(FrameAxis),
-    Native(String),
+    Native(NonBlankString),
 }
 
 impl Freedom {
+    /// The freedom of a motion record's codes; a motion record stores one
+    /// code or more.
     fn of(codes: &[u32]) -> Self {
         match codes {
-            [] => Self::Rigid,
             [1] => Self::Rotation(FrameAxis::Y),
             [2] => Self::Rotation(FrameAxis::Z),
             [8] => Self::Translation(FrameAxis::Z),
-            codes => Self::Native(format!(
+            codes => Self::Native(nonblank_literal!(
                 "f3d:freedom:{}",
                 codes
                     .iter()
@@ -660,13 +864,13 @@ impl Freedom {
         }
     }
 
-    fn motion(&self) -> Option<JointMotion> {
-        Some(match self {
+    fn motion(&self) -> JointMotion {
+        match self {
             Self::Rigid => JointMotion::Rigid,
             Self::Rotation(axis) => JointMotion::Revolute { axis: *axis },
             Self::Translation(axis) => JointMotion::Slider { axis: *axis },
-            Self::Native(name) => JointMotion::Native(NonBlankString::new(name.clone())?),
-        })
+            Self::Native(name) => JointMotion::Native(name.clone()),
+        }
     }
 }
 
@@ -920,12 +1124,24 @@ fn input(pick: Picked) -> Option<ConstructionInput> {
     })
 }
 
-/// The native name of an operand: its parts joined by `/`.
-fn native_name<'s>(parts: impl Iterator<Item = &'s String>) -> Option<NativeName> {
+/// The parts of an operand's native name: the occurrence keys `keys` that
+/// name no occurrence, its object, and its subelements.
+fn operand_parts<'s>(
+    keys: &'s [String],
+    operand: &'s products::JointOperand,
+) -> impl Iterator<Item = &'s str> {
+    keys.iter()
+        .chain(std::iter::once(&operand.object))
+        .chain(&operand.subelements)
+        .map(String::as_str)
+}
+
+/// A native name of `parts` joined by `/`.
+fn native_name<'s>(parts: impl IntoIterator<Item = &'s str>) -> Option<NativeName> {
     Some(NativeName {
         codec: cadmpeg_ir::codec_id!("f3d"),
         value: NativeNameValue::Text(NonBlankString::new(
-            parts.map(String::as_str).collect::<Vec<_>>().join("/"),
+            parts.into_iter().collect::<Vec<_>>().join("/"),
         )?),
     })
 }

@@ -1442,6 +1442,23 @@ fn coupling_joints_pick_joint_features() {
 }
 
 #[test]
+fn a_coupling_counts_a_native_joint_pick_toward_its_two() {
+    let coupling = |picks| {
+        with(joint(JointKind::Coupling {
+            coupling: Coupling::Screw { pitch: None },
+            joints: Some(named(picks)),
+        }))
+    };
+    let native = || pick(PickTarget::Native { within: None });
+    let message = "Coupling.joints picks other than two other Joint features";
+    assert_no_finding_containing(
+        &coupling(vec![pick(PickTarget::Feature(feature("fillet"))), native()]),
+        message,
+    );
+    assert_finding(&coupling(vec![native()]), message);
+}
+
+#[test]
 fn a_symmetric_contour_flange_extent_is_admitted() {
     let flange = |extent| {
         sheet(SheetMetalKind::ContourFlange {

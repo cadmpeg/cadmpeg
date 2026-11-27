@@ -12,7 +12,7 @@ fn decode_stream(
     stream: &str,
     scopes: &HashMap<u32, bool>,
 ) -> Vec<super::DesignJointMotion> {
-    super::decode_stream(bytes, stream, scopes, &AsBuiltJoints::default())
+    super::decode_stream(bytes, stream, scopes, &AsBuiltJoints::default()).0
 }
 
 fn header(out: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
@@ -114,7 +114,7 @@ fn as_built_motion_binds_the_registered_joint_after_occurrence_parents() {
     };
     let scopes = HashMap::from([(11, true)]);
     let read = |as_built: &AsBuiltJoints<'_>| {
-        super::decode_stream(&bytes, "Design/BulkStream.dat", &scopes, as_built)
+        super::decode_stream(&bytes, "Design/BulkStream.dat", &scopes, as_built).0
     };
     let [motion]: [_; 1] = read(&as_built).try_into().unwrap();
     assert_eq!(motion.joint_record_index, 10);

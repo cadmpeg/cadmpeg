@@ -6,12 +6,14 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::container::ContainerScan;
 use crate::design::assembly::compact_placement_as_built_scope;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::layout::assembly_motion_parent_entry as parent_entry;
 use crate::layout::assembly_motion_parent_run as parents;
+use crate::loss::F3dLossCode;
 use crate::records::entity_header::SegmentType;
 use crate::records::feature::joint_motion::{
     DesignJointFreedomWord, DesignJointLimitLanes, DesignJointMotion, DesignJointRest,
@@ -62,8 +64,9 @@ pub(crate) fn decode_joint_motions(
     scan: &ContainerScan<'_>,
     scopes: &[DesignParameterScope],
     types: &[SegmentType],
-) -> Result<Vec<DesignJointMotion>, CodecError> {
+) -> Result<(Vec<DesignJointMotion>, Vec<LossNote>), CodecError> {
     let mut out = Vec::new();
+    let mut unbound = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -100,25 +103,32 @@ pub(crate) fn decode_joint_motions(
             },
             joints,
         };
-        out.extend(decode_stream(
-            bytes,
-            &entry.name,
-            &assemble_scopes,
-            &as_built,
-        ));
+        let (motions, skipped) = decode_stream(bytes, &entry.name, &assemble_scopes, &as_built);
+        out.extend(motions);
+        unbound.extend(skipped.into_iter().map(|index| format!("{stream}#{index}")));
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(out)
+    let losses = if unbound.is_empty() {
+        Vec::new()
+    } else {
+        vec![F3dLossCode::AssemblyJointMotionAssumedRigid.note(format!(
+            "{} record(s) of freedom entries bind no joint record; a joint of their stream with no motion record is stated rigid: {}",
+            unbound.len(),
+            unbound.join(", ")
+        ))]
+    };
+    Ok((out, losses))
 }
 
-/// The motions of one stream. `assemble_scopes` names the decoded scopes of
-/// the stream and whether each is an `Assemble` scope.
+/// The motions of one stream, and the index of each record of π freedom
+/// entries that binds no joint record. `assemble_scopes` names the decoded
+/// scopes of the stream and whether each is an `Assemble` scope.
 fn decode_stream(
     bytes: &[u8],
     entry_name: &str,
     assemble_scopes: &HashMap<u32, bool>,
     as_built: &AsBuiltJoints<'_>,
-) -> Vec<DesignJointMotion> {
+) -> (Vec<DesignJointMotion>, Vec<u32>) {
     let headers: Vec<(usize, u32)> = indexed_record_offsets(bytes)
         .map(|header| (header.offset, header.record_index))
         .collect();
@@ -181,9 +191,11 @@ fn decode_stream(
         }
     }
     let mut out = Vec::new();
+    let mut unbound = Vec::new();
     for (motion_start, motion_index, mut entries) in by_record {
         // A record with π entries stores no zero-lane entry.
-        if entries.iter().any(|(_, entry)| !entry.zero_second_value) {
+        let full = entries.iter().any(|(_, entry)| !entry.zero_second_value);
+        if full {
             entries.retain(|(_, entry)| !entry.zero_second_value);
         }
         let motion = MotionRecord {
@@ -197,6 +209,12 @@ fn decode_stream(
                     .filter(|joint| !as_built.joints.contains(joint))
             })
         else {
+            // A partner record repeats the entries and names a scope.
+            let partner = marked_record_reference(bytes, motion.start + MOTION_JOINT_REFERENCE)
+                .is_some_and(|scope| assemble_scopes.contains_key(&scope));
+            if full && !partner {
+                unbound.push(motion_index);
+            }
             continue;
         };
         let Some(&joint_start) = records.offsets(joint_index).first() else {
@@ -215,7 +233,7 @@ fn decode_stream(
             limits: joint_limits(bytes, joint_start, record_end(joint_start), joint_index),
         });
     }
-    out
+    (out, unbound)
 }
 
 /// A record holding freedom entries: its header offset, end, and index.

@@ -192,6 +192,19 @@ fn restate(
     joints: &[AssemblyJoint],
     sources: &[(u32, Source<'_>)],
 ) -> Vec<LossNote> {
+    restate_with(features, legacy, joints, sources).0
+}
+
+/// Each restated record, its restater, and the fields it leaves out.
+type Restatements = Vec<(String, String, Vec<&'static str>)>;
+
+/// [`restate`], with the restatements.
+fn restate_with(
+    features: &mut [Feature],
+    legacy: &[LegacyFeature],
+    joints: &[AssemblyJoint],
+    sources: &[(u32, Source<'_>)],
+) -> (Vec<LossNote>, Restatements) {
     let model = Model::new();
     let scopes = sources
         .iter()
@@ -212,8 +225,19 @@ fn restate(
         ),
     );
     let mut losses = Vec::new();
-    project(features, &definition("root"), &inputs, &mut losses);
-    losses
+    let restated = project(features, &definition("root"), &inputs, &mut losses)
+        .into_iter()
+        .map(|Restated { legacy, by, cut }| (legacy, by, cut))
+        .collect();
+    (losses, restated)
+}
+
+fn joint_id(name: &str) -> String {
+    format!("f3d:model:joint#{name}")
+}
+
+fn feature_id(name: &str) -> String {
+    format!("f3d:model:feature#{name}")
 }
 
 fn the_joint(feature: &Feature) -> &Joint {
@@ -684,8 +708,11 @@ fn a_group_with_one_occurrence_member_stays_unresolved() {
     );
 }
 
+/// A feature keeps its component where the connector paths do not start
+/// at it: each pick reaches its occurrence through the scope's definition
+/// (§5.8, `InContext`).
 #[test]
-fn a_feature_of_an_operand_component_states_paths_from_the_scope_definition() {
+fn a_feature_of_an_operand_component_keeps_it_and_picks_through_the_scope_definition() {
     let fixed_pair = joint(
         "pair",
         82,
@@ -695,25 +722,175 @@ fn a_feature_of_an_operand_component_states_paths_from_the_scope_definition() {
     let mut feature = unresolved("pair");
     feature.component = Some(definition("part-b"));
     let mut features = [feature];
-    let losses = restate(
+    let (losses, restated) = restate_with(
         &mut features,
         &[legacy("pair", &fixed_pair)],
         &[fixed_pair],
         &[(82, Source::default())],
     );
     assert!(losses.is_empty(), "{losses:?}");
-    assert_eq!(features[0].component, None);
+    assert_eq!(features[0].component, Some(definition("part-b")));
     let contexts = the_joint(&features[0])
         .connectors
         .iter()
         .map(|connector| only_pick(construction(connector)).context.clone())
         .collect::<Vec<_>>();
+    let through = |names: &[&str]| {
+        Some(PickContext::InContext {
+            assembly: DefinitionRef {
+                definition: definition("root"),
+                configuration: None,
+            },
+            own: None,
+            target: Some(path(names)),
+        })
+    };
+    assert_eq!(contexts, [through(&["a"]), through(&["a", "c"])]);
     assert_eq!(
-        contexts,
+        restated,
+        [(joint_id("pair"), feature_id("pair"), vec![NATIVE_REF])]
+    );
+}
+
+/// A rigid group's member paths start at the definition that owns the
+/// group: the group roots at the scope's definition and leaves out the
+/// legacy feature's definition.
+#[test]
+fn a_group_of_an_operand_component_roots_at_the_scope_and_cuts_the_definition() {
+    let first = joint(
+        "set",
+        85,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("b"), STORED)],
+    );
+    let mut feature = unresolved("set");
+    feature.component = Some(definition("part-b"));
+    feature.native_ref = first.native_ref.clone();
+    let mut features = [feature];
+    let (losses, restated) = restate_with(
+        &mut features,
+        &[legacy("set", &first)],
+        &[first],
+        &[(
+            85,
+            Source {
+                group: true,
+                ..Source::default()
+            },
+        )],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(features[0].component, None);
+    let FeatureOperation::RigidGroup(group) = &features[0].definition.operation else {
+        panic!("a rigid group")
+    };
+    assert_eq!(group.members, [path(&["a"]), path(&["b"])].into());
+    assert_eq!(
+        restated,
         [
-            Some(PickContext::Occurrence(path(&["a"]))),
-            Some(PickContext::Occurrence(path(&["a", "c"]))),
+            (
+                feature_id("set"),
+                feature_id("set"),
+                vec!["product_definition"]
+            ),
+            (joint_id("set"), feature_id("set"), Vec::new()),
         ]
+    );
+}
+
+/// The keys of an operand that name no occurrence below the one its path
+/// resolves to name an element of that occurrence's document: the connector
+/// picks it by its native name, at the stored frame, with no resolved value.
+#[test]
+fn an_operand_with_unresolved_keys_states_a_native_pick_at_the_stored_frame() {
+    let deep = joint(
+        "deep",
+        86,
+        fixed(),
+        [
+            connector(on("a"), STORED),
+            connector(
+                JointOperand::occurrence(
+                    occurrence("b"),
+                    "b-origin",
+                    vec!["deeper-key".to_owned()],
+                ),
+                STORED,
+            ),
+        ],
+    );
+    let mut features = [unresolved("deep")];
+    let (losses, restated) = restate_with(
+        &mut features,
+        &[legacy("deep", &deep)],
+        &[deep],
+        &[(86, Source::default())],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let construction = construction(&the_joint(&features[0]).connectors[1]);
+    let pick = only_pick(construction);
+    assert_eq!(pick.target, PickTarget::Native { within: None });
+    assert_eq!(pick.context, Some(PickContext::Occurrence(path(&["b"]))));
+    assert_eq!(
+        pick.native.as_ref().map(|name| &name.value),
+        Some(&NativeNameValue::Text(
+            NonBlankString::new("b-origin/deeper-key").unwrap()
+        ))
+    );
+    assert_eq!(fixed_rows(construction), STORED);
+    assert_eq!(construction.resolved, None);
+    assert_eq!(
+        restated,
+        [(joint_id("deep"), feature_id("deep"), vec![NATIVE_REF])]
+    );
+
+    let group = joint(
+        "deep-group",
+        87,
+        fixed(),
+        [
+            connector(on("a"), STORED),
+            connector(
+                JointOperand::occurrence(
+                    occurrence("b"),
+                    "b-origin",
+                    vec!["deeper-key".to_owned()],
+                ),
+                STORED,
+            ),
+        ],
+    );
+    let member = joint(
+        "deep-group:2",
+        87,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("c"), STORED)],
+    );
+    let mut features = [unresolved("deep-group")];
+    let losses = restate(
+        &mut features,
+        &[legacy("deep-group", &group)],
+        &[group, member],
+        &[(
+            87,
+            Source {
+                group: true,
+                ..Source::default()
+            },
+        )],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    let FeatureOperation::RigidGroup(group) = &features[0].definition.operation else {
+        panic!("a rigid group")
+    };
+    assert_eq!(group.members, [path(&["a"]), path(&["a", "c"])].into());
+    assert_eq!(
+        group
+            .native_options
+            .get(&codec_name("unresolved_member.1").unwrap()),
+        Some(&NativeOption::Text(Dimension::Literal(
+            NonBlankString::new("b-origin/deeper-key").unwrap()
+        )))
     );
 }
 
@@ -816,6 +993,209 @@ fn a_motion_link_couples_the_features_of_its_two_revolute_joints() {
     );
 }
 
+/// A coupled joint that binds no feature of the scope is picked by its
+/// native name (§3.3): the coupling still names its two joints, and the
+/// link's restatement leaves out the coupled joints.
+#[test]
+fn a_coupled_joint_of_no_scope_feature_is_a_native_pick() {
+    let hinge = |name: &str, ordinal: u32| {
+        joint(
+            name,
+            ordinal,
+            PairedJointKind::Revolute {
+                angle: Some(finite(0.0)),
+                angular_limits: None,
+            },
+            [connector(on("a"), STORED), connector(on("b"), STORED)],
+        )
+    };
+    let link = |name: &str, coupled: Vec<JointId>| {
+        joint(
+            name,
+            94,
+            PairedJointKind::Gears {
+                distance: None,
+                distance2: None,
+                ratio: None,
+                coupled_joints: coupled,
+            },
+            [connector(on("a"), STORED), connector(on("b"), STORED)],
+        )
+    };
+    let first = hinge("first", 90);
+    let second = hinge("second", 92);
+    let coupled = link("link", vec![first.id.clone(), second.id.clone()]);
+    let direct = link("direct", Vec::new());
+    let twice = link("twice", vec![second.id.clone(), second.id.clone()]);
+    let mut features = [
+        unresolved("second"),
+        unresolved("link"),
+        unresolved("direct"),
+        unresolved("twice"),
+    ];
+    let (losses, restated) = restate_with(
+        &mut features,
+        &[
+            legacy("first", &first),
+            legacy("second", &second),
+            legacy("link", &coupled),
+            legacy("direct", &direct),
+            legacy("twice", &twice),
+        ],
+        &[first, second, coupled, direct, twice],
+        &[],
+    );
+    let JointKind::Coupling { joints, .. } = &the_joint(&features[1]).kind else {
+        panic!("a coupling")
+    };
+    let Picks::Named(members) = &joints.as_ref().unwrap().picks else {
+        panic!("named picks")
+    };
+    let [native, feature] = members.as_slice() else {
+        panic!("two picks")
+    };
+    assert_eq!(native.target, PickTarget::Native { within: None });
+    assert_eq!(
+        native.native.as_ref().map(|name| &name.value),
+        Some(&NativeNameValue::Text(
+            NonBlankString::new(joint_id("first")).unwrap()
+        ))
+    );
+    assert_eq!(
+        feature.target,
+        PickTarget::Feature(FeatureId::mint(feature_id("second")).unwrap())
+    );
+    let cut = |joint: &str| {
+        restated
+            .iter()
+            .find(|(legacy, _, _)| *legacy == joint_id(joint))
+            .map(|(_, _, cut)| cut.clone())
+    };
+    assert_eq!(cut("link"), Some(vec![NATIVE_REF, COUPLED_JOINTS]));
+
+    let JointKind::Coupling { joints, .. } = &the_joint(&features[2]).kind else {
+        panic!("a coupling")
+    };
+    assert_eq!(joints, &None);
+    assert_eq!(cut("direct"), Some(vec![NATIVE_REF]));
+
+    assert_eq!(
+        features[3].definition.operation,
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Joint
+        }
+    );
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert!(
+        loss.message.contains(&feature_id("twice")),
+        "{}",
+        loss.message
+    );
+}
+
+/// Two motion records that bind one scope leave its motion unread: the joint
+/// is stated rigid, and a loss names the assumption.
+#[test]
+fn a_joint_of_two_motion_records_is_rigid_with_a_loss() {
+    let joint = joint(
+        "doubled",
+        71,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("b"), STORED)],
+    );
+    let mut features = [unresolved("doubled")];
+    let losses = restate(
+        &mut features,
+        &[legacy("doubled", &joint)],
+        &[joint],
+        &[(
+            71,
+            Source {
+                ambiguous: true,
+                ..Source::default()
+            },
+        )],
+    );
+    let JointKind::Motion { motion, .. } = &the_joint(&features[0]).kind else {
+        panic!("a motion")
+    };
+    assert_eq!(motion, &JointMotion::Rigid);
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::AssemblyJointMotionAssumedRigid.kind()
+    );
+    assert!(
+        loss.message.contains(&feature_id("doubled")),
+        "{}",
+        loss.message
+    );
+}
+
+/// A group member whose placement or connectors the group does not state is
+/// restated without its operands.
+#[test]
+fn a_group_member_off_the_group_placement_is_cut_in_its_operands() {
+    let first = joint(
+        "cluster",
+        89,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("b"), STORED)],
+    );
+    let placed = joint(
+        "cluster:2",
+        89,
+        fixed(),
+        [connector(on("a"), STORED), connector(on("c"), STORED)],
+    );
+    let offset = joint(
+        "cluster:3",
+        89,
+        PairedJointKind::Fixed {
+            angle: Some(finite(0.5)),
+            translation_offset: Some([finite(0.0); 3]),
+            angular_limits: None,
+            linear_limits: None,
+        },
+        [connector(on("a"), STORED), connector(on("c"), STORED)],
+    );
+    let elsewhere = joint(
+        "cluster:4",
+        89,
+        fixed(),
+        [connector(on("b"), TURNED), connector(on("c"), STORED)],
+    );
+    let mut feature = unresolved("cluster");
+    feature.native_ref = first.native_ref.clone();
+    let mut features = [feature];
+    let (losses, restated) = restate_with(
+        &mut features,
+        &[legacy("cluster", &first)],
+        &[first, placed, offset, elsewhere],
+        &[(
+            89,
+            Source {
+                group: true,
+                ..Source::default()
+            },
+        )],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(
+        restated,
+        [
+            (joint_id("cluster"), feature_id("cluster"), Vec::new()),
+            (joint_id("cluster:2"), feature_id("cluster"), Vec::new()),
+            (joint_id("cluster:3"), feature_id("cluster"), vec![OPERANDS]),
+            (joint_id("cluster:4"), feature_id("cluster"), vec![OPERANDS]),
+        ]
+    );
+}
+
 /// A CADIR write carries each joint a joint feature restates: the group
 /// feature restates every joint of its scope and the hinge feature its
 /// joint, so the write charges only the joint no feature restates.
@@ -860,6 +1240,8 @@ fn a_cadir_write_carries_the_joints_their_features_restate() {
     ir.model.features = vec![legacy("group", &group[0]), legacy("hinge", &hinge)];
     ir.model.assembly_joints = group.into_iter().chain([hinge, alone]).collect();
     let mut features = [unresolved("group"), unresolved("hinge")];
+    features[0].native_ref = Some(scope(80));
+    features[1].native_ref = Some(scope(84));
     let motions = [motion(84, &[1], None)];
     let scopes = [scope(80), scope(84)];
     let restated = {
@@ -917,6 +1299,19 @@ fn a_cadir_write_carries_the_joints_their_features_restate() {
             "the cadir write does not represent model arena `assembly_joints`: \
           1 record(s) omitted: f3d:model:joint#alone"
         ]
+    );
+    let features = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("arena `features`"))
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    assert!(
+        features
+            .iter()
+            .all(|message| !message.contains("definition")),
+        "{features:?}"
     );
     let mut written = Vec::new();
     plan.write_to(&mut written).expect("write");

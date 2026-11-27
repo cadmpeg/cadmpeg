@@ -280,13 +280,15 @@ pub(super) fn decode(
             &history_index,
             &primary_frames,
         )?;
-    let design_joint_motions = crate::design::decode::joint_motion::decode_joint_motions(
-        scan,
-        &design_parameter_scopes,
-        &design_types,
-    )?;
+    let (design_joint_motions, motion_losses) =
+        crate::design::decode::joint_motion::decode_joint_motions(
+            scan,
+            &design_parameter_scopes,
+            &design_types,
+        )?;
     let (mut design_record_losses, primary_given_up) =
         crate::design::decode::meta::decode_primary_frame_losses(scan)?;
+    design_record_losses.extend(motion_losses);
     given_up.extend(crate::design::decode::record::give_up_frames(
         ctx,
         scan,

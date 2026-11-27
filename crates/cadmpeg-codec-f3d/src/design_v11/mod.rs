@@ -299,6 +299,8 @@ impl JointRecords {
             .filter_map(|scope| {
                 let stream = crate::ids::native_stream(&scope.id)?;
                 let group = crate::design::assembly::rigid_as_built_scope(scope);
+                let motions =
+                    crate::design::assembly::scope_joint_motions(scope, stream, &self.motions);
                 Some((
                     scope.id.as_str(),
                     joint::Source {
@@ -306,11 +308,11 @@ impl JointRecords {
                             && scope.kind()
                                 == crate::records::feature::scope::DesignFeatureKind::AsBuilt,
                         group,
-                        motion: crate::design::assembly::scope_joint_motion(
-                            scope,
-                            stream,
-                            &self.motions,
-                        ),
+                        motion: match motions.as_slice() {
+                            [motion] => Some(*motion),
+                            _ => None,
+                        },
+                        ambiguous: motions.len() > 1,
                     },
                 ))
             })

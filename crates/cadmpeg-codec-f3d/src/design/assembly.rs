@@ -1241,19 +1241,59 @@ pub(crate) fn project_assembly_joints_with_paths(
     }
 }
 
-/// The decoded motion of an `Assemble` scope's joint: the joint record's
-/// index is one less than the scope's.
+/// The angular and the linear limits of a scope's two limit owners: an
+/// angular limit in radians, a linear limit converted from centimetres to
+/// millimetres.
+fn scope_limits(
+    limits: Option<&crate::records::feature::assembly::DesignAssemblyLimits>,
+) -> Result<(Option<JointLimits>, Option<JointLimits>), CodecError> {
+    let Some(limits) = limits else {
+        return Ok((None, None));
+    };
+    let scale = match limits.kind {
+        DesignAssemblyLimitKind::Angular => 1.0,
+        DesignAssemblyLimitKind::Linear => 10.0,
+    };
+    let projected = JointLimits::new(
+        Some(limits.minimum() * scale),
+        Some(limits.maximum() * scale),
+    )
+    .ok_or_else(|| {
+        CodecError::Malformed("joint limits minimum/maximum must be finite and ordered".into())
+    })?;
+    Ok(match limits.kind {
+        DesignAssemblyLimitKind::Angular => (Some(projected), None),
+        DesignAssemblyLimitKind::Linear => (None, Some(projected)),
+    })
+}
+
+/// The decoded motion of an `Assemble` scope's joint: the one motion of
+/// [`scope_joint_motions`].
 pub(crate) fn scope_joint_motion<'a>(
     scope: &DesignParameterScope,
     stream: &str,
     motions: &'a [crate::records::feature::joint_motion::DesignJointMotion],
 ) -> Option<&'a crate::records::feature::joint_motion::DesignJointMotion> {
-    let mut matching = motions.iter().filter(|motion| {
-        native_stream(&motion.id) == Some(stream)
-            && motion.joint_record_index.checked_add(1) == Some(scope.record_index)
-    });
-    let motion = matching.next()?;
-    matching.next().is_none().then_some(motion)
+    match scope_joint_motions(scope, stream, motions).as_slice() {
+        [motion] => Some(motion),
+        _ => None,
+    }
+}
+
+/// The decoded motions that bind to an `Assemble` scope's joint: the joint
+/// record's index is one less than the scope's.
+pub(crate) fn scope_joint_motions<'a>(
+    scope: &DesignParameterScope,
+    stream: &str,
+    motions: &'a [crate::records::feature::joint_motion::DesignJointMotion],
+) -> Vec<&'a crate::records::feature::joint_motion::DesignJointMotion> {
+    motions
+        .iter()
+        .filter(|motion| {
+            native_stream(&motion.id) == Some(stream)
+                && motion.joint_record_index.checked_add(1) == Some(scope.record_index)
+        })
+        .collect()
 }
 
 /// The kind a motion's freedoms and limit lanes select, or the reason they
@@ -1449,21 +1489,7 @@ fn project_assembly_joint(
         _ if rigid_as_built_scope(scope) => return Err(unresolved_rigid_group()),
         _ => return Ok(None),
     };
-    let (angular_limits, linear_limits) = match limits {
-        Some(limits) => {
-            let projected = JointLimits::new(Some(limits.minimum()), Some(limits.maximum()))
-                .ok_or_else(|| {
-                    CodecError::Malformed(
-                        "joint limits minimum/maximum must be finite and ordered".into(),
-                    )
-                })?;
-            match limits.kind {
-                DesignAssemblyLimitKind::Angular => (Some(projected), None),
-                DesignAssemblyLimitKind::Linear => (None, Some(projected)),
-            }
-        }
-        None => (None, None),
-    };
+    let (angular_limits, linear_limits) = scope_limits(limits)?;
     if compact_as_built
         && operands
             .iter()
@@ -1895,6 +1921,42 @@ mod tests {
     use cadmpeg_core::serde_erase::json;
 
     mod placement_owner_run;
+
+    /// A linear limit owner stores centimetres and an angular one radians
+    /// (f3d.md, the 421-byte `As-built` generation map).
+    #[test]
+    fn scope_limits_state_linear_limits_in_millimetres() {
+        let limits = |kind| {
+            crate::records::feature::assembly::DesignAssemblyLimits::try_from(
+                crate::records::feature::assembly::DesignAssemblyLimitsWire {
+                    kind,
+                    minimum: -0.25,
+                    maximum: 1.5,
+                    owner_record_indices: [1, 2],
+                    value_offsets: [0, 0],
+                },
+            )
+            .unwrap()
+        };
+        let range = |limits: Option<cadmpeg_ir::products::JointLimits>| match limits {
+            Some(cadmpeg_ir::products::JointLimits::Range(range)) => {
+                (range.minimum().get(), range.maximum().get())
+            }
+            other => panic!("a range: {other:?}"),
+        };
+        let (angular, linear) = super::scope_limits(Some(&limits(
+            crate::records::feature::assembly::DesignAssemblyLimitKind::Linear,
+        )))
+        .unwrap();
+        assert!(angular.is_none());
+        assert_eq!(range(linear), (-2.5, 15.0));
+        let (angular, linear) = super::scope_limits(Some(&limits(
+            crate::records::feature::assembly::DesignAssemblyLimitKind::Angular,
+        )))
+        .unwrap();
+        assert!(linear.is_none());
+        assert_eq!(range(angular), (-0.25, 1.5));
+    }
 
     #[test]
     fn null_wide_locator_admission_is_specific_to_assemble() {
