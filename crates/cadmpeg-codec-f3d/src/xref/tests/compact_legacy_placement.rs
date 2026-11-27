@@ -277,3 +277,20 @@ fn a_component_path_carrier_states_the_pose_of_a_compact_placement() {
     super::super::retain_unstated_poses(&mut unstated, &[]);
     assert_eq!(unstated.len(), 1);
 }
+
+#[test]
+fn a_wide_legacy_record_keeps_the_wide_reading_and_a_compact_one_binds_its_owner() {
+    let wide = super::legacy_occurrence_record(ROLE, 10, Some(MATRIX));
+    assert!(!super::super::compact_legacy_placement(&wide));
+    let wide = super::super::occurrence_placement(&wide, None)
+        .unwrap()
+        .expect("wide placement");
+    assert!(wide.owner.is_none());
+    assert!(wide.frame_bytes.is_empty());
+    let compact = compact_record(11, 1, Some(MATRIX));
+    assert!(super::super::compact_legacy_placement(&compact));
+    let compact = super::super::occurrence_placement(&compact, None)
+        .unwrap()
+        .expect("compact placement");
+    assert!(compact.owner.is_some());
+}

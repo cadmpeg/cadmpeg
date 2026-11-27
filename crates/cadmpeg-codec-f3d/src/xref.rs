@@ -1651,8 +1651,14 @@ fn occurrence_placement(
     if let Some(details) = legacy_attributed_placement_details(body) {
         return Ok(Some(legacy_external_placement(body, details)));
     }
-    if let Some(details) = compact_legacy_placement_details(body) {
-        return Ok(Some(legacy_external_placement(body, details)));
+    // A record that closes as the wide legacy envelope keeps the wide reading
+    // when it also closes as the compact member sequence: the compact reading
+    // would add an owner whose component-path pose then replaces the scope
+    // transform. Only the compact envelope proper takes the compact reading.
+    if !(legacy_occurrence_placement(body).is_some() && !compact_legacy_placement(body)) {
+        if let Some(details) = compact_legacy_placement_details(body) {
+            return Ok(Some(legacy_external_placement(body, details)));
+        }
     }
     if let Some((role, transform)) = legacy_occurrence_placement(body) {
         let role = role.to_string();
