@@ -514,6 +514,7 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::selections::Body
         | BodySelection::GeneratedSet { .. } => true,
         BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
         BodySelection::Local { bodies, .. } => !bodies.is_empty(),
+        BodySelection::Occurrence { bodies, .. } => !bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
     }
 }
@@ -1788,6 +1789,7 @@ fn design_projection_gaps(
         | BodySelection::HistoricalSet { .. }
         | BodySelection::Generated { .. }
         | BodySelection::GeneratedSet { .. }
+        | BodySelection::Occurrence { .. }
         | BodySelection::Local { .. } => 0,
     };
     for feature in &ir.model.features {
@@ -3303,7 +3305,8 @@ fn store_bodyless_design(
 
 /// Bind the stored design's sketches and features to their product
 /// definitions, then project the configuration tables from the features as
-/// these passes leave them.
+/// these passes leave them, and with the output bodies the body history
+/// bound.
 pub(crate) fn attach_design(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -3311,9 +3314,10 @@ pub(crate) fn attach_design(
     ir: &mut CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
+    let producers = crate::design::configurations::body_producers(&ir.model.features);
     crate::design::decode::sketch_owners::attach(ctx, scan, native, &mut ir.model, losses)?;
     crate::design::owners::attach(scan, native, ir, losses)?;
-    crate::design::configurations::attach(native, &mut ir.model, losses)
+    crate::design::configurations::attach(native, &mut ir.model, &producers, losses)
 }
 
 /// Phase-2 outcome as product projection and finalization see it.
@@ -4641,6 +4645,7 @@ fn decode_scanned_document<'a>(
                             asm_body_key_offset: visibility.asm_body_key_offset,
                             asm_body_key: body_selector,
                             entity_suffix: visibility.entity_suffix,
+                            browser_node_entity: visibility.browser_node_entity,
                             visible: visibility.visible,
                         },
                     )

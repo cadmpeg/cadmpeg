@@ -322,3 +322,41 @@ mod scene;
 mod subsets;
 mod textures;
 mod usdc;
+
+/// The writer meshes a body with no tessellation in the encode session, so a
+/// session that a ceiling has refused refuses the write with that limit,
+/// where an unrefused session writes the mesh.
+#[test]
+fn a_refused_encode_session_refuses_the_meshed_write() {
+    use cadmpeg_core::decode::{DecodeDepth, LimitScope};
+    use cadmpeg_ir::codec::write::target::TargetDomain;
+    use cadmpeg_ir::codec::write::{EncodeInput, EncoderBackend};
+
+    let cube = cadmpeg_ir::examples::unit_cube().unwrap();
+    assert!(cube.model.tessellations.is_empty());
+    let plan = |ctx: &DecodeContext<'_>| {
+        let input = EncodeInput::new(&cube, None);
+        let target = <UsdCodec as EncoderBackend>::TARGET
+            .resolve(&cube, input.target, <UsdCodec as EncoderBackend>::FORMAT)
+            .unwrap();
+        UsdCodec.plan_resolved(ctx, input, target)
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let refused = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    assert!(refused
+        .charge_entities(1, "a record past the ceiling")
+        .is_err());
+    let Err(CodecError::ResourceLimit(limit)) = plan(&refused) else {
+        panic!("the refused session refuses the write");
+    };
+    assert_eq!(limit.scope, LimitScope::Session);
+    assert_eq!(limit.operation, "a record past the ceiling");
+    let open = DecodeContext::new(&arena, &DecodePolicy::service(), DecodeDepth::Full);
+    let body = plan(&open).expect("an open session writes the mesh");
+    assert!(
+        String::from_utf8_lossy(&body.bytes).contains("def Mesh"),
+        "the cube is meshed"
+    );
+}

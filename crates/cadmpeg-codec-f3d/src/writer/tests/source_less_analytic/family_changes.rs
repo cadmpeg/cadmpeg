@@ -62,12 +62,9 @@ fn generated_f3d_regenerates_on_analytic_surface_family_changes() {
         .unwrap(),
     ));
 
-    crate::test_support::assert_written_with_loss(
+    crate::test_support::assert_patch_declined(
         &edited,
         Some(decoded.source_fidelity()),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
         "does not support edits to surface",
     );
 }
