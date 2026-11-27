@@ -2,9 +2,21 @@
 //! Synthetic configuration-table documents and Design configuration root records.
 #![allow(clippy::unwrap_used)]
 
-use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
+use cadmpeg_ir::features::parameters::DesignParameter as NeutralParameter;
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use serde_json::{Map, Value};
+
+use crate::design::configurations::ConfigurationTargets;
+use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::test_support::{indexed_header, lp_ascii, lp_utf16};
+
+/// The Design stream of the parameter records of [`Natives`].
+pub(crate) const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
 
 fn typed(kind: &str, value: Value) -> Value {
     json!({"type": kind, "value": value})
@@ -232,7 +244,7 @@ pub(crate) fn project(
     ir: &cadmpeg_ir::CadIr,
 ) -> Vec<cadmpeg_ir::features::parameters::DesignConfiguration> {
     let native = crate::test_support::native_test::f3d_native(ir);
-    crate::design::configurations::project_configurations(
+    crate::design::configurations::project(
         &native.design_configurations,
         &crate::design::configurations::ConfigurationTargets {
             parameters: &native.design_parameters,
@@ -243,6 +255,7 @@ pub(crate) fn project(
         },
     )
     .expect("configuration projection")
+    .configurations
 }
 
 /// Attach the active row `row_id` of table `1` to the first native
@@ -260,4 +273,118 @@ pub(crate) fn set_active_row(ir: &mut cadmpeg_ir::CadIr, row_id: &str) {
             .unwrap();
     });
     ir.model.configurations = project(ir);
+}
+
+/// Document parameter record `index` in the test parameter stream.
+pub(crate) fn parameter(index: u32, name: &str) -> DesignParameter {
+    let mut frame = crate::design::test_support::parameter_record(
+        None,
+        "10 mm",
+        "User Parameter",
+        Some("mm"),
+        name,
+        1.0,
+    );
+    frame[7..11].copy_from_slice(&index.to_le_bytes());
+    crate::design::decode::parameters::parse_design_parameter_record(&frame).unwrap()
+}
+
+pub(crate) fn owner(stream: &str, index: u32, parameter: u32) -> DesignParameterOwner {
+    json::from_value(json!({
+        "id": format!("{stream}:design-parameter-owner#{index}"),
+        "byte_offset": 2000,
+        "frame_length": 104,
+        "class_tag": "351",
+        "record_index": index,
+        "scope_record_index": 314,
+        "local_ordinal": 0,
+        "evaluated_value": 1.0,
+        "evaluated_value_offset": 2040,
+        "parameter_record_index": parameter,
+        "owned_ordinal": 1,
+        "variant": 0,
+        "companion_record_index": index + 1,
+    }))
+    .unwrap()
+}
+
+pub(crate) fn scope(index: u32) -> DesignParameterScope {
+    DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#{index}"),
+        DesignFeatureKind::Extrude,
+        index,
+    )
+}
+
+pub(crate) fn neutral_parameter(native: &DesignParameter) -> NeutralParameter {
+    NeutralParameter {
+        product_definition: None,
+        id: crate::ids::neutral_parameter_id(native),
+        owner: None,
+        ordinal: 0,
+        name: native.name().to_owned(),
+        expression: "10 mm".into(),
+        display: None,
+        value: None,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    }
+}
+
+pub(crate) fn neutral_feature(scope: &DesignParameterScope, dependency: &str) -> Feature {
+    Feature {
+        product_definition: None,
+        id: crate::ids::neutral_feature_id(scope),
+        ordinal: 1,
+        name: Some("Extrusion 2".into()),
+        suppressed: Some(false),
+        dependencies: std::iter::once(FeatureId::mint(dependency).unwrap()).collect(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: "Extrude".into(),
+                parameters: BTreeMap::new(),
+            }),
+        ),
+        native_ref: None,
+    }
+}
+
+/// Native and neutral records of a configuration table whose columns name
+/// parameter records 202 and 329 (through owner 330) and parameter scope 314.
+pub(crate) struct Natives {
+    pub(crate) parameters: Vec<DesignParameter>,
+    pub(crate) owners: Vec<DesignParameterOwner>,
+    pub(crate) scopes: Vec<DesignParameterScope>,
+    pub(crate) neutral_parameters: Vec<NeutralParameter>,
+    pub(crate) neutral_features: Vec<Feature>,
+}
+
+impl Natives {
+    pub(crate) fn complete() -> Self {
+        let parameters = vec![parameter(202, "hh"), parameter(329, "d4")];
+        let scopes = vec![scope(314)];
+        Self {
+            neutral_parameters: parameters.iter().map(neutral_parameter).collect(),
+            neutral_features: vec![neutral_feature(&scopes[0], "f3d:model:feature#sketch")],
+            owners: vec![owner(STREAM, 330, 329)],
+            parameters,
+            scopes,
+        }
+    }
+
+    pub(crate) fn targets(&self) -> ConfigurationTargets<'_> {
+        ConfigurationTargets {
+            parameters: &self.parameters,
+            owners: &self.owners,
+            scopes: &self.scopes,
+            neutral_parameters: &self.neutral_parameters,
+            neutral_features: &self.neutral_features,
+        }
+    }
 }

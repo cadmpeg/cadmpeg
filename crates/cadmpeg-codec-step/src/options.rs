@@ -106,6 +106,11 @@ impl StepSchema {
         Ap242Edition3,
     );
 
+    /// The catalog row of the cross-format default schema.
+    pub(crate) const DEFAULT_INDEX: usize = 2;
+    /// The cross-format default schema.
+    pub(crate) const DEFAULT: Self = Self::ALL[Self::DEFAULT_INDEX];
+
     /// Exact schema identifier written in `FILE_SCHEMA`.
     pub const fn file_schema(self) -> &'static str {
         match self {

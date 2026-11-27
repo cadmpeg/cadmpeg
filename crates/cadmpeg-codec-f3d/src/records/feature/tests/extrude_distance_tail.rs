@@ -3,6 +3,7 @@
 use crate::records::feature::extrude::{
     DesignExtrudeDistanceTail, DesignExtrudeMeasurement, DesignExtrudePrologue,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn symmetric(extent: &str, measurement: &str) -> String {
     format!(
@@ -24,7 +25,7 @@ fn a_distance_tail_round_trips_with_its_prologue() {
         })
     );
     let again: DesignExtrudePrologue =
-        serde_json::from_str(&serde_json::to_string(&prologue).unwrap()).unwrap();
+        serde_json::from_str(&json::to_string(&prologue).unwrap()).unwrap();
     assert_eq!(again, prologue);
 }
 

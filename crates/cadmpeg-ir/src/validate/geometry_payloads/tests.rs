@@ -188,7 +188,10 @@ fn tessellation_reference_validation_preserves_finding_order() {
         .unwrap(),
     );
     let mut findings = Vec::new();
-    super::check_tessellations(&ir, &mut findings);
+    super::check_tessellations(
+        &crate::index::ModelIndex::new_model_only(&ir),
+        &mut findings,
+    );
     assert_eq!(findings.len(), 2);
     for (finding, message) in findings.iter().zip([
         "references a missing tessellation body",

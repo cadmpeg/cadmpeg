@@ -53,7 +53,7 @@ fn module_edition_2_source_converts_as_ap242_edition_2() {
     let plan = codec
         .plan(
             EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .expect("same-format plan");
     let mut bytes = Vec::new();

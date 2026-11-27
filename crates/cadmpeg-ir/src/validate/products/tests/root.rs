@@ -64,9 +64,7 @@ fn a_document_that_holds_a_model_record_states_exactly_one_root_definition() {
     assert!(summary(&CadIr::empty()).is_empty());
     assert!(summary(&decoded()).is_empty());
     let mut container = decoded();
-    container
-        .set_scope(cadmpeg_core::decode::ContentScope::container())
-        .unwrap();
+    container.set_scope(cadmpeg_core::decode::ContentScope::container());
     assert!(summary(&container).is_empty());
     assert_eq!(
         summary(&with_model_record(CadIr::empty())),

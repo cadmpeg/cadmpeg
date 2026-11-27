@@ -16,21 +16,22 @@ use crate::design::ops::assembly::{
 use crate::design::ops::body::{Kept, ScaleFactors, SplitMode};
 use crate::design::ops::dressup::StageHole;
 use crate::design::ops::shared::{
-    AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
+    AxisLimits, Bounds, ChainLinks, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
     PathRollControl,
 };
 use crate::design::ops::sheet_metal::SheetMetalKind;
 use crate::design::options::Boolean;
 use crate::design::selection::{
-    Keyed, Members, OccurrencePath, PickContext, PickTarget, Picked, Picks, SelectionRule,
-    SetSelection, StepRef,
+    Keyed, Members, OccurrencePath, OrderedSelection, PickContext, PickTarget, Picked, Picks,
+    SelectionRule, SetSelection, StepRef,
 };
 use crate::ids::OccurrenceId;
 use crate::report::check::Finding;
 use crate::scalar::{Angle, Length};
 
+use super::super::constructions::input_selections;
 use super::super::dimensions::Bound;
-use super::super::records::{DesignRecords, MemberKey};
+use super::super::records::{DesignRecords, MemberKey, Namer};
 
 /// The definition whose `occurrences` lists an occurrence (§8.1).
 fn owner<'a>(index: &DesignRecords<'a>, occurrence: &str) -> Option<&'a str> {
@@ -507,6 +508,9 @@ pub(super) fn check_component_pattern(
             }
         }
     }
+    if let crate::design::ops::shared::PatternLayout::Chain(chain) = &pattern.layout {
+        check_chain_seeds(site, &pattern.seeds, &chain.links, findings);
+    }
     let indices: Vec<_> = pattern
         .instances
         .iter()
@@ -546,6 +550,164 @@ pub(super) fn check_component_pattern(
                 occurrence.as_str(),
                 findings,
             );
+        }
+    }
+}
+
+/// The occurrences a path steps through, where every step names one.
+fn path_occurrences(path: &OccurrencePath) -> Option<Vec<&str>> {
+    path.0
+        .iter()
+        .map(|step| match &step.occurrence {
+            StepRef::Occurrence(id) => Some(id.as_str()),
+            StepRef::Native(_) => None,
+        })
+        .collect()
+}
+
+/// The definition that owns the selections of a site's feature: its
+/// `component` where stated, else its scope's definition (§5.8).
+fn owner_definition(site: Site<'_>) -> Option<&str> {
+    site.index
+        .and_then(|index| index.features.get(site.feature))
+        .and_then(|feature| feature.component.as_ref())
+        .map(crate::ids::ProductDefinitionId::as_str)
+        .or(site.scope)
+}
+
+/// A pick's occurrences from the definition it starts at: the owner's
+/// definition for an `Occurrence` context, the assembly for `InContext`,
+/// with `own`, the owner's own place in that assembly (§5.8). A step's
+/// configuration selects a variant of its occurrence, and the occurrence
+/// alone places the pick.
+struct Rooted<'a> {
+    root: &'a str,
+    own: Option<Vec<&'a str>>,
+    steps: Vec<&'a str>,
+}
+
+impl<'a> Rooted<'a> {
+    /// `None` where the pick has no occurrence path from a definition, or a
+    /// step is `Native`.
+    fn of(pick: &'a Picked, owner: Option<&'a str>) -> Option<Self> {
+        match pick.context.as_ref()? {
+            PickContext::Occurrence(path) => Some(Self {
+                root: owner?,
+                own: None,
+                steps: path_occurrences(path)?,
+            }),
+            PickContext::InContext {
+                assembly,
+                own,
+                target: Some(target),
+            } => Some(Self {
+                root: assembly.definition.as_str(),
+                own: match own {
+                    Some(own) => Some(path_occurrences(own)?),
+                    None => None,
+                },
+                steps: path_occurrences(target)?,
+            }),
+            _ => None,
+        }
+    }
+
+    /// The steps of `self` from the root of `frame`, where `self` starts at
+    /// that root or at the owner's definition that `frame` places by `own`.
+    fn steps_from_root_of(&self, frame: &Self, owner: Option<&str>) -> Option<Vec<&'a str>> {
+        if self.root == frame.root {
+            return Some(self.steps.clone());
+        }
+        if self.own.is_some() || Some(self.root) != owner {
+            return None;
+        }
+        let mut steps = frame.own.clone()?;
+        steps.extend_from_slice(&self.steps);
+        Some(steps)
+    }
+
+    /// Whether `self` lies under `seed`; `None` where their paths start at
+    /// definitions neither places in the other.
+    fn under(&self, seed: &Self, owner: Option<&str>) -> Option<bool> {
+        if let Some(seed_steps) = seed.steps_from_root_of(self, owner) {
+            return Some(self.steps.starts_with(&seed_steps));
+        }
+        self.steps_from_root_of(seed, owner)
+            .map(|steps| steps.starts_with(&seed.steps))
+    }
+}
+
+/// A chain's pins are two distinct axes, and its pins and native picks pick
+/// the geometry of the pattern's seeds (§6.7). A pick is judged where it and
+/// every seed name their occurrences by paths of occurrence steps from one
+/// definition, or from an assembly and the owner's definition the
+/// `InContext` pick places in it by `own`.
+fn check_chain_seeds(
+    site: Site<'_>,
+    seeds: &OrderedSelection,
+    links: &ChainLinks,
+    findings: &mut Vec<Finding>,
+) {
+    let owner = owner_definition(site);
+    let seeds: Option<Vec<_>> = picks::named(seeds)
+        .and_then(|seeds| seeds.iter().map(|seed| Rooted::of(seed, owner)).collect());
+    let off_seeds = |selection: &OrderedSelection| {
+        let Some(seeds) = seeds.as_ref().filter(|seeds| !seeds.is_empty()) else {
+            return false;
+        };
+        picks::named(selection)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|pick| Rooted::of(pick, owner))
+            .any(|pick| {
+                seeds
+                    .iter()
+                    .all(|seed| pick.under(seed, owner) == Some(false))
+            })
+    };
+    match links {
+        ChainLinks::Connected(links) => {
+            for (at, link) in links.iter().enumerate() {
+                let [first, second] = &link.pins;
+                if first == second
+                    || (first.resolved.is_some() && first.resolved == second.resolved)
+                {
+                    error(
+                        findings,
+                        site.entity,
+                        crate::rule!(
+                            "design.chain-link-pins-one-axis",
+                            "the two pins of ChainLink {at} are one axis"
+                        ),
+                    );
+                }
+                let mut selections = link
+                    .pins
+                    .iter()
+                    .flat_map(|pin| input_selections(&pin.inputs));
+                if selections.any(&off_seeds) {
+                    error(
+                        findings,
+                        site.entity,
+                        crate::rule!(
+                            "design.chain-link-pin-off-seeds",
+                            "a pin of ChainLink {at} picks geometry of no seed of its pattern"
+                        ),
+                    );
+                }
+            }
+        }
+        ChainLinks::Native { picks, .. } => {
+            if off_seeds(picks) {
+                error(
+                    findings,
+                    site.entity,
+                    crate::rule!(
+                        "design.chain-native-picks-off-seeds",
+                        "ChainLinks::Native picks geometry of no seed of its pattern"
+                    ),
+                );
+            }
         }
     }
 }
@@ -888,18 +1050,11 @@ pub(super) fn check_driven_by(
     }
 }
 
-/// Who names an occurrence.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Namer {
-    Combine,
-    Placement,
-    Creator,
-}
-
 /// Every occurrence has at most one creating feature; two `Place`s of one
 /// occurrence are members of one ordered container; no other combine,
 /// component pattern, or mirror names the occurrence a `Combine` creates,
-/// and no placement before the combine names it.
+/// and the combine is before every placement that names it, in that
+/// placement's container chain (§5.3).
 pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let mut order: BTreeMap<&str, (&str, usize)> = BTreeMap::new();
     for container in &index.ir.design.containers {
@@ -911,44 +1066,7 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
             }
         }
     }
-    let before = |a: &str, b: &str| matches!((order.get(a), order.get(b)), (Some((ca, ia)), Some((cb, ib))) if ca == cb && ia < ib);
-    let mut named: BTreeMap<&str, Vec<(&str, Namer, bool)>> = BTreeMap::new();
-    for feature in &index.ir.design.features {
-        let id = feature.id.as_str();
-        let found: Vec<(&str, Namer, bool)> = match &feature.definition.operation {
-            FeatureOperation::Combine(combine) => combine
-                .new_component
-                .iter()
-                .map(|new| (new.occurrence.as_str(), Namer::Combine, false))
-                .collect(),
-            FeatureOperation::Place(place) => {
-                vec![(place.occurrence.as_str(), Namer::Placement, true)]
-            }
-            FeatureOperation::PlaceSet(set) => set
-                .occurrences
-                .iter()
-                .map(|occurrence| (occurrence.as_str(), Namer::Placement, false))
-                .collect(),
-            FeatureOperation::ComponentPattern(pattern) => pattern
-                .instances
-                .iter()
-                .flat_map(|instance| &instance.occurrences)
-                .map(|occurrence| (occurrence.as_str(), Namer::Creator, false))
-                .collect(),
-            FeatureOperation::MirrorComponents(mirror) => mirror
-                .results
-                .iter()
-                .map(|result| (result.occurrence.as_str(), Namer::Creator, false))
-                .collect(),
-            _ => Vec::new(),
-        };
-        for (occurrence, namer, place) in found {
-            named
-                .entry(occurrence)
-                .or_default()
-                .push((id, namer, place));
-        }
-    }
+    let named = index.occurrence_namers();
     for (occurrence, namers) in &named {
         let places: Vec<&str> = namers
             .iter()
@@ -996,13 +1114,15 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
             .collect();
         for combine in &combines {
             let shared = namers.iter().any(|(other, namer, _)| {
-                other != combine && (*namer != Namer::Placement || before(other, combine))
+                other != combine
+                    && (*namer != Namer::Placement
+                        || precedes(index, combine, other) == Some(false))
             });
             if shared {
                 error(
                     findings,
                     combine,
-                    crate::rule!("design.occurrence-combine-new-component-creates-named", "occurrence {occurrence}, which this combine's new_component creates, is named by another combine, pattern, or mirror, or placed before the combine"),
+                    crate::rule!("design.occurrence-combine-new-component-creates-named", "occurrence {occurrence}, which this combine's new_component creates, is named by another combine, pattern, or mirror, or by a placement the combine is not before in its container chain"),
                 );
             }
         }
@@ -1096,6 +1216,26 @@ fn ordered_pair(index: &DesignRecords<'_>, first: &str, second: &str) -> Option<
             index.containers.get(container),
             Some(Container::Ordered { .. })
         )
+    }))
+}
+
+/// Whether `first` is before `second` in `second`'s container chain (§5.3):
+/// their innermost common container is ordered and lists `first`'s branch
+/// first. `None` where either chain is not known.
+fn precedes(index: &DesignRecords<'_>, first: &str, second: &str) -> Option<bool> {
+    let first = container_chain(index, first)?;
+    let second = container_chain(index, second)?;
+    let common = first.iter().find_map(|(container, at)| {
+        second
+            .iter()
+            .find(|(other, _)| other == container)
+            .map(|(_, other_at)| (*container, *at, *other_at))
+    });
+    Some(common.is_some_and(|(container, at, other_at)| {
+        matches!(
+            index.containers.get(container),
+            Some(Container::Ordered { .. })
+        ) && at < other_at
     }))
 }
 
@@ -1258,13 +1398,26 @@ fn check_participant_operands(
             else {
                 return;
             };
+            let owner = owner_definition(site);
+            let participants: Option<Vec<_>> = context
+                .participants
+                .values()
+                .filter_map(listed_participants)
+                .flatten()
+                .map(|pick| Rooted::of(pick, owner))
+                .collect();
+            let Some(participants) = participants else {
+                return;
+            };
             for list in [keep, remove].into_iter().flatten() {
                 let Some(pieces) = picks::named(list) else {
                     continue;
                 };
-                for path in pieces.iter().filter_map(pick_path) {
-                    let of_participant = members.iter().any(|member| path.0.starts_with(&member.0));
-                    if !of_participant {
+                for piece in pieces.iter().filter_map(|pick| Rooted::of(pick, owner)) {
+                    let off = participants
+                        .iter()
+                        .all(|member| piece.under(member, owner) == Some(false));
+                    if off {
                         error(
                             findings,
                             site.entity,

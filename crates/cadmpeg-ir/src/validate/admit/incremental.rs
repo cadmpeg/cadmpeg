@@ -147,7 +147,7 @@ impl AdmittedState {
             for id in changes.provenance.keys().chain(changes.exactness().keys()) {
                 // Native placeholders omit source fields. Their annotations need
                 // the complete source record for field-path diagnostics.
-                if lookup(&selected, id) != Some(false) {
+                if lookup(&selected, id.as_str()) != Some(false) {
                     return Ok(None);
                 }
             }
@@ -232,7 +232,7 @@ impl AdmittedState {
             .keys()
             .chain(annotations.exactness().keys())
         {
-            if lookup(&self.identities, id).is_none() {
+            if lookup(&self.identities, id.as_str()).is_none() {
                 return false;
             }
         }

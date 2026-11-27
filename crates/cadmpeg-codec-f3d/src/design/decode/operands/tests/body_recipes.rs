@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::design::decode::operands::body_recipes::body_recipe_operand_end;
 use crate::design::decode::operands::body_recipes::body_recipe_prologue_end;
@@ -183,7 +184,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             ordinal: 0,
         },
         PersistentSubentityTag {
-            id: "f3d:xref/Other/occurrence-0/design:persistent-subentity-tag#1".into(),
+            id: "f3d:Other/occurrence-0@design:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Face(
                 FaceId::mint("test:model:face#other-stream").expect("identity grammar"),
             ),
@@ -247,6 +248,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 first: crate::records::feature::combine::DesignCombineBodySelection {
                     record_index: record.record_index,
                     external_identity: None,
+                    legacy_external_identity: None,
                     body_node: None,
                 },
                 additional: Vec::new(),
@@ -761,9 +763,9 @@ fn legacy_cut_body_recipe_closes_at_its_profile_group() {
     assert_eq!(operand.next_record_index(), 103);
     assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
     assert!(operand.references().is_empty());
-    let wire = serde_json::to_value(&operand).unwrap();
+    let wire = json::to_value(&operand).unwrap();
     let reloaded: crate::records::topology::body_recipe::DesignBodyRecipeOperand =
-        serde_json::from_value(wire).unwrap();
+        json::from_value(wire).unwrap();
     assert_eq!(reloaded, operand);
     assert!(read(&bytes, 104).is_none());
     bytes[serialization_at] = 1;

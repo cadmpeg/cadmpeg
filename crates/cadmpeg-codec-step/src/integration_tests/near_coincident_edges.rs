@@ -447,3 +447,51 @@ fn a_short_arc_near_the_periodic_seam_keeps_its_parameter_midpoint() {
     let expected = Point3::new(RADIUS * angle.cos(), RADIUS * angle.sin(), 0.0);
     assert!(point.position().get().distance(expected) <= UNCERTAINTY);
 }
+
+/// An open edge whose ends coincide, with no parameter of its curve strictly
+/// between its ends, is written as one edge and named, where the file was
+/// refused.
+#[test]
+fn an_open_edge_with_no_interior_parameter_is_written_unsplit() {
+    let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
+    let first = 1.0;
+    let last = first + f64::EPSILON;
+    for (point, x) in ir.geometry.points.iter_mut().zip([first, last]) {
+        *point = Point::new(
+            point.id.clone(),
+            FinitePoint3::new(Point3::new(x, 0.0, 0.0)).expect("point"),
+            None,
+        );
+    }
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("line"),
+    ));
+    ir.geometry.edges[0].carrier =
+        EdgeCarrier::new(ir.geometry.edges[0].curve().cloned(), Some([first, last]))
+            .expect("carrier");
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("an unsplittable open edge is written whole");
+    assert_eq!(edge_count(&bytes), 1);
+    let edge = ir.geometry.edges[0].id.as_str();
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code == crate::loss::StepLossCode::OpenEdgeUnsplit.kind()
+                && loss.message.contains(edge)
+        }),
+        "{:?}",
+        report.losses
+    );
+    StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read back");
+}

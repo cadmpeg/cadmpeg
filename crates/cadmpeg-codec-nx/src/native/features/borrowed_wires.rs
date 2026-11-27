@@ -549,6 +549,7 @@ mod tests {
         FeaturePayloadScalar, FeatureSketchConstructionInputs, FeatureSketchPayloadScalarLane,
         FeatureSketchPointUse, OffsetStoreNamedPoint,
     };
+    use cadmpeg_core::serde_erase::json;
 
     macro_rules! route_tests {
         ($bytes:ident, $limit:ident, $record:ty, $wire:ty, $json:expr) => {
@@ -556,10 +557,14 @@ mod tests {
             fn $bytes() {
                 let json = $json;
                 let record: $record = serde_json::from_str(json).unwrap();
-                assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
                 assert_eq!(
-                    serde_json::to_vec(&record).unwrap(),
-                    serde_json::to_vec(&<$wire>::from(record.clone())).unwrap()
+                    cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+                    json.as_bytes()
+                );
+                assert_eq!(
+                    cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
+                    cadmpeg_core::serde_erase::json::to_vec(&<$wire>::from(record.clone()))
+                        .unwrap()
                 );
             }
 
@@ -709,14 +714,14 @@ mod tests {
         let blocks = (0..18).map(|n| format!("block{n}")).collect::<Vec<_>>();
         let json = format!(
             r#"{{"id":"nx:feature:block-construction#0","operation_label":"operation","control":38,"member_references":{},"member_data_blocks":{},"terminal_reference":"terminal","terminal_data_block":"last"}}"#,
-            serde_json::to_string(&references).unwrap(),
-            serde_json::to_string(&blocks).unwrap()
+            json::to_string(&references).unwrap(),
+            json::to_string(&blocks).unwrap()
         );
         let record: FeatureBlockConstruction = serde_json::from_str(&json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(json::to_vec(&record).unwrap(), json.as_bytes());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&FeatureBlockConstructionWire::from(record.clone())).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&FeatureBlockConstructionWire::from(record.clone())).unwrap()
         );
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
@@ -728,6 +733,6 @@ mod tests {
     fn input_column_target_borrowed_wire_omits_linked_fields_for_target_rows() {
         let json = r#"{"id":"nx:feature:column-target#0","input_block":"input","operation_label":"operation","input_slot":0,"column_row":"row","row_kind":"target_index","field_indices":[2,3,4],"field_data_blocks":["a","b","c"],"field_source_offsets":[101,102,103],"mode":7,"column_table":"table","data_block":"block","source_offset":100}"#;
         let record: FeatureInputColumnTarget = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_vec(&record).unwrap(), json.as_bytes());
+        assert_eq!(json::to_vec(&record).unwrap(), json.as_bytes());
     }
 }

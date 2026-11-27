@@ -130,7 +130,7 @@ fn check_scope_contents(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) 
             super::error(
                 findings,
                 definition,
-                crate::rule!("design.design-scope-holds-no-member-parameter", "design scope holds no member, parameter, program, rule, configuration, arrangement, publication, occurrence design, or setup"),
+                crate::rule!("design.scope-holds-nothing", "design scope holds no member, parameter, program, rule, configuration, arrangement, publication, occurrence design, or setup"),
             );
         }
     }

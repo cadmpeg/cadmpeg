@@ -99,8 +99,11 @@ macro_rules! define_model_identity_checks {
 crate::document::arena_registry!(define_model_identity_checks);
 
 /// Check model and native identities and preserve arena-ordered findings.
+/// `file_keys` are the keys of the `File` definitions of the document that
+/// holds the records.
 pub(super) fn check_identity_and_order(
     ids: &crate::index::ModelIndex<'_>,
+    file_keys: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let view = ids.native_view();
@@ -123,12 +126,11 @@ pub(super) fn check_identity_and_order(
             }
         });
     }));
-    let file_keys = super::products::decode_set::file_keys(view.ir);
-    check_model_identity_and_order(view.ir, &mut seen, &file_keys, findings)?;
+    check_model_identity_and_order(view.ir, &mut seen, file_keys, findings)?;
     let mut by_arena: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     view.visit::<cadmpeg_core::CodecError>(|format, arena, records| {
         for record in records.records() {
-            push_identity(&mut seen, &file_keys, findings, record.id())?;
+            push_identity(&mut seen, file_keys, findings, record.id())?;
         }
         if records.len() == 0 {
             return Ok(());

@@ -4,6 +4,7 @@ use super::*;
 use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
 use crate::records::identity::ReferenceRun;
 use crate::test_support::indexed_header;
+use cadmpeg_core::serde_erase::json;
 
 const SCOPE: u32 = 1;
 const CARRIER: u32 = 2;
@@ -128,10 +129,10 @@ fn silhouette_split_keeps_the_mode_and_solved_carrier_in_both_prefixes() {
             panic!("Silhouette Split scope");
         };
         *slot = Some(operation);
-        let wire = serde_json::to_value(&scope).unwrap();
+        let wire = json::to_value(&scope).unwrap();
         assert_eq!(wire["silhouette_split_operation"]["mode_word"], mode_word);
         assert_eq!(
-            serde_json::from_value::<DesignParameterScope>(wire).unwrap(),
+            json::from_value::<DesignParameterScope>(wire).unwrap(),
             scope
         );
     }

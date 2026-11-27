@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityUse, SpatialSketchGeometry,
     SpatialSketchGeometryDefinition, SpatialSketchId, SpatialSketchProfile,
 };
-use serde_json::json;
 
 use super::{
     certified_profiles, distinct_profiles, stored_region_profiles, SpatialFrame,
@@ -136,7 +137,7 @@ fn operand(regions: &[Vec<Vec<(u32, u32)>>]) -> DesignSketchProfileOperand {
             }));
         }
     }
-    serde_json::from_value(json!({
+    json::from_value(json!({
         "scope_reference_ordinal": 0,
         "record_index": 100,
         "byte_offset": 10,
