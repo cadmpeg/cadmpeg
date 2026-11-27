@@ -263,9 +263,10 @@ document with no suppressed feature, no failed feature and no earlier
 unsuppression, the word is `n` + 1. Each suppressed feature adds the number of
 non-folder items that follow it in the feature-tree order, including a mirror
 copy that failed because its source is suppressed. Each feature whose recompute
-failed subtracts one. Unsuppressing a feature does not restore the word: the
-word of a document with no suppressed feature stays above `n` + 1 after an
-unsuppression, and suppressing the same feature again adds to it. A SaveAs
+failed subtracts one. Unsuppressing a feature adds the number of non-folder items that follow it,
+plus one, and does not restore the word: the word of a document with no
+suppressed feature stays above `n` + 1 after an unsuppression. Suppressing the
+same feature again adds the number of following non-folder items again. A SaveAs
 sequence and a save in place after the same actions store the same word.
 The word is not a feature count, and the reader does not use it.
 
