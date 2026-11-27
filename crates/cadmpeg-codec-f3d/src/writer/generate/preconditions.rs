@@ -18,8 +18,7 @@ use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-use super::attributes::source_less_body_key;
-use super::reduce::Unwritable;
+use super::reduce::{DroppedRecords, Unwritable};
 pub(super) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.geometry.procedural_surfaces {
@@ -237,13 +236,20 @@ fn design_type_matches(design_type: &SegmentType, expected: (&str, u32, &str)) -
         && design_type.module == expected.2
 }
 
-/// The record indices that a sketch-module entity header names.
+/// The record indices that a sketch-module entity header names in its
+/// reference list and its base-record slot.
 fn sketch_header_indices(native: &F3dNative) -> BTreeSet<u32> {
     native
         .design_entity_headers
         .iter()
         .filter(|header| header.in_sketch_module())
-        .flat_map(|header| header.reference_values().copied())
+        .flat_map(|header| {
+            header.reference_values().copied().chain(
+                header
+                    .sketch_references()
+                    .and_then(|list| list.record_reference),
+            )
+        })
         .collect()
 }
 
@@ -410,56 +416,89 @@ pub(super) fn unwritable_link_records(target: &CadIr, native: &F3dNative) -> Opt
     )
 }
 
-/// The body visibilities the writer writes from their body (W2): each one
-/// whose ASM body key differs from the key the body is written with, and
-/// each one that shares its body or its Design entity with another. The
-/// writer writes the visibility record of each body from the body.
-pub(super) fn regenerated_body_visibilities(
-    target: &CadIr,
-    native: &F3dNative,
-    attributes: &super::attributes::AttributeIndex<'_>,
-) -> Result<BTreeSet<String>, CodecError> {
-    let bodies = target
-        .geometry
-        .bodies
-        .iter()
-        .map(|body| (&body.id, body))
-        .collect::<HashMap<_, _>>();
-    let mut regenerated = BTreeSet::new();
-    let mut by_body = BTreeMap::<_, Vec<&str>>::new();
-    let mut by_suffix = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for visibility in &native.body_visibilities {
-        by_body
-            .entry(&visibility.body)
-            .or_default()
-            .push(visibility.id());
-        by_suffix
-            .entry(visibility.entity_suffix)
-            .or_default()
-            .insert(visibility.asm_body_key());
-        let Some(body) = bodies.get(&visibility.body) else {
-            continue;
-        };
-        let key = u64::try_from(source_less_body_key(attributes, body)?).ok();
-        if key != Some(visibility.asm_body_key()) {
-            regenerated.insert(visibility.id().to_owned());
-        }
-    }
-    regenerated.extend(
-        by_body
-            .into_values()
-            .filter(|rows| rows.len() > 1)
-            .flatten()
-            .map(str::to_owned),
-    );
-    regenerated.extend(
+/// The body visibilities that name the body or the Design entity of an
+/// earlier kept visibility. The Design stream holds one visibility for each
+/// body and one body for each Design entity.
+pub(super) fn shared_body_visibilities(native: &F3dNative) -> Option<Unwritable> {
+    let mut bodies = HashSet::new();
+    let mut entities = HashSet::new();
+    Unwritable::of(
+        "of body visibilities that name the body or the Design entity of an earlier body visibility (the Design stream holds one visibility for each body and one body for each Design entity)",
         native
             .body_visibilities
             .iter()
-            .filter(|visibility| by_suffix[&visibility.entity_suffix].len() > 1)
-            .map(|visibility| visibility.id().to_owned()),
-    );
-    Ok(regenerated)
+            .filter(|visibility| {
+                let kept = !bodies.contains(&visibility.body)
+                    && !entities.contains(&visibility.entity_suffix);
+                if kept {
+                    bodies.insert(&visibility.body);
+                    entities.insert(visibility.entity_suffix);
+                }
+                !kept
+            })
+            .map(|visibility| visibility.id().to_owned())
+            .collect(),
+    )
+}
+
+/// The `BodiesRoot` members that name the Design entity of a dropped body
+/// visibility, where no kept visibility holds that entity: the written
+/// member would name an entity the Design stream does not hold.
+pub(super) fn body_members_naming(
+    native: &F3dNative,
+    dropped: &BTreeSet<u64>,
+) -> Option<Unwritable> {
+    if dropped.is_empty() {
+        return None;
+    }
+    let held = native
+        .body_visibilities
+        .iter()
+        .map(|visibility| visibility.entity_suffix)
+        .collect::<BTreeSet<_>>();
+    Unwritable::of(
+        "of BodiesRoot members that name the Design entity of a dropped body visibility (the written member would name an entity the Design stream does not hold)",
+        native
+            .design_body_members
+            .iter()
+            .filter(|member| {
+                dropped.contains(&member.entity_suffix) && !held.contains(&member.entity_suffix)
+            })
+            .map(|member| member.id().clone())
+            .collect(),
+    )
+}
+
+/// The sketch-curve links whose source-curve key names a dropped sketch
+/// curve or the record of a dropped sketch text, and no kept sketch curve:
+/// the written link would name a record the Design stream does not hold.
+pub(super) fn sketch_curve_links_naming(
+    native: &F3dNative,
+    dropped: &DroppedRecords,
+) -> Option<Unwritable> {
+    if dropped.curve_identities.is_empty() && dropped.texts.is_empty() {
+        return None;
+    }
+    let kept = native
+        .sketch_curve_identities
+        .iter()
+        .map(|curve| (curve.primary_id.get(), curve.secondary_id))
+        .collect::<BTreeSet<_>>();
+    Unwritable::of(
+        "of sketch-curve links that name a dropped sketch curve or sketch text (the written link would name a record the Design stream does not hold)",
+        native
+            .sketch_curve_links
+            .iter()
+            .filter(|link| {
+                let key = (link.sketch_curve_id.cast_unsigned(), link.ref_b);
+                !kept.contains(&key)
+                    && (dropped.curve_identities.contains(&key)
+                        || u32::try_from(link.ref_b)
+                            .is_ok_and(|index| dropped.texts.contains(&index)))
+            })
+            .map(|link| link.id.clone())
+            .collect(),
+    )
 }
 
 /// The lengths of the arenas that the stamp of a regenerated design extends.
@@ -1054,51 +1093,6 @@ pub(super) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         }
     }
     Ok(())
-}
-
-/// Proof that [`validate_source_less_design_bindings`] ran against the borrowed
-/// `F3dNative`. The private field keeps construction inside this module, so the
-/// registry that keys each body from the body visibilities cannot be reached
-/// without the check having run on the very native it will read.
-#[derive(Clone, Copy)]
-pub(super) struct DesignBindingsValidated<'a> {
-    native: &'a F3dNative,
-}
-
-impl<'a> DesignBindingsValidated<'a> {
-    /// The native whose design bindings were validated.
-    pub(super) fn native(self) -> &'a F3dNative {
-        self.native
-    }
-}
-
-pub(super) fn validate_source_less_design_bindings(
-    native: &F3dNative,
-) -> Result<DesignBindingsValidated<'_>, CodecError> {
-    let mut by_key = BTreeMap::new();
-    let mut by_suffix = BTreeMap::new();
-    let mut insert = |key: u64, suffix: u64, id: &str| -> Result<(), CodecError> {
-        if by_key
-            .insert(key, suffix)
-            .is_some_and(|before| before != suffix)
-            || by_suffix
-                .insert(suffix, key)
-                .is_some_and(|before| before != key)
-        {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design body binding {id} conflicts with the body-map key/suffix bijection"
-            )));
-        }
-        Ok(())
-    };
-    for visibility in &native.body_visibilities {
-        insert(
-            visibility.asm_body_key(),
-            visibility.entity_suffix,
-            visibility.id(),
-        )?;
-    }
-    Ok(DesignBindingsValidated { native })
 }
 
 pub(super) fn validate_source_less_history_graph(

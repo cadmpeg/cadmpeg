@@ -154,7 +154,7 @@ fn generated_source_less_drops_material_assignment_alone() {
 }
 
 #[test]
-fn generated_source_less_regenerates_collapsed_visibility_body_bindings() {
+fn generated_source_less_charges_the_second_visibility_of_a_body() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.geometry.bodies[0].visible = Some(false);
     let body = source_less.geometry.bodies[0].id.clone();
@@ -184,10 +184,13 @@ fn generated_source_less_regenerates_collapsed_visibility_body_bindings() {
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less write");
     assert!(
-        report
-            .losses
-            .iter()
-            .all(|loss| !loss.message.contains("body visibilit")),
+        report.losses.iter().any(|loss| {
+            loss.message
+                .contains("of body visibilities that name the body or the Design entity")
+                && loss
+                    .message
+                    .ends_with(": f3d:generated-1:body-visibility#42")
+        }),
         "{:#?}",
         report.losses
     );
@@ -198,6 +201,7 @@ fn generated_source_less_regenerates_collapsed_visibility_body_bindings() {
         &crate::test_support::native_test::f3d_native(decoded.ir()).body_visibilities;
     assert_eq!(visibilities.len(), 1);
     assert!(!visibilities[0].visible);
+    assert_eq!(visibilities[0].entity_suffix, 985);
 }
 
 #[test]

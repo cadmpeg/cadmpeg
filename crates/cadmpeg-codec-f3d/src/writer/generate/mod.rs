@@ -29,18 +29,17 @@ mod records;
 mod reduce;
 mod smbh;
 use preconditions::{
-    regenerated_body_visibilities, replaced_by_stamp, sketch_records_naming,
-    unowned_sketch_records, unreachable_record_headers, unwritable_link_records,
-    unwritable_tolerant_coedges, unwritable_tolerant_tails,
-    validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
-    validate_source_less_design_links, validate_source_less_design_ownership,
-    validate_source_less_history_graph, validate_source_less_procedural_carriers,
-    validate_source_less_recipes, validate_source_less_sketch_graph,
-    validate_source_less_topology_tolerances, StampMark,
+    body_members_naming, replaced_by_stamp, shared_body_visibilities, sketch_curve_links_naming,
+    sketch_records_naming, unowned_sketch_records, unreachable_record_headers,
+    unwritable_link_records, unwritable_tolerant_coedges, unwritable_tolerant_tails,
+    validate_source_less_auxiliary_geometry, validate_source_less_design_links,
+    validate_source_less_design_ownership, validate_source_less_history_graph,
+    validate_source_less_procedural_carriers, validate_source_less_recipes,
+    validate_source_less_sketch_graph, validate_source_less_topology_tolerances, StampMark,
 };
 use presentation::{BodySelection, GeneratedDesignRegistry};
 use records::{encode_design_bulkstream, encode_design_metastream};
-use reduce::{Failure, Reduction, Stage};
+use reduce::{DroppedRecords, Failure, Reduction, Stage};
 use smbh::encode_smbh;
 
 /// What [`write_new`] wrote: the model arenas it carries and the losses it
@@ -90,7 +89,7 @@ pub(super) fn write_new(
             reduction.writes_neutral_design(),
             missing_states,
             reduction.fallback(),
-            reduction.dropped_sketch_records(),
+            reduction.dropped(),
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -142,7 +141,7 @@ fn writes_alone(target: &CadIr, stage: Stage) -> bool {
             false,
             MissingStateForm::GeometryTrue,
             &design::Fallback::default(),
-            &BTreeSet::new(),
+            &DroppedRecords::default(),
             &mut std::io::Cursor::new(Vec::new()),
         )
         .is_ok(),
@@ -163,8 +162,8 @@ fn encode_brep(
 /// Write `target` once. `write_design` states whether its native Design
 /// records are written, and `write_neutral` whether its design scope is, in
 /// the form `missing_states` names; `fallback` names the parts of the design
-/// scope's form dropped after a failure; `dropped` holds the record indices
-/// of the dropped sketch records, which no written record names. A failure
+/// scope's form dropped after a failure; `dropped` holds the keys of the
+/// dropped records, which no written record names. A failure
 /// names the stage that failed. Returns the arena coverage and the losses of
 /// the design scope's records.
 fn attempt<W: Write + Seek>(
@@ -173,7 +172,7 @@ fn attempt<W: Write + Seek>(
     write_neutral: bool,
     missing_states: MissingStateForm,
     fallback: &design::Fallback,
-    dropped: &BTreeSet<u32>,
+    dropped: &DroppedRecords,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -198,7 +197,13 @@ fn attempt<W: Write + Seek>(
     for header in &mut native.design_entity_headers {
         if let Some(list) = header.sketch_references_mut() {
             list.references
-                .retain(|reference| !dropped.contains(&reference.value));
+                .retain(|reference| !dropped.sketch_records.contains(&reference.value));
+            if list
+                .record_reference
+                .is_some_and(|index| dropped.sketch_records.contains(&index))
+            {
+                list.record_reference = None;
+            }
         }
     }
     if write_design && records::holds_parameter_records(&native) {
@@ -230,13 +235,16 @@ fn attempt<W: Write + Seek>(
         attributes
     };
     if has_native {
-        if let Some(unwritable) = unwritable_link_records(target, &native) {
+        if let Some(unwritable) = unwritable_link_records(target, &native)
+            .or_else(|| shared_body_visibilities(&native))
+            .or_else(|| body_members_naming(&native, &dropped.body_entities))
+            .or_else(|| {
+                write_design
+                    .then(|| sketch_curve_links_naming(&native, dropped))
+                    .flatten()
+            })
+        {
             return Err(Failure::unwritable(Stage::Design, unwritable));
-        }
-        let regenerated =
-            regenerated_body_visibilities(target, &native, &attributes).map_err(Failure::design)?;
-        if !regenerated.is_empty() {
-            return Err(Failure::regenerated(Stage::Design, regenerated));
         }
         validate_source_less_design_links(target, &native).map_err(Failure::design)?;
     }
@@ -269,11 +277,10 @@ fn attempt<W: Write + Seek>(
         }
         None => (smbh, Vec::new()),
     };
-    let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;
     if write_design {
         if let Some(unwritable) = unowned_sketch_records(&native)
-            .or_else(|| sketch_records_naming(&native, dropped))
+            .or_else(|| sketch_records_naming(&native, &dropped.sketch_records))
             .or_else(|| unreachable_record_headers(&native))
         {
             return Err(Failure::unwritable(Stage::Design, unwritable));
@@ -293,9 +300,8 @@ fn attempt<W: Write + Seek>(
     } else {
         BodySelection::Stated
     };
-    let mut design_registry =
-        GeneratedDesignRegistry::new(target, design_bindings, &attributes, selection)
-            .map_err(design_failure)?;
+    let mut design_registry = GeneratedDesignRegistry::new(target, &native, &attributes, selection)
+        .map_err(design_failure)?;
     let unstated_visibility = cadmpeg_ir::codec::write::value_unwritable(
         "F3D",
         "writes these bodies as visible: the source did not record their visibility",

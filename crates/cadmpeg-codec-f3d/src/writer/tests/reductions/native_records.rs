@@ -37,9 +37,9 @@ fn assert_no_whole_drop(report: &ExportReport) {
     }
 }
 
-/// Write `ir` with no source file; the write's report and the decoded
-/// written bytes.
-fn write_with_report(ir: &CadIr) -> (ExportReport, CadIr) {
+/// Write `ir` with no source file; the write's report, the written bytes
+/// and their decode.
+fn write_with_bytes(ir: &CadIr) -> (ExportReport, Vec<u8>, CadIr) {
     let mut bytes = Vec::new();
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &crate::F3dCodec,
@@ -50,11 +50,18 @@ fn write_with_report(ir: &CadIr) -> (ExportReport, CadIr) {
     .expect("the writer writes the document");
     let decoded = cadmpeg_ir::codec::Codec::decode(
         &crate::F3dCodec,
-        &mut std::io::Cursor::new(bytes),
+        &mut std::io::Cursor::new(&bytes),
         &cadmpeg_ir::codec::DecodeOptions::default(),
     )
     .expect("the written file decodes");
-    (report, decoded.into_parts().0)
+    (report, bytes, decoded.into_parts().0)
+}
+
+/// Write `ir` with no source file; the write's report and the decoded
+/// written bytes.
+fn write_with_report(ir: &CadIr) -> (ExportReport, CadIr) {
+    let (report, _, decoded) = write_with_bytes(ir);
+    (report, decoded)
 }
 
 /// Write `ir` with no source file and decode the written bytes.
@@ -187,17 +194,125 @@ fn a_body_visibility_that_disagrees_with_its_body_is_written_from_the_body() {
     assert_eq!(rows[0].entity_suffix, 985);
 }
 
+/// A `BodiesRoot` member that names Design entity `entity_suffix`.
+fn body_member(ordinal: u64, entity_suffix: u64) -> crate::records::bodies::DesignBodyMember {
+    crate::records::bodies::DesignBodyMember::try_from(
+        crate::records::bodies::DesignBodyMemberWire {
+            id: format!("f3d:generated/Design1/BulkStream.dat:design-body-member#{ordinal}"),
+            byte_offset: ordinal,
+            entity_suffix,
+            flags: 0,
+        },
+    )
+    .expect("a BodiesRoot member")
+}
+
+/// The Design entities that the `BodiesRoot` members of `ir` name.
+fn body_member_entities(ir: &CadIr) -> Vec<u64> {
+    f3d_native(ir)
+        .design_body_members
+        .iter()
+        .map(|member| member.entity_suffix)
+        .collect()
+}
+
 #[test]
-fn a_body_visibility_under_another_asm_key_is_written_from_the_body() {
+fn a_body_visibility_under_another_asm_key_keeps_its_entity_and_takes_the_body_key() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].visible = Some(false);
     let row = body_visibility(&ir, 4242, false);
-    f3d_native_mut(&mut ir).body_visibilities = vec![row];
+    let mut native = f3d_native_mut(&mut ir);
+    native.body_visibilities = vec![row];
+    native.design_body_members = vec![body_member(0, 985)];
+    drop(native);
 
     let (report, decoded) = write_with_report(&ir);
     assert_no_loss_naming(&report, "body visibilit");
+    assert_no_loss_naming(&report, "BodiesRoot");
     assert_eq!(decoded.geometry.bodies[0].visible, Some(false));
-    assert_eq!(f3d_native(&decoded).body_visibilities.len(), 1);
+    let native = f3d_native(&decoded);
+    let [row] = native.body_visibilities.as_slice() else {
+        panic!("one body visibility: {:#?}", native.body_visibilities)
+    };
+    assert_eq!(row.entity_suffix, 985);
+    assert_ne!(row.asm_body_key(), 4242);
+    assert_eq!(
+        native.body_native_keys[0].asm_body_key,
+        Some(row.asm_body_key())
+    );
+    assert_eq!(body_member_entities(&decoded), [985]);
+}
+
+#[test]
+fn a_second_visibility_of_a_body_is_dropped_with_the_bodies_root_member_of_its_entity() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    ir.geometry.bodies[0].visible = Some(true);
+    let first = body_visibility(&ir, 1, true);
+    let mut wire = crate::records::bodies::BodyVisibilityWire::from(body_visibility(&ir, 7, true));
+    wire.entity_suffix = 986;
+    let second = crate::records::bodies::BodyVisibility::try_from(wire).expect("a body visibility");
+    let mut native = f3d_native_mut(&mut ir);
+    native.body_visibilities = vec![first, second];
+    native.design_body_members = vec![body_member(0, 985), body_member(1, 986)];
+    drop(native);
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let messages = omitted(&report);
+    assert!(
+        messages.iter().any(|message| {
+            message.contains("of body visibilities that name the body or the Design entity")
+                && message.ends_with(": f3d:generated:body-visibility#7")
+        }),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        messages.iter().any(|message| {
+            message.contains("of BodiesRoot members that name the Design entity")
+                && message.ends_with(": f3d:generated/Design1/BulkStream.dat:design-body-member#1")
+        }),
+        "{:#?}",
+        report.losses
+    );
+    let rows = &f3d_native(&decoded).body_visibilities;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].entity_suffix, 985);
+    assert_eq!(body_member_entities(&decoded), [985]);
+}
+
+#[test]
+fn a_visibility_that_shares_a_design_entity_is_dropped_and_the_entity_stays_with_the_first() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let second_body = append_cube(&mut ir, "synthetic:cube_two:", 30.0);
+    for body in &mut ir.geometry.bodies {
+        body.visible = Some(true);
+    }
+    let first = body_visibility(&ir, 1, true);
+    let mut wire = crate::records::bodies::BodyVisibilityWire::from(body_visibility(&ir, 2, true));
+    wire.body = second_body.id.clone();
+    let second = crate::records::bodies::BodyVisibility::try_from(wire).expect("a body visibility");
+    let mut native = f3d_native_mut(&mut ir);
+    native.body_visibilities = vec![first, second];
+    native.design_body_members = vec![body_member(0, 985)];
+    drop(native);
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    assert!(
+        omitted(&report).iter().any(|message| {
+            message.contains("of body visibilities that name the body or the Design entity")
+                && message.ends_with(": f3d:generated:body-visibility#2")
+        }),
+        "{:#?}",
+        report.losses
+    );
+    assert_no_loss_naming(&report, "BodiesRoot");
+    let rows = &f3d_native(&decoded).body_visibilities;
+    assert_eq!(rows.len(), 2);
+    let entities = rows.iter().filter(|row| row.entity_suffix == 985).count();
+    assert_eq!(entities, 1);
+    assert_eq!(body_member_entities(&decoded), [985]);
 }
 
 #[test]
@@ -627,6 +742,118 @@ fn a_point_whose_companion_names_a_dropped_curve_is_dropped_with_it() {
     assert!(native.sketch_points.is_empty());
     assert!(native.sketch_curve_identities.is_empty());
     assert_eq!(native.design_entity_headers.len(), 1);
+}
+
+#[test]
+fn a_record_header_named_by_the_base_record_slot_is_written_with_its_sketch() {
+    use crate::records::decal::DesignRecordHeader;
+    use crate::records::references::DesignClassTag;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let mut native = f3d_native_mut(&mut ir);
+    sketch_container(&mut native, &[33]);
+    native.design_record_headers.push(DesignRecordHeader {
+        id: "f3d:generated:record-header#1".into(),
+        record_index: 584,
+        class_tag: DesignClassTag::try_from("269".to_owned()).expect("class tag"),
+        byte_offset: 0,
+    });
+    drop(native);
+
+    let (report, bytes, decoded) = write_with_bytes(&ir);
+    assert_no_whole_drop(&report);
+    assert_no_loss_naming(&report, "f3d:generated:record-header#1");
+    let native = f3d_native(&decoded);
+    let [header] = native.design_entity_headers.as_slice() else {
+        panic!("one sketch header")
+    };
+    let base = header
+        .sketch_references()
+        .and_then(|list| list.record_reference);
+    assert_eq!(base, Some(584));
+    let scope = crate::ids::native_stream(&header.id)
+        .expect("a stream-scoped header id")
+        .to_owned();
+    let written = crate::test_support::zip_test::with_scan(&bytes, |scan| {
+        crate::design::decode::sketch::decode_related_record_headers(scan, &[(scope, 584)])
+    })
+    .expect("the written Design stream scans");
+    let classes = written
+        .iter()
+        .map(|header| (header.record_index, header.class_tag.as_str().to_owned()))
+        .collect::<Vec<_>>();
+    assert_eq!(classes, [(584, "269".to_owned())]);
+}
+
+#[test]
+fn a_sketch_curve_link_that_names_a_dropped_curve_is_dropped_with_it() {
+    use crate::records::sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    let coedges = [0, 1].map(|index| ir.geometry.coedges[index].id.clone());
+    let mut native = f3d_native_mut(&mut ir);
+    sketch_container(&mut native, &[33]);
+    native.sketch_curve_identities = vec![SketchCurveIdentity {
+        id: "f3d:generated:sketch-curve#0".into(),
+        record_index: 600,
+        owner_reference: None,
+        geometry_group: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("259".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+        geometry_offset: 133,
+        entity_genesis: None,
+        primary_id: std::num::NonZeroU64::new(700).expect("a nonzero identity"),
+        secondary_id: 701,
+        geometry: Some(
+            SketchCurveGeometry::line(
+                Point3::new(10.0, 20.0, 0.0),
+                Point3::new(40.0, 20.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )
+            .expect("a sketch line"),
+        ),
+        planar_z_noise: None,
+        tail_marker: None,
+    }];
+    native.sketch_curve_links = [(700, 701), (113, 0)]
+        .into_iter()
+        .zip(coedges)
+        .enumerate()
+        .map(
+            |(ordinal, ((sketch_curve_id, ref_b), coedge))| SketchCurveLink {
+                id: format!("f3d:generated:sketch-curve-link#{ordinal}"),
+                target: AttributeTarget::Coedge(coedge),
+                sketch_curve_id,
+                ref_b,
+                sense: Some(SketchLinkSense::try_from(1).expect("link sense")),
+                role: 2,
+                closure: 3,
+            },
+        )
+        .collect();
+    drop(native);
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    assert!(
+        omitted(&report).iter().any(|message| {
+            message.contains("of sketch-curve links that name a dropped sketch curve")
+                && message.ends_with(": f3d:generated:sketch-curve-link#0")
+        }),
+        "{:#?}",
+        report.losses
+    );
+    let native = f3d_native(&decoded);
+    assert!(native.sketch_curve_identities.is_empty());
+    let links = native
+        .sketch_curve_links
+        .iter()
+        .map(|link| (link.sketch_curve_id, link.ref_b))
+        .collect::<Vec<_>>();
+    assert_eq!(links, [(113, 0)]);
 }
 
 #[test]
