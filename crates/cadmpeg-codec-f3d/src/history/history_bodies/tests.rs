@@ -1686,10 +1686,16 @@ fn a_producer_of_equal_records_joins_the_nest_of_the_consumer() {
         cadmpeg_core::decode::DecodeDepth::Full,
     );
     let allowance = ctx.retained_bytes_available();
-    let records = *cube_candidate().topology;
-    let name = "source body name";
+    let mut records = *cube_candidate().topology;
+    let body_name = "source body name";
+    let face_name = "source face name";
+    records.body.name = Some(body_name.into());
+    for face in &mut records.faces {
+        face.name = Some(face_name.into());
+    }
+    let name_bytes = body_name.len() + records.faces.len() * face_name.len();
     let built = |mut body: HistoryBody, records: &BodyTopology| {
-        body.topology.body.name = Some(name.into());
+        body.topology.as_mut().clone_from(records);
         Built {
             body,
             records: Some(records.clone()),
@@ -1737,7 +1743,7 @@ fn a_producer_of_equal_records_joins_the_nest_of_the_consumer() {
     assert_eq!(bodies[0].state.identifier, 1);
     assert_eq!(
         allowance - ctx.retained_bytes_available(),
-        2 * cadmpeg_core::decode::u64_from_index(name.len())
+        2 * cadmpeg_core::decode::u64_from_index(name_bytes)
     );
 }
 
