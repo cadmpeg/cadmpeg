@@ -973,6 +973,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.primary_brep,
     )?;
     losses.extend(bound_outputs.losses);
+    let omitted_copies = bound_outputs.omitted_copies;
     let feature_ids = model
         .features
         .iter()
@@ -1070,7 +1071,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &body_selection_inputs,
         );
     losses.extend(selection_losses);
-    let (tool_losses, replaced_tools) = crate::history::combine_history_tools::bind(
+    let (tool_losses, replaced_tools, tool_results) = crate::history::combine_history_tools::bind(
         &mut model.features,
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
@@ -1092,13 +1093,33 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.primary_brep,
             &mut losses,
         ));
-    losses.extend(
-        crate::history::combine_history_tools::align_with_result_states(
-            &mut model.features,
-            &model.feature_result_topologies,
-            replaced_tools,
-        ),
-    );
+    losses.extend(crate::history::combine_history_tools::apply_result_states(
+        &mut model.features,
+        &mut model.feature_result_topologies,
+        (tool_results, replaced_tools),
+    ));
+    for (producer, state_id, slots) in omitted_copies {
+        if crate::history::feature_outputs::combine_consumes_generated_bodies(
+            &model.features,
+            &producer,
+        ) {
+            continue;
+        }
+        let Some(feature) = model.features.iter().find(|feature| feature.id == producer) else {
+            continue;
+        };
+        let (note, result) =
+            crate::history::feature_outputs::omitted_copy_outputs(feature, state_id, &slots);
+        losses.push(note);
+        if let Some(result) = result.filter(|result| {
+            !model
+                .feature_result_topologies
+                .iter()
+                .any(|known| known.output_of == result.output_of)
+        }) {
+            model.feature_result_topologies.push(result);
+        }
+    }
     // After the body selections: a Split names its input-state bodies there.
     let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,
@@ -1485,6 +1506,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.features,
         &design.design_parameter_scopes,
         &design.asm_histories,
+        &scope_histories,
         geometry.primary_brep,
     );
     if matches!(geometry.path, DesignPath::Geometry) {
@@ -2402,9 +2424,11 @@ fn extend_related_design_records(
         &design.asm_histories,
         &prereqs.design_types,
     );
-    crate::history::selection::bind_edge_identity_bounded_face_rules(
-        &mut design.design_edge_identity_operands,
-        &design.design_face_operands,
+    profile_losses.extend(
+        crate::history::selection::bind_edge_identity_bounded_face_rules(
+            &mut design.design_edge_identity_operands,
+            &design.design_face_operands,
+        ),
     );
     let mut placement_given_up = Vec::new();
     design.design_sketch_placements = crate::design::decode::sketch::decode_sketch_placements(

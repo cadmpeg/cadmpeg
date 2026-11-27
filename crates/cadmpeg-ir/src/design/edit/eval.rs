@@ -993,7 +993,7 @@ pub(crate) fn kind_type(kind: &ValueKind, found: Type) -> Result<(), String> {
 
 /// A cache as an expression value of the declared kind, or `None` where the
 /// two do not agree.
-pub(crate) fn cache_value(kind: &ValueKind, cache: &ParameterValue) -> Option<Value> {
+pub fn cache_value(kind: &ValueKind, cache: &ParameterValue) -> Option<Value> {
     match (kind, cache) {
         (ValueKind::Quantity(quantity), ParameterValue::Number(value)) => Some(Value::Number {
             value: value.get(),
@@ -1015,7 +1015,7 @@ pub(crate) fn cache_value(kind: &ValueKind, cache: &ParameterValue) -> Option<Va
 ///
 /// Returns the difference where the value does not have the kind: another
 /// quantity, a fraction for an integer, another variant, or a `Native` kind.
-pub(super) fn kind_value(kind: &ValueKind, value: Value) -> Result<ParameterValue, String> {
+pub fn kind_value(kind: &ValueKind, value: Value) -> Result<ParameterValue, String> {
     match (kind, value) {
         (ValueKind::Quantity(expected), Value::Number { value, quantity }) => {
             if *expected != quantity {

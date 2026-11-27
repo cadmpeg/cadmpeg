@@ -151,19 +151,24 @@ pub(super) fn attach(
             ));
             continue;
         };
-        let Some(owners) = introduced(record, "TOLERANCE_ZONE", 4, 0) else {
-            continue;
-        };
-        let owners = references(owners, ctx).collect::<Result<Vec<_>, _>>()?;
+        let owners = introduced(record, "TOLERANCE_ZONE", 4, 0)
+            .map(|owners| references(owners, ctx).collect::<Result<Vec<_>, _>>())
+            .transpose()?
+            .unwrap_or_default();
         if owners.len() != 1 {
+            let why = if owners.is_empty() {
+                format!("tolerance zone #{id} names no defining tolerance")
+            } else {
+                format!(
+                    "tolerance zone #{id} has {} defining tolerances; shared zone ownership is not transferred",
+                    owners.len()
+                )
+            };
             losses.extend(give_up_zone(
                 exchange,
                 id,
                 zone_projections,
-                StepLossCode::PmiZoneUnresolved.note(format!(
-                    "tolerance zone #{id} has {} defining tolerances; shared zone ownership is not transferred",
-                    owners.len()
-                )),
+                StepLossCode::PmiZoneUnresolved.note(why),
             ));
             continue;
         }
