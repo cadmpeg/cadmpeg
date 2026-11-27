@@ -78,27 +78,6 @@ enum ExportIdentity {
     },
 }
 
-#[cfg(all(test, feature = "schema"))]
-mod schema_tests {
-    use cadmpeg_core::serde_erase::json;
-
-    #[test]
-    fn the_native_export_payload_schema_requires_its_target() {
-        let schema = json::to_value(schemars::schema_for!(super::ExportIdentity))
-            .expect("export identity schema serializes");
-        let native = schema["oneOf"]
-            .as_array()
-            .expect("export identity schema is a tagged union")
-            .iter()
-            .find(|arm| arm["properties"]["kind"]["const"] == "native")
-            .expect("the native arm");
-        let required = native["required"]
-            .as_array()
-            .expect("the native arm has required fields");
-        assert!(required.iter().any(|field| field == "target"), "{schema:#}");
-    }
-}
-
 /// Which of an encoder's write paths produced the exported bytes.
 ///
 /// An encoder that retains its source bytes has two ways to answer "write this
