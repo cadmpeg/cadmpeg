@@ -116,6 +116,47 @@ fn malformed(message: &str) -> CodecError {
 fn ptr(node: Node<'_>, field: &str) -> Option<u32> {
     node.pointer(field).filter(|index| *index > 1)
 }
+/// The key of the attribute definition that holds the role string of a body.
+const ROLE_DEFINITION: &[u8] = b"MONIKER/BODY_ID_ATTRIB";
+/// The role number of a construction body.
+const ROLE_CONSTRUCTION: u32 = 96;
+
+/// The number of a role string, `SE <build> Type<number>`.
+fn role_number(text: &[u8]) -> Option<u32> {
+    let text = std::str::from_utf8(text).ok()?;
+    let (head, number) = text.rsplit_once("Type")?;
+    (head.len() > 3 && head.starts_with("SE ") && head.ends_with(' ')).then_some(())?;
+    if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    number.parse().ok()
+}
+
+/// The role number that an attribute of the role definition on `body` states.
+fn body_role(nodes: &Nodes<'_>, body: u32) -> Option<u32> {
+    nodes
+        .values()
+        .copied()
+        .filter(|node| node.kind() == kind::ATTRIBUTE && ptr(*node, "owner") == Some(body))
+        .find_map(|attribute| {
+            let definition = *nodes.get(&ptr(attribute, "definition")?)?;
+            let key = *nodes.get(&ptr(definition, "identifier")?)?;
+            (definition.kind() == kind::ATTRIB_DEF
+                && key.kind() == kind::KEY
+                && key.chars("string")? == ROLE_DEFINITION)
+                .then_some(())?;
+            attribute
+                .pointer_list("fields")?
+                .into_iter()
+                .filter(|index| *index > 1)
+                .find_map(|index| {
+                    let values = *nodes.get(&index)?;
+                    (values.kind() == kind::CHAR_VALUES)
+                        .then_some(())
+                        .and_then(|()| role_number(&values.chars("values")?))
+                })
+        })
+}
 fn sense(node: Node<'_>) -> Option<Sense> {
     match node.char("sense") {
         Some(b'+') => Some(Sense::Forward),
@@ -424,6 +465,14 @@ pub(crate) fn project(
             losses.push(SolidEdgeLossCode::BodyPlacementUnread.note(
                 "a body names an instance whose transform is not read; the body keeps the coordinates of its partition",
             ));
+        }
+        // CADIR states no construction role for a body. The role stays in the
+        // loss so that a consumer does not read the body as design geometry.
+        if body_role(&nodes, body.index()) == Some(ROLE_CONSTRUCTION) {
+            losses.push(SolidEdgeLossCode::BodyConstruction.note(format!(
+                "the body of node {} is a construction body, not design geometry",
+                body.index()
+            )));
         }
         ir.geometry.bodies.push(Body {
             id: body_id(stream, body.index()),
@@ -1507,7 +1556,7 @@ fn periodic_range([start, end]: [f64; 2], lower: f64, period: f64) -> [f64; 2] {
 
 #[cfg(test)]
 mod tests {
-    use super::{curve_id, edge_id, periodic_range, point_id, trim_edges, vertex_id};
+    use super::{curve_id, edge_id, periodic_range, point_id, role_number, trim_edges, vertex_id};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::LineCurve;
@@ -1557,6 +1606,19 @@ mod tests {
         assert_eq!(ir.geometry.edges[0].carrier.curve(), Some(&curve_id(0, 1)));
         assert!(losses.is_empty());
         ctx.finish_session().expect("session");
+    }
+    #[test]
+    fn role_string_states_its_trailing_number() {
+        assert_eq!(role_number(b"SE 7.0.0.1 Type96"), Some(96));
+        assert_eq!(role_number(b"SE 7.0.0.1 Type86"), Some(86));
+        assert_eq!(role_number(b"SE 1 Type0"), Some(0));
+        assert_eq!(role_number(b"SE 7.0.0.1 Type"), None);
+        assert_eq!(role_number(b"SE 7.0.0.1 Type9x"), None);
+        assert_eq!(role_number(b"SE 7.0.0.1 Type+9"), None);
+        assert_eq!(role_number(b"7.0.0.1 Type96"), None);
+        assert_eq!(role_number(b"SE Type96"), None);
+        assert_eq!(role_number(b"SE 1 Type99999999999"), None);
+        assert_eq!(role_number(&[0xff, 0xfe]), None);
     }
     #[test]
     fn periodic_trim_starts_in_the_canonical_turn() {
