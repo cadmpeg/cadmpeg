@@ -28,7 +28,7 @@ use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::features::operation_settings::BooleanOp as V10Op;
 use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveConstruction, RevolveExtent};
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, ParameterId};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::units::UnitVector3;
@@ -48,6 +48,19 @@ pub(super) struct Context<'c> {
     pub(super) entities: &'c std::collections::BTreeMap<&'c str, &'c str>,
     /// The sketches of the earlier timeline members.
     pub(super) preceding: &'c BTreeSet<String>,
+    /// The parameter each feature owns for an input, by the feature and the
+    /// input's `FeatureScript` role.
+    pub(super) owned: &'c std::collections::BTreeMap<(&'c str, &'c str), &'c ParameterId>,
+}
+
+impl Context<'_> {
+    /// The parameter `feature` owns for the first of `roles` it states.
+    fn owned(&self, feature: &v10::Feature, roles: &[&str]) -> Option<ParameterId> {
+        roles
+            .iter()
+            .find_map(|role| self.owned.get(&(feature.id.as_str(), *role)))
+            .map(|id| (*id).clone())
+    }
 }
 
 /// The operation a feature falls back to, with the loss that names what the
@@ -164,11 +177,22 @@ pub(super) fn project(
             });
         }
         v10::FeatureOperation::Extrude { .. } => {
-            extrude(operation, source.is_some_and(|source| source.next), context)
-                .map(|extrude| FeatureOperation::Extrude(Box::new(extrude)))
+            let depth = context.owned(model, &["AlongDistance", "TotalDistance"]);
+            extrude(
+                operation,
+                source.is_some_and(|source| source.next),
+                depth.as_ref(),
+                context,
+            )
+            .map(|extrude| FeatureOperation::Extrude(Box::new(extrude)))
         }
-        v10::FeatureOperation::Revolve { construction, op } => revolve(construction, *op, context)
-            .map(|revolve| FeatureOperation::Revolve(Box::new(revolve))),
+        v10::FeatureOperation::Revolve { construction, op } => revolve(
+            construction,
+            *op,
+            context.owned(model, &["AlongAngle"]),
+            context,
+        )
+        .map(|revolve| FeatureOperation::Revolve(Box::new(revolve))),
         v10::FeatureOperation::DatumOffsetPlane { .. } => {
             offset_plane(model).map(|datum| FeatureOperation::Datum(Box::new(datum)))
         }
@@ -277,8 +301,12 @@ fn length(value: f64) -> Result<Dimension<Length>, &'static str> {
 fn linear_limit(
     termination: &LinearTermination,
     next: bool,
+    depth: Option<&ParameterId>,
 ) -> Result<Limit<Length>, &'static str> {
     Ok(match termination {
+        LinearTermination::Blind { .. } if depth.is_some() => Limit::Amount(Dimension::Parameter(
+            depth.cloned().ok_or("the depth is missing")?,
+        )),
         LinearTermination::Blind { length: value } => Limit::Amount(length(value.get())?),
         LinearTermination::ThroughAll {} => Limit::ThroughAll,
         LinearTermination::ToFace { .. } if next => Limit::Next,
@@ -289,6 +317,7 @@ fn linear_limit(
 fn extrude(
     operation: &v10::FeatureOperation,
     next: bool,
+    depth: Option<&ParameterId>,
     context: &Context<'_>,
 ) -> Result<Extrude, &'static str> {
     let v10::FeatureOperation::Extrude {
@@ -318,10 +347,10 @@ fn extrude(
     let span = match extent {
         ExtrudeExtent::OneSided { side } if side.draft.is_none() => Span::Between {
             start: Box::new(Limit::AtOrigin),
-            end: Box::new(linear_limit(&side.termination, next)?),
+            end: Box::new(linear_limit(&side.termination, next, depth)?),
         },
         ExtrudeExtent::Symmetric { side } if side.draft.is_none() => {
-            match linear_limit(&side.termination, false)? {
+            match linear_limit(&side.termination, false, depth)? {
                 Limit::Amount(amount) => Span::Symmetric {
                     amount,
                     measure: Some(SymmetricMeasure::Total),
@@ -361,6 +390,7 @@ fn extrude(
 fn revolve(
     construction: &RevolveConstruction,
     op: V10Op,
+    bound: Option<ParameterId>,
     context: &Context<'_>,
 ) -> Result<Revolve, &'static str> {
     let RevolveConstruction::Resolved {
@@ -382,6 +412,8 @@ fn revolve(
     };
     let end = if (angle.abs() - std::f64::consts::TAU).abs() <= FULL_TURN_TOLERANCE_RAD {
         Limit::ThroughAll
+    } else if let (Some(parameter), true) = (bound, angle > 0.0) {
+        Limit::Amount(Dimension::Parameter(parameter))
     } else {
         Limit::Amount(Dimension::Literal(
             Angle::new(angle).ok_or("the revolve angle is not finite")?,

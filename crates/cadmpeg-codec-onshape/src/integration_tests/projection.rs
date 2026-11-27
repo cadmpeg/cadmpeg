@@ -1175,7 +1175,7 @@ fn a_dropped_constraint_names_its_kind_even_when_an_operand_is_missing() {
 
 /// `fixture` with `variables` placed before its features. Every later feature moves down by
 /// as many rollback positions, so the body details captured at those rollbacks move with it.
-fn with_variables(
+pub(super) fn with_variables(
     fixture: &[u8],
     variables: &[Value],
     mut edit: impl FnMut(&mut Value),
@@ -1212,7 +1212,13 @@ fn with_variables(
     output.finish().unwrap().into_inner()
 }
 
-fn variable(feature: &str, name: &str, kind: &str, key: &str, expression: &str) -> Value {
+pub(super) fn variable(
+    feature: &str,
+    name: &str,
+    kind: &str,
+    key: &str,
+    expression: &str,
+) -> Value {
     json!({"featureId":feature,"featureType":"assignVariable","parameters":[
         {"parameterId":"mode","value":"ASSIGNED"},{"parameterId":"variableType","value":kind},
         {"parameterId":"name","value":name},{"parameterId":key,"expression":expression}]})

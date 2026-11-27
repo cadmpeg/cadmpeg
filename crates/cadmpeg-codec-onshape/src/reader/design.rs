@@ -24,6 +24,7 @@ use super::{id, push, RollbackBar};
 use crate::loss::OnshapeLossCode;
 
 mod operation;
+mod parameters;
 mod sketches;
 
 /// What the design projection reads of a source feature that its model
@@ -90,6 +91,22 @@ pub(super) fn project(
         .iter()
         .map(|entity| (entity.id.as_str(), entity.sketch.as_str()))
         .collect();
+    let owned: BTreeMap<(&str, &str), &cadmpeg_ir::features::ParameterId> = ir
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| {
+            let role = parameter
+                .properties
+                .iter()
+                .find(|(key, _)| key.as_str() == "source_kind")?
+                .1;
+            Some((
+                (parameter.owner.as_ref()?.as_str(), role.as_str()),
+                &parameter.id,
+            ))
+        })
+        .collect();
     let mut designed = Vec::with_capacity(ir.model.features.len());
     let mut preceding = BTreeSet::new();
     let mut timeline: Vec<_> = ir.model.features.iter().collect();
@@ -101,6 +118,7 @@ pub(super) fn project(
             sketches: &stated_sketches,
             entities: &stated_entities,
             preceding: &preceding,
+            owned: &owned,
         };
         let thin = source.and_then(|source| source.thin.as_ref());
         let typed = match (thin, sketch_failures.get(&model.id)) {
@@ -153,13 +171,31 @@ pub(super) fn project(
         });
     }
     ir.design.features.extend(designed);
-    install_scope(ctx, ir, bar).map_err(malformed)?;
+    let definition = owner(ctx, ir)?;
+    let (parameters, texts) = parameters::project(&ir.model.parameters, &definition);
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(parameters.len()),
+        "Onshape design parameters",
+    )?;
+    ir.design.parameters.extend(parameters);
+    for parameter in texts {
+        note(
+            notes,
+            OnshapeLossCode::ParameterExpressionText,
+            parameter.as_str(),
+            "the parameter's expression stays Onshape source text",
+        );
+    }
+    install_scope(ir, bar, &definition).map_err(malformed)?;
     Ok(projected)
 }
 
 /// State the Part Studio's timeline and scope over its design features.
-fn install_scope(ctx: &DecodeContext<'_>, ir: &mut CadIr, bar: &RollbackBar) -> Result<(), String> {
-    let definition = owner(ctx, ir).map_err(|error| error.to_string())?;
+fn install_scope(
+    ir: &mut CadIr,
+    bar: &RollbackBar,
+    definition: &cadmpeg_ir::ids::ProductDefinitionId,
+) -> Result<(), String> {
     let container = id("container", "Part Studio");
     let bodies: Vec<_> = ir.geometry.bodies.iter().map(|body| &body.id).collect();
     let members: Vec<_> = ir

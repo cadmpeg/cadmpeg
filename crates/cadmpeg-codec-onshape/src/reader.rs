@@ -1384,8 +1384,7 @@ fn annotate(
 
 /// The model fields the decoder reads to build each design field. A design
 /// feature's definition is read from the source feature, and takes the
-/// `definition` mark [`annotate`] states on every feature; the decoder states
-/// no design parameter.
+/// `definition` mark [`annotate`] states on every feature.
 const RESTATEMENT: cadmpeg_ir::design::projection::Restatement =
     cadmpeg_ir::design::projection::Restatement {
         feature: feature_inputs,
@@ -1408,20 +1407,24 @@ fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
 #[deny(clippy::wildcard_enum_match_arm)]
 fn parameter_inputs(field: ParameterField) -> &'static [ModelParameterField] {
     match field {
+        ParameterField::Owner => &[ModelParameterField::Owner],
+        ParameterField::Name => &[ModelParameterField::Name],
+        ParameterField::Kind => &[ModelParameterField::Value],
+        ParameterField::Definition => &[
+            ModelParameterField::ExpressionText,
+            ModelParameterField::Dependencies,
+        ],
+        ParameterField::Value => &[ModelParameterField::Value],
+        ParameterField::NativeOptions | ParameterField::SourceSettings => {
+            &[ModelParameterField::Properties]
+        }
+        ParameterField::NativeRef => &[ModelParameterField::NativeRef],
         ParameterField::Scope
-        | ParameterField::Owner
-        | ParameterField::Name
-        | ParameterField::Kind
         | ParameterField::Unit
-        | ParameterField::Definition
-        | ParameterField::Value
         | ParameterField::Display
         | ParameterField::Tolerance
         | ParameterField::Decimals
-        | ParameterField::Comment
-        | ParameterField::NativeOptions
-        | ParameterField::SourceSettings
-        | ParameterField::NativeRef => &[],
+        | ParameterField::Comment => &[],
     }
 }
 

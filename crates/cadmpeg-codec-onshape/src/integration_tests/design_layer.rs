@@ -117,3 +117,85 @@ fn a_revolve_about_a_sketch_line_states_its_axis_pick() {
     );
     validate(result);
 }
+
+fn variable_depth() -> Vec<u8> {
+    super::projection::with_variables(
+        &fixture("plate-fillet"),
+        &[super::projection::variable(
+            "width-variable",
+            "width",
+            "LENGTH",
+            "lengthValue",
+            "3 mm",
+        )],
+        |response| {
+            for parameter in response["features"][1]["parameters"]
+                .as_array_mut()
+                .unwrap()
+            {
+                if parameter["parameterId"] == "depth" {
+                    parameter["expression"] = json!("#width * 2");
+                }
+            }
+        },
+    )
+}
+
+#[test]
+fn variables_and_owned_dimensions_are_design_parameters() {
+    let result = decode(&variable_depth());
+    let ir = result.ir();
+    let wire = wire(&result);
+    let parameter = |owner: Option<&str>| {
+        wire["design"]["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p.pointer("/owner/value").and_then(|o| o.as_str()) == owner)
+            .unwrap_or_else(|| panic!("{owner:?}: {:?}", result.report().losses))
+            .clone()
+    };
+    let width = parameter(None);
+    assert_eq!(width["id"], id("parameter", "width-variable"));
+    assert_eq!(width["name"], "width");
+    assert_eq!(
+        width["definition"],
+        json!({"kind":"expression","value":{"kind":"neutral","value":{"text":"3[mm]","refs":[],"measures":[]}}})
+    );
+    assert_eq!(width["value"], json!({"kind":"number","value":3.0}));
+    let plate = id("feature", "Plate");
+    let depth = parameter(Some(&plate));
+    assert_eq!(
+        depth["definition"]["value"]["value"],
+        json!({"text":"$0 * 2","refs":[{"target":{"kind":"parameter","value":id("parameter", "width-variable")}}],"measures":[]})
+    );
+    assert_eq!(depth["value"], json!({"kind":"number","value":6.0}));
+    assert_eq!(
+        design_operation(ir, "Plate")["value"]["span"]["end"]["value"],
+        json!({"kind":"parameter","value":depth["id"]})
+    );
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { crate::loss::OnshapeLossCode::ParameterExpressionText.matches(loss) }));
+    validate(result);
+}
+
+#[test]
+fn a_cadir_write_carries_the_restated_parameters() {
+    let result = decode(&variable_depth());
+    let (written, losses) = cadir_round_trip(&result);
+    assert_eq!(written.design.parameters, result.ir().design.parameters);
+    assert_eq!(
+        result.ir().design.parameters.len(),
+        result.ir().model.parameters.len()
+    );
+    for parameter in &result.ir().model.parameters {
+        assert!(
+            omitted(&losses, parameter.id.as_str()).is_empty(),
+            "{}: {losses:#?}",
+            parameter.id
+        );
+    }
+}
