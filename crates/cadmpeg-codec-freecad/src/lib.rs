@@ -1179,6 +1179,7 @@ impl CodecBackend for FcstdCodec {
                     &graph.objects,
                     &graph.properties,
                     &product_nodes,
+                    &joint_records,
                     &mut transfer_losses,
                 );
             }

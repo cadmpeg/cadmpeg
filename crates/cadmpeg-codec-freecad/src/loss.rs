@@ -80,6 +80,9 @@ pub(crate) enum FreecadLossCode {
     /// A link that follows its linked object's own placement places an
     /// object the scope holds no own occurrence of.
     FeatureLinkPlacementUnresolved,
+    /// An assembly joint names no object for a connector or a blank joint
+    /// type, or grounds an object that the scope holds no occurrence of.
+    FeatureJointUnresolved,
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
     ParameterExpressionEmpty,
@@ -169,6 +172,7 @@ impl FreecadLossCode {
         Self::FeatureRemovalWithoutBase,
         Self::FeaturePrimitivePlacementUnresolved,
         Self::FeatureLinkPlacementUnresolved,
+        Self::FeatureJointUnresolved,
         Self::ParameterExpressionEmpty,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
@@ -230,6 +234,7 @@ impl FreecadLossCode {
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
             Self::FeatureLinkPlacementUnresolved => "feature.link-placement-unresolved",
+            Self::FeatureJointUnresolved => "feature.joint-unresolved",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
@@ -308,6 +313,7 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
             | Self::FeatureLinkPlacementUnresolved
+            | Self::FeatureJointUnresolved
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -358,7 +364,8 @@ impl FreecadLossCode {
             | Self::FeatureRevolutionNotTransferred
             | Self::FeatureRemovalWithoutBase
             | Self::FeaturePrimitivePlacementUnresolved
-            | Self::FeatureLinkPlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
+            | Self::FeatureLinkPlacementUnresolved
+            | Self::FeatureJointUnresolved => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
@@ -446,6 +453,7 @@ mod tests {
                 "feature.removal-without-base",
                 "feature.primitive-placement-unresolved",
                 "feature.link-placement-unresolved",
+                "feature.joint-unresolved",
                 "parameter.expression-empty",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",

@@ -830,6 +830,25 @@ independent fields.
 Persisted degree values convert to radians for neutral angles and angular limits. Validation checks
 operand/frame cardinality, component references, finite values, and ordered intervals.
 
+Each paired joint is a v11 `Joint` feature whose identity is the assembly joint's identity. The
+`Assembly` that lists the joint, directly or in its `JointGroup`, is the feature's component, and
+connector paths start at its definition. A connector is a frame construction. Its picks name the
+elements of `Reference1` or `Reference2`: the reference object and each leading sub-name segment
+that names an object placed in the prototype reached give the occurrence path, and the rest of the
+sub-name is the element's native name. A reference with no element picks the whole occurrence.
+`Offset1` or `Offset2` is the construction's fixed step where it is not the identity, and
+`Placement1` or `Placement2` is its resolved frame. Fixed, revolute, cylindrical, slider, and ball
+joints are motions about the connector frame's z axis, with their enabled limits. Distance,
+parallel, perpendicular, and angle joints are relations of those kinds. Rack-pinion, screw, gears,
+and belt joints are couplings whose pitch radius, pitch, or radii are `Distance` and `Distance2`.
+Another family is a native kind with its source label. `Suppressed` is the feature's suppression.
+A true `Detach1` or `Detach2` is a source setting, and each other stored value that the kind does
+not use is a native option under its property name. A `JointGroup` is an unordered `Group` of its
+joints; the document's `Group` holds each other joint. A grounded object is grounded occurrence
+state. A joint that names no object for a connector, that stores a blank joint type, or that
+grounds an object with no occurrence in the scope emits `feature.joint-unresolved` and stays in its
+native record.
+
 ## 10. Drawing graph
 
 The native namespace holds a `drawings` arena for every TechDraw page, template, view,

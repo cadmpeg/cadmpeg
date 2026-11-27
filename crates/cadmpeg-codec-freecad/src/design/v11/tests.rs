@@ -1064,3 +1064,320 @@ fn an_app_link_array_places_its_elements_in_one_feature() {
         (None, None, None)
     );
 }
+
+const ASSEMBLY: &str = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="9">
+ <Object type="Assembly::AssemblyObject" name="Assembly" id="1"/>
+ <Object type="Part::Feature" name="BracketShape" id="2"/>
+ <Object type="Part::Feature" name="PinShape" id="3"/>
+ <Object type="App::Link" name="Bracket" id="4"/>
+ <Object type="App::Link" name="Pin" id="5"/>
+ <Object type="Assembly::JointGroup" name="Joints" id="6"/>
+ <Object type="App::FeaturePython" name="Hinge" id="7"/>
+ <Object type="App::FeaturePython" name="Ground" id="8"/>
+ <Object type="App::FeaturePython" name="Weld" id="9"/>
+</Objects>
+<ObjectData Count="9">
+ <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="4"><Link value="Bracket"/><Link value="Pin"/><Link value="Joints"/><Link value="Weld"/></LinkList></Property></Properties></Object>
+ <Object name="BracketShape"><Properties Count="0"/></Object>
+ <Object name="PinShape"><Properties Count="0"/></Object>
+ <Object name="Bracket"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="BracketShape"/></Property></Properties></Object>
+ <Object name="Pin"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="PinShape"/></Property></Properties></Object>
+ <Object name="Joints"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Hinge"/><Link value="Ground"/></LinkList></Property></Properties></Object>
+ <Object name="Hinge"><Properties Count="14">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="3"><Enum value="Fixed"/><Enum value="Revolute"/><Enum value="Weld"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="2"><Sub value="Bracket.Face1"/><Sub value="Bracket.Vertex2"/></XLink></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Edge3"/></Property>
+  <Property name="Placement1" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Placement2" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Offset1" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0.5" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="15"/></Property>
+  <Property name="AngleMin" type="App::PropertyAngle"><Float value="-30"/></Property>
+  <Property name="AngleMax" type="App::PropertyAngle"><Float value="45"/></Property>
+  <Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="EnableAngleMax" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="LengthMin" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Detach1" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Ground"><Properties Count="2">
+  <Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="Bracket"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+ <Object name="Weld"><Properties Count="3">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="2" CustomEnum="true"/><CustomEnumList count="3"><Enum value="Fixed"/><Enum value="Revolute"/><Enum value="Weld"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+
+fn joint_feature<'ir>(
+    ir: &'ir CadIr,
+    name: &str,
+) -> (
+    &'ir cadmpeg_ir::design::feature::Feature,
+    &'ir cadmpeg_ir::design::ops::shared::Joint,
+) {
+    let feature = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name))
+        .unwrap_or_else(|| panic!("{:?}", ir.design.features));
+    let FeatureOperation::Joint(joint) = &feature.definition.operation else {
+        panic!("{:?}", feature.definition.operation);
+    };
+    (feature, joint)
+}
+
+/// The construction of frame connector `connector`.
+fn frame(
+    connector: &cadmpeg_ir::design::ops::shared::JointConnector,
+) -> &cadmpeg_ir::design::construction::Construction<cadmpeg_ir::design::construction::kinds::Frame>
+{
+    let cadmpeg_ir::design::ops::shared::JointConnector::Frame(frame) = connector else {
+        panic!("{connector:?}");
+    };
+    frame
+}
+
+/// The native names and occurrence paths of the picks of frame connector
+/// `connector`.
+fn frame_picks(
+    connector: &cadmpeg_ir::design::ops::shared::JointConnector,
+) -> Vec<(Option<String>, Vec<String>)> {
+    use cadmpeg_ir::design::construction::InputReference;
+    use cadmpeg_ir::design::selection::{PickContext, Picks, StepRef};
+    let frame = frame(connector);
+    let [input] = frame.inputs.as_slice() else {
+        panic!("{:?}", frame.inputs);
+    };
+    let Some(InputReference::Picks(selection)) = &input.reference else {
+        panic!("{input:?}");
+    };
+    let Picks::Named(members) = &selection.picks else {
+        panic!("{selection:?}");
+    };
+    let picks = members
+        .as_slice()
+        .iter()
+        .map(|pick| {
+            let native = pick.native.as_ref().map(|name| match &name.value {
+                cadmpeg_ir::design::names::NativeNameValue::Text(text) => text.as_str().to_owned(),
+                other => panic!("{other:?}"),
+            });
+            let path = match &pick.context {
+                Some(PickContext::Occurrence(path)) => path
+                    .0
+                    .iter()
+                    .map(|step| match &step.occurrence {
+                        StepRef::Occurrence(id) => id.as_str().to_owned(),
+                        StepRef::Native(name) => panic!("{name:?}"),
+                    })
+                    .collect(),
+                None => Vec::new(),
+                Some(other) => panic!("{other:?}"),
+            };
+            (native, path)
+        })
+        .collect();
+    picks
+}
+
+#[test]
+fn an_assembly_joint_is_a_joint_feature_of_its_joint_group() {
+    use cadmpeg_ir::design::construction::{FrameAxis, PostStep};
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::ops::shared::{AxisLimits, JointKind, JointMotion};
+    use cadmpeg_ir::design::options::NativeOption;
+    use cadmpeg_ir::design::selection::PickTarget;
+
+    let ir = decode(&archive(ASSEMBLY), DecodeDepth::Design);
+    let occurrence = |object: &str| {
+        let native = format!("fcstd:native:object#{object}");
+        ir.model
+            .occurrences
+            .iter()
+            .find(|occurrence| {
+                occurrence.native_ref.as_deref() == Some(native.as_str())
+                    && !occurrence.id.as_str().ends_with(":container")
+            })
+            .unwrap_or_else(|| panic!("{:?}", ir.model.occurrences))
+            .id
+            .clone()
+    };
+    let (bracket, pin) = (occurrence("Bracket"), occurrence("Pin"));
+    let assembly = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.native_ref.as_deref() == Some("fcstd:native:object#Assembly"))
+        .unwrap()
+        .id
+        .clone();
+
+    let (feature, hinge) = joint_feature(&ir, "Hinge");
+    assert_eq!(feature.id.as_str(), "fcstd:model:joint#Hinge:constraint");
+    assert_eq!(feature.suppressed, Some(Dimension::Literal(true)));
+    assert_eq!(feature.component.as_ref(), Some(&assembly));
+    assert_eq!(
+        feature.native_ref.as_deref(),
+        Some("fcstd:native:object#Hinge")
+    );
+    // FreeCAD turns and slides joints about the connector frame's z axis;
+    // an enabled limit is in degrees (§6.7).
+    let JointKind::Motion {
+        motion: JointMotion::Revolute { axis: FrameAxis::Z },
+        limits,
+        ..
+    } = &hinge.kind
+    else {
+        panic!("{:?}", hinge.kind);
+    };
+    let [AxisLimits::Rotation {
+        axis: FrameAxis::Z,
+        limits: Some(bounds),
+        rest: None,
+    }] = limits.as_slice()
+    else {
+        panic!("{limits:?}");
+    };
+    let degrees = |bound: &Option<Dimension<cadmpeg_ir::scalar::Angle>>| match bound {
+        Some(Dimension::Literal(angle)) => angle.get().to_degrees(),
+        other => panic!("{other:?}"),
+    };
+    assert!((degrees(&bounds.min) + 30.0).abs() < 1e-9);
+    assert!((degrees(&bounds.max) - 45.0).abs() < 1e-9);
+
+    // A connector picks its elements in the occurrence the sub-name names;
+    // its offset is its step and its placement its resolved frame.
+    let (first, picks) = (
+        frame(&hinge.connectors[0]),
+        frame_picks(&hinge.connectors[0]),
+    );
+    let bracket_path = vec![bracket.as_str().to_owned()];
+    assert_eq!(
+        picks,
+        [
+            (Some("Face1".to_owned()), bracket_path.clone()),
+            (Some("Vertex2".to_owned()), bracket_path.clone())
+        ]
+    );
+    let [PostStep::Fixed(offset)] = first.after.as_slice() else {
+        panic!("{:?}", first.after);
+    };
+    assert_eq!(offset.affine_rows()[2][3], 0.5);
+    let origin = first.resolved.as_ref().unwrap().origin.get();
+    assert_eq!([origin.x, origin.y, origin.z], [1.0, 0.0, 0.0]);
+    let (second, picks) = (
+        frame(&hinge.connectors[1]),
+        frame_picks(&hinge.connectors[1]),
+    );
+    assert_eq!(
+        picks,
+        [(Some("Edge3".to_owned()), vec![pin.as_str().to_owned()])]
+    );
+    assert!(second.after.is_empty());
+    assert_eq!(second.resolved.as_ref().unwrap().origin.get().x, 2.0);
+
+    // A value the joint does not hold is a native option; a detached
+    // connector is a source setting.
+    let option = |options: &cadmpeg_ir::design::options::NativeOptions, name: &str| {
+        options
+            .iter()
+            .find(|(key, _)| key.as_str() == format!("fcstd:{name}"))
+            .map(|(_, option)| option.clone())
+    };
+    let Some(NativeOption::Angle(Dimension::Literal(angle))) =
+        option(&hinge.native_options, "Angle")
+    else {
+        panic!("{:?}", hinge.native_options);
+    };
+    assert!((angle.get().to_degrees() - 15.0).abs() < 1e-9);
+    let Some(NativeOption::Length(Dimension::Literal(length))) =
+        option(&hinge.native_options, "LengthMin")
+    else {
+        panic!("{:?}", hinge.native_options);
+    };
+    assert_eq!(length.get(), 1.0);
+    for used in [
+        "AngleMin",
+        "AngleMax",
+        "EnableAngleMin",
+        "Suppressed",
+        "Detach1",
+    ] {
+        assert_eq!(option(&hinge.native_options, used), None, "{used}");
+    }
+    assert_eq!(
+        option(&hinge.source_settings, "Detach1"),
+        Some(NativeOption::Bool(Dimension::Literal(true)))
+    );
+
+    // An unknown family is a native kind; a reference with no element picks
+    // the whole occurrence.
+    let (weld_feature, weld) = joint_feature(&ir, "Weld");
+    assert_eq!(
+        weld.kind,
+        JointKind::Native(cadmpeg_core::text::NonBlankString::new("Weld".to_owned()).unwrap())
+    );
+    let picks = frame_picks(&weld.connectors[0]);
+    assert_eq!(picks, [(None, bracket_path)]);
+    let cadmpeg_ir::design::construction::InputReference::Picks(selection) =
+        frame(&weld.connectors[0]).inputs[0]
+            .reference
+            .as_ref()
+            .unwrap()
+    else {
+        unreachable!();
+    };
+    let cadmpeg_ir::design::selection::Picks::Named(members) = &selection.picks else {
+        unreachable!();
+    };
+    assert!(members
+        .as_slice()
+        .iter()
+        .all(|pick| pick.target == PickTarget::Component));
+
+    // A JointGroup is an unordered Group of its joints; a joint it does not
+    // list is a member of the document's Group.
+    let joints = ir
+        .design
+        .containers
+        .iter()
+        .find(|container| container.id().as_str() == "fcstd:design:container#Joints")
+        .unwrap_or_else(|| panic!("{:?}", ir.design.containers));
+    let Container::Unordered {
+        kind: UnorderedKind::Group,
+        members,
+        ..
+    } = joints
+    else {
+        panic!("{joints:?}");
+    };
+    assert_eq!(
+        members,
+        &BTreeSet::from([Member::Feature(feature.id.clone())])
+    );
+    assert!(ir.design.scopes[0].roots.contains(joints.id()));
+    assert!(group_members(&ir).contains(&Member::Feature(weld_feature.id.clone())));
+
+    // Grounding is occurrence state (§6.7).
+    let scope = &ir.design.scopes[0];
+    assert_eq!(
+        scope
+            .occurrences
+            .get(&bracket)
+            .and_then(|state| state.grounded),
+        Some(true)
+    );
+    assert_eq!(scope.occurrences.len(), 1);
+
+    let (written, omitted) = cadir_round_trip(&ir);
+    for id in [feature.id.as_str(), weld_feature.id.as_str()] {
+        assert!(!omitted.contains(id), "{omitted:?}");
+    }
+    assert_eq!(written.design.features, ir.design.features);
+    assert_eq!(written.design.containers, ir.design.containers);
+    assert_eq!(written.design.scopes, ir.design.scopes);
+}

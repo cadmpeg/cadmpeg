@@ -46,8 +46,10 @@ use cadmpeg_ir::units::UnitVector3;
 
 use crate::loss::FreecadLossCode;
 use crate::native::frame::FiniteFrame;
+use crate::native::joint::JointRecord;
 use crate::native::{ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord};
 
+mod joints;
 mod parameters;
 pub(crate) mod states;
 
@@ -62,6 +64,7 @@ pub(crate) fn project(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     links: &[ProductNodeRecord],
+    joints: &[JointRecord],
     losses: &mut Vec<LossNote>,
 ) {
     let source = Source::of(objects, properties);
@@ -81,6 +84,9 @@ pub(crate) fn project(
     let places = places(ir, &definition, objects, links, losses);
     grouped.extend(places.iter().map(|place| Member::Feature(place.id.clone())));
     features.extend(places);
+    let joints = joints::project(ir, &definition, joints, objects, properties, losses);
+    grouped.extend(joints.loose);
+    features.extend(joints.features);
     let mut containers = Vec::new();
     let mut body_containers = BTreeMap::new();
     let mut roots = Vec::new();
@@ -144,6 +150,8 @@ pub(crate) fn project(
                 .and_then(|object| source.placement(object)),
         });
     }
+    roots.extend(joints.groups.iter().map(|group| group.id().clone()));
+    containers.extend(joints.groups);
     if !grouped.is_empty() {
         let id = ContainerId::from(Identity::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "design", "container"),
@@ -206,7 +214,7 @@ pub(crate) fn project(
         roots,
         active_configuration: None,
         active_arrangements: BTreeSet::default(),
-        occurrences: BTreeMap::default(),
+        occurrences: joints.grounded,
         current,
         unproduced: BTreeSet::new(),
     });
@@ -482,7 +490,18 @@ fn scale_factors(factors: [f64; 3]) -> Option<ScaleFactors> {
 /// The frame `frame` a source stores as a placement: one fixed step
 /// (§5.9).
 fn fixed(frame: FiniteFrame) -> Option<Construction<kinds::Frame>> {
-    let transform = frame.transform();
+    Some(Construction {
+        inputs: Vec::new(),
+        after: vec![PostStep::Fixed(frame.transform())],
+        solution: None,
+        mode: None,
+        resolved: Some(frame_value(frame)?),
+        resolved_in: BTreeMap::new(),
+    })
+}
+
+/// The origin and axes of frame `frame`.
+fn frame_value(frame: FiniteFrame) -> Option<FrameValue> {
     let rows = frame.rows();
     let axis = |column: usize| {
         UnitVector3::new(Vector3::new(
@@ -491,18 +510,11 @@ fn fixed(frame: FiniteFrame) -> Option<Construction<kinds::Frame>> {
             rows[2][column],
         ))
     };
-    Some(Construction {
-        inputs: Vec::new(),
-        after: vec![PostStep::Fixed(transform)],
-        solution: None,
-        mode: None,
-        resolved: Some(FrameValue {
-            origin: FinitePoint3::new(Point3::new(rows[0][3], rows[1][3], rows[2][3]))?,
-            x_axis: axis(0)?,
-            y_axis: axis(1)?,
-            z_axis: axis(2)?,
-        }),
-        resolved_in: BTreeMap::new(),
+    Some(FrameValue {
+        origin: FinitePoint3::new(Point3::new(rows[0][3], rows[1][3], rows[2][3]))?,
+        x_axis: axis(0)?,
+        y_axis: axis(1)?,
+        z_axis: axis(2)?,
     })
 }
 

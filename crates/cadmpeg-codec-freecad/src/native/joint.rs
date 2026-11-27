@@ -31,7 +31,7 @@ impl PairedJointFamily {
 
 /// A checked joint parameter value that retains its source spelling.
 #[derive(Debug, Clone, PartialEq)]
-enum JointParameter {
+pub(crate) enum JointParameter {
     Scalar { raw: String, value: FiniteReal },
     Boolean { raw: String, value: bool },
     Native { raw: String },
@@ -100,6 +100,13 @@ impl JointParameters {
     #[cfg(test)]
     pub(crate) fn raw(&self, name: &str) -> Option<&str> {
         self.0.get(name).map(JointParameter::raw)
+    }
+
+    /// Each parameter with its name, in name order.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&str, &JointParameter)> {
+        self.0
+            .iter()
+            .map(|(name, parameter)| (name.as_str(), parameter))
     }
 
     pub(crate) fn bool_value(&self, name: &str) -> Option<bool> {
