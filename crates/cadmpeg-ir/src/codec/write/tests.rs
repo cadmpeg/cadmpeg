@@ -27,6 +27,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 
 mod dropped_records;
+mod restated_records;
 mod session;
 
 #[test]
@@ -738,8 +739,12 @@ fn design_sheet(key: &str) -> crate::design::spreadsheet::Spreadsheet {
 }
 
 fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
+    model_sheet("v10")
+}
+
+fn model_sheet(key: &str) -> crate::spreadsheets::Spreadsheet {
     crate::spreadsheets::Spreadsheet::new(
-        crate::spreadsheets::SpreadsheetId::mint("test:design:spreadsheet#v10").unwrap(),
+        crate::spreadsheets::SpreadsheetId::mint(format!("test:design:spreadsheet#{key}")).unwrap(),
         crate::features::FeatureId::mint("test:design:feature#v10").unwrap(),
         Vec::new(),
         Vec::new(),
@@ -748,23 +753,6 @@ fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
         None,
     )
     .unwrap()
-}
-
-/// A CADIR write charges a record of an arena the wire omits only where no
-/// `design` record it writes restates the record under its id; a write that
-/// omits the design record too charges the omitted record.
-#[test]
-fn a_cadir_write_charges_only_omitted_records_no_written_design_record_restates() {
-    let mut ir = CadIr::empty();
-    ir.model.spreadsheets.push(v10_sheet());
-    let cadir = super::coverage::cadir_dispositions();
-    assert_eq!(cadir.omitted(&ir), ["spreadsheets"]);
-    ir.design.spreadsheets.push(design_sheet("v10"));
-    assert!(cadir.omitted(&ir).is_empty());
-    assert_eq!(
-        uniform_dispositions(ArenaDisposition::Omitted).omitted(&ir),
-        ["spreadsheets"]
-    );
 }
 
 /// `omitted` names the arenas the `arena.omitted` losses name: an omitted

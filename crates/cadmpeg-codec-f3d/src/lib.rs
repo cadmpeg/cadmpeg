@@ -91,6 +91,7 @@ mod design;
 mod design_v11;
 mod dialect;
 mod f3z;
+mod scoped;
 pub use f3z::{
     observe_f3z_members, F3zDecodedMember, F3zMember, F3zMemberKind, F3zMemberObserver, F3zPhase,
     F3zSession,

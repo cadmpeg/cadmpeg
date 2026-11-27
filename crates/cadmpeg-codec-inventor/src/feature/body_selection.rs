@@ -779,6 +779,9 @@ pub(crate) fn native_losses(
                 FeatureDefinition::Operation(FeatureOperation::MirrorShape { source, .. }) => {
                     native(source)
                 }
+                FeatureDefinition::Operation(FeatureOperation::SewBodies { bodies, .. }) => {
+                    native(bodies)
+                }
                 FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => seeds
                     .iter()
                     .map(|seed| match seed {

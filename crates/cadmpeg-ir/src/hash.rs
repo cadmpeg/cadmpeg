@@ -116,6 +116,21 @@ pub(crate) fn measured_content_digest(
     (digest, measured)
 }
 
+/// Measures every record and outside value of `ir` past a bound of §2.5 in a
+/// single unlimited-depth pass without computing a SHA-256 digest.
+pub(crate) fn measure_document_bounds(
+    ir: &CadIr,
+) -> Result<crate::bounds::Measured, CanonicalJsonError> {
+    let mut measure = crate::bounds::Measure::new(std::io::sink());
+    let admission = finite_json::admission::CanonicalAdmission::unlimited();
+    let written = finite_json::write_serde_json_erased(admission, &mut measure, &|serializer| {
+        ir.serialize_pretty_erased(serializer, admission)
+    });
+    let measured = measure.finish();
+    written?;
+    Ok(measured)
+}
+
 /// The canonical JSON of `ir`, with each record it holds past a bound of
 /// §2.5. The walk admits every depth.
 pub(crate) fn measured_canonical_json(

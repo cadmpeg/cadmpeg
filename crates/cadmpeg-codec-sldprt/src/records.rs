@@ -534,7 +534,7 @@ pub(crate) struct Feature {
 }
 
 /// One ordered item inside a native feature XML element.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum FeatureContent {
     /// Named dimension child.
@@ -546,7 +546,7 @@ pub(crate) enum FeatureContent {
 }
 
 /// One ordered item inside the native `Keywords` root.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum HistoryContent {
     /// Native configuration record id.
@@ -574,7 +574,7 @@ pub(crate) struct HistoryElement {
 }
 
 /// One ordered item inside a [`HistoryElement`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub(crate) enum HistoryElementContent {
     /// Child element.

@@ -7,17 +7,16 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
 use cadmpeg_ir::codec::write::{EncodeInput, RestoredDocument};
-use cadmpeg_ir::codec::{Codec, DecodeFailure};
+use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::report::strictness::Strictness;
 
 use super::primitives::{configuration_targets, decoded_configurations, f3d_native};
+use crate::ids;
 use crate::loss::F3dLossCode;
-use crate::{ids, F3dCodec};
 
 /// `input`'s document with the arenas the CADIR wire omits restored from
 /// its retained archive, where it was read from CADIR JSON and `target` does
@@ -38,12 +37,10 @@ pub(crate) fn restore(
     let Some(image) = saved_source(ctx, input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
         return Ok(None);
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
     let restored = ctx
-        .with_arena(&arena, |ctx| {
-            let root = ctx.open_input(image, "F3D retained source archive")?;
-            F3dCodec.decode_with_context(ctx, root, &Strictness::default())
-        })
+        .open_input(image, "F3D retained source archive")
+        .map_err(DecodeFailure::from)
+        .and_then(|root| super::decode_retained_source(ctx, root))
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format!(
