@@ -20,6 +20,7 @@ use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::ConfigurationEvaluation;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::ids::BodyId;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -418,9 +419,10 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
     let mut inactive = configuration.clone();
     inactive.active = false;
     inactive.feature_states.clear();
+    let undecided = BTreeSet::from([unstated.id.clone()]);
     let mut features = vec![unlisted, unstated, stored];
     let mut configurations = vec![configuration.clone(), inactive];
-    reconcile_active_configurations(&mut features, &mut configurations, &BTreeSet::new()).unwrap();
+    reconcile_active_configurations(&mut features, &mut configurations, &undecided).unwrap();
     assert_eq!(inferred_configuration_suppression_count(&configurations), 0);
 
     // A suppressed feature no row names gains a row in the active configuration only.
@@ -435,12 +437,12 @@ fn the_active_configuration_and_the_feature_states_fill_each_others_gaps() {
 }
 
 /// Features whose cell in active row `off` suppresses scope 314, computes
-/// scope 315, suppresses scopes 316 and 318 and computes Sketch scope 319:
-/// the Base Feature of 314 and the Extrude of 315 store no suppression and
-/// carry the states feature projection infers for them, 316 stores its state
-/// in its tail, the Thread of 318 in its companion suppression flag, and the
-/// Sketch of 319 stores a suppressed state in its tail. The suppressed
-/// feature of scope 317 has no column.
+/// scope 315 and suppresses scopes 316, 318 and 319: the Base Feature of 314
+/// and the Extrude of 315 store no suppression and carry the states feature
+/// projection infers for them, 316 stores its state in its tail, the Thread
+/// of 318 in its companion suppression flag, and the Sketch of 319 stores an
+/// active state in its tail. The suppressed feature of scope 317 has no
+/// column.
 #[test]
 fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
     let mut natives = Natives::complete();
@@ -479,12 +481,8 @@ fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
         DesignFeatureKind::Sketch,
         319,
     );
-    sketch_scope.tail_flags = Some(DesignScopeTailFlags {
-        suppression: [false, true],
-        ..stored_scope.tail_flags.unwrap()
-    });
+    sketch_scope.tail_flags = stored_scope.tail_flags;
     let mut sketch = neutral_feature(&sketch_scope, "f3d:test:feature#e");
-    sketch.suppressed = Some(true);
     sketch
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -521,7 +519,7 @@ fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
                 ("G", bool_cell(true)),
                 ("H", bool_cell(false)),
                 ("I", bool_cell(false)),
-                ("J", bool_cell(true)),
+                ("J", bool_cell(false)),
             ],
         )],
         &["off"],
@@ -541,12 +539,69 @@ fn the_active_row_decides_a_feature_whose_scope_stores_no_suppression() {
     assert_eq!(state(&inferred_suppressed.id), Some(false));
     assert_eq!(state(&stored.id), Some(false));
     assert_eq!(state(&thread.id), Some(false));
-    assert_eq!(state(&sketch.id), Some(true));
+    assert_eq!(state(&sketch.id), Some(false));
     assert_eq!(state(&unlisted.id), Some(true));
     assert_eq!(configurations.len(), 1);
     assert!(configurations[0].feature_states[&unlisted.id]
         .evaluation
         .is_suppressed());
+}
+
+/// Active row `off` suppresses scopes 314 and 315, whose tails store no
+/// suppression. The Base Feature of 314 carries the active state feature
+/// projection infers, and the feature of 315 states none. Each produces a
+/// body, so each keeps its state and the row contradicts the features.
+#[test]
+fn a_feature_that_produces_a_body_keeps_its_state_under_a_suppressing_row() {
+    let mut natives = Natives::complete();
+    natives.scopes[0] =
+        DesignParameterScope::empty(&natives.scopes[0].id, DesignFeatureKind::BaseFeature, 314);
+    let mut inferred = neutral_feature(&natives.scopes[0], "f3d:test:feature#s");
+    let mut unstated = neutral_feature(&scope(315), "f3d:test:feature#a");
+    unstated.suppressed = None;
+    for (feature, body) in [
+        (&mut inferred, "f3d:test:body#1"),
+        (&mut unstated, "f3d:test:body#2"),
+    ] {
+        feature
+            .evaluation
+            .edit(|_, outputs| outputs.extend([BodyId::mint(body).unwrap()]));
+    }
+    natives.neutral_features[0] = inferred.clone();
+    natives.scopes.push(scope(315));
+    natives.neutral_features.push(unstated.clone());
+    let mut document = table(&table_document(
+        "1",
+        &[
+            ("F", object_target("314", "DcFeature")),
+            ("G", object_target("315", "DcFeature")),
+        ],
+        &[(
+            "off",
+            "Off",
+            vec![("F", bool_cell(false)), ("G", bool_cell(false))],
+        )],
+        &["off"],
+    ));
+    document.set_active_row(active("1", "off")).unwrap();
+
+    let configurations = natives.attach(&[document]);
+    let state = |id: &cadmpeg_ir::features::FeatureId| {
+        natives
+            .neutral_features
+            .iter()
+            .find(|feature| &feature.id == id)
+            .unwrap()
+            .suppressed
+    };
+    assert_eq!(state(&inferred.id), Some(false));
+    assert_eq!(state(&unstated.id), None);
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features = natives.neutral_features.clone();
+    ir.model.configurations = configurations;
+    let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(report.findings.iter().any(|finding| finding.rule.as_str()
+        == "topology.active-configuration-suppression-disagrees-current-feature"));
 }
 
 #[test]

@@ -388,10 +388,11 @@ fn a_feature_the_decoder_suppressed_with_the_active_row_is_not_charged() {
         })
         .unwrap();
     let mut decoded = project(&documents, &natives.targets()).unwrap();
+    let undecided = BTreeSet::from([natives.neutral_features[0].id.clone()]);
     reconcile_active_configurations(
         &mut natives.neutral_features,
         &mut decoded.configurations,
-        &BTreeSet::new(),
+        &undecided,
     )
     .unwrap();
     assert_eq!(natives.neutral_features[0].suppressed, Some(true));

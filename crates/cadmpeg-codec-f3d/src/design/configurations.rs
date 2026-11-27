@@ -451,8 +451,18 @@ pub(crate) fn attach(
         .iter()
         .filter(|scope| scope.tail_flags.is_none() && scope.companion_suppressed.is_none())
         .map(crate::ids::neutral_feature_id)
+        .collect::<BTreeSet<_>>();
+    // A feature that produces a body is active in the stored geometry.
+    let undecided = model
+        .features
+        .iter()
+        .filter(|feature| {
+            feature.evaluation.outputs().is_empty()
+                && (feature.suppressed.is_none() || unstored.contains(&feature.id))
+        })
+        .map(|feature| feature.id.clone())
         .collect();
-    reconcile_active_configurations(&mut model.features, &mut configurations, &unstored)?;
+    reconcile_active_configurations(&mut model.features, &mut configurations, &undecided)?;
     model.configurations = configurations;
     Ok(())
 }
@@ -460,18 +470,16 @@ pub(crate) fn attach(
 /// Make the active configurations and the current feature states agree where
 /// the source leaves one of them silent. A table lists only the features it
 /// toggles, so a suppressed feature with no row keeps that state in the active
-/// row. The active row supplies the state of a feature whose records do not
-/// decide it (f3d.md §1.2): a feature with no state, and a feature of
-/// `unstored`, whose scope tail stores no feature item state and no Thread
-/// companion suppression flag, so that feature projection infers its state.
-/// A stored state is kept, so a row that contradicts it reaches the
-/// disagreement finding. A row with a suppression column that names no
-/// feature could name the feature that gained a row, so that row records the
-/// assumption in a property.
+/// row. The active row supplies the state of each feature of `undecided`,
+/// whose records do not decide it (f3d.md §1.2). Every other feature keeps
+/// its state, so a row that contradicts it reaches the disagreement finding.
+/// A row with a suppression column that names no feature could name the
+/// feature that gained a row, so that row records the assumption in a
+/// property.
 pub(crate) fn reconcile_active_configurations(
     features: &mut [cadmpeg_ir::features::Feature],
     configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
-    unstored: &BTreeSet<cadmpeg_ir::features::FeatureId>,
+    undecided: &BTreeSet<cadmpeg_ir::features::FeatureId>,
 ) -> Result<(), CodecError> {
     for configuration in configurations.iter_mut().filter(|row| row.active) {
         let unresolved_column = configuration
@@ -481,7 +489,7 @@ pub(crate) fn reconcile_active_configurations(
         for feature in features.iter_mut() {
             match configuration.feature_states.get(&feature.id) {
                 Some(state) => {
-                    if feature.suppressed.is_none() || unstored.contains(&feature.id) {
+                    if undecided.contains(&feature.id) {
                         feature.suppressed = Some(state.evaluation.is_suppressed());
                     }
                 }
