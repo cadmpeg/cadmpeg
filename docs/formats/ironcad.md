@@ -154,7 +154,8 @@ the part frame in the frame of its parent: a point `p` of the part frame lies
 at `p · R + t`, where `R` is the 3 × 3 block and `t` the translation. The
 parent of a part that an assembly holds is that assembly. The matrix of the
 record of an assembly that the scene root holds places the assembly in the
-scene in the same form. A part at
+scene in the same form. The matrix of the record of a member assembly has the
+same form; its frame is open (DR-1067). A part at
 the scene origin stores the identity matrix. A part turned by 30° about the
 scene Z axis stores the rows `(cos 30°, sin 30°, 0)` and `(-sin 30°, cos 30°, 0)`
 in the first two rows of `R`.
