@@ -410,6 +410,15 @@ fn translated(
             }
         }
     }
+    // A source token list holds a text token (part 10): a lone reference
+    // stays the source's text.
+    if !text.is_empty()
+        && !tokens
+            .iter()
+            .any(|token| matches!(token, ExpressionToken::Text(_)))
+    {
+        tokens = vec![ExpressionToken::Text(text.to_owned())];
+    }
     Expression::Source {
         dialect: ExpressionDialect::FreeCad,
         tokens,

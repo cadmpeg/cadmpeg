@@ -126,6 +126,53 @@ fn a_dimensionless_reference_bound_to_a_length_is_in_millimetres() {
 }
 
 #[test]
+fn a_dimensionless_reference_bound_to_an_angle_is_in_degrees() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sketch" type="Sketcher::SketchObject"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="2">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="1"><Cell address="A1" alias="tilt" content="30"/></Cells></Property></Properties></Object>
+<Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="12" EndY="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Name="tilt" Type="9" First="0" FirstPos="0" Value="0.5235987755982988"/>
+</ConstraintList></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path=".Constraints.tilt" expression="Sheet.tilt"/></ExpressionEngine></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let ir = decode(&archive(document));
+    let angle = parameter(&ir, "fcstd:design:parameter#Sketch:constraint:1");
+    assert_eq!(angle.kind, ValueKind::Quantity(Quantity::ANGLE));
+    let (text, refs) = neutral(angle);
+    assert_eq!(text, "$0 * 1[deg]");
+    assert_eq!(refs.len(), 1);
+}
+
+#[test]
+fn a_lone_reference_to_a_cell_with_no_value_stays_source_text() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sketch" type="Sketcher::SketchObject"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="2">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="1"><Cell address="A1" alias="w" content="=width0 * 2"/></Cells></Property></Properties></Object>
+<Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="12" EndY="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Name="width" Type="6" First="0" FirstPos="1" Second="0" SecondPos="2" Value="12"/>
+</ConstraintList></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path=".Constraints.width" expression="Sheet.w"/></ExpressionEngine></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let ir = decode(&archive(document));
+    let distance = parameter(&ir, "fcstd:design:parameter#Sketch:constraint:1");
+    assert_eq!(
+        distance.definition,
+        cadmpeg_ir::design::parameter::ParameterDefinition::Expression(Expression::Source {
+            dialect: cadmpeg_ir::design::expr::ExpressionDialect::FreeCad,
+            tokens: vec![cadmpeg_ir::design::expr::ExpressionToken::Text(
+                "Sheet.w".to_owned()
+            )],
+        })
+    );
+}
+
+#[test]
 fn a_stored_angle_is_a_literal_in_degrees() {
     let ir = decode(CORE_OPERATIONS);
     let angle = parameter(&ir, "fcstd:design:parameter#Draft:Angle");

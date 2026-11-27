@@ -38,8 +38,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::NonZeroReal;
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::UnitVector3;
 
+use crate::loss::FreecadLossCode;
 use crate::native::frame::FiniteFrame;
 use crate::native::{ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord};
 
@@ -64,7 +66,7 @@ pub(crate) fn project(
     let mut features = history
         .features
         .values()
-        .map(|legacy| feature(legacy, &source))
+        .map(|legacy| feature(legacy, &source, losses))
         .collect::<Vec<_>>();
     let mut grouped = history
         .features
@@ -72,7 +74,7 @@ pub(crate) fn project(
         .filter(|id| !history.contained.contains(**id))
         .map(|id| Member::Feature((*id).clone()))
         .collect::<BTreeSet<_>>();
-    let places = places(ir, &definition, objects, links);
+    let places = places(ir, &definition, objects, links, losses);
     grouped.extend(places.iter().map(|place| Member::Feature(place.id.clone())));
     features.extend(places);
     let mut containers = Vec::new();
@@ -135,10 +137,7 @@ pub(crate) fn project(
             placement: body
                 .native_ref
                 .as_deref()
-                .and_then(|object| source.placements.get(object))
-                .and_then(|property| crate::placement::placement_matrix_unreported(property))
-                .and_then(fixed)
-                .map(Box::new),
+                .and_then(|object| source.placement(object, losses)),
         });
     }
     if !grouped.is_empty() {
@@ -306,6 +305,7 @@ fn places(
     definition: &ProductDefinitionId,
     objects: &[ObjectRecord],
     links: &[ProductNodeRecord],
+    losses: &mut Vec<LossNote>,
 ) -> Vec<Feature> {
     let spanned = spanned_definitions(
         &ir.model.product_definitions,
@@ -363,7 +363,7 @@ fn places(
                             .any(|occurrence| occurrence.id.as_str() == own)
                     })
                 });
-                FeatureOperation::Place(Box::new(place(link, occurrence, own)))
+                FeatureOperation::Place(Box::new(place(link, occurrence, own, losses)))
             }
             several => FeatureOperation::PlaceSet(Box::new(PlaceSet {
                 occurrences: several
@@ -405,7 +405,15 @@ fn places(
 /// that is no array states its `Placement` and its scale (§6.7): under its
 /// parent where `LinkTransform` is false, and after the linked object's own
 /// occurrence where it is true and the scope holds that occurrence (`own`).
-fn place(link: &ProductNodeRecord, occurrence: &Occurrence, own: bool) -> Place {
+/// Where it is true and the scope holds no such occurrence, the `Place`
+/// states neither, with a loss naming the link. The identity is absent
+/// under `Parent` with no scale (§2.4).
+fn place(
+    link: &ProductNodeRecord,
+    occurrence: &Occurrence,
+    own: bool,
+    losses: &mut Vec<LossNote>,
+) -> Place {
     let scalar = link.element_count().unwrap_or(0) == 0
         && link.element_objects().is_empty()
         && link.element_transforms().is_empty()
@@ -415,13 +423,30 @@ fn place(link: &ProductNodeRecord, occurrence: &Occurrence, own: bool) -> Place 
     } else {
         Some(PlacementBase::Parent)
     };
+    if scalar && base.is_none() {
+        losses.push(
+            FreecadLossCode::FeatureLinkPlacementUnresolved.note(format!(
+                "link {} composes its Placement after the linked object's own placement, \
+             which the scope holds no occurrence of; its Place states no placement, and \
+             its Placement and LinkTransform stay in its native record",
+                link.object
+            )),
+        );
+    }
+    let scale = link.scale().and_then(scale_factors);
     let placement = link
         .local_transform()
-        .filter(|_| scalar && base.is_some())
+        .filter(|frame| {
+            scalar
+                && base.is_some()
+                && (frame.transform() != Transform::identity()
+                    || base == Some(PlacementBase::OwnOccurrence)
+                    || scale.is_some())
+        })
         .and_then(fixed);
     Place {
         occurrence: occurrence.id.clone(),
-        scale: placement.as_ref().and(link.scale()).and_then(scale_factors),
+        scale: placement.as_ref().and(scale),
         base: placement.as_ref().and(base),
         placement,
         constraints: Vec::new(),
@@ -519,6 +544,31 @@ impl<'a> Source<'a> {
             .native_ref
             .as_deref()
             .is_some_and(|object| self.stored.contains(&(object, name)))
+    }
+
+    /// The `Placement` that object `object` stores, as a construction: `None`
+    /// where it stores none or the identity, which no binding of it is
+    /// stated for (§2.4). An unreadable `Placement` states none and charges a
+    /// loss naming the object.
+    fn placement(
+        &self,
+        object: &str,
+        losses: &mut Vec<LossNote>,
+    ) -> Option<Box<Construction<kinds::Frame>>> {
+        let frame = match crate::placement::placement_matrix(self.placements.get(object)?) {
+            Ok(frame) => frame?,
+            Err(error) => {
+                losses.push(
+                    FreecadLossCode::FeaturePlacementUnresolved
+                        .note(format!("object {object} states no placement: {error}")),
+                );
+                return None;
+            }
+        };
+        if frame.transform() == Transform::identity() {
+            return None;
+        }
+        fixed(frame).map(Box::new)
     }
 
     /// The status of a state object `object` stores: `Stale` where `FreeCAD`
@@ -635,8 +685,9 @@ impl<'a> History<'a> {
 
 /// The feature of `legacy`. Its `refine` and `fuzzy_tolerance` are stated only
 /// where the object stores `Refine` and `FuzzyTolerance` (§2.4): the decoded
-/// definition fills the one the object lacks.
-fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
+/// definition fills the one the object lacks. A Part workbench feature that
+/// is no primitive states its `Placement` as its `placement` (§5.10).
+fn feature(legacy: &LegacyFeature, source: &Source<'_>, losses: &mut Vec<LossNote>) -> Feature {
     let (operation, refine, fuzzy_tolerance) = match legacy.evaluation.definition() {
         LegacyDefinition::PostProcess {
             operation,
@@ -657,17 +708,38 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
         ),
         LegacyDefinition::Operation(operation) => (operation, None, None),
     };
+    let operation = self::operation(legacy, operation);
+    let placed = legacy
+        .source_tag
+        .as_deref()
+        .is_some_and(|kind| kind.starts_with("Part::"))
+        && !matches!(
+            operation,
+            FeatureOperation::Stored { .. }
+                | FeatureOperation::Unresolved {
+                    family: OperationFamily::Primitive
+                        | OperationFamily::Curve
+                        | OperationFamily::Datum
+                        | OperationFamily::Sketch
+                        | OperationFamily::SpatialSketch
+                }
+        );
+    let placement = legacy
+        .native_ref
+        .as_deref()
+        .filter(|_| placed)
+        .and_then(|object| source.placement(object, losses));
     Feature {
         id: legacy.id.clone(),
         name: legacy.name.clone(),
         suppressed: legacy.suppressed.map(Dimension::Literal),
         definition: FeatureDefinition {
-            operation: self::operation(legacy, operation),
+            operation,
             assembly: None,
             refine,
             fuzzy_tolerance,
         },
-        placement: None,
+        placement,
         component: None,
         driven_by: None,
         native_ref: legacy.native_ref.clone(),

@@ -390,12 +390,80 @@ fn a_body_placement_is_its_container_placement() {
         ),
         DecodeDepth::Design,
     );
-    let identity = body_placement(&identity).expect("a stored identity placement");
-    let frame = identity.resolved.as_ref().expect("a resolved frame");
-    let origin = frame.origin.get();
-    assert!(near([origin.x, origin.y, origin.z], [0.0; 3]));
-    assert!(near(axis(frame.x_axis), [1.0, 0.0, 0.0]));
-    assert!(near(axis(frame.z_axis), [0.0, 0.0, 1.0]));
+    // A stored identity with no binding is absent (§2.4).
+    assert_eq!(body_placement(&identity), None);
+}
+
+#[test]
+fn an_unreadable_body_placement_is_a_loss_naming_the_body() {
+    let property = crate::native::PropertyRecord {
+        id: "fcstd:native:property#Body:Placement".into(),
+        owner: "fcstd:native:object#Body".into(),
+        name: "Placement".into(),
+        type_name: "App::PropertyPlacement".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 0,
+        xml: crate::native::RetainedXml::from_text(
+            r#"<Property name="Placement" type="App::PropertyPlacement"/>"#.into(),
+            0,
+        )
+        .unwrap(),
+    };
+    let properties = [property];
+    let source = super::Source::of(&[], &properties);
+    let mut losses = Vec::new();
+    assert_eq!(
+        source.placement("fcstd:native:object#Body", &mut losses),
+        None
+    );
+    let [loss] = losses.as_slice() else {
+        panic!("{losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::FreecadLossCode::FeaturePlacementUnresolved
+            .note("")
+            .code
+    );
+    assert!(
+        loss.message.contains("fcstd:native:object#Body"),
+        "{loss:?}"
+    );
+}
+
+#[test]
+fn a_part_feature_states_its_placement() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Compound" name="Compound" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Compound"><Properties Count="1">
+ <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="PX" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let placement = |ir: &CadIr| {
+        ir.design
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == "fcstd:design:feature#Compound")
+            .unwrap_or_else(|| panic!("{:?}", ir.design.features))
+            .placement
+            .clone()
+    };
+    let moved = decode(&archive(&document.replace("PX", "4")), DecodeDepth::Design);
+    let stated = placement(&moved).expect("the feature's Placement");
+    assert!(stated.inputs.is_empty());
+    let origin = stated
+        .resolved
+        .as_ref()
+        .expect("a resolved frame")
+        .origin
+        .get();
+    assert_eq!([origin.x, origin.y, origin.z], [4.0, 0.0, 0.0]);
+    let (written, _) = cadir_round_trip(&moved);
+    assert_eq!(written.design.features, moved.design.features);
+    // A stored identity with no binding is absent (§2.4).
+    let identity = decode(&archive(&document.replace("PX", "0")), DecodeDepth::Design);
+    assert_eq!(placement(&identity), None);
 }
 
 #[test]
@@ -762,6 +830,65 @@ fn an_app_link_is_a_place_feature_of_the_group() {
     let place = instance_place(&follows);
     assert_eq!(place.base, Some(PlacementBase::OwnOccurrence));
     assert!(place.placement.is_some());
+
+    // At the identity with no scale, a placement under the parent is
+    // absent (§2.4); one after the object's own occurrence is stated
+    // (§6.7).
+    let at_identity = document
+        .replace(r#"Px="5" Py="6" Pz="7""#, r#"Px="0" Py="0" Pz="0""#)
+        .replace(
+            r#"<PropertyVector valueX="2" valueY="3" valueZ="4"/>"#,
+            r#"<PropertyVector valueX="1" valueY="1" valueZ="1"/>"#,
+        );
+    let place = instance_place(&decode(
+        &archive(&at_identity.replace("FOLLOWS", "false")),
+        DecodeDepth::Design,
+    ));
+    assert_eq!(
+        (place.placement, place.base, place.scale),
+        (None, None, None)
+    );
+    let place = instance_place(&decode(
+        &archive(&at_identity.replace("FOLLOWS", "true")),
+        DecodeDepth::Design,
+    ));
+    assert_eq!(place.base, Some(PlacementBase::OwnOccurrence));
+    assert!(place.placement.is_some());
+    assert_eq!(place.scale, None);
+}
+
+#[test]
+fn a_link_that_follows_an_object_with_no_own_occurrence_is_a_loss() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Link" name="Instance" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Instance"><Properties Count="3">
+ <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="other.FCStd" name="Prototype"/></Property>
+ <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="5" Py="6" Pz="7" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ir = decoded.ir();
+    assert_valid_document(ir);
+    let place = instance_place(ir);
+    assert_eq!(
+        (place.placement, place.base, place.scale),
+        (None, None, None)
+    );
+    let unresolved = crate::loss::FreecadLossCode::FeatureLinkPlacementUnresolved.note("");
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == unresolved.code && loss.message.contains("Instance")),
+        "{:?}",
+        decoded.report().losses
+    );
 }
 
 #[test]
@@ -815,4 +942,30 @@ fn an_app_link_array_places_its_elements_in_one_feature() {
     assert_eq!(set.occurrences, elements);
     let (written, _) = cadir_round_trip(&ir);
     assert_eq!(written.design.features, ir.design.features);
+
+    // An array of one element is a `Place` that states only its occurrence
+    // (§6.7).
+    let mut placement = 1_u32.to_le_bytes().to_vec();
+    placement.extend(
+        [1.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+    );
+    let one = decode(
+        &archive_entries(&[
+            (
+                "Document.xml",
+                document
+                    .replace(r#"<Integer value="2"/>"#, r#"<Integer value="1"/>"#)
+                    .as_bytes(),
+            ),
+            ("placements", &placement),
+        ]),
+        DecodeDepth::Design,
+    );
+    let place = instance_place(&one);
+    assert_eq!(
+        (place.placement, place.base, place.scale),
+        (None, None, None)
+    );
 }

@@ -37,6 +37,15 @@ fn linked(target: &str, include_prototype_placement: bool) -> Vec<String> {
     ]
 }
 
+fn loss_codes(result: &cadmpeg_ir::DecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.to_string())
+        .collect()
+}
+
 fn mesh_properties(position: [f64; 3], quarter_turn: bool) -> Vec<String> {
     vec![
         r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="triangle"/></Property>"#.to_owned(),
@@ -226,7 +235,14 @@ fn application_mesh_links_select_prototype_placement_once() {
                 .unwrap(),
             1
         );
-        assert!(result.report().losses.is_empty());
+        // An object at the document root has no own occurrence, so a link
+        // that follows its placement states no `Place.placement` (§6.7).
+        let expected: &[&str] = if prototype_transform {
+            &["fcstd/feature.link-placement-unresolved"]
+        } else {
+            &[]
+        };
+        assert_eq!(loss_codes(&result), expected);
     }
 }
 
@@ -359,7 +375,10 @@ fn application_mesh_link_scale_transforms_prototype_translation_and_vertices() {
         1,
         [[6.0, 0.0, 0.0], [2.0, 0.0, 0.0], [6.0, 9.0, 0.0]],
     );
-    assert!(result.report().losses.is_empty());
+    assert_eq!(
+        loss_codes(&result),
+        ["fcstd/feature.link-placement-unresolved"]
+    );
 }
 
 #[test]
