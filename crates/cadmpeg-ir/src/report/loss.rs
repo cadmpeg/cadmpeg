@@ -99,8 +99,15 @@ pub enum LossTaxonomy {
     /// Named feature operations and their dependency tables were retained as
     /// native passthrough rather than replayed.
     FeatureHistoryRetained,
-    /// The part is an assembly; component geometry lives in external referenced
-    /// files, not inline.
+    /// Content of an assembly that lies in another file or layer and did not
+    /// transfer. On read: a component, member, placement, link, or layer that
+    /// a referenced file holds and the decode did not read or resolve (an
+    /// external component file, a missing, undecoded, or cyclic archive
+    /// member, an unsolved placement or joint occurrence, an unresolved
+    /// component link, an uncomposed layer). On write: an output of an encode
+    /// set that is not written, a link to another output that is not written,
+    /// or a record that no output holds whole because it needs a record of
+    /// another output.
     AssemblyComponentsExternal,
     /// Assembly component occurrence placements were not transferred.
     AssemblyPlacementsNotTransferred,
