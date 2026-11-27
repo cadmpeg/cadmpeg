@@ -24,20 +24,30 @@ fixed default. Tests require an offline process.
 A present thread pitch that cannot be admitted carries `onshape/record.malformed`.
 The hole keeps its thread specification without pitch.
 
-Admitted thin walls use typed design operations and Native model companions.
-The design timeline carries the decoded sketches, their placed frames and
-solved curves. Thin profile picks name those design sketch entities. Model
-sketches, constraints and parameters retain their decoded constructions.
-`onshape/extrude.thin-model-not-supported` names the model construction gap.
-The scoped design timeline includes every admitted model feature. Native design members
-carry `onshape/history.design-operation-native`; the model rows retain their
-decoded constructions. Final STEP bodies bind after the complete timeline.
-Failed thin sketch projection or scope installation restores the design state
-and reports `onshape/extrude.thin-not-supported`. The bundle retains its native
-model operations. Session resource limits propagate to the caller. Feature
-annotations use the first admitted source record for each model feature.
-Explicit historical provenance passes the stored rollback producer proof,
-including tangent-added edges.
+Each Part Studio states its v11 design layer. The scope is the studio's
+root definition, and one ordered timeline holds a design feature for each
+model feature, in `features.json` order, with the stored rollback bar. A
+design feature has the id of its model feature. Sketches, solid extrudes of a
+whole sketch (blind, through all, symmetric, up to next), thin extrudes,
+revolves, and offset datum planes take their typed operation. Every other
+feature takes its operation family; where the model row decodes more than the
+family, `onshape/history.design-operation-unresolved` names the feature. A
+derived Part Studio is a native design operation, and
+`onshape/history.design-operation-native` names its captured design, which
+stays in the model row. A sketch whose frame or curves the
+design cannot state falls back to its family alone. Variables and feature and
+sketch dimensions are design parameters with neutral expressions; an
+extrude's depth and a revolve's angle bind them. Sketch constraints are
+design relations, on point entities for the curve ends and centres they name.
+A thin extrude keeps a Native model operation, and
+`onshape/extrude.thin-model-not-supported` names the gap; a thin design
+feature that the projection refuses keeps its family and reports
+`onshape/extrude.thin-not-supported`. The root Assembly states its scope: a
+Joint feature for each mate, and a grounded entry for each fixed occurrence.
+Session resource limits propagate to the caller. Feature annotations use the
+first admitted source record for each model feature. Explicit historical
+provenance passes the stored rollback producer proof, including tangent-added
+edges.
 
 Unreadable members, invalid names, encryption, unsupported compression and repeated
 names carry `onshape/member.unreadable`. The first member with each name is
