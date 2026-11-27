@@ -14,7 +14,6 @@ use crate::report::check::Finding;
 
 use super::index::{DesignIndex, StateAt};
 use super::records::MemberKey;
-use super::selections::moved_occurrences;
 use super::states::States;
 
 /// Member entries and pose paths of a state name occurrences existing in it;
@@ -56,7 +55,7 @@ pub(super) fn check(index: &DesignIndex<'_>, states: &States<'_>, findings: &mut
             }
         }
     }
-    let moved = moved_occurrences(ir);
+    let moved = index.records.moved_occurrences();
     for evaluation in &ir.design.evaluations {
         let Evaluated::State(position) = &evaluation.of else {
             continue;

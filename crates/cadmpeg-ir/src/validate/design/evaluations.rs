@@ -83,7 +83,7 @@ pub(in crate::validate) fn check_position(
 /// unordered container: `After(m)` is then `m`'s own result (§5.3).
 fn unordered_feature<'a>(
     index: &DesignRecords<'a>,
-    position: PositionKey<'a>,
+    position: PositionKey<'_>,
 ) -> Option<&'a Feature> {
     let PositionKey::After(MemberKey::Feature(id)) = position else {
         return None;
@@ -578,7 +578,7 @@ fn listed_bodies(definition: &ProductDefinition) -> impl Iterator<Item = &crate:
 
 pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
-    let moved = super::selections::moved_occurrences(ir);
+    let moved = index.moved_occurrences();
     let bodies: BTreeSet<&str> = ir
         .geometry
         .bodies
@@ -630,7 +630,7 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             }
             for path in current.poses.keys() {
                 *posed.entry(path).or_default() += 1;
-                check_path(index, Some(entity), path, &moved, entity, findings);
+                check_path(index, Some(entity), path, moved, entity, findings);
             }
         }
         for body in &scope.unproduced {

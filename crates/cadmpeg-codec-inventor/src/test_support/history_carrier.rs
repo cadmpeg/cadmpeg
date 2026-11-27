@@ -392,6 +392,58 @@ pub(crate) fn lofted_carrier_bytes(width: RefWidth) -> Vec<u8> {
     out
 }
 
+/// Naming tag that lists one source index, in the class chain of the
+/// schema-38, -40 and -42 tags with the stored schema `schema`.
+pub(crate) fn put_naming_tag(out: &mut Vec<u8>, width: RefWidth, schema: i64, source: i64) {
+    put_plain(
+        out,
+        width,
+        "NMx_Generated_Brep_tag-NMx_Brep_Name_tag-NMx_Brep_tag-NamingMatching-attrib",
+        &[
+            (REF, -1),
+            (INT, -1),
+            (REF, -1),
+            (REF, -1),
+            (REF, -1),
+            (INT, schema),
+            (INT, 1),
+            (INT, source),
+            (INT, -1),
+            (INT, 0),
+        ],
+    );
+}
+
+/// A carrier whose current model holds no body: the head state holds the
+/// header and a naming tag that lists `source`; the state before it also
+/// holds a sphere solid with body key `key`; the oldest state holds the
+/// header only. The state that first lists `source` therefore introduces the
+/// body `key`. `schema` is the stored schema of the tag.
+pub(crate) fn introducing_carrier_bytes(
+    width: RefWidth,
+    schema: i64,
+    source: i64,
+    key: i64,
+) -> Vec<u8> {
+    // Active slots are the header and the tag; the archived solid takes
+    // slots 2 to 6.
+    let solid = 2;
+    let mut out = Vec::new();
+    put_header(&mut out, width);
+    put_plain(&mut out, width, "asmheader", &[]);
+    put_naming_tag(&mut out, width, schema, source);
+    let deletes: Vec<(i64, i64)> = (solid..solid + 5).map(|slot| (slot, -1)).collect();
+    put_state(&mut out, width, (13, -1, 1, 0), &deletes);
+    put_sphere_solid(&mut out, width, solid, key, -1);
+    let inserts: Vec<(i64, i64)> = std::iter::once(1)
+        .chain(solid..solid + 5)
+        .map(|slot| (-1, slot))
+        .collect();
+    put_state(&mut out, width, (12, 0, 2, 1), &inserts);
+    put_state(&mut out, width, (11, 1, -1, 2), &[]);
+    out
+}
+
 pub(crate) fn framed_carrier(bytes: &[u8]) -> Vec<u8> {
     let mut payload = Vec::new();
     payload.extend_from_slice(&1_u32.to_le_bytes());

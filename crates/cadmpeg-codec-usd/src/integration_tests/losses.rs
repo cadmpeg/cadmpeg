@@ -613,3 +613,37 @@ fn an_occurrence_of_a_prototype_left_out_is_left_out() {
         "{text}"
     );
 }
+
+/// A `BrepArray` whose arrays read and do not decode gives up each B-rep
+/// that `brep:regionCount` counts, not only the first.
+#[test]
+fn a_brep_array_that_does_not_decode_gives_up_each_brep_it_counts() {
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/golden/fixtures/brep_array_box.usda",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("fixture");
+    let broken = text.replacen(
+        "uniform uint[] brep:regionCount = [2]",
+        "uniform uint[] brep:regionCount = [2, 1]",
+        1,
+    );
+    assert_ne!(broken, text);
+    let result = decode(&broken);
+    let prefix = format!("{}:", UsdLossCode::BrepRejected.kind());
+    let given_up: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| loss.message.contains(&prefix))
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(given_up.len(), 2, "{given_up:#?}");
+    assert!(
+        given_up
+            .iter()
+            .any(|message| message.contains("brep1 given up")),
+        "{given_up:#?}"
+    );
+}

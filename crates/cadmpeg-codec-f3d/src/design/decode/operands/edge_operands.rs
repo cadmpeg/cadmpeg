@@ -5,7 +5,6 @@ use super::extrude_selections::parse_edge_identity_member;
 use super::recipe_operands::{parse_edge_operand, parse_vertex_recipe};
 use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::bind_recipe_reference_candidates;
-use crate::design::decode::sketch::{cached_borrowed_record_offsets, IndexedRecordOffsets};
 use crate::design::decode::text::design_record_id;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
@@ -64,7 +63,6 @@ pub(crate) fn decode_edge_operands(
     for offsets in stream_offsets.values_mut() {
         offsets.sort_unstable();
     }
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -108,7 +106,7 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if !member_indices.contains(&record_index) {
                 continue;
@@ -136,7 +134,7 @@ pub(crate) fn decode_edge_operands(
             let Some(operand) = parse_edge_operand(
                 ctx,
                 bytes,
-                records,
+                &records,
                 scope,
                 (ordinal, header),
                 recipes,
@@ -169,7 +167,6 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
         let key = (stream, header.record_index);
         header_index.insert(key, header);
     }
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -183,7 +180,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         for (scope_reference_ordinal, record_index) in
             scope.reference_members().values().copied().enumerate()
         {
@@ -212,7 +209,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             let Some(header) = header_index.get(&(stream, record_index)) else {
                 continue;
             };
-            let Some(recipe) = parse_vertex_recipe(bytes, records, stream, header, recipes) else {
+            let Some(recipe) = parse_vertex_recipe(bytes, &records, stream, header, recipes) else {
                 continue;
             };
             let (Ok(scope_reference_ordinal), Ok(group_member_ordinal)) = (

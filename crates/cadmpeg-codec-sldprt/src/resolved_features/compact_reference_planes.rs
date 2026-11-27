@@ -13,7 +13,7 @@ const COMPACT_COMPONENT_PLANE_RECORD_LEN: usize = 138;
 
 type PlaneFrame = (Point3, Vector3, Vector3);
 
-pub(super) struct CompactReferencePlaneIndex {
+pub(crate) struct CompactReferencePlaneIndex {
     payload_len: usize,
     /// The end of the lane's first `moCompRefPlane_c` class name.
     class_end: Option<usize>,
@@ -35,7 +35,7 @@ pub(super) enum SourceRoute {
 }
 
 impl CompactReferencePlaneIndex {
-    pub(super) fn new(payload: &[u8]) -> Self {
+    pub(crate) fn new(payload: &[u8]) -> Self {
         let class_end = memchr::memmem::find(payload, COMPACT_REFERENCE_PLANE_CLASS)
             .map(|offset| offset + COMPACT_REFERENCE_PLANE_CLASS.len());
         let mut declared = Vec::new();
