@@ -91,6 +91,11 @@ pub(crate) enum FreecadLossCode {
     /// points, which `FreeCAD`'s solver cannot satisfy; the joint keeps the
     /// distance as a native option.
     FeatureJointDistanceUnsatisfiable,
+    /// An assembly joint property that an `ExpressionEngine` entry drives
+    /// has a joint value that binds no parameter: the stated value is the
+    /// stored one or derived from it, and the expression stays in the
+    /// native record or the parameter.
+    FeatureJointValueUnbound,
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
     ParameterExpressionEmpty,
@@ -192,6 +197,7 @@ impl FreecadLossCode {
         Self::FeatureJointUnresolved,
         Self::FeatureJointDistanceUnresolved,
         Self::FeatureJointDistanceUnsatisfiable,
+        Self::FeatureJointValueUnbound,
         Self::ParameterExpressionEmpty,
         Self::ParameterQuantityAssumed,
         Self::ParameterValueNonFinite,
@@ -259,6 +265,7 @@ impl FreecadLossCode {
             Self::FeatureJointUnresolved => "feature.joint-unresolved",
             Self::FeatureJointDistanceUnresolved => "feature.joint-distance-unresolved",
             Self::FeatureJointDistanceUnsatisfiable => "feature.joint-distance-unsatisfiable",
+            Self::FeatureJointValueUnbound => "feature.joint-value-unbound",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
@@ -346,6 +353,7 @@ impl FreecadLossCode {
             | Self::FeatureJointUnresolved
             | Self::FeatureJointDistanceUnresolved
             | Self::FeatureJointDistanceUnsatisfiable
+            | Self::FeatureJointValueUnbound
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -399,7 +407,8 @@ impl FreecadLossCode {
             | Self::FeatureLinkPlacementUnresolved
             | Self::FeatureJointUnresolved
             | Self::FeatureJointDistanceUnresolved
-            | Self::FeatureJointDistanceUnsatisfiable => LossTaxonomy::FeatureHistoryRetained,
+            | Self::FeatureJointDistanceUnsatisfiable
+            | Self::FeatureJointValueUnbound => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
@@ -493,6 +502,7 @@ mod tests {
                 "feature.joint-unresolved",
                 "feature.joint-distance-unresolved",
                 "feature.joint-distance-unsatisfiable",
+                "feature.joint-value-unbound",
                 "parameter.expression-empty",
                 "parameter.quantity-assumed",
                 "parameter.value-non-finite",

@@ -583,12 +583,13 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
 <Object name="Steel"><Properties Count="1">
 <Property name="Label" type="App::PropertyString"><String value="S235"/></Property>
 </Properties></Object>
-<Object name="Vars"><Properties Count="3">
+<Object name="Vars"><Properties Count="4">
 <Property name="Flag" type="App::PropertyBool" status="1"><Bool value="true"/></Property>
 <Property name="Material" type="App::PropertyLink" status="1"><Link value="Steel"/></Property>
 <Property name="Other" type="App::PropertyXLink" status="1"><XLink file="" name="Steel"/></Property>
+<Property name="Part" type="App::PropertyXLink" status="1"><XLink file="" name="Steel" sub=""/></Property>
 </Properties></Object>
-<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="15">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="23">
 <Cell address="A1" content="5 mm"/>
 <Cell address="B1" content="=str(A1) * Vars.Flag + &lt;&lt;-&gt;&gt; * (1 - Vars.Flag)"/>
 <Cell address="B2" content="=Vars.Material.Label"/>
@@ -604,6 +605,14 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
 <Cell address="C1" content="'abc"/>
 <Cell address="C2" content="3 mm"/>
 <Cell address="C3" content="=sum(C2:C2)"/>
+<Cell address="E1" content="=True"/>
+<Cell address="E2" content="=Vars.Flag"/>
+<Cell address="E3" content="=E1 != E2"/>
+<Cell address="E4" content="=str(A1) * 1.5"/>
+<Cell address="E5" content="=Vars.Part.Label"/>
+<Cell address="E6" content="=&lt;&lt;a&gt;&gt; &lt; 1"/>
+<Cell address="E7" content="=Vars.Material.Shape == 1"/>
+<Cell address="E8" content="=A1 &gt; cos(0)"/>
 </Cells></Property></Properties></Object>
 </ObjectData></Document>"#;
     let (ir, losses) = decode_with_losses(document);
@@ -624,13 +633,14 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
         assert!(!assumed(address), "{address}: {losses:?}");
     }
 
-    // A comparison is a bool, and an aggregate passes over a text value.
-    for (address, quantity) in [
-        ("B6", Quantity::REAL),
-        ("B7", Quantity::REAL),
-        ("B8", Quantity::LENGTH),
-        ("C3", Quantity::LENGTH),
-    ] {
+    // A comparison, a truth constant, and a Bool property are bools.
+    for address in ["B6", "B7", "E1", "E2", "E3"] {
+        assert_eq!(cell(address).kind, ValueKind::Boolean, "{address}");
+        assert!(!assumed(address), "{address}: {losses:?}");
+    }
+
+    // An aggregate passes over a text value.
+    for (address, quantity) in [("B8", Quantity::LENGTH), ("C3", Quantity::LENGTH)] {
         assert_eq!(
             cell(address).kind,
             ValueKind::Quantity(quantity),
@@ -639,10 +649,17 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
         assert!(!assumed(address), "{address}: {losses:?}");
     }
 
-    // FreeCAD refuses a range with a text cell, text times a length, and
-    // reads another property of a linked object at run time.
-    for address in ["B9", "D1", "D2"] {
-        assert_eq!(cell(address).kind, ValueKind::Quantity(Quantity::REAL));
+    // FreeCAD raises on a range with a text cell, text times a length or a
+    // float, the label of a link with sub-names, text ordered against a
+    // number, and a length ordered against a dimensionless function result.
+    // It reads another property of a linked object at run time, and a
+    // comparison with that operand is undetermined.
+    for address in ["B9", "D1", "D2", "E4", "E5", "E6", "E7", "E8"] {
+        assert_eq!(
+            cell(address).kind,
+            ValueKind::Quantity(Quantity::REAL),
+            "{address}"
+        );
         assert!(assumed(address), "{address}: {losses:?}");
     }
 }

@@ -271,6 +271,17 @@ fn an_axis_separation_below_the_radius_is_its_magnitude() {
     };
     assert_eq!(length(distance.as_ref()), Some(2.0));
     assert_eq!(native(&decoded.joint, "Distance"), None);
+    // The stored signed distance differs from the stated one: it is a
+    // source setting.
+    assert!(matches!(
+        decoded
+            .joint
+            .source_settings
+            .iter()
+            .find(|(key, _)| key.as_str() == "fcstd:Distance")
+            .map(|(_, option)| option),
+        Some(NativeOption::Length(Dimension::Literal(length))) if length.get() == -5.0
+    ));
     assert!(!charged(
         &decoded,
         FreecadLossCode::FeatureJointDistanceUnsatisfiable

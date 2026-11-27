@@ -17,6 +17,10 @@ const MAX_NESTING: usize = 64;
 /// of a unit as that integer.
 const INTEGRAL: f64 = 1e-9;
 
+/// The magnitude below which an integral number is a Python `int`
+/// (`essentiallyInteger`, the range of a C `long`).
+const WHOLE: f64 = 9.223_372_036_854_776e18;
+
 /// A formula the reader does not parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::design) enum Unparsed {
@@ -30,6 +34,8 @@ pub(in crate::design) enum Unparsed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::design) enum Kind {
     Quantity(Quantity),
+    /// A Python `bool`: a comparison, `True`, `False`, or a `Bool` property.
+    Boolean,
     Text,
     /// A kind that the file does not determine.
     Unknown,
@@ -81,7 +87,18 @@ pub(in crate::design) enum Operator {
     Divide,
     Remainder,
     Power,
-    Compare,
+    /// `==` or `!=`.
+    Equal,
+    /// `<`, `<=`, `>`, or `>=`.
+    Order,
+}
+
+/// The Python type of a number's value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Python {
+    Int,
+    Float,
+    Object,
 }
 
 /// An argument of a call: a value, or a range of cells `from:to`.
@@ -166,23 +183,46 @@ impl<'a> Node<'a> {
                 unit: Some(unit), ..
             }
             | Node::Unit(unit) => unit_kind(unit),
-            Node::Constant { name, .. } => {
-                if *name == "None" {
-                    Kind::Unknown
-                } else {
-                    Kind::Quantity(Quantity::REAL)
-                }
-            }
+            Node::Constant { name, .. } => match *name {
+                "None" => Kind::Unknown,
+                "True" | "False" => Kind::Boolean,
+                _ => Kind::Quantity(Quantity::REAL),
+            },
             Node::Text => Kind::Text,
             Node::Path(path) => scope.path(path),
-            Node::Negate(operand) | Node::Plus(operand) => match operand.kind(scope) {
-                Kind::Quantity(quantity) => Kind::Quantity(quantity),
-                Kind::Text | Kind::Unknown => Kind::Unknown,
-            },
+            Node::Negate(operand) | Node::Plus(operand) => {
+                numeric(operand.kind(scope)).map_or(Kind::Unknown, Kind::Quantity)
+            }
             Node::Group(inner) => inner.kind(scope),
             Node::Binary { op, left, right } => {
                 let (left_kind, right_kind) = (left.kind(scope), right.kind(scope));
-                binary(*op, left_kind, right_kind, right.constant())
+                let real = Kind::Quantity(Quantity::REAL);
+                match (op, left_kind, right_kind) {
+                    // Text times an int repeats the text; times a float it
+                    // is a TypeError.
+                    (Operator::Multiply, Kind::Text, kind) if kind == real => {
+                        if right.python(scope) == Python::Int {
+                            Kind::Text
+                        } else {
+                            Kind::Unknown
+                        }
+                    }
+                    (Operator::Multiply, kind, Kind::Text) if kind == real => {
+                        if left.python(scope) == Python::Int {
+                            Kind::Text
+                        } else {
+                            Kind::Unknown
+                        }
+                    }
+                    // A quantity and a plain number compare as floats.
+                    (Operator::Order, Kind::Quantity(_), Kind::Quantity(_))
+                        if (left_kind == real && left.python(scope) != Python::Object)
+                            || (right_kind == real && right.python(scope) != Python::Object) =>
+                    {
+                        Kind::Boolean
+                    }
+                    _ => binary(*op, left_kind, right_kind, right.constant()),
+                }
             }
             Node::Conditional {
                 then, otherwise, ..
@@ -195,6 +235,62 @@ impl<'a> Node<'a> {
                 }
             }
             Node::Call { name, args } => call(name, args, scope),
+        }
+    }
+
+    /// The Python type of the node's value where its kind is a number: an
+    /// `int` (a `bool` included) or a `float` where `FreeCAD` hands a plain
+    /// number to Python (`pyFromQuantity`, a number property, a cell, an
+    /// aggregate), and an object (a `QuantityPy`, as every function returns)
+    /// otherwise. An integer property counts as a `float`.
+    fn python(&self, scope: &mut dyn Scope) -> Python {
+        let both = |left: Python, right: Python| match (left, right) {
+            (Python::Int, Python::Int) => Python::Int,
+            (Python::Object, _) | (_, Python::Object) => Python::Object,
+            _ => Python::Float,
+        };
+        match self {
+            Node::Number { text, unit: None } => match text.replace(',', ".").parse::<f64>() {
+                Ok(value) if value.fract() == 0.0 && value.abs() < WHOLE => Python::Int,
+                Ok(_) => Python::Float,
+                Err(_) => Python::Object,
+            },
+            Node::Constant { name, .. } => match *name {
+                "True" | "False" => Python::Int,
+                "None" => Python::Object,
+                _ => Python::Float,
+            },
+            Node::Path(_) => match self.kind(scope) {
+                Kind::Boolean => Python::Int,
+                Kind::Quantity(Quantity::REAL) => Python::Float,
+                _ => Python::Object,
+            },
+            Node::Negate(inner) | Node::Plus(inner) | Node::Group(inner) => inner.python(scope),
+            Node::Binary { op, left, right } => match op {
+                Operator::Add | Operator::Subtract | Operator::Multiply | Operator::Remainder => {
+                    both(left.python(scope), right.python(scope))
+                }
+                Operator::Divide | Operator::Power => {
+                    match both(left.python(scope), right.python(scope)) {
+                        Python::Object => Python::Object,
+                        Python::Int | Python::Float => Python::Float,
+                    }
+                }
+                Operator::Equal | Operator::Order => Python::Int,
+            },
+            Node::Conditional {
+                then, otherwise, ..
+            } => both(then.python(scope), otherwise.python(scope)),
+            Node::Call { name, args } => match *name {
+                "count" | "and" | "or" => Python::Int,
+                "sum" | "min" | "max" | "average" | "stddev" => Python::Float,
+                "href" | "hiddenref" => match args.first() {
+                    Some(Argument::Value(node)) => node.python(scope),
+                    _ => Python::Object,
+                },
+                _ => Python::Object,
+            },
+            Node::Number { .. } | Node::Unit(_) | Node::Text => Python::Object,
         }
     }
 
@@ -249,7 +345,7 @@ impl<'a> Node<'a> {
                     Operator::Multiply => Some(left * right),
                     Operator::Divide => Some(left / right),
                     Operator::Power => Some(left.powf(right)),
-                    Operator::Remainder | Operator::Compare => None,
+                    Operator::Remainder | Operator::Equal | Operator::Order => None,
                 }
             }
             _ => None,
@@ -266,27 +362,48 @@ fn unit_kind(unit: &Unit) -> Kind {
 }
 
 /// The kind of `left op right` (`OperatorExpression`, Python's number
-/// protocol): text times an integer or a bool repeats the text, and a
-/// comparison is a bool.
+/// protocol). A bool is an `int`. `==` and `!=` give a bool for any two
+/// values; an ordering gives a bool for two texts, two numbers of one
+/// quantity, and a bool and a number. Text times a real, and an ordering
+/// of a real and another quantity, are decided by the caller.
 fn binary(op: Operator, left: Kind, right: Kind, exponent: Option<f64>) -> Kind {
     let quantity = |quantity: Option<Quantity>| quantity.map_or(Kind::Unknown, Kind::Quantity);
     match (op, left, right) {
         (Operator::Add, Kind::Text, Kind::Text)
         | (Operator::Remainder, Kind::Text, _)
-        | (Operator::Multiply, Kind::Text, Kind::Quantity(Quantity::REAL))
-        | (Operator::Multiply, Kind::Quantity(Quantity::REAL), Kind::Text) => Kind::Text,
-        (_, Kind::Quantity(left), Kind::Quantity(right)) => match op {
-            Operator::Add | Operator::Subtract => quantity((left == right).then_some(left)),
-            Operator::Multiply => quantity(combine(left, right, 1)),
-            Operator::Divide => quantity(combine(left, right, -1)),
-            Operator::Remainder => {
-                quantity((left != Quantity::REAL || right == Quantity::REAL).then_some(left))
-            }
-            Operator::Power => power(left, right, exponent),
-            Operator::Compare => Kind::Quantity(Quantity::REAL),
+        | (Operator::Multiply, Kind::Text, Kind::Boolean)
+        | (Operator::Multiply, Kind::Boolean, Kind::Text) => Kind::Text,
+        (Operator::Equal, Kind::Unknown, _) | (Operator::Equal, _, Kind::Unknown) => Kind::Unknown,
+        (Operator::Equal, _, _)
+        | (Operator::Order, Kind::Text, Kind::Text)
+        | (Operator::Order, Kind::Boolean, Kind::Boolean | Kind::Quantity(_))
+        | (Operator::Order, Kind::Quantity(_), Kind::Boolean) => Kind::Boolean,
+        (Operator::Order, Kind::Quantity(left), Kind::Quantity(right)) if left == right => {
+            Kind::Boolean
+        }
+        (Operator::Order, _, _) => Kind::Unknown,
+        _ => match (numeric(left), numeric(right)) {
+            (Some(left), Some(right)) => match op {
+                Operator::Add | Operator::Subtract => quantity((left == right).then_some(left)),
+                Operator::Multiply => quantity(combine(left, right, 1)),
+                Operator::Divide => quantity(combine(left, right, -1)),
+                Operator::Remainder => {
+                    quantity((left != Quantity::REAL || right == Quantity::REAL).then_some(left))
+                }
+                Operator::Power => power(left, right, exponent),
+                Operator::Equal | Operator::Order => Kind::Unknown,
+            },
+            _ => Kind::Unknown,
         },
-        (Operator::Compare, _, _) => Kind::Quantity(Quantity::REAL),
-        _ => Kind::Unknown,
+    }
+}
+
+/// The quantity of a number: a bool is a dimensionless `int`.
+fn numeric(kind: Kind) -> Option<Quantity> {
+    match kind {
+        Kind::Quantity(quantity) => Some(quantity),
+        Kind::Boolean => Some(Quantity::REAL),
+        Kind::Text | Kind::Unknown => None,
     }
 }
 
@@ -339,27 +456,24 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Kind {
         Some(Argument::Range(..)) | None => Kind::Unknown,
     };
     let first = value(0, scope);
-    let first_quantity = match first {
-        Kind::Quantity(quantity) => Some(quantity),
-        Kind::Text | Kind::Unknown => None,
-    };
+    let first_quantity = numeric(first);
     match name {
         "cos" | "sin" | "tan" => {
-            if first == REAL || first == ANGLE {
+            if matches!(first_quantity, Some(Quantity::REAL | Quantity::ANGLE)) {
                 REAL
             } else {
                 Kind::Unknown
             }
         }
         "acos" | "asin" | "atan" => {
-            if first == REAL {
+            if first_quantity == Some(Quantity::REAL) {
                 ANGLE
             } else {
                 Kind::Unknown
             }
         }
         "exp" | "log" | "log10" | "sinh" | "tanh" | "cosh" => {
-            if first == REAL {
+            if first_quantity == Some(Quantity::REAL) {
                 REAL
             } else {
                 Kind::Unknown
@@ -375,30 +489,31 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Kind {
             .and_then(|quantity| scaled(quantity, 1.0 / 3.0))
             .map_or(Kind::Unknown, Kind::Quantity),
         "atan2" => {
-            if first_quantity.is_some() && value(1, scope) == first {
+            if first_quantity.is_some() && numeric(value(1, scope)) == first_quantity {
                 ANGLE
             } else {
                 Kind::Unknown
             }
         }
-        "mod" => match (first, value(1, scope)) {
-            (Kind::Quantity(left), Kind::Quantity(right))
+        "mod" => match (first_quantity, numeric(value(1, scope))) {
+            (Some(left), Some(right))
                 if left == right || left == Quantity::REAL || right == Quantity::REAL =>
             {
-                first
+                Kind::Quantity(left)
             }
             _ => Kind::Unknown,
         },
-        "pow" => match (first, value(1, scope), args.get(1)) {
-            (Kind::Quantity(base), Kind::Quantity(exponent), Some(Argument::Value(node))) => {
+        "pow" => match (first_quantity, numeric(value(1, scope)), args.get(1)) {
+            (Some(base), Some(exponent), Some(Argument::Value(node))) => {
                 power(base, exponent, node.constant())
             }
             _ => Kind::Unknown,
         },
         "hypot" | "cath" => {
-            let rest = (1..args.len().max(2)).all(|index| value(index, scope) == first);
-            if first_quantity.is_some() && rest {
-                first
+            let rest =
+                (1..args.len().max(2)).all(|index| numeric(value(index, scope)) == first_quantity);
+            if let (Some(quantity), true) = (first_quantity, rest) {
+                Kind::Quantity(quantity)
             } else {
                 Kind::Unknown
             }
@@ -414,13 +529,15 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Kind {
 }
 
 /// The kind of an aggregate: the quantity its values share. It passes over a
-/// text value, and a text cell of a range has no quantity.
+/// text value and counts a bool as a dimensionless value; a text or bool
+/// cell of a range has no quantity.
 fn aggregate(args: &[Argument<'_>], scope: &mut dyn Scope) -> Kind {
     let mut found: Option<Quantity> = None;
     for arg in args {
         let kinds = match arg {
             Argument::Value(node) => match node.kind(scope) {
                 Kind::Text => Vec::new(),
+                Kind::Boolean => vec![Kind::Quantity(Quantity::REAL)],
                 kind => vec![kind],
             },
             Argument::Range(from, to) => {
@@ -462,7 +579,7 @@ enum Token<'a> {
     /// A function name with its `(`.
     Function(&'a str),
     Minus,
-    Compare,
+    Compare(Operator),
     Symbol(char),
 }
 
@@ -501,14 +618,14 @@ fn lexeme(rest: &str) -> Option<(Token<'_>, usize)> {
             return Some((Token::Text(&rest[..length]), length));
         }
     }
-    if ["==", "!=", ">=", "<="]
-        .iter()
-        .any(|symbol| rest.starts_with(symbol))
-    {
-        return Some((Token::Compare, 2));
+    if ["==", "!="].iter().any(|symbol| rest.starts_with(symbol)) {
+        return Some((Token::Compare(Operator::Equal), 2));
+    }
+    if [">=", "<="].iter().any(|symbol| rest.starts_with(symbol)) {
+        return Some((Token::Compare(Operator::Order), 2));
     }
     match ch {
-        '<' | '>' => Some((Token::Compare, 1)),
+        '<' | '>' => Some((Token::Compare(Operator::Order), 1)),
         '-' | '\u{2212}' => Some((Token::Minus, ch.len_utf8())),
         '\'' | '"' => Some((Token::UsUnit(unit_word(&rest[..1])?), 1)),
         '°' | '′' | '″' => Some((
@@ -715,7 +832,7 @@ impl<'a> Parser<'a> {
         let mut left = self.binary(level + 1)?;
         loop {
             let op = match (level, self.peek()) {
-                (1, Some(Token::Compare)) => Operator::Compare,
+                (1, Some(Token::Compare(op))) => *op,
                 (2, Some(Token::Symbol('+'))) => Operator::Add,
                 (2, Some(Token::Minus)) => Operator::Subtract,
                 (3, Some(Token::Symbol('*'))) => Operator::Multiply,

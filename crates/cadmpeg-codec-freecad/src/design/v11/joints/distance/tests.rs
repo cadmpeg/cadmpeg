@@ -2,6 +2,7 @@
 use cadmpeg_ir::design::construction::FrameAxis;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::ops::shared::{Alignment, JointKind, JointMotion};
+use cadmpeg_ir::features::ParameterId;
 
 use crate::loss::FreecadLossCode;
 
@@ -194,6 +195,9 @@ fn length(kind: &JointKind) -> Option<f64> {
     }
     | JointKind::Coincident {
         offset: Some(Dimension::Literal(length)),
+    }
+    | JointKind::PointOnAxis {
+        distance: Some(Dimension::Literal(length)),
     }) = kind
     else {
         return None;
@@ -202,7 +206,7 @@ fn length(kind: &JointKind) -> Option<f64> {
 }
 
 fn restated(form: Form, distance: f64) -> Restatement {
-    restatement(form, distance).unwrap()
+    restatement(form, distance, None).unwrap()
 }
 
 #[test]
@@ -262,8 +266,11 @@ fn an_axis_pair_keeps_its_axes_parallel() {
 #[test]
 fn a_separation_from_an_axis_or_a_point_adds_the_radii() {
     let axis = restated(Form::CylSph { extra: 2.0 }, -1.0);
+    // §6.7 `PointOnAxis` relates the point first.
+    assert!(matches!(axis.kind, JointKind::PointOnAxis { .. }));
     assert_eq!(length(&axis.kind), Some(1.0));
     assert_eq!(axis.shapes, [Shape::Axis, Shape::Point]);
+    assert!(axis.reversed);
     assert_eq!(axis.alignment, None);
     // The solver squares the separation from an axis.
     let crossed = restated(Form::CylSph { extra: 2.0 }, -3.0);
@@ -273,11 +280,11 @@ fn a_separation_from_an_axis_or_a_point_adds_the_radii() {
     assert_eq!(points.shapes, [Shape::Point, Shape::Point]);
     // The solver holds the length of the separation of two points.
     assert_eq!(
-        restatement(Form::SphSph { extra: 0.0 }, -0.5),
+        restatement(Form::SphSph { extra: 0.0 }, -0.5, None),
         Err(FreecadLossCode::FeatureJointDistanceUnsatisfiable)
     );
     assert_eq!(
-        restatement(Form::CylSph { extra: f64::MAX }, f64::MAX),
+        restatement(Form::CylSph { extra: f64::MAX }, f64::MAX, None),
         Err(FreecadLossCode::FeatureJointDistanceUnresolved)
     );
 }
@@ -292,4 +299,47 @@ fn a_point_pair_below_the_tolerance_is_a_coincidence() {
     let apart = restated(Form::PointPoint, 4.0);
     assert!(matches!(apart.kind, JointKind::Distance { .. }));
     assert_eq!(length(&apart.kind), Some(4.0));
+}
+
+#[test]
+fn only_the_stored_distance_itself_binds_its_parameter() {
+    let parameter = ParameterId::mint("test:test:parameter#Distance".to_owned()).expect("id");
+    let bound = |form, distance| {
+        let restated = restatement(form, distance, Some(&parameter)).unwrap();
+        let value = match &restated.kind {
+            JointKind::Motion { offset, .. } => offset.z.clone(),
+            JointKind::Coincident { offset } => offset.clone(),
+            JointKind::Distance { distance, .. } | JointKind::PointOnAxis { distance } => {
+                distance.clone()
+            }
+            _ => None,
+        };
+        (
+            matches!(value, Some(Dimension::Parameter(ref id)) if *id == parameter),
+            restated.exact,
+        )
+    };
+    for (form, distance) in [
+        (Form::Planar, -2.0),
+        (Form::PointInPlane { extra: 0.0 }, -1.0),
+        (Form::LineInPlane { extra: 0.0 }, 3.0),
+        (Form::RevCyl { extra: 0.0 }, 2.0),
+        (Form::CylSph { extra: 0.0 }, 2.0),
+        (Form::SphSph { extra: 0.0 }, 2.0),
+        (Form::PointPoint, 4.0),
+    ] {
+        assert_eq!(bound(form, distance), (true, true), "{form:?}");
+    }
+    // A radius added, a magnitude taken, or no value stated leaves the
+    // stored distance unstated.
+    for (form, distance) in [
+        (Form::PointInPlane { extra: 3.0 }, -1.0),
+        (Form::RevCyl { extra: 0.0 }, -2.0),
+        (Form::RevCyl { extra: 2.0 }, -2.0),
+        (Form::CylSph { extra: 0.0 }, -2.0),
+        (Form::SphSph { extra: 1.0 }, 2.0),
+        (Form::PointPoint, 0.0),
+    ] {
+        assert_eq!(bound(form, distance), (false, false), "{form:?}");
+    }
 }

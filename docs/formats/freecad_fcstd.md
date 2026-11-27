@@ -638,12 +638,20 @@ formula cell stores no value. Its value kind is the kind of its result under `Fr
 rules, with the cells it references read first in dependency order:
 
 - A `<<…>>` string, `str()`, `address()`, the sum of two strings, a string `%` a value, and the
-  product of a string and a dimensionless number, which repeats the string, are text.
+  product of a string and a Python `int` or `bool`, which repeats the string, are text. A number
+  with no unit is an `int` where it is integral; a sign, a sum, a difference, a product, or a
+  remainder of `int` values, a comparison, `count`, `and`, `or`, and `href` of an `int` are `int`
+  values.
+- `True`, `False`, a comparison, and a reference to an `App::PropertyBool` property or to a
+  Boolean cell are Boolean. `==` and `!=` compare any two values. `<`, `<=`, `>`, and `>=` compare
+  two strings, two values of one quantity, a Boolean and a number, and a quantity and a dimensionless
+  literal, cell, number property, or aggregate. In arithmetic and in a function
+  argument, a Boolean is a dimensionless number.
 - A reference to a cell, by alias, address, or `.address`, takes that cell's kind. A reference to a
   typed property of an object, or a placement or vector component, takes the property's quantity;
   a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
-  property names are text.
-- Addition and subtraction of equal quantities keep the quantity, and a comparison is a real; a
+  property names are text, where the link stores no sub-name.
+- Addition and subtraction of equal quantities keep the quantity; a
   product and a quotient add and subtract the exponents of the units;
   `x ^ n` and `pow(x, n)` multiply each exponent by the constant `n` where each product is an
   integer.
@@ -655,7 +663,10 @@ rules, with the cells it references read first in dependency order:
   `vlinedist` and `vplanedist` give a length.
 
 Where the file does not determine the result's kind, as for a reference to another document, to a
-property with no stated quantity, or to a cell of a reference cycle, the cell's kind is a real
+property with no stated quantity, or to a cell of a reference cycle, the product of a string and
+another number, `Label` of a link that stores a sub-name, an ordering of a string and a number,
+of two different quantities, or of a quantity and a function result, and a comparison with an
+operand of such a kind, the cell's kind is a real
 number, it emits `parameter.quantity-assumed`, and an expression that references it takes it as a
 real number. A display unit whose quantity is the cell's and whose words each have a symbol is
 the parameter's `unit`. Another display unit of a quantity cell is the native option
@@ -899,13 +910,24 @@ of distance joints between parallel axes, in either sense. The pre-solve of fixe
 cylindrical, and slider joints, and the solver's iteration from the stored placements for the
 others, keep the nearer sense: these joints have the alignment `nearest`. Rack-pinion, screw, gears, and belt
 joints are couplings whose pitch radius,
-pitch, or radii are `Distance` and `Distance2`. Another family is a native kind with its source
+pitch, or radii are `Distance` and `Distance2`. The solver drops a screw or rack-pinion joint where
+no slider joint shares a moving part with it along a colinear z axis; the joint states its stored
+coupling. Another family is a native kind with its source
 label. `Suppressed` is the feature's suppression. Each other stored joint value is a source setting
 under its property name, `fcstd:<name>` (Rule N case (b)): a value the kind does not use, a limit
 whose enable flag is false and that flag, an angle outside zero to a half turn whose reflection is
 the joint angle, and
 `Detach1` and `Detach2`. An angle is an `Angle` option in radians, a length a `Length` option in
-millimetres, and a flag a `Bool` option. A native kind keeps these values as native options (Rule N case (a)). A
+millimetres, and a flag a `Bool` option. A native kind keeps these values as native options (Rule N case (a)).
+A joint's `App::PropertyLength` or `App::PropertyAngle` property that an `ExpressionEngine` entry
+of the joint names by its exact path is a parameter that the joint feature owns, with the
+identity, value, and expression of a PartDesign feature's minted parameter. The joint value,
+limit, source setting, or native option that states the stored value is that parameter. A value
+that the joint derives from the stored one is a literal, and the stored value is the source
+setting under its property name, stated as the parameter: the reflected angle of an angle joint,
+a parallel joint, and a distance joint value other than `d`. Where an entry drives a joint
+property that states no parameter, as a derived value, a flag, a placement, an offset, a
+reference, or a float `Distance`, the joint emits `feature.joint-value-unbound`. A
 `JointGroup` is an unordered `Group` of its joints; the document's `Group` holds each other joint.
 A grounded object is grounded occurrence state. A joint that names no object for a connector, that
 stores a blank joint type, that has an object name that is no feature id, or that grounds an
@@ -927,7 +949,9 @@ order, and a line before a circle. Where it reverses the order, it swaps `Refere
 stay with their connector slots, and each connector is built from its slot's swapped reference and
 placement. A swapped placement holds the offset of the other slot: an attached connector's resolved
 frame is that placement with the other slot's offset removed and its own offset applied. The
-solver applies this exchange at each solve, and the document does not store it. An exchange of all
+solver writes the exchanged references and placements to the joint's own `Reference1`,
+`Reference2`, `Placement1`, and `Placement2` at each solve: a document saved after a solve stores
+the references in the solver's order, and the order then exchanges nothing. An exchange of all
 four slot values that moves an unconnected reference to the second slot is stored, and the stored
 slot values already hold it.
 With `d` the stored `Distance` (zero where it is absent), and `r1` and `r2` the radii of the first
@@ -941,7 +965,7 @@ types), the joint is:
 | line and plane | Coincidence of the second connector's axis with the first connector's plane, offset `d` |
 | plane and cylinder | The same, offset `d + r2` |
 | line and line, line and circle, circle and circle, cylinder and cylinder, cylinder and torus | With `v` equal to the magnitude of `d`, `d + r2`, `d + r1 + r2`, `d + r1 + r2`, and `d + r1`: for `v` greater than zero, distance `v` between the connectors' axes and the native option `fcstd:parallelAxes` (Bool `true`) for the parallel axes; for `v` equal to zero, a concentric joint |
-| cylinder and sphere, torus and sphere, point and cylinder, point and line | Distance equal to the magnitude of `d + r1 + r2`, `d + r2`, `d + r1`, and `d` from the first connector's axis to the second connector's point |
+| cylinder and sphere, torus and sphere, point and cylinder, point and line | Point on axis: the second element's point at distance equal to the magnitude of `d + r1 + r2`, `d + r2`, `d + r1`, and `d` from the first element's axis; the point is the joint's first connector and the axis its second |
 | sphere and sphere, point and sphere | Distance `d + r1 + r2` and `d + r1` between the connectors' points |
 | vertex and vertex | Coincidence of the connectors' points for `d` less than `1e-7`, and distance `d` between them for other `d` |
 | each other pair | Planar motion along the first connector frame's z axis with z offset `d` |

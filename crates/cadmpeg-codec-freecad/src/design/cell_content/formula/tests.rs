@@ -75,9 +75,77 @@ fn operators_follow_the_unit_rules() {
     assert_eq!(kind("2^0.5"), REAL);
     assert_eq!(kind("7 mm % 2"), LENGTH);
     assert_eq!(kind("7 % 2 mm"), Kind::Unknown);
-    assert_eq!(kind("1 mm < 2 mm"), REAL);
+    assert_eq!(kind("1 mm < 2 mm"), Kind::Boolean);
     assert_eq!(kind("1 > 2 ? 3 mm : 4 mm"), LENGTH);
     assert_eq!(kind("1 > 2 ? 3 mm : 4"), Kind::Unknown);
+}
+
+#[test]
+fn a_comparison_and_a_truth_value_are_bools() {
+    let mut scope = Names::default();
+    scope.paths.insert("Flag".to_owned(), Kind::Boolean);
+    scope.paths.insert("A1".to_owned(), LENGTH);
+    scope.paths.insert("Ratio".to_owned(), REAL);
+    for text in [
+        "True",
+        "False",
+        "Flag",
+        "<<a>> == 1",
+        "1 mm != 2 °",
+        "<<a>> < <<b>>",
+        "Flag >= 1 mm",
+        "A1 > 2",
+        "A1 > Ratio",
+        "A1 <= sum(2; 3)",
+        "Flag ? True : 1 > 2",
+    ] {
+        assert_eq!(kind_in(text, &mut scope), Kind::Boolean, "{text:?}");
+    }
+    // A bool is an int in arithmetic.
+    assert_eq!(kind_in("Flag + 1", &mut scope), REAL);
+    assert_eq!(kind_in("-True", &mut scope), REAL);
+    assert_eq!(kind_in("Flag * 2 mm", &mut scope), LENGTH);
+    // Python raises where the operands do not compare, and an operand of no
+    // known kind leaves the result undetermined.
+    for text in [
+        "<<a>> < 1",
+        "1 mm < 2 °",
+        "A1 > cos(0)",
+        "B9 == 1",
+        "None == 1",
+    ] {
+        assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
+    }
+}
+
+#[test]
+fn text_times_a_number_repeats_only_for_an_int() {
+    let mut scope = Names::default();
+    scope.paths.insert("Flag".to_owned(), Kind::Boolean);
+    scope.paths.insert("Ratio".to_owned(), REAL);
+    for text in [
+        "<<a>> * 2",
+        "3 * <<a>>",
+        "<<a>> * (1 + 2) % 2",
+        "<<a>> * -2",
+        "<<a>> * True",
+        "<<a>> * Flag",
+        "<<a>> * (1 > 2)",
+        "<<a>> * count(1; 2)",
+        "<<a>> * href(2)",
+    ] {
+        assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
+    }
+    for text in [
+        "<<a>> * 1.5",
+        "<<a>> * pi",
+        "<<a>> * (4 / 2)",
+        "<<a>> * Ratio",
+        "<<a>> * abs(2)",
+        "<<a>> * 2 mm",
+    ] {
+        assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
+    }
 }
 
 #[test]

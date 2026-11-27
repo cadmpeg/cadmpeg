@@ -2,7 +2,7 @@
 //! The properties and sketch constraints of a Body's features, and the
 //! properties of the Body, as v11 parameters.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
@@ -17,7 +17,6 @@ use cadmpeg_ir::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
 };
 use cadmpeg_ir::design::units::{Quantity, Unit, ValueKind};
-use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{
     DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
 };
@@ -47,11 +46,12 @@ const CELL_DISPLAY: [&str; 4] = ["alignment", "style", "foregroundColor", "backg
 /// of the cell's parameter.
 const DISPLAY_UNIT: &str = "displayUnit";
 
-/// Each parameter the decoder read that one of `features` or a Body owns, in
-/// the scope of `definition`. `containers` maps a Body's feature to its
-/// container.
+/// Each parameter of `parameters` that one of `features` or a Body owns, in
+/// the scope of `definition`. `parameters` holds the model's parameters and
+/// the minted parameters of features that have no model record.
+/// `containers` maps a Body's feature to its container.
 pub(super) fn project(
-    ir: &CadIr,
+    parameters: [&[LegacyParameter]; 2],
     definition: &ProductDefinitionId,
     containers: &BTreeMap<FeatureId, ContainerId>,
     features: &[Feature],
@@ -67,10 +67,9 @@ pub(super) fn project(
         .iter()
         .map(|feature| &feature.id)
         .collect::<BTreeSet<_>>();
-    let owners = ir
-        .model
-        .parameters
-        .iter()
+    let [model, minted] = parameters;
+    let all = || model.iter().chain(minted);
+    let owners = all()
         .filter_map(|parameter| {
             let owner = parameter.owner.as_ref()?;
             let owner = containers.get(owner).map_or_else(
@@ -84,10 +83,7 @@ pub(super) fn project(
             Some((&parameter.id, owner))
         })
         .collect::<BTreeMap<_, _>>();
-    let by_id = ir
-        .model
-        .parameters
-        .iter()
+    let by_id = all()
         .filter(|parameter| owners.contains_key(&parameter.id))
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
@@ -99,6 +95,10 @@ pub(super) fn project(
             == Some(SHEET)
     };
     let catalog = Catalog::new(&by_id, objects, properties);
+    let minted = minted
+        .iter()
+        .map(|parameter| &parameter.id)
+        .collect::<BTreeSet<_>>();
     let formulas = by_id
         .values()
         .filter(|parameter| is_cell(parameter))
@@ -110,8 +110,8 @@ pub(super) fn project(
         )
         .collect::<BTreeMap<_, _>>();
     let kinds = cell_kinds(&by_id, &formulas, &catalog, &is_cell);
-    let mut parameters = Vec::new();
-    for parameter in &ir.model.parameters {
+    let mut projected = Vec::new();
+    for parameter in all() {
         let Some(owner) = owners.get(&parameter.id) else {
             continue;
         };
@@ -126,6 +126,7 @@ pub(super) fn project(
         let context = Context {
             catalog: &catalog,
             kinds: &kinds,
+            minted: &minted,
         };
         let (kind, value, parameter_definition) = if sheet {
             let (kind, value, expression) =
@@ -160,7 +161,7 @@ pub(super) fn project(
                 BTreeMap::default(),
             )
         };
-        parameters.push(DesignParameter {
+        projected.push(DesignParameter {
             id: parameter.id.clone(),
             scope: definition.clone(),
             owner: Some(owner.clone()),
@@ -178,8 +179,8 @@ pub(super) fn project(
             native_ref: parameter.native_ref.clone(),
         });
     }
-    parameters.sort_by(|a, b| a.id.cmp(&b.id));
-    parameters
+    projected.sort_by(|a, b| a.id.cmp(&b.id));
+    projected
 }
 
 /// The objects, properties, and parameters that a formula's paths name.
@@ -195,6 +196,9 @@ struct Catalog<'a> {
     features: HashMap<&'a str, FeatureId>,
     /// The type of each property, by its owner's id and its name.
     types: HashMap<(&'a str, &'a str), &'a str>,
+    /// The `XLink` properties that store a sub-name, by owner's id and name:
+    /// their value is a tuple.
+    subnamed: HashSet<(&'a str, &'a str)>,
     /// Each parameter by its owner and a name a path gives it: a
     /// property's name, `Constraints.<name>`, and a cell's alias and
     /// address. A name that two parameters share names neither.
@@ -226,6 +230,7 @@ impl<'a> Catalog<'a> {
             objects: HashMap::new(),
             features: HashMap::new(),
             types: HashMap::new(),
+            subnamed: HashSet::new(),
             named: HashMap::new(),
             cells: HashMap::new(),
         };
@@ -240,11 +245,24 @@ impl<'a> Catalog<'a> {
             .iter()
             .map(|object| (object.id().as_str(), object))
             .collect::<HashMap<_, _>>();
+        let mut holders = HashMap::new();
         for property in properties {
+            holders.insert(property.id.as_str(), property.owner.as_str());
             catalog.types.insert(
                 (property.owner.as_str(), property.name.as_str()),
                 property.type_name.as_str(),
             );
+            if property.type_name == "App::PropertyXLink"
+                && property.values().iter().any(|value| {
+                    value.tag == "XLink"
+                        && (value.attributes.contains_key("sub")
+                            || value.attributes.contains_key("count"))
+                })
+            {
+                catalog
+                    .subnamed
+                    .insert((property.owner.as_str(), property.name.as_str()));
+            }
             let label = (property.name == "Label" && property.type_name == "App::PropertyString")
                 .then(|| property.values().iter().find(|value| value.tag == "String"))
                 .flatten()
@@ -261,6 +279,19 @@ impl<'a> Catalog<'a> {
             let Some(owner) = parameter.owner.as_ref() else {
                 continue;
             };
+            // A feature that is no object's feature id is the feature of the
+            // object that holds the parameter's property.
+            if !catalog.objects.contains_key(owner) {
+                let object = parameter
+                    .native_ref
+                    .as_deref()
+                    .and_then(|property| holders.get(property))
+                    .and_then(|object| ids.get(object));
+                if let Some(object) = object {
+                    catalog.objects.insert(owner.clone(), object);
+                    catalog.features.insert(object.id().as_str(), owner.clone());
+                }
+            }
             let mut names = vec![parameter.name.clone()];
             names.extend(property(parameter, "alias").map(str::to_owned));
             if let Some(address) = property(parameter, "address") {
@@ -329,7 +360,11 @@ impl<'a> Catalog<'a> {
         if let Some(Some(id)) = self.named.get(&(feature.clone(), key)) {
             return Target::Parameter(id);
         }
-        match self.types.get(&(object.id().as_str(), property.as_str())) {
+        let key = (object.id().as_str(), property.as_str());
+        if self.subnamed.contains(&key) {
+            return Target::Property(Kind::Unknown);
+        }
+        match self.types.get(&key) {
             Some(type_name) => Target::Property(property_kind(type_name, &rest[1..])),
             None => Target::Unresolved,
         }
@@ -382,6 +417,7 @@ fn property_kind(type_name: &str, sub: &[String]) -> Kind {
             Some("Placement"),
             ["Rotation", "Axis", "x" | "y" | "z"] | ["Rotation", "Yaw" | "Pitch" | "Roll"],
         ) => Quantity::REAL,
+        (Some("Bool"), []) => return Kind::Boolean,
         (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font"), [])
         | (
             Some("Link" | "LinkChild" | "LinkGlobal" | "LinkHidden" | "XLink"),
@@ -427,8 +463,9 @@ fn property_quantity(name: &str) -> Option<Quantity> {
         "DynamicViscosity" => Quantity::of(-1, 1, 0, -1),
         "SpecificEnergy" => Quantity::of(2, 0, 0, -2),
         "DissipationRate" => Quantity::of(2, 0, 0, -3),
-        "Float" | "FloatConstraint" | "Precision" | "Integer" | "IntegerConstraint" | "Percent"
-        | "Bool" => Quantity::REAL,
+        "Float" | "FloatConstraint" | "Precision" | "Integer" | "IntegerConstraint" | "Percent" => {
+            Quantity::REAL
+        }
         _ => return None,
     })
 }
@@ -541,9 +578,8 @@ impl Lookup<'_, '_> {
         match &parameter.value {
             Some(LegacyValue::Length(_)) => Kind::Quantity(Quantity::LENGTH),
             Some(LegacyValue::Angle(_)) => Kind::Quantity(Quantity::ANGLE),
-            Some(LegacyValue::Real(_) | LegacyValue::Integer(_) | LegacyValue::Boolean(_)) => {
-                Kind::Quantity(Quantity::REAL)
-            }
+            Some(LegacyValue::Real(_) | LegacyValue::Integer(_)) => Kind::Quantity(Quantity::REAL),
+            Some(LegacyValue::Boolean(_)) => Kind::Boolean,
             Some(LegacyValue::String(_)) => Kind::Text,
             None => Kind::Unknown,
         }
@@ -569,6 +605,9 @@ impl Scope for Lookup<'_, '_> {
 struct Context<'c, 'a> {
     catalog: &'c Catalog<'a>,
     kinds: &'c HashMap<&'a ParameterId, Kind>,
+    /// The parameters that have no model record, and so no stored
+    /// dependencies: their references, and each reference to them, bind.
+    minted: &'c BTreeSet<&'a ParameterId>,
 }
 
 fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
@@ -652,6 +691,11 @@ fn cell(
             let kind = ValueKind::Quantity(quantity);
             let value = value.filter(|_| stored == kind);
             (kind, value, expression)
+        }
+        Kind::Boolean => {
+            let (stored, value) = kind_and_value(parameter.value.as_ref());
+            let value = value.filter(|_| stored == ValueKind::Boolean);
+            (ValueKind::Boolean, value, expression)
         }
         Kind::Text => (ValueKind::Text, None, expression),
         Kind::Unknown => {
@@ -917,10 +961,12 @@ fn translated(
         };
         match context.catalog.resolve(parameter.owner.as_ref(), path) {
             Target::Parameter(id)
-                if parameter
-                    .dependencies
-                    .iter()
-                    .any(|dependency| dependency == id) =>
+                if context.minted.contains(&parameter.id)
+                    || context.minted.contains(id)
+                    || parameter
+                        .dependencies
+                        .iter()
+                        .any(|dependency| dependency == id) =>
             {
                 let reference = ParameterRef {
                     target: RefTarget::Parameter(id.clone()),
@@ -1025,7 +1071,7 @@ fn neutral_text(
                 Operator::Multiply => "*",
                 Operator::Divide => "/",
                 Operator::Power => "^",
-                Operator::Remainder | Operator::Compare => return None,
+                Operator::Remainder | Operator::Equal | Operator::Order => return None,
             };
             let left = neutral_text(left, spans, refs)?;
             let right = match right.as_ref() {

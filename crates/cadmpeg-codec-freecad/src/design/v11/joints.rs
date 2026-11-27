@@ -29,7 +29,8 @@ use cadmpeg_ir::design::selection::{
     StepRef,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::parameters::DesignParameter as LegacyParameter;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition};
 use cadmpeg_ir::report::loss::LossNote;
@@ -53,6 +54,9 @@ pub(super) struct Joints {
     pub(super) loose: BTreeSet<Member>,
     /// The occurrences a grounded joint fixes.
     pub(super) grounded: BTreeMap<OccurrenceId, OccurrenceDesign>,
+    /// One parameter, owned by the joint feature, for each length or angle
+    /// property of a joint that an `ExpressionEngine` entry drives.
+    pub(super) parameters: Vec<LegacyParameter>,
 }
 
 /// The design records of the joint records of `assembly` in the scope of
@@ -73,7 +77,12 @@ pub(super) fn project(
         groups: Vec::new(),
         loose: BTreeSet::new(),
         grounded: BTreeMap::new(),
+        parameters: Vec::new(),
     };
+    let by_id = objects
+        .iter()
+        .map(|object| (object.id().as_str(), object))
+        .collect::<HashMap<_, _>>();
     let mut grouped = BTreeMap::<&str, BTreeSet<Member>>::new();
     for record in assembly.joints {
         let definition = products.definition(record.object()).unwrap_or(root);
@@ -105,11 +114,12 @@ pub(super) fn project(
                 }
             }
             JointBody::Pair { kind, connectors } => {
-                let owned = |name: &str| {
-                    properties
-                        .iter()
-                        .find(|property| property.owner == record.object() && property.name == name)
-                };
+                let held = properties
+                    .iter()
+                    .filter(|property| property.owner == record.object())
+                    .collect::<Vec<_>>();
+                let owned =
+                    |name: &str| held.iter().copied().find(|property| property.name == name);
                 let [first, second] = connectors.as_ref();
                 let float_distance = owned("Distance")
                     .is_some_and(|property| property.type_name == "App::PropertyFloat");
@@ -166,21 +176,6 @@ pub(super) fn project(
                     )));
                     continue;
                 };
-                let Some((joint, charge)) = joint(
-                    kind.as_str(),
-                    record.parameters(),
-                    [first, second],
-                    native_options,
-                    float_distance,
-                    classified.map(|classified| classified.map(|(_, form)| form)),
-                ) else {
-                    losses.push(FreecadLossCode::FeatureJointUnresolved.note(format!(
-                        "joint {} stores a blank joint type; the joint stays in its native \
-                         record",
-                        record.object()
-                    )));
-                    continue;
-                };
                 let Ok(id) = FeatureId::mint(crate::native::model_id(
                     "joint",
                     record.object(),
@@ -193,6 +188,46 @@ pub(super) fn project(
                     )));
                     continue;
                 };
+                let driven = driven(&held);
+                let minted = by_id
+                    .get(record.object())
+                    .map(|object| mint(object, &id, &held, record.parameters()))
+                    .unwrap_or_default();
+                let bindings = minted
+                    .iter()
+                    .map(|parameter| (parameter.name.as_str(), &parameter.id))
+                    .collect::<BTreeMap<_, _>>();
+                let Some((joint, charge, bound)) = joint(
+                    kind.as_str(),
+                    record.parameters(),
+                    &bindings,
+                    [first, second],
+                    native_options,
+                    float_distance,
+                    classified.map(|classified| classified.map(|(_, form)| form)),
+                ) else {
+                    losses.push(FreecadLossCode::FeatureJointUnresolved.note(format!(
+                        "joint {} stores a blank joint type; the joint stays in its native \
+                         record",
+                        record.object()
+                    )));
+                    continue;
+                };
+                let unbound = driven
+                    .iter()
+                    .filter(|name| !bound.contains(*name))
+                    .map(String::as_str)
+                    .collect::<Vec<_>>();
+                if !unbound.is_empty() {
+                    losses.push(FreecadLossCode::FeatureJointValueUnbound.note(format!(
+                        "joint {} states {} with values that bind no parameter, although an \
+                         ExpressionEngine entry drives them; each states its stored value or one \
+                         derived from it",
+                        record.object(),
+                        unbound.join(", ")
+                    )));
+                }
+                joints.parameters.extend(minted);
                 match charge {
                     Some(code @ FreecadLossCode::FeatureJointDistanceUnresolved) => {
                         losses.push(code.note(format!(
@@ -261,26 +296,32 @@ pub(super) fn project(
 
 /// The joint of family `label` with parameters `parameters` between
 /// connectors `connectors`, whose detached connectors keep `native_options`.
+/// `bindings` names the parameter of each driven length or angle.
 /// `float_distance` states that the joint stores `Distance` as a float, the
 /// form in which an Angle joint stores its angle there in degrees.
 /// `classified` is the form of a `Distance` joint, whose connectors are
 /// already in the order `FreeCAD` solves them. Each parameter the joint does not hold is a source setting
 /// under its own name, and a native option of a family the decoder does not
-/// read. The code is the loss a `Distance` joint charges. `None` where the
+/// read. The code is the loss a `Distance` joint charges, and the set holds
+/// each property whose stated value binds its parameter. `None` where the
 /// family is blank.
 fn joint(
     label: &str,
     parameters: &JointParameters,
+    bindings: &BTreeMap<&str, &ParameterId>,
     mut connectors: [JointConnector; 2],
     mut native_options: NativeOptions,
     float_distance: bool,
     classified: Option<Result<distance::Form, distance::Unresolved>>,
-) -> Option<(Joint, Option<FreecadLossCode>)> {
+) -> Option<(Joint, Option<FreecadLossCode>, BTreeSet<String>)> {
     let family = label.to_ascii_lowercase();
     let mut charge = None;
     let old_angle = family == "angle" && float_distance;
     let mut read = Read {
         parameters,
+        bindings,
+        bound: BTreeSet::new(),
+        derived: BTreeSet::new(),
         used: BTreeSet::from(["Suppressed"]),
         degrees: if old_angle {
             &["Angle", "AngleMin", "AngleMax", "Distance"]
@@ -328,19 +369,38 @@ fn joint(
         ),
         "ball" => motion(JointMotion::Ball, Vec::new()),
         "distance" => {
-            let stored = read.scalar("Distance");
+            let stored = parameters.scalar_value("Distance").map(FiniteReal::get);
             let restated = classified
                 .unwrap_or(Err(distance::Unresolved))
                 .map_err(|_| FreecadLossCode::FeatureJointDistanceUnresolved)
-                .and_then(|form| distance::restatement(form, stored.unwrap_or(0.0)));
+                .and_then(|form| {
+                    distance::restatement(
+                        form,
+                        stored.unwrap_or(0.0),
+                        bindings.get("Distance").copied(),
+                    )
+                });
             match restated {
                 Ok(restatement) => {
+                    // A restated value other than the stored one leaves the
+                    // stored one a source setting.
+                    if restatement.exact {
+                        read.used.insert("Distance");
+                        if bindings.contains_key("Distance") {
+                            read.bound.insert("Distance".to_owned());
+                        }
+                    } else {
+                        read.derived.insert("Distance");
+                    }
                     let [first, second] = connectors;
                     let [first_shape, second_shape] = restatement.shapes;
                     connectors = [
                         distance::connector(first, first_shape),
                         distance::connector(second, second_shape),
                     ];
+                    if restatement.reversed {
+                        connectors.reverse();
+                    }
                     alignment = restatement.alignment;
                     if restatement.parallel {
                         native_options.extend(
@@ -352,9 +412,11 @@ fn joint(
                 }
                 Err(code) => {
                     charge = Some(code);
-                    native_options.extend(key("Distance").zip(stored.and_then(Length::new)).map(
-                        |(key, length)| (key, NativeOption::Length(Dimension::Literal(length))),
-                    ));
+                    read.used.insert("Distance");
+                    if let Some((key, length)) = key("Distance").zip(stored.and_then(Length::new)) {
+                        native_options
+                            .insert(key, NativeOption::Length(read.bind("Distance", length)));
+                    }
                     JointKind::Distance {
                         distance: None,
                         limits: None,
@@ -369,6 +431,7 @@ fn joint(
             match parameters.scalar_value(name) {
                 Some(angle) if (angle.get().to_radians().abs() % TAU) < CONFUSION => {
                     alignment = Some(Alignment::Nearest);
+                    read.derived.insert(name);
                     JointKind::Parallel
                 }
                 _ => JointKind::Angle {
@@ -395,6 +458,11 @@ fn joint(
         _ => JointKind::Native(NonBlankString::new(label.to_owned())?),
     };
     let rest = read.rest();
+    let bound = read
+        .bound
+        .into_iter()
+        .filter(|name| !read.derived.contains(name.as_str()))
+        .collect();
     let source_settings = if matches!(kind, JointKind::Native(_)) {
         native_options.extend(rest);
         NativeOptions::new()
@@ -410,7 +478,56 @@ fn joint(
             source_settings,
         },
         charge,
+        bound,
     ))
+}
+
+/// The names of the properties that the `ExpressionEngine` of `held`, the
+/// properties of one object, drives: the first component of each entry's
+/// path.
+fn driven(held: &[&PropertyRecord]) -> BTreeSet<String> {
+    held.iter()
+        .filter(|property| property.name == "ExpressionEngine")
+        .flat_map(|engine| engine.values())
+        .filter(|value| value.tag == "Expression")
+        .filter_map(|value| value.attributes.get("path"))
+        .filter_map(|path| path.trim_start_matches('.').split('.').next())
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The parameter, owned by joint feature `owner`, of each length and angle
+/// property of joint object `object` that an `ExpressionEngine` entry
+/// binds, as `FreeCAD` features mint theirs (§5.12, Minted parameters).
+fn mint(
+    object: &ObjectRecord,
+    owner: &FeatureId,
+    held: &[&PropertyRecord],
+    parameters: &JointParameters,
+) -> Vec<LegacyParameter> {
+    held.iter()
+        .copied()
+        .filter(|property| {
+            matches!(
+                property.type_name.as_str(),
+                "App::PropertyLength" | "App::PropertyAngle"
+            )
+        })
+        .filter_map(|property| {
+            let (engine, expression) = crate::design::expression_binding(held, &property.name)?;
+            let value = parameters.scalar_value(&property.name)?;
+            crate::design::property_parameter(
+                object,
+                owner.clone(),
+                property,
+                value,
+                expression,
+                Some(engine),
+            )
+            .ok()
+        })
+        .collect()
 }
 
 /// Frame `placement`, which `FreeCAD` built with offset `from`, rebuilt with
@@ -441,6 +558,13 @@ fn key(name: &str) -> Option<CodecName> {
 /// The parameters of one joint, with the names a typed field holds.
 struct Read<'a> {
     parameters: &'a JointParameters,
+    /// The parameter of each driven length and angle.
+    bindings: &'a BTreeMap<&'a str, &'a ParameterId>,
+    /// The names whose stated value binds their parameter.
+    bound: BTreeSet<String>,
+    /// The names from which the joint derives a value it states as a
+    /// literal.
+    derived: BTreeSet<&'static str>,
     used: BTreeSet<&'static str>,
     /// The parameters the joint stores in degrees.
     degrees: &'static [&'static str],
@@ -453,11 +577,23 @@ impl Read<'_> {
         Some(value)
     }
 
+    /// Value `value` of `name`, bound to the parameter of `name` where it
+    /// has one.
+    fn bind<T>(&mut self, name: &str, value: T) -> Dimension<T> {
+        match self.bindings.get(name) {
+            Some(parameter) => {
+                self.bound.insert(name.to_owned());
+                Dimension::Parameter((*parameter).clone())
+            }
+            None => Dimension::Literal(value),
+        }
+    }
+
     /// Length `name`, in millimetres.
     fn length(&mut self, name: &'static str) -> Option<Dimension<Length>> {
         let value = Length::new(self.parameters.scalar_value(name)?.get())?;
         self.used.insert(name);
-        Some(Dimension::Literal(value))
+        Some(self.bind(name, value))
     }
 
     /// The angle `FreeCAD` solves for from angle `name`, stored in degrees:
@@ -470,7 +606,9 @@ impl Read<'_> {
         let value = Angle::new(if turn > PI { TAU - turn } else { turn })?;
         if (0.0..=180.0).contains(&stored) {
             self.used.insert(name);
+            return Some(self.bind(name, value));
         }
+        self.derived.insert(name);
         Some(Dimension::Literal(value))
     }
 
@@ -486,9 +624,12 @@ impl Read<'_> {
 
     /// The enabled limits of the rotation about z, stored in degrees.
     fn rotation(&mut self) -> Option<AxisLimits> {
-        let bound = |value: f64| Angle::new(value.to_radians()).map(Dimension::Literal);
-        let min = self.bound("AngleMin", "EnableAngleMin").and_then(bound);
-        let max = self.bound("AngleMax", "EnableAngleMax").and_then(bound);
+        let mut bound = |name, enable| {
+            let value = Angle::new(self.bound(name, enable)?.to_radians())?;
+            Some(self.bind(name, value))
+        };
+        let min = bound("AngleMin", "EnableAngleMin");
+        let max = bound("AngleMax", "EnableAngleMax");
         (min.is_some() || max.is_some()).then_some(AxisLimits::Rotation {
             axis: FrameAxis::Z,
             limits: Some(Bounds { min, max }),
@@ -498,9 +639,12 @@ impl Read<'_> {
 
     /// The enabled limits of the translation along z, in millimetres.
     fn translation(&mut self) -> Option<AxisLimits> {
-        let bound = |value: f64| Length::new(value).map(Dimension::Literal);
-        let min = self.bound("LengthMin", "EnableLengthMin").and_then(bound);
-        let max = self.bound("LengthMax", "EnableLengthMax").and_then(bound);
+        let mut bound = |name, enable| {
+            let value = Length::new(self.bound(name, enable)?)?;
+            Some(self.bind(name, value))
+        };
+        let min = bound("LengthMin", "EnableLengthMin");
+        let max = bound("LengthMax", "EnableLengthMax");
         (min.is_some() || max.is_some()).then_some(AxisLimits::Translation {
             axis: FrameAxis::Z,
             limits: Some(Bounds { min, max }),
@@ -510,19 +654,21 @@ impl Read<'_> {
 
     /// Each parameter no typed field holds, as an option: an angle in
     /// radians, a length in millimetres, a flag, or the stored text.
-    fn rest(self) -> NativeOptions {
-        self.parameters
+    fn rest(&mut self) -> NativeOptions {
+        let parameters = self.parameters;
+        let unused = parameters
             .iter()
             .filter(|(name, _)| !self.used.contains(name))
+            .collect::<Vec<_>>();
+        unused
+            .into_iter()
             .filter_map(|(name, parameter)| {
                 let option = match parameter {
                     JointParameter::Scalar { value, .. } if self.degrees.contains(&name) => {
-                        NativeOption::Angle(Dimension::Literal(Angle::new(
-                            value.get().to_radians(),
-                        )?))
+                        NativeOption::Angle(self.bind(name, Angle::new(value.get().to_radians())?))
                     }
                     JointParameter::Scalar { value, .. } => {
-                        NativeOption::Length(Dimension::Literal(Length::new(value.get())?))
+                        NativeOption::Length(self.bind(name, Length::new(value.get())?))
                     }
                     JointParameter::Boolean { value, .. } => {
                         NativeOption::Bool(Dimension::Literal(*value))

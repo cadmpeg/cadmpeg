@@ -1507,55 +1507,77 @@ fn append_operation_parameters(
         let Some(value) = scalar_value(ctx, property)? else {
             continue;
         };
-        let expression = expression_binding(properties, &property.name);
-        let is_angle = property.type_name.contains("Angle");
-        let mut retained = BTreeMap::new();
-        if let Some((native_ref, _)) = &expression {
-            retained.insert(
-                cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                native_ref.to_owned(),
-            );
-        }
-        let expression = match expression {
-            Some((_, expression)) => expression,
+        let binding = expression_binding(properties, &property.name);
+        let (engine, expression) = match binding {
+            Some((engine, expression)) => (Some(engine), expression),
             None => match scalar_text(ctx, property, str::to_owned)? {
-                Some(text) => text,
-                None => format!("{}", value.get()),
+                Some(text) => (None, text),
+                None => (None, format!("{}", value.get())),
             },
         };
-        parameters.push(DesignParameter {
-            product_definition: None,
-            id: ParameterId::mint(design_identity_text(
-                "parameter",
-                object,
-                format_args!(
-                    ":{}",
-                    cadmpeg_ir::ids::IdentityKey::encode_segment(&property.name)
-                ),
-            ))
-            .map_err(CodecError::malformed)?,
-            owner: Some(owner.clone()),
-            ordinal: u32::try_from(property.order).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "FreeCAD ordinal {} exceeds u32",
-                    property.order
-                ))
-            })?,
-            name: property.name.clone(),
+        parameters.push(property_parameter(
+            object,
+            owner.clone(),
+            property,
+            value,
             expression,
-            display: None,
-            value: if is_angle {
-                cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
-            } else {
-                Some(ParameterValue::Length(Length::from_assigned_real(value)))
-            },
-            dependencies: DistinctMembers::default(),
-            properties: retained,
-            pmi: None,
-            native_ref: Some(property.id.clone()),
-        });
+            engine,
+        )?);
     }
     Ok(())
+}
+
+/// The parameter of scalar property `property` of `object`, owned by
+/// `owner`: its stored value `value`, a length or, for an angle carrier, an
+/// angle stored in degrees, and its expression `expression`, which the
+/// `ExpressionEngine` property `engine` binds where it is `Some`.
+fn property_parameter(
+    object: &ObjectRecord,
+    owner: FeatureId,
+    property: &PropertyRecord,
+    value: FiniteReal,
+    expression: String,
+    engine: Option<String>,
+) -> Result<DesignParameter, CodecError> {
+    let is_angle = property.type_name.contains("Angle");
+    let mut retained = BTreeMap::new();
+    if let Some(native_ref) = engine {
+        retained.insert(
+            cadmpeg_core::nonblank_literal!("expression_native_ref"),
+            native_ref,
+        );
+    }
+    Ok(DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint(design_identity_text(
+            "parameter",
+            object,
+            format_args!(
+                ":{}",
+                cadmpeg_ir::ids::IdentityKey::encode_segment(&property.name)
+            ),
+        ))
+        .map_err(CodecError::malformed)?,
+        owner: Some(owner),
+        ordinal: u32::try_from(property.order).map_err(|_| {
+            CodecError::malformed(format_args!(
+                "FreeCAD ordinal {} exceeds u32",
+                property.order
+            ))
+        })?,
+        name: property.name.clone(),
+        expression,
+        display: None,
+        value: if is_angle {
+            cadmpeg_ir::scalar::Angle::new(value.get().to_radians()).map(ParameterValue::Angle)
+        } else {
+            Some(ParameterValue::Length(Length::from_assigned_real(value)))
+        },
+        dependencies: DistinctMembers::default(),
+        properties: retained,
+        pmi: None,
+        native_ref: Some(property.id.clone()),
+    })
 }
 
 struct SketchTransfer {

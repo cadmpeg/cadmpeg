@@ -174,7 +174,7 @@ pub(crate) fn project(
     containers.sort_by(|a, b| a.id().cmp(b.id()));
     features.sort_by(|a, b| a.id.cmp(&b.id));
     let parameters = parameters::project(
-        ir,
+        [&ir.model.parameters, &joints.parameters],
         &definition,
         &body_containers,
         &features,
