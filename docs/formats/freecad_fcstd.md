@@ -832,10 +832,10 @@ operand/frame cardinality, component references, finite values, and ordered inte
 
 Each paired joint is a v11 `Joint` feature whose identity is the assembly joint's identity. The
 `Assembly` that lists the joint, directly or in its `JointGroup`, is the feature's component, and
-connector paths start at its definition. A connector is a frame construction. Its picks name the
-elements of `Reference1` or `Reference2`: the reference object and each leading sub-name segment
-that names an object placed in the prototype reached give the occurrence path, and the rest of the
-sub-name is the element's native name. A reference with no element picks the whole occurrence.
+connector paths start at its definition. A connector is a frame construction on the elements of
+`Reference1` or `Reference2`: the reference object and each leading sub-name segment that names an
+object placed in the prototype reached give the occurrence path, and the rest of the sub-name is the
+element's native name. A reference with no element names the whole occurrence.
 `Offset1` or `Offset2` is the construction's fixed step where it is not the identity, and
 `Placement1` or `Placement2` is its resolved frame. Fixed, revolute, cylindrical, slider, and ball
 joints are motions about the connector frame's z axis, with their enabled limits. Distance,

@@ -987,6 +987,53 @@ fn a_link_that_follows_an_object_with_no_own_occurrence_is_a_loss() {
 }
 
 #[test]
+fn a_joint_with_a_connector_that_names_no_object_is_a_loss() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Assembly::AssemblyObject" name="Assembly" id="1"/>
+ <Object type="Part::Feature" name="BracketShape" id="2"/>
+ <Object type="App::Link" name="Bracket" id="3"/>
+ <Object type="App::FeaturePython" name="Broken" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Bracket"/><Link value="Broken"/></LinkList></Property></Properties></Object>
+ <Object name="BracketShape"><Properties Count="0"/></Object>
+ <Object name="Bracket"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="BracketShape"/></Property></Properties></Object>
+ <Object name="Broken"><Properties Count="3">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name=""/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ir = decoded.ir();
+    assert_valid_document(ir);
+    assert!(
+        ir.design
+            .features
+            .iter()
+            .all(|feature| feature.name.as_deref() != Some("Broken")),
+        "{:?}",
+        ir.design.features
+    );
+    let unresolved = crate::loss::FreecadLossCode::FeatureJointUnresolved.note("");
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == unresolved.code && loss.message.contains("Broken")),
+        "{:?}",
+        decoded.report().losses
+    );
+}
+
+#[test]
 fn an_app_link_array_places_its_elements_in_one_feature() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Instance"/></Objects>
