@@ -2,8 +2,10 @@
 //! The properties and sketch constraints of a Body's features, and the
 //! properties of the Body, as v11 parameters.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::cell::OnceCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::decode::View;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
@@ -30,7 +32,7 @@ use cadmpeg_ir::spreadsheets::CellAddress;
 use crate::design::cell_content::formula::{
     self, Class, Kind, Origin, Path, Reference, Scope, Unparsed, Value,
 };
-use crate::design::cell_content::{self, CellContent, CellKind};
+use crate::design::cell_content::{self, CellContent, CellKind, Dimensions};
 use crate::loss::FreecadLossCode;
 use crate::native::{ObjectRecord, PropertyRecord};
 
@@ -191,7 +193,7 @@ pub(super) fn project(
 }
 
 /// The objects, properties, and parameters that a formula's paths name.
-struct Catalog<'a> {
+struct Catalog<'a, 'data> {
     parameters: &'a BTreeMap<&'a ParameterId, &'a LegacyParameter>,
     /// Each object by its name.
     names: HashMap<&'a str, &'a ObjectRecord>,
@@ -203,14 +205,9 @@ struct Catalog<'a> {
     features: HashMap<&'a str, FeatureId>,
     /// The property by its owner's id and its name.
     properties: HashMap<(&'a str, &'a str), &'a PropertyRecord>,
-    /// The local object held by each scalar link with no sub-selection.
-    linked: HashMap<(&'a str, &'a str), &'a ObjectRecord>,
-    /// The link properties whose value is a tuple or `None`, by owner's id
-    /// and name: an `XLink` that stores a sub-name, and a link that stores no
-    /// target.
-    refused: HashSet<(&'a str, &'a str)>,
-    /// The value of each Python object property, by owner's id and name.
-    python: HashMap<(&'a str, &'a str), Value>,
+    links: HashMap<(&'a str, &'a str), ScalarLink<'a>>,
+    python: HashMap<&'a str, OnceCell<Value>>,
+    entries: &'a BTreeMap<String, View<'data>>,
     /// Whether each admitted shape payload has a root.
     shapes: HashMap<&'a str, bool>,
     /// Each parameter by its owner and a name a path gives it: a
@@ -219,6 +216,13 @@ struct Catalog<'a> {
     named: HashMap<(FeatureId, String), Option<&'a ParameterId>>,
     /// The cells of each sheet, with their addresses.
     cells: HashMap<FeatureId, Vec<(CellAddress, &'a ParameterId)>>,
+}
+
+enum ScalarLink<'a> {
+    Local(&'a ObjectRecord),
+    Null,
+    Tuple,
+    External,
 }
 
 /// What a path names.
@@ -237,10 +241,10 @@ enum Target<'a> {
     Unresolved,
 }
 
-impl<'a> Catalog<'a> {
+impl<'a, 'data> Catalog<'a, 'data> {
     fn new(
         parameters: &'a BTreeMap<&'a ParameterId, &'a LegacyParameter>,
-        sources: &DesignSources<'a, '_>,
+        sources: &DesignSources<'a, 'data>,
     ) -> Self {
         let mut catalog = Self {
             parameters,
@@ -249,16 +253,15 @@ impl<'a> Catalog<'a> {
             objects: HashMap::new(),
             features: HashMap::new(),
             properties: HashMap::new(),
-            linked: HashMap::new(),
-            refused: HashSet::new(),
+            links: HashMap::new(),
             python: HashMap::new(),
+            entries: sources.entries,
             shapes: sources
                 .shapes
                 .iter()
-                .map(|shape| {
-                    let has_root = crate::brep::Tables::from_payload(shape)
-                        .is_some_and(|tables| !tables.roots.is_empty());
-                    (shape.property.as_str(), has_root)
+                .filter_map(|shape| {
+                    let tables = crate::brep::Tables::from_payload(shape)?;
+                    Some((shape.property.as_str(), !tables.roots.is_empty()))
                 })
                 .collect(),
             named: HashMap::new(),
@@ -281,49 +284,42 @@ impl<'a> Catalog<'a> {
             holders.insert(property.id.as_str(), property.owner.as_str());
             let held = (property.owner.as_str(), property.name.as_str());
             catalog.properties.insert(held, property);
-            let empty = |tag: &str, key: &str| {
-                property.values().iter().any(|value| {
-                    value.tag == tag && value.attributes.get(key).is_some_and(String::is_empty)
-                })
-            };
-            let refused = match property.type_name.as_str() {
-                "App::PropertyXLink" | "App::PropertyXLinkHidden" => {
-                    empty("XLink", "name")
-                        || property.values().iter().any(|value| {
-                            value.tag == "XLink"
-                                && (value.attributes.contains_key("sub")
-                                    || value.attributes.contains_key("count"))
-                        })
-                }
+            let carrier = match property.type_name.as_str() {
+                "App::PropertyXLink" | "App::PropertyXLinkHidden" => Some(("XLink", "name")),
                 "App::PropertyLink"
                 | "App::PropertyLinkChild"
                 | "App::PropertyLinkGlobal"
-                | "App::PropertyLinkHidden" => empty("Link", "value"),
-                _ => false,
+                | "App::PropertyLinkHidden" => Some(("Link", "value")),
+                _ => None,
             };
-            if refused {
-                catalog.refused.insert(held);
-            } else if matches!(
-                property.type_name.as_str(),
-                "App::PropertyLink"
-                    | "App::PropertyLinkChild"
-                    | "App::PropertyLinkGlobal"
-                    | "App::PropertyLinkHidden"
-                    | "App::PropertyXLink"
-                    | "App::PropertyXLinkHidden"
-            ) {
-                if let [Some(link)] = property.links() {
-                    if link.document().is_none() && link.subelements().is_empty() {
-                        if let Some(target) = link.object().and_then(|id| ids.get(id)) {
-                            catalog.linked.insert(held, *target);
-                        }
+            if let Some((tag, key)) = carrier {
+                let empty = property.values().iter().any(|value| {
+                    value.tag == tag && value.attributes.get(key).is_some_and(String::is_empty)
+                });
+                let target = match (empty, property.links()) {
+                    (true, _) => Some(ScalarLink::Null),
+                    (_, [Some(link)]) if link.document().is_some() => Some(ScalarLink::External),
+                    (_, [Some(link)]) => {
+                        let object = link.object().and_then(|id| ids.get(id));
+                        Some(match object {
+                            Some(object) if object.id() != &property.owner => {
+                                if link.subelements().is_empty() {
+                                    ScalarLink::Local(object)
+                                } else {
+                                    ScalarLink::Tuple
+                                }
+                            }
+                            _ => ScalarLink::Null,
+                        })
                     }
+                    _ => None,
+                };
+                if let Some(target) = target {
+                    catalog.links.insert(held, target);
                 }
             }
             if property.type_name == "App::PropertyPythonObject" {
-                catalog
-                    .python
-                    .insert(held, python::object(property, sources.entries));
+                catalog.python.insert(property.id.as_str(), OnceCell::new());
             }
             let label = (property.name == "Label" && property.type_name == "App::PropertyString")
                 .then(|| property.values().iter().find(|value| value.tag == "String"))
@@ -413,7 +409,7 @@ impl<'a> Catalog<'a> {
         while let Some((name, sub)) = rest.split_first() {
             let held = (object.id().as_str(), name.as_str());
             if !sub.is_empty() {
-                if let Some(target) = self.linked.get(&held) {
+                if let Some(ScalarLink::Local(target)) = self.links.get(&held) {
                     if matches!(sub, [label] if matches!(label.as_str(), "Label" | "Label2")) {
                         return Target::Property(Value::of(&[Class::Text]));
                     }
@@ -424,16 +420,36 @@ impl<'a> Catalog<'a> {
                 }
             }
             let typed = self.properties.get(&held).map(|property| {
-                if self.refused.contains(&held) {
-                    Value::of(&[Class::Refused])
-                } else {
-                    property_value(
-                        &property.type_name,
-                        sub,
-                        self.python.get(&held),
-                        self.shapes.get(property.id.as_str()).copied(),
-                        indirect,
-                    )
+                match (self.links.get(&held), sub.is_empty()) {
+                    (Some(ScalarLink::Null), true) => Value::none(),
+                    (Some(ScalarLink::Null | ScalarLink::Tuple), false) => {
+                        Value::of(&[Class::Raises])
+                    }
+                    (Some(ScalarLink::Tuple), true) => Value::of(&[Class::Tuple]),
+                    (Some(ScalarLink::Local(_)), true) => Value::of(&[Class::Object]),
+                    (Some(ScalarLink::External), _) => Value::any(),
+                    _ if sub.is_empty() && property.type_name == "App::PropertyPythonObject" => {
+                        self.python[property.id.as_str()]
+                            .get_or_init(|| python::object(property, self.entries))
+                            .clone()
+                    }
+                    _ => {
+                        let has_root =
+                            self.shapes.get(property.id.as_str()).copied().or_else(|| {
+                                property
+                                    .values()
+                                    .iter()
+                                    .any(|value| {
+                                        value.tag == "Part"
+                                            && value
+                                                .attributes
+                                                .get("file")
+                                                .is_some_and(String::is_empty)
+                                    })
+                                    .then_some(false)
+                            });
+                        property_value(property, sub, has_root, indirect)
+                    }
                 }
             });
             let key = std::iter::once(name.replace('$', ""))
@@ -480,40 +496,49 @@ impl<'a> Catalog<'a> {
         let (from, to) = (corner(from)?, corner(to)?);
         let rows = from.row().min(to.row())..=from.row().max(to.row());
         let columns = from.col().min(to.col())..=from.col().max(to.col());
-        Some(
-            cells
-                .iter()
-                .filter(|(address, _)| {
-                    rows.contains(&address.row()) && columns.contains(&address.col())
-                })
-                .map(|(_, id)| *id)
-                .collect(),
-        )
+        let mut selected = cells
+            .iter()
+            .filter(|(address, _)| {
+                rows.contains(&address.row()) && columns.contains(&address.col())
+            })
+            .collect::<Vec<_>>();
+        selected.sort_unstable_by_key(|(address, _)| (address.col(), address.row()));
+        Some(selected.into_iter().map(|(_, id)| *id).collect())
     }
 }
 
 /// The value of a property of type `type_name`, or of its component `sub`
-/// (`getPyObject`, `getPyPathValue`), where `python` is the stored value of a
-/// Python object property. A link property's `Label` and `Label2` are those
-/// of the object it names; a link with sub-names and a color are tuples, and
-/// an integer set is a `set`.
+/// (`getPyObject`, `getPyPathValue`).
 fn property_value(
-    type_name: &str,
+    property: &PropertyRecord,
     sub: &[String],
-    python: Option<&Value>,
     shape_has_root: Option<bool>,
     indirect: bool,
 ) -> Value {
+    let type_name = property.type_name.as_str();
     let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
-    let quantity = |quantity| Value::of(&[Class::Quantity(Some(quantity))]);
+    let raw = |tag: &str| match property.values() {
+        [value] if value.tag == tag => value.attributes.get("value").map(String::as_str),
+        _ => None,
+    };
+    let quantity = |quantity| Value::of(&[Class::quantity(quantity)]);
+    let scalar = |class, tag| Value::numeric(class, raw(tag).and_then(|value| value.parse().ok()));
     match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
-        (Some("Integer" | "IntegerConstraint" | "Percent"), []) => Value::of(&[Class::Int]),
-        (Some("Float" | "FloatConstraint" | "Precision"), [])
-        | (
+        (Some("Integer" | "IntegerConstraint" | "Percent"), []) => Value::numeric(
+            Class::Int,
+            raw("Integer")
+                .and_then(|value| value.parse::<i32>().ok())
+                .map(f64::from),
+        ),
+        (Some("Float" | "FloatConstraint" | "Precision"), []) => scalar(Class::Float, "Float"),
+        (
             Some("Placement"),
             ["Rotation", "Axis", "x" | "y" | "z"] | ["Rotation", "Yaw" | "Pitch" | "Roll"],
         ) => Value::of(&[Class::Float]),
-        (Some("Bool"), []) => Value::of(&[Class::Boolean]),
+        (Some("Bool"), []) => Value::numeric(
+            Class::Boolean,
+            raw("Bool").map(|value| f64::from(u8::from(value == "true"))),
+        ),
         (Some("Placement"), ["Base", "x" | "y" | "z"])
         | (Some("VectorDistance" | "Position" | "Direction"), ["x" | "y" | "z"])
             if !indirect =>
@@ -534,33 +559,58 @@ fn property_value(
         }
         (Some("Placement"), ["Rotation"]) => Value::of(&[Class::Object]),
         (Some("Quantity" | "QuantityConstraint"), []) => Value::of(&[Class::Quantity(None)]),
-        (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font" | "UUID"), [])
-        | (
-            Some("Link" | "LinkChild" | "LinkGlobal" | "LinkHidden" | "XLink"),
-            ["Label" | "Label2"],
-        ) => Value::of(&[Class::Text]),
+        (Some("Enumeration"), []) if indirect => {
+            if enumeration_index(property).is_some() {
+                Value::of(&[Class::Text])
+            } else {
+                Value::of(&[Class::Text, Class::Refused])
+            }
+        }
+        (Some("Enumeration"), []) => Value::numeric(Class::Int, enumeration_index(property)),
+        (Some("Enumeration"), ["String"]) if !indirect => {
+            if enumeration_index(property).is_some() {
+                Value::of(&[Class::Text])
+            } else {
+                Value::of(&[Class::Text, Class::Raises])
+            }
+        }
+        (Some("Enumeration"), ["Enum" | "All"]) if !indirect => {
+            Value::of(&[Class::Tuple, Class::Raises])
+        }
+        (Some("String" | "File" | "FileIncluded" | "Font" | "UUID"), []) => {
+            raw("String").map_or_else(|| Value::of(&[Class::Text]), Value::text)
+        }
+        (Some("Path"), []) => raw("Path").map_or_else(|| Value::of(&[Class::Text]), Value::text),
         (Some("Vector" | "VectorDistance" | "Position" | "Direction"), []) => {
             Value::of(&[Class::Vector])
         }
         (
             Some(
                 "LinkSub" | "LinkSubChild" | "LinkSubGlobal" | "LinkSubHidden" | "XLinkSub"
-                | "XLinkSubHidden" | "Color" | "IntegerSet",
+                | "XLinkSubHidden",
             ),
             [],
-        ) => Value::of(&[Class::Refused]),
+        ) => Value::of(&[Class::Tuple, Class::Refused]),
+        (Some("Color"), []) => Value::of(&[Class::Tuple]),
+        (Some("IntegerSet"), []) => Value::of(&[Class::Refused]),
+        (Some("Placement"), []) => Value::of(&[Class::Placement]),
         (
             Some(
-                "Placement" | "Rotation" | "Matrix" | "Link" | "LinkChild" | "LinkGlobal"
-                | "LinkHidden" | "XLink" | "XLinkHidden" | "LinkList" | "LinkListChild"
-                | "LinkListGlobal" | "LinkListHidden" | "XLinkList" | "StringList" | "Map"
-                | "Material",
+                "LinkList" | "LinkListChild" | "LinkListGlobal" | "LinkListHidden" | "XLinkList"
+                | "LinkSubList" | "LinkSubListChild" | "LinkSubListGlobal" | "LinkSubListHidden"
+                | "XLinkSubList" | "IntegerList" | "FloatList" | "StringList" | "BoolList"
+                | "ColorList" | "MaterialList" | "VectorList" | "PlacementList",
             ),
             [],
-        ) => Value::of(&[Class::Object]),
-        (Some(name), []) if name.ends_with("List") => Value::of(&[Class::Object]),
-        (Some("PythonObject"), []) => python.cloned().unwrap_or_else(Value::any),
-        (Some(name), []) => property_quantity(name).map_or_else(Value::any, quantity),
+        ) => Value::of(&[Class::List]),
+        (Some("Map"), []) => Value::of(&[Class::Dict]),
+        (Some("Rotation" | "Matrix" | "Material"), []) => Value::of(&[Class::Object]),
+        (Some(name), []) => property_quantity(name)
+            .map(Dimensions::from_quantity)
+            .or_else(|| property_native_dimensions(name))
+            .map_or_else(Value::any, |dimensions| {
+                scalar(Class::Quantity(Some(dimensions)), "Float")
+            }),
         (None, ["Length" | "Area" | "Volume"]) if type_name == "Part::PropertyPartShape" => {
             Value::of(match shape_has_root {
                 Some(true) => &[Class::Float],
@@ -568,16 +618,23 @@ fn property_value(
                 None => &[Class::Float, Class::Raises],
             })
         }
-        (None, []) if type_name == "Part::PropertyShapeHistory" => Value::of(&[Class::Refused]),
+        (None, []) if type_name == "Part::PropertyShapeHistory" => Value::none(),
         (None, [])
             if matches!(
                 type_name,
-                "Part::PropertyPartShape"
-                    | "Part::PropertyGeometryList"
+                "Part::PropertyGeometryList"
                     | "Part::PropertyTopoShapeList"
                     | "Part::PropertyFilletEdges"
                     | "Part::PropertyShapeCache"
                     | "Sketcher::PropertyConstraintList"
+            ) =>
+        {
+            Value::of(&[Class::List])
+        }
+        (None, [])
+            if matches!(
+                type_name,
+                "Part::PropertyPartShape"
                     | "Spreadsheet::PropertySheet"
                     | "Spreadsheet::PropertyColumnWidths"
                     | "Spreadsheet::PropertyRowHeights"
@@ -587,6 +644,53 @@ fn property_value(
         }
         _ => Value::any(),
     }
+}
+
+fn enumeration_index(property: &PropertyRecord) -> Option<f64> {
+    let [index, items] = property.values() else {
+        return None;
+    };
+    if index.tag != "Integer"
+        || !index.attributes.contains_key("CustomEnum")
+        || items.tag != "CustomEnumList"
+    {
+        return None;
+    }
+    let index: i32 = index.attributes.get("value")?.parse().ok()?;
+    let count: i32 = items.attributes.get("count")?.parse().ok()?;
+    (0..count).contains(&index).then_some(f64::from(index))
+}
+
+fn property_native_dimensions(name: &str) -> Option<Dimensions> {
+    let dimensions = match name {
+        "AmountOfSubstance" => [0, 0, 0, 0, 0, 0, 1, 0],
+        "CurrentDensity" => [-2, 0, 0, 0, 1, 0, 0, 0],
+        "ElectricalCapacitance" => [-2, -1, 0, 4, 2, 0, 0, 0],
+        "ElectricalInductance" => [2, 1, 0, -2, -2, 0, 0, 0],
+        "ElectricalConductance" => [-2, -1, 0, 3, 2, 0, 0, 0],
+        "ElectricalConductivity" => [-3, -1, 0, 3, 2, 0, 0, 0],
+        "ElectricalResistance" => [2, 1, 0, -3, -2, 0, 0, 0],
+        "ElectricCharge" => [0, 0, 0, 1, 1, 0, 0, 0],
+        "SurfaceChargeDensity" => [-2, 0, 0, 1, 1, 0, 0, 0],
+        "VolumeChargeDensity" => [-3, 0, 0, 1, 1, 0, 0, 0],
+        "ElectricCurrent" => [0, 0, 0, 0, 1, 0, 0, 0],
+        "ElectricPotential" => [2, 1, 0, -3, -1, 0, 0, 0],
+        "LuminousIntensity" => [0, 0, 0, 0, 0, 0, 0, 1],
+        "MagneticFieldStrength" | "Magnetization" => [-1, 0, 0, 0, 1, 0, 0, 0],
+        "MagneticFlux" => [2, 1, 0, -2, -1, 0, 0, 0],
+        "MagneticFluxDensity" => [0, 1, 0, -2, -1, 0, 0, 0],
+        "ElectromagneticPotential" => [1, 1, 0, -2, -1, 0, 0, 0],
+        "SpecificHeat" => [2, 0, 0, -2, 0, -1, 0, 0],
+        "Temperature" => [0, 0, 0, 0, 0, 1, 0, 0],
+        "ThermalConductivity" => [1, 1, 0, -3, 0, -1, 0, 0],
+        "ThermalExpansionCoefficient" | "VolumetricThermalExpansionCoefficient" => {
+            [0, 0, 0, 0, 0, -1, 0, 0]
+        }
+        "ThermalTransferCoefficient" => [0, 1, 0, -3, 0, -1, 0, 0],
+        "VacuumPermittivity" => [-3, -1, 0, 4, 2, 0, 0, 0],
+        _ => return None,
+    };
+    Some(Dimensions(dimensions))
 }
 
 /// The quantity of a quantity property `App::Property<name>`.
@@ -620,6 +724,9 @@ fn property_quantity(name: &str) -> Option<Quantity> {
         "DynamicViscosity" => Quantity::of(-1, 1, 0, -1),
         "SpecificEnergy" => Quantity::of(2, 0, 0, -2),
         "DissipationRate" => Quantity::of(2, 0, 0, -3),
+        "HeatFlux" => Quantity::of(0, 1, 0, -3),
+        "Stiffness" => Quantity::of(0, 1, 0, -2),
+        "StiffnessDensity" => Quantity::of(-2, 1, 0, -2),
         "Float" | "FloatConstraint" | "Precision" | "Integer" | "IntegerConstraint" | "Percent" => {
             Quantity::REAL
         }
@@ -651,25 +758,27 @@ impl CellValue {
 fn cell_values<'a>(
     parameters: &BTreeMap<&'a ParameterId, &'a LegacyParameter>,
     formulas: &BTreeMap<&'a ParameterId, Result<formula::Node<'a>, Unparsed>>,
-    catalog: &Catalog<'a>,
+    catalog: &Catalog<'a, '_>,
     is_cell: &dyn Fn(&LegacyParameter) -> bool,
 ) -> (
     HashMap<&'a ParameterId, CellValue>,
     BTreeSet<&'a ParameterId>,
 ) {
-    let text = || Value::of(&[Class::Text]);
     let mut values = HashMap::new();
     let mut assumed = BTreeSet::new();
     for parameter in parameters.values().filter(|parameter| is_cell(parameter)) {
         let value = match cell_content::read(&parameter.expression) {
-            CellContent::Text(_) => text(),
-            CellContent::Value(value) => Value::of(&[match value.kind {
-                CellKind::Quantity(Quantity::REAL) => Value::number(value.number),
-                CellKind::Quantity(quantity) => Class::Quantity(Some(quantity)),
-                CellKind::Native(_) => Class::Quantity(None),
-            }]),
+            CellContent::Text(text) => Value::text(text),
+            CellContent::Value(value) => Value::numeric(
+                if value.dimensions == Dimensions::REAL {
+                    Value::number(value.freecad_number.unwrap_or(value.number))
+                } else {
+                    Class::Quantity(Some(value.dimensions))
+                },
+                value.freecad_number,
+            ),
             CellContent::Formula(_) => match formulas.get(&parameter.id) {
-                Some(Err(Unparsed::Syntax)) => text(),
+                Some(Err(Unparsed::Syntax)) => Value::text(parameter.expression.as_str()),
                 Some(Ok(_) | Err(Unparsed::Limit)) | None => continue,
             },
         };
@@ -728,7 +837,7 @@ fn cell_values<'a>(
             id,
             CellValue {
                 kind: value.kind(),
-                value: pending[id].stored(&value),
+                value: value.stored(),
             },
         );
         for dependent in dependents.get(id).into_iter().flatten() {
@@ -751,8 +860,8 @@ fn cell_values<'a>(
 
 /// The values a formula's paths take: a parameter's from its cell's value
 /// or its stored value, and a property's from its type.
-struct Lookup<'c, 'a> {
-    catalog: &'c Catalog<'a>,
+struct Lookup<'c, 'a, 'data> {
+    catalog: &'c Catalog<'a, 'data>,
     values: &'c HashMap<&'a ParameterId, CellValue>,
     owner: Option<&'c FeatureId>,
     /// A cell of no kind the file determines is the real it is projected
@@ -763,14 +872,14 @@ struct Lookup<'c, 'a> {
     assumed: bool,
 }
 
-impl Lookup<'_, '_> {
+impl Lookup<'_, '_, '_> {
     /// The value of parameter `id`, whose property has the value `typed`
     /// where the property has a stated type: a cell's from its result, and
     /// another parameter's from its property's type and its stored value.
     fn parameter(&self, id: &ParameterId, typed: Option<Value>) -> Value {
         if let Some(cell) = self.values.get(id) {
             return if self.projected && cell.kind == Kind::Unknown {
-                Value::of(&[Class::Quantity(Some(Quantity::REAL))])
+                Value::of(&[Class::quantity(Quantity::REAL)])
             } else {
                 cell.value.clone()
             };
@@ -779,33 +888,38 @@ impl Lookup<'_, '_> {
             return typed.unwrap_or_else(Value::any);
         };
         let stored = match &parameter.value {
-            Some(LegacyValue::Length(_)) => Value::of(&[Class::Quantity(Some(Quantity::LENGTH))]),
-            Some(LegacyValue::Angle(_)) => Value::of(&[Class::Quantity(Some(Quantity::ANGLE))]),
+            Some(LegacyValue::Length(length)) => {
+                Value::numeric(Class::quantity(Quantity::LENGTH), Some(length.get()))
+            }
+            Some(LegacyValue::Angle(angle)) => Value::numeric(
+                Class::quantity(Quantity::ANGLE),
+                Some(angle.get().to_degrees()),
+            ),
             Some(LegacyValue::Real(_)) => Value::of(&[Class::Int, Class::Float]),
-            Some(LegacyValue::Integer(_)) => Value::of(&[Class::Int]),
-            Some(LegacyValue::Boolean(_)) => Value::of(&[Class::Boolean]),
-            Some(LegacyValue::String(_)) => Value::of(&[Class::Text]),
+            Some(LegacyValue::Integer(value)) => {
+                Value::numeric(Class::Int, i32::try_from(*value).ok().map(f64::from))
+            }
+            Some(LegacyValue::Boolean(value)) => {
+                Value::numeric(Class::Boolean, Some(f64::from(u8::from(*value))))
+            }
+            Some(LegacyValue::String(text)) => Value::text(text.as_str()),
             None => Value::any(),
         };
         match (typed, stored.kind()) {
             (Some(typed), _) if typed.is_any() => stored,
-            (Some(typed), Kind::Quantity(quantity)) => Value::of(
-                &typed
-                    .classes()
-                    .iter()
-                    .map(|class| match class {
-                        Class::Quantity(None) => Class::Quantity(Some(quantity)),
-                        _ => *class,
-                    })
-                    .collect::<Vec<_>>(),
-            ),
+            (Some(typed), Kind::Quantity(quantity))
+                if typed.classes() == [Class::Quantity(None)] =>
+            {
+                Value::numeric(Class::quantity(quantity), stored.numeric_fact())
+            }
+            (Some(typed), Kind::Quantity(_)) => typed,
             (Some(typed), Kind::Boolean | Kind::Text | Kind::Unknown) => typed,
             (None, _) => stored,
         }
     }
 }
 
-impl Scope for Lookup<'_, '_> {
+impl Scope for Lookup<'_, '_, '_> {
     fn path(&mut self, path: &Path) -> Value {
         match self.catalog.resolve(self.owner, path) {
             Target::Parameter { id, typed, .. } => self.parameter(id, typed),
@@ -825,8 +939,8 @@ impl Scope for Lookup<'_, '_> {
 }
 
 /// What the projection of a parameter's expression reads.
-struct Context<'c, 'a> {
-    catalog: &'c Catalog<'a>,
+struct Context<'c, 'a, 'data> {
+    catalog: &'c Catalog<'a, 'data>,
     values: &'c HashMap<&'a ParameterId, CellValue>,
     /// The formula cells whose kind takes a plain number of unstated value
     /// as an `int`.
@@ -860,7 +974,7 @@ fn name(parameter: &LegacyParameter) -> Option<NonBlankString> {
 fn cell(
     parameter: &LegacyParameter,
     formula: Option<&Result<formula::Node<'_>, Unparsed>>,
-    context: &Context<'_, '_>,
+    context: &Context<'_, '_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> (ValueKind, Option<ParameterValue>, Expression) {
     let content = parameter.expression.as_str();
@@ -1026,7 +1140,7 @@ fn kind_and_value(value: Option<&LegacyValue>) -> (ValueKind, Option<ParameterVa
 /// stored value and charged a loss.
 fn expression(
     parameter: &LegacyParameter,
-    context: &Context<'_, '_>,
+    context: &Context<'_, '_, '_>,
     kind: &ValueKind,
     carrier: Option<&str>,
     losses: &mut Vec<LossNote>,
@@ -1189,7 +1303,7 @@ fn translated(
     parameter: &LegacyParameter,
     text: &str,
     node: &formula::Node<'_>,
-    context: &Context<'_, '_>,
+    context: &Context<'_, '_, '_>,
     stated: Kind,
     kind: Option<&ValueKind>,
     losses: &mut Vec<LossNote>,
@@ -1241,7 +1355,8 @@ fn translated(
     }
     if !indirect.is_empty() {
         losses.push(FreecadLossCode::ParameterDependencyDropped.note(format!(
-            "FCStd parameter {} references {} through a link; the reference stays the +             source's text",
+            "FCStd parameter {} references {} through a link; the reference stays the \
+             source's text",
             parameter.id.as_str(),
             indirect.join(", ")
         )));
@@ -1329,7 +1444,13 @@ fn neutral_text(
                 Operator::Multiply => "*",
                 Operator::Divide => "/",
                 Operator::Power => "^",
-                Operator::Remainder | Operator::Equal | Operator::Order => return None,
+                Operator::Remainder
+                | Operator::Equal
+                | Operator::NotEqual
+                | Operator::Less
+                | Operator::LessEqual
+                | Operator::Greater
+                | Operator::GreaterEqual => return None,
             };
             let left = neutral_text(left, spans, refs)?;
             let right = match right.as_ref() {

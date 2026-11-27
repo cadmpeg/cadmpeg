@@ -44,7 +44,7 @@ impl Scope for Names {
 }
 
 fn quantity(quantity: Quantity) -> Class {
-    Class::Quantity(Some(quantity))
+    Class::quantity(quantity)
 }
 
 fn cells(classes: &[Class]) -> Vec<Value> {
@@ -98,7 +98,7 @@ fn operators_follow_the_unit_rules() {
     assert_eq!(kind("7 % 2 mm"), Kind::Unknown);
     assert_eq!(kind("1 mm < 2 mm"), Kind::Boolean);
     assert_eq!(kind("1 > 2 ? 3 mm : 4 mm"), LENGTH);
-    assert_eq!(kind("1 > 2 ? 3 mm : 4"), Kind::Unknown);
+    assert_eq!(kind("1 > 2 ? 3 mm : 4"), REAL);
 }
 
 #[test]
@@ -157,7 +157,6 @@ fn text_times_a_number_repeats_only_for_an_int() {
         "<<a>> * 2",
         "3 * <<a>>",
         "<<a>> * 2.0",
-        "<<a>> * (1 + 2) % 2",
         "<<a>> * -2",
         "<<a>> * True",
         "<<a>> * Flag",
@@ -183,6 +182,7 @@ fn text_times_a_number_repeats_only_for_an_int() {
         "<<a>> * abs(2)",
         "<<a>> * 2 mm",
         "<<a>> * 2^-1",
+        "<<a>> * (1 + 2) % 2",
         // An average of no number is NaN.
         "<<a>> * average(<<b>>)",
     ] {
@@ -197,7 +197,6 @@ fn text_times_a_number_of_unstated_value_takes_it_as_an_int() {
         "<<a>> * Cell",
         "<<a>> * average(Cell; 3)",
         "<<a>> * max(Cell; 2)",
-        "<<a>> * 2^Cell",
         "<<a>> * (Cell > 1 ? 2 : Cell)",
     ] {
         let mut scope = Names::default();
@@ -297,7 +296,7 @@ fn an_aggregate_passes_over_a_value_that_is_no_number() {
     let mut scope = Names::default();
     scope.insert("Part", &[Refused]);
     scope.insert("Proxy", &[Refused]);
-    scope.insert("Placement", &[Object]);
+    scope.insert("Placement", &[Class::Placement]);
     scope.insert("Base", &[Vector]);
     for (text, expected) in [
         ("sum(Part; 2 mm)", LENGTH),
@@ -343,7 +342,7 @@ fn stddev_of_fewer_than_two_values_raises() {
 #[test]
 fn a_numeric_function_raises_on_an_object_that_is_no_number() {
     let mut scope = Names::default();
-    scope.insert("Placement", &[Object]);
+    scope.insert("Placement", &[Class::Placement]);
     scope.insert("Base", &[Vector]);
     for text in [
         "cos(Placement) == 1",
@@ -372,7 +371,7 @@ fn a_cell_that_raises_holds_text() {
     let node = parse("cos(5 mm)").unwrap();
     let value = node.value(&mut Names::default());
     assert_eq!(value, Value::of(&[Class::Raises]));
-    assert_eq!(node.stored(&value), Value::of(&[Text]));
+    assert_eq!(value.stored(), Value::of(&[Text]));
 }
 
 #[test]
@@ -444,7 +443,75 @@ fn functions_follow_the_unit_rules() {
     assert_eq!(kind("hypot(3 mm; 4 mm)"), LENGTH);
     assert_eq!(kind("max(3 mm; 4 mm)"), LENGTH);
     assert_eq!(kind("max(3 mm; 4 °)"), Kind::Unknown);
-    assert_eq!(kind("unknownfn(3)"), Kind::Unknown);
+    assert!(matches!(parse("unknownfn(3)"), Err(Unparsed::Syntax)));
+}
+
+#[test]
+fn formula_results_require_a_proven_operation() {
+    let mut scope = Names::default();
+    scope.insert("Operand", &[Object]);
+    scope
+        .paths
+        .insert("A1".into(), Value::numeric(Int, Some(2.0)));
+    for text in [
+        "(1 / 0) == 1",
+        "(1 % 0) == 1",
+        "<<%d>> % <<bad>>",
+        "<<%s %s>> % 1",
+        "<<%k>> % 1",
+        "address(1; 1; 5)",
+        "address(1; 0)",
+        "address(1; 1; 1.5)",
+        "list(cos(5 mm); 1)",
+        "tuple(cos(5 mm))",
+        "translationm(tuple(1; <<x>>; 3))",
+        "create(<<vector>>; <<bad>>; 2; 3)",
+    ] {
+        assert_eq!(
+            parse(text).unwrap().value(&mut scope).classes(),
+            &[Class::Raises],
+            "{text}"
+        );
+    }
+    for text in [
+        "cos(0; 0) == 1",
+        "sum(no_such_function(1); 2 mm)",
+        "tuple()",
+        "address(1)",
+        "Vars.K",
+    ] {
+        assert!(matches!(parse(text), Err(Unparsed::Syntax)), "{text}");
+    }
+    for (text, expected) in [
+        ("2 > 1 ? 4 mm : 5", LENGTH),
+        ("1 == 2 ? cos(5 mm) : 4 mm", LENGTH),
+        ("pow(4 mm; A1)", AREA),
+        ("<<x>> * average(A1; 4)", Kind::Text),
+        ("pow(4 mm; count(A1; 4))", AREA),
+        ("4 A / 2 A", REAL),
+        ("4 V / 2 V", REAL),
+        ("2 A * 3 Ohm / 2 V", REAL),
+        ("sum(list(1; 2) + list(3); 2 mm)", LENGTH),
+        ("sum(create(<<vector>>); 2 mm)", LENGTH),
+        (
+            "vangle(create(<<vector>>; 1; 2; 3); vector(1; 0; 0))",
+            ANGLE,
+        ),
+        (
+            "vangle(vector(1; 2; 3) + vector(1; 2; 3); vector(1; 0; 0))",
+            ANGLE,
+        ),
+        ("(vector(1; 2; 3) * vector(4; 5; 6)) + 2", REAL),
+        ("sum(translationm(vector(1; 2; 3)); 2 mm)", LENGTH),
+        ("sum(translationm(tuple(1; 2; 3)); 2 mm)", LENGTH),
+        ("parsequant(<<2 mm>>)", LENGTH),
+        ("address(1; 1; 4)", Kind::Text),
+        ("(Operand + 2) == 1", Kind::Unknown),
+        ("Operand == 1", Kind::Unknown),
+    ] {
+        assert_eq!(kind_in(text, &mut scope), expected, "{text}");
+        assert!(!scope.assumed, "{text}");
+    }
 }
 
 #[test]

@@ -4,7 +4,7 @@ use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::design::expr::{Expression, Neutral};
-use cadmpeg_ir::design::parameter::{DesignParameter, ParameterOwner};
+use cadmpeg_ir::design::parameter::{DesignParameter, ParameterOwner, ParameterValue};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::features::parameters::ParameterValue as LegacyValue;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
@@ -510,12 +510,12 @@ fn a_python_property_takes_its_json_class_from_the_named_member() {
         let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
         assert_eq!(parameter(&ir, &id).kind, expected, "{address}");
         assert_eq!(
-            charged(
+            charge_count(
                 &losses,
                 crate::loss::FreecadLossCode::ParameterQuantityAssumed,
                 &id
             ),
-            assumed,
+            usize::from(assumed),
             "{address}"
         );
     }
@@ -524,11 +524,14 @@ fn a_python_property_takes_its_json_class_from_the_named_member() {
 #[test]
 fn a_formula_reads_typed_values_through_local_links_and_shape_paths() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/><Object name="Stock" type="Part::Feature"/></Objects>
-<ObjectData Count="3">
+<Objects Count="4"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/><Object name="Stock" type="Part::Feature"/><Object name="Relay" type="App::FeaturePython"/></Objects>
+<ObjectData Count="4">
 <Object name="Vars"><Properties Count="2">
 <Property name="Ref" type="App::PropertyLink"><Link value="Stock"/></Property>
-<Property name="Again" type="App::PropertyXLink"><XLink file="" name="Vars"/></Property>
+<Property name="Again" type="App::PropertyXLink"><XLink file="" name="Relay"/></Property>
+</Properties></Object>
+<Object name="Relay"><Properties Count="1">
+<Property name="Ref" type="App::PropertyLink"><Link value="Stock"/></Property>
 </Properties></Object>
 <Object name="Stock"><Properties Count="3">
 <Property name="Width" type="App::PropertyLength"><Float value="12"/></Property>
@@ -562,12 +565,12 @@ fn a_formula_reads_typed_values_through_local_links_and_shape_paths() {
         let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
         assert_eq!(parameter(&ir, &id).kind, expected, "{address}");
         assert_eq!(
-            charged(
+            charge_count(
                 &losses,
                 crate::loss::FreecadLossCode::ParameterQuantityAssumed,
                 &id
             ),
-            assumed,
+            usize::from(assumed),
             "{address}"
         );
     }
@@ -578,10 +581,147 @@ fn charged(
     code: crate::loss::FreecadLossCode,
     id: &str,
 ) -> bool {
+    charge_count(losses, code, id) != 0
+}
+
+fn charge_count(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    code: crate::loss::FreecadLossCode,
+    id: &str,
+) -> usize {
     let code = code.note("").code;
     losses
         .iter()
-        .any(|loss| loss.code == code && loss.message.contains(id))
+        .filter(|loss| {
+            loss.code == code && loss.message.split_ascii_whitespace().any(|word| word == id)
+        })
+        .count()
+}
+
+#[test]
+fn spreadsheet_formulas_keep_proven_kinds_and_distinguish_syntax_from_errors() {
+    use crate::loss::FreecadLossCode::{ParameterIntegerAssumed, ParameterQuantityAssumed};
+
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/><Object name="Stock" type="Part::Feature"/></Objects>
+<ObjectData Count="3">
+<Object name="Vars"><Properties Count="10">
+<Property name="Mode" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="2"><Enum value="one"/><Enum value="two"/></CustomEnumList></Property>
+<Property name="SpringRate" type="App::PropertyStiffness"><Float value="7"/></Property>
+<Property name="Heat" type="App::PropertyHeatFlux"><Float value="5"/></Property>
+<Property name="Density" type="App::PropertyStiffnessDensity"><Float value="3"/></Property>
+<Property name="Path" type="App::PropertyPath"><Path value="model"/></Property>
+<Property name="Target" type="App::PropertyLink"><Link value="Missing"/></Property>
+<Property name="Self" type="App::PropertyLink"><Link value="Vars"/></Property>
+<Property name="Flag" type="App::PropertyPythonObject"><Python value="dHJ1ZQ" encoded="yes" json="yes"/></Property>
+<Property name="Other" type="App::PropertyPythonObject"><Python value="ZmFsc2U" encoded="yes" json="yes"/></Property>
+<Property name="Current" type="App::PropertyElectricCurrent"><Float value="4"/></Property>
+</Properties></Object>
+<Object name="Stock"><Properties Count="1">
+<Property name="Shape" type="Part::PropertyPartShape"><Part file=""/></Property>
+</Properties></Object>
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="31">
+<Cell address="A1" content="2"/>
+<Cell address="A3" content="=sum(list(1; 2) + list(3); 2 mm)"/>
+<Cell address="A4" content="=sum(create(&lt;&lt;vector&gt;&gt;); 2 mm)"/>
+<Cell address="A7" content="=pow(4 mm; A1)"/>
+<Cell address="A8" content="=cos(0; 0) == 1"/>
+<Cell address="A9" content="=&lt;&lt;%d&gt;&gt; % &lt;&lt;bad&gt;&gt;"/>
+<Cell address="A10" content="=(1 / 0) == 1"/>
+<Cell address="A11" content="=&lt;&lt;x&gt;&gt; * average(A1; 4)"/>
+<Cell address="A21" content="=(vector(1; 2; 3) * vector(4; 5; 6)) + 2"/>
+<Cell address="A22" content="=vangle(vector(1; 2; 3) + vector(1; 2; 3); vector(1; 0; 0))"/>
+<Cell address="A24" content="=vangle(create(&lt;&lt;vector&gt;&gt;; 1; 2; 3); vector(1; 0; 0))"/>
+<Cell address="A28" content="=(2 &gt; 1 ? 4 mm : 5)"/>
+<Cell address="A29" content="=sum(no_such_function(1); 2 mm)"/>
+<Cell address="B1" content="=sum(translationm(vector(1; 2; 3)); 2 mm)"/>
+<Cell address="B2" content="=sum(translationm(tuple(1; 2; 3)); 2 mm)"/>
+<Cell address="B3" content="=parsequant(&lt;&lt;2 mm&gt;&gt;)"/>
+<Cell address="B4" content="=address(1; 1; 5)"/>
+<Cell address="B5" content="=(4 A / 2 A)"/>
+<Cell address="B6" content="=pow(4 mm; count(A1; 4))"/>
+<Cell address="C1" content="=Vars.Mode"/>
+<Cell address="C2" content="=Vars.SpringRate"/>
+<Cell address="C3" content="=Vars.Heat"/>
+<Cell address="C4" content="=Vars.Density"/>
+<Cell address="C5" content="=Vars.Path + &lt;&lt;suffix&gt;&gt;"/>
+<Cell address="C6" content="=Vars.Target == 1"/>
+<Cell address="C7" content="=Vars.Self == 1"/>
+<Cell address="C8" content="=Stock.Shape.Length"/>
+<Cell address="C9" content="=sum(C8; 2 mm)"/>
+<Cell address="D1" content="=Vars.Flag == 1"/>
+<Cell address="D2" content="=Vars.Other"/>
+<Cell address="D3" content="=Vars.Current / 2 A"/>
+</Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let (ir, losses) = decode_with_losses(document);
+    let length = ValueKind::Quantity(Quantity::LENGTH);
+    let real = ValueKind::Quantity(Quantity::REAL);
+    let angle = ValueKind::Quantity(Quantity::ANGLE);
+    let area = ValueKind::Quantity(Quantity::AREA);
+    for (address, expected, assumed) in [
+        ("A3", length.clone(), 0),
+        ("A4", length.clone(), 0),
+        ("A7", area.clone(), 0),
+        ("A9", real.clone(), 1),
+        ("A10", real.clone(), 1),
+        ("A11", ValueKind::Text, 0),
+        ("A21", real.clone(), 0),
+        ("A22", angle.clone(), 0),
+        ("A24", angle, 0),
+        ("A28", length.clone(), 0),
+        ("B1", length.clone(), 0),
+        ("B2", length.clone(), 0),
+        ("B3", length.clone(), 0),
+        ("B4", real.clone(), 1),
+        ("B5", real.clone(), 0),
+        ("B6", area, 0),
+        ("C1", real.clone(), 0),
+        ("C2", ValueKind::Quantity(Quantity::of(0, 1, 0, -2)), 0),
+        ("C3", ValueKind::Quantity(Quantity::of(0, 1, 0, -3)), 0),
+        ("C4", ValueKind::Quantity(Quantity::of(-2, 1, 0, -2)), 0),
+        ("C5", ValueKind::Text, 0),
+        ("C6", real.clone(), 1),
+        ("C7", real.clone(), 1),
+        ("C8", real, 1),
+        ("C9", length, 0),
+        ("D1", ValueKind::Boolean, 0),
+        ("D2", ValueKind::Boolean, 0),
+        ("D3", ValueKind::Quantity(Quantity::REAL), 0),
+    ] {
+        let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
+        let cell = parameter(&ir, &id);
+        assert_eq!(cell.kind, expected, "{address}");
+        assert_eq!(cell.value, None, "{address}");
+        assert_eq!(
+            charge_count(&losses, ParameterQuantityAssumed, &id),
+            assumed,
+            "{address}"
+        );
+        assert_eq!(
+            charge_count(&losses, ParameterIntegerAssumed, &id),
+            0,
+            "{address}"
+        );
+    }
+    for (address, original) in [
+        ("A8", "=cos(0; 0) == 1"),
+        ("A29", "=sum(no_such_function(1); 2 mm)"),
+    ] {
+        let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
+        let cell = parameter(&ir, &id);
+        assert_eq!(cell.kind, ValueKind::Text, "{address}");
+        assert_eq!(
+            cell.value,
+            Some(ParameterValue::Text(original.to_owned())),
+            "{address}"
+        );
+        assert_eq!(
+            charge_count(&losses, ParameterQuantityAssumed, &id),
+            0,
+            "{address}"
+        );
+    }
 }
 
 #[test]
@@ -764,13 +904,11 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
         assert!(!integer(address), "{address}: {losses:?}");
     }
 
-    // A formula cell holds an integer where its value is whole; the file
-    // does not store that value.
+    // The referenced quotient folds to a whole number and FreeCAD stores
+    // it as an integer before the repetition.
     assert_eq!(cell("G3").kind, ValueKind::Text);
     assert!(!assumed("G3"), "{losses:?}");
-    assert!(integer("G3"), "{losses:?}");
-    // The cell that takes the number as an `int` carries the one charge; a
-    // cell that references it takes its text.
+    assert!(!integer("G3"), "{losses:?}");
     assert_eq!(cell("G7").kind, ValueKind::Text);
     assert!(!assumed("G7"), "{losses:?}");
     assert!(!integer("G7"), "{losses:?}");

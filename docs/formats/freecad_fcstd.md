@@ -634,86 +634,62 @@ and as `Sheet.name` elsewhere. A reference to an object property that is no para
 source's text in the expression, and the parameter emits `parameter.dependency-dropped`. A formula
 that `FreeCAD`'s expression grammar does not read is a text cell whose value is its content. A
 value cell whose number is not finite has no value and emits `parameter.value-non-finite`. A
-formula cell stores no value. Its value kind is the kind of its result under `FreeCAD`'s unit
-rules, with the cells it references read first in dependency order:
+formula cell stores no value. Its result kind follows `FreeCAD`'s expression rules. A
+reference to a cell uses the runtime type and any value determined by its content. A
+conditional evaluates the branch selected by the condition's Python truth value.
 
-- A `<<…>>` string, `str()`, `address()`, the sum of two strings, a string `%` a value, and the
-  product of a string and a Python `int` or `bool`, which repeats the string, are text.
-- A dimensionless number that `FreeCAD` hands to an operator is a Python `int` where its value is
-  whole and a `float` otherwise: a number with no unit, a unitless value cell, a dimensionless
-  `sum`, `min`, `max`, `average`, `stddev`, `count`, `and`, or `or`, and a formula cell whose result
-  is a dimensionless number. A Boolean, an `App::PropertyInteger`, `IntegerConstraint`, or
-  `Percent` property, a sum, a difference, a product, or a remainder of `int` values, `x ^ n` of
-  `int` values with a constant `n` of zero or more, and `href` of an `int` are `int` values. An
-  `App::PropertyFloat`, `FloatConstraint`, or `Precision` property, a placement's axis component,
-  yaw, pitch, or roll, `pi`, `e`, a quotient, and a sum, a difference, or a product with a `float`
-  are `float` values. Every other function returns a quantity object. Where the product of a
-  string and a dimensionless number has a number of unstated value, such as a formula cell whose
-  result is not a constant or an aggregate of numbers that are not all `int` values or constants,
-  the number is an `int`, the result is text, and the parameter emits
-  `parameter.integer-assumed`. A parameter whose expression references that parameter takes its
-  text and emits no `parameter.integer-assumed` of its own. A `sum`, `min`, `max`, or `average` of
-  constants is its value.
-- `True`, `False`, a comparison, and a reference to an `App::PropertyBool` property or to a
-  Boolean cell are Boolean. A value is a number (a quantity, an `int`, a `float`, or a Boolean),
-  text, an object that is no number, or a refused value. Objects that are no numbers are a
-  vector, a placement, a rotation, a matrix, a link that stores a target and no sub-name, a link
-  list, a string list, a map, a material, a shape, a geometry list, a constraint list, another
-  list property, and the result of `vector`, `matrix`, `placement`, `rotation`, `list`, `create`,
-  `rotationx`, `rotationy`, `rotationz`, and `translationm`. Refused values are `None` (a link that
-  stores no target), a tuple (an `App::PropertyLinkSub` value, a link that stores a sub-name, a
-  color, `tuple()`), a set (an `App::PropertyIntegerSet` value), a conditional with a refused
-  branch, and an operand that raises.
-- An `App::PropertyPythonObject` value is the value of its JSON text in the `Python` element or
-  its named archive member. `true` and `false`
-  are Boolean, a number is an `int` where its text contains no `.`, `e`, or `E` and a `float`
-  otherwise, `NaN`, `Infinity`, and `-Infinity` are `float` values, a string is text, and an array
-  or an object is an object that is no number. `null`, a stored class instance (a `module` and a
-  `class` attribute), and a value that stores no JSON text are refused.
-- A cell whose formula raises holds the text of its error, and a reference to that cell is text.
-- `==` and `!=` compare any two values that are not refused. An operand raises where it is an
-  operator with a refused operand, or where it is `cos`, `sin`, `tan`, `acos`, `asin`, `atan`,
-  `exp`, `log`, `log10`, `sinh`, `tanh`, `cosh`, `round`, `trunc`, `ceil`, `floor`, `abs`, `sqrt`,
-  `cbrt`, `atan2`, `mod`, `pow`, `hypot`, `cath`, or `not` with too few arguments or with an
-  argument that is text, refused, an object that is no number, or a quantity whose unit the
-  function does not take. `<`, `<=`, `>`, and `>=` compare two strings, two values of one
-  quantity, a Boolean and a number, and a quantity and a dimensionless `int` or `float`; they
-  raise on text and a number. In arithmetic and in a function argument, a Boolean is a
-  dimensionless number. A unit exponent outside −8 through 7 raises.
-- A reference to a cell, by alias, address, or `.address`, takes that cell's kind. A reference to a
-  typed property of an object, or a placement or vector component, takes the property's quantity;
-  a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
-  property names are text, where the link stores no sub-name. A path through a scalar local link
-  follows the target's Python attributes. The placement and vector coordinates obtained this
-  way are `float` values. A non-null shape's
-  `Length`, `Area`, and `Volume` are `float` values. Access to those properties of a null shape
-  raises.
-- Addition and subtraction of equal quantities keep the quantity; a
-  product and a quotient add and subtract the exponents of the units; the remainder of a quantity
-  keeps its quantity, and the remainder of a plain number by a quantity raises;
-  For a quantity `x`, `x ^ n` with a plain numeric exponent and `pow(x, n)` multiply each unit
-  exponent by `n` where each product is an integer. When `n` is a dimensionless quantity object,
-  `x ^ n` multiplies each unit exponent by the integer part of `n`. For a unit-bearing base,
-  `pow(x, n)` also requires `n - round(n) < 1e-9`, with halves rounded away from zero.
-- `abs`, `round`, `trunc`, `ceil`, `floor`, `mod`, `hypot`, `cath`, `href`, `sum`, `min`, `max`,
-  `average`, and `stddev` keep the quantity of their values. An aggregate (`sum`, `min`, `max`,
-  `average`, `stddev`, `count`, `and`, `or`) passes over an argument that is no number (text, a
-  refused value, an object that is no number), raises at a cell of a range that holds no number,
-  and raises at an argument that raises; `sum`, `min`, `max`, `average`, and `stddev` raise on
-  values of two different quantities. `stddev` requires at least two values and a unit that can
-  be squared. `sqrt` and `cbrt` divide the unit
-  exponents; `cos`, `sin`, `tan`, `exp`, `log`, `log10`, `sinh`, `cosh`, `tanh`, `not`, `and`, `or`,
-  `count`, and `vdot` give a real; `acos`, `asin`, `atan`, `atan2`, and `vangle` give an angle; and
-  `vlinedist` and `vplanedist` give a length.
+- A number without a unit becomes a Python `int` when it is whole and fits a C long, and a
+  `float` otherwise. Dimensionless numeric aggregates and computed cell values follow the
+  same rule. A typed float property remains a `float` at the point of access. A Boolean
+  behaves as an `int` in Python arithmetic. Direct enumeration references give their
+  integer index. A valid enumeration reached through a scalar link gives its text label.
+- A `<<…>>` literal, a successful `str()` or `address()` call, string concatenation and
+  successful string `%` formatting give text. `address()` requires an integer row and
+  column and takes an optional integer reference type from 1 through 4. Multiplying a
+  string by an integer or Boolean repeats it. When the multiplier can be an `int` or a
+  `float`, the decoder states text and emits `parameter.integer-assumed`.
+- Equality and ordering use the operands' Python comparison methods. The arithmetic
+  operand guard refuses `None`, tuples and sets. String formatting uses its own
+  right-operand rules. Plain Python division and numeric remainder raise on zero
+  divisors. A cell whose formula raises holds the error text at runtime. A call with
+  an unknown name or invalid argument count stays literal cell text.
+- Addition and subtraction of quantities require the same units. Multiplication and
+  division add and subtract all native unit exponents. A unit exponent outside −8 through
+  7 raises. A quantity's remainder preserves its unit. A plain number's remainder by a
+  quantity raises. For a quantity `x`, `x ^ n` with a plain numeric exponent and
+  `pow(x; n)` multiply each unit exponent by `n` where each product is an integer.
+  With a dimensionless quantity exponent, `x ^ n` uses the integer part of `n` for the
+  unit exponents. For a unit-bearing base, `pow(x; n)` also requires
+  `n - round(n) < 1e-9`, with halves rounded away from zero.
+- Numeric functions require numbers and check their units. `parsequant` parses a quantity
+  string and returns a quantity object. An aggregate passes over nonnumeric arguments
+  outside ranges. It raises at an argument that raises or a cell in its range with a
+  nonnumeric property. `sum`, `min`, `max`, `average`, and `stddev` require matching
+  quantities. `stddev` requires at least two contributing numbers and a unit that can be
+  squared.
+- List addition concatenates. Vector addition produces a vector. Vector multiplication
+  gives a dot product. `create(<<vector>>; …)` constructs a vector. `translationm` accepts
+  a vector or a sequence of three numbers.
+- String, path and file properties give text. `Label` and `Label2` of the object that a
+  scalar link names give text. A local scalar link restores to `None` when its target is
+  absent or names its own object. A link with a sub-selection gives a tuple. A path
+  through a scalar local link follows the target's Python attributes. Placement and
+  vector coordinates obtained this way are `float` values. The `Length`, `Area`, and
+  `Volume` of a non-null shape are `float` values. A `Part` element with an empty `file`
+  attribute restores a null shape. Access to a null shape's measures raises.
+- An `App::PropertyPythonObject` takes its value from JSON in the `Python` element or
+  its named archive member. `true` and `false` give Boolean. A number with a `.`, `e`,
+  or `E` gives a float, and an integer token gives an int. `NaN`, `Infinity`, and
+  `-Infinity` give floats. A JSON string, array, or object gives a Python string, list,
+  or dictionary. `null`, a stored class instance, and an absent JSON value give classes
+  outside the arithmetic operand guard. Base64 JSON accepts a final group of two or three
+  digits without padding.
 
-Where the file does not determine the result's kind, as for a reference to another document, to a
-property with no stated quantity, to a property or object that the document does not store, to an
-`App::PropertyPythonObject` with an unreadable archive member, or to a cell of a reference cycle,
-the product of a string and
-a `float` or a quantity, `Label` of a link that stores a sub-name, an ordering of a string and a
-number, of two different quantities, or of a quantity and a function result, and a comparison with
-a refused operand, the cell's kind is a real number, it emits `parameter.quantity-assumed`, and an expression that references it takes it as a
-real number. A display unit whose quantity is the cell's and whose words each have a symbol is
+The decoder states a formula's result kind when its operand types and values establish a
+supported result. An unread or unproved result, a formula that raises, and a formula result
+outside the four CADIR quantity dimensions use a dimensionless kind and emit
+`parameter.quantity-assumed`. A stored value cell with an extra dimension uses a
+`Native` kind. A display unit whose quantity is the cell's and whose words each have a symbol is
 the parameter's `unit`. Another display unit of a quantity cell is the native option
 `fcstd:displayUnit` (Text, Rule N case (a)). Alignment, style, foreground and background colors, and the display unit of a
 text cell are source settings of the cell parameter (Rule N case (b)): `fcstd:alignment`,
