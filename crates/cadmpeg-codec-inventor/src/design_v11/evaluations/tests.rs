@@ -412,6 +412,85 @@ fn spline(bytes: &[u8]) -> UnknownRecord {
     )
 }
 
+#[test]
+fn a_base_at_the_current_position_cannot_share_different_spline_bytes() {
+    use cadmpeg_ir::ids::{FaceId, RegionId, ShellId};
+    use cadmpeg_ir::topology::{Face, FaceLoops, Region, Sense, Shell};
+
+    let mut ir = part(
+        vec![extrude("a", 0), extrude("base", 1)],
+        vec![history_body("base", 0, false, 7)],
+    );
+    let mut state = spline_state();
+    let geometry = &mut state.geometry;
+    geometry.bodies = ir.geometry.bodies.clone();
+    let region = RegionId::mint("inventor:brep:entity#8").expect("region");
+    let shell = ShellId::mint("inventor:brep:entity#9").expect("shell");
+    geometry
+        .regions
+        .push(Region::new(region.clone(), body(7).id, vec![shell.clone()]));
+    geometry.shells.push(Shell::new(shell.clone(), region));
+    geometry.faces.push(Face {
+        id: FaceId::mint("inventor:brep:entity#10").expect("face"),
+        shell,
+        surface: geometry.surfaces[0].id.clone(),
+        sense: Sense::Forward,
+        loops: FaceLoops::Unspecified { loops: Vec::new() },
+        name: None,
+        color: None,
+        tolerance: None,
+        native_ref: None,
+    });
+    ir.geometry = geometry.clone();
+    state.unknowns = vec![spline(&[4, 5, 6])];
+    let (losses, retained) = project_over(
+        &mut ir,
+        &BTreeMap::from([(0, state)]),
+        vec![spline(&[1, 2, 3])],
+    );
+    assert_eq!(current_state_record(&ir), None);
+    assert!(ir.design.evaluations.is_empty());
+    assert!(retained.is_empty());
+    assert!(ir
+        .model
+        .restated()
+        .get(ir.model.history_bodies[0].id.as_str())
+        .is_none());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert!(loss.message.contains("in history state 0"));
+    assert!(loss.message.contains("inventor:brep:spline#20 differs"));
+}
+
+#[test]
+fn a_state_reports_an_unavailable_byte_image_without_claiming_a_difference() {
+    let mut ir = part(
+        vec![extrude("a", 0), extrude("b", 1)],
+        vec![history_body("a", 0, false, 9)],
+    );
+    let bytes = spline(&[1, 2, 3]);
+    let unavailable = UnknownRecord::unavailable(
+        bytes.id().clone(),
+        0,
+        3,
+        "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+        Vec::new(),
+    );
+    let mut state = spline_state();
+    state.unknowns = vec![bytes];
+    let (losses, retained) =
+        project_over(&mut ir, &BTreeMap::from([(0, state)]), vec![unavailable]);
+    assert!(ir.design.evaluations.is_empty());
+    assert!(retained.is_empty());
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert!(loss
+        .message
+        .contains("inventor:brep:spline#20 cannot be compared without both byte images"));
+}
+
 /// The findings of a validation of `ir` that a resolved state references a
 /// record that it does not hold.
 fn unclosed(ir: &CadIr) -> Vec<String> {

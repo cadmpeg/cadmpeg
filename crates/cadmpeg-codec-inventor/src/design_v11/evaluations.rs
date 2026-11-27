@@ -75,9 +75,6 @@ struct Planned<'a> {
     state: &'a StateRecords,
     identifier: i64,
     bodies: Vec<HistoryBodyId>,
-    /// The undecoded records of the state that its records reference and
-    /// that the document does not hold yet.
-    unknowns: Vec<UnknownRecord>,
 }
 
 type Why = Cow<'static, str>;
@@ -150,7 +147,6 @@ pub(crate) fn project(
             state,
             identifier: body.state.identifier,
             bodies: Vec::new(),
-            unknowns: Vec::new(),
         });
         if entry.ordinal == placed.ordinal {
             entry.bodies.push(body.id.clone());
@@ -162,49 +158,11 @@ pub(crate) fn project(
         charge(&unplaced, losses);
         return Ok(());
     }
-    let mut restated: Vec<(HistoryBodyId, String, Vec<&'static str>)> = Vec::new();
-    let mut native = BTreeMap::<u32, HistoryState>::new();
-    // A history state at the current position whose records are the
-    // current geometry's is the current state: the feature that the body
-    // is the result or the input of restates the body, and the current
-    // state's native record restates the state that holds it.
-    let mut current_state = None::<HistoryState>;
-    for (body, feature, state) in held {
-        let same = StateDelta::between(&records, &state.geometry) == StateDelta::default();
-        let written = ir
-            .design
-            .features
-            .binary_search_by(|item| item.id.cmp(feature))
-            .is_ok();
-        match (same, written) {
-            (true, true) => {
-                restated.push((body.id.clone(), feature.as_str().to_owned(), vec!["state"]));
-                let record = current_state.get_or_insert_with(|| {
-                    HistoryState::new(body.state.ordinal, body.state.identifier)
-                });
-                if record.ordinal == body.state.ordinal {
-                    restated.push((
-                        body.id.clone(),
-                        scope.as_str().to_owned(),
-                        all_but_state(body),
-                    ));
-                }
-            }
-            (false, _) => {
-                unplaced.push((body, "the state differs from the current geometry".into()));
-            }
-            (true, false) => unplaced.push((body, "the feature has no design record".into())),
-        }
-    }
-    // The document holds one undecoded record per id. A state reads its
-    // own record of an id where the document holds none, and shares the
-    // document's where that holds the same bytes.
     let wanted = planned
         .values()
-        .flat_map(|plan| {
-            let state: &StateRecords = plan.state;
-            state.unknowns.iter().map(|record| record.id().as_str())
-        })
+        .map(|plan| plan.state)
+        .chain(held.iter().map(|&(_, _, state)| state))
+        .flat_map(|state| state.unknowns.iter().map(|record| record.id().as_str()))
         .collect::<BTreeSet<_>>();
     let mut document = BTreeMap::<String, Option<&[u8]>>::new();
     for record in ir.native_unknowns_iter("inventor") {
@@ -218,46 +176,50 @@ pub(crate) fn project(
             document.insert(id.to_owned(), record.data());
         }
     }
-    let mut open = Vec::new();
-    for (index, plan) in planned.iter_mut().rev() {
-        let own = plan
-            .state
-            .unknowns
-            .iter()
-            .map(|record| (record.id().as_str(), record))
-            .collect::<BTreeMap<_, _>>();
-        let targets =
-            ir.open_references(ctx, &plan.state.geometry, &own.keys().copied().collect())?;
-        let mut kept = Vec::new();
-        let mut why = None::<Why>;
-        for target in &targets {
-            let Some(&record) = own.get(target.as_str()) else {
-                why = Some("the state names a record that it does not hold".into());
-                break;
-            };
-            match document.get(target) {
-                None => kept.push(record),
-                Some(Some(bytes)) if record.data() == Some(*bytes) => {}
-                Some(_) => {
-                    why = Some(
-                        format!(
-                            "its undecoded record {target} differs from the document's record of that id"
-                        )
-                        .into(),
-                    );
-                    break;
-                }
-            }
+    let mut restated: Vec<(HistoryBodyId, String, Vec<&'static str>)> = Vec::new();
+    let mut native = BTreeMap::<u32, HistoryState>::new();
+    let mut current_state = None::<HistoryState>;
+    let mut unknowns = Vec::new();
+    for (body, feature, state) in held {
+        if StateDelta::between(&records, &state.geometry) != StateDelta::default() {
+            unplaced.push((body, "the state differs from the current geometry".into()));
+            continue;
         }
-        match why {
-            None => {
-                document.extend(
-                    kept.iter()
-                        .map(|record| (record.id().as_str().to_owned(), record.data())),
-                );
-                plan.unknowns = kept.into_iter().cloned().collect();
-            }
-            Some(why) => open.push((*index, why)),
+        if ir
+            .design
+            .features
+            .binary_search_by(|item| item.id.cmp(feature))
+            .is_err()
+        {
+            unplaced.push((body, "the feature has no design record".into()));
+            continue;
+        }
+        let ordinal = body.state.ordinal;
+        if let Some(why) = close_state(ctx, ir, (ordinal, state), &mut document, &mut unknowns)? {
+            unplaced.push((body, why));
+            continue;
+        }
+        restated.push((body.id.clone(), feature.as_str().to_owned(), vec!["state"]));
+        let record =
+            current_state.get_or_insert_with(|| HistoryState::new(ordinal, body.state.identifier));
+        if record.ordinal == ordinal {
+            restated.push((
+                body.id.clone(),
+                scope.as_str().to_owned(),
+                all_but_state(body),
+            ));
+        }
+    }
+    let mut open = Vec::new();
+    for (index, plan) in planned.iter().rev() {
+        if let Some(why) = close_state(
+            ctx,
+            ir,
+            (plan.ordinal, plan.state),
+            &mut document,
+            &mut unknowns,
+        )? {
+            open.push((*index, why));
         }
     }
     for (index, why) in open {
@@ -275,14 +237,12 @@ pub(crate) fn project(
     let mut base = StateBase::Current(at.clone());
     let mut evaluations = Vec::with_capacity(planned.len());
     let mut minted = BTreeMap::<u32, usize>::new();
-    let mut unknowns = Vec::new();
     for Planned {
         position,
         ordinal,
         state,
         identifier,
         bodies,
-        unknowns: kept,
     } in planned.into_values().rev()
     {
         let delta = StateDelta::between(&records, &state.geometry);
@@ -304,7 +264,6 @@ pub(crate) fn project(
                 .into_iter()
                 .map(|body| (body, id.as_str().to_owned(), Vec::new())),
         );
-        unknowns.extend(kept.into_iter().map(|record| (ordinal, record)));
         evaluations.push(Evaluation {
             id: id.clone(),
             scope: scope.clone(),
@@ -343,6 +302,56 @@ pub(crate) fn project(
     }
     retained.extend(unknowns);
     Ok(())
+}
+
+/// Resolve the referenced unknowns of one state against the document-wide byte
+/// images. Publish newly needed records only after every reference closes.
+fn close_state<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    (ordinal, state): (u32, &'a StateRecords),
+    document: &mut BTreeMap<String, Option<&'a [u8]>>,
+    retained: &mut Vec<(u32, UnknownRecord)>,
+) -> Result<Option<Why>, CodecError> {
+    let own = state
+        .unknowns
+        .iter()
+        .map(|record| (record.id().as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let targets = ir.open_references(ctx, &state.geometry, &own.keys().copied().collect())?;
+    let mut kept = Vec::new();
+    for target in targets {
+        let Some(&record) = own.get(target.as_str()) else {
+            return Ok(Some(
+                "the state names a record that it does not hold".into(),
+            ));
+        };
+        match (document.get(&target), record.data()) {
+            (None, _) => kept.push((target, record)),
+            (Some(Some(bytes)), Some(own)) if *bytes == own => {}
+            (Some(Some(_)), Some(_)) => {
+                return Ok(Some(
+                    format!(
+                        "its undecoded record {target} differs from the document's record of that id"
+                    )
+                    .into(),
+                ));
+            }
+            (Some(_), _) => {
+                return Ok(Some(
+                    format!(
+                        "its undecoded record {target} cannot be compared without both byte images"
+                    )
+                    .into(),
+                ));
+            }
+        }
+    }
+    for (id, record) in kept {
+        document.insert(id, record.data());
+        retained.push((ordinal, record.clone()));
+    }
+    Ok(None)
 }
 
 /// The wire keys of the fields of `body` other than its state, which a
