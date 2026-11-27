@@ -1477,6 +1477,31 @@ fn another_stream_does_not_decide_the_assumption_and_is_not_decided_by_it() {
 }
 
 #[test]
+fn a_current_pose_path_naming_an_unplaced_carrier_removes_the_assumption() {
+    let (mut carriers, components) = fixture(2);
+    snapshot_of_the_module(&mut carriers);
+    // The second root-contained module has no component binding, so it is not
+    // placed, and its current-pose path resolves to no expanded occurrence.
+    let unbound = carriers
+        .iter_mut()
+        .find(|carrier| carrier.record_index == 400)
+        .unwrap();
+    unbound.component_record_index = 999;
+    unbound.current_pose = Some(crate::records::xref::XrefCurrentPose {
+        carrier_record_index: 903,
+        frame_bytes: Vec::new().into(),
+        transform: Some(pose(EYE, [1.0, 0.0, 0.0]).try_into().unwrap()),
+    });
+    let unbound_path = path(
+        903,
+        &[(999, Kind::Component), (400, Kind::Occurrence)],
+        pose(EYE, [1.0, 0.0, 0.0]),
+    );
+    let projection = project(&carriers, &components, &[leaf_path(), unbound_path]);
+    assert!(module_is_unplaced(&projection, &carriers));
+}
+
+#[test]
 fn an_object_snapshot_with_an_explicit_source_frame_uses_its_closing_local_pose() {
     let (original, components) = fixture(1);
     let expected = project(&original, &components, &[]);

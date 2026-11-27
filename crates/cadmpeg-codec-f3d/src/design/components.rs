@@ -1193,10 +1193,16 @@ impl<'a> Projector<'a> {
                     })
                     .is_some_and(|root| root.root_entity == carrier.owner_entity)
             });
+            // A root-contained current pose is applied by its own route, but
+            // only to a carrier that was placed; a path that names an
+            // unplaced carrier resolves to nothing and blocks its stream.
             if root_contained
                 && carriers
                     .get(&(stream, *target))
                     .is_some_and(|carrier| carrier.current_pose.is_some())
+                && instances
+                    .iter()
+                    .any(|instance| instance.stream == stream && instance.record == *target)
             {
                 continue;
             }
