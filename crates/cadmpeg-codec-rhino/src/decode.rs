@@ -3943,11 +3943,11 @@ impl<'a> DecodeContext<'a> {
                     Err(ENTITY_BUDGET_EXCEEDED.to_string())
                 };
                 if let Err(error) = committed {
-                    let reason = format_args!("Brep draft rejected before commit: {error}");
+                    let reason = format!("Brep draft rejected before commit: {error}");
                     if admitted {
-                        self.mark_failed(source_order, Cause::Undecoded, reason);
+                        self.mark_failed(source_order, Cause::Undecoded, format_args!("{reason}"));
                     } else {
-                        self.scan_warning(source_order, reason);
+                        self.scan_warning(source_order, format_args!("{reason}"));
                     }
                 } else {
                     self.expansion_budget = budget;
