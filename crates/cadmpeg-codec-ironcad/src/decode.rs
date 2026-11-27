@@ -299,10 +299,10 @@ fn classify<'a>(
     for (ordinal, record) in records.iter().enumerate() {
         let carrier = format!("{BREP_DATA}/record {ordinal}");
         if !record.canonical_header {
-            losses.push(
-                IronCadLossCode::RecordHeaderUnrecognized
-                    .note(format!("{carrier}: header words differ from 1, 1, 1, 0")),
-            );
+            losses.push(IronCadLossCode::RecordHeaderUnrecognized.note(format!(
+                "{carrier}: the marker low byte differs from 0x01 or the header words \
+                         differ from 1, 1, 1, 0; the record is read by its kernel tag"
+            )));
         }
         match record.kernel {
             Kernel::Parasolid => {

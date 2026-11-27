@@ -52,7 +52,8 @@ pub(crate) struct KernelRecord<'a> {
     /// The item before the record in its node is a node that holds records,
     /// and no pair holds the record in its child node.
     pub(crate) follows_node: bool,
-    /// Header words at `words` and `reserved` equal `1, 1, 1, 0`.
+    /// The low byte of `marker` is `0x01`, and the header words at `words`
+    /// and `reserved` equal `1, 1, 1, 0`.
     pub(crate) canonical_header: bool,
     /// The assembly that holds the record's pair, as an index into
     /// [`Tree::assemblies`].
@@ -256,6 +257,9 @@ fn assemble<'a>(mut records: Vec<KernelRecord<'a>>, nodes: &[Node], closed: &[us
     }
 }
 
+/// The low byte of a kernel record marker.
+const MARKER_LOW_BYTE: u8 = 0x01;
+
 fn kernel_record(whole: View<'_>) -> Result<KernelRecord<'_>, TreeError> {
     let header = whole.window();
     let at = whole.start();
@@ -263,6 +267,7 @@ fn kernel_record(whole: View<'_>) -> Result<KernelRecord<'_>, TreeError> {
         View::u32_le_at(header, offset)
             .ok_or_else(|| malformed(format!("kernel record at {at} is shorter than its header")))
     };
+    let marker = field(record::MARKER)?;
     let tag = field(record::KERNEL)?;
     let words = [
         field(record::WORDS)?,
@@ -276,7 +281,7 @@ fn kernel_record(whole: View<'_>) -> Result<KernelRecord<'_>, TreeError> {
     Ok(KernelRecord {
         kernel: Kernel::from_tag(tag),
         follows_node: false,
-        canonical_header: words == [1, 1, 1, 0],
+        canonical_header: marker.to_le_bytes()[0] == MARKER_LOW_BYTE && words == [1, 1, 1, 0],
         assembly: None,
         bytes,
     })
