@@ -1415,8 +1415,6 @@ struct ScalarGrammar<T> {
     read: fn(&[u8]) -> Option<T>,
     /// Whether a token is written in the scalar grammar of the type.
     written: fn(&[u8]) -> bool,
-    /// Whether an array header without element rows stores an empty array.
-    empty_header: bool,
 }
 
 fn numeric_records<K, T>(
@@ -1493,7 +1491,7 @@ where
                     RowFault::Unread
                 };
                 let header_only = elements_read && value.continuation.is_none() && runs.is_empty();
-                let payload = if header_only && grammar.empty_header {
+                let payload = if header_only {
                     Some(NumericPayload::Empty { dimensions })
                 } else {
                     elements_read
@@ -1698,17 +1696,14 @@ pub(crate) fn scan(
     let real = ScalarGrammar {
         read: compact_real,
         written: is_compact_real,
-        empty_header: false,
     };
     let signed = ScalarGrammar {
         read: signed_integer,
         written: is_signed_integer,
-        empty_header: true,
     };
     let unsigned = ScalarGrammar {
         read: unsigned_integer,
         written: is_unsigned_integer,
-        empty_header: true,
     };
     let real_values = numeric_records(data, &scopes, ValueKind::REAL, &real, &parents);
     let integer_values = numeric_records(data, &scopes, ValueKind::INTEGER, &signed, &parents);

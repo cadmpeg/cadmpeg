@@ -170,16 +170,20 @@ The decoder gives up a part (CADIR §3.3) in these cases:
 | Part kind | Bytes | Cause |
 |---|---|---|
 | `stream` | The `Brep Data` stream, as its digest, when the stream does not open, its frame (§2) does not read, or its record tree (§3) does not read. | `record.unreadable` |
-| `stream` | The `Brep Data` stream, as its digest, when the frame (§2) declares a block above the decoder's limit for one inflate. | `record.undecoded` |
+| `stream` | The `Public Access` stream, as its digest, when the stream does not open or its frame (§2) does not read. Bodies remain in their part frames. | `record.unreadable` |
+| `stream` | The `Brep Data` or `Public Access` stream, as its digest, when its frame (§2) declares a block above the decoder's limit for one inflate. | `record.undecoded` |
+| `stream` | `Brep Data`, `Public Access`, or `Document Data` when its joined copy exceeds the remaining retained-byte budget. | `record.undecoded` |
 | `stream` | The `Document Data` stream, as its digest, when the stream does not open. The root definition then states no units (§4). | `record.unreadable` |
 | `kernel-record` | The kernel bytes of an ACIS result record whose save stream does not frame. | `record.unreadable` |
 | `kernel-record` | The kernel bytes of an ACIS record whose header does not read, of a result record whose framed ACIS records or Parasolid transmit the decode does not read, or of a result record whose identities do not move into its record namespace. | `record.undecoded` |
 
-A stream that does not open has a broken sector chain or a sector outside
-the file. Its digest covers the sectors that its chain reaches. A resource
-limit on the open of a stream stops the decode.
+For a broken chain, the digest covers the located bytes that fit the
+retained-byte budget. A chain that reaches no available sector gives the
+empty digest. An allocated chain whose located sectors are short of the
+declared stream length also gives the empty digest. A session-wide resource
+refusal stops the decode.
 
-`ironcad/container.noncanonical` carries strict floor Warning (CADIR §3.2):
-it records a compound-file deviation that the reader recovers from. The
-give-up of `Brep Data` or `Document Data` charges the broken chain of that
-stream. No other IronCAD code carries a strict floor.
+`ironcad/container.noncanonical` carries strict floor Warning (CADIR §3.2).
+The give-up of a decoded stream charges its broken chain. A broken chain of a
+stream that no reader opens keeps the container deviation. No other IronCAD
+code carries a strict floor.

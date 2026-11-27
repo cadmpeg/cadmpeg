@@ -432,7 +432,12 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("carrier fixture context");
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
-        let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let inventory = RseInventory::build(
+            &setup_ctx,
+            &snapshot,
+            &mut crate::container::streams::Streams::default(),
+        )
+        .expect("RSe fixture");
         assert!(matches!(
             select_active_carrier(&inventory.segments, &DocumentKind::Part),
             ActiveCarrierState::Selected(_)

@@ -1752,11 +1752,12 @@ The decoder gives up a part or a record (CADIR §3.3) in these cases:
 | Occurrence | The placement transform of an occurrence is not affine after unit conversion (§9). | `record.unreadable` |
 | Occurrence | The external reference, `AmDc` occurrence, or `AmGraphics` placement of an occurrence is missing or ambiguous (§9). | `record.undecoded` |
 | `rse-record` | A typed drawing record does not parse (§15). | `record.undecoded` |
-| `meta-section` | The length of metadata section 7, 8, or 10 of a drawing segment is not its entry count times the entry width of the surface-body reference form (§13.4, §15). | `record.undecoded` |
+| `meta-section` | Metadata section 7, 8, or 10 of a drawing segment has extra bytes after its entry count times the entry width of the surface-body reference form (§13.4, §15). | `record.undecoded` |
+| `meta-section` | Metadata section 7, 8, or 10 of a drawing segment is shorter than its entry count times the entry width of the surface-body reference form (§13.4, §15). | `record.unreadable` |
 | `meta-section` | Metadata section 7, 8, or 10 of a drawing segment breaks its framing in another way (§15). | `record.unreadable` |
 | `meta-section` | The section-9 entries of a drawing segment do not read (§15). | `record.unreadable` |
 | `rse-record` | The operand references or links of a drawing record do not select their targets (§15). | `record.undecoded` |
 
-A stream in this table that does not open is given up with no bytes, as `record.unreadable`. When the open passes a resource limit, the cause is `record.undecoded`.
+A compound stream that does not open because its chain breaks or supplies too few bytes is given up with an empty digest as `record.unreadable`. A fragmented stream whose joined copy exceeds the remaining retained-byte budget is given up as `record.undecoded` before the copy. An individual frame that exceeds its expansion limit is given up as `record.undecoded`. A session-wide resource refusal stops the decode. The decoder reports a property-set give-up at every depth.
 
-`inventor/container.noncanonical` carries strict floor Warning (CADIR §3.2). It records a compound-file deviation that the reader recovers from: a DIFAT chain that ends with FREESECT (§1), a stream chain that has no ENDOFCHAIN terminator, or a stream chain that is broken. The give-up of a property-set stream charges its broken chain. No other Inventor code carries a strict floor.
+`inventor/container.noncanonical` carries strict floor Warning (CADIR §3.2). It reports a compound-file deviation such as a DIFAT chain that ends with FREESECT (§1) or a stream chain without an ENDOFCHAIN terminator. A stream give-up charges its broken chain. A broken chain of a stream that no reader opens keeps the container deviation. No other Inventor code carries a strict floor.

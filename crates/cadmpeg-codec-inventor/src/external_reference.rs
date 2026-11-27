@@ -184,12 +184,21 @@ pub(crate) struct InventorEmbeddedReference<'a> {
 pub(crate) fn parse<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
+    streams: &mut crate::container::streams::Streams<'a>,
     document_kind: &DocumentKind,
 ) -> Result<UfrxState<'a>, CodecError> {
     let Some(stream) = snapshot.stream("UFRxDoc") else {
         return Ok(UfrxState::Absent);
     };
-    let source = snapshot.open(ctx, stream)?;
+    let source = match streams.open(ctx, snapshot, stream, Some("ufrx-stream")) {
+        Ok(source) => source,
+        Err(error) => {
+            return Ok(UfrxState::Malformed {
+                stream: stream.id(),
+                detail: crate::issue_detail(error)?,
+            });
+        }
+    };
     Ok(
         match parse_stream(ctx, source, stream.id(), document_kind) {
             Ok(document) => UfrxState::Parsed(Box::new(document)),
@@ -1124,8 +1133,13 @@ mod tests {
                 .expect("compound input fits service policy");
         let snapshot = CompoundSnapshot::new(&setup, root).expect("synthetic compound parses");
         assert!(matches!(
-            super::parse(&setup, &snapshot, &DocumentKind::Part)
-                .expect("malformed UFRx remains an inventory state"),
+            super::parse(
+                &setup,
+                &snapshot,
+                &mut crate::container::streams::Streams::default(),
+                &DocumentKind::Part
+            )
+            .expect("malformed UFRx remains an inventory state"),
             UfrxState::Malformed { .. }
         ));
     }

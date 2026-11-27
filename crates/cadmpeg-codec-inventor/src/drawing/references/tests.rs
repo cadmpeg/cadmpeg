@@ -3,7 +3,6 @@
 use super::{parse, Tables};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_core::CodecError;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -64,49 +63,44 @@ fn fixed_reference_forms_share_decode_and_native_validation() -> TestResult {
     Ok(())
 }
 
-/// A section whose length is not its count times the entry width of the
-/// surface-body reference form holds another form: the reader refuses it as
-/// a form that it does not read.
 #[test]
-fn every_reference_width_refuses_short_long_and_wrong_count_forms_as_unread() -> TestResult {
+fn every_reference_width_distinguishes_damage_from_an_extra_width_form() -> TestResult {
+    use cadmpeg_ir::unknown::part::Cause;
+
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for index in 0..3 {
         let valid = table()?;
-        for extra in [false, true] {
-            let mut invalid = valid.clone();
-            if extra {
-                invalid.payloads[index].push(0);
-            } else {
-                invalid.payloads[index].pop();
-            }
-            assert!(matches!(
-                parse(
-                    &ctx,
-                    invalid.counts,
-                    invalid
-                        .payloads
-                        .each_ref()
-                        .map(|bytes| View::over_retained(bytes))
-                ),
-                Err((at, CodecError::NotImplemented(_))) if at == index
-            ));
+        let assert_refusal = |invalid: &Tables, cause| -> TestResult {
+            let (at, error) = parse(
+                &ctx,
+                invalid.counts,
+                invalid
+                    .payloads
+                    .each_ref()
+                    .map(|bytes| View::over_retained(bytes)),
+            )
+            .expect_err("a reference table width mismatch is refused");
+            assert_eq!(at, index);
+            assert_eq!(Cause::Unreadable.of(&error), cause);
             assert!(!invalid.valid(&ctx)?);
-        }
-        for count in [0, 2, u32::MAX] {
+            Ok(())
+        };
+
+        let mut short = valid.clone();
+        short.payloads[index].pop();
+        assert_refusal(&short, Cause::Unreadable)?;
+        let mut long = valid.clone();
+        long.payloads[index].push(0);
+        assert_refusal(&long, Cause::Undecoded)?;
+
+        for (count, cause) in [
+            (0, Cause::Undecoded),
+            (2, Cause::Unreadable),
+            (u32::MAX, Cause::Unreadable),
+        ] {
             let mut invalid = valid.clone();
             invalid.counts[index] = count;
-            assert!(matches!(
-                parse(
-                    &ctx,
-                    invalid.counts,
-                    invalid
-                        .payloads
-                        .each_ref()
-                        .map(|bytes| View::over_retained(bytes))
-                ),
-                Err((at, CodecError::NotImplemented(_))) if at == index
-            ));
-            assert!(!invalid.valid(&ctx)?);
+            assert_refusal(&invalid, cause)?;
         }
     }
     Ok(())

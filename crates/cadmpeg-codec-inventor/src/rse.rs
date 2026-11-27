@@ -10,6 +10,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{Identity, IdentityKey};
 use cadmpeg_ir::unknown::part::Part;
 
+use crate::container::streams::Streams;
 use crate::database::{
     parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionTable, RseDatabase,
     RseSchema, SegmentRegistry,
@@ -383,6 +384,7 @@ impl<'a> RseInventory<'a> {
     pub(crate) fn build(
         ctx: &DecodeContext<'a>,
         snapshot: &CompoundSnapshot<'a>,
+        streams: &mut Streams<'a>,
     ) -> Result<Self, CodecError> {
         let mut databases = Vec::new();
         let mut metadata = BTreeMap::new();
@@ -415,10 +417,9 @@ impl<'a> RseInventory<'a> {
         let mut database_descriptors = Vec::new();
         for (band, stream_id) in databases {
             let state = match snapshot.stream_by_id(stream_id) {
-                Some(stream) => match snapshot
-                    .open(ctx, stream)
-                    .and_then(|view| parse_database(ctx, view.window()))
-                {
+                Some(stream) => match streams.read(ctx, snapshot, stream, "rse-database", |view| {
+                    parse_database(ctx, view.window())
+                }) {
                     Ok(DatabaseHeader::Supported(database)) => DatabaseState::Parsed(database),
                     Ok(DatabaseHeader::Unframed { schema, detail }) => {
                         DatabaseState::Unframed { schema, detail }
@@ -439,20 +440,18 @@ impl<'a> RseInventory<'a> {
         // declarations decide the admission, not whether the attempt is made.
         let registry = match snapshot.stream("RSeStorage/RSeSegInfo") {
             None => ParsedState::Absent,
-            Some(stream) => match snapshot
-                .open(ctx, stream)
-                .and_then(|view| parse_registry(ctx, view.window()))
-            {
+            Some(stream) => match streams.read(ctx, snapshot, stream, "rse-table", |view| {
+                parse_registry(ctx, view.window())
+            }) {
                 Ok(value) => ParsedState::Parsed(value),
                 Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
         };
         let revisions = match snapshot.stream("RSeStorage/RSeDbRevisionInfo") {
             None => ParsedState::Absent,
-            Some(stream) => match snapshot
-                .open(ctx, stream)
-                .and_then(|view| parse_revisions(view.window()))
-            {
+            Some(stream) => match streams.read(ctx, snapshot, stream, "rse-table", |view| {
+                parse_revisions(view.window())
+            }) {
                 Ok(value) => ParsedState::Parsed(value),
                 Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
             },
@@ -477,8 +476,11 @@ impl<'a> RseInventory<'a> {
                         .ok_or_else(|| {
                             CodecError::Malformed("RSe metadata stream handle is absent".into())
                         })
-                        .and_then(|entry| snapshot.open(ctx, entry))
-                        .and_then(|view| parse_meta_stream(ctx, view));
+                        .and_then(|entry| {
+                            streams.read(ctx, snapshot, entry, "rse-metadata", |view| {
+                                parse_meta_stream(ctx, view)
+                            })
+                        });
                     let meta = match meta {
                         Ok(meta) => meta,
                         Err(error) => SegmentMetaState::Malformed {
@@ -491,8 +493,11 @@ impl<'a> RseInventory<'a> {
                         .ok_or_else(|| {
                             CodecError::Malformed("RSe bulk stream handle is absent".into())
                         })
-                        .and_then(|entry| snapshot.open(ctx, entry))
-                        .and_then(|view| parse_bulk_stream(ctx, view));
+                        .and_then(|entry| {
+                            streams.read(ctx, snapshot, entry, "rse-bulk", |view| {
+                                parse_bulk_stream(ctx, view)
+                            })
+                        });
                     let bulk = match bulk {
                         Ok(bulk) => SegmentBulkState::Framed(bulk),
                         Err(error) => SegmentBulkState::Malformed(crate::issue_detail(error)?),
@@ -522,17 +527,61 @@ impl<'a> RseInventory<'a> {
                     .push("segment registry is unavailable".to_owned());
             }
         }
+        let drawing_document = segments
+            .iter()
+            .any(|segment| segment.kind == SegmentKind::Drawing(crate::drawing::Family::Document));
+        for segment in &mut segments {
+            if drawing_document && matches!(segment.kind, SegmentKind::Drawing(_)) {
+                continue;
+            }
+            let SegmentMetaState::Parsed(meta) = &segment.meta else {
+                continue;
+            };
+            if let Err(error) = meta.tables.validate_reference_widths() {
+                segment.meta = SegmentMetaState::Malformed {
+                    declared: Some(meta.declared.clone()),
+                    detail: crate::issue_detail(error)?,
+                };
+                segment.registry = None;
+                segment.kind = SegmentKind::Unresolved;
+                segment.identity_issues.clear();
+                segment.identity_issues.push(
+                    if matches!(registry, ParsedState::Parsed(_)) {
+                        "segment metadata is unavailable"
+                    } else {
+                        "segment registry is unavailable"
+                    }
+                    .to_owned(),
+                );
+            }
+        }
         let segments = frame_segment_records(segments)?;
-        let unpaired_metadata = metadata
+        let unpaired_metadata: Vec<_> = metadata
             .iter()
             .filter(|(token, _)| !bulk.contains_key(*token))
             .map(|(token, stream)| (token.clone(), *stream))
             .collect();
-        let unpaired_bulk = bulk
+        let unpaired_bulk: Vec<_> = bulk
             .iter()
             .filter(|(token, _)| !metadata.contains_key(*token))
             .map(|(token, stream)| (token.clone(), *stream))
             .collect();
+        if !ctx.container_only() {
+            for (unpaired, kind) in [
+                (&unpaired_metadata, "rse-metadata"),
+                (&unpaired_bulk, "rse-bulk"),
+            ] {
+                for (_, id) in unpaired {
+                    if let Some(entry) = snapshot.stream_by_id(*id) {
+                        if let Err(error @ CodecError::ResourceLimit(_)) =
+                            streams.open(ctx, snapshot, entry, Some(kind))
+                        {
+                            return Err(error);
+                        }
+                    }
+                }
+            }
+        }
         let document_kind = document_kind_for_segments(&segments);
         let active_carrier = select_active_carrier(&segments, &document_kind);
         Ok(Self {
@@ -930,7 +979,12 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("database fixture context");
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
-        let mut inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let mut inventory = RseInventory::build(
+            &setup_ctx,
+            &snapshot,
+            &mut crate::container::streams::Streams::default(),
+        )
+        .expect("RSe fixture");
         let descriptor = &mut inventory.databases[0];
         assert!(descriptor.issue_detail().is_some(), "unframed issue");
         descriptor.state = super::DatabaseState::Unreadable("bad".into());
@@ -945,7 +999,12 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("metadata fixture context");
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
-        let mut inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let mut inventory = RseInventory::build(
+            &setup_ctx,
+            &snapshot,
+            &mut crate::container::streams::Streams::default(),
+        )
+        .expect("RSe fixture");
         let meta = &mut inventory.segments[0].meta;
         let expected = meta.declaration().expect("metadata declaration");
         *meta = SegmentMetaState::Malformed {

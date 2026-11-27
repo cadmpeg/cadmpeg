@@ -454,9 +454,8 @@ fn unplaced_costing(dependents: &[String]) -> String {
     )
 }
 
-/// The record ids and types (`iges:entity:directory#<n> (Type <t>)`) of the dropped subfigure and network
-/// entities, by the Directory sequence of the entity whose give-up drops
-/// them.
+/// The record ids and types (`iges:entity:directory#<n> (Type <t>)`) of the dropped subfigure
+/// and network entities, keyed by the Directory sequence of their given-up owner.
 type Unplaced = BTreeMap<u32, Vec<String>>;
 
 /// Settles each [`give_up_needing`] marker of an entity that has no give-up

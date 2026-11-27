@@ -1123,9 +1123,8 @@ fn legacy_value_rows_split_by_the_rule_they_break() {
             .filter(|loss| loss.code == cause.kind() && loss.message.contains(text))
             .count()
     };
-    // A header without element rows and a non-finite word are stated forms
-    // without a reading.
-    assert_eq!(given_up(Undecoded, "the legacy type-2 value row"), 2);
+    // The non-finite word is undecoded. The header-only array is empty.
+    assert_eq!(given_up(Undecoded, "the legacy type-2 value row"), 1);
     assert_eq!(given_up(Unreadable, "the legacy type-2"), 1);
     assert_eq!(
         given_up(
@@ -1151,13 +1150,15 @@ fn legacy_value_rows_split_by_the_rule_they_break() {
 }
 
 #[test]
-fn integer_array_headers_without_element_rows_are_empty_arrays() {
+fn numeric_array_headers_without_element_rows_are_empty_arrays() {
     let rows = b"@integers 7 1\n0 7 [2]\n\
         @single 8 1\n0 8 [1]\n\
         @type_5 9 5\n0 9 [3]\n\
         @type_7 10 7\n0 10 [2][2]\n\
         @type_9 11 9\n0 11 [1]\n\
-        @type_11 12 11\n0 12 [4]\n";
+        @type_11 12 11\n0 12 [4]\n\
+        @real 13 2\n0 13 [3][2]\n\
+        @type_6 14 6\n0 14 [1]\n";
     let persistence = scan(rows, std::iter::once(0..rows.len()))
         .expect("the fixture states every scope inside its own bytes");
     let empty = |dimensions: &[u32]| NumericPayload::<i32>::Empty {
@@ -1174,7 +1175,7 @@ fn integer_array_headers_without_element_rows_are_empty_arrays() {
         [empty(&[2]), empty(&[1])]
     );
     macro_rules! assert_one_empty {
-        ($values:expr, $dimensions:expr) => {{
+        ($values:expr, $element:ty, $dimensions:expr) => {{
             let values = &$values;
             assert!(values.unresolved.is_empty());
             let [row] = values.rows.as_slice() else {
@@ -1182,17 +1183,20 @@ fn integer_array_headers_without_element_rows_are_empty_arrays() {
             };
             assert_eq!(
                 row.payload,
-                NumericPayload::<u32>::Empty {
+                NumericPayload::<$element>::Empty {
                     dimensions: $dimensions.to_vec(),
                 }
             );
             assert_eq!(row.payload.element_count(), 0);
         }};
     }
-    assert_one_empty!(persistence.type_5_values, [3]);
-    assert_one_empty!(persistence.type_7_values, [2, 2]);
-    assert_one_empty!(persistence.type_9_values, [1]);
-    assert_one_empty!(persistence.type_11_values, [4]);
+    assert_one_empty!(persistence.type_5_values, u32, [3]);
+    assert_one_empty!(persistence.type_7_values, u32, [2, 2]);
+    assert_one_empty!(persistence.type_9_values, u32, [1]);
+    assert_one_empty!(persistence.type_11_values, u32, [4]);
+
+    assert_one_empty!(persistence.real_values, super::Real, [3, 2]);
+    assert_one_empty!(persistence.type_6_values, super::Real, [1]);
 
     let mut data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n".to_vec();
     data.extend_from_slice(rows);

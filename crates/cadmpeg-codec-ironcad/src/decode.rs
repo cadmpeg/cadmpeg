@@ -38,19 +38,66 @@ use cadmpeg_ir::scalar::PositiveReal;
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let snapshot = container::open(ctx, root)?;
     let mut layers = dialect::layers();
-    let mut losses = deviation_losses(ctx, &snapshot);
+    let mut stream_parts = Vec::new();
+    let mut failed_opens = Vec::new();
+    let mut open = |name| {
+        let Some(entry) = snapshot.stream(name) else {
+            return Ok(None);
+        };
+        match ctx.run_part(|| snapshot.open_part(ctx, entry))? {
+            Ok(stream) => Ok(Some((entry, stream))),
+            Err(error) => {
+                let located = snapshot.open_located_part(ctx, entry)?;
+                stream_parts.push(give_up_stream(ctx, entry, located, error)?);
+                failed_opens.push(entry.id());
+                Ok::<_, CodecError>(None)
+            }
+        }
+    };
+    let brep = open(BREP_DATA)?;
+    let access = open(PUBLIC_ACCESS)?;
+    let document = open(DOCUMENT_DATA)?;
+    let mut losses = deviation_losses(&snapshot, &failed_opens);
     let mut bodies = Bodies::default();
     let mut scene = Scene::default();
     if !ctx.container_only() {
-        if let Some(tree) = records(ctx, &snapshot, &mut losses, &mut bodies.given_up)? {
-            bodies = classify(ctx, &tree.records, &mut layers, &mut losses)?;
-            scene.record_assemblies = tree.records.iter().map(|record| record.assembly).collect();
-            scene.assemblies = tree.assemblies;
+        if snapshot.stream(BREP_DATA).is_none() {
+            losses.push(IronCadLossCode::FrameUnreadable.note("`Brep Data` is not a stream"));
         }
-        scene.records = scene_records(ctx, &snapshot, &mut losses)?;
-        scene.units = document_units(ctx, &snapshot, &mut losses, &mut bodies.given_up)?;
+        if let Some((entry, stream)) = brep {
+            match ctx
+                .run_part(|| tree::read(frame::payload(ctx, stream)?).map_err(CodecError::from))?
+            {
+                Ok(tree) => {
+                    bodies = classify(ctx, &tree.records, &mut layers, &mut losses)?;
+                    scene.record_assemblies =
+                        tree.records.iter().map(|record| record.assembly).collect();
+                    scene.assemblies = tree.assemblies;
+                }
+                Err(error) => stream_parts.push(give_up_stream(ctx, entry, Some(stream), error)?),
+            }
+        }
+        if snapshot.stream(PUBLIC_ACCESS).is_none() {
+            losses.push(
+                IronCadLossCode::PlacementUnbound
+                    .note("`Public Access` is not a stream; bodies stay in their part frames"),
+            );
+        }
+        if let Some((entry, stream)) = access {
+            match ctx.run_part(|| frame::payload(ctx, stream))? {
+                Ok(payload) => {
+                    let records = placement::records(payload.window());
+                    property_losses(&records, &mut losses);
+                    scene.records = Some(records);
+                }
+                Err(error) => stream_parts.push(give_up_stream(ctx, entry, Some(stream), error)?),
+            }
+        }
+        scene.units = document
+            .and_then(|(_, stream)| unit_losses(units::scene_units(stream.window()), &mut losses));
         scene_streams(&snapshot, &mut losses);
     }
+    bodies.given_up.extend(stream_parts);
     let mut ir = CadIr::empty();
     ir.source = Some(SourceMeta::classified(
         layers,
@@ -74,23 +121,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     transfer(ctx, ir, bodies, scene, losses, digest)
 }
 
-/// One loss per compound deviation. A decode gives up `Brep Data` and
-/// `Document Data` when their chains break, and the give-up charges the
-/// broken chain.
-fn deviation_losses(ctx: &DecodeContext<'_>, snapshot: &CompoundSnapshot<'_>) -> Vec<LossNote> {
-    let given_up: Vec<CompoundStreamId> = if ctx.container_only() {
-        Vec::new()
-    } else {
-        [BREP_DATA, DOCUMENT_DATA]
-            .iter()
-            .filter_map(|name| snapshot.stream(name))
-            .map(CompoundStreamEntry::id)
-            .collect()
-    };
+fn deviation_losses(
+    snapshot: &CompoundSnapshot<'_>,
+    failed_opens: &[CompoundStreamId],
+) -> Vec<LossNote> {
     snapshot
         .deviations()
         .filter(|deviation| {
-            !matches!(deviation, CompoundDeviation::StreamChainBroken(id) if given_up.contains(id))
+            !matches!(deviation, CompoundDeviation::StreamChainBroken(id) if failed_opens.contains(id))
         })
         .map(|deviation| IronCadLossCode::ContainerNoncanonical.note(deviation.description()))
         .collect()
@@ -279,39 +317,24 @@ fn transfer(
     })
 }
 
-/// Reads the kernel records of `Brep Data`, or charges the reason they are
-/// absent: a missing stream, or a stream whose frame or record tree does not
-/// read, which is given up.
-fn records<'a>(
-    ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
-    losses: &mut Vec<LossNote>,
-    given_up: &mut Vec<GivenUpPart>,
-) -> Result<Option<tree::Tree<'a>>, CodecError> {
-    let Some(entry) = snapshot.stream(BREP_DATA) else {
-        losses.push(IronCadLossCode::FrameUnreadable.note("`Brep Data` is not a stream"));
-        return Ok(None);
-    };
-    let read = ctx.run_part(|| {
-        let stream = snapshot.open(ctx, entry)?;
-        let payload = frame::payload(ctx, stream)?;
-        tree::read(payload).map_err(CodecError::from)
-    })?;
-    let error = match read {
-        Ok(tree) => return Ok(Some(tree)),
-        Err(error) => error,
-    };
-    let located = match snapshot.open(ctx, entry) {
-        Ok(stream) => Some(stream),
-        Err(_) => snapshot.open_located(ctx, entry).ok().flatten(),
-    };
-    let bytes = located.as_ref().map_or(&[][..], |stream| stream.window());
-    let part = Part::at("ironcad", "stream", 0, bytes, [ArenaClass::Model])
-        .named(BREP_DATA)
-        .in_stream(cadmpeg_ir::stream_name!("ironcad:").with_suffix(BREP_DATA))
+fn give_up_stream(
+    ctx: &DecodeContext<'_>,
+    entry: &CompoundStreamEntry,
+    source: Option<View<'_>>,
+    error: CodecError,
+) -> Result<GivenUpPart, CodecError> {
+    let path = entry.path();
+    let bytes = source.as_ref().map_or(&[][..], |view| view.window());
+    let mut part = Part::at("ironcad", "stream", 0, bytes, [ArenaClass::Model])
+        .named(path)
+        .in_stream(cadmpeg_ir::stream_name!("ironcad:").with_suffix(path))
         .digest_only();
-    given_up.push(ctx.give_up_part(part, Cause::Unreadable, error)?);
-    Ok(None)
+    if path.eq_ignore_ascii_case(DOCUMENT_DATA) {
+        part = part.costing("the root definition states no units");
+    } else if path.eq_ignore_ascii_case(PUBLIC_ACCESS) {
+        part = part.costing("bodies stay in their part frames");
+    }
+    ctx.give_up_part(part, Cause::Unreadable, error)
 }
 
 /// Adds a dialect layer for every kernel record and decodes the body of each
@@ -619,39 +642,6 @@ fn property_losses(records: &[SceneRecord], losses: &mut Vec<LossNote>) {
     }
 }
 
-/// Reads the part and assembly records of `Public Access`, or charges the
-/// reason they are absent.
-fn scene_records(
-    ctx: &DecodeContext<'_>,
-    snapshot: &CompoundSnapshot<'_>,
-    losses: &mut Vec<LossNote>,
-) -> Result<Option<Vec<SceneRecord>>, CodecError> {
-    let Some(entry) = snapshot.stream(PUBLIC_ACCESS) else {
-        losses.push(
-            IronCadLossCode::PlacementUnbound
-                .note("`Public Access` is not a stream; bodies stay in their part frames"),
-        );
-        return Ok(None);
-    };
-    match snapshot
-        .open(ctx, entry)
-        .and_then(|stream| frame::payload(ctx, stream))
-    {
-        Ok(payload) => {
-            let records = placement::records(payload.window());
-            property_losses(&records, losses);
-            Ok(Some(records))
-        }
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => {
-            losses.push(IronCadLossCode::PlacementUnbound.note(format!(
-                "`Public Access` frame could not be read: {error}; bodies stay in their part frames"
-            )));
-            Ok(None)
-        }
-    }
-}
-
 /// Places each part result by the matrix of its part record, and each
 /// assembly of the `Brep Data` tree by the matrix of its assembly record.
 ///
@@ -861,37 +851,6 @@ fn mass_properties(
     })
 }
 
-/// Reads the scene units of `Document Data`, or gives up the stream when it
-/// does not open.
-fn document_units(
-    ctx: &DecodeContext<'_>,
-    snapshot: &CompoundSnapshot<'_>,
-    losses: &mut Vec<LossNote>,
-    given_up: &mut Vec<GivenUpPart>,
-) -> Result<Option<UnitSystem>, CodecError> {
-    let Some(entry) = snapshot.stream(DOCUMENT_DATA) else {
-        return Ok(None);
-    };
-    let error = match snapshot.open(ctx, entry) {
-        Ok(stream) => return Ok(unit_losses(units::scene_units(stream.window()), losses)),
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(error) => error,
-    };
-    let located = match snapshot.open_located(ctx, entry) {
-        Ok(located) => located,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => None,
-    };
-    let bytes = located.as_ref().map_or(&[][..], |stream| stream.window());
-    let part = Part::at("ironcad", "stream", 0, bytes, [ArenaClass::Model])
-        .named(DOCUMENT_DATA)
-        .in_stream(cadmpeg_ir::stream_name!("ironcad:").with_suffix(DOCUMENT_DATA))
-        .digest_only()
-        .costing("the root definition states no units");
-    given_up.push(ctx.give_up_part(part, Cause::Unreadable.of(&error), error)?);
-    Ok(None)
-}
-
 /// Charges the notes of `scene` and returns its unit system.
 fn unit_losses(scene: units::SceneUnits, losses: &mut Vec<LossNote>) -> Option<UnitSystem> {
     for note in scene.unrecognized {
@@ -942,7 +901,7 @@ fn scene_streams(snapshot: &CompoundSnapshot<'_>, losses: &mut Vec<LossNote>) {
         let read = [BREP_DATA, PUBLIC_ACCESS, DOCUMENT_DATA]
             .iter()
             .any(|name| stream.path().eq_ignore_ascii_case(name));
-        if read || stream.logical_size() == 0 {
+        if read || stream.logical_size() == 0 || stream.chain_error().is_some() {
             continue;
         }
         losses.push(IronCadLossCode::SceneStreamsPending.note(format!(

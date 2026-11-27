@@ -8,7 +8,7 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeFailure, DecodeOptions, DecodeR
 
 use cadmpeg_ir::unknown::part::{gives_up, record_unreadable_kind};
 
-use crate::container::{BREP_DATA, DOCUMENT_DATA};
+use crate::container::{BREP_DATA, DOCUMENT_DATA, PUBLIC_ACCESS};
 use crate::loss::IronCadLossCode;
 use crate::test_support::corpus;
 use crate::IronCadCodec;
@@ -263,25 +263,11 @@ fn assert_point_box(result: &DecodeResult, expected: [f64; 6]) {
     }
 }
 
-/// `BOX` with every frame magic of its streams cleared, so that the frame of
-/// `Brep Data` does not read.
-fn box_without_frame_magic() -> Vec<u8> {
-    let mut bytes = corpus(BOX);
-    let magic = 0x3de3_de00_u32.to_le_bytes();
-    let mut cleared = 0;
-    for at in 0..bytes.len().saturating_sub(magic.len()) {
-        if bytes[at..at + magic.len()] == magic {
-            bytes[at..at + magic.len()].fill(0);
-            cleared += 1;
-        }
-    }
-    assert!(cleared > 0);
-    bytes
-}
-
 #[test]
 fn a_brep_data_frame_that_does_not_read_is_one_unreadable_give_up() {
-    let bytes = box_without_frame_magic();
+    let access = crate::test_support::framed_with(&[], 1024, 0);
+    let mut bytes = scene_with_public_access(&access);
+    bytes[4 * SECTOR..4 * SECTOR + 4].fill(0);
     let result = IronCadCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
@@ -399,6 +385,218 @@ fn a_document_data_stream_that_does_not_open_is_one_unreadable_give_up() {
 fn a_brep_data_stream_that_does_not_open_is_one_unreadable_give_up() {
     let result = assert_one_unreadable_give_up(&box_with_broken_chain(BREP_DATA), BREP_DATA);
     assert!(result.ir().geometry.bodies.is_empty());
+    let mut expected = losses(&decode(BOX));
+    expected.retain(|(code, _)| {
+        ![
+            IronCadLossCode::KernelUnverified,
+            IronCadLossCode::PlacementBoundByOrder,
+            IronCadLossCode::FeatureShapeRetained,
+            IronCadLossCode::BodyExtensionsRetained,
+        ]
+        .iter()
+        .any(|loss| loss.note("").code.to_string() == *code)
+    });
+    let mut actual = losses(&result);
+    actual.retain(|(code, _)| *code != record_unreadable_kind().to_string());
+    assert_eq!(actual, expected);
+}
+
+const SECTOR: usize = 512;
+const END_CHAIN: u32 = 0xffff_fffe;
+const PUBLIC_START: usize = 11;
+
+fn scene_with_public_access(access: &[u8]) -> Vec<u8> {
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
+
+    let access_sectors = access.len().div_ceil(SECTOR).max(8);
+    let mut bytes = vec![0_u8; (PUBLIC_START + access_sectors + 1) * SECTOR];
+    bytes[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    for (offset, value) in [(24, 0x003e), (26, 3), (28, 0xfffe), (30, 9), (32, 6)] {
+        put_u16(&mut bytes, offset, value);
+    }
+    for (offset, value) in [
+        (44, 1),
+        (48, 0),
+        (56, 4096),
+        (60, END_CHAIN),
+        (68, END_CHAIN),
+    ] {
+        put_u32(&mut bytes, offset, value);
+    }
+    bytes[76..SECTOR].fill(0xff);
+    put_u32(&mut bytes, 76, 2);
+
+    for (ordinal, (name, start, size)) in [
+        ("Root Entry", END_CHAIN, 0),
+        (BREP_DATA, 3, 4096),
+        (DOCUMENT_DATA, END_CHAIN, 0),
+        (
+            PUBLIC_ACCESS,
+            u32::try_from(PUBLIC_START).unwrap(),
+            access_sectors * SECTOR,
+        ),
+        ("Shape Data", END_CHAIN, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let entry = &mut bytes[SECTOR + ordinal * 128..][..128];
+        let name = name.encode_utf16().collect::<Vec<_>>();
+        for (index, unit) in name.iter().enumerate() {
+            put_u16(entry, index * 2, *unit);
+        }
+        put_u16(entry, 64, u16::try_from((name.len() + 1) * 2).unwrap());
+        entry[66] = if ordinal == 0 { 5 } else { 2 };
+        entry[67] = 1;
+        entry[68..80].fill(0xff);
+        if ordinal == 0 {
+            put_u32(entry, 76, 1);
+            entry[80..96].copy_from_slice(&[
+                0x2b, 0xc5, 0x02, 0, 0, 0, 0, 0, 0xc0, 0, 0, 0, 0, 0, 0, 0x46,
+            ]);
+        }
+        let right = match ordinal {
+            1 => 4,
+            4 => 2,
+            2 => 3,
+            _ => u32::MAX,
+        };
+        put_u32(entry, 72, right);
+        put_u32(entry, 116, start);
+        put_u32(entry, 120, u32::try_from(size).unwrap());
+    }
+    let fat = &mut bytes[3 * SECTOR..4 * SECTOR];
+    fat.fill(0xff);
+    put_u32(fat, 0, 1);
+    put_u32(fat, 4, END_CHAIN);
+    put_u32(fat, 8, 0xffff_fffd);
+    for chain in [3..PUBLIC_START, PUBLIC_START..PUBLIC_START + access_sectors] {
+        let end = chain.end;
+        for sector in chain {
+            let next = sector + 1;
+            put_u32(
+                fat,
+                sector * 4,
+                if next == end {
+                    END_CHAIN
+                } else {
+                    u32::try_from(next).unwrap()
+                },
+            );
+        }
+    }
+    let brep = crate::test_support::framed_with(&[], 256, 0);
+    bytes[4 * SECTOR..][..brep.len()].copy_from_slice(&brep);
+    bytes[(PUBLIC_START + 1) * SECTOR..][..access.len()].copy_from_slice(access);
+    bytes
+}
+
+#[test]
+fn public_access_damage_is_one_give_up_with_its_pinned_floor() {
+    use cadmpeg_test_support::bytes::put_u32;
+
+    let valid = scene_with_public_access(&crate::test_support::framed_with(&[], 1024, 0));
+    let mut expected = valid.clone();
+    let start = (PUBLIC_START + 1) * SECTOR;
+    expected[start..start + 4].fill(0);
+    let mut off_table = valid.clone();
+    put_u32(&mut off_table, SECTOR + 3 * 128 + 116, 128);
+    let mut cycle = valid.clone();
+    put_u32(
+        &mut cycle,
+        3 * SECTOR + PUBLIC_START * 4,
+        u32::try_from(PUBLIC_START).unwrap(),
+    );
+    let mut outside = valid[..valid.len() - SECTOR].to_vec();
+    let missing_sector = PUBLIC_START + 7;
+    put_u32(&mut outside, 3 * SECTOR + missing_sector * 4, u32::MAX);
+    let intact = IronCadCodec
+        .decode(&mut Cursor::new(&valid), &DecodeOptions::default())
+        .unwrap();
+    for bytes in [
+        expected.as_slice(),
+        &off_table,
+        &cycle,
+        &valid[..valid.len() - 1],
+        &outside,
+    ] {
+        let result = assert_one_unreadable_give_up(bytes, PUBLIC_ACCESS);
+        let mut remaining = losses(&result);
+        remaining.retain(|(code, _)| *code != record_unreadable_kind().to_string());
+        assert_eq!(remaining, losses(&intact));
+    }
+    let mut container_options = DecodeOptions {
+        depth: cadmpeg_core::decode::DecodeDepth::Container,
+        ..DecodeOptions::default()
+    };
+    container_options.strictness.pinned = true;
+    let result = IronCadCodec
+        .decode(&mut Cursor::new(outside), &container_options)
+        .unwrap();
+    let [loss] = result.report().losses.as_slice() else {
+        panic!(
+            "one container-depth stream charge: {:?}",
+            result.report().losses
+        );
+    };
+    assert_eq!(loss.code, record_unreadable_kind());
+    assert!(loss.message.contains(PUBLIC_ACCESS));
+}
+
+fn public_access_limit_charge(result: &DecodeResult) -> &cadmpeg_ir::report::loss::LossNote {
+    let entries = &result.report().losses;
+    let [units, limit] = entries.as_slice() else {
+        panic!("one unit note and one Public Access charge: {entries:?}");
+    };
+    assert_eq!(units.code, IronCadLossCode::UnitsUnrecognized.note("").code);
+    assert_eq!(
+        limit.code,
+        cadmpeg_ir::unknown::part::record_undecoded_kind()
+    );
+    assert!(limit.message.contains(PUBLIC_ACCESS));
+    limit
+}
+
+#[test]
+fn public_access_above_one_inflate_allowance_is_undecoded() {
+    let bytes = scene_with_public_access(&crate::test_support::framed_with(&[], 1024, 0));
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_decompressed_bytes_per_expand = 512;
+    options.strictness.pinned = true;
+    let result = IronCadCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .unwrap();
+    assert!(public_access_limit_charge(&result)
+        .message
+        .contains("resource limit"));
+}
+
+#[test]
+fn a_public_access_copy_above_available_retention_is_undecoded() {
+    use cadmpeg_test_support::bytes::put_u32;
+
+    let frame = crate::test_support::framed_with(&[], 1024, 0);
+    let mut access = vec![0; 32 * 1024];
+    access[..frame.len()].copy_from_slice(&frame);
+    let mut bytes = scene_with_public_access(&access);
+    let fat = &mut bytes[3 * SECTOR..4 * SECTOR];
+    let start = u32::try_from(PUBLIC_START).unwrap();
+    for (sector, next) in [
+        (PUBLIC_START, start + 2),
+        (PUBLIC_START + 2, start + 1),
+        (PUBLIC_START + 1, start + 3),
+    ] {
+        put_u32(fat, sector * 4, next);
+    }
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 16 * 1024;
+    options.strictness.pinned = true;
+    let result = IronCadCodec
+        .decode(&mut Cursor::new(bytes), &options)
+        .unwrap();
+    assert!(public_access_limit_charge(&result)
+        .message
+        .contains("joining CFB stream"));
 }
 
 #[test]

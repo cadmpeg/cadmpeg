@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_container::compound::{CompoundSnapshot, CompoundStreamEntry};
+use cadmpeg_container::compound::CompoundStreamEntry;
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
@@ -369,7 +369,17 @@ fn decode_container<'a>(
             .collect::<Result<Vec<_>, _>>()?,
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
-    let mut given_up = Vec::new();
+    let mut given_up = container.streams.give_ups(ctx, &container.snapshot)?;
+    for (stream, cause, detail) in &unread_property_sets {
+        give_up_stream(
+            ctx,
+            container,
+            container.snapshot.stream_by_id(*stream),
+            ("property-set", &[ArenaClass::Model]),
+            (*cause, detail),
+            &mut given_up,
+        )?;
+    }
     let mut issue_records = std::collections::BTreeSet::new();
     if !ctx.container_only() {
         for descriptor in &container.rse.databases {
@@ -386,7 +396,7 @@ fn decode_container<'a>(
             };
             give_up_stream(
                 ctx,
-                &container.snapshot,
+                container,
                 container.snapshot.stream_by_id(descriptor.stream),
                 ("rse-database", &[ArenaClass::Model]),
                 (cause, &detail),
@@ -421,7 +431,7 @@ fn decode_container<'a>(
         if !ctx.container_only() {
             give_up_stream(
                 ctx,
-                &container.snapshot,
+                container,
                 container.snapshot.stream(path),
                 ("rse-table", &[ArenaClass::Model, ArenaClass::Design]),
                 (Cause::Unreadable, detail),
@@ -674,12 +684,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
     drawing_inventory.write(ctx, namespace)?;
-    let unread_streams: Vec<_> = container
-        .property_sets
-        .iter()
-        .filter(|descriptor| matches!(descriptor.state, PropertySetState::Unread { .. }))
-        .map(|descriptor| descriptor.stream)
-        .collect();
+    let unread_streams: Vec<_> = container.streams.skipped().collect();
     let mut losses = crate::container::deviation_losses(&container.snapshot, &unread_streams);
     losses.extend(drawing_inventory.losses());
     let mut geometry_failure = None;
@@ -1120,7 +1125,7 @@ fn decode_container<'a>(
         for issue in &segment_meta_issues {
             give_up_stream(
                 ctx,
-                &container.snapshot,
+                container,
                 segment_stream(container, &issue.token, |pair| pair.metadata),
                 ("rse-metadata", &[ArenaClass::Model, ArenaClass::Design]),
                 (Cause::Undecoded, &issue.detail),
@@ -1130,7 +1135,7 @@ fn decode_container<'a>(
         for issue in &segment_bulk_issues {
             give_up_stream(
                 ctx,
-                &container.snapshot,
+                container,
                 segment_stream(container, &issue.token, |pair| pair.bulk),
                 ("rse-bulk", &[ArenaClass::Model, ArenaClass::Design]),
                 (Cause::Unreadable, &issue.detail),
@@ -1421,7 +1426,7 @@ fn decode_container<'a>(
                 for (token, stream) in unpaired {
                     give_up_stream(
                         ctx,
-                        &container.snapshot,
+                        container,
                         container.snapshot.stream_by_id(*stream),
                         (kind, &[ArenaClass::Model, ArenaClass::Design]),
                         (
@@ -1442,16 +1447,6 @@ fn decode_container<'a>(
                     .note(format!("{kept} OLE property-set stream(s) are malformed.")),
             );
         }
-        for (stream, cause, detail) in &unread_property_sets {
-            give_up_stream(
-                ctx,
-                &container.snapshot,
-                container.snapshot.stream_by_id(*stream),
-                ("property-set", &[ArenaClass::Model]),
-                (*cause, detail),
-                &mut given_up,
-            )?;
-        }
         if metadata.unmapped != 0 {
             losses.push(InventorLossCode::MetadataPropertyUnmapped.note(format!(
                 "Retained {} property value(s) without neutral metadata mapping.",
@@ -1463,7 +1458,7 @@ fn decode_container<'a>(
                 if let Some(detail) = &protein_semantic_issue {
                     give_up_stream(
                         ctx,
-                        &container.snapshot,
+                        container,
                         container.snapshot.stream_by_id(package.stream),
                         ("protein-stream", &[ArenaClass::Model]),
                         (
@@ -1516,7 +1511,7 @@ fn decode_container<'a>(
             ProteinState::Malformed { stream, detail } => {
                 give_up_stream(
                     ctx,
-                    &container.snapshot,
+                    container,
                     container.snapshot.stream_by_id(*stream),
                     ("protein-stream", &[ArenaClass::Model]),
                     (Cause::Unreadable, detail),
@@ -1556,7 +1551,7 @@ fn decode_container<'a>(
             UfrxState::Malformed { stream, detail } => {
                 give_up_stream(
                     ctx,
-                    &container.snapshot,
+                    container,
                     container.snapshot.stream_by_id(*stream),
                     ("ufrx-stream", &[ArenaClass::Model]),
                     (Cause::Unreadable, detail),
@@ -1571,7 +1566,7 @@ fn decode_container<'a>(
             } => {
                 give_up_stream(
                     ctx,
-                    &container.snapshot,
+                    container,
                     container.snapshot.stream_by_id(*stream),
                     ("ufrx-stream", &[ArenaClass::Model]),
                     (
@@ -2268,14 +2263,9 @@ fn rse_record_frame<'s, 'a>(
     Some((segment.pair.token.key(), frame))
 }
 
-/// Gives up the compound stream `entry` as a part of `kind` holding
-/// content of the classes `holds`, for `cause` with the text `error`. A
-/// stream whose chain does not open is given up with no bytes, as
-/// unreadable. An absent stream has no part to give up: the record that
-/// names the stream keeps its issue.
-fn give_up_stream<'a>(
-    ctx: &DecodeContext<'a>,
-    snapshot: &CompoundSnapshot<'a>,
+fn give_up_stream(
+    ctx: &DecodeContext<'_>,
+    container: &InventorContainer<'_>,
     entry: Option<&CompoundStreamEntry>,
     (kind, holds): (&'static str, &[ArenaClass]),
     (cause, error): (Cause, &str),
@@ -2284,11 +2274,10 @@ fn give_up_stream<'a>(
     let Some(entry) = entry else {
         return Ok(());
     };
-    let opened = ctx.run_part(|| snapshot.open(ctx, entry))?;
-    let (bytes, cause) = match &opened {
-        Ok(view) => (view.window(), cause),
-        Err(error) => (&[][..], Cause::Unreadable.of(error)),
-    };
+    if container.streams.was_skipped(entry.id()) {
+        return Ok(());
+    }
+    let bytes = container.streams.opened_bytes(entry.id());
     let part = Part::at("inventor", kind, 0, bytes, holds.iter().copied())
         .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()));
     parts.push(ctx.give_up_part(part, cause, CodecError::Malformed(error.to_owned()))?);

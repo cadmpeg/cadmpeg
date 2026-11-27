@@ -80,6 +80,10 @@ struct FamilyTableValue {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "form", rename_all = "snake_case")]
 enum FamilyTableValuePayload {
+    Empty {
+        #[serde(skip)]
+        type_code: i32,
+    },
     /// `type=50` with one `value(d_val)` real field.
     Real {
         /// Exact source real value.
@@ -103,6 +107,7 @@ impl FamilyTableValuePayload {
             Self::Real { .. } => 50,
             Self::String { .. } => 51,
             Self::Integer { .. } => 52,
+            Self::Empty { type_code } => *type_code,
         }
     }
 }
@@ -193,6 +198,7 @@ struct Index<'a> {
     reals_by_parent_name: BTreeMap<(usize, &'a str), Option<&'a legacy::RealRecord>>,
     strings_by_parent_name: BTreeMap<(usize, &'a str), Option<&'a legacy::StringRecord>>,
     typed_field_names: BTreeMap<usize, Vec<&'a str>>,
+    empty_numeric_fields: BTreeMap<(usize, &'a str), usize>,
 }
 
 impl<'a> Index<'a> {
@@ -223,27 +229,38 @@ impl<'a> Index<'a> {
             }
         }
 
+        let mut empty_numeric_fields = BTreeMap::new();
+        let integers = nonempty_fields(&persistence.integer_values.rows, &mut empty_numeric_fields);
+        let reals = nonempty_fields(&persistence.real_values.rows, &mut empty_numeric_fields);
         let mut integers_by_parent_name = BTreeMap::new();
-        legacy::value_index(
-            &persistence.integer_values.rows,
-            &mut integers_by_parent_name,
-        );
+        legacy::value_index(integers.iter().copied(), &mut integers_by_parent_name);
         let mut reals_by_parent_name = BTreeMap::new();
-        legacy::value_index(&persistence.real_values.rows, &mut reals_by_parent_name);
+        legacy::value_index(reals.iter().copied(), &mut reals_by_parent_name);
         let mut strings_by_parent_name = BTreeMap::new();
         legacy::value_index(&persistence.string_values, &mut strings_by_parent_name);
 
         let mut typed_field_names = BTreeMap::new();
-        add_typed_field_names(&mut typed_field_names, &persistence.integer_values.rows);
-        add_typed_field_names(&mut typed_field_names, &persistence.real_values.rows);
+        add_typed_field_names(&mut typed_field_names, integers);
+        add_typed_field_names(&mut typed_field_names, reals);
         add_typed_field_names(&mut typed_field_names, &persistence.string_values);
         add_typed_field_names(&mut typed_field_names, &persistence.type_3_values.rows);
         add_typed_field_names(&mut typed_field_names, &persistence.type_4_values.rows);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_5_values.rows);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_6_values.rows);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_7_values.rows);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_9_values.rows);
-        add_typed_field_names(&mut typed_field_names, &persistence.type_11_values.rows);
+        macro_rules! add_numeric_names {
+            ($($values:ident),+ $(,)?) => {$(
+                add_typed_field_names(
+                    &mut typed_field_names,
+                    persistence.$values.rows.iter()
+                        .filter(|row| !matches!(row.payload, NumericPayload::Empty { .. })),
+                );
+            )+};
+        }
+        add_numeric_names!(
+            type_5_values,
+            type_6_values,
+            type_7_values,
+            type_9_values,
+            type_11_values
+        );
         Some(Self {
             object_by_id,
             object_by_offset,
@@ -252,13 +269,39 @@ impl<'a> Index<'a> {
             reals_by_parent_name,
             strings_by_parent_name,
             typed_field_names,
+            empty_numeric_fields,
         })
     }
 }
 
-fn add_typed_field_names<'a, K: legacy::LegacyCode>(
-    index: &mut BTreeMap<usize, Vec<&'a str>>,
+fn nonempty_fields<'a, K, T>(
     records: &'a [legacy::ValueRecord<K>],
+    empty: &mut BTreeMap<(usize, &'a str), usize>,
+) -> Vec<&'a legacy::ValueRecord<K>>
+where
+    K: legacy::LegacyCode<Payload = NumericPayload<T>>,
+{
+    records
+        .iter()
+        .filter(|row| {
+            if let Some(parent) = row.parent {
+                if row.name.starts_with("value(")
+                    && matches!(row.payload, NumericPayload::Empty { .. })
+                {
+                    empty
+                        .entry((parent, row.name.as_str()))
+                        .or_insert(row.offset);
+                    return false;
+                }
+            }
+            true
+        })
+        .collect()
+}
+
+fn add_typed_field_names<'a, K: legacy::LegacyCode + 'a>(
+    index: &mut BTreeMap<usize, Vec<&'a str>>,
+    records: impl IntoIterator<Item = &'a legacy::ValueRecord<K>>,
 ) {
     for record in records {
         if !record.name.starts_with("value(") {
@@ -357,18 +400,20 @@ fn typed_value(
     value_object: &ObjectRecord,
     type_code: i32,
 ) -> Option<(usize, FamilyTableValuePayload)> {
-    let names = index.typed_field_names.get(&value_object.offset)?;
-    if names.len() != 1 {
-        return None;
-    }
     let expected_name = match type_code {
         50 => VALUE_REAL,
         51 => VALUE_STRING,
         52 => VALUE_INTEGER,
         _ => return None,
     };
-    if names[0] != expected_name {
-        return None;
+    let key = (value_object.offset, expected_name);
+    match index.typed_field_names.get(&value_object.offset) {
+        None => {
+            let offset = *index.empty_numeric_fields.get(&key)?;
+            return Some((offset, FamilyTableValuePayload::Empty { type_code }));
+        }
+        Some(names) if names.as_slice() == [expected_name] => {}
+        Some(_) => return None,
     }
     match type_code {
         50 => {
@@ -779,6 +824,35 @@ mod tests {
             table.instances[0].values[0].value,
             FamilyTableValuePayload::Real { .. }
         ));
+    }
+
+    #[test]
+    fn empty_numeric_fields_leave_the_family_table_and_its_cell_ordinal() {
+        let mut persistence = complete_table();
+        let mut unused = integer("value", VALUE_INTEGER, 2, 32);
+        unused.payload = NumericPayload::Empty {
+            dimensions: vec![1],
+        };
+        persistence.integer_values.rows.push(unused);
+
+        let mut table = parse(&persistence).expect("the real cell has its stored value");
+        assert!(matches!(
+            table.instances[0].values[0].value,
+            FamilyTableValuePayload::Real { .. }
+        ));
+
+        let [real] = &mut persistence.real_values.rows[..] else {
+            panic!("one real field in the fixture");
+        };
+        real.payload = NumericPayload::Empty {
+            dimensions: vec![1],
+        };
+        table = parse(&persistence).expect("the family table keeps its empty cell");
+        let json = json::to_value(&table).expect("family table serializes");
+        let cell = &json["instances"][0]["values"][0];
+        assert_eq!(cell["ordinal"], 0);
+        assert_eq!(cell["type_code"], 50);
+        assert_eq!(cell["value"]["form"], "empty");
     }
 
     #[test]

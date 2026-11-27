@@ -8,6 +8,8 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::unknown::part::Cause;
 
+use crate::container::streams::Streams;
+
 const BYTE_ORDER_LE: u16 = 0xfffe;
 const MAX_STREAM_SIZE: usize = 2_097_152;
 const MAX_PROPERTIES: usize = 65_536;
@@ -146,6 +148,7 @@ fn is_property_set_name(path: &str) -> bool {
 pub(crate) fn inventory<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
+    streams: &mut Streams<'a>,
 ) -> Result<Vec<PropertySetDescriptor<'a>>, CodecError> {
     let mut property_sets = Vec::new();
     for entry in snapshot.entries() {
@@ -157,10 +160,11 @@ pub(crate) fn inventory<'a>(
         {
             continue;
         }
-        let view = match snapshot.open(ctx, stream) {
+        let named = is_property_set_name(stream.path());
+        let view = match streams.open(ctx, snapshot, stream, named.then_some("property-set")) {
             Ok(view) => view,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) if is_property_set_name(stream.path()) => {
+            Err(error) if named => {
                 let (cause, detail) = crate::issue(error)?;
                 property_sets.push(PropertySetDescriptor {
                     stream: stream.id(),
@@ -969,7 +973,7 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("compound input fits service policy");
         let snapshot = CompoundSnapshot::new(&setup, root).expect("synthetic compound parses");
-        let inventory = super::inventory(&setup, &snapshot)
+        let inventory = super::inventory(&setup, &snapshot, &mut super::Streams::default())
             .expect("malformed property set remains an inventory entry");
         assert!(matches!(
             inventory.first().map(|entry| &entry.state),

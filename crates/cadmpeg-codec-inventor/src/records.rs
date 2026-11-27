@@ -173,6 +173,22 @@ pub(crate) struct RseRecordTable<'a> {
     pub(crate) stream_trailer: View<'a>,
 }
 
+pub(crate) const MAX_METADATA_SECTION_ENTRIES: u32 = 1_000_000;
+
+impl MetaTables<'_> {
+    pub(crate) fn validate_reference_widths(&self) -> Result<(), CodecError> {
+        for (index, number) in [
+            (6, ReverseSectionNumber::Seven),
+            (7, ReverseSectionNumber::Eight),
+            (9, ReverseSectionNumber::Ten),
+        ] {
+            let section = &self.sections[index];
+            validate_reverse_section(number, section.discriminator, section.payload)?;
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecError> {
     let mut view = body;
     let prefix =
@@ -390,7 +406,12 @@ fn reverse_section<'a>(
         )));
     }
     let payload = child(body, header + 8, *end, "metadata section payload")?;
-    validate_reverse_section(number, discriminator, payload)?;
+    if !matches!(
+        number,
+        ReverseSectionNumber::Seven | ReverseSectionNumber::Eight | ReverseSectionNumber::Ten
+    ) {
+        validate_reverse_section(number, discriminator, payload)?;
+    }
     *end = header;
     *payload_len = previous_span - 4;
     Ok(MetaSection {
@@ -441,7 +462,7 @@ fn validate_reverse_section(
     payload: View<'_>,
 ) -> Result<(), CodecError> {
     let payload_len = payload.window().len();
-    if number != ReverseSectionNumber::Five && discriminator > 1_000_000 {
+    if number != ReverseSectionNumber::Five && discriminator > MAX_METADATA_SECTION_ENTRIES {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata section {number} count exceeds 1000000"
         )));

@@ -100,9 +100,9 @@ Type 0 stores object nodes. `->` and an empty payload are distinct non-null
 object forms, and `NULL` is the null form. A positive dimension header stores an
 object array. Its direct elements are the following rows at depth one greater
 with the same attribute identifier; element subtrees can contain rows at still
-greater depths. The direct-element count must equal the product of the extents
-for a complete array. A header without direct element rows stores no default
-objects.
+greater depths. An array with direct element rows is complete when their count
+equals the product of the extents. An array header without element rows stores
+no elements for every array type. The extents alone supply no default values.
 
 Within one attribute scope, a row at depth `d > 0` is owned by the most recent
 preceding type-0 row at depth `d - 1`. A row at depth zero has no parent. A new
@@ -115,10 +115,8 @@ the positive decimal extent header, continuation rows, comma separators,
 terminal-comma rule, and `n*value` run-length form defined below for type 2,
 with signed decimal integers in place of compact reals. A one-element `[1]`
 array can instead store its integer in the immediately following value row at
-depth one greater and with the same attribute identifier. The sum of run counts
-must equal the product of the extents. A type-1 array header without element
-rows stores no integer elements; its declared extents do not supply default
-values.
+depth one greater and with the same attribute identifier. When it stores
+element rows, the sum of run counts must equal the product of the extents.
 
 A type-2 scalar payload is one through sixteen uppercase hexadecimal digits.
 The digits are the most-significant nibbles of an IEEE-754 binary64 bit word.
@@ -132,16 +130,15 @@ as comma-separated compact-real tokens. A token `n*H` repeats compact real `H`
 `n` times. A terminal comma before the line break adds no element. The sum of
 run counts must equal the product of the extents. A one-element `[1]` array can
 instead store its compact-real token in the immediately following value row at
-depth one greater and with the same attribute identifier. An incomplete array
-does not produce a typed value.
+depth one greater and with the same attribute identifier. A sequence of
+element rows with a run count different from the extent product is incomplete.
 
 Type 3 stores a nullable byte-string scalar. The exact token `NULL` is null;
 all other payloads, including an empty payload, are stored byte strings. Type 4
 stores its complete scalar payload as a byte string; `NULL` has no special
 meaning for type 4. Neither type uses continuation rows.
 
-Type 6 uses the type-2 compact-real scalar and array grammar. Its array run
-count must equal the product of the declared extents.
+Type 6 uses the type-2 compact-real scalar and array grammar.
 
 Types 5, 7, 9, and 11 store unsigned decimal 32-bit scalars. Their arrays use
 the positive decimal extent headers, `$` continuation rows, comma separators,
@@ -6544,10 +6541,12 @@ type-1 signed-integer `attributes` scalar, one arrow `drv_tbl_ptr` model target,
 and one complete one-dimensional `values` object array. Instance names are
 unique. The values array has exactly the item-array length, and its inline
 elements join the item columns by ordinal. Each value element has one type-1
-signed-integer `type` scalar and exactly one typed scalar: type `50` selects
-type-2 `value(d_val)`, type `51` selects type-10 `value(s_val)`, and type `52`
-selects type-1 `value(i_val)`. A missing, duplicate, mismatched, or incomplete
-field withholds the table join and retains the source object graph.
+signed-integer `type` scalar. Type `50` selects type-2 `value(d_val)`, type
+`51` selects type-10 `value(s_val)`, and type `52` selects type-1
+`value(i_val)`. An empty numeric array supplies no scalar. An empty array for
+the selected numeric field leaves its cell empty when there is no scalar.
+A missing, conflicting, mismatched, or incomplete selected field withholds
+the table join and retains the source object graph.
 
 Unix-compress streams with header `1f 9d 10` grow code width from 9 to 16 bits.
 Code 256 is the first dynamic dictionary slot rather than a clear code.

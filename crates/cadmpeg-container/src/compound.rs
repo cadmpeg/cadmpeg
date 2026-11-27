@@ -630,6 +630,26 @@ impl<'a> CompoundSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         entry: &CompoundStreamEntry,
     ) -> Result<View<'a>, CodecError> {
+        self.open_stream(ctx, entry, false)
+    }
+
+    /// Opens an independently framed stream if its joined copy fits the
+    /// remaining retained budget. A copy beyond that allowance is unsupported
+    /// for this part. The session budget remains available to other parts.
+    pub fn open_part(
+        &self,
+        ctx: &DecodeContext<'a>,
+        entry: &CompoundStreamEntry,
+    ) -> Result<View<'a>, CodecError> {
+        self.open_stream(ctx, entry, true)
+    }
+
+    fn open_stream(
+        &self,
+        ctx: &DecodeContext<'a>,
+        entry: &CompoundStreamEntry,
+        optional: bool,
+    ) -> Result<View<'a>, CodecError> {
         if entry.snapshot_id != self.snapshot_id {
             return malformed("CFB stream handle does not belong to this snapshot");
         }
@@ -656,17 +676,33 @@ impl<'a> CompoundSnapshot<'a> {
         };
         let first = sector_view(chain.first)?;
         let mut end = first.end();
+        let mut length = first.window().len();
         let mut contiguous = true;
         for &sector in &chain.rest {
             let view = sector_view(sector)?;
             contiguous &= view.start() == end;
             end = view.end();
+            length = length
+                .checked_add(view.window().len())
+                .ok_or_else(|| CodecError::malformed("CFB stream length overflows"))?;
+        }
+        if length < logical_size {
+            return Err(CodecError::malformed(format_args!(
+                "CFB stream {} is shorter than declared",
+                entry.path
+            )));
         }
         let opened = if contiguous {
             self.root.child(first.start(), end).ok_or_else(|| {
                 CodecError::Malformed("CFB contiguous stream range escapes input".into())
             })?
         } else {
+            if optional && !can_copy_part(ctx, length)? {
+                return Err(CodecError::NotImplemented(format!(
+                    "joining CFB stream {} needs {length} retained bytes",
+                    entry.path()
+                )));
+            }
             let mut views = vec![first];
             for &sector in &chain.rest {
                 views.push(sector_view(sector)?);
@@ -696,6 +732,25 @@ impl<'a> CompoundSnapshot<'a> {
         ctx: &DecodeContext<'a>,
         entry: &CompoundStreamEntry,
     ) -> Result<Option<View<'a>>, CodecError> {
+        self.located(ctx, entry, false)
+    }
+
+    /// Opens the located bytes of a broken stream when their joined copy fits
+    /// the remaining retained budget.
+    pub fn open_located_part(
+        &self,
+        ctx: &DecodeContext<'a>,
+        entry: &CompoundStreamEntry,
+    ) -> Result<Option<View<'a>>, CodecError> {
+        self.located(ctx, entry, true)
+    }
+
+    fn located(
+        &self,
+        ctx: &DecodeContext<'a>,
+        entry: &CompoundStreamEntry,
+        optional: bool,
+    ) -> Result<Option<View<'a>>, CodecError> {
         if entry.snapshot_id != self.snapshot_id {
             return malformed("CFB stream handle does not belong to this snapshot");
         }
@@ -714,6 +769,7 @@ impl<'a> CompoundSnapshot<'a> {
         };
         let mut remaining = usize::try_from(*logical_size)
             .map_err(|_| CodecError::malformed("CFB stream size exceeds the address space"))?;
+        let logical_size = remaining;
         let mut views = Vec::new();
         for &sector in located {
             if remaining == 0 {
@@ -740,7 +796,12 @@ impl<'a> CompoundSnapshot<'a> {
         match views.as_slice() {
             [] => Ok(None),
             [view] => Ok(Some(*view)),
-            views => ctx.concat_views(views).map(Some),
+            views => {
+                if optional && !can_copy_part(ctx, logical_size - remaining)? {
+                    return Ok(None);
+                }
+                ctx.concat_views(views).map(Some)
+            }
         }
     }
 
@@ -831,6 +892,13 @@ impl<'a> CompoundSnapshot<'a> {
                 CodecError::Malformed("CFB mini sector crosses a regular-sector boundary".into())
             })
     }
+}
+
+fn can_copy_part(ctx: &DecodeContext<'_>, length: usize) -> Result<bool, CodecError> {
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(limit.into());
+    }
+    Ok(cadmpeg_core::decode::u64_from_index(length) <= ctx.retained_bytes_available())
 }
 
 impl CompoundState {
@@ -2424,6 +2492,30 @@ mod tests {
                 &[0x5a; 4096]
             );
         }
+    }
+
+    #[test]
+    fn a_fragmented_part_can_leave_the_retained_allowance_for_other_parts() {
+        let mut file = fixture();
+        let fat = sector_mut(&mut file, 11);
+        for (index, next) in [(2, 4), (4, 3), (3, 5)] {
+            put_u32(fat, index * 4, next);
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2048;
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&file, &arena, &policy).expect("fixture root");
+        let snapshot = CompoundSnapshot::new(&ctx, root).expect("valid allocation");
+        let stream = snapshot.stream("Store/Large").expect("large stream");
+        let available = ctx.retained_bytes_available();
+        assert!(matches!(
+            snapshot.open_part(&ctx, stream),
+            Err(CodecError::NotImplemented(_))
+        ));
+        assert_eq!(ctx.retained_bytes_available(), available);
+        ctx.finish_session()
+            .expect("an optional copy leaves the session usable");
     }
 
     #[test]

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Give-ups of whole streams and metadata sections, as a decode reports them.
 
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{record_unreadable_kind, Cause};
 
 use crate::test_support::test_fixtures::{
-    acis_sphere_kernel_stream, primary_envelope_fixture, primary_envelope_fixture_with_design,
-    primary_envelope_fixture_with_drawing_tables, primary_envelope_fixture_with_kernel,
-    BaseEnvelopeRecords, EnvelopeDeclarations,
+    acis_sphere_kernel_stream, fixture_with_ufrx, primary_envelope_fixture,
+    primary_envelope_fixture_with_design, primary_envelope_fixture_with_drawing_tables,
+    primary_envelope_fixture_with_kernel, BaseEnvelopeRecords, EnvelopeDeclarations,
 };
 use crate::InventorCodec;
 use cadmpeg_test_support::bytes::{put_u16, put_u32};
@@ -79,33 +80,145 @@ fn envelope_with_broken_property_set_stream() -> Vec<u8> {
 #[test]
 fn a_property_set_stream_that_does_not_open_is_one_unreadable_give_up() {
     let bytes = envelope_with_broken_property_set_stream();
-    let decoded = InventorCodec
-        .decode(
-            &mut std::io::Cursor::new(bytes.clone()),
-            &DecodeOptions::default(),
-        )
-        .expect("a default decode gives up the stream and continues");
-    let losses = &decoded.report().losses;
-    let noncanonical = crate::loss::InventorLossCode::ContainerNoncanonical
-        .note("")
-        .code;
-    assert!(
-        losses.iter().all(|loss| loss.code != noncanonical),
-        "{losses:#?}"
-    );
-    let broken = charges(losses)
-        .into_iter()
-        .filter(|message| message.contains("Broken"))
-        .collect::<Vec<_>>();
-    assert_eq!(broken.len(), 1, "{losses:#?}");
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let mut options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        let decoded = InventorCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &options)
+            .expect("a default decode gives up the stream and continues");
+        let losses = &decoded.report().losses;
+        let noncanonical = crate::loss::InventorLossCode::ContainerNoncanonical.kind();
+        assert!(
+            losses.iter().all(|loss| loss.code != noncanonical),
+            "{losses:#?}"
+        );
+        let broken = charges(losses)
+            .into_iter()
+            .filter(|message| message.contains("Broken"))
+            .collect::<Vec<_>>();
+        let [charge] = broken.as_slice() else {
+            panic!("one property-set give-up at {depth:?}: {losses:#?}");
+        };
+        assert!(charge.starts_with("part property-set "), "{charge}");
 
-    let mut options = DecodeOptions::default();
-    options.strictness.pinned = true;
-    match InventorCodec.decode(&mut std::io::Cursor::new(bytes), &options) {
-        Err(DecodeFailure::StrictRejected { rejection }) => {
-            assert_eq!(rejection.loss().code, record_unreadable_kind());
+        options.strictness.pinned = true;
+        if depth == DecodeDepth::Container {
+            InventorCodec
+                .decode(&mut std::io::Cursor::new(&bytes), &options)
+                .expect("container depth is exempt from pinned floors");
+            options.strictness = options.strictness.with_code("record.unreadable");
         }
-        other => panic!("a pinned decode refuses the give-up: {:?}", other.err()),
+        match InventorCodec.decode(&mut std::io::Cursor::new(&bytes), &options) {
+            Err(DecodeFailure::StrictRejected { rejection }) => {
+                assert_eq!(rejection.loss().code, record_unreadable_kind());
+                assert!(rejection.loss().message.contains("Broken"));
+            }
+            other => panic!("strict decode refuses the give-up: {:?}", other.err()),
+        }
+    }
+}
+
+#[test]
+fn a_fragmented_property_set_above_available_retention_is_undecoded() {
+    const DIRECTORY: usize = 512;
+    const FAT: usize = 1024;
+    const PROPERTY_ENTRY: usize = DIRECTORY + 3 * 128;
+    const FIRST_STREAM_BYTE: usize = 1536;
+    const STREAM_BYTES: usize = 32 * 1024;
+    const END_CHAIN: u32 = 0xffff_fffe;
+    let mut property_set = [0_u8; 56];
+    put_u16(&mut property_set, 0, 0xfffe);
+    put_u32(&mut property_set, 24, 1);
+    put_u32(&mut property_set, 44, 48);
+    put_u32(&mut property_set, 48, 8);
+    let mut bytes = fixture_with_ufrx(&property_set);
+    bytes.resize(FIRST_STREAM_BYTE + STREAM_BYTES, 0);
+    let name = "\u{5}Budget".encode_utf16().collect::<Vec<_>>();
+    bytes[PROPERTY_ENTRY..PROPERTY_ENTRY + 64].fill(0);
+    for (index, unit) in name.iter().enumerate() {
+        put_u16(&mut bytes, PROPERTY_ENTRY + index * 2, *unit);
+    }
+    put_u16(
+        &mut bytes,
+        PROPERTY_ENTRY + 64,
+        u16::try_from((name.len() + 1) * 2).expect("fixture name length"),
+    );
+    put_u32(
+        &mut bytes,
+        PROPERTY_ENTRY + 120,
+        u32::try_from(STREAM_BYTES).expect("fixture stream size"),
+    );
+    let end = 2 + STREAM_BYTES / 512;
+    for sector in 2..end {
+        let next = match sector {
+            2 => 4,
+            3 => 5,
+            4 => 3,
+            _ if sector + 1 == end => END_CHAIN,
+            _ => u32::try_from(sector + 1).expect("fixture FAT link"),
+        };
+        put_u32(&mut bytes, FAT + sector * 4, next);
+    }
+    let intact = InventorCodec
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the property-set stream is valid");
+    let inventor = intact
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("Inventor namespace");
+    let records = inventor
+        .arena_as::<crate::native::PropertySetRecord>("property_sets")
+        .expect("property-set arena");
+    assert_eq!(records.len(), 1);
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let mut options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        options.policy.limits.max_retained_bytes = 16 * 1024;
+        let result = InventorCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &options)
+            .expect("a property-set copy can be skipped without exhausting the session");
+        let charges = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.message.starts_with("part property-set "))
+            .collect::<Vec<_>>();
+        let [loss] = charges.as_slice() else {
+            panic!("one property-set charge at {depth:?}: {charges:?}");
+        };
+        assert_eq!(loss.code, Cause::Undecoded.kind());
+        assert!(loss.message.contains("joining CFB stream"));
+        assert!(loss.message.contains("Budget"));
+    }
+}
+
+#[test]
+fn a_ufrx_stream_with_an_unallocated_start_is_given_up_once() {
+    let mut bytes = fixture_with_ufrx(&[]);
+    put_u32(&mut bytes, 512 + 3 * 128 + 116, 128);
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        let result = InventorCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &options)
+            .expect("an unread reference stream leaves the container readable");
+        let all = &result.report().losses;
+        let reference_losses: Vec<_> = all
+            .iter()
+            .filter(|loss| loss.message.contains("UFRxDoc"))
+            .collect();
+        let [loss] = reference_losses.as_slice() else {
+            panic!("one UFRxDoc charge at {depth:?}: {all:?}");
+        };
+        assert_eq!(loss.code, Cause::Unreadable.kind());
+        assert!(loss.message.starts_with("part ufrx-stream "));
     }
 }
 
@@ -166,12 +279,20 @@ fn an_unpaired_segment_stream_is_given_up_whole() {
 }
 
 #[test]
-fn reference_tables_that_do_not_read_give_up_their_section() {
-    // Section 7 stores 76 bytes for one 32-byte segment pair.
+fn an_unknown_reference_table_width_is_undecoded() {
+    assert_reference_table_give_up(76, Cause::Undecoded);
+}
+
+#[test]
+fn a_reference_table_shorter_than_its_count_is_unreadable() {
+    assert_reference_table_give_up(31, Cause::Unreadable);
+}
+
+fn assert_reference_table_give_up(length: usize, cause: Cause) {
     let tables = BaseEnvelopeRecords {
         design_version: 18,
         brep: Vec::new(),
-        pairs: vec![0x41; 76],
+        pairs: vec![0x41; length],
         pair_count: Some(1),
         revisions: Vec::new(),
         references: Vec::new(),
@@ -187,7 +308,7 @@ fn reference_tables_that_do_not_read_give_up_their_section() {
     let losses = &decoded.report().losses;
     let charges = losses
         .iter()
-        .filter(|loss| loss.code == Cause::Undecoded.kind())
+        .filter(|loss| loss.code == cause.kind())
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
     let [charge] = charges

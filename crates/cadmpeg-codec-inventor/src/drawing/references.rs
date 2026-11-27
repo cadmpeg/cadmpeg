@@ -138,18 +138,24 @@ fn read_entries<T: Clone>(
     initial: T,
     mut read: impl FnMut(&mut View<'_>) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
-    // The section length is count times the width of the surface-body
-    // reference form; any other length is a form the reader does not read.
-    let bounded = payload
-        .counted(u64::from(count), width)
-        .filter(|bounded| bounded.get().checked_mul(width) == Some(payload.remaining()))
-        .ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "drawing reference table of {count} entries holds {} bytes, not {width}-byte \
-                 entries of the surface-body reference form",
-                payload.remaining()
-            ))
-        })?;
+    let bounded = payload.counted(u64::from(count), width).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "drawing reference table of {count} entries has only {} bytes for {width}-byte entries",
+            payload.remaining(),
+        ))
+    })?;
+    if bounded.get().checked_mul(width) != Some(payload.remaining()) {
+        return Err(CodecError::NotImplemented(format!(
+            "drawing reference table of {count} entries holds {} bytes, not {width}-byte \
+             entries of the surface-body reference form",
+            payload.remaining()
+        )));
+    }
+    if count > crate::records::MAX_METADATA_SECTION_ENTRIES {
+        return Err(CodecError::NotImplemented(format!(
+            "drawing reference table count {count} exceeds the metadata entry limit"
+        )));
+    }
     let mut entries =
         ctx.alloc_filled(bounded.get(), initial, "retain drawing reference entries")?;
     for target in &mut entries {

@@ -8,6 +8,7 @@ use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+use crate::container::streams::Streams;
 use crate::layout::protein_header;
 
 #[derive(Debug)]
@@ -40,31 +41,34 @@ pub(crate) struct ProteinInstanceRecords {
 pub(crate) fn parse<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
+    streams: &mut Streams<'a>,
 ) -> Result<ProteinState<'a>, CodecError> {
     let Some(stream) = snapshot.stream("Protein") else {
         return Ok(ProteinState::Absent);
     };
-    let source = snapshot.open(ctx, stream)?;
-    let result = parse_stream(ctx, source);
-    Ok(match result {
-        Ok(ParsedProtein::Empty) => ProteinState::Empty {
-            stream: stream.id(),
+    Ok(
+        match streams.read(ctx, snapshot, stream, "protein-stream", |source| {
+            parse_stream(ctx, source)
+        }) {
+            Ok(ParsedProtein::Empty) => ProteinState::Empty {
+                stream: stream.id(),
+            },
+            Ok(ParsedProtein::Package {
+                declared_len,
+                archive,
+                payload,
+            }) => ProteinState::Package(ProteinEnvelope {
+                stream: stream.id(),
+                declared_len,
+                archive,
+                payload,
+            }),
+            Err(error) => ProteinState::Malformed {
+                stream: stream.id(),
+                detail: crate::issue_detail(error)?,
+            },
         },
-        Ok(ParsedProtein::Package {
-            declared_len,
-            archive,
-            payload,
-        }) => ProteinState::Package(ProteinEnvelope {
-            stream: stream.id(),
-            declared_len,
-            archive,
-            payload,
-        }),
-        Err(error) => ProteinState::Malformed {
-            stream: stream.id(),
-            detail: crate::issue_detail(error)?,
-        },
-    })
+    )
 }
 
 enum ParsedProtein<'a> {
@@ -220,7 +224,8 @@ mod tests {
                 .expect("compound input fits service policy");
         let snapshot = CompoundSnapshot::new(&setup, root).expect("synthetic compound parses");
         assert!(matches!(
-            super::parse(&setup, &snapshot).expect("malformed Protein remains an inventory state"),
+            super::parse(&setup, &snapshot, &mut super::Streams::default())
+                .expect("malformed Protein remains an inventory state"),
             super::ProteinState::Malformed { .. }
         ));
     }

@@ -189,6 +189,7 @@ fn discover(
     Vec<cadmpeg_ir::report::loss::LossNote>,
     usize,
 ) {
+    const DESIGN: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let key = |entity: u64, start: usize| (entity, u64::try_from(start).unwrap());
     let frames = crate::metastream::primary_record_frames(meta, bytes.len()).unwrap();
     let typed = super::super::occurrence_frames(bytes, meta).unwrap();
@@ -204,28 +205,30 @@ fn discover(
         .iter()
         .map(|frame| (frame.start, frame.member_end))
         .collect();
-    let admitted = crate::test_support::with_decode_context(|ctx| {
-        super::super::admitted_stream_occurrences(
-            ctx,
-            bytes,
-            "Design/BulkStream.dat",
-            &frame_ends,
-            &super::super::occurrence_source_entities(meta),
-            &primary,
-            &typed_primary,
-        )
-        .expect("the admission charges its losses")
-    });
+    let archive = crate::test_support::body_map_test::f3d_with_breps_and_design(&[], bytes, &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let admitted = super::super::admitted_stream_occurrences(
+        &ctx,
+        scan.entry_bytes(DESIGN).unwrap(),
+        DESIGN,
+        &frame_ends,
+        &super::super::occurrence_source_entities(meta),
+        &primary,
+        &typed_primary,
+    )
+    .expect("the stream admits its occurrences");
     let mut losses = admitted.losses;
-    losses.extend(admitted.given_up.iter().map(|frame| {
-        let (cause, why) = frame.reason();
-        cadmpeg_ir::unknown::part::GivenUpRecord::new(
-            cadmpeg_ir::ids::Identity::new("f3d:design:record#0").unwrap(),
-            cause,
-            why,
-        )
-        .loss()
-    }));
+    let frames = crate::design::decode::record::give_up_frames(&ctx, &scan, admitted.given_up)
+        .expect("each dropped frame gives up its source part");
+    losses.extend(
+        frames
+            .iter()
+            .map(cadmpeg_ir::unknown::part::GivenUpPart::loss),
+    );
     (admitted.occurrences, losses, admitted.superseded)
 }
 
@@ -342,6 +345,12 @@ fn an_occurrence_with_a_registered_and_an_unregistered_frame_takes_the_registere
     assert_eq!(occurrences[0].byte_offset(), 0);
     assert_eq!(superseded, 0);
     assert_eq!(codes(&losses), [Refusal::YieldedToRegistered]);
+    let [loss] = losses.as_slice() else {
+        panic!("one dropped-frame charge: {losses:?}");
+    };
+    assert!(loss.message.starts_with(&format!(
+        "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset={second} "
+    )));
 
     let mut upper = unregistered.clone();
     let guid_at = 51 + 76 + 4;

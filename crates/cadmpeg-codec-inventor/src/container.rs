@@ -17,6 +17,9 @@ use crate::protein::{parse as parse_protein, ProteinState};
 use crate::rse::SegmentBulkState;
 use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
 
+pub(crate) mod streams;
+use streams::Streams;
+
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {
     pub(crate) snapshot: CompoundSnapshot<'a>,
@@ -24,6 +27,7 @@ pub(crate) struct InventorContainer<'a> {
     pub(crate) property_sets: Vec<PropertySetDescriptor<'a>>,
     pub(crate) protein: ProteinState<'a>,
     pub(crate) ufrx: UfrxState<'a>,
+    pub(crate) streams: Streams<'a>,
 }
 
 impl<'a> InventorContainer<'a> {
@@ -37,16 +41,18 @@ impl<'a> InventorContainer<'a> {
                 "Inventor document has no RSeStorage storage".into(),
             ));
         }
-        let rse = RseInventory::build(ctx, &snapshot)?;
-        let property_sets = property_set_inventory(ctx, &snapshot)?;
-        let protein = parse_protein(ctx, &snapshot)?;
-        let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind())?;
+        let mut streams = Streams::default();
+        let rse = RseInventory::build(ctx, &snapshot, &mut streams)?;
+        let protein = parse_protein(ctx, &snapshot, &mut streams)?;
+        let ufrx = parse_ufrx(ctx, &snapshot, &mut streams, &rse.document_kind())?;
+        let property_sets = property_set_inventory(ctx, &snapshot, &mut streams)?;
         Ok(Self {
             snapshot,
             rse,
             property_sets,
             protein,
             ufrx,
+            streams,
         })
     }
 
