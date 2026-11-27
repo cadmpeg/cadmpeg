@@ -44,6 +44,7 @@ use cadmpeg_ir::units::UnitVector3;
 use crate::loss::FreecadLossCode;
 use crate::native::frame::FiniteFrame;
 use crate::native::{ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord};
+use crate::product::UnresolvedLink;
 
 mod parameters;
 pub(crate) mod states;
@@ -59,6 +60,7 @@ pub(crate) fn project(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     links: &[ProductNodeRecord],
+    unresolved: &[UnresolvedLink],
     losses: &mut Vec<LossNote>,
 ) {
     let source = Source::of(objects, properties);
@@ -74,7 +76,8 @@ pub(crate) fn project(
         .filter(|id| !history.contained.contains(**id))
         .map(|id| Member::Feature((*id).clone()))
         .collect::<BTreeSet<_>>();
-    let places = places(ir, &definition, objects, links, losses);
+    let mut places = places(ir, &definition, objects, links, losses);
+    places.extend(unresolved_places(objects, unresolved));
     grouped.extend(places.iter().map(|place| Member::Feature(place.id.clone())));
     features.extend(places);
     let mut containers = Vec::new();
@@ -346,11 +349,15 @@ fn places(
         .filter(|link| matches!(link.node, ProductNode::Occurrence(_)))
     {
         let container = crate::native::model_id("occurrence", &link.object, "container");
+        // The occurrences of the link in its other containers repeat these.
         let placed = by_object
             .get(link.object.as_str())
             .into_iter()
             .flatten()
-            .filter(|occurrence| occurrence.id.as_str() != container)
+            .filter(|occurrence| {
+                occurrence.id.as_str() != container
+                    && !crate::product::is_listing_copy(occurrence.id.as_str())
+            })
             .collect::<Vec<_>>();
         let operation = match placed.as_slice() {
             [] => continue,
@@ -393,6 +400,42 @@ fn places(
                 fuzzy_tolerance: None,
             },
             placement: None,
+            component: None,
+            driven_by: None,
+            native_ref: Some(link.object.clone()),
+        });
+    }
+    features
+}
+
+/// The feature of each link given up for a prototype or element list
+/// stored in a form the decoder cannot read: a `Place` whose operation is
+/// unresolved, at the placement the link stores (§3.3).
+fn unresolved_places(objects: &[ObjectRecord], unresolved: &[UnresolvedLink]) -> Vec<Feature> {
+    let mut features = Vec::new();
+    for link in unresolved {
+        let Ok(id) = FeatureId::mint(format!(
+            "fcstd:design:feature#{}",
+            crate::native::id_key(&link.object)
+        )) else {
+            continue;
+        };
+        features.push(Feature {
+            id,
+            name: objects
+                .iter()
+                .find(|object| object.id() == &link.object)
+                .map(|object| object.name().to_owned()),
+            suppressed: None,
+            definition: FeatureDefinition {
+                operation: FeatureOperation::Unresolved {
+                    family: OperationFamily::Place,
+                },
+                assembly: None,
+                refine: None,
+                fuzzy_tolerance: None,
+            },
+            placement: link.placement.and_then(fixed).map(Box::new),
             component: None,
             driven_by: None,
             native_ref: Some(link.object.clone()),

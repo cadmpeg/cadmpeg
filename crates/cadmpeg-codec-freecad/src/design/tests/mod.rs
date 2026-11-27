@@ -54,7 +54,7 @@ fn singular_reference_link_keeps_one_selector_and_rejects_two() {
 }
 
 #[test]
-fn sketch_placement_runtime_type_error_is_malformed() {
+fn a_sketch_placement_of_another_runtime_type_leaves_the_frame_unresolved() {
     let property = crate::native::PropertyRecord {
         id: "placement-property".into(),
         owner: "sketch".into(),
@@ -67,11 +67,8 @@ fn sketch_placement_runtime_type_error_is_malformed() {
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
             .expect("valid XML span"),
     };
-    let expected = "sketch Placement placement carrier has runtime type App::PropertyString";
-    assert!(matches!(super::validate_sketch_placement(&[&property]),
-        Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected));
-    assert!(matches!(super::sketch_frame(&[&property]),
-        Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected));
+    assert!(super::sketch_frame(&[&property]).is_none());
+    assert!(super::sketch_frame(&[]).is_some());
 }
 
 /// Feature definition selected by exact feature name.

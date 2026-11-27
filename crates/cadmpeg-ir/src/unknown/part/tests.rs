@@ -554,6 +554,20 @@ fn a_record_given_up_names_its_span_and_the_sorted_records_dropped_with_it() {
 }
 
 #[test]
+fn a_record_given_up_states_what_else_it_cost_before_its_lists() {
+    let id = |text: &str| Identity::new(text).expect("an id");
+    let loss = super::GivenUpRecord::new(id("t:r:rec#7"), "carrier unsupported")
+        .costing("occurrence t:o:occ#1 states no transform")
+        .dropping([id("t:r:rec#8")])
+        .loss();
+    assert_eq!(
+        loss.message,
+        "record t:r:rec#7 given up: carrier unsupported; occurrence t:o:occ#1 states no \
+         transform; dropped=[t:r:rec#8]"
+    );
+}
+
+#[test]
 fn a_tail_gains_the_wrapper_s_dropped_and_marked_records_in_order() {
     let id = |text: &str| Identity::new(text).expect("an id");
     let mut loss = super::GivenUpRecord::new(id("t:r:rec#1"), "bad")

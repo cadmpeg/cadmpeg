@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Primitive feature-local to document-model frame admission.
 
-use super::{body_membership_property, property};
+use super::property;
 use crate::native::{sole_named_property, ObjectRecord, PropertyRecord};
+use crate::product::ParentMap;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::FeatureRigidPlacement;
 use std::collections::{HashMap, HashSet};
@@ -19,9 +20,11 @@ pub(crate) fn carries_frame(properties: &[&PropertyRecord]) -> bool {
     .any(|name| property(properties, name).is_some())
 }
 
+/// The frame of primitive `object` in the document: its `Placement` after
+/// the placement of each coordinate-system group that holds it in turn.
 pub(crate) fn resolve(
     object: &ObjectRecord,
-    objects: &[ObjectRecord],
+    parents: &ParentMap<'_>,
     properties: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Result<Option<FeatureRigidPlacement>, CodecError> {
     let owned = properties
@@ -53,30 +56,10 @@ pub(crate) fn resolve(
     let mut current = object.id().as_str();
     let mut seen = HashSet::new();
     while seen.insert(current) {
-        let parents = objects
-            .iter()
-            .filter(|parent| {
-                matches!(parent.type_name.as_str(), "PartDesign::Body" | "App::Part")
-                    && properties
-                        .get(parent.id().as_str())
-                        .and_then(|p| body_membership_property(p))
-                        .is_some_and(|group| {
-                            group
-                                .links()
-                                .iter()
-                                .flatten()
-                                .any(|link| link.object() == Some(current))
-                        })
-            })
-            .collect::<Vec<_>>();
-        let parent = match parents.as_slice() {
-            [] => return Ok(FeatureRigidPlacement::new(frame)),
-            [parent] => *parent,
-            _ => return Ok(None),
+        let Some(parent) = parents.coordinate(current) else {
+            return Ok(FeatureRigidPlacement::new(frame));
         };
-        let owned = properties
-            .get(parent.id().as_str())
-            .map_or(&[][..], Vec::as_slice);
+        let owned = properties.get(parent).map_or(&[][..], Vec::as_slice);
         let Some(parent_frame) = read_frame(owned)? else {
             return Ok(None);
         };
@@ -84,7 +67,7 @@ pub(crate) fn resolve(
             return Ok(None);
         };
         frame = composed;
-        current = parent.id().as_str();
+        current = parent;
     }
     Ok(None)
 }

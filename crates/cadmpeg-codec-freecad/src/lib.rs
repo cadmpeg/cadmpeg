@@ -282,6 +282,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             .or_default()
             .push(property);
     }
+    let parent_map = product::ParentMap::new(&product_nodes, &objects, &primitive_properties);
     for feature in &ir.model.features {
         let operation = match feature.evaluation.definition() {
             cadmpeg_ir::features::FeatureDefinition::Operation(operation)
@@ -296,7 +297,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         else {
             continue;
         };
-        match design::primitive_placement::resolve(object, &objects, &primitive_properties) {
+        match design::primitive_placement::resolve(object, &parent_map, &primitive_properties) {
             Ok(expected)
                 if expected == *placement
                     && (expected.is_some()
@@ -992,12 +993,13 @@ impl CodecBackend for FcstdCodec {
                 &brep::carrier_census(ctx, &shape_payloads)?,
             )?;
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
-            let product_layer = product::transfer(
+            let mut product_layer = product::transfer(
                 &graph.objects,
                 &graph.properties,
                 &scan.data,
                 &mut transfer_losses,
             )?;
+            let deferred = std::mem::take(&mut product_layer.deferred);
             let product_nodes = &product_layer.records;
             namespace.set_arena(ctx, "product_nodes", product_nodes)?;
             let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
@@ -1080,6 +1082,7 @@ impl CodecBackend for FcstdCodec {
                     design::DesignObjects {
                         objects: &graph.objects,
                         extensions: &graph.extensions,
+                        products: product_nodes,
                     },
                     &graph.properties,
                     &shape_payloads,
@@ -1132,6 +1135,7 @@ impl CodecBackend for FcstdCodec {
                     bodies: &ir.geometry.bodies,
                     tessellations: &ir.model.tessellations,
                 },
+                deferred,
                 &mut transfer_losses,
             ) {
                 Ok(products) => products,
@@ -1207,6 +1211,7 @@ impl CodecBackend for FcstdCodec {
                     &graph.objects,
                     &graph.properties,
                     product_nodes,
+                    &product_layer.unresolved,
                     &mut transfer_losses,
                 );
             }

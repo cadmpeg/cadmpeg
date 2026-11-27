@@ -876,11 +876,38 @@ fn primitive_placement_with_multiple_part_parents_keeps_the_first_container() {
         .collect::<Vec<_>>();
     assert_eq!(given_up.len(), 1, "{given_up:?}");
     assert!(given_up[0].starts_with("record fcstd:native:property#Body:Group given up"));
-    assert!(decoded
+    // The primitive's frame and its occurrence both lie in OtherBody, the
+    // first container that lists it.
+    assert!(!decoded
         .report()
         .losses
         .iter()
         .any(|l| l.code.local_code() == "feature.primitive-placement-unresolved"));
+    let primitive = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find_map(|f| match operation(f) {
+            FeatureOperation::Primitive { placement, .. } => *placement,
+            _ => None,
+        })
+        .expect("a resolved primitive frame");
+    let occurrence = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str().ends_with("#Box:container"))
+        .expect("the primitive's occurrence");
+    let world = cadmpeg_test_support::assembly::resolved_transform(decoded.ir(), &occurrence.id)
+        .expect("a placed occurrence");
+    assert_eq!(primitive.rows()[0][3], 10.0);
+    assert_eq!(primitive.rows()[1][3], -14.0);
+    assert_eq!(primitive.rows()[2][3], 6.0);
+    assert_eq!(primitive.rows(), world.rows());
+    let findings = crate::test_support::validate_native(decoded.ir());
+    assert!(findings.is_empty(), "{findings:?}");
 }
 
 #[test]

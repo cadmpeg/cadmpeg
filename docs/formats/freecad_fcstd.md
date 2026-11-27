@@ -492,9 +492,11 @@ axis uses the positive Z fallback and a nonzero axis is normalized. When `A` is 
 quaternion components are authoritative, their Euclidean norm must be finite and positive, and the
 components are normalized. A zero quaternion or non-finite quaternion norm is not a sketch frame.
 CADIR decision: this placement admission rule is shared by product, attachment, joint, and sketch
-carriers. A malformed present placement or attachment offset on a non-sketch profile refuses the
-document before design transfer; design transfer does not replace the failed frame with an
-unresolved profile normal.
+carriers. A sketch whose `Placement`, or `AttachmentOffset` where it stores no `Placement`, is
+malformed keeps its geometry in its own frame; its plane frame is unresolved, and so is the profile
+normal that the frame supplies. The product layer gives up the malformed `Placement`, and the
+attachment record gives up the malformed `AttachmentOffset`. A sketch that stores neither carrier
+lies in the identity frame.
 Sketch geometry dispatch uses exact runtime names. `Part::GeomLine` and `Part::GeomLineSegment`
 select lines; `Part::GeomCircle` selects circles; `Part::GeomArcOfCircle` selects bounded arcs;
 `Part::GeomEllipse` and `Part::GeomArcOfEllipse` select ellipses; `Part::GeomHyperbola` and
@@ -656,11 +658,16 @@ Local prototypes resolve to component ids; cross-document links keep the documen
 object without attempting to open the document. Missing local targets, invalid array counts,
 non-finite transforms, and container cycles are validation errors; external targets remain
 intentionally unresolved. The native graph retains every direct container membership. FreeCAD holds
-an object in one container: a member that a later container in document order also lists stays in
-the first, and the later container's list property is given up as `record.unreadable`. The object
-that a link's `LinkCopyOnChangeGroup` names is a hidden `App::LinkGroup` that holds the link's copies
-and places none of them; a member that it and another container both list stays in the other
-container.
+an object in one coordinate-system group: an `App::Part`, `Assembly::AssemblyObject`,
+`Assembly::AssemblyLink`, or `PartDesign::Body`. A member that a later group in document order also
+lists stays in the first, and the later group's list property is given up as `record.unreadable`.
+An `App::LinkGroup` lists objects that a coordinate-system group also holds. Each object it lists
+has its own occurrence under the link group, beside its occurrence in the group that holds it. The
+occurrence under the first container that lists an object keeps the object's occurrence identity; the identity of each further occurrence adds that container's object key. The
+object that a link's `LinkCopyOnChangeGroup` names is a hidden `App::LinkGroup` that holds the
+link's copies and places none of them; it places a member only where no other container lists it.
+The primitive frames of the design layer and the product occurrences read this one parent
+relation.
 Product record identities are unique by object identity; duplicate records are invalid.
 
 Product metadata uses exact `App::PropertyString` properties. Each selected property has exactly one
@@ -703,11 +710,17 @@ retained when it has no neutral policy name. An `ElementCount` that is negative 
 malformed.
 
 Each malformed named carrier is given up as a `record.unreadable` that names the property, and the
-rest of the document is kept. A malformed `Group`, `ElementList`, `LinkedObject`,
-`LinkCopyOnChangeSource`, or `LinkCopyOnChangeGroup` states the membership or prototype of its
-object, so the object's product record is dropped with it. A malformed placement, `Scale`,
-`ScaleVector`, `PlacementList`, or `ScaleList` leaves each occurrence of the object, and each link
-occurrence that composes after its placement, with no transform. Any other malformed carrier is
+rest of the document is kept. A container whose `Group` or `ElementList` is malformed keeps its
+product record, its placement, and its occurrence, and lists no member; the give-up states that the
+objects it lists are placed without its placement. A malformed `Group`, `ElementList`,
+`LinkedObject`, `LinkCopyOnChangeSource`, or `LinkCopyOnChangeGroup` of a link states its prototype
+or elements, so the link's product record is dropped with it, and the link's design feature is a
+`Place` whose operation is unresolved, at the placement the link stores. A malformed placement,
+`Scale`, `ScaleVector`, `PlacementList`, or `ScaleList` leaves each occurrence of the object, and
+each link occurrence that composes after its placement, with no transform; its give-up names those
+occurrences. A chain of links that follow their linked objects and return to a link they hold gives
+up each link of the cycle as `record.unreadable`; each link occurrence that composes after the cycle
+has no transform. Any other malformed carrier is
 absent from the product record. A malformed `ShowElement` reads as true where the link lists
 element objects, which FreeCAD keeps only while it shows them, and as false otherwise. A link
 copy-on-change payload with no readable `LinkCopyOnChange` policy is given up with it. An object
@@ -724,12 +737,11 @@ Components retain their own local and hierarchy-resolved placements as well as e
 Neutral validation recomposes every component and occurrence world matrix from its direct parent
 and local matrix and rejects any mismatch, including finite but stale or double-applied transforms.
 An occurrence has at most one `LinkedObject` target. Its scalar target is not selected from a link
-list by source order. When both `LinkPlacement` and `Placement` are present, `LinkTransform=true`
-selects `LinkPlacement` and `LinkTransform=false` selects `Placement`; when only one carrier is
-present, that carrier supplies the local placement. FreeCAD holds one value in both carriers, so
-where one is malformed the other supplies the placement. Where both carry different values and
-`LinkTransform` is absent or malformed, `Placement` applies, which FreeCAD selects at its default
-`LinkTransform` of false; this reading emits `assembly.link-transform-assumed`. Each named
+list by source order. An object that stores `LinkPlacement` is placed at it, whatever
+`LinkTransform` holds; `Placement` is its alias. `LinkTransform` states only whether the linked
+object's own placement composes after the link's. FreeCAD holds one value in both carriers, so
+where one is malformed the other supplies the placement. Where both carry different values, the
+`Placement` value is stale, and the reading emits `assembly.placement-alias-noncanonical`. Each named
 `LinkedObject`, `LinkPlacement`, `Placement`, and `LinkTransform` carrier occurs at most once in a product record. Each placement carrier has at most
 one `App::PropertyPlacement` property with at most one `PropertyPlacement` value. A value carries finite
 `Px`, `Py`, and `Pz`. When `A` is present, finite axis-angle components `Ox`, `Oy`, `Oz`, and
@@ -1669,10 +1681,9 @@ The neutral primitive placement maps the primitive feature frame into the docume
 frame and attachment-local `AttachmentOffset`. The offset is not multiplied into this frame again.
 `MapMode` indices 0, 1, and 5 admit the persisted resolved frame. Other indices retain the operation natively and emit
 `feature.primitive-placement-unresolved`. The native attachment record retains the support links,
-mode, placement and offset as distinct fields. Each enclosing `PartDesign::Body` or `App::Part`
-frame premultiplies the member frame. Each object has at most one parent placement container.
-Multiple parent containers are malformed. A placement path requires finite rigid placements and
-no cycle. Missing frames and cyclic placement paths emit
+mode, placement and offset as distinct fields. The frame of each coordinate-system group that holds
+the object in turn premultiplies the member frame. A placement path requires finite rigid
+placements and no cycle. Missing frames and cyclic placement paths emit
 `feature.primitive-placement-unresolved`; no identity frame replaces a missing placement.
 
 Part cut, fuse, common, multi-fuse, and multi-common objects transfer as neutral Boolean combine

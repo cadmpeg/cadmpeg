@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use std::io::Cursor;
 
 mod graph_diagnostic_tests;
+mod partial;
 mod restoration;
 
 /// The identity of the definition that owns `occurrence`.
@@ -413,7 +414,7 @@ fn retains_malformed_product_metadata_without_neutral_projection() {
 }
 
 #[test]
-fn selects_the_active_link_placement_carrier() {
+fn applies_link_placement_whatever_link_transform_holds() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">
  <Object type="Part::Feature" name="Prototype" id="1"/>
@@ -457,7 +458,16 @@ fn selects_the_active_link_placement_carrier() {
             .expect("link placement")
     };
     assert_eq!(x("Propagating"), 2.0);
-    assert_eq!(x("LocalOnly"), 30.0);
+    assert_eq!(x("LocalOnly"), 3.0);
+    let stale = crate::loss::FreecadLossCode::AssemblyPlacementAliasNoncanonical
+        .note("")
+        .code;
+    for name in ["Propagating", "LocalOnly"] {
+        assert!(result.report().losses.iter().any(|loss| loss.code == stale
+            && loss
+                .message
+                .contains(&format!("fcstd:native:object#{name} "))));
+    }
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
@@ -629,7 +639,7 @@ fn accepts_nonzero_quaternion_below_machine_epsilon() {
 }
 
 #[test]
-fn link_placements_without_a_policy_apply_placement() {
+fn link_placements_without_a_policy_apply_link_placement() {
     let document = |link_placement: &str| {
         format!(
             r#"<Document SchemaVersion="4" FileVersion="1">
@@ -647,30 +657,26 @@ fn link_placements_without_a_policy_apply_placement() {
 </ObjectData></Document>"#
         )
     };
-    let assumed = crate::loss::FreecadLossCode::AssemblyLinkTransformAssumed
+    let stale = crate::loss::FreecadLossCode::AssemblyPlacementAliasNoncanonical
         .note("")
         .code;
-    for (link_placement, assumes) in [("2", true), ("20", false)] {
+    for (link_placement, x, differs) in [("2", 2.0, true), ("20", 20.0, false)] {
         let result = decode_document(&document(link_placement));
         let node = product_node(&result, "Occurrence").expect("link record");
         assert_eq!(
             node.placement_property(),
-            Some("fcstd:native:property#Occurrence:Placement")
+            Some("fcstd:native:property#Occurrence:LinkPlacement")
         );
         assert_eq!(node.link_transform(), None);
         let rows = occurrence(&result, "#Occurrence:instance")
             .transform
-            .expect("the link's Placement")
+            .expect("the link's LinkPlacement")
             .affine_rows();
-        assert_eq!([rows[0][3], rows[1][3], rows[2][3]], [20.0, 0.0, 0.0]);
+        assert_eq!([rows[0][3], rows[1][3], rows[2][3]], [x, 0.0, 0.0]);
         assert_eq!(
-            result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == assumed
-                    && loss.message.contains("fcstd:native:object#Occurrence")),
-            assumes,
+            result.report().losses.iter().any(|loss| loss.code == stale
+                && loss.message.contains("fcstd:native:object#Occurrence")),
+            differs,
             "{:?}",
             result.report().losses
         );

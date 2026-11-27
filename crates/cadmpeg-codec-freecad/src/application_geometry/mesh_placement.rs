@@ -63,7 +63,7 @@ pub(crate) fn project(
         }
         if let Some(object) = occurrence.native_ref.as_deref() {
             if definitions.get(occurrence.prototype.as_str()).copied() == Some(object) {
-                own_occurrences.insert(object, occurrence);
+                own_occurrences.entry(object).or_insert(occurrence);
             }
         }
     }

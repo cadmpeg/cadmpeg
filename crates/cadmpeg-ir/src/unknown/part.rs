@@ -96,6 +96,14 @@ impl GivenUpRecord {
         self
     }
 
+    /// States what else the document lacks because the record was given up,
+    /// such as the transforms its value would have composed, as
+    /// [`Part::costing`] does for a part.
+    pub fn costing(mut self, consequence: impl std::fmt::Display) -> Self {
+        self.error = format!("{}; {consequence}", self.error);
+        self
+    }
+
     /// The records that state their unstated children marked because this
     /// record is dropped (§5.6).
     pub fn marking<I>(mut self, records: I) -> Self

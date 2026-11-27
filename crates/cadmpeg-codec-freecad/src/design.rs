@@ -91,6 +91,7 @@ macro_rules! required {
 pub(crate) struct DesignObjects<'a> {
     pub(crate) objects: &'a [ObjectRecord],
     pub(crate) extensions: &'a [crate::native::ExtensionRecord],
+    pub(crate) products: &'a [crate::native::ProductNodeRecord],
 }
 
 #[derive(Clone, Copy)]
@@ -111,6 +112,7 @@ pub(crate) fn transfer(
     let DesignObjects {
         objects,
         extensions,
+        products,
     } = graph;
     let attachment_owners = extensions
         .iter()
@@ -132,6 +134,7 @@ pub(crate) fn transfer(
             owned.push(property);
         }
     }
+    let parent_map = crate::product::ParentMap::new(products, objects, &properties_by_owner);
     let reference_graph = DesignReferenceGraph {
         objects,
         properties_by_owner: &properties_by_owner,
@@ -157,6 +160,7 @@ pub(crate) fn transfer(
             .iter()
             .flatten()
             .filter_map(crate::native::LinkTarget::object)
+            .filter(|member| parent_map.coordinate(member) == Some(body.id().as_str()))
         {
             parent_by_member.insert(member, feature_id(body)?);
         }
@@ -265,7 +269,7 @@ pub(crate) fn transfer(
         } else if is_primitive(&object.type_name) {
             match primitive_definition(ctx, &object.type_name, &owned)? {
                 Some(mut definition) => {
-                    match primitive_placement::resolve(object, objects, &properties_by_owner)? {
+                    match primitive_placement::resolve(object, &parent_map, &properties_by_owner)? {
                         Some(frame) => {
                             if let FeatureDefinition::Operation(FeatureOperation::Primitive {
                                 placement,
@@ -392,14 +396,13 @@ pub(crate) fn transfer(
                 .and_then(|(_, target)| {
                     objects.iter().find(|object| object.id().as_str() == target)
                 })
-                .map(|profile_object| {
+                .and_then(|profile_object| {
                     let profile_properties = properties_by_owner
                         .get(profile_object.id().as_str())
                         .map(Vec::as_slice)
                         .unwrap_or_default();
                     sketch_frame(profile_properties).map(|frame| frame.1)
-                })
-                .transpose()?;
+                });
             extrusion_definition(
                 ctx,
                 &object.type_name,
@@ -603,7 +606,9 @@ pub(crate) fn transfer(
     Ok((cycle_affected, losses))
 }
 
-fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
+pub(crate) fn body_membership_property<'a>(
+    properties: &'a [&PropertyRecord],
+) -> Option<&'a PropertyRecord> {
     match (property(properties, "Group"), property(properties, "Model")) {
         (Some(group), None) | (None, Some(group)) if group.type_name == "App::PropertyLinkList" => {
             Some(group)
@@ -2041,15 +2046,19 @@ fn parse_sketch(
         );
         Vec::new()
     });
-    let (origin, normal, u_axis) = sketch_frame(properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
             id,
             name: Some(object.name().to_owned()),
             configuration: None,
             visible: None,
-            placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
-                .map_err(cadmpeg_core::CodecError::malformed)?,
+            placement: match sketch_frame(properties) {
+                Some((origin, normal, u_axis)) => {
+                    cadmpeg_ir::sketches::SketchPlacement::try_resolved(origin, normal, u_axis)
+                        .map_err(cadmpeg_core::CodecError::malformed)?
+                }
+                None => cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
+            },
             profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             native_ref: Some(object.id().to_owned()),
@@ -2300,18 +2309,26 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
     })
 }
 
-fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
-    validate_sketch_placement(properties)?;
-    Ok(placement_frame(properties).map_or_else(
-        || {
-            (
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-        },
-        |(origin, normal, x_axis, _)| (origin, normal, x_axis),
-    ))
+/// The frame of a sketch: its `Placement`, else its `AttachmentOffset`, else
+/// the identity. `None` where the carrier is stored in a form the decoder
+/// cannot read; the product layer gives that carrier up.
+fn sketch_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3)> {
+    let Some(property) =
+        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
+    else {
+        return Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ));
+    };
+    if property.type_name != "App::PropertyPlacement"
+        || property.values().len() != 1
+        || property.values()[0].tag != "PropertyPlacement"
+    {
+        return None;
+    }
+    placement_frame(properties).map(|(origin, normal, x_axis, _)| (origin, normal, x_axis))
 }
 
 fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
@@ -2325,36 +2342,6 @@ fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, V
         column(0),
         column(1),
     ))
-}
-
-fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), CodecError> {
-    let Some(property) =
-        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
-    else {
-        return Ok(());
-    };
-    let error = if property.type_name != "App::PropertyPlacement" {
-        Some(format!(
-            "sketch {} placement carrier has runtime type {}",
-            property.name, property.type_name
-        ))
-    } else if property.values().len() != 1 || property.values()[0].tag != "PropertyPlacement" {
-        Some(format!(
-            "sketch {} placement carrier requires one PropertyPlacement value",
-            property.name
-        ))
-    } else if placement_frame(properties).is_none() {
-        Some(format!(
-            "sketch {} placement carrier has incomplete or invalid components",
-            property.name
-        ))
-    } else {
-        None
-    };
-    if let Some(message) = error {
-        return Err(CodecError::Malformed(message));
-    }
-    Ok(())
 }
 
 fn feature_state(
