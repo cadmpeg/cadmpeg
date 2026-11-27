@@ -1591,7 +1591,7 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
         .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[0];
-    assert_eq!(annotation.object, record.id.to_string());
+    assert_eq!(annotation.object.as_str(), record.id.to_string());
     assert_eq!(annotation.native_ref, record.id.to_string());
     assert!(record
         .links

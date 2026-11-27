@@ -1019,10 +1019,22 @@ fn native_attribute_target_rewrite_preserves_every_wire_kind() {
     use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let ctx = super::test_ctx();
     for kind in [
-        "body", "face", "shell", "loop", "coedge", "edge", "vertex", "document",
+        "body",
+        "face",
+        "shell",
+        "loop",
+        "coedge",
+        "edge",
+        "vertex",
+        "tessellation",
+        "record",
+        "document",
     ] {
         let mut value = cadmpeg_core::json!({"kind": kind});
-        if kind != "document" {
+        if kind == "record" {
+            value["value"] =
+                cadmpeg_core::json!({"arena": "point_clouds", "id": "test:model:cloud#one"});
+        } else if kind != "document" {
             value["value"] = cadmpeg_core::json!(format!("test:model:{kind}#one"));
         }
         let expected: AttributeTarget = json::from_value(value.clone()).unwrap();

@@ -2023,49 +2023,52 @@ pub(super) fn decode(
             };
             let parameter_ranges = [[u_start, u_end], [v_start, v_end]];
             let surface = SurfaceId::from(ids::data(kind!("surface"), id));
-            let copied_geometry = solved_geometry.clone();
+            let construction = match (|| {
+                let ranges = parameter_ranges.map(|range| {
+                    DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
+                        ProceduralGeometryError::Payload(
+                            "surface subset ranges are not finite and non-zero",
+                        )
+                    })
+                });
+                let [u_range, v_range] = ranges;
+                Ok::<_, ProceduralGeometryError>(
+                    cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::from_parts(
+                        SurfaceId::from(ids::data(kind!("surface"), support_step)),
+                        [u_range?, v_range?],
+                        Some(u_sense),
+                        Some(v_sense),
+                        None,
+                    ),
+                )
+            })()
+            .map(|admitted_payload| {
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::from(ids::construction(
+                        kind!("rectangular_trimmed_surface"),
+                        id,
+                    )),
+                    ProceduralSurfaceDefinition::Subset(admitted_payload),
+                    None,
+                )
+            }) {
+                Ok(surface) => surface,
+                Err(error) => {
+                    losses.push(
+                        StepLossCode::DecodeWarning
+                            .note(format!("procedural surface #{id}: {error}")),
+                    );
+                    continue;
+                }
+            };
             ir.geometry.surfaces.push(Surface {
                 id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(copied_geometry),
+                geometry: SurfaceGeometry::Solved(solved_geometry.clone()),
                 source_object: None,
                 native_ref: None,
             });
-            let _attached = procedural_admission.add_surface(&mut ir.geometry, &surface, match (|| {
-                    let ranges = parameter_ranges.map(|range| {
-                        DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
-                            ProceduralGeometryError::Payload(
-                                "surface subset ranges are not finite and non-zero",
-                            )
-                        })
-                    });
-                    let [u_range, v_range] = ranges;
-                    Ok::<_, ProceduralGeometryError>(
-                        cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction::from_parts(
-                            SurfaceId::from(ids::data(kind!("surface"), support_step)),
-                            [u_range?, v_range?],
-                            Some(u_sense),
-                            Some(v_sense),
-                            None,
-                        ),
-                    )
-                })()
-                .map(|admitted_payload| {
-                    ProceduralSurface::new(
-                        ProceduralSurfaceId::from(ids::construction(
-                            kind!("rectangular_trimmed_surface"),
-                            id,
-                        )),
-                        ProceduralSurfaceDefinition::Subset(admitted_payload),
-                        None,
-                    )
-                }) {
-                    Ok(surface) => surface,
-                    Err(error) => {
-                        losses.push(StepLossCode::DecodeWarning
-                                .note(format!("procedural surface #{id}: {error}")));
-                        continue;
-                    }
-                })?;
+            let _attached =
+                procedural_admission.add_surface(&mut ir.geometry, &surface, construction)?;
             carrier_index
                 .surfaces
                 .insert(id, SurfaceIndex(ir.geometry.surfaces.len() - 1));
@@ -2177,14 +2180,7 @@ pub(super) fn decode(
             let Some((distance, self_intersect)) = distance.zip(self_intersect) else {
                 continue;
             };
-            let surface_index = SurfaceIndex(ir.geometry.surfaces.len());
-            ir.geometry.surfaces.push(Surface {
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
-                source_object: None,
-                native_ref: None,
-            });
-            let _attached = procedural_admission.add_surface(&mut ir.geometry, &surface, match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
+            let construction = match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
                     ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
                     None,
@@ -2194,7 +2190,16 @@ pub(super) fn decode(
                         losses.push(StepLossCode::DecodeWarning.note(format!("procedural surface #{id}: {error}")));
                         continue;
                     }
-                })?;
+                };
+            let surface_index = SurfaceIndex(ir.geometry.surfaces.len());
+            ir.geometry.surfaces.push(Surface {
+                id: surface.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+                source_object: None,
+                native_ref: None,
+            });
+            let _attached =
+                procedural_admission.add_surface(&mut ir.geometry, &surface, construction)?;
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
             true
