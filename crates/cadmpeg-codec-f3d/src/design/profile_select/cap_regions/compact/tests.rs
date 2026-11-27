@@ -699,7 +699,7 @@ fn run_intersect_with_gaps(
         topology: &topologies[index],
         versions: &empty,
     };
-    let states = (0..2)
+    let states = (0..2usize)
         .map(|index| {
             let transition = AsmHistoricalTransition::between(
                 index.checked_sub(1).map(snapshot),

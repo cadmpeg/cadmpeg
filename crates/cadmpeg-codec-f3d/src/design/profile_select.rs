@@ -1041,7 +1041,7 @@ fn bind_one_extrude_profile_selection(
                             {
                                 let named = operand
                                     .planar_region_selection()
-                                    .and_then(|selection| selection.resolution_regions())
+                                    .and_then(DesignSketchProfileRegionSelection::resolution_regions)
                                     .into_iter()
                                     .flatten()
                                     .flat_map(|region| region.members.iter())
