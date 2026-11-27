@@ -657,7 +657,10 @@ object without attempting to open the document. Missing local targets, invalid a
 non-finite transforms, and container cycles are validation errors; external targets remain
 intentionally unresolved. The native graph retains every direct container membership. FreeCAD holds
 an object in one container: a member that a later container in document order also lists stays in
-the first, and the later container's list property is given up as `record.unreadable`.
+the first, and the later container's list property is given up as `record.unreadable`. The object
+that a link's `LinkCopyOnChangeGroup` names is a hidden `App::LinkGroup` that holds the link's copies
+and places none of them; a member that it and another container both list stays in the other
+container.
 Product record identities are unique by object identity; duplicate records are invalid.
 
 Product metadata uses exact `App::PropertyString` properties. Each selected property has exactly one

@@ -806,6 +806,31 @@ fn overlapping_product_membership_keeps_the_first_container() {
 }
 
 #[test]
+fn a_copy_on_change_group_yields_its_member_to_another_container() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="App::LinkGroup" name="CopyOnChangeGroup"/><Object type="App::Part" name="Part"/><Object type="Part::Feature" name="Member"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="4">
+ <Object name="CopyOnChangeGroup"><Properties Count="1"><Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
+ <Object name="Part"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="4" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Member"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="3">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Member"/></Property>
+  <Property name="LinkCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="LinkCopyOnChangeGroup" type="App::PropertyLink"><Link value="CopyOnChangeGroup"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = decode_document(document);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()));
+    let member = occurrence(&result, "#Member:container");
+    assert!(owner_id(result.ir(), &member.id).ends_with("#Part:definition"));
+    assert_valid_document(result.ir());
+}
+
+#[test]
 fn product_runtime_dispatch_requires_exact_registered_types() {
     for (runtime_type, expected) in [
         ("Assembly::AssemblyObject", Some(ProductKind::Part)),

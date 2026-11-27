@@ -755,11 +755,17 @@ pub(crate) fn transfer_neutral(
             .filter(|member| !constraint_objects.contains(member.as_str()))
         {
             let member = member.as_str();
-            match parent_by_object.get(member) {
+            match parent_by_object.get(member).copied() {
                 None => {
                     parent_by_object.insert(member, record.object.as_str());
                 }
-                Some(previous) if *previous != record.object.as_str() => {
+                // A copy-on-change group holds a link's copies hidden and
+                // places none of them, so another container keeps the member.
+                Some(previous) if copy_on_change_groups.contains(previous) => {
+                    parent_by_object.insert(member, record.object.as_str());
+                }
+                Some(_) if copy_on_change_groups.contains(record.object.as_str()) => {}
+                Some(previous) if previous != record.object.as_str() => {
                     // `FreeCAD` holds an object in one container; the first
                     // container that lists it keeps it.
                     let list = if record.members().iter().any(|listed| listed == member) {
