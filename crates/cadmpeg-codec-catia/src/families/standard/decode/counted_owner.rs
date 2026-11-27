@@ -26,6 +26,16 @@ pub(super) fn bind_counted_owner_surfaces(
     budget: &WorkBudget,
     carriers: &[crate::families::a5a8::records::FreeformSurface],
 ) -> Result<usize, CodecError> {
+    if carriers.is_empty()
+        || !ir.geometry.surfaces.iter().any(|surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+            )
+        })
+    {
+        return Ok(0);
+    }
     let charts =
         crate::families::consolidated::a5_chart::a5_chart_boundaries(source.data, source.records)
             .into_iter()

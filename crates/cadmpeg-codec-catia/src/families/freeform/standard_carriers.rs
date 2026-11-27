@@ -61,12 +61,12 @@ pub(in crate::families) fn recover_missing_plane_normals(
     data: &[u8],
     sources: &[Vec<SourceExtent>],
     records: &[ConsolidatedRecord],
+    journal: &AllocationJournal<'_>,
     brep: &[u8],
     surface_records: &[StandardSurfaceRecord],
     normals: &mut HashMap<u32, FiniteVector<3>>,
 ) -> HashMap<u32, PlaneSurface> {
-    let journal = AllocationJournal::with_sources(data, sources, records);
-    let face_carriers = unique_5f_carriers(data, sources, records, &journal);
+    let face_carriers = unique_5f_carriers(data, sources, records, journal);
     let b2_planes: HashMap<_, _> = b2_plane_carriers_from_records(data, records)
         .into_iter()
         .map(|carrier| (carrier.pos, carrier))
@@ -108,7 +108,7 @@ pub(in crate::families) fn recover_missing_plane_normals(
         let bounds = parsed_bounds[index];
         if let Some(Some((_, carrier))) = face_carriers.get(&u64::from(prefix.target)) {
             if let Some(plane) =
-                resolve_b2_plane(data, sources, &journal, carrier, &b2_planes, &b2_offsets, 0)
+                resolve_b2_plane(data, sources, journal, carrier, &b2_planes, &b2_offsets, 0)
             {
                 let axis = *plane.frame().axis().as_raw();
                 let bounds_ok = bounds.is_none_or(|b| {
@@ -167,6 +167,13 @@ pub(in crate::families) fn recover_missing_plane_normals(
     journal_planes
 }
 
+pub(in crate::families) struct JournalSurfaceSource<'a> {
+    pub(in crate::families) data: &'a [u8],
+    pub(in crate::families) sources: &'a [Vec<SourceExtent>],
+    pub(in crate::families) records: &'a [ConsolidatedRecord],
+    pub(in crate::families) journal: &'a AllocationJournal<'a>,
+}
+
 /// Bind unresolved standard freeform faces directly from their `b2 03 5f`
 /// allocation-journal carriers (`a5 03 34` NURBS, `b2 03 2c` extrusions,
 /// `b2 03 30`/`31` offsets, and consolidated analytics).
@@ -174,14 +181,25 @@ pub(in crate::families) fn recover_missing_plane_normals(
 pub(in crate::families) fn bind_journal_standard_surfaces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl AnnotationStorage>,
-    data: &[u8],
-    sources: &[Vec<SourceExtent>],
-    records: &[ConsolidatedRecord],
+    source: &JournalSurfaceSource<'_>,
     a5_carriers: &[FreeformSurface],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<usize, CodecError> {
-    let journal = AllocationJournal::with_sources(data, sources, records);
-    let face_carriers = unique_5f_carriers(data, sources, records, &journal);
+    let JournalSurfaceSource {
+        data,
+        sources,
+        records,
+        journal,
+    } = *source;
+    if !ir.geometry.surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None })
+        )
+    }) {
+        return Ok(0);
+    }
+    let face_carriers = unique_5f_carriers(data, sources, records, journal);
     if face_carriers.is_empty() {
         return Ok(0);
     }
@@ -230,8 +248,9 @@ pub(in crate::families) fn bind_journal_standard_surfaces(
     let resolver = CarrierResolver {
         data,
         sources,
-        journal: &journal,
+        journal,
         a5_by_pos: &a5_by_pos,
+        a5_multi_extent_cache: std::cell::RefCell::new(HashMap::new()),
         b2_planes: &b2_planes,
         b2_cylinders: &b2_cylinders,
         b2_cones: &b2_cones,
@@ -273,6 +292,7 @@ struct CarrierResolver<'a> {
     sources: &'a [Vec<SourceExtent>],
     journal: &'a AllocationJournal<'a>,
     a5_by_pos: &'a HashMap<usize, &'a NurbsSurface>,
+    a5_multi_extent_cache: std::cell::RefCell<HashMap<usize, Option<NurbsSurface>>>,
     b2_planes: &'a HashMap<usize, crate::families::b2::records::B2PlaneCarrier>,
     b2_cylinders: &'a HashMap<usize, crate::families::b2::records::B2Cylinder>,
     b2_cones: &'a HashMap<usize, crate::families::b2::records::B2Cone>,
@@ -344,11 +364,15 @@ impl<'a> CarrierResolver<'a> {
                 decode_rolling_ball_surface(self.data, self.sources, carrier)
                     .map(SolvedSurfaceGeometry::Nurbs)
             }
-            (ConsolidatedFamily::A, 0x34) => self
-                .a5_by_pos
-                .get(&carrier.byte_offset())
-                .map(|surface| SolvedSurfaceGeometry::Nurbs((*surface).clone()))
-                .or_else(|| {
+            (ConsolidatedFamily::A, 0x34) => {
+                if let Some(surface) = self.a5_by_pos.get(&carrier.byte_offset()) {
+                    return Some(SolvedSurfaceGeometry::Nurbs((*surface).clone()));
+                }
+                let pos = carrier.byte_offset();
+                if let Some(cached) = self.a5_multi_extent_cache.borrow().get(&pos) {
+                    return cached.clone().map(SolvedSurfaceGeometry::Nurbs);
+                }
+                let decoded =
                     crate::families::a5a8::records::a5_owned_surface_from_record_in_sources(
                         self.data,
                         self.sources,
@@ -357,12 +381,15 @@ impl<'a> CarrierResolver<'a> {
                     )
                     .ok()
                     .flatten()
-                    .map(|surface| SolvedSurfaceGeometry::Nurbs(surface.geometry))
-                })
-                .or_else(|| {
-                    decode_u32_nurbs_surface(self.data, self.sources, carrier, refusal)
-                        .map(SolvedSurfaceGeometry::Nurbs)
-                }),
+                    .map(|surface| surface.geometry)
+                    .or_else(|| {
+                        decode_u32_nurbs_surface(self.data, self.sources, carrier, refusal)
+                    });
+                self.a5_multi_extent_cache
+                    .borrow_mut()
+                    .insert(pos, decoded.clone());
+                decoded.map(SolvedSurfaceGeometry::Nurbs)
+            }
             (ConsolidatedFamily::A, 0x39) => {
                 decode_ruled_guide_surface(self.data, self.sources, carrier)
                     .map(SolvedSurfaceGeometry::Nurbs)

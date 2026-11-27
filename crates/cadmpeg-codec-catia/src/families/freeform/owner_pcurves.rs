@@ -236,6 +236,14 @@ pub(in crate::families) fn attach(
     attach_in_sources(ir, annotations, data, &[], records, refusal, admission)
 }
 
+pub(in crate::families) struct OwnerPcurvesSource<'a> {
+    pub(in crate::families) data: &'a [u8],
+    pub(in crate::families) records: &'a [ConsolidatedRecord],
+    pub(in crate::families) journal: &'a AllocationJournal<'a>,
+    pub(in crate::families) owners: &'a OwnerClosureIndex,
+}
+
+#[cfg(test)]
 pub(in crate::families) fn attach_in_sources(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder<impl AnnotationStorage>,
@@ -245,6 +253,35 @@ pub(in crate::families) fn attach_in_sources(
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<AttachResult, CodecError> {
+    let journal = AllocationJournal::with_sources(data, sources, records);
+    let owners = OwnerClosureIndex::new(data, records, &journal);
+    attach_in_sources_with_journal(
+        ir,
+        annotations,
+        &OwnerPcurvesSource {
+            data,
+            records,
+            journal: &journal,
+            owners: &owners,
+        },
+        refusal,
+        admission,
+    )
+}
+
+pub(in crate::families) fn attach_in_sources_with_journal(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder<impl AnnotationStorage>,
+    source: &OwnerPcurvesSource<'_>,
+    refusal: &mut crate::nurbs::LaneRefusals,
+    admission: &mut FamilyEntityAdmission<'_, '_>,
+) -> Result<AttachResult, CodecError> {
+    let OwnerPcurvesSource {
+        data,
+        records,
+        journal,
+        owners,
+    } = *source;
     let mut result = AttachResult::default();
     if ir.geometry.coedges.is_empty()
         || !records
@@ -254,8 +291,6 @@ pub(in crate::families) fn attach_in_sources(
         return Ok(result);
     }
     let ctx = admission.context();
-    let journal = AllocationJournal::with_sources(data, sources, records);
-    let owners = OwnerClosureIndex::new(data, records, &journal);
     let count = records
         .iter()
         .filter(|r| r.family() == ConsolidatedFamily::B && r.class() == 0x5e)
@@ -324,13 +359,13 @@ pub(in crate::families) fn attach_in_sources(
             };
             let (Some(a), Some(b), Some(start_tag), Some(end_tag)) = (
                 endpoint_address(
-                    &journal,
+                    journal,
                     *node_index,
                     node.start_vertex_ref,
                     node.reference_encodings[1],
                 ),
                 endpoint_address(
-                    &journal,
+                    journal,
                     *node_index,
                     node.end_vertex_ref,
                     node.reference_encodings[2],
@@ -437,7 +472,7 @@ pub(in crate::families) fn attach_in_sources(
                 let range = jet.range.endpoints();
                 let Some(fit) = source_map::fit_tolerance(
                     data,
-                    &journal,
+                    journal,
                     *node_index,
                     node,
                     source_map::Selection {

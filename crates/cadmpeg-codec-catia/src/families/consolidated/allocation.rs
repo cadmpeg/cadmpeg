@@ -225,12 +225,22 @@ fn resolve_journal_reference<'a>(
 /// Extract exact `[start_vertex, end_vertex]` allocation-journal identities from
 /// consolidated `b2 03 5e` edge records whose endpoint references resolve to
 /// `b2 03 5d` vertex records in the same allocation scope.
+#[cfg(test)]
 pub(crate) fn consolidated_edge_vertex_references(
     data: &[u8],
     sources: &[Vec<SourceExtent>],
     records: &[ConsolidatedRecord],
 ) -> BTreeMap<u32, [u32; 2]> {
     let journal = AllocationJournal::with_sources(data, sources, records);
+    consolidated_edge_vertex_references_with_journal(data, sources, records, &journal)
+}
+
+pub(crate) fn consolidated_edge_vertex_references_with_journal(
+    data: &[u8],
+    sources: &[Vec<SourceExtent>],
+    records: &[ConsolidatedRecord],
+    journal: &AllocationJournal<'_>,
+) -> BTreeMap<u32, [u32; 2]> {
     let mut resolved = BTreeMap::<u32, Option<[u32; 2]>>::new();
     for (index, record) in records.iter().enumerate() {
         if record.family() != ConsolidatedFamily::B || record.class() != 0x5e {
@@ -266,7 +276,7 @@ pub(crate) fn consolidated_edge_vertex_references(
             _ => continue,
         };
         let resolve_vertex = |reference: AllocationReference| -> Option<u32> {
-            let (target_idx, target) = resolve_journal_reference(&journal, index, reference)?;
+            let (target_idx, target) = resolve_journal_reference(journal, index, reference)?;
             if target.family() != ConsolidatedFamily::B || target.class() != 0x5d {
                 return None;
             }
