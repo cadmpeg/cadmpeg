@@ -11,6 +11,7 @@ use cadmpeg_ir::design::construction::{InputReference, Relation, Subject};
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::datum::DatumElement;
+use cadmpeg_ir::design::ops::sketch::{SketchPlane, SketchRelation};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::{Anchor, PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::report::check::Check;
@@ -18,11 +19,12 @@ use cadmpeg_ir::{CadIr, ReadOptions};
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::test_container::outer_container_catpart;
-use crate::test_support::test_feature_tree::{part, stream};
+use crate::test_support::test_feature_tree::{compact, part, stream, stream_with_sketches, SKETCH};
 use crate::test_support::test_formula::standard_catpart_with_formula_relation;
 use crate::test_support::test_object_graph::{
     catalog_stream, entity_backed_object_graph, object_graph_record,
 };
+use crate::test_support::test_sketch_bindings::placed_sketch_catpart;
 use crate::CatiaCodec;
 
 fn decode(bytes: Vec<u8>, options: &DecodeOptions) -> EditableDecodeResult {
@@ -207,6 +209,18 @@ fn cadir_round_trip(ir: &CadIr) -> (CadIr, Vec<String>) {
                 .iter()
                 .map(|container| container.id().as_str().to_owned()),
         )
+        .chain(
+            ir.design
+                .sketches
+                .iter()
+                .map(|sketch| sketch.id.as_str().to_owned()),
+        )
+        .chain(
+            ir.design
+                .sketch_constraints
+                .iter()
+                .map(|constraint| constraint.id.as_str().to_owned()),
+        )
         .collect::<Vec<_>>();
     let omitted = plan
         .report()
@@ -235,6 +249,7 @@ fn assert_design_survives_cadir(ir: &CadIr) {
     assert_eq!(read.design.containers, ir.design.containers);
     assert_eq!(read.design.features, ir.design.features);
     assert_eq!(read.design.sketches, ir.design.sketches);
+    assert_eq!(read.design.sketch_constraints, ir.design.sketch_constraints);
 }
 
 /// The part root lists a plane, the body `MainTool` selects, and an empty
@@ -432,6 +447,233 @@ fn the_part_planes_are_origin_datums_on_the_principal_planes() {
         assert_eq!(design_findings(&result), Vec::<String>::new());
         assert_design_survives_cadir(ir);
     }
+}
+
+/// The plane construction of a design sketch: its inputs and its resolved
+/// frame.
+fn sketch_plane(
+    sketch: &cadmpeg_ir::design::ops::sketch::Sketch,
+) -> &cadmpeg_ir::design::construction::Construction<cadmpeg_ir::design::construction::kinds::Frame>
+{
+    let SketchPlane::Placed(plane) = &sketch.plane else {
+        panic!("a sketch on a plane");
+    };
+    assert!(plane.after.is_empty());
+    plane
+}
+
+/// A sketch record of the part's tree is a sketch feature whose sketch has
+/// one plane input with unread picks, anchored by the set that lists it
+/// (§5.8, §6.1).
+#[test]
+fn a_tree_sketch_is_a_sketch_feature_whose_plane_is_unread() {
+    let mut records = part();
+    records[2].1 = compact(0x0c, SKETCH);
+    records[3].1 = compact(0x08, SKETCH);
+    let result = decode(
+        outer_container_catpart(&stream_with_sketches(&records)).0,
+        &DecodeOptions::default(),
+    );
+    let ir = result.ir();
+    let sketches = ir
+        .design
+        .features
+        .iter()
+        .filter_map(|feature| match &feature.definition.operation {
+            FeatureOperation::Sketch(id) => Some((entity(feature.id.as_str()), id)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        sketches
+            .iter()
+            .map(|(feature, id)| (
+                *feature,
+                id.as_str().split('#').next().unwrap(),
+                entity(id.as_str())
+            ))
+            .collect::<Vec<_>>(),
+        [(4, "catia:outer:sketch", 4), (5, "catia:outer:sketch", 5)]
+    );
+    assert_eq!(
+        ir.design
+            .sketches
+            .iter()
+            .map(|sketch| {
+                let plane = sketch_plane(sketch);
+                assert_eq!(plane.resolved, None);
+                let [input] = plane.inputs.as_slice() else {
+                    panic!("one plane input");
+                };
+                assert_eq!(input.role, None);
+                let Some(InputReference::Picks(selection)) = &input.reference else {
+                    panic!("the plane input picks");
+                };
+                assert_eq!(selection.picks, Picks::Unread);
+                assert_eq!(
+                    sketch.solve.status,
+                    cadmpeg_ir::design::evaluation::EvaluationStatus::Current
+                );
+                assert!(sketch.native_ref.is_some());
+                (
+                    entity(sketch.id.as_str()),
+                    entity(sketch.owner.as_str()),
+                    selection.at.clone(),
+                )
+            })
+            .collect::<Vec<_>>(),
+        [(4, 4, Anchor::Current), (5, 5, Anchor::Input)]
+    );
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+    assert_design_survives_cadir(ir);
+}
+
+/// A sketch whose placement the decoder resolves keeps its frame: the
+/// origin, the u axis as x, the normal as z, and z × x as y (§6.1).
+#[test]
+fn a_decoded_sketch_keeps_its_resolved_frame() {
+    let result = decode(placed_sketch_catpart(), &DecodeOptions::default());
+    let ir = result.ir();
+    let [legacy] = ir.model.sketches.as_slice() else {
+        panic!("one decoded sketch");
+    };
+    let (origin, normal, u_axis) = legacy.resolved_placement().unwrap();
+    let [feature] = ir.design.features.as_slice() else {
+        panic!("one design feature");
+    };
+    assert_eq!(
+        feature.definition.operation,
+        FeatureOperation::Sketch(legacy.id.clone())
+    );
+    let [sketch] = ir.design.sketches.as_slice() else {
+        panic!("one design sketch");
+    };
+    assert_eq!(sketch.id, legacy.id);
+    assert_eq!(sketch.owner, feature.id);
+    assert_eq!(sketch.native_ref, legacy.native_ref);
+    let plane = sketch_plane(sketch);
+    assert!(plane.inputs.is_empty());
+    let frame = plane.resolved.as_ref().unwrap();
+    let unit = |v: [f64; 3]| {
+        let length = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        v.map(|c| c / length)
+    };
+    let (u_axis, normal) = (u_axis.as_raw(), normal.as_raw());
+    let (x, z) = (
+        unit([u_axis.x, u_axis.y, u_axis.z]),
+        unit([normal.x, normal.y, normal.z]),
+    );
+    let y = [
+        z[1] * x[2] - z[2] * x[1],
+        z[2] * x[0] - z[0] * x[2],
+        z[0] * x[1] - z[1] * x[0],
+    ];
+    assert_eq!(frame.origin, origin);
+    for (axis, expected) in [(&frame.x_axis, x), (&frame.y_axis, y), (&frame.z_axis, z)] {
+        let axis = axis.as_raw();
+        for (got, want) in [axis.x, axis.y, axis.z].into_iter().zip(expected) {
+            assert!((got - want).abs() < 1e-12, "{got} against {want}");
+        }
+    }
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+    assert_design_survives_cadir(ir);
+}
+
+/// A native constraint of a decoded sketch is a `Native` relation written
+/// `catia:<kind>`, whose native properties and operands are text options
+/// (§6.1, Rule N).
+#[test]
+fn a_native_sketch_constraint_is_a_native_relation_of_its_sketch() {
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::options::NativeOption;
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchNativeOperand,
+    };
+
+    let mut ir = decode(placed_sketch_catpart(), &DecodeOptions::default())
+        .ir()
+        .clone();
+    let sketch = ir.model.sketches[0].id.clone();
+    let operand = SketchNativeOperand {
+        native_kind: cadmpeg_core::nonblank_literal!("Length"),
+        field: None,
+        object_index: Some(3),
+        native_ref: Some("catia:outer:entity-record#source".to_owned()),
+    };
+    let properties =
+        std::collections::BTreeMap::from([("catia_framing".to_owned(), "range".to_owned())]);
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId::mint(
+            "catia:outer:sketch-constraint#0000000000-0000000009".to_owned(),
+        )
+        .unwrap(),
+        sketch: sketch.clone(),
+        definition: SketchConstraintDefinition::native_with_operand(
+            cadmpeg_core::nonblank_literal!("Distance"),
+            properties.clone(),
+            Vec::new(),
+            operand.clone(),
+        ),
+        name: None,
+        driving: None,
+        active: Some(true),
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: Some("catia:outer:entity-record#range".to_owned()),
+    });
+    ir.design = cadmpeg_ir::document::Design::default();
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(|ctx| {
+        crate::design_v11::project(
+            ctx,
+            &mut ir,
+            &crate::native::CatiaNative::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+            &mut losses,
+        )
+    })
+    .unwrap();
+    let [constraint] = ir.design.sketch_constraints.as_slice() else {
+        panic!("one design constraint");
+    };
+    assert_eq!(constraint.id, ir.model.sketch_constraints[0].id);
+    assert_eq!(constraint.sketch, sketch);
+    assert_eq!(
+        constraint.relation,
+        SketchRelation::Native {
+            kind: cadmpeg_core::nonblank_literal!("catia:Distance"),
+            operands: Vec::new(),
+            values: Vec::new(),
+        }
+    );
+    assert_eq!(constraint.active, Some(Dimension::Literal(true)));
+    assert_eq!(
+        constraint.native_ref.as_deref(),
+        Some("catia:outer:entity-record#range")
+    );
+    let text = |key: &str| {
+        let Some(NativeOption::Text(Dimension::Literal(text))) = constraint.native_options.get(
+            &cadmpeg_ir::design::names::CodecName::new(&cadmpeg_ir::codec_id!("catia"), key)
+                .unwrap(),
+        ) else {
+            panic!("a text option {key}");
+        };
+        text.as_str().to_owned()
+    };
+    assert_eq!(
+        serde_json::from_str::<std::collections::BTreeMap<String, String>>(&text("properties"))
+            .unwrap(),
+        properties
+    );
+    assert_eq!(
+        serde_json::from_str::<Vec<SketchNativeOperand>>(&text("operands")).unwrap(),
+        [operand]
+    );
+    assert_design_survives_cadir(&ir);
 }
 
 #[test]

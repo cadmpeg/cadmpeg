@@ -34,6 +34,8 @@ pub(crate) const HYBRID_BODY: u8 = 0x3f;
 pub(crate) const PAD: u8 = 0x40;
 pub(crate) const GSM_PLANE: u8 = 0x41;
 pub(crate) const REFERENCE_PLANES: u8 = 0x42;
+/// The tag of the class that [`stream_with_sketches`] appends to [`CATALOG`].
+pub(crate) const SKETCH: u8 = 0x43;
 
 pub(crate) fn escaped(value: u32) -> Vec<u8> {
     let mut bytes = vec![0x80];
@@ -44,6 +46,17 @@ pub(crate) fn escaped(value: u32) -> Vec<u8> {
 /// One graph of `(entity id, definition prefix, payload)` records followed by
 /// its catalog.
 pub(crate) fn stream(records: &[(u32, Vec<u8>, Vec<u8>)]) -> Vec<u8> {
+    stream_with_catalog(records, &CATALOG)
+}
+
+/// [`stream`] whose catalog also names `PRTSketch`, at tag [`SKETCH`].
+pub(crate) fn stream_with_sketches(records: &[(u32, Vec<u8>, Vec<u8>)]) -> Vec<u8> {
+    let mut catalog = CATALOG.to_vec();
+    catalog.push("PRTSketch");
+    stream_with_catalog(records, &catalog)
+}
+
+fn stream_with_catalog(records: &[(u32, Vec<u8>, Vec<u8>)], catalog: &[&str]) -> Vec<u8> {
     let mut bytes = Vec::new();
     for (entity_id, prefix, _) in records {
         bytes.extend(entity_table_record_with_definition_and_value(
@@ -58,7 +71,7 @@ pub(crate) fn stream(records: &[(u32, Vec<u8>, Vec<u8>)]) -> Vec<u8> {
         .map(|(_, _, payload)| object_graph_record(&[0x12, 0x82, 0x84], payload))
         .collect::<Vec<_>>();
     bytes.extend(object_graph_from_records(&objects));
-    bytes.extend(catalog_stream(&CATALOG));
+    bytes.extend(catalog_stream(catalog));
     bytes
 }
 

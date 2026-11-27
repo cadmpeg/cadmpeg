@@ -5,20 +5,23 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::design::construction::FrameValue;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::CodecName;
+use cadmpeg_ir::design::ops::sketch::{Planar, Sketch, SketchConstraint};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::Anchor;
 use cadmpeg_ir::features::{
     Feature as LegacyFeature, FeatureId, FeatureOperation as Legacy, UnresolvedFamily,
 };
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::sketches::{SketchConstraint as LegacyConstraint, SketchId};
 use cadmpeg_ir::CadIr;
 
-use super::datums;
 use super::tree::{Body, Item, Tree};
+use super::{datums, sketches};
 use crate::ids::neutral_history_id;
 use crate::loss::{identity_statement, CatiaLossCode};
 use crate::native::CatiaNative;
@@ -38,14 +41,30 @@ pub(super) fn project(
         .iter()
         .map(|feature| (feature.id.clone(), feature.clone()))
         .collect::<BTreeMap<_, _>>();
+    let model_sketches = ir
+        .model
+        .sketches
+        .iter()
+        .map(|sketch| {
+            (
+                sketch.id.clone(),
+                (sketch.native_ref.clone(), sketches::frame(sketch)),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let model_constraints = ir.model.sketch_constraints.clone();
     let mut stated = Statements {
         ctx,
         legacy: &legacy,
+        model_sketches: &model_sketches,
+        model_constraints: &model_constraints,
         current: tree.and_then(|tree| tree.current),
         restated: BTreeSet::new(),
         reclassified: Vec::new(),
         features: Vec::new(),
         containers: Vec::new(),
+        sketches: Vec::new(),
+        constraints: Vec::new(),
     };
     let mut group = BTreeSet::new();
     let mut bodies = Vec::new();
@@ -122,18 +141,28 @@ pub(super) fn project(
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.extend(stated.containers);
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
+    ir.design.sketches.extend(stated.sketches);
+    ir.design.sketches.sort_by(|a, b| a.id.cmp(&b.id));
+    ir.design.sketch_constraints.extend(stated.constraints);
+    ir.design.sketch_constraints.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(roots)
 }
 
 struct Statements<'c, 'l> {
     ctx: &'c DecodeContext<'c>,
     legacy: &'l BTreeMap<FeatureId, LegacyFeature>,
+    /// The native reference and the resolved frame of each sketch the
+    /// decoder reads.
+    model_sketches: &'l BTreeMap<SketchId, (Option<String>, Option<FrameValue>)>,
+    model_constraints: &'l [LegacyConstraint],
     /// The in-work object's entity.
     current: Option<u32>,
     restated: BTreeSet<FeatureId>,
     reclassified: Vec<String>,
     features: Vec<Feature>,
     containers: Vec<Container>,
+    sketches: Vec<Sketch>,
+    constraints: Vec<SketchConstraint<Planar>>,
 }
 
 impl Statements<'_, '_> {
@@ -192,8 +221,27 @@ impl Statements<'_, '_> {
                 id.as_str()
             ));
         }
+        let native_ref = member
+            .target
+            .as_ref()
+            .map(|target| target.object_record.clone());
         let operation = match datums::by_class(class) {
             Some(operation) => operation,
+            None if class == SKETCH_CLASS => {
+                let sketch = SketchId::from(neutral_history_id(
+                    &crate::native::design_object_id(graph_offset, member.entity_id),
+                    &cadmpeg_ir::identity_component!("sketch"),
+                )?);
+                self.ctx.charge_entities(1, "project a CATIA sketch")?;
+                self.sketches.push(sketches::sketch(
+                    sketch.clone(),
+                    id.clone(),
+                    native_ref.clone(),
+                    None,
+                    at,
+                ));
+                FeatureOperation::Sketch(sketch)
+            }
             None => {
                 let Some(kind) = CodecName::new(&cadmpeg_ir::codec_id!("catia"), class) else {
                     return Ok(None);
@@ -207,26 +255,68 @@ impl Statements<'_, '_> {
         };
         self.ctx.charge_entities(1, "project a CATIA feature")?;
         self.restated.insert(id.clone());
-        self.features.push(feature(
-            id.clone(),
-            operation,
-            member
-                .target
-                .as_ref()
-                .map(|target| target.object_record.clone()),
-        ));
+        self.features
+            .push(feature(id.clone(), operation, native_ref));
         Ok(Some(Member::Feature(id)))
     }
 
     fn legacy_feature(&mut self, legacy: &LegacyFeature, at: Anchor) -> Result<Member, CodecError> {
         self.ctx.charge_entities(1, "project a CATIA feature")?;
         self.restated.insert(legacy.id.clone());
+        let operation = self.legacy_operation(legacy, at)?;
         self.features.push(feature(
             legacy.id.clone(),
-            legacy_operation(legacy, at),
+            operation,
             legacy.native_ref.clone(),
         ));
         Ok(Member::Feature(legacy.id.clone()))
+    }
+
+    /// The design operation of a feature the decoder types, and the sketch
+    /// and constraints a sketch feature owns.
+    fn legacy_operation(
+        &mut self,
+        feature: &LegacyFeature,
+        at: Anchor,
+    ) -> Result<FeatureOperation, CodecError> {
+        let family = match feature.evaluation.definition().operation() {
+            Legacy::Sketch { sketch } => {
+                if let Some((id, (native_ref, frame))) = sketch
+                    .id()
+                    .and_then(|id| self.model_sketches.get_key_value(id))
+                {
+                    self.ctx.charge_entities(1, "project a CATIA sketch")?;
+                    self.sketches.push(sketches::sketch(
+                        id.clone(),
+                        feature.id.clone(),
+                        native_ref.clone(),
+                        frame.clone(),
+                        at,
+                    ));
+                    for legacy in self
+                        .model_constraints
+                        .iter()
+                        .filter(|item| &item.sketch == id)
+                    {
+                        if let Some(constraint) = sketches::constraint(legacy)? {
+                            self.ctx
+                                .charge_entities(1, "project a CATIA sketch constraint")?;
+                            self.constraints.push(constraint);
+                        }
+                    }
+                    return Ok(FeatureOperation::Sketch(id.clone()));
+                }
+                OperationFamily::Sketch
+            }
+            Legacy::DatumPrincipalPlane { plane } => {
+                if let Some(operation) = datums::principal(*plane, at) {
+                    return Ok(operation);
+                }
+                OperationFamily::Datum
+            }
+            _ => OperationFamily::Datum,
+        };
+        Ok(FeatureOperation::Unresolved { family })
     }
 }
 
@@ -261,6 +351,8 @@ pub(super) fn member_feature_id(
     .map(FeatureId::from)
 }
 
+const SKETCH_CLASS: &str = "PRTSketch";
+
 /// The compact class a legacy reading needs of its record.
 fn legacy_class(feature: &LegacyFeature) -> Option<&'static str> {
     match feature.evaluation.definition().operation() {
@@ -268,7 +360,7 @@ fn legacy_class(feature: &LegacyFeature) -> Option<&'static str> {
         | Legacy::Unresolved {
             family: UnresolvedFamily::DatumPlane,
         } => Some("GSMPlane"),
-        Legacy::Sketch { .. } => Some("PRTSketch"),
+        Legacy::Sketch { .. } => Some(SKETCH_CLASS),
         _ => None,
     }
 }
@@ -293,19 +385,4 @@ fn contradicting_class<'n>(native: &'n CatiaNative, feature: &LegacyFeature) -> 
         .compact_class
         .as_ref()?;
     (!legacy_agrees(feature, &class.name)).then_some(class.name.as_str())
-}
-
-/// The design operation of a feature the decoder types.
-fn legacy_operation(feature: &LegacyFeature, at: Anchor) -> FeatureOperation {
-    let family = match feature.evaluation.definition().operation() {
-        Legacy::Sketch { .. } => OperationFamily::Sketch,
-        Legacy::DatumPrincipalPlane { plane } => {
-            if let Some(operation) = datums::principal(*plane, at) {
-                return operation;
-            }
-            OperationFamily::Datum
-        }
-        _ => OperationFamily::Datum,
-    };
-    FeatureOperation::Unresolved { family }
 }

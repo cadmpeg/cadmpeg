@@ -23,6 +23,7 @@ use crate::native::CatiaNative;
 mod datums;
 mod history;
 mod parameters;
+mod sketches;
 mod tree;
 
 /// Project the decoded design records of `ir` into its v11 design layer, and
