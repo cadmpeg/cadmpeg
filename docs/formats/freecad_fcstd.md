@@ -630,13 +630,36 @@ a word has none (`3 dm`). A value whose unit has a dimension other than length, 
 time (`5 mA`) has the `Native` kind named by its unit as written, its number as written as its
 value, and the source's text as its expression. A formula is a neutral expression where it
 translates. An expression names a cell by its alias or its address, unqualified within its sheet
-and as `Sheet.name` elsewhere. A formula cell stores no value; its value kind is the quantity that
-its expression gives from the kinds of its references. Where those kinds are unknown, its kind is
-a real number, it emits `parameter.quantity-assumed`, and an expression that references it takes it
-as a real number. A display unit whose quantity is the cell's and whose words each have a symbol is
-the parameter's `unit`. Alignment, style, foreground and background colors, and every other display
-unit are source settings of the cell parameter (Rule N case (b)): `fcstd:alignment`, `fcstd:style`,
-`fcstd:foregroundColor`, `fcstd:backgroundColor`, and `fcstd:displayUnit`, each as Text.
+and as `Sheet.name` elsewhere. A reference to an object property that is no parameter stays the
+source's text in the expression, and the parameter emits `parameter.dependency-dropped`. A formula
+that `FreeCAD`'s expression grammar does not read is a text cell whose value is its content. A
+value cell whose number is not finite has no value and emits `parameter.value-non-finite`. A
+formula cell stores no value. Its value kind is the kind of its result under `FreeCAD`'s unit
+rules, with the cells it references read first in dependency order:
+
+- A `<<…>>` string, `str()`, `address()`, the sum of two strings, and a string `%` a value are text.
+- A reference to a cell, by alias, address, or `.address`, takes that cell's kind. A reference to a
+  typed property of an object, or a placement or vector component, takes the property's quantity;
+  a string, enumeration, or file property is text.
+- Addition and subtraction of equal quantities keep the quantity, and a comparison of equal
+  quantities is a real; a product and a quotient add and subtract the exponents of the units;
+  `x ^ n` and `pow(x, n)` multiply each exponent by the constant `n` where each product is an
+  integer.
+- `abs`, `round`, `trunc`, `ceil`, `floor`, `mod`, `hypot`, `cath`, `href`, `sum`, `min`, `max`,
+  `average`, and `stddev` keep the quantity of their values; `sqrt` and `cbrt` divide its
+  exponents; `cos`, `sin`, `tan`, `exp`, `log`, `log10`, `sinh`, `cosh`, `tanh`, `not`, `and`, `or`,
+  `count`, and `vdot` give a real; `acos`, `asin`, `atan`, `atan2`, and `vangle` give an angle; and
+  `vlinedist` and `vplanedist` give a length.
+
+Where the file does not determine the result's kind, as for a reference to another document, to a
+property with no stated quantity, or to a cell of a reference cycle, the cell's kind is a real
+number, it emits `parameter.quantity-assumed`, and an expression that references it takes it as a
+real number. A display unit whose quantity is the cell's and whose words each have a symbol is
+the parameter's `unit`. Another display unit of a quantity cell is the native option
+`fcstd:displayUnit` (Text, Rule N case (a)). Alignment, style, foreground and background colors, and the display unit of a
+text cell are source settings of the cell parameter (Rule N case (b)): `fcstd:alignment`,
+`fcstd:style`, `fcstd:foregroundColor`, `fcstd:backgroundColor`, and `fcstd:displayUnit`, each as
+Text.
 Only positive row and column spans define a neutral merged range. Nonpositive span attributes remain
 native cell metadata and do not create a neutral range.
 Dimension counts must match their records; names, addresses, ownership, merged anchors, duplicate
@@ -863,11 +886,11 @@ counting from zero in stored order), and an offset that is not the identity is t
 `fcstd:Offset1.<c>` or `fcstd:Offset2.<c>` (Real) for `c` in `px`, `py`, `pz`, `qx`, `qy`, `qz`,
 and `qw`, the stored position and quaternion (Rule N case (a)). Fixed, revolute, cylindrical, slider, and ball joints
 are motions about the connector frame's z axis, with their enabled limits: angle limits on
-revolute and cylindrical joints, and length limits on cylindrical and slider joints. Distance,
-parallel, perpendicular, and angle joints are relations of those kinds. An angle joint's angle is
-the magnitude of `Angle`, or of a float `Distance`. A distance joint's distance is a nonnegative
-`Distance`; a negative `Distance` is the native option `fcstd:Distance` (Length, Rule N case (a)),
-and the joint states no distance. Rack-pinion, screw, gears, and belt joints are couplings whose pitch radius,
+revolute and cylindrical joints, and length limits on cylindrical and slider joints. Parallel,
+perpendicular, and angle joints are relations of those kinds. An angle joint's angle is the
+magnitude of `Angle`, or of a float `Distance`. An angle joint whose angle is less than `1e-7`
+radians from a multiple of a full turn is a parallel joint. Rack-pinion, screw, gears, and belt
+joints are couplings whose pitch radius,
 pitch, or radii are `Distance` and `Distance2`. Another family is a native kind with its source
 label. `Suppressed` is the feature's suppression. Each other stored joint value is a source setting
 under its property name, `fcstd:<name>` (Rule N case (b)): a value the kind does not use, a limit
@@ -876,8 +899,46 @@ whose enable flag is false and that flag, a negative angle whose magnitude is th
 millimetres, and a flag a `Bool` option. A native kind keeps these values as native options (Rule N case (a)). A
 `JointGroup` is an unordered `Group` of its joints; the document's `Group` holds each other joint.
 A grounded object is grounded occurrence state. A joint that names no object for a connector, that
-stores a blank joint type, or that grounds an object with no occurrence in the scope emits
-`feature.joint-unresolved` and stays in its native record.
+stores a blank joint type, that has an object name that is no feature id, or that grounds an
+object with no occurrence in the scope emits `feature.joint-unresolved` and stays in its native
+record.
+
+A distance joint has the form that `FreeCAD`'s assembly solver gives the element types of its two
+references. The element of a reference is the last `.`-separated segment of its first sub-name,
+and the element type is the letters of that segment: `Face`, `Edge`, or `Vertex`. The element's
+object is the reference object where the sub-name has one segment. Otherwise the leading segments
+walk from the reference object through groups, parts, assemblies, and link groups to the first
+shape object, a Body's sketch, datum, or coordinate-system child, or a link to a Body or a shape
+object. A link resolves to its `LinkedObject`. A face's surface and an edge's curve are those of
+the decoded topology of the object's `Shape` property; the elements of an object with no `Shape`
+property have no surface or curve type. The solver orders the two references by element type: a
+face before an edge, an edge before a vertex, a plane, cylinder, cone, torus, and sphere in that
+order, and a line before a circle. Where it reverses the order, it swaps `Reference1` with
+`Reference2` and `Placement1` with `Placement2`, and the joint's two connectors swap as a whole.
+With `d` the stored `Distance` (zero where it is absent), and `r1` and `r2` the radii of the first
+and second ordered elements (the radius of a cylinder, a sphere, or a circle, and zero for other
+types), the joint is:
+
+| Ordered element types | Joint |
+| --- | --- |
+| point and plane, point and a curve other than a line | Coincidence of the second connector's point with the first connector's plane, offset `d` |
+| plane and sphere | The same, offset `d + r2` |
+| line and plane | Coincidence of the second connector's axis with the first connector's plane, offset `d` |
+| plane and cylinder | The same, offset `d + r2` |
+| line and line, line and circle, circle and circle, cylinder and cylinder, cylinder and torus | With `v` equal to `d`, `d + r2`, `d + r1 + r2`, `d + r1 + r2`, and `d + r1`: for `v` greater than zero, distance `v` between the connectors' axes and the native option `fcstd:parallelAxes` (Bool `true`) for the parallel axes; for `v` equal to zero, a concentric joint |
+| cylinder and sphere, torus and sphere, point and cylinder, point and line | Distance `d + r1 + r2`, `d + r2`, `d + r1`, and `d` from the first connector's axis to the second connector's point |
+| sphere and sphere, point and sphere | Distance `d + r1 + r2` and `d + r1` between the connectors' points |
+| vertex and vertex | Coincidence of the connectors' points for `d` less than `1e-7`, and distance `d` between them for other `d` |
+| each other pair | Planar motion along the first connector frame's z axis with z offset `d` |
+
+A point connector is the origin of the connector frame, an axis connector its origin and z axis,
+and a plane connector its origin, z axis as normal, and x axis. Where an element's object is in
+another document, or a face or edge that the order reads has no decoded surface or curve, the
+joint is a distance joint with no distance, `Distance` is the native option `fcstd:Distance`
+(Length, Rule N case (a)), and the joint emits `feature.joint-distance-unresolved`. A distance
+`v` less than zero between axes, from an axis to a point, or between points has no solution: the
+joint is a distance joint with no distance, keeps `fcstd:Distance`, and emits
+`feature.joint-distance-unsatisfiable`.
 
 ## 10. Drawing graph
 
