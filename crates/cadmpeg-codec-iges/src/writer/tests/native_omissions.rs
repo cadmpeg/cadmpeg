@@ -44,8 +44,9 @@ fn decode(file: &[u8]) -> CadIr {
 fn losses(file: &[u8]) -> Vec<(String, String)> {
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(&decode(file), None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&decode(file), None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .unwrap();
     plan.report()

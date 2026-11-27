@@ -203,8 +203,9 @@ fn parameters_with_scalars(
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     let ir = part_with_history(keywords, &[]);
-    let native = crate::native::SldprtNative::load(
+    let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
@@ -1398,8 +1399,9 @@ fn parameters_with_manager(
     use cadmpeg_ir::features::parameters::{ParameterPmi, PmiDimensionSubtype};
 
     let ir = part_with_history(keywords, &[]);
-    let native = crate::native::SldprtNative::load(
+    let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();

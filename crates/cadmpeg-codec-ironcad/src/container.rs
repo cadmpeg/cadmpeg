@@ -15,9 +15,13 @@ use crate::loss::IronCadLossCode;
 
 /// Stream that holds the kernel record tree.
 pub(crate) const BREP_DATA: &str = "Brep Data";
+
+/// The stream that holds the part and assembly records.
+pub(crate) const PUBLIC_ACCESS: &str = "Public Access";
+
 /// Root streams that identify a scene, with [`BREP_DATA`].
 const SHAPE_DATA: &str = "Shape Data";
-const DOCUMENT_DATA: &str = "Document Data";
+pub(crate) const DOCUMENT_DATA: &str = "Document Data";
 
 /// Root storage class of a scene.
 pub(crate) const SCENE_CLASS: CompoundClassId = CompoundClassId::from_guid(

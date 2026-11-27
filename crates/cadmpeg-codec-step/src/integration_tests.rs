@@ -18,7 +18,6 @@ mod tolerance_zones;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
@@ -202,10 +201,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             options: options.clone(),
         };
         let plan = codec
-            .plan(
-                EncodeInput::new(&edited, Some(result.source_fidelity())),
-                TargetRequest::Unnamed,
-            )
+            .plan(EncodeInput::new(&edited, Some(result.source_fidelity())))
             .expect("edited STEP document plan");
         assert!(matches!(
             plan.report().write_path(),

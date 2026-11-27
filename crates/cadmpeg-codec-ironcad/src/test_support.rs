@@ -228,3 +228,13 @@ pub(crate) fn face_body(surface: &'static str) -> Vec<u8> {
     ]);
     acis_stream(&items)
 }
+
+/// A native binary Parasolid transmit with no nodes: the prologue, the
+/// maximum node type, `user_fields`, and the terminator.
+pub(crate) fn parasolid_record(description: &str, user_fields: u32) -> Vec<u8> {
+    let mut bytes = parasolid_prologue(description, "SCH_3401176_34101_13006");
+    bytes.extend_from_slice(&231_u16.to_le_bytes());
+    bytes.extend_from_slice(&user_fields.to_le_bytes());
+    bytes.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
+    bytes
+}

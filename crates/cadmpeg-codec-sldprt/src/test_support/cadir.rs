@@ -2,15 +2,13 @@
 //! A CADIR write and read of a decoded document, for crate tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::document::CadIr;
 
 /// The `arena.omitted` messages of a CADIR write of `ir`, and the document
 /// that reading the written bytes gives.
 pub(crate) fn round_trip(ir: &CadIr) -> (Vec<String>, CadIr) {
-    let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
-        .unwrap();
+    let plan = CadirEncoder.plan(EncodeInput::new(ir, None)).unwrap();
     let omitted = plan
         .report()
         .losses

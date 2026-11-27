@@ -4009,163 +4009,167 @@ pub(crate) fn indexed_sections<'a>(
     let envelopes = section_envelopes(bytes);
     let mut seen_record_starts = BTreeSet::new();
     let mut product_record_ranges = Vec::new();
-    for offset in 0..bytes.len() {
+    for one_at in memchr::memchr_iter(0x01, bytes) {
+        let Some(offset) = one_at.checked_sub(1) else {
+            continue;
+        };
+        if !matches!(bytes[offset], 0x04 | 0x05) {
+            continue;
+        }
         if let Some(range) = product_record_range_at(bytes, offset) {
             product_record_ranges.push(range);
         }
     }
     let descending_u32_edges = DescendingU32Edges::new(bytes);
-    for table in bytes
-        .len()
-        .checked_sub(4)
-        .into_iter()
-        .flat_map(|last| 0..last)
-    {
-        let Some(count) = View::u32_le_at(bytes, table).map(cadmpeg_core::decode::index_from_u32)
-        else {
-            continue;
-        };
-        if !(2..=100_000).contains(&count) {
-            continue;
-        }
-        let Some(index_len) = count.checked_add(1).and_then(|n| n.checked_mul(4)) else {
-            continue;
-        };
-        let Some(index_start) = table.checked_sub(index_len) else {
-            continue;
-        };
-        let Some(table_end) = count
-            .checked_mul(4)
-            .and_then(|length| table.checked_add(4 + length))
-        else {
-            continue;
-        };
-        let Some(product) = bytes
-            .get(table_end..)
-            .and_then(|suffix| ProductRecord::read(suffix, ProductRecordForm::IndexedRoot))
-        else {
-            continue;
-        };
-        if View::u32_le_at(bytes, index_start) != Some(0) {
-            continue;
-        }
-        let Some(first) =
-            View::u32_le_at(bytes, index_start + 4).map(cadmpeg_core::decode::index_from_u32)
-        else {
-            continue;
-        };
-        let section_base = unique_candidate(envelopes.iter().filter_map(|(offset, end)| {
-            if index_start < offset.checked_add(16)? || table_end >= *end {
-                return None;
+    if let Some(last) = bytes.len().checked_sub(4) {
+        for table in 0..last {
+            let Some(count) =
+                View::u32_le_at(bytes, table).map(cadmpeg_core::decode::index_from_u32)
+            else {
+                continue;
+            };
+            if !(2..=100_000).contains(&count) {
+                continue;
             }
-            let payload_len = cadmpeg_core::decode::index_from_u32(View::u32_be_at(
-                bytes,
-                offset.checked_add(8)?,
-            )?);
-            if offset.checked_add(16)?.checked_add(payload_len)? != *end {
-                return None;
+            let Some(index_len) = count.checked_add(1).and_then(|n| n.checked_mul(4)) else {
+                continue;
+            };
+            let Some(index_start) = table.checked_sub(index_len) else {
+                continue;
+            };
+            let Some(table_end) = count
+                .checked_mul(4)
+                .and_then(|length| table.checked_add(4 + length))
+            else {
+                continue;
+            };
+            let Some(product) = bytes
+                .get(table_end..)
+                .and_then(|suffix| ProductRecord::read(suffix, ProductRecordForm::IndexedRoot))
+            else {
+                continue;
+            };
+            if View::u32_le_at(bytes, index_start) != Some(0) {
+                continue;
             }
-            let base = offset.checked_add(14)?;
-            let first_boundary = base.checked_add(first)?;
-            let last_index = index_start.checked_add(count.checked_mul(4)?)?;
-            let last = cadmpeg_core::decode::index_from_u32(View::u32_le_at(bytes, last_index)?);
-            let last_boundary = base.checked_add(last)?;
-            (first_boundary >= table_end.checked_add(product.byte_len())? && last_boundary <= *end)
-                .then_some(base)
-        }));
-        if section_base.is_none() && bytes.get(table_end) == Some(&6) {
-            continue;
+            let Some(first) =
+                View::u32_le_at(bytes, index_start + 4).map(cadmpeg_core::decode::index_from_u32)
+            else {
+                continue;
+            };
+            let section_base = unique_candidate(envelopes.iter().filter_map(|(offset, end)| {
+                if index_start < offset.checked_add(16)? || table_end >= *end {
+                    return None;
+                }
+                let payload_len = cadmpeg_core::decode::index_from_u32(View::u32_be_at(
+                    bytes,
+                    offset.checked_add(8)?,
+                )?);
+                if offset.checked_add(16)?.checked_add(payload_len)? != *end {
+                    return None;
+                }
+                let base = offset.checked_add(14)?;
+                let first_boundary = base.checked_add(first)?;
+                let last_index = index_start.checked_add(count.checked_mul(4)?)?;
+                let last =
+                    cadmpeg_core::decode::index_from_u32(View::u32_le_at(bytes, last_index)?);
+                let last_boundary = base.checked_add(last)?;
+                (first_boundary >= table_end.checked_add(product.byte_len())?
+                    && last_boundary <= *end)
+                    .then_some(base)
+            }));
+            if section_base.is_none() && bytes.get(table_end) == Some(&6) {
+                continue;
+            }
+            let Some(base) = section_base.or_else(|| table_end.checked_sub(first)) else {
+                continue;
+            };
+            let Some(index) =
+                FixedIndex::new(&descending_u32_edges, index_start, count, base, table)
+            else {
+                continue;
+            };
+            if !seen_record_starts.insert(table_end) {
+                continue;
+            }
+            candidates.push(IndexedCandidate {
+                discovery_order: candidates.len(),
+                kind: IndexedCandidateKind::Fixed(index),
+            });
         }
-        let Some(base) = section_base.or_else(|| table_end.checked_sub(first)) else {
-            continue;
-        };
-        let Some(index) = FixedIndex::new(&descending_u32_edges, index_start, count, base, table)
-        else {
-            continue;
-        };
-        if !seen_record_starts.insert(table_end) {
-            continue;
-        }
-        candidates.push(IndexedCandidate {
-            discovery_order: candidates.len(),
-            kind: IndexedCandidateKind::Fixed(index),
-        });
     }
-    for count_offset in bytes
-        .len()
-        .checked_sub(4)
-        .into_iter()
-        .flat_map(|last| 8..last)
-    {
-        let Some(record_count) =
-            View::u32_le_at(bytes, count_offset).map(cadmpeg_core::decode::index_from_u32)
-        else {
-            continue;
-        };
-        if !(2..=100_000).contains(&record_count) {
-            continue;
+    if bytes.len() >= 12 {
+        for count_offset in 8..bytes.len() - 4 {
+            let Some(record_count) =
+                View::u32_le_at(bytes, count_offset).map(cadmpeg_core::decode::index_from_u32)
+            else {
+                continue;
+            };
+            if !(2..=100_000).contains(&record_count) {
+                continue;
+            }
+            let offset_count = record_count + 2;
+            let Some(index_len) = offset_count.checked_mul(4) else {
+                continue;
+            };
+            let Some(index_start) = count_offset.checked_sub(index_len) else {
+                continue;
+            };
+            let Some(first) =
+                View::u32_le_at(bytes, index_start).map(cadmpeg_core::decode::index_from_u32)
+            else {
+                continue;
+            };
+            let Some(second) =
+                View::u32_le_at(bytes, index_start + 4).map(cadmpeg_core::decode::index_from_u32)
+            else {
+                continue;
+            };
+            let Some(third) =
+                View::u32_le_at(bytes, index_start + 8).map(cadmpeg_core::decode::index_from_u32)
+            else {
+                continue;
+            };
+            let Some(last) =
+                View::u32_le_at(bytes, count_offset - 4).map(cadmpeg_core::decode::index_from_u32)
+            else {
+                continue;
+            };
+            if first < count_offset + 4
+                || first >= second
+                || second > third
+                || third > last
+                || last > bytes.len()
+            {
+                continue;
+            }
+            // The first two data ranges contain the sole product marker. Reject
+            // random count words before allocating and walking the full offset
+            // table; malformed payloads commonly satisfy the cheap monotonicity
+            // checks while carrying no self-framed NX record at all.
+            let product_record_count =
+                product_record_count_within(&product_record_ranges, first, second).checked_add(
+                    product_record_count_within(&product_record_ranges, second, third),
+                );
+            if product_record_count != Some(1) {
+                continue;
+            }
+            let Some(index) = OffsetIndex::new(
+                &descending_u32_edges,
+                index_start,
+                offset_count,
+                count_offset,
+            ) else {
+                continue;
+            };
+            if !seen_record_starts.insert(second) {
+                continue;
+            }
+            candidates.push(IndexedCandidate {
+                discovery_order: candidates.len(),
+                kind: IndexedCandidateKind::OffsetOnly(index),
+            });
         }
-        let offset_count = record_count + 2;
-        let Some(index_len) = offset_count.checked_mul(4) else {
-            continue;
-        };
-        let Some(index_start) = count_offset.checked_sub(index_len) else {
-            continue;
-        };
-        let Some(first) =
-            View::u32_le_at(bytes, index_start).map(cadmpeg_core::decode::index_from_u32)
-        else {
-            continue;
-        };
-        let Some(second) =
-            View::u32_le_at(bytes, index_start + 4).map(cadmpeg_core::decode::index_from_u32)
-        else {
-            continue;
-        };
-        let Some(third) =
-            View::u32_le_at(bytes, index_start + 8).map(cadmpeg_core::decode::index_from_u32)
-        else {
-            continue;
-        };
-        let Some(last) =
-            View::u32_le_at(bytes, count_offset - 4).map(cadmpeg_core::decode::index_from_u32)
-        else {
-            continue;
-        };
-        if first < count_offset + 4
-            || first >= second
-            || second > third
-            || third > last
-            || last > bytes.len()
-        {
-            continue;
-        }
-        // The first two data ranges contain the sole product marker. Reject
-        // random count words before allocating and walking the full offset
-        // table; malformed payloads commonly satisfy the cheap monotonicity
-        // checks while carrying no self-framed NX record at all.
-        let product_record_count =
-            product_record_count_within(&product_record_ranges, first, second).checked_add(
-                product_record_count_within(&product_record_ranges, second, third),
-            );
-        if product_record_count != Some(1) {
-            continue;
-        }
-        let Some(index) = OffsetIndex::new(
-            &descending_u32_edges,
-            index_start,
-            offset_count,
-            count_offset,
-        ) else {
-            continue;
-        };
-        if !seen_record_starts.insert(second) {
-            continue;
-        }
-        candidates.push(IndexedCandidate {
-            discovery_order: candidates.len(),
-            kind: IndexedCandidateKind::OffsetOnly(index),
-        });
     }
     let mut sections = Vec::new();
     for candidate in select_outer_indexed_candidates(candidates) {

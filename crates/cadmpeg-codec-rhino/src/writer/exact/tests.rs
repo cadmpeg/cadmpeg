@@ -174,11 +174,21 @@ fn a_pcurve_along_one_angle_maps_to_the_segment_between_its_mapped_ends() {
     )
     .expect("an iso-line composes");
     for (parameter, angle) in [(0.0, 0.5), (1.0, 2.5)] {
-        let point = pcurve_point(&pcurve, parameter).expect("the pcurve has a point");
+        let point = pcurve_point(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &pcurve,
+            parameter,
+        )
+        .expect("the pcurve has a point");
         assert!((point.u - around.parameter(angle)).abs() <= EXACT_FORM_AGREEMENT);
         assert!((point.v - 1.25).abs() <= EXACT_FORM_AGREEMENT);
     }
-    let middle = pcurve_point(&pcurve, 0.5).expect("the pcurve has a point");
+    let middle = pcurve_point(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &pcurve,
+        0.5,
+    )
+    .expect("the pcurve has a point");
     assert!((middle.v - 1.25).abs() <= EXACT_FORM_AGREEMENT);
 }
 
@@ -192,7 +202,12 @@ fn a_constant_angle_maps_to_its_nurbs_parameter() {
     )
     .expect("an axial line composes");
     for (parameter, height) in [(0.0, -1.0), (1.5, 0.5), (3.0, 2.0)] {
-        let point = pcurve_point(&pcurve, parameter).expect("the pcurve has a point");
+        let point = pcurve_point(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &pcurve,
+            parameter,
+        )
+        .expect("the pcurve has a point");
         assert!((point.u - around.parameter(FRAC_PI_2)).abs() <= EXACT_FORM_AGREEMENT);
         assert!((point.v - height).abs() <= EXACT_FORM_AGREEMENT);
     }

@@ -43,8 +43,9 @@ pub(super) fn project(
     ir: &mut CadIr,
     outside: &HashSet<SketchEntityId>,
 ) -> (Extrude, super::super::typed::Typed) {
-    let native = crate::native::SldprtNative::load(
+    let native = crate::native::SldprtNative::load_under(
         ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
         ir.tolerances.linear,
     )
     .unwrap();
