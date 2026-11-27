@@ -818,6 +818,216 @@ fn exact_typed_zero_body_base_feature(
     })
 }
 
+/// Type GUID of the Body presentation owners that the typed result-body
+/// envelope names in its body, passive-reference and repeated runs.
+const TYPED_BODY_PRESENTATION_GUID: &str = "D3937028-C20C-4E65-B010-94AD418A5C20";
+/// Type GUID of the body browser nodes that the typed result-body envelope
+/// names in its result run.
+const TYPED_BODY_NODE_GUID: &str = "D26351F0-5940-4D23-AA20-2C35475A6D9E";
+/// Type GUID of the shared metadata record of a Base Feature.
+const TYPED_METADATA_GUID: &str = "493A89BA-E146-498D-9033-2783FE727AF4";
+/// Distance from the envelope GUID count field of the typed result-body form
+/// to the scope kind: the LP-UTF-16 GUID, three zero bytes, the u32 reference
+/// count, the typed scope reference, the history-state identity and the kind
+/// length field.
+const TYPED_RESULT_BODY_GUID_END_BEFORE_KIND: usize = 66;
+
+/// One typed local reference of the typed result-body envelope: its u32
+/// target, the offset of its u64 target field, its six-byte trailing field
+/// and the offset after it. The trailing field is the two same-segment flag
+/// bytes and, in a member-bearing element, the u32 member. An element without
+/// a member stores only the flag bytes; the remaining field bytes are zero.
+struct TypedBodyReference {
+    target: u32,
+    offset: u64,
+    field: [u8; 6],
+    end: usize,
+}
+
+fn typed_body_reference(
+    bytes: &[u8],
+    at: usize,
+    type_guid: &str,
+    member: bool,
+) -> Option<TypedBodyReference> {
+    let (target, guid) = crate::bytes::typed_local_reference(bytes, at)?;
+    if !guid.eq_ignore_ascii_case(type_guid) {
+        return None;
+    }
+    let flags_at = at.checked_add(crate::bytes::TYPED_LOCAL_REFERENCE_LEN - 2)?;
+    let end = flags_at.checked_add(if member { 6 } else { 2 })?;
+    let trailing = bytes.get(flags_at..end)?;
+    let mut field = [0u8; 6];
+    field[..trailing.len()].copy_from_slice(trailing);
+    local_reference_field(&field)?;
+    Some(TypedBodyReference {
+        target,
+        offset: u64::try_from(at.checked_add(1)?).ok()?,
+        field,
+        end,
+    })
+}
+
+/// The typed-reference spelling of the ordinary result-body envelope. Every
+/// reference of the local form carries an inline type GUID: the bodies, the
+/// passive references and their repeated run name Body presentation owners,
+/// the shared metadata record has the metadata type, and the result records
+/// name body browser nodes. The repeated run stores no member, and one flag
+/// byte follows it. The count field's repeat marker orders the two parallel
+/// runs: marker `0` stores the body suffixes first and the passive references
+/// second; marker `1` stores the passive references first and the body
+/// suffixes second. The repeated run names the passive references in both
+/// orders. The LP-UTF-16 envelope GUID lies a fixed distance before the scope
+/// kind.
+fn exact_typed_result_bodies(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    use crate::records::feature::base_feature::{
+        DesignBaseFeatureEntry, DesignBaseFeatureResultBody, DesignBaseFeatureResults,
+    };
+
+    if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
+        || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
+    {
+        return None;
+    }
+    let combined_count = usize::try_from(View::u32_le_at(
+        bytes,
+        start + result_body::COMBINED_BODY_REFERENCE_COUNT,
+    )?)
+    .ok()?;
+    if combined_count == 0 || combined_count > 200_000 || combined_count % 2 != 0 {
+        return None;
+    }
+    let body_count = combined_count / 2;
+    let mut cursor = start + result_body::LEN;
+    let mut first_run = Vec::with_capacity(body_count);
+    for _ in 0..body_count {
+        let reference = typed_body_reference(bytes, cursor, TYPED_BODY_PRESENTATION_GUID, true)?;
+        cursor = reference.end;
+        first_run.push(reference);
+    }
+    let mut second_run = Vec::with_capacity(body_count);
+    for _ in 0..body_count {
+        let reference = typed_body_reference(bytes, cursor, TYPED_BODY_PRESENTATION_GUID, true)?;
+        cursor = reference.end;
+        second_run.push(reference);
+    }
+    if bytes.get(cursor + compact_count::COUNT_MARKER) != Some(&1)
+        || bytes.get(cursor + compact_count::ZERO_RUN_5..cursor + compact_count::REPEAT_MARKER)?
+            != [0; 5]
+        || usize::try_from(View::u32_le_at(bytes, cursor + compact_count::BODY_COUNT)?).ok()?
+            != body_count
+    {
+        return None;
+    }
+    let passives_first = match bytes.get(cursor + compact_count::REPEAT_MARKER)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    cursor += compact_count::LEN;
+    let mut repeated = Vec::with_capacity(body_count);
+    for _ in 0..body_count {
+        let reference = typed_body_reference(bytes, cursor, TYPED_BODY_PRESENTATION_GUID, false)?;
+        cursor = reference.end;
+        repeated.push(reference);
+    }
+    if *bytes.get(cursor)? != 0 {
+        return None;
+    }
+    cursor += 1;
+    let metadata = typed_body_reference(bytes, cursor, TYPED_METADATA_GUID, false)?;
+    if !scope
+        .reference_members()
+        .values()
+        .copied()
+        .eq([metadata.target])
+    {
+        return None;
+    }
+    let metadata_field = bytes.get(cursor + 9..metadata.end)?.to_vec();
+    cursor = metadata.end;
+    if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
+        return None;
+    }
+    cursor += 4;
+    let mut results = Vec::with_capacity(body_count);
+    for _ in 0..body_count {
+        let reference = typed_body_reference(bytes, cursor, TYPED_BODY_NODE_GUID, true)?;
+        cursor = reference.end;
+        results.push(reference);
+    }
+    let kind = usize::try_from(scope.kind_offset()).ok()?;
+    let guid_count_at = kind.checked_sub(TYPED_RESULT_BODY_GUID_END_BEFORE_KIND + 72 + 4)?;
+    let guid_end = fixed_guid_end(bytes, guid_count_at)?;
+    if guid_count_at < cursor
+        || !bytes
+            .get(cursor..guid_count_at)?
+            .iter()
+            .all(|byte| *byte == 0)
+        || guid_end.checked_add(TYPED_RESULT_BODY_GUID_END_BEFORE_KIND)? != kind
+        || bytes.get(guid_end..guid_end + 3)? != [0; 3]
+        || scope.reference_count_offset() != u64::try_from(guid_end + 3).ok()?
+        || View::u32_le_at(bytes, guid_end + 3)? != 1
+        || crate::bytes::typed_local_reference_target(bytes, guid_end + 7)? != metadata.target
+        || !scope
+            .reference_members()
+            .offsets()
+            .copied()
+            .eq([u64::try_from(guid_end + 8).ok()?])
+        || fixed_utf16_ascii_eq(bytes, kind - 4, "Base Feature")? != kind + 24
+    {
+        return None;
+    }
+    let mut rows = Vec::with_capacity(body_count);
+    for ordinal in 0..body_count {
+        let (passive, entity) = if passives_first {
+            (&first_run[ordinal], &second_run[ordinal])
+        } else {
+            (&second_run[ordinal], &first_run[ordinal])
+        };
+        if repeated[ordinal].target != passive.target {
+            return None;
+        }
+        rows.push((
+            DesignBaseFeatureResultBody {
+                entity: DesignBaseFeatureEntry {
+                    value: u64::from(entity.target),
+                    offset: entity.offset,
+                    field: entity.field,
+                },
+                reference: DesignBaseFeatureEntry {
+                    value: passive.target,
+                    offset: passive.offset,
+                    field: passive.field,
+                },
+                result: DesignBaseFeatureEntry {
+                    value: results[ordinal].target,
+                    offset: results[ordinal].offset,
+                    field: results[ordinal].field,
+                },
+            },
+            repeated[ordinal].field,
+        ));
+    }
+    let mut rows = rows.into_iter();
+    let first = rows.next()?;
+    Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
+        bodies: DesignBaseFeatureResults::WithRepeatedFields {
+            first,
+            rest: rows.collect(),
+        },
+        metadata_record: metadata.target,
+        metadata_record_offset: metadata.offset,
+        metadata_field: metadata_field.into(),
+    })
+}
+
 /// Paste object whose owned scope stores the pasted bodies.
 const PASTE_BODIES_TYPE_GUID: &str = "BA3059E4-4B23-4D02-9D18-E7BB95C991F3";
 /// Body-to-component object whose owned scope stores the moved bodies.
@@ -1413,6 +1623,9 @@ pub(in crate::design::decode) fn exact_base_feature_construction_flagged(
     (|| {
         let start = usize::try_from(scope.byte_offset()).ok()?;
         if let Some(construction) = exact_typed_zero_body_base_feature(bytes, scope, start) {
+            return Some(Ok(construction));
+        }
+        if let Some(construction) = exact_typed_result_bodies(bytes, scope, start) {
             return Some(Ok(construction));
         }
         if scope.frame_length() == 267 {
