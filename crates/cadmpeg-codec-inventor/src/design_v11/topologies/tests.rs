@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::features::evaluation::{
     FeatureEvaluation, FeatureInputTopology, FeatureResultMembers, HistoricalBodyWriter,
@@ -125,7 +124,7 @@ fn project_part(ir: &mut CadIr) {
 /// The `arena.omitted` losses of a CADIR write of `ir`.
 fn omitted(ir: &CadIr) -> Vec<String> {
     let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .expect("the CADIR writer does not refuse");
     plan.report()
         .losses

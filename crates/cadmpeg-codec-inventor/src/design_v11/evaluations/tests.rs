@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::design::refs::RecordRef;
 use cadmpeg_ir::document::Topology;
@@ -136,7 +135,7 @@ fn project_part(ir: &mut CadIr, states: &BTreeMap<u32, Topology>) -> Vec<LossNot
 /// reads back.
 fn write(ir: &CadIr) -> (Vec<String>, CadIr) {
     let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .expect("the CADIR writer does not refuse");
     let omitted = plan
         .report()

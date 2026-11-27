@@ -98,7 +98,14 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
             let ends = [Point3::new(x, 0., 0.), Point3::new(x, 1., 0.)];
             assert_eq!(
                 matches!(
-                    validate_nurbs_trim(&surface, EPS_FIT, &edge, ends, &explicit),
+                    validate_nurbs_trim(
+                        &cadmpeg_core::decode::test_support::service_decode_context(),
+                        &surface,
+                        EPS_FIT,
+                        &edge,
+                        ends,
+                        &explicit
+                    ),
                     Ok(None)
                 ),
                 x == 0.5
@@ -187,9 +194,16 @@ fn trim_refusal_on(
         Point3::new(0.5, domain[0], 0.),
         Point3::new(0.5, domain[1], 0.),
     ];
-    validate_nurbs_trim(surface, EPS_FIT, &edge, ends, &explicit)
-        .expect("the trim check completes")
-        .expect("the pcurve has no point in the surface domain")
+    validate_nurbs_trim(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        surface,
+        EPS_FIT,
+        &edge,
+        ends,
+        &explicit,
+    )
+    .expect("the trim check completes")
+    .expect("the pcurve has no point in the surface domain")
 }
 
 fn vertical_line_at_max() -> PcurveGeometry {

@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{ResourceLimit, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 
 use super::approximation::Approximator;
 use crate::document::CadIr;
@@ -34,12 +34,13 @@ use crate::topology::{Coedge, Edge, EdgeCarrier, PcurveUse};
 const MAX_RECOVERY_WORK: usize = 1 << 26;
 const AGREEMENT_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
-struct RecoveryEvaluation {
+struct RecoveryEvaluation<'c> {
+    context: &'c DecodeContext<'c>,
     work: WorkBudget,
     refusal: Cell<Option<ResourceLimit>>,
 }
 
-impl RecoveryEvaluation {
+impl RecoveryEvaluation<'_> {
     fn evaluate<T, R>(
         &self,
         run: impl for<'slice> FnOnce(
@@ -49,7 +50,9 @@ impl RecoveryEvaluation {
         if self.refusal.get().is_some() {
             return None;
         }
-        match finite_or_refusal(EvaluationAdmission::Standard.within_work_slice(&self.work, run)) {
+        match finite_or_refusal(
+            EvaluationAdmission::Write(self.context).within_work_slice(&self.work, run),
+        ) {
             Ok(value) => value,
             Err(limit) => {
                 self.refusal.set(Some(limit));
@@ -98,9 +101,13 @@ enum Recovery {
 /// Borrow the input when no edge carrier can be recovered; otherwise return a
 /// working document with carriers derived from its coedge geometry.
 ///
-/// The source document and its retained bytes are not changed.
-pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit> {
-    let residual_limit = Approximator::new(ir).residual_limit();
+/// The source document and its retained bytes are not changed. Evaluations
+/// nest under `context`, whose limits are the encode's.
+pub fn recover_edge_curves<'a>(
+    ir: &'a CadIr,
+    context: &DecodeContext<'_>,
+) -> Result<EdgeRecovery<'a>, ResourceLimit> {
+    let residual_limit = Approximator::new(ir, context).residual_limit();
     if !ir
         .geometry
         .edges
@@ -117,6 +124,7 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
     }
     let index = ModelIndex::build(ir);
     let work = RecoveryEvaluation {
+        context,
         work: WorkBudget::new(MAX_RECOVERY_WORK),
         refusal: Cell::new(None),
     };
@@ -278,7 +286,7 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
         }
     }
     let (fits, refusal) = {
-        let mut approximator = Approximator::new(&document);
+        let mut approximator = Approximator::new(&document, context);
         let fits = fitted_candidates
             .iter()
             .map(|(_, _, curve, _)| {
@@ -415,7 +423,7 @@ fn existing_curve(
     end: Point3,
     tolerance: f64,
     index: &ModelIndex<'_>,
-    work: &RecoveryEvaluation,
+    work: &RecoveryEvaluation<'_>,
 ) -> Option<Recovery> {
     let mut uses = coedges
         .iter()
@@ -460,7 +468,7 @@ fn candidate_point(
     candidate: &PcurveCandidate<'_>,
     fraction: f64,
     index: &ModelIndex<'_>,
-    work: &RecoveryEvaluation,
+    work: &RecoveryEvaluation<'_>,
 ) -> Option<Point3> {
     let t = candidate.range[0] * (1.0 - fraction) + candidate.range[1] * fraction;
     let uv = work
@@ -479,7 +487,7 @@ fn coedge_curves_agree(
     end: Point3,
     tolerance: f64,
     index: &ModelIndex<'_>,
-    work: &RecoveryEvaluation,
+    work: &RecoveryEvaluation<'_>,
 ) -> bool {
     for use_ in coedges
         .iter()
@@ -525,7 +533,7 @@ fn pcurve_candidate<'a>(
     end: Point3,
     tolerance: f64,
     index: &'a ModelIndex<'a>,
-    work: &RecoveryEvaluation,
+    work: &RecoveryEvaluation<'_>,
 ) -> Option<(PcurveCandidate<'a>, bool)> {
     let mut chosen: Option<PcurveCandidate<'_>> = None;
     let mut sampled = false;
@@ -641,7 +649,7 @@ fn planar_line_range(
 fn exact_curve(
     candidate: &PcurveCandidate<'_>,
     index: &ModelIndex<'_>,
-    work: &RecoveryEvaluation,
+    work: &RecoveryEvaluation<'_>,
 ) -> Option<(SolvedCurveGeometry, [f64; 2])> {
     let surface = index.surfaces(candidate.surface.as_str(), StandardIndex)?;
     let crate::geometry::SurfaceGeometry::Solved(solved) = &surface.geometry else {
