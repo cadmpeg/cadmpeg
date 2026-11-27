@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{
+    target::{target_loss_kind, TargetRequest, SOURCE_DIALECT_DISPLACED},
+    EncodeInput, Encoder,
+};
 use cadmpeg_ir::document::CadIr;
 
 use crate::RhinoCodec;
@@ -76,55 +80,79 @@ fn inherit_falls_back_to_the_catalog_default_with_nothing_to_inherit() {
     );
 }
 
-/// A Rhino source that records no dialect refuses `Inherit`, uniformly with
-/// every other encoder.
-///
-/// There is nothing to preserve, so the identity default cannot know what it
-/// would be preserving, and any catalog row it picked could change what the
-/// file is. The refusal quotes no dialect id, because none exists: the
-/// `requested` field is `None`, not the bare format id it used to carry in one
-/// codec.
+/// A Rhino source that records no dialect is written as the catalog default
+/// under `Inherit`, and `rhino/target.source-dialect-displaced` says the source
+/// recorded none (§3.4, Refusals).
 #[test]
-fn inherit_refuses_a_source_that_records_no_dialect() {
+fn inherit_writes_a_source_that_records_no_dialect_as_the_default() {
     let mut ir = CadIr::empty();
     ir.source = Some(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "rhino"},
             "attributes": {},
         }))
         .unwrap(),
     );
-    let error = Encoder::plan(
+    let message = written_as_the_default(&ir);
+    assert!(message.contains("records no dialect"), "{message}");
+    assert!(message.contains("rhino:archive-80"), "{message}");
+}
+
+/// Writes `ir` under `Inherit`, asserts the report and the bytes both name the
+/// catalog default, and returns the message of the one displacement loss.
+fn written_as_the_default(ir: &CadIr) -> String {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let plan = Encoder::plan(
         &RhinoCodec,
-        EncodeInput::new(&ir, None),
+        EncodeInput::new(ir, None),
         TargetRequest::Inherit,
     )
-    .expect_err("a source with no recorded dialect is refused");
-
-    let EncodeError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "rhino");
+    .expect("the source is written as the catalog default");
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).expect("write");
     assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        None
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(ToString::to_string),
+        Some("rhino:archive-80".to_owned())
     );
-    assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "rhino:archive-80"),
-        "{:?}",
-        refusal.available()
+    let charged: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code().starts_with("target."))
+        .collect();
+    let [loss] = charged.as_slice() else {
+        panic!("expected one target loss, got {charged:#?}");
+    };
+    assert_eq!(
+        loss.code,
+        target_loss_kind(
+            cadmpeg_ir::loss_namespace!("rhino"),
+            SOURCE_DIALECT_DISPLACED
+        )
     );
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
+    let round_trip = RhinoCodec
+        .decode(
+            &mut std::io::Cursor::new(written),
+            &DecodeOptions::default(),
+        )
+        .expect("decode output");
+    assert_eq!(
+        round_trip
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.dialect())
+            .map(cadmpeg_core::dialect::DialectMatch::dialect)
+            .map(ToString::to_string),
+        Some("rhino:archive-80".to_owned())
+    );
+    loss.message.clone()
 }
 
 /// An explicit target that is not the source archive version charges a loss.
@@ -148,7 +176,13 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == crate::loss::RhinoLossCode::SourceDialectDisplaced.kind())
+        .find(|loss| {
+            loss.code
+                == target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("rhino"),
+                    SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("dialect displacement is charged");
     assert!(loss.message.contains("rhino:archive-50"));
     assert!(loss.message.contains("rhino:archive-70"));
@@ -174,50 +208,18 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
     );
 }
 
-/// A source archive version outside the synthesis catalog is refused, not
-/// quietly rewritten as the catalog default.
+/// A source archive version outside the synthesis catalog is written as the
+/// catalog default under `Inherit` (§3.4, Refusals).
 ///
-/// Archives 2, 3, 4 and 90 decode and have no writer, and 3DM has no byte-replay
-/// path that could preserve them, so preservation is impossible and the honest
-/// answer is a refusal naming the source dialect and every target. An explicit
-/// `--to rhino:<archive>` is the escape.
+/// Archives 2, 3, 4 and 90 decode and have no writer, and 3DM has no
+/// byte-replay path that could preserve them. The displacement loss names the
+/// source dialect and the row written; an explicit `--to rhino:<archive>`
+/// selects another row.
 #[test]
-fn inherit_refuses_a_source_archive_version_outside_the_catalog() {
-    let ir = source_in("rhino:archive-3");
-    let encoder = RhinoCodec;
-    let error = Encoder::plan(
-        &encoder,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
-    )
-    .expect_err("a source dialect outside the catalog is refused");
-
-    let EncodeError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "rhino");
-    assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("rhino:archive-3")
-    );
-    for target in Encoder::targets(&encoder) {
-        assert!(
-            refusal
-                .available()
-                .iter()
-                .any(|available| available == target),
-            "{:?}",
-            refusal.available()
-        );
-    }
+fn inherit_writes_a_source_archive_version_outside_the_catalog_as_the_default() {
+    let message = written_as_the_default(&source_in("rhino:archive-3"));
+    assert!(message.contains("rhino:archive-3"), "{message}");
+    assert!(message.contains("rhino:archive-80"), "{message}");
 }
 
 /// The §8.3 honesty invariant on the synthesis path: re-decoding the output

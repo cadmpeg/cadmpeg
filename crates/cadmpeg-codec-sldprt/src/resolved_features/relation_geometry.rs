@@ -2736,7 +2736,7 @@ fn names_only_own_entities(
     sketch: &cadmpeg_ir::sketches::SketchId,
     owners: &HashMap<&str, &cadmpeg_ir::sketches::SketchId>,
 ) -> bool {
-    let Ok(value) = serde_json::to_value(definition) else {
+    let Ok(value) = cadmpeg_core::serde_erase::to_json_value(definition) else {
         return false;
     };
     let mut pending = vec![&value];

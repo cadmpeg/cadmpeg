@@ -484,14 +484,25 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
 #[test]
 fn strict_decode_refuses_an_unusable_required_copious_geometry_record() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir().geometry.curves.is_empty());
+    assert_eq!(
+        crate::test_support::code_count(result.report(), IgesLossCode::GeometryNotProjected),
+        1
+    );
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 1)]);
+
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let failure = IgesCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .unwrap_err();
-    assert!(
-        matches!(failure, cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } if rejection.loss().code == IgesLossCode::GeometryNotProjected.kind())
-    );
+    match IgesCodec.decode(&mut Cursor::new(bytes), &options) {
+        Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection }) => {
+            crate::test_support::assert_given_up(rejection.loss(), ("entity", 1));
+        }
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
 }
 
 #[test]

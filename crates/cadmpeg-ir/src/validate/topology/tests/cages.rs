@@ -7,6 +7,7 @@ use crate::report::check::{Check, Finding};
 use crate::topology::{BodyKind, Region, Shell, ShellMember};
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::serde_erase::json;
 
 /// The unit cube with the cage of the directed `SubD` example, and its id.
 fn cube_with_cage() -> (CadIr, SubdId) {
@@ -142,10 +143,10 @@ fn a_cage_member_round_trips_through_json() {
     let member = ShellMember::Subd {
         id: SubdId::mint("test:model:subd#0").unwrap(),
     };
-    let json = serde_json::to_value(&member).unwrap();
+    let json = json::to_value(&member).unwrap();
     assert_eq!(
         json,
-        serde_json::json!({"kind": "subd", "id": "test:model:subd#0"})
+        cadmpeg_core::json!({"kind": "subd", "id": "test:model:subd#0"})
     );
-    assert_eq!(serde_json::from_value::<ShellMember>(json).unwrap(), member);
+    assert_eq!(json::from_value::<ShellMember>(json).unwrap(), member);
 }

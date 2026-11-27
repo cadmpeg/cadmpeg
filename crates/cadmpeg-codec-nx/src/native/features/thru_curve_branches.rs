@@ -249,6 +249,7 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
 #[cfg(test)]
 mod tests {
     use super::FeatureThruCurveConstructionBranchGroup;
+    use cadmpeg_core::serde_erase::json;
 
     fn branch_group_container() -> crate::container::Container<'static> {
         let mut branch = b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01".to_vec();
@@ -297,7 +298,7 @@ mod tests {
     #[test]
     fn group_wire_derives_both_lane_forms_and_mixed_token_widths() {
         let group: FeatureThruCurveConstructionBranchGroup = serde_json::from_str(WIRE).unwrap();
-        assert_eq!(serde_json::to_string(&group).unwrap(), WIRE);
+        assert_eq!(json::to_string(&group).unwrap(), WIRE);
         assert_eq!(group.frame.branch_offsets().collect::<Vec<_>>(), [101, 125]);
     }
 
@@ -307,67 +308,67 @@ mod tests {
         for (path, replacement, field) in [
             (
                 "/source_offset",
-                serde_json::json!(u64::MAX),
+                cadmpeg_core::json!(u64::MAX),
                 "source_offset",
             ),
-            ("/declared_count", serde_json::json!(2), "declared_count"),
-            ("/branches/0/ordinal", serde_json::json!(1), "ordinal"),
-            ("/branches/1/ordinal", serde_json::json!(0), "ordinal"),
+            ("/declared_count", cadmpeg_core::json!(2), "declared_count"),
+            ("/branches/0/ordinal", cadmpeg_core::json!(1), "ordinal"),
+            ("/branches/1/ordinal", cadmpeg_core::json!(0), "ordinal"),
             (
                 "/branches/0/source_offset",
-                serde_json::json!(102),
+                cadmpeg_core::json!(102),
                 "source_offset",
             ),
             (
                 "/branches/1/source_offset",
-                serde_json::json!(126),
+                cadmpeg_core::json!(126),
                 "source_offset",
             ),
             (
                 "/branches/0/declared_count",
-                serde_json::json!(4),
+                cadmpeg_core::json!(4),
                 "declared_count",
             ),
             (
                 "/branches/0/members/0/ordinal",
-                serde_json::json!(1),
+                cadmpeg_core::json!(1),
                 "ordinal",
             ),
             (
                 "/branches/0/members/0/source_offset",
-                serde_json::json!(105),
+                cadmpeg_core::json!(105),
                 "source_offset",
             ),
             (
                 "/branches/0/members/0/raw_object_index",
-                serde_json::json!("00"),
+                cadmpeg_core::json!("00"),
                 "raw_object_index",
             ),
             (
                 "/branches/0/terminal/ordinal",
-                serde_json::json!(1),
+                cadmpeg_core::json!(1),
                 "ordinal",
             ),
             (
                 "/branches/0/terminal/source_offset",
-                serde_json::json!(121),
+                cadmpeg_core::json!(121),
                 "source_offset",
             ),
             (
                 "/branches/0/terminal/raw_object_index",
-                serde_json::json!("01"),
+                cadmpeg_core::json!("01"),
                 "raw_object_index",
             ),
             (
                 "/branches/1/state_lane",
-                serde_json::json!("000000000104020304050105060708090000"),
+                cadmpeg_core::json!("000000000104020304050105060708090000"),
                 "state_lane",
             ),
         ] {
             let mut invalid = wire.clone();
             *invalid.pointer_mut(path).unwrap() = replacement;
-            let error = serde_json::from_value::<FeatureThruCurveConstructionBranchGroup>(invalid)
-                .unwrap_err();
+            let error =
+                json::from_value::<FeatureThruCurveConstructionBranchGroup>(invalid).unwrap_err();
             assert!(error.to_string().contains(field), "{path}: {error}");
         }
     }

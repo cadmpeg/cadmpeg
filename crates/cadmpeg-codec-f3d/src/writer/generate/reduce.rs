@@ -13,8 +13,9 @@
 //! the native Design records, then every native record (W1), then the bodies
 //! that cannot be written alone, then every body. An empty design is the last
 //! form; only a failure to write that is returned. A failure of the design
-//! scope's records takes one fallback: the design scope is not written. A
-//! failure of the ASM history of the timeline items drops those items first.
+//! scope's records or of the ASM history of its timeline items drops the
+//! records it names and each record that needs them, then the next part of
+//! the design scope's form, then the design scope.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -24,8 +25,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
 use cadmpeg_ir::codec::write::subset_lowering::UnloweredSubset;
 use cadmpeg_ir::codec::write::{
-    native_records_omitted, output_empty, partial_topology_omitted, record_invalid,
-    MissingStateForm,
+    output_empty, partial_topology_omitted, record_invalid, MissingStateForm, NativeDisposition,
+    NativeDispositions,
 };
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::refs::Member;
@@ -52,6 +53,7 @@ use serde_json::Value;
 
 use crate::loss::F3dLossCode;
 
+use super::design::{Culprit, RecordFailure};
 use super::native_geometry::{
     native_procedural_curve, native_procedural_surface, ProceduralOwners,
 };
@@ -95,10 +97,9 @@ pub(super) enum Stage {
     Brep,
     /// The Design, configuration and appearance streams.
     Design,
-    /// The records of the root definition's design scope.
+    /// The records of the root definition's design scope, with the ASM
+    /// history of its timeline items.
     NeutralDesign,
-    /// The ASM history of the design scope's timeline items.
-    History,
     /// The archive itself: nothing in the document can avoid it.
     Archive,
 }
@@ -108,8 +109,8 @@ pub(super) enum Stage {
 pub(super) struct Failure {
     pub(super) stage: Stage,
     pub(super) error: CodecError,
-    /// The timeline feature the failure concerns, where it names one.
-    pub(super) cause: Option<FeatureId>,
+    /// The records the failure names, where it names any.
+    pub(super) culprit: Option<Culprit>,
 }
 
 impl Failure {
@@ -117,7 +118,7 @@ impl Failure {
         Self {
             stage: Stage::Brep,
             error,
-            cause: None,
+            culprit: None,
         }
     }
 
@@ -125,7 +126,7 @@ impl Failure {
         Self {
             stage: Stage::Design,
             error,
-            cause: None,
+            culprit: None,
         }
     }
 
@@ -133,15 +134,26 @@ impl Failure {
         Self {
             stage: Stage::NeutralDesign,
             error,
-            cause: None,
+            culprit: None,
         }
     }
 
+    /// A failure of the ASM history, with the feature whose state it
+    /// concerns where it names one.
     pub(super) fn history(error: CodecError, cause: Option<FeatureId>) -> Self {
         Self {
-            stage: Stage::History,
+            stage: Stage::NeutralDesign,
             error,
-            cause,
+            culprit: Some(Culprit::History(cause)),
+        }
+    }
+
+    /// A failure to write the design scope's records.
+    pub(super) fn records(failure: RecordFailure) -> Self {
+        Self {
+            stage: Stage::NeutralDesign,
+            error: failure.error,
+            culprit: failure.culprit,
         }
     }
 
@@ -149,15 +161,18 @@ impl Failure {
         Self {
             stage: Stage::Archive,
             error,
-            cause: None,
+            culprit: None,
         }
     }
 }
 
 /// The document the generator writes, and the losses taken to reach it.
+#[derive(Clone)]
 pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
     losses: Vec<LossNote>,
+    /// The `f3d` records are written but those a fallback drops (W1).
+    native: NativeDispositions,
     design_dropped: bool,
     neutral_dropped: bool,
     /// The form of the features whose states the writer cannot write.
@@ -170,19 +185,26 @@ pub(super) struct Reduction<'a> {
     /// The open edges written over one arc of a curve that passes a vertex
     /// twice, charged at [`Self::finish`] for the edges still written.
     assumed_arcs: Vec<(EdgeId, LossNote)>,
+    /// The reduction before the first held state, which the writer takes
+    /// again where it no longer writes the held items.
+    unheld: Option<Box<Reduction<'a>>>,
 }
 
 impl<'a> Reduction<'a> {
     pub(super) fn new(ir: &'a CadIr, missing_states: MissingStateForm) -> Self {
+        let mut native = NativeDispositions::dropped("which the F3D writer does not write");
+        native.namespace("f3d", NativeDisposition::Written);
         Self {
             missing_states,
             ir: Cow::Borrowed(ir),
             losses: Vec::new(),
+            native,
             design_dropped: false,
             neutral_dropped: false,
             fallback: super::design::Fallback::default(),
             opened: BTreeMap::new(),
             assumed_arcs: Vec::new(),
+            unheld: None,
         }
     }
 
@@ -216,8 +238,9 @@ impl<'a> Reduction<'a> {
         &self.fallback
     }
 
-    /// The losses, with `export:output.empty` when no geometry is written.
-    pub(super) fn finish(mut self) -> Vec<LossNote> {
+    /// The losses, with `export:output.empty` when no geometry is written,
+    /// and what the write does with each native record.
+    pub(super) fn finish(mut self) -> (Vec<LossNote>, NativeDispositions) {
         for (body, faces) in std::mem::take(&mut self.opened) {
             let Some(row) = self
                 .ir
@@ -279,7 +302,7 @@ impl<'a> Reduction<'a> {
         } else {
             self.losses.extend(unranged_open_edges(geometry));
         }
-        self.losses
+        (self.losses, self.native)
     }
 
     /// Remove every item the generator has no form for. Idempotent: it runs
@@ -317,7 +340,7 @@ impl<'a> Reduction<'a> {
         let Failure {
             stage,
             error,
-            cause,
+            culprit,
         } = failure;
         if matches!(error, CodecError::ResourceLimit(_) | CodecError::Io(_)) {
             return Err(error);
@@ -326,12 +349,11 @@ impl<'a> Reduction<'a> {
         let progressed = match stage {
             Stage::Archive => false,
             Stage::NeutralDesign => {
-                self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
-            }
-            Stage::History => {
-                self.drop_history_items(&reason, cause)
-                    || self.drop_design_part(&reason)
-                    || self.drop_neutral_design(&reason)
+                let named = match culprit {
+                    Some(culprit) => self.drop_records(&reason, &culprit)?,
+                    None => false,
+                };
+                named || self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
             }
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
@@ -365,11 +387,11 @@ impl<'a> Reduction<'a> {
             return;
         }
         let dropped = self.remove_native_arenas(|arena| UNWRITTEN_ARENAS.contains(&arena));
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             "that the source-less generator has no form for (ACT records and mesh-surface sentinels need the retained MetaStream registry and ASM record)",
             dropped,
-        ));
+        );
     }
 
     /// Neutral records the generator writes only from native Design records.
@@ -1360,11 +1382,11 @@ impl<'a> Reduction<'a> {
             return false;
         }
         self.design_dropped = true;
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             &format!("of the Design stream, because the source-less generator cannot write them consistently ({reason})"),
             dropped,
-        ));
+        );
         true
     }
 
@@ -1391,27 +1413,96 @@ impl<'a> Reduction<'a> {
         );
         let dropped = self.remove_native_arenas(|arena| !BREP_ARENAS.contains(&arena));
         self.design_dropped = true;
-        self.losses
-            .extend(native_records_omitted("F3D", &reason, dropped));
+        self.native.drop_records("f3d", &reason, dropped);
     }
 
     /// Write the design scope without its next droppable part (its sketch
     /// dimensions, its `Extrude` item, its `Sketch` items, in that order):
     /// the design plan charges what the part held.
     fn drop_design_part(&mut self, reason: &str) -> bool {
-        self.writes_neutral_design()
+        let dropped = self.writes_neutral_design()
             && self
                 .fallback
-                .drop_next(&self.ir, self.missing_states, reason)
+                .drop_next(&self.ir, self.missing_states, reason);
+        if dropped && self.fallback.drops_items() {
+            self.unhold();
+        }
+        dropped
     }
 
-    /// Drop the timeline items whose states the history holds, the first
-    /// part a history failure concerns.
-    fn drop_history_items(&mut self, reason: &str, cause: Option<FeatureId>) -> bool {
-        self.writes_neutral_design()
-            && self
-                .fallback
-                .drop_item_history(&self.ir, self.missing_states, cause, reason)
+    /// Drop the records `culprit` names, and each record that needs them.
+    /// Where the history-true run ends at an item, the document keeps the
+    /// state the failed attempt wrote for the items before it.
+    fn drop_records(&mut self, reason: &str, culprit: &Culprit) -> Result<bool, CodecError> {
+        if !self.writes_neutral_design() {
+            return Ok(false);
+        }
+        let earlier = self.fallback.clone();
+        if !self
+            .fallback
+            .drop_records(&self.ir, self.missing_states, culprit, reason)
+        {
+            return Ok(false);
+        }
+        if self.fallback.drops_items() {
+            self.unhold();
+        } else {
+            self.hold(&earlier)?;
+        }
+        Ok(true)
+    }
+
+    /// Write the state the history-true design holds where the current
+    /// fallback ends its run at a feature that `earlier` does not: the
+    /// bodies outside that state are not written.
+    fn hold(&mut self, earlier: &super::design::Fallback) -> Result<(), CodecError> {
+        let Some(scope) = super::design::root_scope_at(&self.ir) else {
+            return Ok(());
+        };
+        let Some(held) = super::design::held_state(
+            &self.ir,
+            scope,
+            self.missing_states,
+            earlier,
+            &self.fallback,
+        ) else {
+            return Ok(());
+        };
+        if self.unheld.is_none() {
+            self.unheld = Some(Box::new(self.clone()));
+        }
+        let reason = format!(
+            "the history-true design writes the state of the items before {} at its timeline marker",
+            held.before
+        );
+        let dropped = self
+            .ir
+            .geometry
+            .bodies
+            .iter()
+            .filter(|body| !held.state.bodies.contains(&body.id))
+            .map(|body| body.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let kept = held
+            .state
+            .bodies
+            .iter()
+            .map(|body| body.as_str().to_owned())
+            .collect::<Vec<_>>();
+        self.ir.to_mut().design.scopes[scope].current = vec![held.state];
+        let kept = kept.iter().map(String::as_str).collect();
+        self.retain_reporting_bodies(&kept, &dropped, &reason)
+    }
+
+    /// Take again the reduction before the first held state, with the
+    /// current fallback: the design no longer writes the held items, so
+    /// every body the hold removed is written.
+    fn unhold(&mut self) {
+        if let Some(unheld) = self.unheld.take() {
+            let fallback = std::mem::take(&mut self.fallback);
+            *self = *unheld;
+            self.fallback = fallback;
+        }
     }
 
     /// Write no design scope: every design scope, container, feature and
@@ -1421,6 +1512,7 @@ impl<'a> Reduction<'a> {
         if !self.writes_neutral_design() {
             return false;
         }
+        self.unhold();
         self.neutral_dropped = true;
         self.losses
             .extend(super::design::dropped_records(&self.ir, reason));
@@ -1440,13 +1532,13 @@ impl<'a> Reduction<'a> {
             .flatten()
             .map(|record| record.id().to_owned())
             .collect::<Vec<_>>();
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             &format!(
                 "because the source-less generator cannot write the document with them ({reason})"
             ),
             dropped,
-        ));
+        );
         true
     }
 
@@ -1561,7 +1653,13 @@ impl<'a> Reduction<'a> {
                 "body {body} was not written, with the topology and geometry only it uses: {reason}"
             )));
         }
-        self.retain(kept, reason)?;
+        let mut removed = retain_bodies(self.ir.to_mut(), kept)?;
+        let omitted = dropped_bodies
+            .iter()
+            .filter(|body| removed.remove(body.as_str()))
+            .cloned()
+            .collect();
+        self.charge_removed(&removed, &omitted, reason);
         Ok(())
     }
 
@@ -1597,11 +1695,11 @@ impl<'a> Reduction<'a> {
             return;
         }
         let dropped = self.remove_native_records_naming(&named);
-        self.losses.extend(native_records_omitted(
-            "F3D",
+        self.native.drop_records(
+            "f3d",
             "that name topology or geometry the write omits",
             dropped,
-        ));
+        );
     }
 
     /// Remove the named native arenas; returns the removed record ids.

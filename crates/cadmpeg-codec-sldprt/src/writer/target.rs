@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! SLDPRT target resolution, write dispatch, and honesty checking.
+//! SLDPRT target resolution, write dispatch, and the row each write is.
 
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -7,7 +7,8 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     carried_source_losses, edit_dropped, edit_dropped_note, edit_unverified,
-    native_records_omitted, target::ResolvedWrite, EncodeInput, ExportBody, WritePath,
+    target::{ResolvedWrite, WrittenRow},
+    EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::diff::ArenaKind;
@@ -20,7 +21,10 @@ use cadmpeg_ir::Annotations;
 use crate::history::write::brep_agreement::{agreement, ShapingEdit, Source};
 use crate::history::write::edits::UnwrittenEdits;
 use crate::loss::SldprtLossCode;
-use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, Written};
+use crate::{
+    source_records, HistoryDropped, ReplaySkipped, RetainedRecords, SemanticFidelity, SemanticPath,
+    SldprtCodec, SldprtWriteSession, Written,
+};
 
 /// Resolve the request against the source, then plan the export it names.
 ///
@@ -33,9 +37,9 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 /// writer could never synthesize. Where the image is not usable the semantic
 /// writer still preserves the dialect whenever the retained blocks carry the
 /// source's own `swSolidWorks` envelope, because that envelope is passed
-/// through unchanged. Where neither holds, the write lands on the totality row
-/// and the request is refused by name. There is no fall-through to the catalog
-/// default: a same-format conversion never silently changes what the file is.
+/// through unchanged. Where neither holds, the write lands on the row the
+/// emitted envelope states, and the sealed encoder names that row and charges
+/// the displacement (§3.4, Refusals).
 ///
 /// The catalog default supplies the target only when there is nothing to
 /// inherit: the document has no source, or a source of another format.
@@ -46,7 +50,14 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+    session: &SldprtWriteSession<'_>,
+) -> Result<
+    (
+        ExportBody,
+        Option<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>>,
+    ),
+    CodecError,
+> {
     let of_document;
     let (digests, unverified) = match input.fidelity {
         Some(fidelity) => (&fidelity.codec_digests, false),
@@ -59,28 +70,12 @@ pub(crate) fn plan(
             (&of_document, false)
         }
     };
-    let (written, bytes) = match write(input, resolved, digests) {
-        Err(error @ CodecError::NotImplemented(_)) if resolved.entry().is_none() => {
-            let synthesis_targets = crate::dialect::TARGETS
-                .iter()
-                .map(|entry| entry.id.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(resolved.unavailable(format!(
-                "cannot preserve {}; synthesis catalog targets: {synthesis_targets}; {error}",
-                resolved.target_id()
-            )));
-        }
-        result => result?,
+    let (mut written, bytes) = write(input, resolved, digests, session)?;
+    let read_back = match &mut written {
+        Written::Semantic { read_back, .. } => read_back.take(),
+        Written::Replayed | Written::Stored { .. } => None,
     };
-    check_honesty(resolved, &written)?;
-    let mut body = finish(
-        input,
-        resolved.displacement_message(),
-        &written,
-        bytes,
-        digests,
-    );
+    let mut body = finish(input, &written, bytes, digests);
     if unverified {
         body.losses.push(edit_unverified(
             "the SLDPRT part comes with no decode sidecar, so its edits since decode are not \
@@ -88,7 +83,7 @@ pub(crate) fn plan(
              hold, so an edit of a neutral record those lanes state is not written",
         ));
     }
-    Ok(body)
+    Ok((body, read_back))
 }
 
 /// Write the file in the first path of §3.4 that writes it: replay, patch,
@@ -106,10 +101,11 @@ fn write(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
+    session: &SldprtWriteSession<'_>,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let target = resolved.target_id();
     let preserves = resolved.preserves_source();
-    let first = write_first(input, resolved, digests);
+    let first = write_first(input, resolved, digests, session);
     let reason = match &first {
         Ok((Written::Semantic { dialect, .. }, _)) if preserves && dialect != target => Some(
             format!("lands on dialect {dialect}, not the source's {target}"),
@@ -197,11 +193,12 @@ fn stored_losses(ir: &CadIr, image: &[u8], why: &str) -> Vec<LossNote> {
 /// The document synthesized without its `SolidWorks` history: the write
 /// takes no record of the `sldprt` native namespace and no codec digest, so
 /// the history stage drops what it cannot write (§3.4, Content the target
-/// cannot hold). `export:native.records-omitted` names each native record
-/// left out, and why the patch did not write the file. The configuration of
-/// each edit that shapes the solid against the retained source image takes
-/// the stale mark (§3.4, States); `digests` are the codec digests the
-/// decode recorded.
+/// cannot hold). Where the write consumes a sidecar, its path states why the
+/// patch did not write the file; the write declares each arena of the
+/// namespace dropped with that cause, and the export wrapper names each
+/// record. The configuration of each edit that shapes the solid against the
+/// retained source image takes the stale mark (§3.4, States); `digests` are
+/// the codec digests the decode recorded.
 fn synthesize(
     input: EncodeInput<'_>,
     digests: &CodecDigests,
@@ -210,43 +207,25 @@ fn synthesize(
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let shaped = shaping_edits(input, digests)?;
     let mut ir = input.ir.clone();
-    let omitted = ir
-        .native
-        .0
-        .remove("sldprt")
-        .map(|namespace| {
-            namespace
-                .arenas()
-                .values()
-                .flatten()
-                .map(|record| record.id().to_owned())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let fidelity = if preserves && input.fidelity.is_some() {
-        SemanticFidelity::ReplaySkipped(ReplaySkipped::PatchDeclined)
-    } else {
-        SemanticFidelity::NotConsumed
-    };
+    ir.native.0.remove("sldprt");
     let mut bytes = Vec::new();
     let mut written = SldprtCodec::write_semantic(
         &ir,
         &Annotations::default(),
         &CodecDigests::new(),
-        &[],
+        RetainedRecords::default(),
         &shaped,
-        fidelity,
+        SemanticFidelity::NotConsumed,
         &mut bytes,
     )?;
-    if let Written::Semantic { losses, .. } = &mut written {
-        losses.extend(native_records_omitted(
-            "SLDPRT",
-            &format!(
-                "because the patch of the document {reason}, and its synthesis writes no \
-                 SolidWorks history record"
-            ),
-            omitted,
-        ));
+    if let Written::Semantic {
+        history_dropped, ..
+    } = &mut written
+    {
+        *history_dropped = Some(Box::new(HistoryDropped {
+            cause: reason.to_owned(),
+            sidecar: preserves && input.fidelity.is_some(),
+        }));
     }
     Ok((written, bytes))
 }
@@ -262,11 +241,10 @@ fn shaping_edits(
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
         .and_then(|record| record.data());
-    let native = input
-        .ir
-        .native
-        .namespace("sldprt")
-        .map(crate::native::SldprtNative::load);
+    let native =
+        input.ir.native.namespace("sldprt").map(|namespace| {
+            crate::native::SldprtNative::load(namespace, input.ir.tolerances.linear)
+        });
     let (Some(image), Some(Ok(native))) = (image, native) else {
         return Ok(Vec::new());
     };
@@ -287,19 +265,22 @@ fn write_first(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
     digests: &CodecDigests,
+    session: &SldprtWriteSession<'_>,
 ) -> Result<(Written, Vec<u8>), CodecError> {
     let replay_eligible = resolved.preserves_source();
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {
             let records = source_records(input.ir, value)?;
-            SldprtCodec::write_preserved_with_annotations(input.ir, value, &records, &mut bytes)?
+            SldprtCodec::write_preserved_with_annotations(
+                input.ir, value, &records, session, &mut bytes,
+            )?
         }
         Some(_) => SldprtCodec::write_semantic(
             input.ir,
             &Annotations::default(),
             digests,
-            &[],
+            RetainedRecords::default(),
             &[],
             SemanticFidelity::NotConsumed,
             &mut bytes,
@@ -308,7 +289,7 @@ fn write_first(
             input.ir,
             &Annotations::default(),
             digests,
-            &[],
+            RetainedRecords::default(),
             &[],
             if replay_eligible {
                 SemanticFidelity::ReplaySkipped(ReplaySkipped::ImageMissing)
@@ -321,24 +302,20 @@ fn write_first(
     Ok((written, bytes))
 }
 
-/// Refuse a semantic write whose emitted `swSolidWorks` envelope does not land
-/// on the resolved target.
-fn check_honesty(resolved: &ResolvedWrite<'_>, written: &Written) -> Result<(), CodecError> {
-    let Written::Semantic { dialect: got, .. } = written else {
-        return Ok(());
+/// The row a semantic write is: the dialect its emitted `swSolidWorks`
+/// envelope states.
+fn written_row(written: &Written) -> Option<WrittenRow> {
+    let Written::Semantic { dialect, .. } = written else {
+        return None;
     };
-    if got == resolved.target_id() {
-        return Ok(());
-    }
-    Err(resolved.unavailable(format!(
-        "the retained document blocks decide the swSolidWorks envelope this writer emits, \
-             and from this input that envelope is {got}"
-    )))
+    Some(WrittenRow {
+        target: dialect.clone(),
+        reason: "the swSolidWorks envelope this writer emits states this row".to_owned(),
+    })
 }
 
 fn finish(
     input: EncodeInput<'_>,
-    displacement: Option<String>,
     written: &Written,
     bytes: Vec<u8>,
     digests: &CodecDigests,
@@ -386,9 +363,6 @@ fn finish(
     if let Written::Stored { losses: stored } = written {
         losses.extend(stored.iter().cloned());
     }
-    if let Some(message) = displacement {
-        losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
-    }
     losses.extend(carried_source_losses(input.fidelity, &write_path));
     let path_note = match &write_path {
         WritePath::VerbatimReplay if matches!(written, Written::Stored { .. }) => {
@@ -408,10 +382,13 @@ fn finish(
         },
         write_path,
         coverage: written.coverage(),
+        native: written.native(),
         losses,
         notes: vec![
             path_note.into(),
             "entity counts are derived from the IR".into(),
         ],
+        written_row: written_row(written),
+        annotations: None,
     }
 }

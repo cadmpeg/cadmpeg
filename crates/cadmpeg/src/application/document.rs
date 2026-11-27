@@ -2,7 +2,7 @@
 //! A CAD document together with its load origin.
 
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::{report::decode::DecodeReport, CadIr, DecodeResult, SourceFidelity};
+use cadmpeg_ir::{report::decode::DecodeReport, CadIr, CadirRead, DecodeResult, SourceFidelity};
 use cadmpeg_registry::Selection;
 
 /// A neutral document and the source information available for later export.
@@ -25,6 +25,14 @@ pub(crate) struct LoadedDocument {
 pub(crate) enum LoadOrigin {
     /// The document was loaded without native decode metadata.
     Neutral,
+    /// The document was loaded from CADIR text without a matching sidecar,
+    /// and the read retained the text of the parts it gave up (§3.3).
+    Read {
+        /// The read's report, for the sidecar of a document written from it.
+        report: DecodeReport,
+        /// The text of each given-up part.
+        fidelity: Box<SourceFidelity>,
+    },
     /// Decode metadata restored from a neutral document sidecar.
     Restored {
         /// What the decoder transferred and omitted.
@@ -53,6 +61,21 @@ impl LoadedDocument {
             stale_sidecar: None,
             read_report: Vec::new(),
         }
+    }
+
+    /// Creates a document from a CADIR read without a matching sidecar: a
+    /// neutral document, or a read one where the read retained the text of
+    /// a part it gave up.
+    pub(crate) fn read(read: CadirRead, input_bytes: u64) -> Self {
+        let (document, report, fidelity) = read.without_sidecar();
+        let mut loaded = Self::neutral(document, input_bytes);
+        if !fidelity.retained_records().is_empty() {
+            loaded.origin = LoadOrigin::Read {
+                report: DecodeReport::of_cadir_read(report.clone(), loaded.ir.scope().depth()),
+                fidelity: Box::new(fidelity),
+            };
+        }
+        loaded.with_read_report(report)
     }
 
     /// Creates a document from a native decode result.
@@ -107,7 +130,7 @@ impl LoadedDocument {
     /// Returns the native decode report, when this document has decoded origin.
     pub(crate) const fn decode_report(&self) -> Option<&DecodeReport> {
         match &self.origin {
-            LoadOrigin::Neutral => None,
+            LoadOrigin::Neutral | LoadOrigin::Read { .. } => None,
             LoadOrigin::Decoded { report, .. } | LoadOrigin::Restored { report, .. } => {
                 Some(report)
             }
@@ -118,9 +141,9 @@ impl LoadedDocument {
     pub(crate) const fn fidelity(&self) -> Option<&SourceFidelity> {
         match &self.origin {
             LoadOrigin::Neutral => None,
-            LoadOrigin::Decoded { fidelity, .. } | LoadOrigin::Restored { fidelity, .. } => {
-                Some(fidelity)
-            }
+            LoadOrigin::Decoded { fidelity, .. }
+            | LoadOrigin::Restored { fidelity, .. }
+            | LoadOrigin::Read { fidelity, .. } => Some(fidelity),
         }
     }
 }

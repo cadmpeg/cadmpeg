@@ -740,6 +740,8 @@ pub(crate) enum F3dLossCode {
     SketchPointUndecoded,
     /// One indexed sketch curve retains an unread geometry member.
     SketchCurveUndecoded,
+    /// One indexed sketch curve record failed decoding and is given up.
+    SketchCurveRecordUndecoded,
     /// One sketch surface failed decoding.
     SketchSurfaceUndecoded,
     /// One indexed sketch text record failed decoding.
@@ -1354,10 +1356,6 @@ pub(crate) enum F3dLossCode {
     SourceDialectUnverified,
     /// Export omits records named by the counted loss message.
     WriterAppearancePropertiesOmitted,
-    /// The selected write target differs from the same-format source dialect.
-    SourceDialectDisplaced,
-    /// An explicitly requested row was written as another.
-    TargetRequestDisplaced,
     /// A procedural carrier with no native encoding was written as its solved geometry.
     WriterProceduralReduced,
     /// A pcurve with no native encoding was omitted; the target recomputes it.
@@ -1898,6 +1896,7 @@ impl F3dLossCode {
         Self::SketchPointUnprojected,
         Self::SketchPointUndecoded,
         Self::SketchCurveUndecoded,
+        Self::SketchCurveRecordUndecoded,
         Self::SketchSurfaceUndecoded,
         Self::SketchTextUndecoded,
         Self::SketchRelationUndecoded,
@@ -2251,8 +2250,6 @@ impl F3dLossCode {
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::WriterAppearancePropertiesOmitted,
-        Self::SourceDialectDisplaced,
-        Self::TargetRequestDisplaced,
         Self::WriterProceduralReduced,
         Self::WriterPcurveOmitted,
         Self::WriterSubdOmitted,
@@ -2964,6 +2961,7 @@ impl F3dLossCode {
             Self::SketchPointUnprojected => "sketch.point-unprojected",
             Self::SketchPointUndecoded => "sketch.point-undecoded",
             Self::SketchCurveUndecoded => "sketch.curve-undecoded",
+            Self::SketchCurveRecordUndecoded => "sketch.curve-record-undecoded",
             Self::SketchSurfaceUndecoded => "sketch.surface-undecoded",
             Self::SketchTextUndecoded => "sketch.text-undecoded",
             Self::SketchRelationUndecoded => "sketch.relation-undecoded",
@@ -3492,8 +3490,6 @@ impl F3dLossCode {
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::WriterAppearancePropertiesOmitted => "writer.appearance-properties-omitted",
-            Self::SourceDialectDisplaced => "target.source-dialect-displaced",
-            Self::TargetRequestDisplaced => "target.request-displaced",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::WriterPcurveOmitted => "writer.pcurve-omitted",
             Self::WriterSubdOmitted => "writer.subd-omitted",
@@ -3606,7 +3602,6 @@ impl F3dLossCode {
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
-            Self::TargetRequestDisplaced => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
             Self::WriterPcurveOmitted => Severity::Info,
             Self::WriterSubdOmitted => Severity::Warning,
@@ -3660,7 +3655,8 @@ impl F3dLossCode {
             | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven
             | Self::ReferenceImageFlagAssumed
-            | Self::DecalMappingAssumed => Severity::Info,
+            | Self::DecalMappingAssumed
+            | Self::VertexToleranceWidened => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -4046,6 +4042,7 @@ impl F3dLossCode {
             | Self::SketchPointUnprojected
             | Self::SketchPointUndecoded
             | Self::SketchCurveUndecoded
+            | Self::SketchCurveRecordUndecoded
             | Self::SketchSurfaceUndecoded
             | Self::SketchTextUndecoded
             | Self::SketchRelationUndecoded
@@ -4354,7 +4351,6 @@ impl F3dLossCode {
             | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
-            | Self::VertexToleranceWidened
             | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
@@ -4364,7 +4360,6 @@ impl F3dLossCode {
             | Self::TsplineRecordUntyped
             | Self::TsplineRadialMapUnresolved
             | Self::SourceDialectUnverified
-            | Self::SourceDialectDisplaced
             | Self::KernelDialectUnverified
             | Self::KernelCarrierUnparseable
             | Self::DialectLayerCollision
@@ -5192,6 +5187,7 @@ impl F3dLossCode {
             | Self::TsplineCageUndecoded
             | Self::SketchPointUndecoded
             | Self::SketchCurveUndecoded
+            | Self::SketchCurveRecordUndecoded
             | Self::SketchSurfaceUndecoded
             | Self::DesignBodyBoundsUndecoded
             | Self::SketchTextUndecoded
@@ -5227,8 +5223,6 @@ impl F3dLossCode {
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
-            Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
-            Self::TargetRequestDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TextHeaderNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
@@ -5237,29 +5231,22 @@ impl F3dLossCode {
         }
     }
 
-    /// Strict floor pinned by this local code.
-    ///
-    /// Defaults to the taxonomy floor. `DesignIntentUndecoded` pins Warning
-    /// above its tolerable `DecodeDiagnostic` taxonomy: strict mode refuses a
-    /// document whose design intent was dropped. `WriterEdgeRangeAssumed`
-    /// pins Warning above `TopologyGaugeSubstituted`: strict mode refuses an
-    /// edge written over an arc the source does not state.
-    /// The other listed undecoded-record codes also pin Warning so strict
-    /// mode rejects partial Design decoding.
+    /// The strict floor `f3d.md` §4 states: each code that records a Design
+    /// record the decoder keeps with less content pins Warning, and so does
+    /// the design-intent failure that the decoder keeps as a record.
     const fn strict_floor(self) -> Option<Severity> {
         match self {
             Self::DesignIntentUndecoded
-            | Self::PrimaryRecordUndecoded
-            | Self::FeatureTimelineUndecoded
-            | Self::ConfigurationDocumentUndecoded
-            | Self::BendSettingsUndecoded
+            | Self::SketchCurveUndecoded
+            | Self::SketchContainerUndecoded
             | Self::ConfigurationProjectionNative
-            | Self::WriterEdgeRangeAssumed => Some(Severity::Warning),
-            other => other.shared_taxonomy().strict_floor(),
+            | Self::SketchOwnerConflict
+            | Self::SketchRelationOwnerUnresolved => Some(Severity::Warning),
+            _ => None,
         }
     }
 
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
         NamespacedLossKind::new(
@@ -5274,7 +5261,7 @@ impl F3dLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `f3d/<local>`. Severity comes from the local
-    /// code; the strict floor comes from [`Self::strict_floor`].
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -5286,39 +5273,46 @@ mod tests {
     use super::F3dLossCode;
     use std::collections::BTreeSet;
 
-    /// The sixteen codes that record a Design record, or its dependent
-    /// state, kept in the source archive after a decoding failure: the
-    /// sketch curve, surface, text, relation, folder, ordinal-collection,
-    /// container and geometry-group codes; the feature-timeline and
-    /// primary-record codes; the configuration projection and document
-    /// codes; the sketch owner-conflict and relation-owner codes; the bend
-    /// settings code; and the body-bounds code.
-    const UNREAD_DESIGN_RECORD_CODES: [F3dLossCode; 16] = [
+    /// The codes that record a Design record the decoder keeps with less
+    /// content: the design-intent failure record, a sketch curve without its
+    /// geometry, a sketch without its container row, configurations left
+    /// native, and sketch geometry or a relation with an unresolved owner.
+    const KEPT_DESIGN_RECORD_CODES: [F3dLossCode; 6] = [
+        F3dLossCode::DesignIntentUndecoded,
         F3dLossCode::SketchCurveUndecoded,
+        F3dLossCode::SketchContainerUndecoded,
+        F3dLossCode::ConfigurationProjectionNative,
+        F3dLossCode::SketchOwnerConflict,
+        F3dLossCode::SketchRelationOwnerUnresolved,
+    ];
+
+    /// The codes that record only a Design record the decoder gives up. The
+    /// record's `record.unreadable` refuses a pinned decode, so these codes
+    /// have no floor.
+    const GIVEN_UP_DESIGN_RECORD_CODES: [F3dLossCode; 12] = [
+        F3dLossCode::SketchCurveRecordUndecoded,
         F3dLossCode::SketchSurfaceUndecoded,
         F3dLossCode::SketchTextUndecoded,
         F3dLossCode::SketchRelationUndecoded,
         F3dLossCode::SketchFolderUndecoded,
         F3dLossCode::SketchOrdinalCollectionUndecoded,
-        F3dLossCode::SketchContainerUndecoded,
         F3dLossCode::SketchGeometryGroupUndecoded,
         F3dLossCode::FeatureTimelineUndecoded,
         F3dLossCode::PrimaryRecordUndecoded,
-        F3dLossCode::ConfigurationProjectionNative,
-        F3dLossCode::SketchOwnerConflict,
-        F3dLossCode::SketchRelationOwnerUnresolved,
         F3dLossCode::ConfigurationDocumentUndecoded,
         F3dLossCode::BendSettingsUndecoded,
         F3dLossCode::DesignBodyBoundsUndecoded,
     ];
 
     #[test]
-    fn unread_design_records_keep_strict_refusal() {
-        for code in UNREAD_DESIGN_RECORD_CODES {
-            assert_eq!(
-                code.note("synthetic unread Design record")
-                    .strict_consequence(),
-                cadmpeg_ir::report::loss::StrictConsequence::Reject,
+    fn kept_design_records_keep_strict_refusal() {
+        for code in KEPT_DESIGN_RECORD_CODES {
+            assert!(
+                cadmpeg_ir::report::strictness::Strictness {
+                    pinned: true,
+                    ..Default::default()
+                }
+                .refuses(&code.note("synthetic kept Design record"), false),
                 "{}",
                 code.kind().local_code()
             );
@@ -5326,9 +5320,24 @@ mod tests {
     }
 
     #[test]
-    fn unread_design_record_codes_are_registered_once() {
+    fn given_up_design_record_codes_have_no_floor() {
+        for code in GIVEN_UP_DESIGN_RECORD_CODES {
+            assert_eq!(
+                code.kind().strict_floor(),
+                None,
+                "{}",
+                code.kind().local_code()
+            );
+        }
+    }
+
+    #[test]
+    fn design_record_codes_are_registered_once() {
         let mut seen = BTreeSet::new();
-        for code in UNREAD_DESIGN_RECORD_CODES {
+        for code in KEPT_DESIGN_RECORD_CODES
+            .into_iter()
+            .chain(GIVEN_UP_DESIGN_RECORD_CODES)
+        {
             assert!(F3dLossCode::ALL.contains(&code));
             assert!(seen.insert(code.kind().local_code().to_owned()));
         }
@@ -5797,6 +5806,7 @@ mod tests {
                 "sketch.point-unprojected",
                 "sketch.point-undecoded",
                 "sketch.curve-undecoded",
+                "sketch.curve-record-undecoded",
                 "sketch.surface-undecoded",
                 "sketch.text-undecoded",
                 "sketch.relation-undecoded",
@@ -6150,8 +6160,6 @@ mod tests {
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "writer.appearance-properties-omitted",
-                "target.source-dialect-displaced",
-                "target.request-displaced",
                 "writer.procedural-reduced",
                 "writer.pcurve-omitted",
                 "writer.subd-omitted",

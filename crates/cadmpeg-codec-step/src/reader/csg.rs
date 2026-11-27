@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use crate::reader::give_up_instance;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -237,7 +238,7 @@ pub(super) struct CsgData {
     /// Boolean that uses them.
     representations: BTreeMap<u64, Vec<u64>>,
     /// Every identity of a derived body.
-    pub(super) derived: Vec<String>,
+    pub(super) derived: Vec<cadmpeg_ir::annotations::AnnotationKey>,
 }
 
 /// Read every CSG item, derive the bodies of those outside Boolean trees,
@@ -287,8 +288,11 @@ pub(super) fn decode(
                     },
                 );
             }
-            Err(message) => losses
-                .push(StepLossCode::CsgItemUnresolved.note(format!("{entity} #{id}: {message}"))),
+            Err(message) => losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::CsgItemUnresolved.note(format!("{entity} #{id}: {message}")),
+            )),
         }
     }
     for (id, record) in exchange.entities("BOOLEAN_RESULT") {
@@ -306,9 +310,13 @@ pub(super) fn decode(
                     },
                 );
             }
-            None => losses.push(StepLossCode::CsgItemUnresolved.note(format!(
-                "BOOLEAN_RESULT #{id} has no operator or no operands"
-            ))),
+            None => losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::CsgItemUnresolved.note(format!(
+                    "BOOLEAN_RESULT #{id} has no operator or no operands"
+                )),
+            )),
         }
     }
     let solids = csg_solid_roots(exchange);
@@ -318,7 +326,7 @@ pub(super) fn decode(
             *operands = operands.map(resolve);
         }
     }
-    let refused = refuse_cycles(&items, &mut losses);
+    let refused = refuse_cycles(exchange, &items, &mut losses);
     for (item, frame) in plant_orientations(exchange, geometry, &items, &solids, &mut losses) {
         if let Some(item) = items.get_mut(&item) {
             item.orientation = Some(frame);
@@ -601,7 +609,11 @@ fn collect_tree(
 /// operand graph. A Boolean tree is acyclic (ISO 10303-42 §6.4.6); each
 /// cycle found and each Boolean that uses one has a `csg.item-unresolved`
 /// loss.
-fn refuse_cycles(items: &BTreeMap<u64, Item>, losses: &mut Vec<LossNote>) -> BTreeSet<u64> {
+fn refuse_cycles(
+    exchange: &Exchange,
+    items: &BTreeMap<u64, Item>,
+    losses: &mut Vec<LossNote>,
+) -> BTreeSet<u64> {
     let operands_of = |id: u64| match items.get(&id).map(|item| &item.shape) {
         Some(Shape::Boolean { operands, .. }) => Some(*operands),
         _ => None,
@@ -666,6 +678,9 @@ fn refuse_cycles(items: &BTreeMap<u64, Item>, losses: &mut Vec<LossNote>) -> BTr
         losses.push(StepLossCode::CsgItemUnresolved.note(format!(
             "BOOLEAN_RESULT #{id} has an operand cycle in its tree, so it has no feature"
         )));
+    }
+    for &id in &refused {
+        exchange.lost().give_up(id, "Boolean operand cycle");
     }
     refused
 }

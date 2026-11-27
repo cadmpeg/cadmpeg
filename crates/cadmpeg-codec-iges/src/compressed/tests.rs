@@ -162,6 +162,50 @@ fn compressed_points_file_with_global(global: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn a_compressed_quarantine_part_lies_in_the_fixed_card_image() {
+    let source = compressed_points_file();
+    let second = source
+        .windows(16)
+        .position(|window| window == b"116,4.0,5.0,6.0;")
+        .unwrap();
+    let mut source = source;
+    source[second..second + 3].copy_from_slice(b"110");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    let bytes = crate::test_support::given_up_part_bytes(&result, ("parameter-data", 3));
+    assert_eq!(bytes.len(), 80);
+    assert!(bytes.starts_with(b"110,4.0,5.0,6.0;"));
+    let loss = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.message.starts_with("part parameter-data \"D3\" "))
+        .unwrap();
+    assert!(
+        loss.message.contains(" stream=\"fixed-card-image\" "),
+        "{}",
+        loss.message
+    );
+    let stub = loss
+        .message
+        .split(" record=")
+        .nth(1)
+        .and_then(|rest| rest.split(": ").next())
+        .unwrap();
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(stub)
+            .unwrap()
+            .stream(),
+        "fixed-card-image"
+    );
+}
+
+#[test]
 fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     let source = compressed_points_file();
     let normalized = normalize(&source).unwrap();
@@ -236,7 +280,13 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .find(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::write::target::target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("iges"),
+                    cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("representation displacement is charged");
     assert!(displacement.message.contains("iges:5.3-compressed-ascii"));
     assert!(displacement.message.contains("iges:5.3-fixed-ascii"));
@@ -476,7 +526,7 @@ fn compressed_reserved_fields_use_fixed_directory_right_justification() {
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(
         native.arenas()["entities"][0].fields().unwrap()["reserved"],
-        serde_json::json!(["202020204c454654", "2020205249474854"])
+        cadmpeg_core::json!(["202020204c454654", "2020205249474854"])
     );
 }
 
@@ -531,4 +581,18 @@ fn a_repeated_directory_sequence_keeps_its_first_record() {
         "{}",
         loss.message
     );
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [given_up] = given_up.as_slice() else {
+        panic!("one give-up for the one copy: {given_up:?}");
+    };
+    let part = format!(
+        "part compressed-data-record stream=\"\" offset={second_end} length={} ",
+        copy.len() - 2
+    );
+    assert!(given_up.message.starts_with(&part), "{}", given_up.message);
 }

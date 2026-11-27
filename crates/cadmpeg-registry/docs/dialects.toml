@@ -1666,6 +1666,26 @@ title = "Input outside the Solid Edge compound identity"
 discriminants = { container = "any other input" }
 witness = "code:crates/cadmpeg-codec-solidedge/src/container.rs"
 
+[format.ironcad]
+complete = false
+aliases = ["ics"]
+
+[[dialect]]
+id = "ironcad:cfb"
+title = "IronCAD scene compound directory"
+discriminants = { container = "CFB", directory = "Brep Data, Shape Data, and Document Data root streams with the IronCAD scene root class" }
+witness = "code:crates/cadmpeg-codec-ironcad/src/container.rs"
+
+[[dialect]]
+# Mandatory `unknown` row. Detection returns `Confidence::No` and a forced
+# decode or inspect returns `CodecError::WrongFormat` for every input outside
+# `ironcad:cfb`.
+id = "ironcad:unknown"
+unknown_kind = "detect-unreachable"
+title = "Input outside the IronCAD scene identity"
+discriminants = { container = "any other input" }
+witness = "code:crates/cadmpeg-codec-ironcad/src/container.rs"
+
 [format.onshape]
 complete = false
 

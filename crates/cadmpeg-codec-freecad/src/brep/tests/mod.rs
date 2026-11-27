@@ -4,6 +4,7 @@
 mod allocation_tests;
 mod nesting;
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -98,53 +99,52 @@ fn polygon_deflection_is_admitted_on_source_and_native_wire() {
         assert!(error.to_string().contains(expected), "{error}");
     }
 
-    let polygon = serde_json::json!({
+    let polygon = cadmpeg_core::json!({
         "deflection": 0.5,
         "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}],
         "parameters": null,
     });
-    let admitted: super::TextPolygon3d = serde_json::from_value(polygon.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), polygon);
+    let admitted: super::TextPolygon3d = json::from_value(polygon.clone()).unwrap();
+    assert_eq!(json::to_value(admitted).unwrap(), polygon);
     let mut invalid = polygon;
-    invalid["deflection"] = serde_json::json!(-1.0);
-    assert!(serde_json::from_value::<super::TextPolygon3d>(invalid).is_err());
+    invalid["deflection"] = cadmpeg_core::json!(-1.0);
+    assert!(json::from_value::<super::TextPolygon3d>(invalid).is_err());
 
-    let polygon = serde_json::json!({
+    let polygon = cadmpeg_core::json!({
         "nodes": [1],
         "deflection": 0.5,
         "parameters": null,
     });
-    let admitted: super::TextPolygonOnTriangulation =
-        serde_json::from_value(polygon.clone()).unwrap();
-    assert_eq!(serde_json::to_value(admitted).unwrap(), polygon);
+    let admitted: super::TextPolygonOnTriangulation = json::from_value(polygon.clone()).unwrap();
+    assert_eq!(json::to_value(admitted).unwrap(), polygon);
     let mut invalid = polygon;
-    invalid["deflection"] = serde_json::json!(-1.0);
-    assert!(serde_json::from_value::<super::TextPolygonOnTriangulation>(invalid).is_err());
+    invalid["deflection"] = cadmpeg_core::json!(-1.0);
+    assert!(json::from_value::<super::TextPolygonOnTriangulation>(invalid).is_err());
 }
 
 #[test]
 fn tshape_collection_checks_indices_at_direct_wire_admission() {
-    let wire = serde_json::json!([
+    let wire = cadmpeg_core::json!([
         {"index": 1, "kind": "wire", "geometry": {"kind": "empty"},
          "flags": [false, false, false, false, false, false, false], "children": []},
         {"index": 2, "kind": "compound", "geometry": {"kind": "empty"},
          "flags": [false, false, false, false, false, false, false], "children": []}
     ]);
-    let shapes: TextTShapes = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&shapes).unwrap(), wire);
+    let shapes: TextTShapes = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&shapes).unwrap(), wire);
     assert!(shapes.resolve(0).is_err());
     assert_eq!(shapes.resolve(1).unwrap().kind(), TextShapeKind::Wire);
     assert!(shapes.resolve(3).is_err());
     for index in [0, 1, 3] {
         let mut invalid = wire.clone();
-        invalid[1]["index"] = serde_json::json!(index);
-        assert!(serde_json::from_value::<TextTShapes>(invalid).is_err());
+        invalid[1]["index"] = cadmpeg_core::json!(index);
+        assert!(json::from_value::<TextTShapes>(invalid).is_err());
     }
 }
 
 #[test]
 fn tshape_geometry_arms_write_their_representation_tables() {
-    let wire = serde_json::json!([
+    let wire = cadmpeg_core::json!([
         {"index": 1, "kind": "vertex",
          "geometry": {"kind": "vertex", "tolerance": 0.25,
              "point": {"x": 1.0, "y": 2.0, "z": 3.0},
@@ -162,8 +162,8 @@ fn tshape_geometry_arms_write_their_representation_tables() {
          "flags": [false, false, false, false, false, false, false],
          "children": [{"shape": 1, "orientation": "forward", "location": 0}]}
     ]);
-    let shapes: TextTShapes = serde_json::from_value(wire.clone()).unwrap();
-    assert_eq!(serde_json::to_value(&shapes).unwrap(), wire);
+    let shapes: TextTShapes = json::from_value(wire.clone()).unwrap();
+    assert_eq!(json::to_value(&shapes).unwrap(), wire);
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn an_edge_representation_writes_its_continuity_token() {
                 parameter_range: [FiniteReal::ZERO, FiniteReal::ONE],
                 uv_endpoints: None,
             },
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": 3, "primary": 5, "secondary": 6, "surface": 7,
                 "second_surface": null, "location": 8, "second_location": null,
                 "parameter_range": [0.0, 1.0], "continuity": "CN", "uv_endpoints": null
@@ -190,16 +190,16 @@ fn an_edge_representation_writes_its_continuity_token() {
                 surfaces: [2, 3],
                 locations: [0, 4],
             },
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": 4, "primary": 0, "secondary": null, "surface": 2,
                 "second_surface": 3, "location": 0, "second_location": 4,
                 "parameter_range": null, "continuity": "C1", "uv_endpoints": null
             }),
         ),
     ] {
-        assert_eq!(serde_json::to_value(&representation).unwrap(), expected);
+        assert_eq!(json::to_value(&representation).unwrap(), expected);
         assert_eq!(
-            serde_json::from_value::<TextEdgeRepresentation>(expected).unwrap(),
+            json::from_value::<TextEdgeRepresentation>(expected).unwrap(),
             representation
         );
     }
@@ -208,7 +208,7 @@ fn an_edge_representation_writes_its_continuity_token() {
 #[test]
 fn shape_set_wire_indices_match_position_for_both_carriers() {
     for form in ["text", "binary"] {
-        let mut facts = serde_json::json!({
+        let mut facts = cadmpeg_core::json!({
             "topology_version": 1,
             "locations": [], "curve2ds": [], "curves": [],
             "polygons3d": [], "polygons_on_triangulations": [],
@@ -221,19 +221,19 @@ fn shape_set_wire_indices_match_position_for_both_carriers() {
             ]
         });
         if form == "text" {
-            facts["shape_types"] = serde_json::json!({"wire": 1, "compound": 1});
-            facts["section_counts"] = serde_json::json!({
+            facts["shape_types"] = cadmpeg_core::json!({"wire": 1, "compound": 1});
+            facts["section_counts"] = cadmpeg_core::json!({
                 "Locations": 0, "Curve2ds": 0, "Curves": 0, "Polygon3D": 0,
                 "PolygonOnTriangulations": 0, "Surfaces": 0, "Triangulations": 0, "TShapes": 2
             });
         }
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "id": "shape", "property": "property", "entry": "Shape.brp",
             "form": form, "text": null, "binary": null
         });
         wire[form] = facts;
-        let mut payload: ShapePayloadRecord = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&payload).unwrap(), wire);
+        let mut payload: ShapePayloadRecord = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&payload).unwrap(), wire);
         let (ShapePayload::Text { facts, .. } | ShapePayload::Binary { facts, .. }) =
             &mut payload.payload
         else {
@@ -242,14 +242,14 @@ fn shape_set_wire_indices_match_position_for_both_carriers() {
         let mut shapes = facts.tshapes.to_vec();
         shapes.swap(0, 1);
         facts.tshapes = shapes.into();
-        let reordered = serde_json::to_value(payload).unwrap();
+        let reordered = json::to_value(payload).unwrap();
         assert_eq!(reordered[form]["tshapes"][0]["index"], 1);
         assert_eq!(reordered[form]["tshapes"][1]["index"], 2);
         assert_eq!(reordered[form]["tshapes"][0]["kind"], "compound");
         assert_eq!(reordered[form]["tshapes"][1]["kind"], "wire");
 
-        wire[form]["tshapes"][1]["index"] = serde_json::json!(1);
-        let error = serde_json::from_value::<ShapePayloadRecord>(wire).unwrap_err();
+        wire[form]["tshapes"][1]["index"] = cadmpeg_core::json!(1);
+        let error = json::from_value::<ShapePayloadRecord>(wire).unwrap_err();
         assert!(error.to_string().contains("tshapes[1].index must equal 2"));
     }
 }
@@ -257,7 +257,7 @@ fn shape_set_wire_indices_match_position_for_both_carriers() {
 #[test]
 fn shape_payload_direct_wire_checks_cross_table_references() {
     for form in ["text", "binary"] {
-        let mut facts = serde_json::json!({
+        let mut facts = cadmpeg_core::json!({
             "topology_version": 1,
             "locations": [], "curve2ds": [], "curves": [],
             "polygons3d": [], "polygons_on_triangulations": [],
@@ -270,29 +270,29 @@ fn shape_payload_direct_wire_checks_cross_table_references() {
             ]
         });
         if form == "text" {
-            facts["shape_types"] = serde_json::json!({"wire": 1, "compound": 1});
-            facts["section_counts"] = serde_json::json!({
+            facts["shape_types"] = cadmpeg_core::json!({"wire": 1, "compound": 1});
+            facts["section_counts"] = cadmpeg_core::json!({
                 "Locations": 0, "Curve2ds": 0, "Curves": 0, "Polygon3D": 0,
                 "PolygonOnTriangulations": 0, "Surfaces": 0, "Triangulations": 0, "TShapes": 2
             });
         }
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "id": "shape", "property": "property", "entry": "Shape.brp",
             "form": form, "text": null, "binary": null
         });
         wire[form] = facts;
 
-        wire[form]["tshapes"][1]["children"] = serde_json::json!([
+        wire[form]["tshapes"][1]["children"] = cadmpeg_core::json!([
             {"shape": 2, "orientation": "forward", "location": 0}
         ]);
-        let error = serde_json::from_value::<ShapePayloadRecord>(wire.clone()).unwrap_err();
+        let error = json::from_value::<ShapePayloadRecord>(wire.clone()).unwrap_err();
         assert!(error.to_string().contains("non-prior"), "{form}: {error}");
 
-        wire[form]["tshapes"][1]["children"] = serde_json::json!([]);
-        wire[form]["roots"] = serde_json::json!([
+        wire[form]["tshapes"][1]["children"] = cadmpeg_core::json!([]);
+        wire[form]["roots"] = cadmpeg_core::json!([
             {"shape": 3, "orientation": "forward", "location": 0}
         ]);
-        let error = serde_json::from_value::<ShapePayloadRecord>(wire).unwrap_err();
+        let error = json::from_value::<ShapePayloadRecord>(wire).unwrap_err();
         assert!(error.to_string().contains("root TShape"), "{form}: {error}");
     }
 }
@@ -301,7 +301,7 @@ fn shape_payload_direct_wire_checks_cross_table_references() {
 fn shape_payload_wire_admits_only_versions_of_its_carrier() {
     for (form, maximum) in [("text", 3), ("binary", 4)] {
         for version in [0, 1, maximum, maximum + 1, u8::MAX] {
-            let facts = serde_json::json!({
+            let facts = cadmpeg_core::json!({
                 "topology_version": version,
                 "locations": [], "curve2ds": [], "curves": [],
                 "polygons3d": [], "polygons_on_triangulations": [],
@@ -311,17 +311,17 @@ fn shape_payload_wire_admits_only_versions_of_its_carrier() {
                     "Polygon3D": 0, "PolygonOnTriangulations": 0, "Surfaces": 0,
                     "Triangulations": 0, "TShapes": 0}
             });
-            let mut wire = serde_json::json!({
+            let mut wire = cadmpeg_core::json!({
                 "id": "shape", "property": "property", "entry": "Shape.brp",
                 "form": form, "text": null, "binary": null
             });
             wire[form] = facts;
-            let result = serde_json::from_value::<ShapePayloadRecord>(wire);
+            let result = json::from_value::<ShapePayloadRecord>(wire);
             if (1..=maximum).contains(&version) {
                 let payload = result.unwrap();
                 assert_eq!(payload.payload.topology_version(), Some(version));
                 assert_eq!(
-                    serde_json::to_value(payload).unwrap()[form]["topology_version"],
+                    json::to_value(payload).unwrap()[form]["topology_version"],
                     version
                 );
             } else {
@@ -333,22 +333,21 @@ fn shape_payload_wire_admits_only_versions_of_its_carrier() {
 
 #[test]
 fn face_table_references_preserve_wire_absence_and_reject_zero_triangulation() {
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "index": 1, "kind": "face",
         "geometry": { "kind": "face", "natural_restriction": false,
             "tolerance": 0.0, "surface": 0, "location": 0, "triangulation": null },
         "flags": [false, false, false, false, false, false, false], "children": []
     });
     let shape =
-        TextTShape::try_from(serde_json::from_value::<TextTShapeWire>(wire.clone()).unwrap())
-            .unwrap();
+        TextTShape::try_from(json::from_value::<TextTShapeWire>(wire.clone()).unwrap()).unwrap();
     assert_eq!(
-        serde_json::to_value(TextTShapes::from(vec![shape])).unwrap(),
+        json::to_value(TextTShapes::from(vec![shape])).unwrap(),
         serde_json::Value::Array(vec![wire.clone()])
     );
-    wire["geometry"]["triangulation"] = serde_json::json!(0);
+    wire["geometry"]["triangulation"] = cadmpeg_core::json!(0);
     assert!(
-        TextTShape::try_from(serde_json::from_value::<TextTShapeWire>(wire).unwrap())
+        TextTShape::try_from(json::from_value::<TextTShapeWire>(wire).unwrap())
             .unwrap_err()
             .contains("triangulation")
     );
@@ -804,9 +803,9 @@ fn recursive_brep_carriers_retain_checked_fields_across_native_json() {
         let facts = test_parse_text(input.as_bytes())
             .expect("recursive curve")
             .0;
-        let wire = serde_json::to_value(&facts.curves[0]).unwrap();
-        let admitted: TextCurve = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        let wire = json::to_value(&facts.curves[0]).unwrap();
+        let admitted: TextCurve = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(admitted).unwrap(), wire);
     }
 
     let input = text_brep(
@@ -819,9 +818,9 @@ fn recursive_brep_carriers_retain_checked_fields_across_native_json() {
         .expect("recursive surfaces")
         .0;
     for surface in facts.surfaces {
-        let wire = serde_json::to_value(&surface).unwrap();
-        let admitted: TextSurface = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(admitted).unwrap(), wire);
+        let wire = json::to_value(&surface).unwrap();
+        let admitted: TextSurface = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(admitted).unwrap(), wire);
     }
 }
 
@@ -1377,19 +1376,19 @@ fn transfers_zero_radius_brep_circles_as_degenerate_curves() {
 
 #[test]
 fn native_analytic_curve_fields_remain_checked_and_wire_identical() {
-    let point = serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0});
-    let axis = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
-    let reference = serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0});
+    let point = cadmpeg_core::json!({"x": 1.0, "y": 2.0, "z": 3.0});
+    let axis = cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+    let reference = cadmpeg_core::json!({"x": 1.0, "y": 0.0, "z": 0.0});
     let wires = [
-        serde_json::json!({"kind": "line", "origin": point, "direction": axis}),
-        serde_json::json!({"kind": "circle", "center": point, "axis": axis, "ref_direction": reference, "radius": 2.0}),
-        serde_json::json!({"kind": "ellipse", "center": point, "axis": axis, "major_direction": reference, "major_radius": 3.0, "minor_radius": 2.0}),
-        serde_json::json!({"kind": "parabola", "vertex": point, "axis": axis, "major_direction": reference, "focal_distance": 2.0}),
-        serde_json::json!({"kind": "hyperbola", "center": point, "axis": axis, "major_direction": reference, "major_radius": 2.0, "minor_radius": 3.0}),
+        cadmpeg_core::json!({"kind": "line", "origin": point, "direction": axis}),
+        cadmpeg_core::json!({"kind": "circle", "center": point, "axis": axis, "ref_direction": reference, "radius": 2.0}),
+        cadmpeg_core::json!({"kind": "ellipse", "center": point, "axis": axis, "major_direction": reference, "major_radius": 3.0, "minor_radius": 2.0}),
+        cadmpeg_core::json!({"kind": "parabola", "vertex": point, "axis": axis, "major_direction": reference, "focal_distance": 2.0}),
+        cadmpeg_core::json!({"kind": "hyperbola", "center": point, "axis": axis, "major_direction": reference, "major_radius": 2.0, "minor_radius": 3.0}),
     ];
     for wire in wires {
-        let curve: TextCurve = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&curve).unwrap(), wire);
+        let curve: TextCurve = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&curve).unwrap(), wire);
         if let TextCurve::Line { origin, direction } = curve {
             let _: FinitePoint3 = origin;
             let _: FiniteVector3 = direction;
@@ -1399,23 +1398,23 @@ fn native_analytic_curve_fields_remain_checked_and_wire_identical() {
 
 #[test]
 fn native_parameter_curve_fields_remain_checked_through_transfer() {
-    let center = serde_json::json!({"u": 1.0, "v": 2.0});
-    let x_axis = serde_json::json!({"u": 1.0, "v": 0.0});
-    let y_axis = serde_json::json!({"u": 0.0, "v": 1.0});
+    let center = cadmpeg_core::json!({"u": 1.0, "v": 2.0});
+    let x_axis = cadmpeg_core::json!({"u": 1.0, "v": 0.0});
+    let y_axis = cadmpeg_core::json!({"u": 0.0, "v": 1.0});
     let wires = [
-        serde_json::json!({"kind": "line", "origin": center, "direction": x_axis}),
-        serde_json::json!({"kind": "circle", "center": center, "x_axis": x_axis, "y_axis": y_axis, "radius": 3.0}),
-        serde_json::json!({"kind": "ellipse", "center": center, "x_axis": x_axis, "y_axis": y_axis, "major_radius": 3.0, "minor_radius": 2.0}),
-        serde_json::json!({"kind": "parabola", "vertex": center, "x_axis": x_axis, "y_axis": y_axis, "focal_distance": 2.0}),
-        serde_json::json!({"kind": "hyperbola", "center": center, "x_axis": x_axis, "y_axis": y_axis, "major_radius": 3.0, "minor_radius": 2.0}),
+        cadmpeg_core::json!({"kind": "line", "origin": center, "direction": x_axis}),
+        cadmpeg_core::json!({"kind": "circle", "center": center, "x_axis": x_axis, "y_axis": y_axis, "radius": 3.0}),
+        cadmpeg_core::json!({"kind": "ellipse", "center": center, "x_axis": x_axis, "y_axis": y_axis, "major_radius": 3.0, "minor_radius": 2.0}),
+        cadmpeg_core::json!({"kind": "parabola", "vertex": center, "x_axis": x_axis, "y_axis": y_axis, "focal_distance": 2.0}),
+        cadmpeg_core::json!({"kind": "hyperbola", "center": center, "x_axis": x_axis, "y_axis": y_axis, "major_radius": 3.0, "minor_radius": 2.0}),
     ];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     for wire in wires {
-        let curve: TextCurve2d = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&curve).unwrap(), wire);
+        let curve: TextCurve2d = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&curve).unwrap(), wire);
         assert!(crate::topology_transfer::pcurve_geometry(&ctx, &curve)
             .unwrap()
             .is_some());
@@ -1424,19 +1423,19 @@ fn native_parameter_curve_fields_remain_checked_through_transfer() {
 
 #[test]
 fn native_analytic_surface_fields_remain_checked_and_wire_identical() {
-    let point = serde_json::json!({"x": 1.0, "y": 2.0, "z": 3.0});
-    let axis = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
-    let reference = serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0});
+    let point = cadmpeg_core::json!({"x": 1.0, "y": 2.0, "z": 3.0});
+    let axis = cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+    let reference = cadmpeg_core::json!({"x": 1.0, "y": 0.0, "z": 0.0});
     let wires = [
-        serde_json::json!({"kind": "plane", "origin": point, "axis": axis, "u_axis": reference, "v_reversed": false}),
-        serde_json::json!({"kind": "cylinder", "origin": point, "axis": axis, "ref_direction": reference, "radius": 2.0, "u_reversed": false}),
-        serde_json::json!({"kind": "cone", "origin": point, "axis": axis, "ref_direction": reference, "radius": 2.0, "half_angle": -0.5, "u_reversed": false}),
-        serde_json::json!({"kind": "sphere", "center": point, "axis": axis, "ref_direction": reference, "radius": -2.0, "u_reversed": false}),
-        serde_json::json!({"kind": "torus", "center": point, "axis": axis, "ref_direction": reference, "major_radius": 4.0, "minor_radius": 1.0, "u_reversed": false}),
+        cadmpeg_core::json!({"kind": "plane", "origin": point, "axis": axis, "u_axis": reference, "v_reversed": false}),
+        cadmpeg_core::json!({"kind": "cylinder", "origin": point, "axis": axis, "ref_direction": reference, "radius": 2.0, "u_reversed": false}),
+        cadmpeg_core::json!({"kind": "cone", "origin": point, "axis": axis, "ref_direction": reference, "radius": 2.0, "half_angle": -0.5, "u_reversed": false}),
+        cadmpeg_core::json!({"kind": "sphere", "center": point, "axis": axis, "ref_direction": reference, "radius": -2.0, "u_reversed": false}),
+        cadmpeg_core::json!({"kind": "torus", "center": point, "axis": axis, "ref_direction": reference, "major_radius": 4.0, "minor_radius": 1.0, "u_reversed": false}),
     ];
     for wire in wires {
-        let surface: TextSurface = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&surface).unwrap(), wire);
+        let surface: TextSurface = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&surface).unwrap(), wire);
         if let TextSurface::Plane {
             origin,
             axis,

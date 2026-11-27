@@ -118,6 +118,7 @@ impl CodecBackend for UsdCodec {
 
 impl EncoderBackend for UsdCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "USD";
     /// Writes topology, geometry, tessellations, appearances, and placements;
     /// design arenas are not read.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
@@ -130,12 +131,12 @@ impl EncoderBackend for UsdCodec {
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
         let packaged = target
-            .entry()
-            .is_some_and(|entry| entry.id == dialect::USD_USDZ);
+            .synthesized_row()
+            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDZ);
         let binary = target
-            .entry()
-            .is_some_and(|entry| entry.id == dialect::USD_USDC_0_8_0);
-        let (mut body, members) = writer::plan(input, &target, packaged)?;
+            .synthesized_row()
+            .is_some_and(|(_, entry)| entry.id == dialect::USD_USDC_0_8_0);
+        let (mut body, members) = writer::plan(input, &target, packaged);
         if binary {
             let (bytes, left_out) = crate_layer(&body.bytes)?;
             body.bytes = bytes;

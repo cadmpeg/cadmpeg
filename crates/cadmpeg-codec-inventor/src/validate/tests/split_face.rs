@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::direct_edit::SplitFaceTool;
 use cadmpeg_ir::features::evaluation::{
     FeatureEvaluation, FeatureResultMembers, FeatureResultTopology,
@@ -120,7 +121,7 @@ fn face_split_validation_recomputes_both_controls_and_all_operand_slots() -> Tes
                 .map(|identity| (identity.record_ordinal, identity.type_id.as_str()))
                 .chain(std::iter::once((2, "00000000000000000000000000000000")))
             {
-                data.records.push(serde_json::from_value(serde_json::json!({
+                data.records.push(json::from_value(cadmpeg_core::json!({
                     "id": format!("inventor:rse:record#generated-{ordinal}"),
                     "token": "generated", "ordinal": ordinal, "selector": 0, "type_index": 0,
                     "type_id": type_id,

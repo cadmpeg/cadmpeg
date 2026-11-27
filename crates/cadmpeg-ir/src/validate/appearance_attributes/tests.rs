@@ -137,7 +137,7 @@ fn each_target_arm_names_a_record_of_its_kind() {
             id("occurrence"),
         ),
         (
-            AttributeTarget::Tessellation(id("tessellation")),
+            AttributeTarget::Tessellation(id("tessellation").try_into().unwrap()),
             "tessellation",
             id("tessellation"),
         ),
@@ -188,7 +188,7 @@ fn a_record_target_names_an_arena_and_an_id_of_it() {
     let body = ir.geometry.bodies[0].id.to_string();
     let record = |arena: &str, id: &str| AttributeTarget::Record {
         arena: cadmpeg_core::text::NonBlankString::new(arena).unwrap(),
-        id: id.into(),
+        id: id.try_into().unwrap(),
     };
     assert_eq!(
         with_attribute(record("bodies", &body), Vec::new()),
@@ -217,7 +217,7 @@ fn a_record_target_names_an_arena_and_an_id_of_it() {
         .appearance_bindings
         .push(binding(AppearanceTarget::Record {
             arena: cadmpeg_core::text::NonBlankString::new("point_clouds").unwrap(),
-            id: "test:model:cloud#1".into(),
+            id: "test:model:cloud#1".try_into().unwrap(),
         }));
     assert_eq!(
         design_findings(&ir, BINDING),
@@ -296,14 +296,17 @@ fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class
     let mass = ParameterId::mint("test:design:parameter#mass").unwrap();
     let scoped = |target, values| {
         let mut ir = CadIr::empty();
-        ir.set_scope(ContentScope::geometry()).unwrap();
+        ir.set_scope(ContentScope::geometry());
         ir.model.attributes.push(attribute(target, values));
-        ir.check_scope().map_err(|violation| violation.to_string())
+        ir.scope_violations()
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
     };
-    let violation = Err(
+    let violation = vec![
         "the document's scope excludes design but model arena `attributes` holds a reference into it"
             .to_owned(),
-    );
+    ];
     for target in [
         AttributeTarget::Feature(
             crate::features::FeatureId::mint("test:design:feature#1").unwrap(),
@@ -320,7 +323,7 @@ fn an_attribute_on_a_design_record_or_reading_a_parameter_needs_the_design_class
         ),
         violation
     );
-    assert_eq!(scoped(AttributeTarget::Document, vec![None]), Ok(()));
+    assert!(scoped(AttributeTarget::Document, vec![None]).is_empty());
 }
 
 /// The unit cube with an assembly that places a part, and the appearance.
@@ -426,7 +429,7 @@ fn a_record_target_names_no_arena_another_arm_names() {
         .appearance_bindings
         .push(binding(AppearanceTarget::Record {
             arena: cadmpeg_core::nonblank_const!("bodies"),
-            id: body,
+            id: body.try_into().unwrap(),
         }));
     assert_eq!(
         design_findings(&ir, BINDING),

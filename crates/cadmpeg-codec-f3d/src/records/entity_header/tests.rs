@@ -3,6 +3,7 @@ use super::{
     SegmentType, SegmentTypeWire, ENTITY_HEADER_CLONE_COUNT, SEGMENT_TYPE_CLONE_COUNT,
     TIMELINE_CLONE_COUNT,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn timeline() -> DesignFeatureTimeline {
     serde_json::from_str(
@@ -23,8 +24,8 @@ fn feature_timeline_borrowed_wire_matches_owned_wire_bytes() {
     let record = timeline();
     let owned = DesignFeatureTimelineWire::from(record.clone());
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&owned).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&owned).unwrap()
     );
 }
 
@@ -34,7 +35,7 @@ fn feature_timeline_native_retained_limit_refuses_before_record_clone() {
 
     let record = timeline();
     let arena_name = "design_feature_timelines";
-    let needed = serde_json::to_vec(&record).unwrap().len();
+    let needed = json::to_vec(&record).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -68,8 +69,8 @@ fn entity_header_borrowed_wire_matches_owned_wire_bytes() {
         let record: DesignEntityHeader = serde_json::from_str(wire).unwrap();
         let owned = DesignEntityHeaderWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -80,7 +81,7 @@ fn entity_header_native_retained_limit_refuses_before_record_clone() {
 
     let record = header();
     let arena_name = "design_entity_headers";
-    let needed = serde_json::to_vec(&record).unwrap().len();
+    let needed = json::to_vec(&record).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -121,10 +122,7 @@ fn segment_type_borrowed_wire_matches_owned_wire_bytes() {
     ] {
         let entry = segment(base_fields);
         let owned = SegmentTypeWire::from(entry.clone());
-        assert_eq!(
-            serde_json::to_vec(&entry).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
-        );
+        assert_eq!(json::to_vec(&entry).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -136,7 +134,7 @@ fn segment_type_native_retained_limit_refuses_before_record_clone() {
         r#", "base_type_guid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","base_type_guid_offset":44"#,
     );
     let arena_name = "design_types";
-    let needed = serde_json::to_vec(&entry).unwrap().len();
+    let needed = json::to_vec(&entry).unwrap().len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
@@ -160,8 +158,8 @@ fn segment_type_native_retained_limit_refuses_before_record_clone() {
         .set_arena(&service, arena_name, std::slice::from_ref(&entry))
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
-        serde_json::to_value(&entry).unwrap()
+        json::to_value(&namespace.arenas()[arena_name][0]).unwrap(),
+        json::to_value(&entry).unwrap()
     );
 }
 
@@ -177,8 +175,8 @@ fn segment_type_rejects_unbound_native_identity() {
         let mut wire = SegmentTypeWire::from(valid.clone());
         wire.id = id.into();
         assert!(SegmentType::try_from(wire).is_err());
-        let mut wire = serde_json::to_value(&valid).unwrap();
-        wire["id"] = serde_json::json!(id);
-        assert!(serde_json::from_value::<SegmentType>(wire).is_err());
+        let mut wire = json::to_value(&valid).unwrap();
+        wire["id"] = cadmpeg_core::json!(id);
+        assert!(json::from_value::<SegmentType>(wire).is_err());
     }
 }

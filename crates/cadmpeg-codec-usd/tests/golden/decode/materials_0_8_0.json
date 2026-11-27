@@ -544,8 +544,7 @@
           "value": {
             "code": "mesh.subdivision-not-applied",
             "kind": "subd_omitted",
-            "namespace": "usd",
-            "strict_floor": "warning"
+            "namespace": "usd"
           }
         },
         "message": "1 subdivision meshes were transferred as their control cages",
@@ -557,8 +556,7 @@
           "value": {
             "code": "appearance.texture-unlocated",
             "kind": "reference_graph_not_closed",
-            "namespace": "usd",
-            "strict_floor": "warning"
+            "namespace": "usd"
           }
         },
         "message": "1 texture paths name no package member or file and were kept as written: ./wood.png",

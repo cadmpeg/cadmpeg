@@ -33,14 +33,15 @@ pub struct StepCodec {
 
 impl EncoderBackend for StepCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "STEP";
     /// Writes B-rep, product structure, presentation and PMI; design arenas are
     /// reported as omitted, not read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(StepSchema::DEFAULT_INDEX));
 
-    /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
-    /// because every emitted schema stamps object-identifier arcs.
+    /// Synthesis-only encoder. Every emitted schema stamps object-identifier
+    /// arcs, so an off-catalog STEP source is written as the catalog default.
     fn plan_resolved(
         &self,
         input: EncodeInput<'_>,

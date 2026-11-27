@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use crate::records::{
     dimensions::{
@@ -48,15 +49,10 @@ fn dimension_locus_group_borrowed_wire_matches_owned_wire_bytes() {
     for (state, count) in [(0, 0), (0x8000_0001, 1), (0x0000_1010, 3)] {
         let group = locus_group(state, count);
         let owned = super::DesignDimensionLocusGroupWire::from(group.clone());
+        assert_eq!(json::to_vec(&group).unwrap(), json::to_vec(&owned).unwrap());
         assert_eq!(
-            serde_json::to_vec(&group).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
-        );
-        assert_eq!(
-            serde_json::from_slice::<super::DesignDimensionLocusGroup>(
-                &serde_json::to_vec(&group).unwrap()
-            )
-            .unwrap(),
+            json::from_slice::<super::DesignDimensionLocusGroup>(&json::to_vec(&group).unwrap())
+                .unwrap(),
             group
         );
     }
@@ -139,8 +135,8 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
             .collect::<Vec<_>>(),
         [10, 10, 11]
     );
-    let wire = serde_json::to_value(&frame).unwrap();
-    assert_eq!(serde_json::from_value::<Frame>(wire).unwrap(), frame);
+    let wire = json::to_value(&frame).unwrap();
+    assert_eq!(json::from_value::<Frame>(wire).unwrap(), frame);
     let mut all_null = original;
     for operand in &mut all_null.operands {
         operand.geometry_record_index = None;
@@ -160,10 +156,7 @@ fn annotation_frame_borrowed_wire_matches_owned_wire_bytes() {
             .map_err(|error| error.to_string())
             .unwrap();
         let owned = super::DesignDimensionAnnotationFrameWire::from(frame.clone());
-        assert_eq!(
-            serde_json::to_vec(&frame).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
-        );
+        assert_eq!(json::to_vec(&frame).unwrap(), json::to_vec(&owned).unwrap());
     }
 }
 
@@ -194,7 +187,7 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
     let frame = Frame::try_new(draft(100))
         .map_err(|error| error.to_string())
         .unwrap();
-    let wire = serde_json::to_value(&frame).unwrap();
+    let wire = json::to_value(&frame).unwrap();
     for field in [
         "annotation_byte_offset",
         "governing_owner_reference_offset",
@@ -203,7 +196,7 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
     ] {
         let mut invalid = wire.clone();
         invalid[field] = (invalid[field].as_u64().unwrap() + 1).into();
-        assert!(serde_json::from_value::<Frame>(invalid)
+        assert!(json::from_value::<Frame>(invalid)
             .unwrap_err()
             .to_string()
             .contains(field));
@@ -211,20 +204,20 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
     for field in ["geometry_reference_offset", "role_offset"] {
         let mut invalid = wire.clone();
         invalid["operands"][0][field] = 0.into();
-        assert!(serde_json::from_value::<Frame>(invalid)
+        assert!(json::from_value::<Frame>(invalid)
             .unwrap_err()
             .to_string()
             .contains(field));
     }
     let mut invalid = wire.clone();
     invalid["return_member_offsets"][0] = 0.into();
-    assert!(serde_json::from_value::<Frame>(invalid)
+    assert!(json::from_value::<Frame>(invalid)
         .unwrap_err()
         .to_string()
         .contains("return_member_offsets"));
     let mut invalid = wire;
     invalid["return_members"][0] = 11.into();
-    assert!(serde_json::from_value::<Frame>(invalid)
+    assert!(json::from_value::<Frame>(invalid)
         .unwrap_err()
         .to_string()
         .contains("return_members"));
@@ -299,8 +292,8 @@ fn dimension_locus_pair_borrowed_wire_matches_owned_wire_bytes() {
     for record in [locus_pair(false), locus_pair(true)] {
         let owned = super::DesignDimensionLocusPairWire::from(record.clone());
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&owned).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -331,15 +324,12 @@ fn annotation_frame_absent_metadata_validates_wire_offsets() {
     let frame = Frame::try_new(input.clone()).unwrap();
     assert_eq!(frame.annotation_byte_offset(), 170);
     assert_eq!(frame.clone().into_draft(), input);
-    let wire = serde_json::to_value(&frame).unwrap();
-    assert_eq!(wire["metadata_absent"], serde_json::json!(true));
-    assert_eq!(
-        serde_json::from_value::<Frame>(wire.clone()).unwrap(),
-        frame
-    );
+    let wire = json::to_value(&frame).unwrap();
+    assert_eq!(wire["metadata_absent"], cadmpeg_core::json!(true));
+    assert_eq!(json::from_value::<Frame>(wire.clone()).unwrap(), frame);
     let mut present = wire;
-    present["metadata_absent"] = serde_json::json!(false);
-    assert!(serde_json::from_value::<Frame>(present).is_err());
+    present["metadata_absent"] = cadmpeg_core::json!(false);
+    assert!(json::from_value::<Frame>(present).is_err());
     let mut genesis = input;
     genesis.entity_genesis = Some(0);
     assert!(Frame::try_new(genesis).is_err());
@@ -386,20 +376,17 @@ fn annotation_frame_empty_metadata_validates_wire_offsets_and_operand_shape() {
     }
     let frame = Frame::try_new(input.clone()).unwrap();
     assert_eq!(frame.clone().into_draft(), input);
-    let wire = serde_json::to_value(&frame).unwrap();
+    let wire = json::to_value(&frame).unwrap();
     assert!(wire.get("entity_genesis").is_none());
-    assert_eq!(
-        serde_json::from_value::<Frame>(wire.clone()).unwrap(),
-        frame
-    );
+    assert_eq!(json::from_value::<Frame>(wire.clone()).unwrap(), frame);
     for field in ["annotation_byte_offset", "governing_owner_reference_offset"] {
         let mut wrong = wire.clone();
-        wrong[field] = serde_json::json!(0);
-        assert!(serde_json::from_value::<Frame>(wrong).is_err());
+        wrong[field] = cadmpeg_core::json!(0);
+        assert!(json::from_value::<Frame>(wrong).is_err());
     }
     let mut null = wire;
     null["entity_genesis"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<Frame>(null).is_err());
+    assert!(json::from_value::<Frame>(null).is_err());
     let mut populated = input.clone();
     populated.entity_genesis = Some(0);
     assert!(Frame::try_new(populated).is_err());

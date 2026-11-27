@@ -58,24 +58,25 @@ impl TryFrom<Wire> for OmLocation {
 #[cfg(test)]
 mod tests {
     use super::OmLocation;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn section_location_checks_wire_relationship_and_overflow() {
         for separator_byte_len in [0, 4, u32::MAX] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "source_offset": 10, "separator_byte_len": separator_byte_len
             });
-            let location: OmLocation = serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(serde_json::to_value(location).unwrap(), wire);
+            let location: OmLocation = json::from_value(wire.clone()).unwrap();
+            assert_eq!(json::to_value(location).unwrap(), wire);
             assert_eq!(
                 location.section_offset(),
                 10 + u64::from(separator_byte_len)
             );
         }
         assert!(OmLocation::new(u64::MAX, 1).is_none());
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "source_offset": u64::MAX, "separator_byte_len": 1
         });
-        assert!(serde_json::from_value::<OmLocation>(wire).is_err());
+        assert!(json::from_value::<OmLocation>(wire).is_err());
     }
 }

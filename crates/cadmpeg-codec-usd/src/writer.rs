@@ -31,11 +31,10 @@ mod trims;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    EncodeInput, ExportBody, NativeDispositions, WritePath,
 };
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::{
@@ -200,16 +199,15 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
-) -> Result<(ExportBody, Vec<Member>), CodecError> {
-    let Some(version) = target
-        .index()
-        .and_then(|index| crate::TARGET_VERSIONS.get(index).copied())
-    else {
-        return Err(target.unavailable(
-            "the source text version is one this writer cannot synthesize, and a USD layer \
-             has no byte-replay path",
-        ));
-    };
+) -> (ExportBody, Vec<Member>) {
+    let version = target
+        .synthesized_row()
+        .and_then(|(index, _)| crate::TARGET_VERSIONS.get(index).copied());
+    debug_assert!(
+        version.is_some(),
+        "the USD catalog declares a default and is projected from TARGET_VERSIONS"
+    );
+    let version = version.unwrap_or("1.0");
     let metres = input
         .scene
         .meters_per_unit
@@ -242,10 +240,14 @@ pub(crate) fn plan(
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(COVERAGE),
+        // A USD layer holds no native record of any format.
+        native: NativeDispositions::dropped("which the USD writer does not write"),
         losses,
         notes: vec![format!("USDA {version} text layer, {}", units_note(metres))],
+        written_row: None,
+        annotations: None,
     };
-    Ok((body, members))
+    (body, members)
 }
 
 /// The note text of a layer of `metres` metres per unit.
@@ -474,13 +476,13 @@ impl<'ir> Writer<'ir> {
         let mut bindings = BTreeMap::new();
         for binding in &ir.model.appearance_bindings {
             let key = match &binding.target.entity {
-                AppearanceTarget::Tessellation(id) => id.clone(),
+                AppearanceTarget::Tessellation(id) => id.to_string(),
                 AppearanceTarget::Body(id) => id.to_string(),
                 AppearanceTarget::Face(id) => id.to_string(),
                 AppearanceTarget::TriangleGroup {
                     tessellation,
                     group,
-                } => group_key(tessellation, group),
+                } => group_key(tessellation.as_str(), group),
                 _ => continue,
             };
             bindings
@@ -1190,8 +1192,11 @@ impl<'ir> Writer<'ir> {
         let mut prims = Vec::new();
         let tessellations = self.tessellations(&body.id);
         let faces = self.body_faces(body);
+        let mut meshed_faces = brep::FaceMeshes::new();
         if !faces.is_empty() && self.exact_brep {
-            if let Some(packed) = self.brep_packed(body) {
+            let (packed, meshes) = self.brep_packed(body);
+            meshed_faces = meshes;
+            if let Some(packed) = packed {
                 prims.push(Geometry::Brep(packed));
             }
         }
@@ -1218,7 +1223,8 @@ impl<'ir> Writer<'ir> {
             if !meshed.is_empty() {
                 self.tessellator
                     .set_options(brep::mesh_options(&self.index, body));
-                let (mesh, unmeshed) = brep::mesh(body, &meshed, &mut self.tessellator);
+                let (mesh, unmeshed) =
+                    brep::mesh(body, &meshed, &mut self.tessellator, meshed_faces);
                 self.unwritten.unmeshed.extend(unmeshed);
                 if let Some((mesh, faces)) = mesh {
                     if !exact {

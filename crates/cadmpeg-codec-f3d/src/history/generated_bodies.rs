@@ -604,13 +604,10 @@ fn combine_side_binding(
                 history.id
             )
         })?;
-    let mut natives = side.natives.iter();
-    let native = natives.next().ok_or("the operand has no native member")?;
-    if natives.any(|other| other != native) {
-        return Err(
-            "its native members name several records, and a generated selection keeps one".into(),
-        );
-    }
+    let native = side
+        .natives
+        .first()
+        .ok_or("the operand has no native member")?;
     let refs = producers
         .iter()
         .zip(&side.slots)
@@ -619,14 +616,27 @@ fn combine_side_binding(
         })
         .collect::<Option<Vec<_>>>()
         .ok_or("a generated body identity is malformed")?;
-    let selection = BodySelection::generated(refs, native.clone())
-        .map_err(|error| format!("the generated bodies form no body set: {error}"))?;
+    let selection = if side.natives.iter().all(|other| other == native) {
+        BodySelection::generated(refs, native.clone())
+            .map_err(|error| format!("the generated bodies form no body set: {error}"))?
+    } else {
+        let rows = refs
+            .into_iter()
+            .zip(natives(side.slots.len()))
+            .map(|(body, native)| super::face_resolution::body_member(body, native))
+            .collect::<Option<Vec<_>>>()
+            .ok_or("a native member is blank")?;
+        BodySelection::GeneratedSet {
+            members: BodyMembers::try_from_rows(rows)
+                .map_err(|error| format!("the generated bodies form no body set: {error}"))?,
+        }
+    };
     Ok((selection, producers, Vec::new(), assumed))
 }
 
 /// The body slots that a transition after the result state of `scope`
 /// updates or deletes in `history`.
-fn later_body_changes(
+pub(super) fn later_body_changes(
     history: &AsmHistory,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Option<HashSet<i64>> {
@@ -779,6 +789,7 @@ fn live_seed_binding(
             || changes_existing_rows(&rows.vertex_points, &delta.vertices.inserted)
             || changes_existing_rows(&rows.point_positions, &delta.points.inserted)
             || changes_existing_rows(&rows.edge_samples, &delta.edges.inserted)
+            || changes_existing_rows(&rows.face_samples, &delta.faces.inserted)
         {
             return None;
         }
@@ -859,7 +870,7 @@ fn history_producer(
 }
 
 /// The ASM state number of a history-input state identity.
-fn historical_state_number(id: &str) -> Option<i64> {
+pub(super) fn historical_state_number(id: &str) -> Option<i64> {
     id.strip_prefix("f3d:history-input:state#")?
         .rsplit_once(':')?
         .1
@@ -867,14 +878,14 @@ fn historical_state_number(id: &str) -> Option<i64> {
         .ok()
 }
 
-fn inserts_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
+pub(super) fn inserts_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
     state
         .transition
         .as_ref()
         .is_some_and(|transition| transition.topology.bodies.inserted.contains(&slot))
 }
 
-fn updates_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
+pub(super) fn updates_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
     state
         .transition
         .as_ref()
@@ -883,7 +894,7 @@ fn updates_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> boo
 
 /// The one ASM history that holds the result and input states of `scope`: its
 /// bound history, else the unique history with that state pair.
-fn scope_state_history<'h>(
+pub(super) fn scope_state_history<'h>(
     scope: &crate::records::feature::scope::DesignParameterScope,
     scope_histories: &HashMap<String, String>,
     histories: &'h [AsmHistory],
@@ -907,7 +918,7 @@ fn scope_state_history<'h>(
 
 /// The ASM history of `scope`: its bound history, else the unique history
 /// with its state pair, else the unique history with its result state.
-fn scope_history<'h>(
+pub(super) fn scope_history<'h>(
     scope: &crate::records::feature::scope::DesignParameterScope,
     scope_histories: &HashMap<String, String>,
     histories: &'h [AsmHistory],

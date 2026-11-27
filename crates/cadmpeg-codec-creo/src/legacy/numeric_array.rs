@@ -55,6 +55,7 @@ impl<T> NumericArray<T> {
 #[cfg(test)]
 mod tests {
     use crate::legacy::{NumericPayload, NumericRun};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn rejects_incomplete_or_overflowing_extent_products() {
@@ -81,8 +82,8 @@ mod tests {
         )
         .expect("complete array");
         assert_eq!(
-            serde_json::to_value(payload).expect("array JSON"),
-            serde_json::json!({"form": "array", "dimensions": [2, 2], "runs": [{"count": 4, "value": -1}]})
+            json::to_value(payload).expect("array JSON"),
+            cadmpeg_core::json!({"form": "array", "dimensions": [2, 2], "runs": [{"count": 4, "value": -1}]})
         );
         assert!(NumericPayload::<i32>::array(vec![0], vec![]).is_some());
     }

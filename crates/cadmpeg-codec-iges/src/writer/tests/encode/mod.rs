@@ -477,10 +477,26 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     ));
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report
+    let omitted = report
         .losses
         .iter()
-        .any(|loss| { loss.code == IgesLossCode::PassthroughRecordOmitted.kind() }));
+        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        omitted,
+        [
+            "the IGES write omits 1 native record(s) of `iges` arena `cards` that are Start \
+             section cards, whose text the semantic writer replaces with its own: \
+             iges:physical:card#1",
+            "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` that \
+             are Directory line font, level, view, or line weight fields the semantic writer \
+             writes with its own values: iges:presentation:display-attributes#D1",
+            "the IGES write omits 1 native record(s) of `iges` arena \
+             `product_occurrence_expansion` which the bounded semantic writer does not \
+             regenerate: iges:product:occurrence-expansion#state",
+        ]
+    );
     let round_trip = IgesCodec
         .decode(
             &mut Cursor::new(written.as_slice()),
@@ -1397,10 +1413,15 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::PassthroughRecordOmitted.kind()));
+    assert!(
+        !report.losses.iter().any(|loss| {
+            loss.code.to_string() == "export/native.records-omitted"
+                && (loss.message.contains("arena `directions`")
+                    || loss.message.contains("native topology"))
+        }),
+        "{:#?}",
+        report.losses
+    );
     assert_eq!(
         report.census.counts.get("186_manifold_solid_brep"),
         Some(&1)

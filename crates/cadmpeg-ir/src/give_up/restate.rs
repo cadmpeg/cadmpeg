@@ -3,9 +3,11 @@
 //!
 //! A record is rewritten through its JSON, typed by the CADIR schema: a pick
 //! of a lost record is `Native` (§5.8), an expression that names one is
-//! `Source` with no tokens (§5.13), a procedural carrier on one is `Unknown`,
-//! a name that names one leaves its entry's native name alone (§5.7), and a
-//! collection whose order carries no meaning loses the member that names one.
+//! `Source` with no tokens (§5.13), a procedural definition on one is
+//! `Unknown`, a curve or surface carrier that names one follows the
+//! carrier's own rule (`CurveGeometry::release`), a name that names one
+//! leaves its entry's native name alone (§5.7), and a collection whose order
+//! carries no meaning loses the member that names one.
 
 use std::collections::BTreeSet;
 
@@ -15,22 +17,170 @@ use crate::design::expr::{ExpressionDialect, Neutral};
 use crate::design::selection::{Members, PickTarget, Picked, Unordered};
 use crate::geometry::procedural_curves::ProceduralCurveDefinition;
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{CurveGeometry, SurfaceGeometry};
 
 /// The CADIR schema, read to type each value of a record.
 pub(crate) struct Schema(Value);
 
 impl Schema {
-    /// The committed CADIR schema, or `None` where it does not parse.
-    pub(crate) fn read() -> Option<Self> {
-        serde_json::from_str(crate::CADIR_JSON_SCHEMA)
-            .ok()
-            .map(Self)
-    }
-
     /// The schema of a record of the arena `field` of `home`.
     fn record(&self, home: &str, field: &str) -> Option<&Value> {
         let (home, _) = self.resolve(self.0.get("properties")?.get(home)?);
         home.get("properties")?.get(field)?.get("items")
+    }
+
+    /// The committed CADIR schema, read once, or `None` where it does not
+    /// parse.
+    pub(crate) fn cadir() -> Option<&'static Self> {
+        static SCHEMA: std::sync::OnceLock<Option<Schema>> = std::sync::OnceLock::new();
+        SCHEMA
+            .get_or_init(|| {
+                serde_json::from_str(crate::CADIR_JSON_SCHEMA)
+                    .ok()
+                    .map(Self)
+            })
+            .as_ref()
+    }
+
+    /// The alternatives of `branches` that `value` may be: the one whose
+    /// `kind` is the value's, else each alternative of the value's JSON
+    /// type.
+    fn alternatives<'s>(&'s self, branches: &'s [Value], value: &Value) -> Vec<&'s Value> {
+        if let Some(kind) = value.get("kind").and_then(Value::as_str) {
+            let tagged = branches.iter().find(|branch| {
+                let kind_schema = self.resolve(branch).0.pointer("/properties/kind");
+                kind_schema.and_then(|schema| schema.get("const")) == Some(&Value::from(kind))
+            });
+            if let Some(tagged) = tagged {
+                return vec![tagged];
+            }
+        }
+        let json_type = match value {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(_) => "number",
+            Value::String(_) => "string",
+            Value::Array(_) => "array",
+            Value::Object(_) => "object",
+        };
+        let typed =
+            |stated: &Value| stated == json_type || (stated == "integer" && json_type == "number");
+        branches
+            .iter()
+            .filter(|branch| match self.resolve(branch).0.get("type") {
+                None => true,
+                Some(Value::Array(stated)) => stated.iter().any(typed),
+                Some(stated) => typed(stated),
+            })
+            .collect()
+    }
+
+    /// Each name of an id that `lookup` finds in `record`, a record of the
+    /// arena `field` of `home`, other than its own top-level `id`, with the
+    /// path at which it names it: a value the schema types as an id, the key
+    /// of a map keyed by ids, or a `native_ref`, which names the native
+    /// record a neutral record projects (§2). A label that equals an id
+    /// names nothing. A record of an arena the schema does not hold names
+    /// nothing.
+    pub(crate) fn references<'k>(
+        &self,
+        home: &str,
+        field: &str,
+        record: &Value,
+        lookup: &impl Fn(&str) -> Option<&'k str>,
+    ) -> Vec<(String, String)> {
+        let mut names = Vec::new();
+        if let Some(schema) = self.record(home, field) {
+            self.name(schema, record, "", lookup, &mut names);
+        }
+        names
+    }
+
+    /// Adds to `names` each name of an id of `lookup` in `value`, typed by
+    /// `schema`, at `path`. The record's own `id`, at the empty path, names
+    /// nothing.
+    fn name<'k>(
+        &self,
+        schema: &Value,
+        value: &Value,
+        path: &str,
+        lookup: &impl Fn(&str) -> Option<&'k str>,
+        names: &mut Vec<(String, String)>,
+    ) {
+        let (node, definition) = self.resolve(schema);
+        if definition == Some(IDENTITY) {
+            if let Some(target) = value.as_str().and_then(lookup) {
+                names.push((path.to_owned(), target.to_owned()));
+            }
+            return;
+        }
+        if let Some(branches) = ["oneOf", "anyOf", "allOf"]
+            .iter()
+            .find_map(|key| node.get(*key).and_then(Value::as_array))
+        {
+            for branch in self.alternatives(branches, value) {
+                self.name(branch, value, path, lookup, names);
+            }
+            return;
+        }
+        match value {
+            Value::Object(map) => {
+                let properties = node.get("properties").and_then(Value::as_object);
+                let patterned = node
+                    .get("patternProperties")
+                    .and_then(Value::as_object)
+                    .filter(|patterns| patterns.len() == 1)
+                    .and_then(|patterns| patterns.iter().next());
+                let keyed_by_ids = patterned.is_some_and(|(pattern, _)| {
+                    self.0
+                        .pointer("/$defs/Identity/pattern")
+                        .and_then(Value::as_str)
+                        == Some(pattern.as_str())
+                });
+                let values = node
+                    .get("additionalProperties")
+                    .filter(|schema| schema.is_object())
+                    .or(patterned.map(|(_, schema)| schema));
+                for (key, child) in map {
+                    if path.is_empty() && key == "id" {
+                        continue;
+                    }
+                    let listed = properties.and_then(|properties| properties.get(key));
+                    if listed.is_none() && keyed_by_ids {
+                        if let Some(target) = lookup(key) {
+                            names.push((path.to_owned(), target.to_owned()));
+                        }
+                    }
+                    let child_path = if path.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{path}.{key}")
+                    };
+                    if key == "native_ref" {
+                        if let Some(target) = child.as_str().and_then(lookup) {
+                            names.push((child_path, target.to_owned()));
+                        }
+                        continue;
+                    }
+                    if let Some(schema) = listed.or(values) {
+                        self.name(schema, child, &child_path, lookup, names);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                let positions = node.get("prefixItems").and_then(Value::as_array);
+                let members = node.get("items").filter(|schema| schema.is_object());
+                for (at, item) in items.iter().enumerate() {
+                    if let Some(schema) = positions
+                        .and_then(|positions| positions.get(at))
+                        .or(members)
+                    {
+                        self.name(schema, item, path, lookup, names);
+                    }
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
     }
 
     /// `node` with its `$ref` links followed, and the name of the last
@@ -59,12 +209,17 @@ impl Schema {
     }
 }
 
+/// The schema definition of an id.
+const IDENTITY: &str = "Identity";
+
 /// The schema definition families the rewrite gives a partial form or a
 /// collection rule, and the one definition it sorts again.
 pub(super) const PICKED: &str = "Picked";
 pub(super) const EXPRESSION: &str = "Expression";
 pub(super) const PROCEDURAL_CURVE: &str = "ProceduralCurveDefinition";
 pub(super) const PROCEDURAL_SURFACE: &str = "ProceduralSurfaceDefinition";
+pub(super) const CURVE_GEOMETRY: &str = "CurveGeometry";
+pub(super) const SURFACE_GEOMETRY: &str = "SurfaceGeometry";
 pub(super) const NAME_ENTRY: &str = "NameEntry";
 pub(super) const UNORDERED_MEMBERS: &str = "UnorderedMembers";
 pub(super) const ORDERED_MEMBERS: &str = "OrderedMembers";
@@ -90,6 +245,20 @@ enum Fate {
     Lost,
 }
 
+/// `value` read as `T`, changed by `release`, and written back, or `None`
+/// where it does not read or write as `T`.
+fn released<T: serde::Serialize + serde::de::DeserializeOwned>(
+    value: &Value,
+    release: impl FnOnce(&mut T),
+) -> Option<Value> {
+    let mut geometry = cadmpeg_core::serde_erase::from_json_value::<T>(value).ok()?;
+    release(&mut geometry);
+    cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+        serde::Serialize::serialize(&geometry, adapter)
+    })
+    .ok()
+}
+
 /// Whether `value` holds a string of `gone`, as a value or as a key.
 pub(crate) fn names(value: &Value, gone: &BTreeSet<String>) -> bool {
     match value {
@@ -108,9 +277,9 @@ fn reads(expression: &Value) -> bool {
     if expression.get("kind").and_then(Value::as_str) != Some("neutral") {
         return true;
     }
-    expression
-        .get("value")
-        .is_some_and(|wire| serde_json::from_value::<Neutral<Value>>(wire.clone()).is_ok())
+    expression.get("value").is_some_and(|wire| {
+        cadmpeg_core::serde_erase::from_json_value::<Neutral<Value>>(wire).is_ok()
+    })
 }
 
 /// The rewrite of the records that name an id of `gone`.
@@ -139,9 +308,16 @@ impl<'a> Restate<'a> {
             schema,
             gone,
             past_the_bound: false,
-            dialect: ExpressionDialect::of_codec(codec, process)
-                .and_then(|dialect| serde_json::to_value(dialect).ok()),
-            native: serde_json::to_value(PickTarget::Native { within: None }).ok()?,
+            dialect: ExpressionDialect::of_codec(codec, process).and_then(|dialect| {
+                cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+                    serde::Serialize::serialize(&dialect, adapter)
+                })
+                .ok()
+            }),
+            native: cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+                serde::Serialize::serialize(&PickTarget::Native { within: None }, adapter)
+            })
+            .ok()?,
         })
     }
 
@@ -170,6 +346,9 @@ impl<'a> Restate<'a> {
                 return self.carrier(carrier, value);
             }
             Some(NAME_ENTRY) => return self.name_entry(value),
+            Some(carrier @ (CURVE_GEOMETRY | SURFACE_GEOMETRY)) => {
+                return self.carrier_geometry(carrier, value);
+            }
             _ => {}
         }
         if let Some(branches) = ["oneOf", "anyOf", "allOf"]
@@ -202,36 +381,7 @@ impl<'a> Restate<'a> {
     /// The alternative of `branches` that `value` is: the one whose `kind`
     /// is the value's, else the one alternative of the value's JSON type.
     fn branch<'s>(&'s self, branches: &'s [Value], value: &Value) -> Option<&'s Value> {
-        if let Some(kind) = value.get("kind").and_then(Value::as_str) {
-            let tagged = branches.iter().find(|branch| {
-                let kind_schema = self.schema.resolve(branch).0.pointer("/properties/kind");
-                kind_schema.and_then(|schema| schema.get("const")) == Some(&Value::from(kind))
-            });
-            if tagged.is_some() {
-                return tagged;
-            }
-        }
-        let json_type = match value {
-            Value::Null => "null",
-            Value::Bool(_) => "boolean",
-            Value::Number(_) => "number",
-            Value::String(_) => "string",
-            Value::Array(_) => "array",
-            Value::Object(_) => "object",
-        };
-        let mut candidates =
-            branches
-                .iter()
-                .filter(|branch| match self.schema.resolve(branch).0.get("type") {
-                    None => true,
-                    Some(Value::String(stated)) => {
-                        stated == json_type || (stated == "integer" && json_type == "number")
-                    }
-                    Some(Value::Array(stated)) => stated.iter().any(|stated| {
-                        stated == json_type || (stated == "integer" && json_type == "number")
-                    }),
-                    Some(_) => false,
-                });
+        let mut candidates = self.schema.alternatives(branches, value).into_iter();
         let first = candidates.next()?;
         candidates.next().is_none().then_some(first)
     }
@@ -332,14 +482,17 @@ impl<'a> Restate<'a> {
     /// Restates `items`, the picks of an `Unordered` member list, in the
     /// order of their identity keys, and returns whether no two share one.
     fn sort_picks(items: &mut Vec<Value>) -> bool {
-        let Ok(picks) = serde_json::from_value::<Vec<Picked>>(Value::Array(std::mem::take(items)))
-        else {
+        let Ok(picks) = cadmpeg_core::serde_erase::from_json_value::<Vec<Picked>>(&Value::Array(
+            std::mem::take(items),
+        )) else {
             return false;
         };
         let Ok(members) = Members::<Picked, Unordered>::new(picks) else {
             return false;
         };
-        match serde_json::to_value(members) {
+        match cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+            serde::Serialize::serialize(&members, adapter)
+        }) {
             Ok(Value::Array(sorted)) => {
                 *items = sorted;
                 true
@@ -397,7 +550,7 @@ impl<'a> Restate<'a> {
             },
             Some("neutral") => match &self.dialect {
                 Some(dialect) => {
-                    *value = serde_json::json!({
+                    *value = cadmpeg_core::json!({
                         "kind": "source",
                         "value": {"dialect": dialect, "tokens": []}
                     });
@@ -415,21 +568,57 @@ impl<'a> Restate<'a> {
         if !names(value, self.gone) {
             return Fate::Clean;
         }
-        let bare = serde_json::json!({"kind": "unknown"});
+        let bare = cadmpeg_core::json!({"kind": "unknown"});
         let cached = value
             .get("cache")
             .filter(|cache| !names(cache, self.gone))
-            .map(|cache| serde_json::json!({"kind": "unknown", "cache": cache}))
+            .map(|cache| cadmpeg_core::json!({"kind": "unknown", "cache": cache}))
             .filter(|unknown| {
-                let unknown = unknown.clone();
                 if carrier == PROCEDURAL_CURVE {
-                    serde_json::from_value::<ProceduralCurveDefinition>(unknown).is_ok()
+                    cadmpeg_core::serde_erase::from_json_value::<ProceduralCurveDefinition>(unknown)
+                        .is_ok()
                 } else {
-                    serde_json::from_value::<ProceduralSurfaceDefinition>(unknown).is_ok()
+                    cadmpeg_core::serde_erase::from_json_value::<ProceduralSurfaceDefinition>(
+                        unknown,
+                    )
+                    .is_ok()
                 }
             });
         *value = cached.unwrap_or(bare);
         Fate::Kept
+    }
+
+    /// A curve or surface carrier that names a lost id is stated in the form
+    /// that holds only what was read, by the carrier's own rule
+    /// (`CurveGeometry::release`, `SurfaceGeometry::release`).
+    fn carrier_geometry(&self, carrier: &str, value: &mut Value) -> Fate {
+        if !names(value, self.gone) {
+            return Fate::Clean;
+        }
+        let lost = |field: &str| {
+            value
+                .get("value")
+                .and_then(|procedural| procedural.get(field))
+                .is_some_and(|named| names(named, self.gone))
+        };
+        let (construction, held) =
+            if value.get("kind").and_then(Value::as_str) == Some("procedural") {
+                (lost("construction"), lost("cache"))
+            } else {
+                (false, true)
+            };
+        let restated = if carrier == CURVE_GEOMETRY {
+            released::<CurveGeometry>(value, |geometry| geometry.release(construction, held))
+        } else {
+            released::<SurfaceGeometry>(value, |geometry| geometry.release(construction, held))
+        };
+        match restated {
+            Some(restated) => {
+                *value = restated;
+                Fate::Kept
+            }
+            None => Fate::Lost,
+        }
     }
 
     /// A name-table entry whose name names a lost id keeps its native name

@@ -56,7 +56,7 @@ pub(crate) fn cgm_source_key(
 
 pub(crate) fn annotate(
     annotations: &mut AnnotationBuilder<impl cadmpeg_ir::annotations::AnnotationStorage>,
-    id: impl std::fmt::Display,
+    key: impl Into<cadmpeg_ir::annotations::AnnotationKey>,
     stream_name: &str,
     offset: u64,
     tag: impl std::fmt::Display,
@@ -64,7 +64,7 @@ pub(crate) fn annotate(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let tag = tag.to_string();
     annotations.annotate(
-        id,
+        key,
         format_args!("catia:{stream_name}"),
         offset,
         &tag,
@@ -847,7 +847,7 @@ pub(crate) fn link_payload_carriers(
         return Ok(());
     }
     *payload.links_mut() = links;
-    annotations.derived(payload.id().as_str(), "links")?;
+    annotations.derived(payload.id(), "links")?;
     Ok(())
 }
 
@@ -1588,7 +1588,7 @@ mod route_tests {
             let mut builder = cadmpeg_ir::AnnotationBuilder::new();
             super::annotate(
                 &mut builder,
-                "catia:test:curve#0",
+                cadmpeg_ir::ids::Identity::new("catia:test:curve#0").expect("identity grammar"),
                 "CATPart",
                 17,
                 format_args!("record:{:08x}", 7),

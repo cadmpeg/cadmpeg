@@ -28,6 +28,7 @@ use crate::records::feature::combine::DesignCombineDestination;
 use crate::records::feature::combine::DesignCombineExternalBodyIdentity;
 use crate::records::feature::combine::DesignCombineExternalBodyIdentityWire;
 use crate::records::feature::combine::DesignCombineForm;
+use crate::records::feature::combine::DesignCombineLegacyExternalBodyIdentity;
 use crate::records::feature::combine::DesignCombineOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
@@ -393,7 +394,7 @@ fn combine_operation_with(
                 CombineOperandRole::Tool => {
                     tool_operations.push(*operation_record_index);
                     let additional = first_tool.is_some();
-                    let external_identity = match exact_combine_external_body_identity(
+                    let external_selector = match exact_combine_external_body_identity(
                         bytes,
                         *selection_at,
                         *selection_end,
@@ -403,9 +404,15 @@ fn combine_operation_with(
                         Ok(identity) => identity,
                         Err(error) => return Some(Err(error)),
                     };
+                    let (external_identity, legacy_external_identity) = match external_selector {
+                        Some(CombineExternalSelector::Linked(identity)) => (Some(identity), None),
+                        Some(CombineExternalSelector::Legacy(identity)) => (None, Some(identity)),
+                        None => (None, None),
+                    };
                     let selection = DesignCombineBodySelection {
                         record_index: *selection_record_index,
                         external_identity,
+                        legacy_external_identity,
                         body_node,
                     };
                     if additional {
@@ -980,13 +987,20 @@ pub(super) fn take_external_reference_identity(
     .transpose()
 }
 
-fn exact_combine_external_body_identity(
+/// The external body identity of a cross-document `Combine` tool selector.
+#[derive(Debug)]
+pub(super) enum CombineExternalSelector {
+    Linked(DesignCombineExternalBodyIdentity),
+    Legacy(DesignCombineLegacyExternalBodyIdentity),
+}
+
+pub(super) fn exact_combine_external_body_identity(
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     scope_record_index: u32,
     record_index: u32,
-) -> Result<Option<DesignCombineExternalBodyIdentity>, CodecError> {
+) -> Result<Option<CombineExternalSelector>, CodecError> {
     (|| {
         if bytes.get(
             start + combine_external::ZERO_RUN_14
@@ -1027,6 +1041,34 @@ fn exact_combine_external_body_identity(
             return None;
         }
         cursor = cursor.checked_add(4)?;
+        if let Some((browser_node, source_occurrence, tail_values, tail_value_offsets)) =
+            legacy_external_body_reference(
+                bytes,
+                cursor,
+                paired_at,
+                scope_record_index,
+                record_index,
+            )
+        {
+            return Some(Ok(CombineExternalSelector::Legacy(
+                DesignCombineLegacyExternalBodyIdentity {
+                    selector_asset_id,
+                    selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?)
+                        .ok()?,
+                    selector_context_id,
+                    selector_context_id_offset: u64::try_from(selector_context_at.checked_add(4)?)
+                        .ok()?,
+                    occurrence_reference,
+                    occurrence_reference_offset: u64::try_from(occurrence_reference_at).ok()?,
+                    browser_node_entity: browser_node.0,
+                    browser_node_entity_offset: browser_node.1,
+                    source_occurrence_identity: source_occurrence.0,
+                    source_occurrence_identity_offset: source_occurrence.1,
+                    tail_values,
+                    tail_value_offsets,
+                },
+            )));
+        }
         let external = match take_external_reference_identity(bytes, &mut cursor) {
             Ok(Some(value)) => value,
             Ok(None) => return None,
@@ -1105,9 +1147,98 @@ fn exact_combine_external_body_identity(
             ],
         })
         .ok()
-        .map(Ok)
+        .map(|identity| Ok(CombineExternalSelector::Linked(identity)))
     })()
     .transpose()
+}
+
+/// Value and byte offset of one u64 selector field.
+type LocatedU64 = (u64, u64);
+
+/// The browser-node entity, source occurrence identity, raw tail values and
+/// their offsets of a legacy cross-document body reference at `at` and the
+/// legacy selector tail after it, when the tail closes at `paired_at`.
+fn legacy_external_body_reference(
+    bytes: &[u8],
+    at: usize,
+    paired_at: usize,
+    scope_record_index: u32,
+    record_index: u32,
+) -> Option<(LocatedU64, LocatedU64, [u64; 2], [u64; 2])> {
+    use crate::layout::combine_legacy_external_body_reference as reference;
+    use crate::layout::combine_legacy_external_selector_tail as tail;
+
+    let field = |offset: usize| at.checked_add(offset);
+    if bytes.get(at) != Some(&reference::BODY_MARKER_VALUE)
+        || bytes.get(field(reference::OCCURRENCE_MARKER)?)
+            != Some(&reference::OCCURRENCE_MARKER_VALUE)
+        || bytes.get(field(reference::CROSS_DOCUMENT_FLAG)?)
+            != Some(&reference::CROSS_DOCUMENT_FLAG_VALUE)
+        || bytes.get(field(reference::CLOSING_ZERO)?) != Some(&reference::CLOSING_ZERO_VALUE)
+    {
+        return None;
+    }
+    let browser_node_at = field(reference::BROWSER_NODE_ENTITY)?;
+    let browser_node = View::u64_le_at(bytes, browser_node_at)?;
+    let source_at = field(reference::SOURCE_OCCURRENCE_IDENTITY)?;
+    let source = View::u64_le_at(bytes, source_at)?;
+    let guid_at = field(reference::TYPE_GUID)?;
+    let guid_text_at = guid_at.checked_add(4)?;
+    let guid = bytes.get(guid_text_at..field(reference::CLOSING_ZERO)?)?;
+    let type_guid = crate::design::presentation::BROWSER_NODE_TYPE_GUID;
+    if browser_node == 0
+        || source == 0
+        || usize::try_from(View::u32_le_at(bytes, guid_at)?).ok()? != type_guid.len()
+        || !guid.eq_ignore_ascii_case(type_guid.as_bytes())
+    {
+        return None;
+    }
+    let tail_at = field(reference::LEN)?;
+    let tail_field = |offset: usize| tail_at.checked_add(offset);
+    let epoch = View::u32_le_at(bytes, tail_field(tail::EVALUATION_EPOCH)?)?;
+    if View::u32_le_at(bytes, tail_at)? != tail::CONSTANT_NINE_VALUE
+        || View::u16_le_at(bytes, tail_field(tail::CONSTANT_TWO)?)? != tail::CONSTANT_TWO_VALUE
+        || View::u32_le_at(bytes, tail_field(tail::REPEATED_EPOCH)?)? != epoch
+    {
+        return None;
+    }
+    let stamp_at = tail_field(tail::SELECTION_PAYLOAD_STAMP)?;
+    let scalar_at = tail_field(tail::EVALUATION_SCALAR)?;
+    let scalar = View::f64_le_at(bytes, scalar_at)?;
+    if !scalar.is_finite() || scalar < 0.0 {
+        return None;
+    }
+    let take_local = |cursor: &mut usize, expected: u32| {
+        let reference = take_reference(bytes, cursor)?;
+        (reference.local()?.0 == u64::from(expected)).then_some(())
+    };
+    let mut cursor = tail_field(tail::NESTED_TWO_REFERENCE)?;
+    take_local(&mut cursor, record_index.checked_add(2)?)?;
+    let separator = match bytes.get(cursor..)? {
+        [0, 0, 1, ..] => 2,
+        [1, 0, 0, 1, ..] => 3,
+        _ => return None,
+    };
+    cursor = cursor.checked_add(separator)?;
+    take_local(&mut cursor, record_index.checked_add(1)?)?;
+    if bytes.get(cursor) != Some(&0) {
+        return None;
+    }
+    cursor = cursor.checked_add(1)?;
+    take_local(&mut cursor, scope_record_index)?;
+    if cursor != paired_at {
+        return None;
+    }
+    let offset = |at: usize| u64::try_from(at).ok();
+    Some((
+        (browser_node, offset(browser_node_at)?),
+        (source, offset(source_at)?),
+        [
+            View::u64_le_at(bytes, stamp_at)?,
+            View::u64_le_at(bytes, scalar_at)?,
+        ],
+        [offset(stamp_at)?, offset(scalar_at)?],
+    ))
 }
 
 #[derive(Clone, Copy)]

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use super::compact_feature_reference;
 use super::exact_legacy_mirror_scope_count;
@@ -333,19 +334,19 @@ fn mirror_unique_match_preserves_zero_one_and_many() {
 #[test]
 fn a_mirror_without_a_body_or_face_group_takes_its_ordinal_one_role_0x10_group_as_seed() {
     let group = |record_index: u32, ordinal: u32, role: u64, members: &[u32]| {
-        serde_json::from_value::<
-            crate::records::topology::construction::DesignConstructionOperandGroup,
-        >(serde_json::json!({
-            "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
-            "scope_record_index": 10, "scope_reference_ordinal": ordinal,
-            "record_index": record_index, "byte_offset": 0, "class_tag": "282",
-            "members": members, "member_offsets": vec![0; members.len()],
-            "frame": {"member_count_offset": 0, "opaque_index": 1,
-                "opaque_index_offset": 18, "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22, "variant": false},
-            "role": role, "role_offset": 0,
-            "paired_class_tag": "261", "paired_byte_offset": 0
-        }))
+        json::from_value::<crate::records::topology::construction::DesignConstructionOperandGroup>(
+            cadmpeg_core::json!({
+                "id": format!("f3d:Design/BulkStream.dat:group#{record_index}"),
+                "scope_record_index": 10, "scope_reference_ordinal": ordinal,
+                "record_index": record_index, "byte_offset": 0, "class_tag": "282",
+                "members": members, "member_offsets": vec![0; members.len()],
+                "frame": {"member_count_offset": 0, "opaque_index": 1,
+                    "opaque_index_offset": 18, "opaque_scalar": 0.0,
+                    "opaque_scalar_offset": 22, "variant": false},
+                "role": role, "role_offset": 0,
+                "paired_class_tag": "261", "paired_byte_offset": 0
+            }),
+        )
         .expect("construction group")
     };
     let faces = 0x4_u64 << 32;

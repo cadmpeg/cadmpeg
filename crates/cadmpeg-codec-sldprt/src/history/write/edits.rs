@@ -66,7 +66,7 @@ pub(crate) struct SourceEdits<'source> {
     /// the native records during the write is the writer's own.
     native_unedited: bool,
     /// The native records of the decoded source.
-    source_native: Option<SldprtNative>,
+    source_native: Option<&'source SldprtNative>,
     /// The unwritten-edit losses in the order they are found; a feature's
     /// loss is completed from `unwritten_features` at the end.
     unwritten: Vec<PendingLoss>,
@@ -109,7 +109,7 @@ struct FeatureLoss {
 }
 
 /// What a write's edit comparison leaves for the rest of the write.
-pub(crate) struct EditOutcome {
+pub(crate) struct EditOutcome<'source> {
     /// The unwritten-edit losses.
     pub(crate) unwritten: UnwrittenLosses,
     /// The construction edits of the written features and what the rest of
@@ -120,7 +120,7 @@ pub(crate) struct EditOutcome {
     /// The caller's parameters that differ from the source's.
     pub(crate) edited_parameters: HashSet<ParameterId>,
     /// The feature-input lanes of the decoded source, by id.
-    pub(crate) source_lanes: HashMap<String, FeatureInputLane>,
+    pub(crate) source_lanes: HashMap<&'source str, &'source FeatureInputLane>,
 }
 
 /// One edited leaf of a feature's construction against its source feature.
@@ -150,12 +150,16 @@ impl ConstructionEdit {
         let mut applied = original.clone();
         match &self.leaf {
             ConstructionLeaf::Definition(pointer) => {
-                let mut wire = serde_json::to_value(original.evaluation.definition()).ok()?;
-                let edited = serde_json::to_value(current.evaluation.definition()).ok()?;
+                let mut wire =
+                    cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition())
+                        .ok()?;
+                let edited =
+                    cadmpeg_core::serde_erase::to_json_value(current.evaluation.definition())
+                        .ok()?;
                 *wire.pointer_mut(pointer)? = edited.pointer(pointer)?.clone();
                 applied
                     .evaluation
-                    .set_definition(serde_json::from_value(wire).ok()?);
+                    .set_definition(cadmpeg_core::serde_erase::from_json_value(&wire).ok()?);
             }
             ConstructionLeaf::Dependencies => {
                 applied.dependencies.clone_from(&current.dependencies);
@@ -178,7 +182,7 @@ impl ConstructionEdit {
         let (source, edited) = match &self.leaf {
             ConstructionLeaf::Definition(pointer) => {
                 let at = |feature: &Feature| {
-                    serde_json::to_value(feature.evaluation.definition())
+                    cadmpeg_core::serde_erase::to_json_value(feature.evaluation.definition())
                         .ok()
                         .and_then(|wire| wire.pointer(pointer).cloned())
                         .unwrap_or(Value::Null)
@@ -234,8 +238,8 @@ pub(crate) fn construction_edits(original: &Feature, current: &Feature) -> Vec<C
     let mut edits = Vec::new();
     if original.evaluation.definition() != current.evaluation.definition() {
         match (
-            serde_json::to_value(original.evaluation.definition()),
-            serde_json::to_value(current.evaluation.definition()),
+            cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition()),
+            cadmpeg_core::serde_erase::to_json_value(current.evaluation.definition()),
         ) {
             (Ok(original), Ok(current)) => {
                 differing_leaves(Some(&original), Some(&current), "", "", &mut edits);
@@ -582,16 +586,17 @@ fn affected_parameters(input: &CadIr, edited: &HashSet<ParameterId>) -> HashSet<
 
 impl<'source> SourceEdits<'source> {
     /// Compares the caller's document `input` and its native records with the
-    /// retained source image decoded again. Each feature of `withheld` keeps
-    /// its stored definition record for the reason it is paired with: an
-    /// earlier write of it did not read back as edited.
+    /// retained source image decoded again, `source`, and its native records.
+    /// Each feature of `withheld` keeps its stored definition record for the
+    /// reason it is paired with: an earlier write of it did not read back as
+    /// edited.
     pub(crate) fn new(
         input: &CadIr,
         input_native: Option<&SldprtNative>,
-        source: Option<&'source CadIr>,
+        source: Option<(&'source CadIr, Option<&'source SldprtNative>)>,
         withheld: &[(FeatureId, String)],
     ) -> Result<Self, CodecError> {
-        let Some(source) = source else {
+        let Some((source, source_native)) = source else {
             return Ok(Self::without_source(input));
         };
         let source_parameters = source
@@ -607,11 +612,6 @@ impl<'source> SourceEdits<'source> {
             .filter(|parameter| source_parameters.get(&parameter.id).copied() != Some(*parameter))
             .map(|parameter| parameter.id.clone())
             .collect();
-        let source_native = source
-            .native
-            .namespace("sldprt")
-            .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
-            .transpose()?;
         let mut edits = Self {
             source: Some(source),
             features: Some(
@@ -624,7 +624,7 @@ impl<'source> SourceEdits<'source> {
             ),
             parameters: Some(source_parameters),
             edited_parameters,
-            native_unedited: source_native.as_ref() == input_native,
+            native_unedited: source_native == input_native,
             source_native,
             unwritten: Vec::new(),
             unwritten_features: HashMap::new(),
@@ -848,7 +848,9 @@ impl<'source> SourceEdits<'source> {
                 edit.claim(original, current, written)
             })
             .collect::<Vec<_>>();
-        let Ok(source_definition) = serde_json::to_value(original.evaluation.definition()) else {
+        let Ok(source_definition) =
+            cadmpeg_core::serde_erase::to_json_value(original.evaluation.definition())
+        else {
             return;
         };
         if edits.is_empty() && !withhold && original.dependencies == current.dependencies {
@@ -888,7 +890,7 @@ impl<'source> SourceEdits<'source> {
 
     /// The unwritten-edit losses, the edits the output does not carry, the
     /// edited parameters, and the source's feature-input lanes.
-    pub(crate) fn into_parts(self) -> EditOutcome {
+    pub(crate) fn into_parts(self) -> EditOutcome<'source> {
         let Self {
             source_native,
             unwritten,
@@ -907,14 +909,10 @@ impl<'source> SourceEdits<'source> {
             written,
             edited_parameters,
             source_lanes: source_native
-                .map(|native| {
-                    native
-                        .feature_input_lanes
-                        .into_iter()
-                        .map(|lane| (lane.id.clone(), lane))
-                        .collect()
-                })
-                .unwrap_or_default(),
+                .iter()
+                .flat_map(|native| &native.feature_input_lanes)
+                .map(|lane| (lane.id.as_str(), lane))
+                .collect(),
         }
     }
 }

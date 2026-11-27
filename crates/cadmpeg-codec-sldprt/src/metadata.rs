@@ -8,11 +8,12 @@ pub(crate) mod mass_properties;
 pub(crate) mod part;
 
 use crate::container::{ContainerScan, Section};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
+use cadmpeg_ir::unknown::part::{DecodeParts as _, GivenUpPart, Part};
 use cadmpeg_ir::Exactness;
 
 use crate::layout::{
@@ -25,6 +26,7 @@ pub(crate) fn attributes(
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Vec<SourceAttribute>, CodecError> {
     let mut out = Vec::new();
     for section in scan.sections() {
@@ -58,8 +60,8 @@ pub(crate) fn attributes(
         scan_units_xml(ctx, section, &mut out, annotations)?;
         scan_length_user_units(ctx, section, &mut out, annotations)?;
     }
-    default_properties::append(ctx, scan, &mut out, annotations, losses)?;
-    configuration_properties::append(ctx, scan, &mut out, annotations, losses)?;
+    default_properties::append(ctx, scan, &mut out, annotations, losses, given_up)?;
+    configuration_properties::append(ctx, scan, &mut out, annotations, losses, given_up)?;
     Ok(out)
 }
 
@@ -70,15 +72,57 @@ pub(crate) fn saved_property_rows(
     scan: &ContainerScan,
 ) -> Result<Vec<SourceAttribute>, CodecError> {
     let (mut out, mut annotations, mut losses) = (Vec::new(), Annotations::default(), Vec::new());
+    let mut given_up = Vec::new();
     for section in scan
         .sections()
         .filter(|section| is_saved_property_owner(*section))
     {
         scan_units_xml(ctx, section, &mut out, &mut annotations)?;
     }
-    default_properties::append(ctx, scan, &mut out, &mut annotations, &mut losses)?;
-    configuration_properties::append(ctx, scan, &mut out, &mut annotations, &mut losses)?;
+    default_properties::append(
+        ctx,
+        scan,
+        &mut out,
+        &mut annotations,
+        &mut losses,
+        &mut given_up,
+    )?;
+    configuration_properties::append(
+        ctx,
+        scan,
+        &mut out,
+        &mut annotations,
+        &mut losses,
+        &mut given_up,
+    )?;
     Ok(out)
+}
+
+/// The part a saved-property carrier is when none of its properties is read.
+const PROPERTY_CARRIER_PART: &str = "property-carrier";
+
+/// Gives up the saved-property carrier `owner`, whose stored content is
+/// malformed: none of its properties is read. The source record holds the
+/// carrier's bytes, so the part keeps only their digest.
+fn give_up_carrier(
+    ctx: &DecodeContext<'_>,
+    owner: Section<'_>,
+    error: CodecError,
+    given_up: &mut Vec<GivenUpPart>,
+) -> Result<(), CodecError> {
+    let stream = owner.source_stream();
+    let part = Part::at(
+        "sldprt",
+        PROPERTY_CARRIER_PART,
+        0,
+        owner.stored_payload(),
+        [ArenaClass::Model],
+    )
+    .named(stream.as_str())
+    .in_stream(stream.clone())
+    .digest_only();
+    given_up.push(ctx.give_up_part(part, error)?);
+    Ok(())
 }
 
 pub(crate) fn is_saved_property_attribute(attribute: &SourceAttribute) -> bool {
@@ -348,7 +392,7 @@ fn attribute(
 ) -> Result<SourceAttribute, CodecError> {
     let id = AttributeId::compose(
         &cadmpeg_ir::ids::IdentityNamespace::from_components(
-            &cadmpeg_ir::identity_component!("sldprt"),
+            cadmpeg_ir::codec::FormatId::new(crate::dialect::FORMAT),
             &cadmpeg_ir::identity_component!("metadata"),
             name,
         ),
@@ -356,7 +400,7 @@ fn attribute(
     );
     crate::annotations::note(
         annotations,
-        id.as_str(),
+        &id,
         section.source_stream(),
         u64_from_index(offset),
         std::str::from_utf8(token).unwrap_or(name.as_str()),
