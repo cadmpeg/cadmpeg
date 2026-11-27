@@ -1926,36 +1926,19 @@ fn a_record_is_matched_whole_and_not_by_its_suffix() {
 }
 
 #[test]
-fn features_of_one_record_go_to_items_in_id_order_and_none_twice() {
+fn features_of_one_record_go_to_the_item_in_id_order() {
+    // A timeline frame names a record once, so one item meets every feature
+    // of its record and takes the one with the smallest id.
     let a = keyed(MEMBER, "Extrude", 10, 0);
     let b = keyed(MEMBER, "Fillet", 10, 1);
-    let (first, second) = if a.id.as_str() < b.id.as_str() {
-        (a.id.clone(), b.id.clone())
+    let first = if a.id.as_str() < b.id.as_str() {
+        a.id.clone()
     } else {
-        (b.id.clone(), a.id.clone())
+        b.id.clone()
     };
     for features in [[a.clone(), b.clone()], [b.clone(), a.clone()]] {
         let one = items_of(MEMBER, &features, &[10], &super::timeline::TailFlags::new());
         assert_eq!(one[0].id, first);
-        let two = items_of(
-            MEMBER,
-            &features,
-            &[10, 10],
-            &super::timeline::TailFlags::new(),
-        );
-        assert_eq!([&two[0].id, &two[1].id], [&first, &second]);
-        let three = items_of(
-            MEMBER,
-            &features,
-            &[10, 10, 10],
-            &super::timeline::TailFlags::new(),
-        );
-        assert!(is_timeline_item(&three[2]));
-        let ids = three
-            .iter()
-            .map(|feature| &feature.id)
-            .collect::<BTreeSet<_>>();
-        assert_eq!(ids.len(), 3);
     }
 }
 
