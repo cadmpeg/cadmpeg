@@ -667,6 +667,7 @@ mod tests {
                         asm_body_key_offset: 0,
                         asm_body_key: 11,
                         entity_suffix: 101,
+                        browser_node_entity: 102,
                         visible: false,
                     },
                 )
@@ -680,6 +681,7 @@ mod tests {
                         asm_body_key_offset: 0,
                         asm_body_key: 22,
                         entity_suffix: 202,
+                        browser_node_entity: 203,
                         visible: true,
                     },
                 )

@@ -171,6 +171,7 @@ fn generated_source_less_charges_the_second_visibility_of_a_body() {
                     asm_body_key_offset: 0,
                     asm_body_key: 42,
                     entity_suffix,
+                    browser_node_entity: entity_suffix + 1,
                     visible: false,
                 },
             )

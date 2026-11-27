@@ -173,6 +173,7 @@ fn body_visibility(
         asm_body_key_offset: 0,
         asm_body_key,
         entity_suffix: 985,
+        browser_node_entity: 986,
         visible,
     })
     .expect("a body visibility")
