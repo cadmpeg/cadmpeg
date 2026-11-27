@@ -322,7 +322,9 @@ fn a_held_state_keeps_the_stale_status_of_the_current_state() {
 fn dropped_items_after_a_held_state_write_every_current_body() {
     let (ir, second) = with_a_second_extrude(Boolean::NewBody);
     let error = || CodecError::NotImplemented("a test failure of the design".into());
-    let mut reduction = Reduction::new(&ir, MissingStateForm::HistoryTrue);
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let alone = |target: &CadIr, stage| writes_alone(&ctx, target, stage);
+    let mut reduction = Reduction::new(&ctx, &ir, MissingStateForm::HistoryTrue);
     reduction.prepare().expect("the document prepares");
     reduction
         .degrade(
@@ -333,13 +335,13 @@ fn dropped_items_after_a_held_state_write_every_current_body() {
                     rolled: false,
                 }),
             }),
-            writes_alone,
+            alone,
         )
         .expect("the run ends at the second extrude");
     assert_eq!(reduction.ir().geometry.bodies.len(), 1);
     while !reduction.fallback().drops_items() {
         reduction
-            .degrade(Failure::neutral_design(error()), writes_alone)
+            .degrade(Failure::neutral_design(error()), alone)
             .expect("the design scope falls back");
     }
     assert!(!reduction.drops_neutral_design());
