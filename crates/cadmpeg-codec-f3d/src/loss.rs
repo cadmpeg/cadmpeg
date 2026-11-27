@@ -708,6 +708,10 @@ pub(crate) enum F3dLossCode {
     /// A treatment group takes the transition edges that the other groups of
     /// its scope do not take.
     HistoricalEdgeSelectionLeftoverAssumed,
+    /// A treatment group whose members' first sides name three faces takes
+    /// the one distinct assignment of edges that two of each member's faces
+    /// share.
+    HistoricalEdgeSelectionFirstSidePairAssumed,
     /// A Chamfer face member keeps a loop edge of its face whose continuity
     /// with the adjacent face is undetermined, with the assumption that the
     /// edge is sharp.
@@ -1890,6 +1894,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeSelectionInferred,
         Self::HistoricalEdgeSelectionDeletedSetAssumed,
         Self::HistoricalEdgeSelectionLeftoverAssumed,
+        Self::HistoricalEdgeSelectionFirstSidePairAssumed,
         Self::HistoricalEdgeContinuityAssumedSharp,
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
@@ -2956,6 +2961,9 @@ impl F3dLossCode {
             }
             Self::HistoricalEdgeSelectionLeftoverAssumed => {
                 "history.edge-selection-leftover-assumed"
+            }
+            Self::HistoricalEdgeSelectionFirstSidePairAssumed => {
+                "history.edge-selection-first-side-pair-assumed"
             }
             Self::HistoricalEdgeContinuityAssumedSharp => "history.edge-continuity-assumed-sharp",
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
@@ -4041,6 +4049,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionInferred
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeSelectionLeftoverAssumed
+            | Self::HistoricalEdgeSelectionFirstSidePairAssumed
             | Self::HistoricalEdgeContinuityAssumedSharp
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
@@ -4841,6 +4850,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionInferred
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeSelectionLeftoverAssumed
+            | Self::HistoricalEdgeSelectionFirstSidePairAssumed
             | Self::HistoricalEdgeContinuityAssumedSharp
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
@@ -5809,6 +5819,7 @@ mod tests {
                 "history.edge-selection-inferred",
                 "history.edge-selection-deleted-set-assumed",
                 "history.edge-selection-leftover-assumed",
+                "history.edge-selection-first-side-pair-assumed",
                 "history.edge-continuity-assumed-sharp",
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
