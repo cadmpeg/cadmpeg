@@ -345,9 +345,9 @@ profile items.
 
 A `CLSID_JMPart` feature with function `JMProtrusionFunction`,
 `JMCutoutFunction`, `JMRevolvedProtrusionFunction`,
-`JMMultiSweepProtrusionFunction`, `JMLoftedProtrusionFunction` or
-`JMBaseTabFunction` stores the identifier of its profile as the `u32` 72
-bytes after the end of its function name (§4.2). For
+`JMMultiSweepProtrusionFunction` or `JMBaseTabFunction` stores the identifier
+of its profile as the `u32` 72 bytes after the end of its function name
+(§4.2). For
 `JMMultiSweepProtrusionFunction` that profile is the sweep path, and the
 `u32` 104 bytes after the end of the function name is the identifier of the
 section profile. A feature with function
@@ -355,6 +355,14 @@ section profile. A feature with function
 bytes after the end of its function name. The identifier names a
 `CLSID_JProfile` object, or a `CLSID_JPatternProfile` object for a pattern
 profile. At most one feature names a profile.
+
+A feature with function `JMLoftedProtrusionFunction` stores the identifiers
+of its section profiles in loft order. The first is the `u32` 72 bytes after
+the end of its function name. Each later one is 20 bytes after the one
+before it, and each entry is a `u32` identifier followed by 16 bytes. The
+list ends at the first entry whose identifier does not name a
+`CLSID_JProfile` object. Each section lies on the frame of its profile
+(§5.1), and its curves are in that frame (§5.2).
 
 ## 6. Feature extents
 
@@ -451,6 +459,14 @@ A `CLSID_JMHolePropData` object stores:
 
 A hole of type `3` is threaded with the stored thread. A hole of another
 type can keep thread values from an earlier type; they do not apply.
+
+A hole of type `2` removes a bore of the diameter at offset 12 and a
+counterbore of the diameter at offset 20. The depth of the counterbore is the
+dimension of slot 124, or the `f64` at offset 28 when the slot is `0`. Both
+start at the profile plane. The depth of the hole is measured from the
+profile plane and includes the counterbore depth. A tapped hole with no
+selected thread is of type `2`, and it stores `-1` at offsets 1053 and 1061.
+Its thread depth does not change the solid.
 
 ### 7.3 Rounds
 

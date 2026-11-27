@@ -84,16 +84,17 @@
 
 ### DR-1027. Tapped hole with counterbore
 
-**Question.** Which stored value sizes the solid of a tapped hole that has a counterbore?
+**Question.** What does the thread depth of a tapped hole store, and which stored value sizes the solid of a hole of type `3` that has a counterbore?
 
-**Known.** A tapped M6 hole with a 12.7 mm by 12.7 mm counterbore stores a tap drill diameter of 5 mm and the thread values of §7.2. Its solid removes about 200 mm³ more than a 5 mm bore with that counterbore. A plain hole with a 5 mm drill and M6 thread values removes exactly a 5 mm bore.
+**Known.** A tapped M6 hole of type `3` with a 12.7 mm by 12.7 mm counterbore stores a tap drill diameter of 5 mm and the thread values of §7.2. Its solid removes about 200 mm³ more than a 5 mm bore with that counterbore. A plain hole with a 5 mm drill and M6 thread values removes exactly a 5 mm bore. A tapped hole with no selected thread and a thread depth of 8 mm stores `8` at offset 92 of its properties object in four documents with different counterbores.
 
-**Need.** Tapped holes with counterbores of two depths and two diameters.
+**Need.** A tapped hole with a selected thread and a counterbore, and two copies of it that differ in the thread depth only.
 
 ### DR-1028. Lofted feature operands
 
-**Question.** Where does a lofted feature store its sections and guide curves?
+**Question.** Where does a lofted feature store its guide curves, its centreline and its closed and ruled options?
 
-**Known.** A lofted feature stores its first profile at the §5.3 position.
+**Known.** A lofted feature stores its section profiles at the §5.3 positions. After the section list it stores 12 bytes of reference words and then the identifier of a `CLSID_JMVertexMap` object.
 
-**Need.** Lofts between two and three sections, and a copy of each with one section moved.
+**Need.** A loft with one guide curve, a loft with a centreline, and a closed loft, each with a copy that moves the curve or changes the option.
+

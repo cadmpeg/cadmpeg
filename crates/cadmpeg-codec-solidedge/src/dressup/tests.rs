@@ -643,6 +643,31 @@ fn thread_values_of_a_hole_of_another_type_do_not_apply() {
 }
 
 #[test]
+fn counterbore_hole_without_a_selected_thread_states_bore_head_and_depth() {
+    let mut stored = props(2, 0.005);
+    stored.head_diameter = 0.011;
+    stored.head_depth = 0.001;
+    stored.thread = Some((-1.0, -1.0, ""));
+    let extra = [
+        (124, Dress::Value(Slot::Dim(0.005))),
+        (264, Dress::Value(Slot::Dim(0.015))),
+    ];
+    let result = hole_with(stored, 13.0, 1.0, &[[0.0, 0.0]], &extra);
+    let hole = hole(&result);
+    assert!(near(mm(bore(hole).diameter.as_ref()), 5.0));
+    match &bore(hole).head {
+        Some(HoleHead::Counterbore { diameter, depth }) => {
+            assert!(near(mm(diameter.as_ref()), 11.0));
+            assert!(near(mm(depth.as_ref()), 5.0));
+        }
+        other => panic!("expected a counterbore, found {other:?}"),
+    }
+    assert!(near(blind_mm(hole), 15.0));
+    assert_eq!(hole.thread, None);
+    assert!(!codes(&result).contains(&"feature.thread-unread".to_owned()));
+}
+
+#[test]
 fn a_designation_that_is_not_printable_ascii_leaves_the_thread_unread() {
     let mut stored = props(3, 0.005);
     stored.thread = Some((4.917, 6.0, "M6\u{e9}"));
