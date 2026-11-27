@@ -15,6 +15,9 @@ use crate::InventorCodec;
 pub(crate) const SOURCE_INDEX: u32 = 100;
 /// Entity key of the result body of the fixture.
 pub(crate) const RESULT_KEY: i64 = 7;
+/// Entity key of the result link of the derived fixture. The kernel stream of
+/// `decoded` keys its body 7, so the final model holds no body of this key.
+pub(crate) const DERIVED_RESULT_KEY: i64 = 9;
 
 pub(crate) fn list(bytes: &mut Vec<u8>, references: &[u32]) {
     push_u16(bytes, 2);
@@ -219,7 +222,11 @@ pub(crate) fn derived(mirror: bool) -> (SyntheticRecords, BaseEnvelopeRecords) {
         .copy_from_slice(&101_u32.to_le_bytes());
     link[link_layout::BODY_REFERENCE..link_layout::BODY_REFERENCE + 4]
         .copy_from_slice(&0x8000_0011_u32.to_le_bytes());
-    link[link_layout::ENTITY_ID..link_layout::ENTITY_ID + 4].copy_from_slice(&9_u32.to_le_bytes());
+    link[link_layout::ENTITY_ID..link_layout::ENTITY_ID + 4].copy_from_slice(
+        &u32::try_from(DERIVED_RESULT_KEY)
+            .expect("key")
+            .to_le_bytes(),
+    );
     design.push((base.brep[0].0, link));
     design.push((
         crate::kernel::KERNEL_RECORD_TYPE_ID,

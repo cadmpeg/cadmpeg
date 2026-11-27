@@ -10,7 +10,9 @@ use cadmpeg_ir::report::Severity;
 use crate::feature::history_states::{
     Binding, FeatureHistoryState, StateRef, UnboundReason, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
 };
-use crate::test_support::base_envelope::{decoded, derived_at_version, state_model, RESULT_KEY};
+use crate::test_support::base_envelope::{
+    decoded, derived_at_version, state_model, DERIVED_RESULT_KEY, RESULT_KEY,
+};
 use crate::InventorCodec;
 fn bound(ir: &CadIr, key: i64) -> Vec<FeatureHistoryState> {
     let namespace = ir.native.namespace("inventor").expect("native namespace");
@@ -40,9 +42,10 @@ fn bound(ir: &CadIr, key: i64) -> Vec<FeatureHistoryState> {
 }
 
 /// Base findings of `ir`, whose final model holds no result body key, with
-/// the history states of `ir` changed by `mutate`.
+/// the history states of `ir`, bound to `key`, changed by `mutate`.
 pub(super) fn base_findings_of(
     mut ir: CadIr,
+    key: i64,
     mutate: impl FnOnce(&mut Vec<FeatureHistoryState>),
 ) -> Vec<String> {
     // The final model joins no body to the result wrapper, so the feature
@@ -55,7 +58,7 @@ pub(super) fn base_findings_of(
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
-    let mut states = bound(&ir, RESULT_KEY);
+    let mut states = bound(&ir, key);
     mutate(&mut states);
     let namespace = ir.native.namespace_mut(cadmpeg_ir::codec_id!("inventor"));
     namespace
@@ -77,7 +80,7 @@ pub(super) fn base_findings_of(
 }
 
 fn base_findings(mutate: impl FnOnce(&mut Vec<FeatureHistoryState>)) -> Vec<String> {
-    base_findings_of(state_model(), mutate)
+    base_findings_of(state_model(), RESULT_KEY, mutate)
 }
 
 #[test]
@@ -120,8 +123,13 @@ fn validation_accepts_a_derived_result_only_on_a_body_creating_state() {
     let (design, base) = derived_at_version(false, 19);
     let ir = decoded(&design, &base).into_parts().0;
     assert!(!ir.geometry.bodies.is_empty());
-    assert_eq!(base_findings_of(ir.clone(), |_| {}), Vec::<String>::new());
-    assert!(!base_findings_of(ir.clone(), |states| states[0].body_key = Some(8)).is_empty());
+    // The result link of the derived fixture has entity key DERIVED_RESULT_KEY.
+    let key = DERIVED_RESULT_KEY;
+    assert_eq!(
+        base_findings_of(ir.clone(), key, |_| {}),
+        Vec::<String>::new()
+    );
+    assert!(!base_findings_of(ir.clone(), key, |states| states[0].body_key = Some(8)).is_empty());
     // A Base state does not bind a derived feature: the kinds differ.
-    assert!(!base_findings_of(ir, |states| states[0].kind = BASE_TAG.into()).is_empty());
+    assert!(!base_findings_of(ir, key, |states| states[0].kind = BASE_TAG.into()).is_empty());
 }
