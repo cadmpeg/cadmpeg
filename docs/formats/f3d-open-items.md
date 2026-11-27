@@ -1434,18 +1434,6 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** Controlled exports that vary evaluation time, operation order, and the relevant Boolean state must separate the scalar unit, ordinal allocation rule, flag meaning, and flag-width selector. A neutral Form writer also needs an explicit tracking-member-to-cage identity join.
 
-### DR-324. Cage order of a Form bound through body records
-
-**Question.** In which order does a Form scope that several Form body records name hold its cages?
-
-**Known.** `f3d.md` §1.1.1 "**Form body-record cage join.**" binds each cage to its owning Form scope through one Form body record. The scope's reference table holds a result-owner record and a Form selection group, and its selection members are tracking records. The decoder orders the cages by ascending body-record index and reports `feature.form-cage-order-assumed` for each such Form with two or more cages.
-
-**Need.** Controlled saves of one Form session that creates two bodies in one order and then changes the first body, to compare the body order of the session with the body-record index order.
-
-**Conflict.** None.
-
-**Note.** None.
-
 ### DR-645. Legacy sole-scope serializer membership and order
 
 **Question.** Which native relations establish complete cage membership and order in the sole-scope legacy Form envelope?
@@ -2028,13 +2016,13 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 
 **Question.** Which edge does a standard Chamfer recipe select when its first side carries three non-null face references, and how does a group with several members that keep the same two candidate edges select its edge set?
 
-**Known.** A member whose first side names two face references selects an edge that both reference lanes hold among the changed edges of the owning transition. The edges that the transition deletes include every selected edge. A member whose first side names three references has an empty intersection of the three lanes' changed-edge sets. Such a member can occur in a group together with members that resolve by two references; the group then keeps its resolved edges as a partial selection. Members that keep the same two candidate edges are interchangeable, and the pair of edges they cover is the same under both assignments. A recipe's selector contexts can exclude the edge that the first-side lane intersection proves, so they do not corroborate the lane intersection for these members.
+**Known.** A member whose first side names two face references selects an edge that both reference lanes hold among the changed edges of the owning transition. The edges that the transition deletes include every selected edge. A member whose first side names three references has an empty intersection of the three lanes' changed-edge sets. Such a member can occur in a group together with members that resolve by two references; the group then keeps its resolved edges as a partial selection. Members that keep the same two candidate edges are interchangeable, and the pair of edges they cover is the same under both assignments. The local topology references of a three-reference member start with its three first-side reference numbers in first-side order. Two of its three faces share one transition-deleted edge, and the third face shares one transition-deleted edge with one of the other two. In a group of two-reference and three-reference members, the members with one candidate edge can leave exactly one assignment of distinct edges; the decoder then selects that assignment and charges `history.edge-selection-first-side-pair-assumed`. In the assigned instances, the selected edge is the edge that the faces of the first two prefix references share. A recipe's selector contexts can exclude the edge that the first-side lane intersection proves, so they do not corroborate the lane intersection for these members.
 
 **Need.** A controlled Chamfer whose selected edges bound faces that persistent names bind to several fragments, with edge sets chosen so that exactly one assignment of three-reference members to edges exists. The role of the third first-side reference in the selector.
 
 **Conflict.** None.
 
-**Note.** The group retains its resolved edges and the unresolved member identities as a partial selection, and a feature that needs edge samples reports `history.edge-midpoints-unresolved`.
+**Note.** A group with more than one assignment retains its resolved edges and the unresolved member identities as a partial selection, and a feature that needs edge samples reports `history.edge-midpoints-unresolved`.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 
@@ -2277,6 +2265,16 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 **Conflict.** None.
 
 **Note.** The decoder reports this selection with `design.flagged-base-feature-body-selected`. The `Base Feature` of such a design has no history partition, so its output state chain stays unbound and the decoder reports `feature.output-state-chain-unbound`.
+
+### DR-1080. Two-sided distance Extrude with distances of opposite sign, with a draft or a wall thickness
+
+**Question.** Where does a two-sided distance Extrude with distances of opposite sign put its solid when a side has a draft, and when it has a wall thickness?
+
+**Known.** `f3d.md` §3.1 states that the two distances place the solid's ends at `AlongDistance` and at the negated `AgainstDistance` on the profile normal, with the solid between them. A controlled save confirms this for solid Extrudes with every sign pair (+20/−5, −20/+5, −20/−5 and +20/+5 mm give final bodies spanning 5…20, −20…−5, −20…5 and −5…20 mm), and two Extrudes of another design agree. The decoder reads distances of opposite sign as a one-sided Extrude from an offset profile plane at the nearer end. In the same save, an Extrude of −20/+5 mm with a 5° draft on side one spans −20…0 mm: the solid reaches the profile plane. Wall-thickness Extrudes of open chains of +20/−5 and −20/+5 mm span 5…20 and −20…−5 mm, but a wall-thickness Extrude of a closed profile of 50/−2 mm in another design records a body centre 25 mm above its profile plane. Recorded body centres are bounding-box centres in the controlled save, so that body spans 0…50 mm, not 2…50 mm; its parameter roles and extent form equal those of the open-chain Extrudes. The decoder keeps both forms native.
+
+**Need.** Saves of drafted Extrudes with distances of opposite sign, with the draft on either side and with several drafts, and wall-thickness Extrudes with distances of opposite sign of a closed profile and of an open chain, with each wall location.
+
+**Conflict.** None.
 
 ### DR-646. Entry order of a multi-body suffix result-body frame
 
@@ -3664,7 +3662,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Question.** Which edges do two bounded-face members of a Chamfer edge group select, and how do their boundary nodes assign the transition edges to each member?
 
-**Known.** A Chamfer edge group with role `0x0000001000000000` can name two members. The compact identity prefix of each member names a local record. Each local record carries `bounded_face_recipe_data`, followed by a counted program with twenty parsed nodes. Both operands retain the same four preceding candidate faces. Their prefix references also name eleven further faces. References with two of the Design values have empty candidate lanes. The input topology has fifteen faces and thirty-eight edges. Each compact identity retains the same twenty-two transition edge candidates, in five runs of consecutive edge slots of five, three, six, three, and five slots, with one slot between adjacent runs. Each selected-face candidate has a four-edge preceding loop. The group has a 0.4 mm equal-distance Chamfer specification. A whole-face full-layout member of a Chamfer group selects every coedge edge of every loop of the preceding face that its first recipe reference names, in the transition edge set, except each loop edge at which the face meets its neighbour with tangent continuity. When the continuity of a loop edge is undetermined, the decoder keeps the edge and charges `history.edge-continuity-assumed-sharp`. Two members that name two adjacent faces together select every edge of both faces, and each member keeps the edge that the two faces share.
+**Known.** A Chamfer edge group with role `0x0000001000000000` can name two members. The compact identity prefix of each member names a local record. Each local record carries `bounded_face_recipe_data`, followed by a counted program with twenty parsed nodes. Both operands retain the same four preceding candidate faces. Their prefix references also name eleven further faces. References with two of the Design values have empty candidate lanes. The input topology has fifteen faces and thirty-eight edges. Each compact identity retains the same twenty-two transition edge candidates, in five runs of consecutive edge slots of five, three, six, three, and five slots, with one slot between adjacent runs. Each selected-face candidate has a four-edge preceding loop. The group has a 0.4 mm equal-distance Chamfer specification. A Chamfer can also store a role-`0x0000001000000000` group of nine full-layout bounded-face identities beside a role-`0x0000000800000000` edge group of thirty-two recipe members, each group in its own Chamfer set with the same distance. The first prefix reference of each bounded-face recipe has a one-face candidate lane, and the nine named faces are distinct. One member names a face bounded by the other eight faces; its support contexts are those nine faces. Each of the other eight members names a face bounded by that first face, two of the eight faces, and three further faces; its support contexts exclude its named face. Every transition-deleted boundary edge of the nine named faces is an edge of the sibling edge group. A whole-face full-layout member of a Chamfer group selects every coedge edge of every loop of the preceding face that its first recipe reference names, in the transition edge set, except each loop edge at which the face meets its neighbour with tangent continuity. When the continuity of a loop edge is undetermined, the decoder keeps the edge and charges `history.edge-continuity-assumed-sharp`. Two members that name two adjacent faces together select every edge of both faces, and each member keeps the edge that the two faces share.
 
 **Need.** Independent Chamfer designs with bounded-face members, including one selected face, two adjacent selected faces, and a face whose boundary splits before the operation. Establish the selected boundary and the binding of empty prefix lanes.
 
