@@ -1130,6 +1130,8 @@ fn studio_in(
                         .map(str::to_owned),
                     next: features::value(feature, "endBound") == Some("UP_TO_NEXT"),
                     thin: thin_design,
+                    tangent: features::tangent_propagation(feature),
+                    seeds: features::edge_seeds(feature),
                 },
             );
         }
@@ -1162,7 +1164,7 @@ fn project_design(
         ir,
         &mut report.notes,
         |ir, notes| {
-            refused = design::project(ctx, ir, notes, bar, sources)?.thin_refused;
+            refused = design::project(ctx, ir, notes, bar, sources)?;
             Ok(())
         },
     )?;

@@ -9,16 +9,19 @@ use cadmpeg_ir::design::construction::{
     PlaneValue, Relation, ScalarDimension, Subject,
 };
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::ops::body::Combine;
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
+use cadmpeg_ir::design::ops::shared::ToolDisposition;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
-use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin, Revolve};
+use cadmpeg_ir::design::ops::swept::{
+    Extrude, ExtrudeDirection, ExtrudeOrigin, Revolve, SpineLimits, Sweep, SweepControls,
+    SweepSection,
+};
 use cadmpeg_ir::design::options::{
     BodyForm, Boolean, BooleanOp, NativeOptions, SolidOutput, SymmetricMeasure, Targets,
 };
-use cadmpeg_ir::design::selection::{
-    Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, Selection,
-};
+use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::extents::{
     AngularTermination, ExtrudeDirection as V10Direction, ExtrudeExtent, ExtrudeStart,
@@ -26,16 +29,22 @@ use cadmpeg_ir::features::extents::{
 };
 use cadmpeg_ir::features::geometry::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::features::operation_settings::BooleanOp as V10Op;
-use cadmpeg_ir::features::profiles::{PathRef, PlanarProfileRef, ProfileRef};
+use cadmpeg_ir::features::operation_settings::{BooleanKind, CombineDestination};
+use cadmpeg_ir::features::profiles::{PathRef, ProfileRef};
 use cadmpeg_ir::features::revolve::{RevolutionAxis, RevolveConstruction, RevolveExtent};
+use cadmpeg_ir::features::sweeps::{SolidSweepOperation, SweepSection as V10Section, SweepShape};
 use cadmpeg_ir::features::{FeatureDefinition, ParameterId};
 use cadmpeg_ir::scalar::{Angle, Length};
-use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::units::UnitVector3;
 use serde_json::Value;
 
 use super::Source;
 use crate::loss::OnshapeLossCode;
+
+mod dressup;
+mod picks;
+
+use picks::{pick, selection};
 
 /// A full turn within this many radians is a full revolve.
 const FULL_TURN_TOLERANCE_RAD: f64 = 1e-12;
@@ -51,6 +60,12 @@ pub(super) struct Context<'c> {
     /// The parameter each feature owns for an input, by the feature and the
     /// input's `FeatureScript` role.
     pub(super) owned: &'c std::collections::BTreeMap<(&'c str, &'c str), &'c ParameterId>,
+    /// The stored input states of the features.
+    pub(super) inputs: &'c [cadmpeg_ir::features::evaluation::FeatureInputTopology],
+    /// The model sketch entities, which a trimmed region is cut against.
+    pub(super) model_entities: &'c [cadmpeg_ir::sketches::SketchEntity],
+    /// The sketch arrangements built so far.
+    pub(super) arrangements: &'c cadmpeg_ir::design::regions::Arrangements,
 }
 
 impl Context<'_> {
@@ -103,12 +118,13 @@ fn family(kind: &str) -> Option<OperationFamily> {
     })
 }
 
-/// The design feature of a thin extrude, admitted where every sketch entity
-/// its profile picks is a stated entity of a sketch earlier in the timeline.
-pub(super) fn thin(thin: &Value, context: &Context<'_>) -> Result<Feature, String> {
-    let feature: Feature = json::from_value(thin.clone())
-        .map_err(|error| format!("the thin design feature is not supported yet ({error})"))?;
-    let FeatureOperation::Extrude(extrude) = &feature.definition.operation else {
+/// The design operation of a thin extrude, admitted where every sketch
+/// entity its profile picks is a stated entity of a sketch earlier in the
+/// timeline.
+pub(super) fn thin(thin: &Value, context: &Context<'_>) -> Result<FeatureOperation, String> {
+    let operation: FeatureOperation = json::from_value(thin.clone())
+        .map_err(|error| format!("the thin design operation is not supported yet ({error})"))?;
+    let FeatureOperation::Extrude(extrude) = &operation else {
         return Err("the thin design feature is no extrusion".into());
     };
     let Picks::Named(picks) = &extrude.profile.picks else {
@@ -125,15 +141,16 @@ pub(super) fn thin(thin: &Value, context: &Context<'_>) -> Result<Feature, Strin
             return Err("the thin profile's sketch does not precede it in the timeline".into());
         }
     }
-    Ok(feature)
+    Ok(operation)
 }
 
-/// The design operation of `model`, or the operation it falls back to.
+/// The design operation of `model` and the assumption it states, or the
+/// operation it falls back to.
 pub(super) fn project(
     model: &v10::Feature,
     source: Option<&Source>,
     context: &Context<'_>,
-) -> Result<FeatureOperation, Fallback> {
+) -> Result<(FeatureOperation, Option<&'static str>), Fallback> {
     let kind = source.and_then(|source| source.feature_type.as_deref());
     let FeatureDefinition::Operation(operation) = model.evaluation.definition() else {
         return Err(unresolved(
@@ -146,7 +163,7 @@ pub(super) fn project(
         v10::FeatureOperation::Sketch { sketch } => {
             return match sketch.id() {
                 Some(id) if context.sketches.contains(id.as_str()) => {
-                    Ok(FeatureOperation::Sketch(id.clone()))
+                    Ok((FeatureOperation::Sketch(id.clone()), None))
                 }
                 _ => Err(unresolved(
                     kind,
@@ -196,9 +213,31 @@ pub(super) fn project(
         v10::FeatureOperation::DatumOffsetPlane { .. } => {
             offset_plane(model).map(|datum| FeatureOperation::Datum(Box::new(datum)))
         }
+        v10::FeatureOperation::Fillet { .. } => dressup::fillet(model, operation, source, context),
+        v10::FeatureOperation::Chamfer { .. } => {
+            return dressup::chamfer(model, operation, source, context)
+                .map(|(chamfer, sided)| (chamfer, sided.then_some(dressup::CHAMFER_SIDE)))
+                .map_err(|reason| unresolved(kind, None, reason));
+        }
+        v10::FeatureOperation::Shell { .. } => dressup::shell(model, operation, context),
+        v10::FeatureOperation::Hole { .. } => dressup::hole(model, operation, context),
+        v10::FeatureOperation::Sweep { .. } => {
+            sweep(operation, context).map(|sweep| FeatureOperation::Sweep(Box::new(sweep)))
+        }
+        v10::FeatureOperation::Combine { .. } => {
+            combine(operation).map(|combine| FeatureOperation::Combine(Box::new(combine)))
+        }
         _ => Err("the design operation of this feature is not projected yet"),
     };
-    typed.map_err(|reason| unresolved(kind, None, reason))
+    typed
+        .map(|operation| (operation, None))
+        .map_err(|reason| unresolved(kind, None, reason))
+}
+
+/// The dimension of `value`, bound to the parameter `parameter` where the
+/// feature owns one for it.
+fn bound<Q>(parameter: Option<ParameterId>, value: Q) -> Dimension<Q> {
+    parameter.map_or(Dimension::Literal(value), Dimension::Parameter)
 }
 
 /// A native operation of the Onshape feature type `kind`, or of the kind
@@ -241,43 +280,6 @@ fn unresolved(kind: Option<&str>, family: Option<OperationFamily>, reason: &str)
     }
 }
 
-fn pick(target: PickTarget) -> Picked {
-    Picked {
-        target,
-        context: None,
-        native: None,
-        domain: None,
-        witness: None,
-        resolved: None,
-    }
-}
-
-fn selection(picks: Vec<Picked>) -> Result<OrderedSelection, &'static str> {
-    Ok(Selection {
-        at: Anchor::Input,
-        picks: Picks::Named(Members::new(picks).map_err(|_| "the selection is empty")?),
-        native: None,
-    })
-}
-
-/// The whole-sketch profile `profile`, stated in the design and earlier in
-/// the timeline.
-fn sketch_profile<'p>(
-    profile: &'p PlanarProfileRef,
-    context: &Context<'_>,
-) -> Result<&'p SketchId, &'static str> {
-    let PlanarProfileRef::Sketch(sketch) = profile else {
-        return Err("the profile is no whole sketch");
-    };
-    if !context.sketches.contains(sketch.as_str()) {
-        return Err("the profile sketch is not stated in the design");
-    }
-    if !context.preceding.contains(sketch.as_str()) {
-        return Err("the profile sketch does not precede the feature in the timeline");
-    }
-    Ok(sketch)
-}
-
 fn boolean(op: V10Op) -> Option<Boolean> {
     let apply = |op| Boolean::Apply {
         op,
@@ -310,7 +312,17 @@ fn linear_limit(
         LinearTermination::Blind { length: value } => Limit::Amount(length(value.get())?),
         LinearTermination::ThroughAll {} => Limit::ThroughAll,
         LinearTermination::ToFace { .. } if next => Limit::Next,
-        _ => return Err("the extrude limit is neither blind, through all, nor up to next"),
+        LinearTermination::ToFace { face, offset: None } => Limit::ToGeometry {
+            target: picks::faces(face)?,
+            offset: None,
+            extend: None,
+            far: None,
+        },
+        _ => {
+            return Err(
+                "the extrude limit is neither blind, through all, up to next, nor up to a face",
+            )
+        }
     })
 }
 
@@ -335,7 +347,7 @@ fn extrude(
     let ProfileRef::Planar(profile) = profile else {
         return Err("the extrude profile is not planar");
     };
-    let sketch = sketch_profile(profile, context)?;
+    let profile = picks::profile(profile, context)?;
     let reversed = match direction {
         V10Direction::ProfileNormal {} => false,
         V10Direction::ReversedProfileNormal {} => true,
@@ -361,7 +373,7 @@ fn extrude(
         _ => return Err("the extrude extent is not projected yet"),
     };
     Ok(Extrude {
-        profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
+        profile,
         loops: None,
         direction: Some(ExtrudeDirection::ProfileNormal {
             reversed: Some(Dimension::Literal(reversed)),
@@ -403,7 +415,7 @@ fn revolve(
     else {
         return Err("the revolve construction is unresolved");
     };
-    let sketch = sketch_profile(profile, context)?;
+    let profile = picks::profile(profile, context)?;
     let angle = match extent {
         RevolveExtent::OneSided {
             termination: AngularTermination::Angle { angle },
@@ -420,7 +432,7 @@ fn revolve(
         ))
     };
     Ok(Revolve {
-        profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
+        profile,
         loops: None,
         axis: Some(axis_construction(axis)?),
         span: Some(Span::Between {
@@ -563,6 +575,95 @@ fn offset_plane(model: &v10::Feature) -> Result<Datum, &'static str> {
             resolved_in: std::collections::BTreeMap::new(),
         }),
         link: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+    })
+}
+
+/// A solid sweep of one planar profile along a chain of sketch curves, with
+/// no orientation, twist, or scaling control.
+fn sweep(operation: &v10::FeatureOperation, context: &Context<'_>) -> Result<Sweep, &'static str> {
+    let v10::FeatureOperation::Sweep {
+        shape:
+            SweepShape::Solid {
+                op,
+                section: V10Section::Profile(profile),
+                sections,
+            },
+        path: Some(path),
+        orientation: None,
+        transition: None,
+        transformation: None,
+        path_tangent: false,
+        linearize: false,
+        twist: None,
+        path_extent: None,
+        guide_rail: None,
+        taper: None,
+        scale: None,
+        ..
+    } = operation
+    else {
+        return Err("the sweep states controls beyond a plain solid sweep");
+    };
+    if !sections.is_empty() {
+        return Err("the sweep has more than one section");
+    }
+    Ok(Sweep {
+        section: SweepSection::Profile(picks::profile(profile, context)?),
+        path: picks::path(path, context)?,
+        controls: SweepControls {
+            orientation: None,
+            twist: None,
+            scaling: None,
+        },
+        guides: Vec::new(),
+        extent: None,
+        placement: None,
+        limits: SpineLimits {
+            start: None,
+            end: None,
+        },
+        transition: None,
+        output: SolidOutput {
+            body: Some(BodyForm::Solid),
+            boolean: boolean(match op {
+                SolidSweepOperation::NewBody => V10Op::NewBody,
+                SolidSweepOperation::Join => V10Op::Join,
+                SolidSweepOperation::Cut => V10Op::Cut,
+                SolidSweepOperation::Intersect => V10Op::Intersect,
+            }),
+        },
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+    })
+}
+
+/// A Boolean of generated bodies whose result stays with its target.
+fn combine(operation: &v10::FeatureOperation) -> Result<Combine, &'static str> {
+    let v10::FeatureOperation::Combine {
+        operands,
+        op,
+        keep_tools,
+        destination: CombineDestination::TargetComponent,
+    } = operation
+    else {
+        return Err("the Boolean makes a new component");
+    };
+    Ok(Combine {
+        target: Some(picks::bodies(operands.target())?),
+        tools: picks::bodies(operands.tools())?,
+        op: Some(match op {
+            BooleanKind::Join => BooleanOp::Join,
+            BooleanKind::Cut => BooleanOp::Cut,
+            BooleanKind::Intersect => BooleanOp::Intersect,
+        }),
+        tools_after: Some(if *keep_tools {
+            ToolDisposition::Kept
+        } else {
+            ToolDisposition::Consumed
+        }),
+        new_component: None,
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
     })

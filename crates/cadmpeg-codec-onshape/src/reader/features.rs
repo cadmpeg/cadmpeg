@@ -35,6 +35,37 @@ pub(super) fn source_properties(feature: &Value, definition: &Value) -> Mapping<
     )
 }
 
+/// The stored `tangentPropagation` of a fillet or chamfer.
+pub(super) fn tangent_propagation(feature: &Value) -> Option<bool> {
+    matches!(
+        feature.get("featureType").and_then(Value::as_str),
+        Some("fillet" | "chamfer")
+    )
+    .then(|| {
+        parameter(feature, "tangentPropagation")
+            .ok()?
+            .get("value")?
+            .as_bool()
+    })
+    .flatten()
+}
+
+/// The edge ids the `entities` queries of a fillet or chamfer store, in
+/// query order.
+pub(super) fn edge_seeds(feature: &Value) -> Vec<String> {
+    if tangent_propagation(feature).is_none() {
+        return Vec::new();
+    }
+    queries(feature, "entities")
+        .unwrap_or(&[])
+        .iter()
+        .filter_map(|query| query.get("deterministicIds")?.as_array())
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+
 pub(super) fn enabled(feature: &Value, key: &str) -> Mapping<bool> {
     if !rows(feature, "parameters")?
         .iter()
@@ -978,6 +1009,30 @@ pub(super) fn map(
                 .as_object_mut()
                 .ok_or("blend group is missing")?
                 .insert(key.into(), spec);
+            let owned: &[(&str, &str, bool)] = match (kind, value(feature, "chamferType")) {
+                ("fillet", _) => &[("radius", "Radius", false)],
+                (_, Some("EQUAL_OFFSETS")) => &[("width", "Distance", false)],
+                (_, Some("TWO_OFFSETS")) => &[
+                    ("width1", "FirstDistance", false),
+                    ("width2", "SecondDistance", false),
+                ],
+                _ => &[("width", "Distance", false), ("angle", "Angle", true)],
+            };
+            for (key, role, angle) in owned {
+                owned_variable(
+                    feature,
+                    ordinal,
+                    key,
+                    role,
+                    if *angle {
+                        super::expression::Dimension::Angle
+                    } else {
+                        super::expression::Dimension::Length
+                    },
+                    model,
+                    unresolved,
+                )?;
+            }
             push(&mut model.feature_input_topologies, state.row)?;
             let operation = if kind == "chamfer" {
                 json!({"groups": [group], "flip_direction": enabled(feature, "oppositeDirection")?})
@@ -1175,6 +1230,47 @@ fn hole(
             json!({"kind": "blind", "length": length(feature, "holeDepth", model, unresolved)?}),
         );
         fields.insert("bottom".into(), bottom);
+    }
+    let mut owned = vec![(
+        if tapped && parameter(feature, "tapDrillDiameter").is_ok() {
+            "tapDrillDiameter"
+        } else {
+            "holeDiameter"
+        },
+        "Diameter",
+        false,
+    )];
+    match value(feature, "style") {
+        Some("C_BORE") => owned.extend([
+            ("cBoreDiameter", "CounterboreDiameter", false),
+            ("cBoreDepth", "CounterboreDepth", false),
+        ]),
+        Some("C_SINK") => owned.extend([
+            ("cSinkDiameter", "CountersinkDiameter", false),
+            ("cSinkAngle", "CountersinkAngle", true),
+        ]),
+        _ => {}
+    }
+    if !through {
+        owned.extend([
+            ("holeDepth", "Depth", false),
+            ("tipAngle", "TipAngle", true),
+        ]);
+    }
+    for (key, role, angle) in owned {
+        owned_variable(
+            feature,
+            ordinal,
+            key,
+            role,
+            if angle {
+                super::expression::Dimension::Angle
+            } else {
+                super::expression::Dimension::Length
+            },
+            model,
+            unresolved,
+        )?;
     }
     Ok(definition("hole", operation))
 }

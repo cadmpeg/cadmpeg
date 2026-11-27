@@ -216,12 +216,9 @@ pub(super) fn feature(
         .iter()
         .map(|entity| json!({"target":{"kind":"sketch_entity","value":entity}}))
         .collect();
-    let mut row = json!({"id":id("feature",text(source,"featureId")?),"definition":{"operation":{"kind":"extrude","value":{
+    let operation = json!({"kind":"extrude","value":{
         "profile":{"at":{"kind":"input"},"picks":{"kind":"named","value":picks}},
         "direction":{"kind":"profile_normal","reversed":{"kind":"literal","value":reversed}},"origin":{"kind":"profile_plane"},"span":span,
-        "output":{"body":{"kind":"thin","thickness":thickness},"boolean":boolean},"native_options":{},"source_settings":{}}}}});
-    if super::suppression_stated(source) {
-        row["suppressed"] = json!({"kind":"literal","value":false});
-    }
-    Ok((row, assumed))
+        "output":{"body":{"kind":"thin","thickness":thickness},"boolean":boolean},"native_options":{},"source_settings":{}}});
+    Ok((operation, assumed))
 }

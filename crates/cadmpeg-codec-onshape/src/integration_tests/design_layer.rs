@@ -7,7 +7,7 @@ use cadmpeg_core::serde_erase::json;
 use crate::reader::id;
 use crate::test_support::fixture;
 use crate::test_support::review::{
-    cadir_round_trip, decode, design_operation, omitted, unresolved, validate, wire,
+    cadir_round_trip, decode, design_operation, omitted, validate, wire,
 };
 
 #[test]
@@ -50,8 +50,35 @@ fn a_part_studio_without_a_thin_extrude_states_its_timeline() {
         plate["value"]["output"]["boolean"],
         json!({"kind":"new_body"})
     );
-    assert_eq!(design_operation(ir, "Corner round"), unresolved("fillet"));
-    assert!(result.report().losses.iter().any(|loss| {
+    let fillet = design_operation(ir, "Corner round");
+    assert_eq!(fillet["kind"], "fillet");
+    let set = &fillet["value"]["sets"][0];
+    assert_eq!(
+        set["section"]["size"],
+        json!({"kind":"radius","value":{"kind":"literal","value":1.0}})
+    );
+    let [edge] = set["edges"]["picks"]["value"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
+        panic!("one edge pick: {set}");
+    };
+    assert_eq!(edge["target"], json!({"kind":"native","value":{}}));
+    assert_eq!(
+        edge["native"],
+        json!({"codec":"onshape","value":{"kind":"text","value":"upright"}})
+    );
+    assert_eq!(edge["witness"]["point"], json!({"x":0.0,"y":0.0,"z":1.0}));
+    assert_eq!(
+        edge["witness"]["direction"],
+        json!({"x":0.0,"y":0.0,"z":1.0})
+    );
+    assert_eq!(
+        edge["witness"]["endpoints"],
+        json!([{"x":0.0,"y":0.0,"z":0.0},{"x":0.0,"y":0.0,"z":2.0}])
+    );
+    assert!(!result.report().losses.iter().any(|loss| {
         crate::loss::OnshapeLossCode::DesignOperationUnresolved.matches(loss)
             && loss.message.ends_with("subject: Corner round")
     }));

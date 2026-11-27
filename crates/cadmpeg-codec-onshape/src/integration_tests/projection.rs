@@ -84,15 +84,30 @@ fn real_shaped_synthetic_bundle_resolves_plane_and_selected_region() {
         .iter()
         .filter(|loss| loss.code.as_deref().unwrap_or("").starts_with("onshape/"))
         .collect();
-    let [region] = onshape.as_slice() else {
-        panic!("one loss names the region profile the design does not state: {onshape:?}");
+    assert!(onshape.is_empty(), "{onshape:?}");
+    let result = crate::test_support::review::decode(&base_fixture());
+    let plate = crate::test_support::review::design_operation(result.ir(), "raised-plate");
+    assert_eq!(plate["kind"], "extrude");
+    let [region] = plate["value"]["profile"]["picks"]["value"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
+        panic!("one region pick");
     };
+    assert_eq!(region["target"]["kind"], "sketch_region");
     assert_eq!(
-        region.code.as_deref(),
-        Some("onshape/history.design-operation-unresolved")
+        region["target"]["value"]["sketch"],
+        json!(id("sketch", "drawn-profile"))
     );
-    assert!(region.detail.contains("the profile is no whole sketch"));
-    assert!(region.detail.ends_with("subject: raised-plate"));
+    assert_eq!(
+        region["target"]["value"]["region"]["outer"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    crate::test_support::review::validate(result);
     assert_eq!(
         wire["sketches"][0]["placement"]["frame"]["normal"],
         json!({"x":0.0,"y":0.0,"z":1.0})
@@ -1262,7 +1277,7 @@ fn suppressed_features_and_variables_do_not_report_variable_loss() {
 }
 
 #[test]
-fn a_variable_value_no_parameter_drives_is_a_named_loss() {
+fn a_fillet_radius_from_a_variable_binds_its_owned_parameter() {
     let bytes = with_variables(
         &fixture("plate-fillet"),
         &[variable(
@@ -1283,13 +1298,42 @@ fn a_variable_value_no_parameter_drives_is_a_named_loss() {
             }
         },
     );
-    let (wire, report) = read(&bytes);
+    let result = crate::test_support::review::decode(&bytes);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|l| l.code.to_string() == "onshape/history.variable-evaluated"));
+    let fillet = crate::test_support::review::design_operation(result.ir(), "Corner round");
     assert_eq!(
-        kinds(&wire),
-        ["tree_node", "sketch", "extrude", "fillet"],
-        "{:?}",
-        report.losses()
+        fillet["value"]["sets"][0]["section"]["size"],
+        json!({"kind":"radius","value":{"kind":"parameter","value":id("parameter", "Corner round/radius")}})
     );
+    crate::test_support::review::validate(result);
+}
+
+#[test]
+fn a_variable_value_no_parameter_drives_is_a_named_loss() {
+    let bytes = with_variables(
+        &fixture("hole-forms"),
+        &[variable(
+            "major-variable",
+            "major",
+            "LENGTH",
+            "lengthValue",
+            "4 mm",
+        )],
+        |response| {
+            for feature in response["features"].as_array_mut().unwrap() {
+                for p in feature["parameters"].as_array_mut().into_iter().flatten() {
+                    if p["parameterId"] == "majorDiameter" {
+                        p["expression"] = json!("#major");
+                    }
+                }
+            }
+        },
+    );
+    let (_, report) = read(&bytes);
     let losses: Vec<_> = report
         .losses()
         .iter()
@@ -1298,7 +1342,7 @@ fn a_variable_value_no_parameter_drives_is_a_named_loss() {
     assert_eq!(losses.len(), 1, "{:?}", report.losses());
     assert!(losses[0]
         .detail
-        .starts_with("radius uses Part Studio variables"));
+        .starts_with("majorDiameter uses Part Studio variables"));
 }
 
 #[test]

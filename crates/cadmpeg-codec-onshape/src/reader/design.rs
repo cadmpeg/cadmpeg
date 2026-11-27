@@ -37,27 +37,25 @@ pub(super) struct Source {
     pub(super) feature_type: Option<String>,
     /// Whether an extrude ends at the next face (`UP_TO_NEXT`).
     pub(super) next: bool,
-    /// The design feature of a thin extrude, built from the source record.
+    /// The design operation of a thin extrude, built from the source record.
     pub(super) thin: Option<Value>,
+    /// The stored `tangentPropagation` of a fillet or chamfer.
+    pub(super) tangent: Option<bool>,
+    /// The edge ids a fillet or chamfer selects before propagation.
+    pub(super) seeds: Vec<String>,
 }
 
 /// The source facts of each admitted feature, by its model feature id.
 pub(super) type Sources = BTreeMap<String, Source>;
-
-/// The outcome of a projection that keeps its design layer.
-#[derive(Debug, Default)]
-pub(super) struct Projected {
-    /// The names of the thin extrudes whose design feature fell back to
-    /// their family, with the reason.
-    pub(super) thin_refused: Vec<(String, String)>,
-}
 
 fn note(notes: &mut Vec<LossNote>, code: OnshapeLossCode, subject: &str, detail: &str) {
     notes.push(code.note(format!("{detail}; subject: {subject}")));
 }
 
 /// Project the design layer of the Part Studio `ir`, whose model features
-/// were decoded from the sources `sources`, with `bar` its rollback bar.
+/// were decoded from the sources `sources`, with `bar` its rollback bar. The
+/// result names the thin extrudes whose design feature fell back to their
+/// family, with the reason.
 ///
 /// # Errors
 ///
@@ -68,10 +66,10 @@ pub(super) fn project(
     notes: &mut Vec<LossNote>,
     bar: &RollbackBar,
     sources: &Sources,
-) -> Result<Projected, CodecError> {
-    let mut projected = Projected::default();
+) -> Result<Vec<(String, String)>, CodecError> {
+    let mut thin_refused = Vec::new();
     if ir.model.features.is_empty() {
-        return Ok(projected);
+        return Ok(thin_refused);
     }
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.features.len()) + 2,
@@ -118,6 +116,7 @@ pub(super) fn project(
             ))
         })
         .collect();
+    let arrangements = cadmpeg_ir::design::regions::Arrangements::default();
     let mut designed = Vec::with_capacity(ir.model.features.len());
     let mut preceding = BTreeSet::new();
     let mut timeline: Vec<_> = ir.model.features.iter().collect();
@@ -130,13 +129,16 @@ pub(super) fn project(
             entities: &stated_entities,
             preceding: &preceding,
             owned: &owned,
+            inputs: &ir.model.feature_input_topologies,
+            model_entities: &ir.model.sketch_entities,
+            arrangements: &arrangements,
         };
         let thin = source.and_then(|source| source.thin.as_ref());
         let typed = match (thin, sketch_failures.get(&model.id)) {
             (Some(thin), _) => match operation::thin(thin, &context) {
-                Ok(feature) => Ok(feature.definition.operation),
+                Ok(operation) => Ok((operation, None)),
                 Err(reason) => {
-                    projected.thin_refused.push((name.to_owned(), reason));
+                    thin_refused.push((name.to_owned(), reason));
                     Err(None)
                 }
             },
@@ -151,7 +153,12 @@ pub(super) fn project(
                 .map_err(|fallback| Some((fallback.operation, fallback.code, fallback.reason))),
         };
         let operation = match typed {
-            Ok(operation) => operation,
+            Ok((operation, assumed)) => {
+                if let Some(assumed) = assumed {
+                    note(notes, OnshapeLossCode::ChamferSideAssumed, name, assumed);
+                }
+                operation
+            }
             Err(None) => FeatureOperation::Unresolved {
                 family: OperationFamily::Extrude,
             },
@@ -197,16 +204,62 @@ pub(super) fn project(
             "the parameter's expression stays Onshape source text",
         );
     }
-    install_scope(ir, bar, &definition).map_err(malformed)?;
-    Ok(projected)
+    let current = install_scope(ir, bar, &definition).map_err(malformed)?;
+    name_bodies(ir, current);
+    Ok(thin_refused)
 }
 
-/// State the Part Studio's timeline and scope over its design features.
+/// Name each body that one feature of the first `current` timeline members
+/// makes by that feature (§5.7).
+fn name_bodies(ir: &mut CadIr, current: usize) {
+    let current: BTreeSet<_> = ir
+        .design
+        .features
+        .iter()
+        .take(current)
+        .map(|feature| &feature.id)
+        .collect();
+    let mut producers = BTreeMap::new();
+    for feature in ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| current.contains(&feature.id))
+    {
+        for body in feature.evaluation.outputs() {
+            producers
+                .entry(body.clone())
+                .and_modify(|producer: &mut Option<_>| *producer = None)
+                .or_insert_with(|| Some(feature.id.clone()));
+        }
+    }
+    let mut entries = ir.design.names.entries().clone();
+    for (body, producer) in producers {
+        let Some(feature) = producer else { continue };
+        entries.insert(
+            cadmpeg_ir::design::refs::EntityRef::Body(body),
+            cadmpeg_ir::design::names::NameEntry {
+                name: Some(cadmpeg_ir::design::names::TopoName::Generated {
+                    kind: cadmpeg_ir::design::names::NameKind::Body,
+                    feature,
+                    role: Some(cadmpeg_ir::design::names::GenerationRole::Body),
+                    generator: None,
+                    index: None,
+                }),
+                native: None,
+            },
+        );
+    }
+    ir.design.names = entries.into();
+}
+
+/// State the Part Studio's timeline and scope over its design features, and
+/// give the number of members before the rollback bar.
 fn install_scope(
     ir: &mut CadIr,
     bar: &RollbackBar,
     definition: &cadmpeg_ir::ids::ProductDefinitionId,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     let container = id("container", "Part Studio");
     let bodies: Vec<_> = ir.geometry.bodies.iter().map(|body| &body.id).collect();
     let members: Vec<_> = ir
@@ -215,6 +268,7 @@ fn install_scope(
         .iter()
         .map(|feature| json!({"kind":"feature","value":feature.id}))
         .collect();
+    let count = members.len();
     // The bar stands before the first kept member at or after the stored
     // rollback feature. The current state is the state before the bar.
     let barred = bar.0.iter().find_map(|native| {
@@ -247,7 +301,7 @@ fn install_scope(
         json!({"definition":definition,"roots":[container],"active_arrangements":[],"occurrences":{},"unproduced":[],
         "current":[{"at":at,"bodies":bodies,"poses":[],"status":"current"}]}),
     )?;
-    Ok(())
+    Ok(barred.unwrap_or(count))
 }
 
 /// The Part Studio's root definition, stated where the STEP export states

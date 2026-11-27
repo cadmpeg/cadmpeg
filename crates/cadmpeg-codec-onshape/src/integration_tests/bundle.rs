@@ -102,7 +102,7 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
         (
             "plate-fillet",
             vec!["sketch", "extrude", "fillet"],
-            vec!["sketch", "extrude", "unresolved:fillet"],
+            vec!["sketch", "extrude", "fillet"],
         ),
         (
             "revolve",
@@ -112,7 +112,7 @@ fn synthetic_bundles_retain_the_expected_cadir_rows_and_final_step() {
         (
             "hole",
             vec!["sketch", "extrude", "sketch", "hole"],
-            vec!["sketch", "extrude", "sketch", "unresolved:hole"],
+            vec!["sketch", "extrude", "sketch", "hole"],
         ),
         (
             "unsupported",
@@ -278,7 +278,7 @@ fn rollback_edge_sampling_retains_ids_and_reports_each_failure() {
         assert_eq!(samples[1]["edge"], "upright");
         assert_eq!(
             design_kinds(&model),
-            ["sketch", "extrude", "unresolved:fillet"],
+            ["sketch", "extrude", "fillet"],
             "{failure}"
         );
         let losses: Vec<_> = report
