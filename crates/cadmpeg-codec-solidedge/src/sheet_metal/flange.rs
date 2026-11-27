@@ -51,12 +51,16 @@ const RELIEF_LENGTH_AFTER_NAME: usize = 408;
 const PARTIAL_WIDTH_AFTER_NAME: usize = 492;
 const RELIEF_TYPE_AFTER_NAME: usize = 496;
 /// The distance the slots from [`PARTIAL_WIDTH_AFTER_NAME`] on move where the
-/// flange has a partial width.
+/// flange has a centred partial width.
 const PARTIAL_SHIFT: usize = 24;
+/// The distance the slots from [`PARTIAL_WIDTH_AFTER_NAME`] on move where the
+/// flange has an offset and a width: two `CLSID_JDim` slots.
+const OFFSET_SHIFT: usize = 44;
 
 /// The extent kinds.
 const EXTENT_FULL: f64 = 134.0;
 const EXTENT_CENTRED: f64 = 135.0;
+const EXTENT_OFFSET: f64 = 138.0;
 /// The side value that turns the flange towards the base face normal.
 const SIDE_TOWARDS_NORMAL: f64 = 2.0;
 /// The side value that turns the flange against the base face normal.
@@ -184,14 +188,14 @@ fn unread_edges() -> OrderedSelection {
 
 fn relief(
     slots: &Slots<'_, '_>,
-    partial: bool,
+    shift: usize,
     object: u32,
     overrides: &mut Vec<&'static str>,
     bound: &BTreeSet<u32>,
     governed: bool,
     losses: &mut Vec<LossNote>,
 ) -> Option<Relief> {
-    let after = RELIEF_TYPE_AFTER_NAME + if partial { PARTIAL_SHIFT } else { 0 };
+    let after = RELIEF_TYPE_AFTER_NAME + shift;
     let code = match slots.double(after, "relief type") {
         Ok(code) => code,
         Err(reason) => {
@@ -324,7 +328,12 @@ fn flange(
         object,
         slots.double(EXTENT_AFTER_NAME, "extent kind"),
     );
-    let partial = extent.is_some_and(|kind| is(kind, EXTENT_CENTRED));
+    let shift = match extent {
+        Some(kind) if is(kind, EXTENT_CENTRED) => Some(PARTIAL_SHIFT),
+        Some(kind) if is(kind, EXTENT_OFFSET) => Some(OFFSET_SHIFT),
+        Some(kind) if is(kind, EXTENT_FULL) => Some(0),
+        _ => None,
+    };
     let width = match extent {
         Some(kind) if is(kind, EXTENT_FULL) => Some(FlangeWidth::Full),
         Some(kind) if is(kind, EXTENT_CENTRED) => take(
@@ -335,20 +344,29 @@ fn flange(
                 .and_then(|metres| positive_length(metres, "partial width")),
         )
         .map(|width| FlangeWidth::Centered { width }),
+        Some(kind) if is(kind, EXTENT_OFFSET) => {
+            // The end that the offset counts from is not established.
+            unread(
+                losses,
+                object,
+                "the offset of the extent kind 138 does not state its end",
+            );
+            None
+        }
         Some(kind) => {
             unread(
                 losses,
                 object,
-                &format!("the extent kind {kind} is not 134 or 135"),
+                &format!("the extent kind {kind} is not 134, 135 or 138"),
             );
             None
         }
         None => None,
     };
-    let relief = if extent.is_some() {
+    let relief = if let Some(shift) = shift {
         relief(
             slots,
-            partial,
+            shift,
             object,
             &mut overrides,
             bound,

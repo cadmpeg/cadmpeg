@@ -674,15 +674,18 @@ object identifiers after the end of its function name (§4.2):
 | 380 | `Double Value Object` relief width |
 | 408 | `Double Value Object` relief length |
 | 440 | `Double Value Object` offset kind, `44` |
-| 492 | `CLSID_JDim` partial width, only where the extent kind is `135` |
+| 492 | `CLSID_JDim` partial width where the extent kind is `135`; offset where the extent kind is `138` |
 | 496 | `Double Value Object` relief type, where the extent kind is `134` |
+| 512 | `CLSID_JDim` width, only where the extent kind is `138` |
 | 520 | `Double Value Object` relief type, where the extent kind is `135` |
+| 540 | `Double Value Object` relief type, where the extent kind is `138` |
 | 832 | `Double Value Object` bend method, the document variable of §10.1 index 13 |
 | 860 | `Double Value Object` bend deduction, the document variable of §10.1 index 11 |
 | 888 | `Double Value Object` bend allowance, the document variable of §10.1 index 12 |
 
 The slots from offset 492 on are 24 bytes later where the extent kind is
-`135` than where it is `134`. The slots at offsets 832, 860 and 888 are
+`135` than where it is `134`, and 44 bytes later where the extent kind is
+`138`. The slots at offsets 832, 860 and 888 are
 those of the extent kind `134` layout. The feature holds one edge. A flange
 that follows another flange in the part names that flange at offset 40.
 
@@ -694,6 +697,23 @@ base face and the side value `1` turns it against that normal. The material
 side is `1` for material inside, `2` for material outside and `9` for bend
 outside. The flange stores no thickness side. The relief type is `53` for no
 relief, `51` for a square relief and `52` for a round relief.
+
+The extent kind `138` is a width along the edge that starts at an offset from
+one end of the edge. The `CLSID_JDim` at offset 492 stores the offset and the
+`CLSID_JDim` at offset 512 stores the width. The stored edge proxy is the whole
+edge.
+
+The relief width and the relief length dimension the notch that the relief
+cuts in the base at each end of the flange width. The notch lies outside the
+flange width along the edge and cuts the full thickness. The relief width is
+the extent of the notch along the edge, from the end of the flange width away
+from the flange. The relief length is the extent of the notch across the edge,
+from the line where the bend meets the base face, away from the edge, to the
+far line of the notch. The notch also removes the bend and the base between
+that line and the edge. A relief length of zero ends the notch at that line.
+A square relief ends the notch at the far line. A round relief adds to the
+notch a half-round end of diameter equal to the relief width, centred on the
+far line and lying beyond it.
 
 The length `CLSID_JDim` stores the flange length. The length runs from the
 outer sharp, the intersection of the outer faces of the base and the flange,

@@ -112,13 +112,13 @@
 
 **Need.** Flanges at two angles under bend method `1`, and documents set to each other bend method the software offers.
 
-### DR-1055. Bend relief length and shape
+### DR-1073. Flange offset end and slots after the offset extent
 
-**Question.** Which dimension of a bend relief does the relief length (§10.1) set?
+**Question.** From which end of the edge does the offset of extent kind `138` (§10.3) count, and where do the bend method, bend deduction and bend allowance slots lie for that kind?
 
-**Known.** The relief width and relief length variables hold the values set as the document defaults. A flange stores its own relief width, relief length and relief type (§10.3).
+**Known.** The offset and the width are two `CLSID_JDim` slots at offsets 492 and 512. The relief type is at offset 540. The offset equals the remaining edge length less the width in every stored flange of this kind, so both ends have the same setback.
 
-**Need.** A flange with a bend relief at two relief lengths, and the flat pattern of each.
+**Need.** A flange of extent kind `138` whose offset differs from the remaining edge length less the width, on an edge of known direction.
 
 ### DR-1034. Flange constants and options
 

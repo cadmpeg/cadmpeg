@@ -43,10 +43,13 @@ const RELATION_OFFSET: u32 = 10_000;
 /// One flange of [`flange_document`], in metres and radians.
 #[derive(Clone)]
 pub(crate) struct FlangeSpec {
-    /// The extent kind: 134 full edge, 135 centred partial width.
+    /// The extent kind: 134 full edge, 135 centred partial width, 138 offset
+    /// and width.
     pub(crate) extent: f64,
-    /// The partial width, stored with extent kind 135.
+    /// The partial width, stored with extent kinds 135 and 138.
     pub(crate) partial_width: f64,
+    /// The offset, stored with extent kind 138.
+    pub(crate) offset: f64,
     pub(crate) length: f64,
     /// The entered angle.
     pub(crate) angle: f64,
@@ -71,6 +74,7 @@ impl Default for FlangeSpec {
         Self {
             extent: 134.0,
             partial_width: 0.02,
+            offset: 0.005,
             length: 0.01,
             angle: std::f64::consts::FRAC_PI_2,
             side: 2.0,
@@ -125,7 +129,7 @@ fn relation_body(own: u32, variable: u32) -> Vec<u8> {
 /// A document whose cluster 0 holds one `JMMultiFlangeFunction` feature per
 /// spec, in order, from object 10. Each flange names the flange before it at
 /// slot 40. The slots follow §10.3 and shift by 24 bytes from offset 492 for
-/// extent kind 135. The streams `streams` stand beside the cluster.
+/// extent kind 135 and by 44 bytes for extent kind 138. The streams `streams` stand beside the cluster.
 pub(crate) fn flange_document(specs: &[FlangeSpec], streams: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let mut objects = Vec::new();
     for id in 1..=3 {
@@ -151,7 +155,11 @@ pub(crate) fn flange_document(specs: &[FlangeSpec], streams: &[(&str, Vec<u8>)])
         let mut body = part_body("JMMultiFlangeFunction");
         let end = body.len();
         body.resize(end + 900 + 4, 0);
-        let shift = if spec.extent == 135.0 { 24 } else { 0 };
+        let shift = match spec.extent {
+            135.0 => 24,
+            138.0 => 44,
+            _ => 0,
+        };
         let previous = if index == 0 { 0 } else { id - 1 };
         body[end + 40..end + 44].copy_from_slice(&previous.to_le_bytes());
         let proxy = base + 72;
@@ -228,12 +236,30 @@ pub(crate) fn flange_document(specs: &[FlangeSpec], streams: &[(&str, Vec<u8>)])
             &mut objects,
         );
         put_slot(&mut body, end, base, 440, Slot::Double(44.0), &mut objects);
-        if shift != 0 {
+        if shift == 24 {
             put_slot(
                 &mut body,
                 end,
                 base,
                 492,
+                Slot::Dim(spec.partial_width),
+                &mut objects,
+            );
+        }
+        if shift == 44 {
+            put_slot(
+                &mut body,
+                end,
+                base,
+                492,
+                Slot::Dim(spec.offset),
+                &mut objects,
+            );
+            put_slot(
+                &mut body,
+                end,
+                base,
+                512,
                 Slot::Dim(spec.partial_width),
                 &mut objects,
             );

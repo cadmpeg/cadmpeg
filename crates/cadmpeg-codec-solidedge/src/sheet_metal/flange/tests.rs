@@ -133,6 +133,32 @@ fn centred_partial_width_shifts_the_later_slots() {
 }
 
 #[test]
+fn offset_extent_shifts_the_relief_type_and_leaves_the_width_unread() {
+    let result = decode(&[FlangeSpec {
+        extent: 138.0,
+        partial_width: 0.02,
+        offset: 0.005,
+        relief_type: 52.0,
+        relief_width: 0.0015,
+        relief_length: 0.003,
+        ..FlangeSpec::default()
+    }]);
+    let flange = flange(&result, 0);
+    assert!(flange.width.is_none());
+    let relief = flange.bend.relief.as_ref().unwrap();
+    assert_eq!(relief.shape, Some(ReliefShape::Obround));
+    assert!((millimetres(relief.width.as_ref()) - 1.5).abs() <= EPS_VALUE);
+    assert!((millimetres(relief.depth.as_ref()) - 3.0).abs() <= EPS_VALUE);
+    assert_eq!(
+        codes(&result)
+            .iter()
+            .filter(|code| *code == "sheet-metal.flange-field-unread")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn square_relief_is_a_native_shape_and_zero_length_states_no_depth() {
     let result = decode(&[FlangeSpec {
         relief_type: 51.0,
