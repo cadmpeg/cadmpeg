@@ -1448,6 +1448,10 @@ fn validate_features_with_raw(
             PmDcFeaturePropertyKind::PlaneSurface {
                 references: surface,
                 ..
+            }
+            | PmDcFeaturePropertyKind::ParametricSurface {
+                references: surface,
+                ..
             } => {
                 references.extend(surface.iter().map(|reference| reference.index()));
             }
@@ -2777,6 +2781,32 @@ fn validate_features_with_raw(
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral split does not match its PmDc operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
+        if matches!(family, crate::feature::FeatureFamily::Stitch) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::stitch::operation(
+                raw_feature,
+                |reference| {
+                    properties_by_record
+                        .get(&(token, reference.checked_sub(1)?))
+                        .copied()
+                },
+                |reference| {
+                    let raw = feature_parameters
+                        .get(&(token, reference.checked_sub(1)?))?
+                        .as_ref()?;
+                    crate::feature::stitch::millimetres(raw)
+                },
+            );
+            if expected.is_none_or(|(expected, _)| {
+                cadmpeg_ir::features::FeatureDefinition::Operation(expected) != *definition
+            }) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral stitch does not match its PmDc slots".into(),
                     Some(feature.id.as_str().to_owned()),
                 ));
             }

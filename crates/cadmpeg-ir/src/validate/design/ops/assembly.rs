@@ -53,7 +53,7 @@ fn owner<'a>(index: &DesignRecords<'a>, occurrence: &str) -> Option<&'a str> {
 /// feature's scope spans.
 fn check_owned(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     occurrence: &str,
     findings: &mut Vec<Finding>,
@@ -94,7 +94,7 @@ fn check_owned(
 
 pub(super) fn check_place(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     place: &Place,
     findings: &mut Vec<Finding>,
 ) {
@@ -151,7 +151,7 @@ pub(super) fn check_place(
 
 pub(super) fn check_place_set(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     set: &PlaceSet,
     findings: &mut Vec<Finding>,
 ) {
@@ -202,7 +202,7 @@ fn free_axes(motion: &JointMotion) -> Option<BTreeSet<(bool, FrameAxis)>> {
 }
 
 fn check_bounds<Q: Bound + Clone>(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     bounds: &Bounds<Q>,
     value: impl Fn(Q) -> f64,
     findings: &mut Vec<Finding>,
@@ -225,7 +225,7 @@ fn check_bounds<Q: Bound + Clone>(
 /// A joint's connectors fit its kind; its motion's limits name free axes.
 pub(super) fn check_joint(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     joint: &Joint,
     findings: &mut Vec<Finding>,
 ) {
@@ -364,7 +364,7 @@ pub(super) fn check_joint(
 /// resolved value. A connector with no inputs and a step is placed by its
 /// steps and is not taken for a world connector.
 pub(super) fn check_connectors(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     connectors: &[JointConnector; 2],
     kind: &JointKind,
     findings: &mut Vec<Finding>,
@@ -428,7 +428,7 @@ pub(super) fn check_connectors(
 
 pub(super) fn check_rigid_group(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     group: &RigidGroup,
     findings: &mut Vec<Finding>,
 ) {
@@ -464,7 +464,7 @@ pub(super) fn check_rigid_group(
 }
 
 fn check_component_seeds(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     seeds: &crate::design::selection::OrderedSelection,
     findings: &mut Vec<Finding>,
@@ -484,7 +484,7 @@ fn check_component_seeds(
 
 pub(super) fn check_component_pattern(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     pattern: &ComponentPattern,
     findings: &mut Vec<Finding>,
 ) {
@@ -567,7 +567,7 @@ fn path_occurrences(path: &OccurrencePath) -> Option<Vec<&str>> {
 
 /// The definition that owns the selections of a site's feature: its
 /// `component` where stated, else its scope's definition (§5.8).
-fn owner_definition(site: Site<'_>) -> Option<&str> {
+fn owner_definition<'a>(site: Site<'_, 'a>) -> Option<&'a str> {
     site.index
         .and_then(|index| index.features.get(site.feature))
         .and_then(|feature| feature.component.as_ref())
@@ -643,7 +643,7 @@ impl<'a> Rooted<'a> {
 /// definition, or from an assembly and the owner's definition the
 /// `InContext` pick places in it by `own`.
 fn check_chain_seeds(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     seeds: &OrderedSelection,
     links: &ChainLinks,
     findings: &mut Vec<Finding>,
@@ -714,7 +714,7 @@ fn check_chain_seeds(
 
 pub(super) fn check_mirror(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     mirror: &MirrorComponents,
     findings: &mut Vec<Finding>,
 ) {
@@ -751,7 +751,7 @@ pub(super) fn check_mirror(
 /// participants.
 pub(super) fn check_assembly_feature(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     operation: &FeatureOperation,
     context: &AssemblyContext,
     findings: &mut Vec<Finding>,
@@ -796,7 +796,7 @@ pub(super) fn check_assembly_feature(
 /// is stated, it holds no participant another entry of the context states."
 /// The seeds, propagation, and placement of an `Affected` term are checked
 /// with every selection's rules.
-fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut Vec<Finding>) {
+fn check_participants(site: Site<'_, '_>, context: &AssemblyContext, findings: &mut Vec<Finding>) {
     let selections: Vec<&SetSelection> = context.participants.values().collect();
     let mut record = |message: Ruled<'_>| error(findings, site.entity, message);
     if selections
@@ -1151,7 +1151,7 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
 /// of the prototype, owned by a definition the scope spans.
 fn check_own_occurrence(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     place: &Place,
     findings: &mut Vec<Finding>,
 ) {
@@ -1182,14 +1182,11 @@ fn check_own_occurrence(
 /// The containers above a feature, innermost first, each with the index of
 /// the member on the way down. `None` where the feature is in no container
 /// or the parents do not end.
-fn container_chain<'a>(
-    index: &DesignRecords<'a>,
-    feature: &'a str,
-) -> Option<Vec<(&'a str, usize)>> {
+fn container_chain<'a>(index: &DesignRecords<'a>, feature: &str) -> Option<Vec<(&'a str, usize)>> {
     let mut chain = Vec::new();
     let mut member = MemberKey::Feature(feature);
     for _ in 0..=index.containers.len() {
-        let Some(&parent) = index.parents.get(&member) else {
+        let Some(parent) = index.parent_of(member) else {
             return (!chain.is_empty()).then_some(chain);
         };
         let container = index.containers.get(parent)?;
@@ -1241,7 +1238,7 @@ fn precedes(index: &DesignRecords<'_>, first: &str, second: &str) -> Option<bool
 
 /// Part 10 (§6.7): "A `Coupling` whose `joints` is absent has connectors that
 /// each pick a member it couples." A connector with no input picks nothing.
-fn check_coupling_connectors(site: Site<'_>, joint: &Joint, findings: &mut Vec<Finding>) {
+fn check_coupling_connectors(site: Site<'_, '_>, joint: &Joint, findings: &mut Vec<Finding>) {
     if !matches!(joint.kind, JointKind::Coupling { joints: None, .. }) {
         return;
     }
@@ -1321,7 +1318,7 @@ fn path_prototype<'a>(index: &DesignRecords<'a>, path: &OccurrencePath) -> Optio
 /// do not list their participants is not checked.
 fn check_participant_operands(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     operation: &FeatureOperation,
     context: &AssemblyContext,
     findings: &mut Vec<Finding>,
@@ -1512,7 +1509,7 @@ pub(super) fn check_spans(index: &DesignRecords<'_>, findings: &mut Vec<Finding>
     let mut spanned_by: BTreeMap<&str, &str> = BTreeMap::new();
     for scope in &index.ir.design.scopes {
         let own = scope.definition.as_str();
-        for definition in index.spanned_definitions(own) {
+        for definition in index.spanned_definitions(own).iter().copied() {
             if let Some(first) = spanned_by.insert(definition, own) {
                 if first != own {
                     error(

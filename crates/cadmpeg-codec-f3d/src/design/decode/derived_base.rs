@@ -17,7 +17,7 @@ use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use std::collections::HashSet;
 
-use super::meta::{design_primary_frames, metadata_for_bulk_stream, DesignPrimaryFrame};
+use super::meta::{metadata_for_bulk_stream, scan_design_primary_frames, DesignPrimaryFrame};
 
 const MIRROR_COMPONENT: &str = "71BBEDD5-81F8-4585-816B-05908C207204";
 const MIRROR_DERIVED_BASE: &str = "B1E5B971-C007-48C9-8FF5-F4CCD91F87A4";
@@ -77,7 +77,7 @@ pub(crate) fn mark_derived_base_owners(
         let Some(meta) = metadata_for_bulk_stream(scan, &stream_entry.name)? else {
             continue;
         };
-        let Ok(frames) = design_primary_frames(view.window(), &meta) else {
+        let Ok(frames) = scan_design_primary_frames(scan, &stream_entry.name, &meta) else {
             continue;
         };
         let mirror_components = frames

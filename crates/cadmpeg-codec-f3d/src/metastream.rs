@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{bounded_len, u64_from_index};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
+use crate::bytes::{is_guid_hyphenated, lp_ascii_filtered_view, lp_ascii_strict, lp_utf16_bounded};
 use crate::records::entity_header::SegmentTypeData;
 
 /// Serializer magic that selects the modern `MetaStream` header group.
@@ -42,6 +42,21 @@ pub(crate) struct PrimaryRecordFrame {
     pub(crate) member_end: usize,
     /// End of the complete top-level primary record.
     pub(crate) end: usize,
+}
+
+/// Whether the indexed header that starts `header` selects type-table row
+/// `ordinal` through its three-digit class tag and stores `entity_id` as its
+/// u32 record index.
+pub(crate) fn indexed_header_selects(header: &[u8], ordinal: usize, entity_id: u64) -> bool {
+    let Some((tag, after_tag)) = lp_ascii_filtered_view(header, 0, 3..=3, u8::is_ascii_digit)
+    else {
+        return false;
+    };
+    tag.parse::<usize>()
+        .ok()
+        .and_then(|tag| tag.checked_sub(256))
+        == Some(ordinal)
+        && View::u32_le_at(header, after_tag).map(u64::from) == Some(entity_id)
 }
 
 /// Resolve the primary index to nonempty, strictly ordered sibling-BulkStream

@@ -6,8 +6,7 @@ use crate::bytes::lp_utf16_bounded;
 use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;
 use crate::design::decode::operands::face_operand_frames::parse_face_operand;
-use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::sketch::{cached_owned_record_offsets, IndexedRecordOffsets};
+use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -277,7 +276,6 @@ pub(crate) fn bind_mirror_constructions(
         let key = (stream, header.record_index);
         headers_by_record.insert(key, header);
     }
-    let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
     for index in 0..scopes.len() {
         if design_feature_family(&scopes[index].kind()) != Some(DesignFeatureFamily::Mirror) {
             continue;
@@ -336,7 +334,7 @@ pub(crate) fn bind_mirror_constructions(
             },
         );
         let face_recipe = {
-            let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
+            let records = scan.design_record_offsets(&entry.name)?;
             let next_byte_offset = scopes[index]
                 .reference_members()
                 .values()
@@ -348,7 +346,7 @@ pub(crate) fn bind_mirror_constructions(
             parse_face_operand(
                 ctx,
                 bytes,
-                records,
+                &records,
                 crate::design::decode::operands::face_operand_frames::FaceOperandFrame {
                     registered_frame: None,
                     scope: &scopes[index],
@@ -401,14 +399,14 @@ pub(crate) fn bind_mirror_constructions(
             }
             _ => None,
         };
-        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
+        let records = scan.design_record_offsets(&entry.name)?;
         let count = unique_match(owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream.as_str())
                 && owner.scope_record_index() == scope_record_index
                 && owner.local_ordinal() == 0
                 && owner.evaluated_value().get() == 2.0
         }));
-        let inline_count = exact_legacy_mirror_scope_count(bytes, records, &scopes[index]);
+        let inline_count = exact_legacy_mirror_scope_count(bytes, &records, &scopes[index]);
         let inline_tolerance = exact_legacy_mirror_scope_tolerance(bytes, &scopes[index]);
         let tolerance = unique_match(
             owners

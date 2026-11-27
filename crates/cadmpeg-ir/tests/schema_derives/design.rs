@@ -3,51 +3,49 @@
 
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::text::NonBlankString;
-use schemars::{schema_for, JsonSchema, SchemaGenerator};
+use schemars::{schema_for, SchemaGenerator};
 
-use crate::design::construction::{
+use cadmpeg_ir::design::construction::{
     kinds, AnyConstruction, AxisValue, Construction, ConstructionInput, CurveValue, FrameAxis,
     FrameValue, InputReference, InputRole, PlaneValue, PostStep, Relation, ScalarDimension,
     SourceMode, Subject,
 };
-use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
-use crate::design::expr::{
+use cadmpeg_ir::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
+use cadmpeg_ir::design::expr::{
     BendVariable, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Function,
     Measure, MeasureKind, MeasureTarget, Neutral, NeutralWire, Node, UnaryOp,
 };
-use crate::design::ids::{
+use cadmpeg_ir::design::ids::{
     ArrangementId, ContainerId, EvaluationId, MachineId, MachiningFeatureId, OperationId,
     ParameterProgramId, PresetId, ProcessGroupId, ProcessParameterId, ProcessStateId, ProgramId,
     PublicationId, SetupId, SheetMetalRuleId, SpatialSketchConstraintId, ToolId, ToolpathId,
 };
-use crate::design::names::{
+use cadmpeg_ir::design::names::{
     Base64Bytes, CodecId, GenerationRole, Generator, HoleFaceRole, InstanceIndex, NameEntry,
     NameKind, NameTable, NativeName, NativeNameValue, TopoName,
 };
-use crate::design::options::{
+use cadmpeg_ir::design::options::{
     BodyForm, Boolean, BooleanOp, CornerRound, Hand, LimitOffset, LoopNesting, NativeOption,
     NativeOptions, ProjectionDirection, SectionCondition, SheetOutput, SolidOutput, Solidify,
     Support, SymmetricMeasure, Targets, Thickness, ThinEnds, ThinWall, WallSide,
 };
-use crate::design::refs::{
+use cadmpeg_ir::design::refs::{
     ConfigurationRef, EntityRef, Evaluated, Member, Position, RecordRef, StateRef,
 };
-use crate::design::selection::{
+use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::design::selection::{
     Anchor, BoundaryUse, Continuity, DatumPart, DefinitionRef, Fragment, Members, NativeOwner,
     OccurrencePath, Ordered, PathStep, PickContext, PickDomain, PickTarget, Picked, Picks,
     PrincipalEntity, Propagation, RuleTerm, Selection, SelectionRule, SketchRegion, StepRef,
     Unordered, Witness,
 };
-use crate::design::units::{
+use cadmpeg_ir::design::units::{
     AngularSpeed, Duration, Feed, PositiveArea, Quantity, Unit, UnitFactor, UnitSymbol, UnitSystem,
     ValueKind,
 };
-use crate::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::{Angle, Length};
 
-fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
-    let schema = T::json_schema(generator);
-    assert!(schema.as_object().is_some(), "{}", T::schema_name());
-}
+use crate::generates;
 
 #[test]
 fn every_design_type_has_a_schema() {
@@ -205,9 +203,11 @@ fn a_neutral_schema_is_its_wire_form() {
 
 #[test]
 fn every_design_root_type_has_a_schema() {
-    use crate::design::{configuration, container, evaluation, feature, parameter, program, scope};
+    use cadmpeg_ir::design::{
+        configuration, container, evaluation, feature, parameter, program, scope,
+    };
     let mut generator = SchemaGenerator::default();
-    generates::<crate::document::Design>(&mut generator);
+    generates::<cadmpeg_ir::document::Design>(&mut generator);
     generates::<scope::DesignScope>(&mut generator);
     generates::<scope::OccurrenceDesign>(&mut generator);
     generates::<container::Container>(&mut generator);
@@ -247,7 +247,7 @@ fn every_design_root_type_has_a_schema() {
     generates::<configuration::ArrangementMove>(&mut generator);
     generates::<configuration::NestedArrangement>(&mut generator);
     generates::<configuration::ArrangementRef>(&mut generator);
-    generates::<crate::products::NestedOverride>(&mut generator);
+    generates::<cadmpeg_ir::products::NestedOverride>(&mut generator);
     generates::<parameter::DesignParameter>(&mut generator);
     generates::<parameter::ParameterOwner>(&mut generator);
     generates::<parameter::ParameterDefinition>(&mut generator);
@@ -261,5 +261,22 @@ fn every_design_root_type_has_a_schema() {
     generates::<program::ProgramStage>(&mut generator);
     generates::<program::ProgramBody>(&mut generator);
     generates::<program::Statement>(&mut generator);
-    generates::<crate::design::spreadsheet::Spreadsheet>(&mut generator);
+    generates::<cadmpeg_ir::design::spreadsheet::Spreadsheet>(&mut generator);
+}
+
+#[test]
+fn unproduced_schema_is_a_required_unique_array_of_body_ids() {
+    let schema = json::to_value(schema_for!(DesignScope)).unwrap();
+    let property = &schema["properties"]["unproduced"];
+    assert_eq!(property["type"], "array");
+    assert_eq!(property["uniqueItems"], true);
+    assert!(property["items"]["$ref"]
+        .as_str()
+        .unwrap()
+        .ends_with("/BodyId"));
+    assert!(schema["required"]
+        .as_array()
+        .unwrap()
+        .contains(&cadmpeg_core::json!("unproduced")));
+    assert_eq!(schema["additionalProperties"], false);
 }

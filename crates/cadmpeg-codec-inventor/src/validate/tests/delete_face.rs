@@ -14,7 +14,7 @@ fn delete_face_validation_keeps_unresolved_controls_native() -> TestResult {
         (
             2,
             4,
-            "slots 1 and 2 Boolean construction roles are unresolved",
+            "the slot 1 and 2 Boolean pair has no resolved heal mode",
         ),
         (2, 3, "property vector differs from the four-slot form"),
         (2, 5, "property vector differs from the four-slot form"),

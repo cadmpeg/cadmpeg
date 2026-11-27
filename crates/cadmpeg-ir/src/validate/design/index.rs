@@ -13,14 +13,13 @@ use std::rc::Rc;
 
 use crate::design::container::{Container, Rollback};
 use crate::design::feature::FeatureOperation;
-use crate::design::ops::sketch::{Planar, Sketch, SketchEntity, Spatial, SpatialSketch};
+use crate::design::ops::sketch::{Planar, SketchEntity, Spatial};
 use crate::design::refs::{Member, Position};
 use crate::design::selection::{NativeOwner, OccurrencePath, PickTarget, StepRef};
-use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 
 use super::names::mentioned_features;
-use super::records::{by_id, entering_at, members, DesignRecords, MemberKey, PositionKey};
+use super::records::{entering_at, members, DesignRecords, MemberKey, PositionKey};
 use super::Held;
 
 /// A state whose dependencies a rule reads.
@@ -50,12 +49,10 @@ impl<'a> StateKey<'a> {
 
 /// The design records by identity, container membership, and dependencies.
 pub(in crate::validate) struct DesignIndex<'a> {
-    pub(super) records: DesignRecords<'a>,
+    pub(super) records: Rc<DesignRecords<'a>>,
     /// The container holding each member, and the member's index in an
     /// ordered container's list.
     places: BTreeMap<MemberKey<'a>, (&'a Container, usize)>,
-    pub(super) sketches: BTreeMap<&'a str, &'a Sketch>,
-    pub(super) spatial_sketches: BTreeMap<&'a str, &'a SpatialSketch>,
     pub(super) sketch_entities: BTreeMap<&'a str, &'a SketchEntity<Planar>>,
     pub(super) spatial_sketch_entities: BTreeMap<&'a str, &'a SketchEntity<Spatial>>,
     pub(super) publications: BTreeSet<&'a str>,
@@ -68,8 +65,8 @@ pub(in crate::validate) struct DesignIndex<'a> {
 }
 
 impl<'a> DesignIndex<'a> {
-    pub(in crate::validate) fn new(ir: &'a CadIr) -> Self {
-        let design = &ir.design;
+    pub(in crate::validate) fn with_records(records: Rc<DesignRecords<'a>>) -> Self {
+        let design = &records.ir.design;
         let mut places = BTreeMap::new();
         for container in &design.containers {
             for (index, member) in members(container).into_iter().enumerate() {
@@ -79,10 +76,8 @@ impl<'a> DesignIndex<'a> {
             }
         }
         Self {
-            records: DesignRecords::new(ir),
+            records,
             places,
-            sketches: by_id(&design.sketches, |sketch| sketch.id.as_str()),
-            spatial_sketches: by_id(&design.spatial_sketches, |sketch| sketch.id.as_str()),
             sketch_entities: design
                 .sketch_entities
                 .iter()
@@ -195,13 +190,15 @@ impl<'a> DesignIndex<'a> {
     }
 
     fn sketch_owner(&self, sketch: &str) -> Option<&'a str> {
-        self.sketches
+        self.records
+            .sketches
             .get(sketch)
             .map(|sketch| sketch.owner.as_str())
     }
 
     fn spatial_sketch_owner(&self, sketch: &str) -> Option<&'a str> {
-        self.spatial_sketches
+        self.records
+            .spatial_sketches
             .get(sketch)
             .map(|sketch| sketch.owner.as_str())
     }
