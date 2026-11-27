@@ -497,7 +497,7 @@ Each omitted owner-qualified construction circle can have its own current or ext
 
 **Question.** What operation and record shape does each sparse extrusion object outside the defined form codes use?
 
-**Known.** `sldprt.md` §2 "Keywords element order is serialization order, not regeneration order. Neutral regeneration" through `sldprt.md` §2 "Feature-tree" define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Form code `11` identifies an object form and does not determine its Boolean operation. A Keywords operation token or a complete inline operation trailer supplies the operation. Without either carrier, the operation remains unresolved.
+**Known.** `sldprt.md` §2 "Keywords elements follow serialization order. Parent and dependency references" through `sldprt.md` §2 "Feature-tree" define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Form code `11` identifies an object form and does not determine its Boolean operation. A Keywords operation token or a complete inline operation trailer supplies the operation. Without either carrier, the operation remains unresolved.
 
 **Need.** We must know the remaining form codes to parse each object and construct its Boolean operation.
 
@@ -1445,13 +1445,13 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Need.** A sketch with two points on no common axis, dimensioned three times with point-to-point dimensions placed aligned, horizontal and vertical, saved, and the three relation objects and their `moDisplayDistanceDim_c` display objects compared, together with a second save in which a point marker is added before the dimensioned points.
 
-### DI-97. The state after a feature whose records name two marks, and the tree order against the mark order
+### DI-97. The state after a feature whose records name two marks
 
-**Question.** Which state of the main line is the state after a feature whose `moPMarkRecord_c` records name two marks of the main line, and which order of the feature tree holds where the order of the feature elements of `Keywords` differs from the order of the features' marks on the main line?
+**Question.** Which state of the main line is the state after a feature whose `moPMarkRecord_c` records name two marks of the main line?
 
-**Known.** A record's features run from the nearest named object before it back to its holder (`sldprt.md` §3.4). A feature can hold records that name two different marks of the main line. The marks of the records follow the main line in stream order. The feature elements of `Keywords`, with each feature after the features it depends on, can place a feature after a feature whose record names a mark nearer the current mark.
+**Known.** A `moPMarkRecord_c` head gives the PMARK identifier at offset +0. A feature can hold two records whose heads name distinct PMARK identifiers on the linked main line. The marks of the records follow the main line in stream order (`sldprt.md` §3.4).
 
-**Need.** A part with three boss extrusions on independent sketches, saved, and saved again after the third extrusion is moved before the second in the feature tree, with the `Keywords` order and the marks of the three records compared in the two saves. A part with a hole-wizard hole on a face of a boss extrusion, saved, with the marks of every record of the hole compared to the marks of the main line.
+**Need.** A part with a hole-wizard hole on a face of a boss extrusion, saved, with the marks of every record of the hole compared to the marks of the main line.
 
 ## 8. Edited parts
 

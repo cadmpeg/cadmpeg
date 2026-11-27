@@ -221,6 +221,32 @@ impl ChainBack {
             delta,
         }
     }
+
+    /// The names held at the last stated position.
+    pub fn names(&self) -> &BTreeMap<EntityRef, NameEntry> {
+        &self.later.names
+    }
+
+    /// Advance through an unchanged kernel partition. Clear structured names
+    /// of the supplied entities while retaining their native name data.
+    pub fn push_shared(
+        &mut self,
+        id: EvaluationId,
+        clear: impl IntoIterator<Item = EntityRef>,
+    ) -> StateContent {
+        let mut delta = StateDelta::default();
+        for entity in clear {
+            if let Some(entry) = self.later.names.get_mut(&entity) {
+                if entry.name.take().is_some() {
+                    delta.names.insert(entity, Some(entry.clone()));
+                }
+            }
+        }
+        StateContent {
+            base: std::mem::replace(&mut self.base, StateBase::Evaluation(id)),
+            delta,
+        }
+    }
 }
 
 /// A current state of a scope: a position and the bodies of `CadIr.geometry`

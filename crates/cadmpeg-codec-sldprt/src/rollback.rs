@@ -3,7 +3,7 @@
 //! §3.4): the current mark of the active configuration's partition against
 //! the mark each feature's `moPMarkRecord_c` names.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -151,6 +151,7 @@ impl std::fmt::Display for Unread {
 pub(crate) struct MarkRecord {
     pub(crate) at: usize,
     pub(crate) mark: u32,
+    pub(crate) valid: bool,
 }
 
 /// Where the class index of `moPMarkRecord_c` comes from.
@@ -164,15 +165,21 @@ enum MarkClass {
 
 /// The current mark and the main line back from it, current first.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct MarkChain {
-    current: u32,
-    main: Vec<u32>,
+pub(crate) struct MarkChain {
+    pub(crate) current: u32,
+    pub(crate) main: Vec<u32>,
 }
 
 /// The `moPMarkRecord_c` records of each partition site that stores a
-/// deltas transmit, by the name of its partition section, or why they are
+/// deltas transmit, by its partition site key, or why they are
 /// not read.
-pub(crate) type StoredMarks = BTreeMap<String, Result<SiteRecords, Unread>>;
+pub(crate) type StoredMarks<'a> = BTreeMap<String, StoredSite<'a>>;
+
+pub(crate) struct StoredSite<'a> {
+    pub(crate) frame: DeltasRecords<'a>,
+    pub(crate) chain: Option<MarkChain>,
+    pub(crate) marks: Result<SiteRecords, Unread>,
+}
 
 /// The `moPMarkRecord_c` records of one configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,19 +198,21 @@ pub(crate) struct SiteRecords {
 /// transmit. The decode moves the configuration streams into unknown
 /// records after it reads them, so the records are read here, with the
 /// lanes of the configurations' `ResolvedFeatures` streams.
-pub(crate) fn stored_marks(
+pub(crate) fn stored_marks<'a>(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
+    scan: &'a ContainerScan<'_>,
     lanes: &[FeatureInputLane],
-) -> Result<StoredMarks, CodecError> {
+    active_only: bool,
+) -> Result<StoredMarks<'a>, CodecError> {
+    let active = crate::container::select_active_parasolid_site(scan).map(|site| site.site_key());
     let mut stored = BTreeMap::new();
     for section in scan.sections() {
-        let Some(name) = section
-            .name()
-            .filter(|name| crate::container::is_partition_section(name))
-        else {
+        let key = section.site_key();
+        let name = section.name();
+        let selected = active.as_ref() == Some(&key);
+        if !selected && (active_only || !name.is_some_and(crate::container::is_partition_section)) {
             continue;
-        };
+        }
         let Some(deltas) = section
             .ps_streams()
             .iter()
@@ -211,24 +220,35 @@ pub(crate) fn stored_marks(
         else {
             continue;
         };
-        let chain = match DeltasRecords::read(&deltas.payload) {
-            Ok(records) => mark_chain(&records),
+        let frame = match DeltasRecords::read(&deltas.payload) {
+            Ok(frame) => frame,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(_) => None,
+            Err(_) => continue,
         };
-        let site = match chain {
-            Some(chain) => site_marks(ctx, scan, name, &chain)?.map(|marks| SiteRecords {
-                lane: lanes
-                    .iter()
-                    .find(|lane| lane.native_payload.as_slice() == marks.resolved)
-                    .map(|lane| lane.id.clone()),
-                configuration: marks.configuration,
-                records: marks.records,
-                inferred: marks.inferred,
-            }),
-            None => Err(Unread::NoCurrentMark),
+        let chain = mark_chain(&frame);
+        let marks = match (&chain, name) {
+            (Some(chain), Some(name)) => {
+                site_marks(ctx, scan, name, chain)?.map(|marks| SiteRecords {
+                    lane: lanes
+                        .iter()
+                        .find(|lane| lane.native_payload.as_slice() == marks.resolved)
+                        .map(|lane| lane.id.clone()),
+                    configuration: marks.configuration,
+                    records: marks.records,
+                    inferred: marks.inferred,
+                })
+            }
+            (None, _) => Err(Unread::NoCurrentMark),
+            (_, None) => Err(Unread::NoFeatureStreams),
         };
-        stored.insert(name.to_owned(), site);
+        stored.insert(
+            key,
+            StoredSite {
+                frame,
+                chain,
+                marks,
+            },
+        );
     }
     Ok(stored)
 }
@@ -239,35 +259,31 @@ pub(crate) fn stored_marks(
 pub(crate) fn read(
     scan: &ContainerScan<'_>,
     owners: &MarkOwners,
-    stored: &StoredMarks,
+    stored: &StoredMarks<'_>,
     losses: &mut Vec<LossNote>,
-) -> Result<Reading, CodecError> {
+) -> Reading {
     let Some(site) = crate::container::select_active_parasolid_site(scan) else {
-        return Ok(Reading::Unread(Unread::NoPartitionSite));
+        return Reading::Unread(Unread::NoPartitionSite);
     };
-    let Some(deltas) = site
-        .section
-        .ps_streams()
-        .iter()
-        .find(|stream| contains_ascii_case_insensitive(&stream.header.description, "deltas"))
-    else {
-        return Ok(Reading::Unread(Unread::NoDeltasTransmit));
+    let Some(site) = stored.get(&site.site_key()) else {
+        let reason = if site
+            .section
+            .ps_streams()
+            .iter()
+            .any(|stream| contains_ascii_case_insensitive(&stream.header.description, "deltas"))
+        {
+            Unread::NoCurrentMark
+        } else {
+            Unread::NoDeltasTransmit
+        };
+        return Reading::Unread(reason);
     };
-    let records = match DeltasRecords::read(&deltas.payload) {
-        Ok(records) => records,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(Reading::Unread(Unread::NoCurrentMark)),
+    let marks = match &site.marks {
+        Ok(marks) => marks,
+        Err(unread) => return Reading::Unread(unread.clone()),
     };
-    let Some(chain) = mark_chain(&records) else {
-        return Ok(Reading::Unread(Unread::NoCurrentMark));
-    };
-    let Some(partition) = site.section.name() else {
-        return Ok(Reading::Unread(Unread::NoFeatureStreams));
-    };
-    let marks = match stored.get(partition) {
-        Some(Ok(marks)) => marks,
-        Some(Err(unread)) => return Ok(Reading::Unread(unread.clone())),
-        None => return Ok(Reading::Unread(Unread::NoFeatureStreams)),
+    let Some(chain) = &site.chain else {
+        return Reading::Unread(Unread::NoCurrentMark);
     };
     if marks.inferred {
         losses.push(mark_class_inferred(&marks.configuration));
@@ -276,7 +292,7 @@ pub(crate) fn read(
         .get(&marks.configuration.to_ascii_lowercase())
         .map(Vec::as_slice)
         .unwrap_or_default();
-    Ok(join(&chain, &marks.records, owners))
+    join(chain, &marks.records, owners)
 }
 
 /// The `moPMarkRecord_c` records of one configuration, in its stream.
@@ -369,13 +385,14 @@ fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
     let current = current?;
     let mut main = vec![current.identifier()];
     let mut at = current;
-    while let Some(preceding) = at.preceding() {
+    let mut visited = HashSet::from([current.xmt()]);
+    while let Some(preceding) = at
+        .preceding()
+        .filter(|preceding| visited.insert(*preceding))
+    {
         let Some(mark) = marks.get(&preceding) else {
             break;
         };
-        if main.len() > marks.len() {
-            break;
-        }
         main.push(mark.identifier());
         at = *mark;
     }
@@ -422,6 +439,7 @@ fn token_naming_marks(stream: &[u8], count: Option<u32>, chain: &MarkChain) -> O
         Some((_, later)) if !later.is_empty() => later,
         _ => chain.main.as_slice(),
     };
+    let marks = marks.iter().copied().collect::<HashSet<_>>();
     let mut named = BTreeMap::<u32, Named>::new();
     for at in RESOLVED_FEATURES_HEAD..stream.len() {
         let Some(word) = View::u16_le_at(stream, at) else {
@@ -498,8 +516,15 @@ fn mark_records(stream: &[u8], index: u32) -> Vec<MarkRecord> {
         let offset = cursor + rel;
         cursor = offset + 1;
         let at = RESOLVED_FEATURES_HEAD + offset + tag.len();
-        if let Some(mark) = record_mark(stream, at) {
-            out.push(MarkRecord { at, mark });
+        if let Some(mark) = at
+            .checked_add(head::MARK)
+            .and_then(|start| View::u32_le_at(stream, start))
+        {
+            out.push(MarkRecord {
+                at,
+                mark,
+                valid: record_mark(stream, at).is_some(),
+            });
         }
     }
     out
@@ -509,24 +534,28 @@ fn mark_records(stream: &[u8], index: u32) -> Vec<MarkRecord> {
 /// walk gives in `owners`.
 fn join(chain: &MarkChain, records: &[MarkRecord], owners: &[MarkOwner]) -> Reading {
     let current = chain.current;
-    let Some(last) = records.last() else {
+    let records = records
+        .iter()
+        .filter(|record| record.valid)
+        .collect::<Vec<_>>();
+    let Some(&last) = records.last() else {
         return Reading::Unread(Unread::NoMarkRecord);
     };
-    let holder = |record: &MarkRecord| {
-        owners
-            .iter()
-            .find(|owner| owner.at == record.at)
-            .and_then(|owner| owner.owner.clone())
-    };
+    let owners = owners
+        .iter()
+        .map(|owner| (owner.at, &owner.owner))
+        .collect::<HashMap<_, _>>();
+    let main = chain.main.iter().copied().collect::<HashSet<_>>();
+    let holder = |record: &&MarkRecord| owners.get(&record.at).and_then(|owner| (*owner).clone());
     let recorded = records.iter().filter_map(holder).collect::<BTreeSet<_>>();
     if last.mark == current {
-        return match holder(last) {
+        return match holder(&last) {
             Some(last) => Reading::End { last, recorded },
             None => Reading::Unread(Unread::HolderUnresolved { current }),
         };
     }
     let Some(index) = records.iter().rposition(|record| record.mark == current) else {
-        return Reading::Unread(if chain.main.contains(&last.mark) {
+        return Reading::Unread(if main.contains(&last.mark) {
             Unread::AfterLastFeature {
                 current,
                 last: last.mark,
@@ -536,7 +565,7 @@ fn join(chain: &MarkChain, records: &[MarkRecord], owners: &[MarkOwner]) -> Read
         });
     };
     let later = &records[index + 1..];
-    if later.iter().any(|record| chain.main.contains(&record.mark)) {
+    if later.iter().any(|record| main.contains(&record.mark)) {
         return Reading::Unread(Unread::LaterMarkOnMainLine { current });
     }
     let (Some(after), Some(later)) = (

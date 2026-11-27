@@ -95,7 +95,7 @@ pub(crate) struct Part<'a> {
     /// where the decode reads the partitions.
     pub(crate) scan: Option<&'a ContainerScan<'a>>,
     /// The mark records of each partition site.
-    pub(crate) marks: &'a StoredMarks,
+    pub(crate) marks: &'a StoredMarks<'a>,
 }
 
 /// What [`project`] stated.
@@ -148,7 +148,19 @@ pub(crate) fn project(
         losses.extend(equations::without_design(&managers, active));
         return Ok(Projection::default());
     }
-    losses.extend(order::regeneration_order(&mut timeline, &ir.model));
+    let sources = scan.map(|scan| states::between::Sources {
+        scan,
+        histories,
+        lanes,
+        marks,
+    });
+    let active_states = sources
+        .as_ref()
+        .and_then(|sources| states::between::active(sources, &timeline.features));
+    let marked = active_states
+        .as_ref()
+        .map_or(&[][..], states::between::Active::order);
+    losses.extend(order::regeneration_order(&mut timeline, &ir.model, marked));
     let definition = root_definition();
     let entries = parameters::Entries::new(histories, &timeline)?;
     let typed = typed::project(
@@ -224,7 +236,7 @@ pub(crate) fn project(
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
-    let (rollback, at) = match stated(&timeline.features, rollback) {
+    let (mut rollback, mut at) = match stated(&timeline.features, rollback) {
         Ok((built, None)) => {
             let (rollback, at) = built_through(&id, &members, built);
             (Some(rollback), at)
@@ -237,8 +249,20 @@ pub(crate) fn project(
             (None, Position::After(Member::Container(id.clone())))
         }
     };
+    if let Position::After(Member::Feature(feature)) = &at {
+        if active_states
+            .as_ref()
+            .is_some_and(|active| active.earlier(feature))
+        {
+            rollback = None;
+            at = Position::After(Member::Container(id.clone()));
+        }
+    }
+    let tip = active_states
+        .as_ref()
+        .and_then(states::between::Active::native_ref);
     let current = (!bodies.is_empty())
-        .then(|| current_state(at.clone(), bodies.clone()))
+        .then(|| current_state(at.clone(), bodies.clone(), tip))
         .into_iter()
         .collect();
     let designed = sketches
@@ -262,24 +286,20 @@ pub(crate) fn project(
         current: &bodies,
         given_up: given_up_configurations,
     };
-    let states = states::configuration_states(ctx, ir, &scope, &names, losses)?;
-    let between = match scan {
-        Some(scan) => states::between::states(
+    let mut states = states::configuration_states(ctx, ir, &scope, &names, losses)?;
+    let between = match &sources {
+        Some(sources) => states::between::states(
             ctx,
             ir,
             &scope,
-            &states::between::Latest {
+            states::between::Latest {
+                active: active_states,
                 at: &at,
                 names: &table,
-                evaluations: &states.evaluations,
+                evaluations: &mut states.evaluations,
             },
             &names,
-            &states::between::Sources {
-                scan,
-                histories,
-                lanes,
-                marks,
-            },
+            sources,
             losses,
         )?,
         None => states::between::Between::default(),
@@ -440,12 +460,12 @@ fn container_id(key: impl Into<cadmpeg_ir::ids::IdentityKey>) -> ContainerId {
     ))
 }
 
-fn current_state(at: Position, bodies: Vec<BodyId>) -> CurrentState {
+fn current_state(at: Position, bodies: Vec<BodyId>, native_ref: Option<String>) -> CurrentState {
     CurrentState {
         at,
         bodies,
         poses: BTreeMap::new(),
         status: EvaluationStatus::Current,
-        native_ref: None,
+        native_ref,
     }
 }

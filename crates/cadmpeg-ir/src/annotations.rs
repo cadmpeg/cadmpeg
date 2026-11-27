@@ -684,7 +684,7 @@ impl Annotations {
         let mut out = Self::default();
         let mut moved = |key: &AnnotationKey| match key.target() {
             AnnotationTarget::Entity(id) if keep(id) => {
-                Some(AnnotationKey::record_in_delta(qualifier, id))
+                Some(AnnotationKey::qualified(qualifier.as_qualifier(), id))
             }
             _ => None,
         };

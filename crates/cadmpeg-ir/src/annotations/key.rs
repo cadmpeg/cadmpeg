@@ -68,12 +68,7 @@ impl AnnotationKey {
         Self::qualified(qualifier.as_qualifier(), record.as_ref().as_str())
     }
 
-    /// The key of the record of id `record` in the delta of `qualifier`.
-    pub(super) fn record_in_delta(qualifier: &impl Qualifier, record: &str) -> Self {
-        Self::qualified(qualifier.as_qualifier(), record)
-    }
-
-    fn qualified(qualifier: &str, record: &str) -> Self {
+    pub(super) fn qualified(qualifier: &str, record: &str) -> Self {
         Self(format!("{qualifier}{QUALIFIER_SEPARATOR}{record}"))
     }
 

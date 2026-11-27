@@ -106,6 +106,16 @@ pub(super) fn configuration_states(
             .is_some_and(|native| crate::decode::configuration_source_needs_update(ir, native));
         let bodies = native.and_then(|native| native.bodies.as_deref());
         let content = match bodies {
+            Some(_) if ctx.policy().limits.max_state_chain_depth == 0 => {
+                losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
+                    "configuration {}: the part's evaluation-chain depth limit is reached.",
+                    configuration.id,
+                )));
+                if !stale {
+                    continue;
+                }
+                None
+            }
             Some(bodies) if bodies.iter().all(|body| !current.contains(body)) => {
                 if index.is_none() {
                     index = Some(Reach::new(ctx, &ir.geometry)?);

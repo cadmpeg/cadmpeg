@@ -1529,7 +1529,7 @@ fn members_follow_the_features_they_depend_on() {
     depends(&mut ir.model.features, "Boss", "Sketch1");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Sketch1"));
-    let note = super::order::regeneration_order(&mut timeline, &ir.model);
+    let note = super::order::regeneration_order(&mut timeline, &ir.model, &[]);
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         member_position(&timeline, "Sketch1") + 1,
@@ -1580,7 +1580,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Boss");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model);
+    let note = super::order::regeneration_order(&mut timeline, &model, &[]);
     assert!(note.is_none(), "{note:?}");
     assert_eq!(
         names(&timeline),
@@ -1605,7 +1605,7 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     let mut model = ir.model.clone();
     depends(&mut model.features, "Sketch1", "Odd");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let note = super::order::regeneration_order(&mut timeline, &model).unwrap();
+    let note = super::order::regeneration_order(&mut timeline, &model, &[]).unwrap();
     assert_eq!(
         note.code,
         crate::loss::SldprtLossCode::DesignFolderDropped.kind()
