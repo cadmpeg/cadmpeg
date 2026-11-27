@@ -405,8 +405,8 @@
       }
     },
     "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
+      "angular": 1e-11,
+      "linear": 0.00001
     },
     "units": {
       "angle": "radian",
@@ -442,6 +442,18 @@
       "kind": "classified"
     },
     "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "body.resolution-unread",
+            "kind": "decode_diagnostic",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "body sldprt:brep:body#0 stores no res_linear value the decoder reads; the part's linear tolerance excludes it",
+        "severity": "warning"
+      },
       {
         "code": {
           "kind": "namespaced",
@@ -637,6 +649,7 @@
       "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_linear_tolerance_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_native_configuration_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "sldprt_native_history_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "sldprt_native_parameter_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",

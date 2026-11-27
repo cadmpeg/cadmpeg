@@ -3328,6 +3328,9 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target
         .native_body_identities
         .append(&mut source.native_body_identities);
+    target
+        .body_linear_precisions
+        .append(&mut source.body_linear_precisions);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.losses.append(&mut source.losses);
     target.dropped.append(&mut source.dropped);
@@ -3806,6 +3809,8 @@ fn build_geometry_ir(
         metadata_header.as_ref(),
         display_summary,
     )?);
+    ir.tolerances =
+        cadmpeg_parasolid::precision::part_tolerances(brep.body_linear_precisions.iter().copied());
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut history_given_up = Vec::new();
@@ -5327,6 +5332,7 @@ fn build_container_ir(
     classification: &crate::dialect::LayerClassification,
 ) -> Result<(CadIr, Annotations, Vec<UnknownRecord>, retention::Retention), CodecError> {
     let mut ir = CadIr::empty();
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances([]);
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
@@ -5354,6 +5360,7 @@ fn build_metadata_ir(
     let equation_managers = crate::design_v11::equation_managers(scan);
     let length_places = crate::design_v11::length_places(scan);
     let mut ir = CadIr::empty();
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances([]);
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
@@ -6685,10 +6692,15 @@ pub(crate) fn stamp_local_digests(
 ) -> Result<(), CodecError> {
     ir.finalize();
     let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
+    let tolerance_hash = crate::writer::linear_tolerance_local_sha256(ir)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("brep_local_sha256"),
             brep_hash,
+        );
+        source.attributes.insert(
+            cadmpeg_core::nonblank_const!(crate::writer::LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE),
+            tolerance_hash,
         );
     }
     let has_swobjects_semantics = ir.model.attributes.iter().any(|attribute| {

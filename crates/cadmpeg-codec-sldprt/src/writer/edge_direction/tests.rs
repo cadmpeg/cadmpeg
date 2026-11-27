@@ -254,7 +254,13 @@ fn a_nurbs_edge_against_its_coedges_reads_back_along_its_curve() {
         "{:?}",
         source.findings
     );
-    let body = crate::writer::brep_body(&ir, 0.001, false).unwrap();
+    let body = crate::writer::brep_body(
+        &ir,
+        0.001,
+        cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+        false,
+    )
+    .unwrap();
     let native = crate::test_support::container::sldprt_with_body(&body);
     let decoded = <crate::SldprtCodec as cadmpeg_ir::codec::Codec>::decode(
         &crate::SldprtCodec,
