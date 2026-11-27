@@ -44,7 +44,6 @@ fn write_with_bytes(ir: &CadIr) -> (ExportReport, Vec<u8>, CadIr) {
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &crate::F3dCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut bytes))
     .expect("the writer writes the document");
@@ -1124,7 +1123,6 @@ fn a_body_with_no_record_form_is_omitted_alone_beside_native_records() {
     let report = cadmpeg_ir::codec::write::Encoder::plan(
         &crate::F3dCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut bytes))
     .expect("the writer writes the document");

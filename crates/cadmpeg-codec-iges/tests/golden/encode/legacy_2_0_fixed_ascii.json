@@ -88,6 +88,10 @@
     "notes": [
       "IGES Fixed ASCII container regenerated from supported neutral geometry"
     ],
+    "synthesis_cause": {
+      "kind": "patch_declined",
+      "reason": "the write target displaces the source dialect"
+    },
     "write_path": {
       "fidelity": {
         "kind": "not_provided"

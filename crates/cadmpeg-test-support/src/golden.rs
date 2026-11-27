@@ -591,9 +591,9 @@ pub fn fidelity_snapshot(
     ir: &cadmpeg_ir::CadIr,
     fidelity: &cadmpeg_ir::SourceFidelity,
 ) -> serde_json::Value {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
     let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, Some(fidelity)))
         .expect("the CADIR writer drops what it cannot write and does not refuse");
     let mut value = json::to_value(fidelity).expect("serialize source_fidelity");
     value["annotations"] = json::to_value(
