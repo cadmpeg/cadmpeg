@@ -1789,9 +1789,47 @@ fn occurrence_body_selection_must_name_an_occurrence_and_bodies() {
             panic!("test consumer must retain its body selection");
         };
         *bodies = selection(vec![
-            body,
+            body.clone(),
             BodyId::mint(MISSING_BODY).expect("identity grammar"),
         ]);
     });
     assert!(messages(&ir).contains(&missing_body));
+
+    let outside = |ir: &CadIr| {
+        messages(ir)
+            .iter()
+            .any(|message| message.contains("outside its prototype"))
+    };
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies }) = definition
+        else {
+            panic!("test consumer must retain its body selection");
+        };
+        *bodies = selection(vec![body.clone()]);
+    });
+    assert!(ir.model.product_definitions[0].bodies.contains(&body));
+    assert!(!outside(&ir));
+
+    let mut empty = ir.model.product_definitions[0].clone();
+    empty.id = crate::ids::ProductDefinitionId::mint("synthetic:test:definition#empty")
+        .expect("identity grammar");
+    empty.bodies.clear();
+    empty.occurrences.clear();
+    ir.model.occurrences[0].prototype = empty.id.clone();
+    ir.model.product_definitions.push(empty);
+    assert!(outside(&ir));
+
+    ir.model.occurrences[0].prototype = ir.model.product_definitions[0].id.clone();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+            bodies: BodySelection::Occurrence {
+                occurrence_path, ..
+            },
+        }) = definition
+        else {
+            panic!("test consumer must retain its occurrence selection");
+        };
+        occurrence_path.push("nested".into());
+    });
+    assert!(outside(&ir));
 }

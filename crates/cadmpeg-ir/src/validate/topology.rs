@@ -119,6 +119,44 @@ fn same_feature_owner(
     }
 }
 
+/// Whether an occurrence body selection names a body that no definition at
+/// `depth` nested occurrence levels below the occurrence's prototype owns.
+/// An absent occurrence or prototype is a referential finding of its own.
+fn occurrence_selection_leaves_its_prototype(
+    ir: &CadIr,
+    occurrence: &crate::ids::OccurrenceId,
+    depth: usize,
+    bodies: &[crate::ids::BodyId],
+) -> bool {
+    let definition = |id: &crate::ids::ProductDefinitionId| {
+        ir.model
+            .product_definitions
+            .iter()
+            .find(|row| &row.id == id)
+    };
+    let prototype_of = |id: &crate::ids::OccurrenceId| {
+        ir.model
+            .occurrences
+            .iter()
+            .find(|row| &row.id == id)
+            .map(|row| &row.prototype)
+    };
+    let Some(prototype) = prototype_of(occurrence).and_then(definition) else {
+        return false;
+    };
+    let mut level = vec![prototype];
+    for _ in 0..depth {
+        level = level
+            .iter()
+            .flat_map(|owner| &owner.occurrences)
+            .filter_map(|child| prototype_of(child).and_then(definition))
+            .collect();
+    }
+    bodies
+        .iter()
+        .any(|body| !level.iter().any(|owner| owner.bodies.contains(body)))
+}
+
 fn ref_error(
     findings: &mut Vec<Finding>,
     owner: &str,
@@ -4977,7 +5015,10 @@ fn check_feature_references(
                     }
                 }
                 BodySelection::Occurrence {
-                    occurrence, bodies, ..
+                    occurrence,
+                    occurrence_path,
+                    bodies,
+                    ..
                 } => {
                     if !occurrence_ids.contains(occurrence.as_str()) {
                         ref_error(
@@ -4994,6 +5035,21 @@ fn check_feature_references(
                         bodies.iter().map(super::super::ids::BodyId::as_str),
                         |identity| ids.bodies(identity, crate::index::StandardIndex).is_some(),
                     );
+                    if occurrence_selection_leaves_its_prototype(
+                        ir,
+                        occurrence,
+                        occurrence_path.len(),
+                        bodies,
+                    ) {
+                        geometry_error(
+                            findings,
+                            feature.id.as_str(),
+                            crate::rule!(
+                                "topology.occurrence-body-selection-outside-prototype",
+                                "occurrence body selection names a body outside its prototype"
+                            ),
+                        );
+                    }
                 }
                 BodySelection::Local { .. }
                 | BodySelection::NativeSet(_)
