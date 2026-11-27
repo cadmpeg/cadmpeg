@@ -32,7 +32,12 @@ fn malformed_component_reference_data_gives_up_its_own_entry() {
         let mut source = Cursor::new(&document);
         let decoded = F3dCodec.decode(&mut source, &options).unwrap();
         let losses = &decoded.report().losses;
-        crate::test_support::charged_part(decoded.ir(), losses, head, "");
+        crate::test_support::charged_part(
+            decoded.ir(),
+            losses,
+            (cadmpeg_ir::unknown::part::Cause::Unreadable, head),
+            "",
+        );
         let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
         assert!(
             !losses

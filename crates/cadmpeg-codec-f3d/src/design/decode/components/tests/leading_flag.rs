@@ -178,7 +178,9 @@ fn registered(rows: &[(&str, u32, u64)]) -> crate::metastream::MetaStream {
     }
 }
 
-/// Discover and admit the occurrences of one stream as the decoder does.
+/// Discover and admit the occurrences of one stream as the decoder does. The
+/// losses end with the give-up loss of each frame that the admission leaves
+/// out.
 fn discover(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
@@ -214,7 +216,17 @@ fn discover(
         )
         .expect("the admission charges its losses")
     });
-    (admitted.occurrences, admitted.losses, admitted.superseded)
+    let mut losses = admitted.losses;
+    losses.extend(admitted.given_up.iter().map(|frame| {
+        let (cause, why) = frame.reason();
+        cadmpeg_ir::unknown::part::GivenUpRecord::new(
+            cadmpeg_ir::ids::Identity::new("f3d:design:record#0").unwrap(),
+            cause,
+            why,
+        )
+        .loss()
+    }));
+    (admitted.occurrences, losses, admitted.superseded)
 }
 
 const OWNER_TYPE: &str = "904F885E-D859-4755-A7EF-6EBED8732FAD";

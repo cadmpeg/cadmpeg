@@ -412,7 +412,6 @@ mod tests {
                 "structure.property-attributes-undecoded",
                 "structure.property-key-dropped",
                 "structure.root-ambiguous",
-                "structure.occurrence-expansion-truncated",
                 "structure.placement-not-similarity",
                 "structure.placement-invalid",
                 "geometry.member-missing",

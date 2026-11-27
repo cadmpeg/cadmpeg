@@ -440,21 +440,18 @@ pub(crate) mod move_face;
 
 pub(crate) mod typed_reference_scopes;
 
-/// The one `record.unreadable` loss of `losses` whose message starts with
+/// The one give-up loss for `cause` of `losses` whose message starts with
 /// `head`, after checking that it names a stub of the F3D `unknowns` arena of
 /// `ir` and that its dropped list is `dropped`.
 pub(crate) fn charged_part<'a>(
     ir: &CadIr,
     losses: &'a [cadmpeg_ir::report::loss::LossNote],
-    head: &str,
+    (cause, head): (cadmpeg_ir::unknown::part::Cause, &str),
     dropped: &str,
 ) -> &'a cadmpeg_ir::report::loss::LossNote {
     let charges = losses
         .iter()
-        .filter(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
-                && loss.message.starts_with(head)
-        })
+        .filter(|loss| loss.code == cause.kind() && loss.message.starts_with(head))
         .collect::<Vec<_>>();
     assert_eq!(charges.len(), 1, "{head}: {losses:#?}");
     let charge = charges[0];
@@ -495,4 +492,14 @@ pub(crate) fn assert_pinned_refusal(bytes: Vec<u8>, head: &str) {
         "{}",
         rejection.loss().message
     );
+}
+
+/// A pinned decode of `bytes` accepts its `record.undecoded` give-ups.
+pub(crate) fn assert_pinned_acceptance(bytes: Vec<u8>) {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    F3dCodec
+        .decode(&mut std::io::Cursor::new(bytes), &options)
+        .expect("a pinned decode accepts the undecoded give-ups");
 }

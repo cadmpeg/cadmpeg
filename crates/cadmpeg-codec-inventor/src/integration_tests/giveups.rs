@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::unknown::part::{record_unreadable_kind, Cause};
 
 use crate::test_support::test_fixtures::{
     acis_sphere_kernel_stream, primary_envelope_fixture_with_design,
@@ -120,7 +120,11 @@ fn reference_tables_that_do_not_read_give_up_their_section() {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("a default decode admits the unread tables");
     let losses = &decoded.report().losses;
-    let charges = charges(losses);
+    let charges = losses
+        .iter()
+        .filter(|loss| loss.code == Cause::Undecoded.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
     let [charge] = charges
         .iter()
         .filter(|message| message.contains("inventor:drawing:reference-tables#dc"))
@@ -132,7 +136,10 @@ fn reference_tables_that_do_not_read_give_up_their_section() {
         charge.starts_with("part meta-section stream=\"RSeStorage/Mdc:expanded\" offset="),
         "{charge}"
     );
-    assert!(charge.contains("drawing.record-malformed"), "{charge}");
+    assert!(
+        charge.contains("drawing reference tables do not read"),
+        "{charge}"
+    );
     assert!(
         charge.ends_with("; dropped=[inventor:drawing:reference-tables#dc]"),
         "{charge}"

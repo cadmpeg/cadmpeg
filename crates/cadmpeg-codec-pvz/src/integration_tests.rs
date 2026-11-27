@@ -320,7 +320,7 @@ fn wide_package(count: usize) -> Vec<u8> {
 }
 
 #[test]
-fn occurrences_past_the_limit_are_given_up_and_a_pinned_decode_refuses_them() {
+fn occurrences_past_the_limit_are_given_up_and_a_pinned_decode_accepts_them() {
     let limit = crate::decode::MAX_OCCURRENCES;
     let bytes = wide_package(limit + 2);
     let admitted = decode(&bytes);
@@ -329,7 +329,7 @@ fn occurrences_past_the_limit_are_given_up_and_a_pinned_decode_refuses_them() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| loss.code == record_undecoded_kind())
         .collect();
     let [given_up] = charges.as_slice() else {
         panic!("one charge: {charges:?}");
@@ -351,13 +351,9 @@ fn occurrences_past_the_limit_are_given_up_and_a_pinned_decode_refuses_them() {
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let failure = PvzCodec
+    PvzCodec
         .decode(&mut Cursor::new(bytes.as_slice()), &options)
-        .expect_err("a pinned decode refuses the occurrences past the limit");
-    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
-    };
-    assert_eq!(rejection.loss().message, given_up.message);
+        .expect("a pinned decode accepts the occurrences past the limit");
 }
 
 #[test]

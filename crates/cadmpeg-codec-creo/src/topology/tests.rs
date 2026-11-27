@@ -790,13 +790,9 @@ fn faces_withheld_by_the_component_gate_are_given_up() {
 
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
-    let failure = CreoCodec
+    CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect_err("a pinned decode refuses the withheld faces");
-    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
-        panic!("expected a strict rejection, got {failure:?}");
-    };
-    assert!(charges.contains(&rejection.loss().message));
+        .expect("a pinned decode accepts the undecoded faces");
 }
 
 #[test]

@@ -573,7 +573,8 @@ fn later_fixed_identity_occurrence_reports_loss_and_stays_out_of_neutral_structu
 }
 
 /// The occurrence frame whose identity ordinal no matrix states is given up
-/// as a part over its own bytes, under a stub, and the pinned decode refuses.
+/// as a part over its own bytes, under a stub, and the pinned decode accepts
+/// the give-up.
 #[test]
 fn an_unproven_occurrence_frame_is_given_up_as_a_design_record() {
     let (bulk, meta) =
@@ -594,7 +595,7 @@ fn an_unproven_occurrence_frame_is_given_up_as_a_design_record() {
         .losses
         .iter()
         .filter(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
                 && loss.message.contains("ordinal 2")
         })
         .collect::<Vec<_>>();
@@ -604,8 +605,12 @@ fn an_unproven_occurrence_frame_is_given_up_as_a_design_record() {
         "{}",
         charges[0].message
     );
-    let charge =
-        crate::test_support::charged_part(result.ir(), std::slice::from_ref(charges[0]), head, "");
+    let charge = crate::test_support::charged_part(
+        result.ir(),
+        std::slice::from_ref(charges[0]),
+        (cadmpeg_ir::unknown::part::Cause::Undecoded, head),
+        "",
+    );
     let stub = result
         .ir()
         .native_unknowns("f3d")
@@ -617,7 +622,7 @@ fn an_unproven_occurrence_frame_is_given_up_as_a_design_record() {
         .source_fidelity()
         .retained_record(stub.id.as_str())
         .is_some_and(|retained| retained.end_offset() > retained.offset()));
-    crate::test_support::assert_pinned_refusal(bytes, head);
+    crate::test_support::assert_pinned_acceptance(bytes);
 }
 
 #[test]

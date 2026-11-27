@@ -264,7 +264,12 @@ fn a_mistagged_delta_state_header_gives_up_the_history_partition() {
     let decoded = decode(bytes.clone());
     let head =
         "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset=";
-    crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        (cadmpeg_ir::unknown::part::Cause::Unreadable, head),
+        "",
+    );
     assert!(f3d_native(decoded.ir()).asm_histories.is_empty());
     assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     crate::test_support::assert_pinned_refusal(bytes, head);
