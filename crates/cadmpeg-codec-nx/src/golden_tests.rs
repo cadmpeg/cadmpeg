@@ -1052,11 +1052,13 @@ static COVERED_ARENAS: LazyLock<BTreeSet<String>> = LazyLock::new(|| {
     covered
 });
 
-/// Every arena a fixture populates must be a name production actually writes.
+/// Every arena a fixture populates must be a name production actually writes,
+/// and collective arena coverage across the fixture set must meet the floor.
 #[test]
-fn arena_coverage_is_a_subset() {
+fn arena_coverage_is_a_subset_and_meets_floor() {
+    let covered = &*COVERED_ARENAS;
     let known: BTreeSet<&str> = KNOWN_ARENAS.iter().copied().collect();
-    let unknown: Vec<&String> = COVERED_ARENAS
+    let unknown: Vec<&String> = covered
         .iter()
         .filter(|a| a.as_str() != "unknowns" && !known.contains(a.as_str()))
         .collect();
@@ -1064,13 +1066,6 @@ fn arena_coverage_is_a_subset() {
         unknown.is_empty(),
         "fixtures populated arenas absent from KNOWN_ARENAS (update the denominator): {unknown:?}"
     );
-}
-
-/// Collective arena coverage floor across the fixture set.
-#[test]
-fn arena_coverage_meets_floor() {
-    let covered = &*COVERED_ARENAS;
-    let known: BTreeSet<&str> = KNOWN_ARENAS.iter().copied().collect();
     let hit = covered
         .iter()
         .filter(|a| known.contains(a.as_str()))

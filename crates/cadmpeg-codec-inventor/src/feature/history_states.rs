@@ -11,9 +11,9 @@ use std::cell::{OnceCell, RefCell};
 use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_asm::history::{
-    archived_active_record_count, decode_record_archive, frame_history_chain,
-    historical_record_archive, insert_only_active_record_count, walk_entity_versions, ChainFraming,
-    DeltaStateView, HistoryChain, RecordArchiveFrames,
+    archived_active_record_count, decode_record_archive_with_preframed,
+    frame_history_chain_with_preframed, historical_record_archive, insert_only_active_record_count,
+    walk_entity_versions, ChainFraming, DeltaStateView, HistoryChain, RecordArchiveFrames,
 };
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_asm::sab::{Record, Token};
@@ -185,15 +185,33 @@ pub(crate) enum Prepared<'a> {
     Ready(Box<Chain<'a>>),
 }
 
+/// Framed `delta_state` chain paired with its preframed records keyed by byte
+/// offset, so preparing the record archive reuses them without re-lexing.
+pub(crate) struct FramedChain {
+    chain: HistoryChain,
+    preframed: RefCell<HashMap<usize, Record>>,
+}
+
+impl std::ops::Deref for FramedChain {
+    type Target = HistoryChain;
+
+    fn deref(&self) -> &Self::Target {
+        &self.chain
+    }
+}
+
 /// Frame the chain of `bytes` and check it against the archived records.
 pub(crate) fn prepare<'a>(
     ctx: &DecodeContext<'_>,
-    chain: &'a HistoryChain,
+    chain: &'a FramedChain,
     bytes: &'a [u8],
     width: RefWidth,
 ) -> Result<Prepared<'a>, CodecError> {
     let views = chain.views(bytes);
-    let Some(frames) = decode_record_archive(ctx, &views, bytes, width)? else {
+    let mut preframed = chain.preframed.borrow_mut();
+    let Some(frames) =
+        decode_record_archive_with_preframed(ctx, &views, bytes, width, Some(&mut *preframed))?
+    else {
         return Ok(Prepared::Unread(Unread::Unclosed));
     };
     let archived_ids = views
@@ -229,7 +247,7 @@ pub(crate) enum Framing {
     /// The chain does not frame.
     Unread(Unread),
     /// Every state frames.
-    Framed(HistoryChain),
+    Framed(FramedChain),
 }
 
 /// Frame the `delta_state` chain of `bytes` as a stream of the given reference width.
@@ -238,10 +256,14 @@ pub(crate) fn frame_chain(
     bytes: &[u8],
     width: RefWidth,
 ) -> Result<Framing, CodecError> {
-    Ok(match frame_history_chain(ctx, bytes, width)? {
+    let (framing, preframed) = frame_history_chain_with_preframed(ctx, bytes, width)?;
+    Ok(match framing {
         ChainFraming::Absent => Framing::Absent,
         ChainFraming::Unframed => Framing::Unread(Unread::Unclosed),
-        ChainFraming::Framed(chain) => Framing::Framed(chain),
+        ChainFraming::Framed(chain) => Framing::Framed(FramedChain {
+            chain,
+            preframed: RefCell::new(preframed),
+        }),
     })
 }
 
