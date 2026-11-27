@@ -386,6 +386,54 @@ fn a_feature_the_decoder_suppressed_with_the_active_row_is_not_charged() {
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
+/// The table documents of [`documents`] with `row` active.
+fn active_in_source(row: &str) -> Vec<DesignConfiguration> {
+    let mut documents = documents();
+    documents[0]
+        .set_active_row(DesignConfigurationActiveRow {
+            record_index: 349,
+            table_id: "1".into(),
+            row_id: row.into(),
+        })
+        .unwrap();
+    documents
+}
+
+#[test]
+fn a_feature_edited_against_an_unchanged_active_row_is_charged_as_a_moved_row() {
+    let mut stored = natives();
+    stored.neutral_features[0].suppressed = Some(true);
+    let edited = natives();
+    let feature = edited.neutral_features[0].id.clone();
+
+    let tall = active_in_source("tall");
+    let decoded = reconciled(&stored, &tall);
+    let configurations = decoded.configurations.clone();
+    let (unchanged, losses) = charged(&stored, &tall, &decoded, &configurations);
+    assert!(unchanged);
+    assert!(losses.is_empty(), "{losses:#?}");
+
+    let (unchanged, edited_losses) = charged(&edited, &tall, &decoded, &configurations);
+    assert!(unchanged);
+    assert_eq!(edited_losses.len(), 1, "{edited_losses:#?}");
+    assert_eq!(edited_losses[0].0, "export/value.unwritable");
+    assert!(
+        edited_losses[0].1.contains(&format!(
+            "{feature} stated {{\"kind\":\"active\",\"outputs\":[]}}, reads back {{\"kind\":\"suppressed\"}}"
+        )),
+        "{edited_losses:#?}"
+    );
+
+    let c1 = active_in_source("c1");
+    let decoded = reconciled(&edited, &c1);
+    let mut moved = decoded.configurations.clone();
+    configuration(&mut moved, "c1").active = false;
+    configuration(&mut moved, "tall").active = true;
+    assert_eq!(moved, configurations);
+    let (_, moved_losses) = charged(&edited, &c1, &decoded, &moved);
+    assert_eq!(moved_losses, edited_losses);
+}
+
 #[test]
 fn a_changed_cell_is_written_from_the_configuration() {
     let natives = natives();
@@ -582,6 +630,7 @@ fn configurations_with_no_table_to_hold_their_rows_are_charged_dropped() {
 #[test]
 fn an_inferred_state_of_an_unedited_active_row_is_not_charged() {
     let mut natives = natives();
+    natives.neutral_features[0].suppressed = Some(true);
     let mut suppressed = neutral_feature(&scope(2), "f3d:test:feature#a");
     suppressed.suppressed = Some(true);
     natives.neutral_features.push(suppressed.clone());
@@ -621,8 +670,9 @@ fn an_inferred_state_of_an_unedited_active_row_is_not_charged() {
 }
 
 /// The table documents of [`documents`] with row `tall` active, the
-/// natives with a suppressed feature that no column names, and the
-/// configurations the decoder states for them.
+/// natives with the feature of column `F` suppressed as that row states it
+/// and a suppressed feature that no column names, and the configurations
+/// the decoder states for them.
 fn tall_active() -> (
     Natives,
     Vec<DesignConfiguration>,
@@ -630,6 +680,7 @@ fn tall_active() -> (
     Vec<Configuration>,
 ) {
     let mut natives = natives();
+    natives.neutral_features[0].suppressed = Some(true);
     let mut suppressed = neutral_feature(&scope(2), "f3d:test:feature#a");
     suppressed.suppressed = Some(true);
     natives.neutral_features.push(suppressed.clone());
@@ -698,6 +749,7 @@ fn a_state_the_features_no_longer_hold_is_charged_in_any_configuration() {
 
     configuration(&mut configurations, "tall").active = false;
     configuration(&mut configurations, "c1").active = true;
+    natives.neutral_features[0].suppressed = Some(false);
     let (unchanged, losses) = charged(&natives, &documents, &decoded, &configurations);
     assert!(unchanged);
     assert_eq!(losses.len(), 1, "{losses:#?}");
@@ -707,11 +759,25 @@ fn a_state_the_features_no_longer_hold_is_charged_in_any_configuration() {
 }
 
 #[test]
-fn moving_the_active_row_with_no_feature_change_is_not_charged() {
-    let (natives, documents, _, mut configurations) = tall_active();
+fn moving_the_active_row_is_charged_where_the_features_contradict_the_row() {
+    let (mut natives, documents, _, mut configurations) = tall_active();
     let decoded = reconciled(&natives, &documents);
     configuration(&mut configurations, "tall").active = false;
     configuration(&mut configurations, "c1").active = true;
+    let feature = natives.neutral_features[0].id.clone();
+
+    let (unchanged, losses) = charged(&natives, &documents, &decoded, &configurations);
+    assert!(unchanged);
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(losses[0].0, "export/value.unwritable");
+    assert!(
+        losses[0].1.contains(&format!(
+            "{feature} stated {{\"kind\":\"suppressed\"}}, reads back {{\"kind\":\"active\""
+        )),
+        "{losses:#?}"
+    );
+
+    natives.neutral_features[0].suppressed = Some(false);
     let (unchanged, losses) = charged(&natives, &documents, &decoded, &configurations);
     assert!(unchanged);
     assert!(losses.is_empty(), "{losses:#?}");
@@ -765,7 +831,8 @@ fn a_state_no_cell_holds_is_charged_where_it_resolves_otherwise() {
 
 #[test]
 fn a_state_added_to_a_configuration_the_write_makes_inactive_is_charged() {
-    let (natives, documents, suppressed, stated) = tall_active();
+    let (mut natives, documents, suppressed, stated) = tall_active();
+    natives.neutral_features[0].suppressed = Some(false);
     let other = neutral_feature(&scope(3), "f3d:test:feature#b");
     let mut configurations = stated.clone();
     configuration(&mut configurations, "tall").active = false;
@@ -805,10 +872,16 @@ struct Shape {
 /// suppressed or not; no active row, an active row with a feature cell and
 /// one without; a rule document or none; a second table document with no
 /// rows or none; and the active row moved to `wide` by the configurations.
+/// The feature of a stored model has the state of the active row
+/// (f3d.md §1.2), so the column's feature is suppressed where `short` is
+/// active.
 fn table_shapes() -> Vec<Shape> {
     let mut shapes = Vec::new();
     for bits in 0..32_u8 {
         for active in [None, Some("tall"), Some("short")] {
+            if active == Some("short") && bits & 1 == 0 {
+                continue;
+            }
             shapes.push(Shape {
                 suppressed: [bits & 1 != 0, bits & 2 != 0],
                 active,

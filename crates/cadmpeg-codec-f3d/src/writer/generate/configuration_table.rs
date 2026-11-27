@@ -43,9 +43,6 @@ pub(super) struct Written<'a> {
     /// The configuration of each written row, keyed by the configuration id
     /// the row reads back as.
     expected: BTreeMap<String, &'a Configuration>,
-    /// Whether the active row of the source documents suppresses each
-    /// feature it states.
-    stored: BTreeMap<FeatureId, bool>,
 }
 
 /// Write `documents` with the rows, cells, row order and rule targets of
@@ -101,13 +98,6 @@ pub(super) fn regenerate<'a>(
             projection,
             generated,
             expected,
-            stored: decoded
-                .configurations
-                .iter()
-                .filter(|configuration| configuration.active)
-                .flat_map(|configuration| &configuration.feature_states)
-                .map(|(feature, state)| (feature.clone(), state.evaluation.is_suppressed()))
-                .collect(),
         },
         losses,
     ))
@@ -118,9 +108,9 @@ impl Written<'_> {
     /// the configurations and the features of `targets`, when the root
     /// record names the row of the configuration `active`. The decoder
     /// reconciles the features with that row (f3d.md §1.2: the design
-    /// stores the state of the active row). A feature whose state that row
-    /// states otherwise than the source's active row, and otherwise than the
-    /// reconciled feature, is written in a state the row contradicts.
+    /// stores the state of the active row). A feature whose suppression that
+    /// row states otherwise than the reconciled feature is written in a state
+    /// the row contradicts.
     pub(super) fn read_back(
         &self,
         active: Option<&str>,
@@ -174,9 +164,7 @@ impl Written<'_> {
             features.iter().filter_map(|feature| {
                 let row = &active_states.get(&feature.id)?.evaluation;
                 let current = feature.configuration_state().evaluation;
-                let contradicts = row.is_suppressed() != current.is_suppressed()
-                    && self.stored.get(&feature.id) != Some(&row.is_suppressed());
-                contradicts.then(|| {
+                (row.is_suppressed() != current.is_suppressed()).then(|| {
                     Difference::of(feature.id.to_string(), Some(&current), Some(row)).to_string()
                 })
             }),
