@@ -54,6 +54,12 @@ fn a_proxy_without_a_geometry_class_identifier_is_not_an_edge() {
 }
 
 #[test]
+fn a_proxy_that_ends_inside_its_edge_record_is_not_an_edge() {
+    let bytes = proxy(559, [0.010, 0.020, 0.030], [0.0, 1.0, 0.0], 0.040);
+    assert_eq!(edge_line(&bytes[..177]), None);
+}
+
+#[test]
 fn a_vertex_proxy_reads_its_point_in_millimetres() {
     let mut bytes = vec![0_u8; 40];
     bytes[6..16].copy_from_slice(&[0xce, 0x11, 0x9a, 0x5e, 0x08, 0x00, 0x36, 0x9b, 0x41, 0x02]);
