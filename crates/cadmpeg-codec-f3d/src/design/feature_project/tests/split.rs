@@ -1224,6 +1224,63 @@ fn split_body_tool_without_exactly_one_work_plane_keeps_the_group() {
 }
 
 #[test]
+fn a_split_tool_that_proves_no_face_or_plane_reports_why() {
+    let scope = split_body_scope();
+
+    let mut losses = Vec::new();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
+    project_split(&scope, &[], &groups, &[], &[], &[], &mut losses)
+        .unwrap()
+        .unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.split-tool-face-unresolved"
+    );
+    assert!(losses[0]
+        .message
+        .contains("neither Work Plane selections nor whole-body recipes"));
+
+    let mut losses = Vec::new();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
+    let tool = split_body_face_tool();
+    project_split(
+        &scope,
+        &[],
+        &groups,
+        &[],
+        std::slice::from_ref(&tool),
+        &[],
+        &mut losses,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.split-tool-face-unresolved"
+    );
+    assert!(losses[0]
+        .message
+        .contains("0 preceding candidate face(s) and 0 changed candidate face(s)"));
+
+    let mut losses = Vec::new();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
+    project_split(
+        &scope,
+        std::slice::from_ref(&work_plane(601)),
+        &groups,
+        &[compact_plane_selection(101, 0, 600)],
+        &[],
+        &[],
+        &mut losses,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn a_split_body_plane_tool_is_a_dependency_of_the_split() {
     let mut plane = work_plane(601);
     plane.feature_ordinal = std::num::NonZeroU32::new(1).unwrap();
