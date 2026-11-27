@@ -1033,7 +1033,7 @@ fn derives_extrusion_direction_from_a_non_sketch_profile_frame() {
             },
             op: cadmpeg_ir::features::operation_settings::BooleanOp::Cut,
             ..
-        }) if (direction.x - 1.0).abs() < 1.0e-12
+        }) if (direction.x + 1.0).abs() < 1.0e-12
             && direction.y.abs() < 1.0e-12
             && direction.z.abs() < 1.0e-12
     ));
@@ -1629,7 +1629,8 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                 }
             }
             "UseCustomVector" => {
-                for name in ["Pad", "Pocket"] {
+                // The sketch normal is +Z. A Pad sweeps along it and a Pocket against it.
+                for (name, expected) in [("Pad", 1.0), ("Pocket", -1.0)] {
                     assert!(matches!(
                         definition(&absent, name),
                         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -1638,7 +1639,7 @@ fn distinguishes_absent_and_malformed_partdesign_extrusion_flags() {
                                 ..
                             },
                             ..
-                        }) if direction.z == 1.0
+                        }) if direction.z == expected
                     ));
                 }
             }

@@ -61,7 +61,36 @@ pub fn record_stream_start(bytes: &[u8]) -> Option<usize> {
         return None;
     }
     let (strings, doubles, position) = scan_string_region(bytes, acis_bf4::LEN);
-    (strings == 3 && doubles == 3).then_some(position)
+    let version = View::u32_le_at(bytes, acis_bf4::SAVE_FORMAT_VERSION);
+    (strings == 3 && doubles == 3).then(|| skip_key_string(bytes, position, version))
+}
+
+/// Tag of the true flag that announces the key string.
+const KEY_FLAG_TRUE: u8 = 0x0a;
+/// Tag of a one-byte-length string.
+const SHORT_STRING_TAG: u8 = 0x07;
+
+/// Offset past the key string that closes the header of a save format from 1100:
+/// a true flag, then one short string.
+fn skip_key_string(bytes: &[u8], position: usize, version: Option<u32>) -> usize {
+    if !version
+        .is_some_and(|version| crate::kernel_header::EXTENDED_ACIS_SAVE_FORMATS.contains(&version))
+    {
+        return position;
+    }
+    let (Some(&KEY_FLAG_TRUE), Some(&SHORT_STRING_TAG), Some(&length)) = (
+        bytes.get(position),
+        bytes.get(position + 1),
+        bytes.get(position + 2),
+    ) else {
+        return position;
+    };
+    let end = position + 3 + usize::from(length);
+    if end <= bytes.len() {
+        end
+    } else {
+        position
+    }
 }
 
 /// Byte offset immediately after the three strings and three doubles, using
@@ -71,7 +100,8 @@ pub fn record_stream_start_with_header(bytes: &[u8], header: &BinaryHeader) -> O
         return None;
     }
     let (strings, doubles, position) = scan_string_region(bytes, acis_bf4::LEN);
-    (strings == 3 && doubles == 3).then_some(position)
+    (strings == 3 && doubles == 3)
+        .then(|| skip_key_string(bytes, position, header.metadata.save_format_version))
 }
 
 /// Exact boundary between solved records and a legacy `delta_state` history

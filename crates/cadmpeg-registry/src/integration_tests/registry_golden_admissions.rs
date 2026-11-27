@@ -580,7 +580,7 @@ fn check_kernel_loss_counts(
                     let expected = layers
                         .iter()
                         .skip(1)
-                        .filter(|layer| layer.format() == "parasolid")
+                        .filter(|layer| matches!(layer.format(), "parasolid" | "acis"))
                         .filter(|layer| {
                             matches!(
                                 layer.admission(),
@@ -637,7 +637,7 @@ fn check_kernel_loss_counts(
                             snapshot,
                             pointer_child(pointer, "losses"),
                             format!(
-                                "{} has {expected} residual Parasolid layers but {observed} typed kernel losses",
+                                "{} has {expected} residual kernel layers but {observed} typed kernel losses",
                                 layers.primary().dialect()
                             ),
                         ));

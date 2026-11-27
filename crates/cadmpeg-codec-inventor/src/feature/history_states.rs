@@ -372,7 +372,7 @@ pub(crate) enum UnboundReason {
 }
 
 /// Outcome of the join of one feature.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum Binding {
     /// The feature has a state pair and, for Split and Base, a confirmed body key.
@@ -850,7 +850,51 @@ pub(crate) fn losses(projection: &Projection) -> Vec<LossNote> {
         )));
     }
     notes.extend(body_losses(&projection.bodies.outcome));
+    for (nest, why) in &projection.bodies.unbuilt {
+        notes.push(body_given_up(nest, *why));
+    }
     notes
+}
+
+/// The give-up of the body that the nest `nest` would hold.
+fn body_given_up(
+    nest: &cadmpeg_ir::ids::HistoryBodyId,
+    why: super::history_bodies::Unbuilt,
+) -> LossNote {
+    use super::history_bodies::{Open, Unbuilt};
+    use crate::loss::InventorLossCode;
+    let (code, detail) = match why {
+        Unbuilt::Undecoded => (
+            InventorLossCode::FeatureHistoryBodyUndecoded,
+            "the history state of the body did not materialize or decode",
+        ),
+        Unbuilt::Unsolved => (
+            InventorLossCode::FeatureHistoryBodyUndecoded,
+            "a carrier of the body has no solved form",
+        ),
+        Unbuilt::NotClosed(Open::Reference) => (
+            InventorLossCode::FeatureHistoryBodyNotClosed,
+            "the body has a reference outside the body",
+        ),
+        Unbuilt::NotClosed(Open::Kind) => (
+            InventorLossCode::FeatureHistoryBodyNotClosed,
+            "the body is not a solid body",
+        ),
+        Unbuilt::NotClosed(Open::Edge) => (
+            InventorLossCode::FeatureHistoryBodyNotClosed,
+            "the body has an edge that does not join two coedges",
+        ),
+        Unbuilt::Unlinked => (
+            InventorLossCode::FeatureHistoryBodyUnlinked,
+            "the feature of the body is not projected",
+        ),
+        Unbuilt::Bounded => (
+            InventorLossCode::FeatureHistoryBodyBounded,
+            "the body passed the local cap of history bodies",
+        ),
+    };
+    cadmpeg_ir::unknown::part::GivenUpRecord::new(nest, format_args!("{}: {detail}", code.kind()))
+        .loss()
 }
 
 /// Losses of the nests: bodies that were asked for and not produced.

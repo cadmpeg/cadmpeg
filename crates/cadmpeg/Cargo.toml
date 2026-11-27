@@ -36,6 +36,7 @@ default = [
   "sat",
   "pvz",
   "edrawings",
+  "alibre",
   "usd",
   "onshape",
 ]
@@ -58,11 +59,13 @@ iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
 sat = ["cadmpeg-registry/sat"]
 pvz = ["cadmpeg-registry/pvz"]
 edrawings = ["cadmpeg-registry/edrawings"]
+alibre = ["cadmpeg-registry/alibre"]
 onshape = ["cadmpeg-registry/onshape"]
 usd = ["cadmpeg-registry/usd"]
 
 [dependencies]
 cadmpeg-core.workspace = true
+cadmpeg-derive.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-ir.workspace = true
 cadmpeg-measure.workspace = true
