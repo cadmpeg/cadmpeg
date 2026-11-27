@@ -346,13 +346,13 @@ pub(crate) enum InventorLossCode {
     /// manifold solid.
     FeatureHistoryBodyNotClosed,
     /// A part passed the local cap of history bodies or of their materialization
-    /// work, or the decode of a history state passed the retained-byte budget.
+    /// work, or the decode of a history state reached a resource limit.
     FeatureHistoryBodyBounded,
     /// The Base or Split feature of a decoded history body is not a projected
     /// feature, so the body has no origin to name.
     FeatureHistoryBodyUnlinked,
-    /// The decode of the source carrier of a Base feature passed the
-    /// retained-byte budget, so the feature keeps its native form.
+    /// The decode of the source carrier of a Base feature reached a resource
+    /// limit, so the feature keeps its native form.
     FeatureBaseSourceBounded,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,

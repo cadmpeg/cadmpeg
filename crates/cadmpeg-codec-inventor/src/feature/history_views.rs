@@ -42,8 +42,7 @@ pub(crate) enum StateModel {
     /// The state lists the feature, and it does not materialize, decode or
     /// transfer.
     Failed,
-    /// The views of the part passed their work cap, or the decode of the
-    /// state passed the retained-byte budget.
+    /// The state view reached a work or decode resource limit.
     Bounded,
 }
 
@@ -167,13 +166,12 @@ pub(crate) enum Decoded {
     Scratch(Box<Scratch>),
     /// The state does not materialize, decode or transfer.
     Failed,
-    /// The decode passed the retained-byte budget.
+    /// The decode reached a resource limit.
     Bounded,
 }
 
 /// Materialize the records of the state at `ordinal` from its `versions` and
-/// transfer them into a scratch model. Only a resource limit outside the
-/// retained-byte budget is an error.
+/// transfer them into a scratch model.
 pub(crate) fn decode_scratch(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],

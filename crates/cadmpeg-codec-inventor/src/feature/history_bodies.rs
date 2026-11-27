@@ -103,8 +103,7 @@ pub(crate) enum Unbuilt {
     NotClosed(Open),
     /// The feature of the body is not a projected feature.
     Unlinked,
-    /// The request passed the nest or work cap, or the decode of its state
-    /// passed the retained-byte budget.
+    /// The request reached the nest cap, a work cap, or a decode resource limit.
     Bounded,
 }
 
@@ -287,12 +286,17 @@ pub(crate) fn build(
                 .find(|(_, candidate)| Some(*candidate) == key)
                 .map(|(body, _)| body.as_str());
             let result = match body {
-                Some(body) => extract(ctx, &scratch.geometry, body),
-                None => Ok(Extract::Absent),
+                Some(body) => {
+                    ctx.scratch(|scratch_ctx| extract(scratch_ctx, &scratch.geometry, body))
+                }
+                None => Ok(Ok(Extract::Absent)),
             };
             match result {
-                Ok(result) => {
+                Ok(Ok(result)) => {
                     extracted.insert(index, result);
+                }
+                Ok(Err(_)) => {
+                    bounded.insert(index);
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => {
                     failure = Some(error);
@@ -340,11 +344,11 @@ pub(crate) fn build(
                     built.give_up(want, Unbuilt::Unlinked)?;
                     continue;
                 };
+                let body = nest(ctx, want, feature, *topology)?;
                 ctx.retain_bytes(
-                    cadmpeg_core::decode::u64_from_index(topology.name_bytes()),
+                    cadmpeg_core::decode::u64_from_index(body.topology.name_bytes()),
                     "keep history body names",
                 )?;
-                let body = nest(ctx, want, feature, *topology)?;
                 ctx.charge_entities(
                     cadmpeg_core::decode::u64_from_index(body.topology.record_count()),
                     "admit history body records",

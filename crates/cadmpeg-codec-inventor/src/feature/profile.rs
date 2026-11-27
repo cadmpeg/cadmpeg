@@ -85,9 +85,8 @@ pub(crate) struct ProfileBody {
 /// The profile bodies of a document's `PmDc` kernel-body records.
 pub(crate) struct ProfileBodies {
     pub(crate) bodies: Vec<ProfileBody>,
-    /// Kernel-body records that do not decode, or whose decode passes the
-    /// retained-byte budget. Profile selections that link to them keep their
-    /// native selection.
+    /// Kernel-body records whose decode failed or reached a resource limit.
+    /// Profile selections that link to them keep their native selection.
     pub(crate) undecoded: usize,
 }
 
@@ -159,15 +158,14 @@ fn decode_profile_body(
         version,
     )?;
     let header = carrier.header.as_deref().map_err(CodecError::malformed)?;
-    let Ok(brep) =
-        ctx.scratch(|scratch| crate::kernel::inspect_kernel_carrier(scratch, &carrier, header))?
-    else {
-        return Ok(None);
-    };
-    Ok(Some(ProfileBody {
+    let wires = ctx.scratch(|scratch| {
+        let brep = crate::kernel::inspect_kernel_carrier(scratch, &carrier, header)?;
+        profile_wires(scratch, &brep)
+    })?;
+    Ok(wires.ok().map(|wires| ProfileBody {
         segment_token: segment_token.clone(),
         record_ordinal,
-        wires: profile_wires(ctx, &brep)?,
+        wires,
     }))
 }
 

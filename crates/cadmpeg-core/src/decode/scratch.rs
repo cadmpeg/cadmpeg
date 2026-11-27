@@ -5,8 +5,8 @@ use std::ops::Deref;
 
 use crate::CodecError;
 
-use super::transaction::{release_retained, BudgetState, Event};
-use super::{DecodeArena, DecodeContext, ResourceDimension, ResourceLimit};
+use super::transaction::{BudgetState, Event};
+use super::{DecodeArena, DecodeContext, ResourceLimit};
 
 /// The context of work opened with [`DecodeContext::scratch`].
 ///
@@ -34,19 +34,16 @@ impl DecodeContext<'_> {
     /// remaining retained allowance and released when it returns, so the
     /// caller charges the bytes it keeps of the output itself. The input,
     /// decompressed and entity charges of `work` and its address spaces
-    /// stay charged here. A traced context records the retained bytes `work`
-    /// needed as an allowance decision, so a trace that composes where the
-    /// decision differs is refused and executed again. A trace that holds a
-    /// given-up scratch composes only where the retained room is the same.
+    /// stay charged here. Trace replay checks the same temporary charges at
+    /// the new position. A bounded result requires execution at that position.
     ///
-    /// Returns `Ok(Err(limit))` when `work` passed the retained allowance:
-    /// the caller gives up the output of `work`, and this context continues.
+    /// Returns `Ok(Err(limit))` when a resource refuses inside `work`.
+    /// The caller gives up its output and this context continues.
     ///
     /// # Errors
     ///
-    /// A refusal in force at entry, a refusal of `work` in another dimension
-    /// (it fuses this context as the same charge here would), or the error
-    /// `work` returned.
+    /// A resource refusal in force at entry or a non-resource error returned
+    /// by `work`.
     pub fn scratch<T>(
         &self,
         work: impl for<'s> FnOnce(&ScratchContext<'s>) -> Result<T, CodecError>,
@@ -56,7 +53,6 @@ impl DecodeContext<'_> {
         }
         let entry = self.budget.state();
         let entry_spaces = self.derived_spaces.get();
-        let available = self.budget.retained_available();
         let arena = DecodeArena::new();
         let mut local = DecodeContext::new(&arena, &entry.policy, self.depth());
         local.budget.restore(&entry);
@@ -70,68 +66,33 @@ impl DecodeContext<'_> {
         let ScratchContext { ctx: local } = scratch;
         let reached = local.budget.state();
         let spaces = local.derived_spaces.get();
-        let events = local.budget.trace.borrow_mut().take().unwrap_or_default();
-
-        let given_up = reached
-            .fuse
-            .filter(|limit| limit.dimension == ResourceDimension::RetainedBytes);
+        let limit = reached.fuse.or(match &result {
+            Err(CodecError::ResourceLimit(limit)) => Some(*limit),
+            _ => None,
+        });
         self.budget.restore(&BudgetState {
             retained: entry.retained,
             depth: entry.depth,
-            fuse: reached.fuse.filter(|_| given_up.is_none()),
-            ..reached.clone()
+            fuse: None,
+            ..reached
         });
         self.derived_spaces.set(spaces);
-        if given_up.is_some() {
-            // The charges after the refusal were recorded and refused. A
-            // replay composes only where the room equals the room here.
-            self.budget.record(Event::Available(available));
-            record_charges(self, &entry, &reached, entry_spaces..spaces);
-        } else {
-            self.budget.record(Event::Allowance(available));
-            self.budget.record(Event::AllowanceUse(
-                available,
-                reached.retained.saturating_sub(entry.retained),
-            ));
-            for event in release_retained(events) {
-                self.budget.record(event);
+
+        if let Some(trace) = self.budget.trace.borrow_mut().as_mut() {
+            match (limit, local.budget.trace.borrow_mut().take()) {
+                (None, Some(events)) => {
+                    trace.push(Event::ScratchStart);
+                    trace.extend(events);
+                    trace.push(Event::ScratchEnd);
+                }
+                _ => trace.push(Event::ExecuteHere),
             }
         }
 
-        match (given_up, reached.fuse) {
-            (Some(limit), _) => Ok(Err(limit)),
-            (None, Some(limit)) => Err(limit.into()),
-            (None, None) => result.map(Ok),
+        match limit {
+            Some(limit) => Ok(Err(limit)),
+            None => result.map(Ok),
         }
-    }
-}
-
-fn record_charges(
-    ctx: &DecodeContext<'_>,
-    entry: &BudgetState,
-    reached: &BudgetState,
-    spaces: std::ops::Range<usize>,
-) {
-    for (dimension, before, after) in [
-        (ResourceDimension::InputBytes, entry.input, reached.input),
-        (
-            ResourceDimension::DecompressedBytes,
-            entry.decompressed,
-            reached.decompressed,
-        ),
-        (
-            ResourceDimension::Entities,
-            entry.entities,
-            reached.entities,
-        ),
-    ] {
-        if let Some(amount) = after.checked_sub(before).filter(|amount| *amount > 0) {
-            ctx.budget
-                .record(Event::Charge(dimension, amount, "scratch decode charges"));
-        }
-    }
-    for used in spaces {
-        ctx.budget.record(Event::Space(used));
     }
 }
 

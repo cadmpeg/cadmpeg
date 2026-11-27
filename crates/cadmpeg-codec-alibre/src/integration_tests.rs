@@ -4,6 +4,7 @@
 //! The expected volumes and boxes follow from the design values below, which
 //! are lengths in millimetres.
 
+use std::collections::BTreeSet;
 use std::f64::consts::PI;
 use std::io::Cursor;
 
@@ -750,16 +751,42 @@ fn a_face_whose_surface_names_no_record_is_given_up_in_the_sab_data_stream() {
         result.ir().geometry.bodies.len(),
         whole.ir().geometry.bodies.len()
     );
+    let edited = &result.ir().geometry;
     assert_eq!(
-        result.ir().geometry.faces.len() + 1,
-        whole.ir().geometry.faces.len()
+        edited
+            .faces
+            .iter()
+            .map(|candidate| &candidate.id)
+            .collect::<BTreeSet<_>>(),
+        geometry
+            .faces
+            .iter()
+            .filter(|candidate| candidate.id.as_str() != face.face)
+            .map(|candidate| &candidate.id)
+            .collect::<BTreeSet<_>>()
     );
     assert_eq!(
-        result.ir().geometry.edges.len(),
-        whole.ir().geometry.edges.len()
+        edited
+            .edges
+            .iter()
+            .map(|edge| &edge.id)
+            .collect::<BTreeSet<_>>(),
+        geometry
+            .edges
+            .iter()
+            .map(|edge| &edge.id)
+            .collect::<BTreeSet<_>>()
     );
     assert_eq!(
-        result.ir().geometry.vertices.len(),
-        whole.ir().geometry.vertices.len()
+        edited
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.id)
+            .collect::<BTreeSet<_>>(),
+        geometry
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.id)
+            .collect::<BTreeSet<_>>()
     );
 }

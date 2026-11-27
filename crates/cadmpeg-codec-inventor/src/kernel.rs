@@ -477,6 +477,11 @@ mod tests {
             assert_eq!(carrier.bytes.window(), b"ASM BinaryFile4 synthetic");
             assert_eq!(carrier.record_ordinal, 7);
             assert_eq!(carrier.carrier_offset, 114);
+            let overflow =
+                parse_carrier(view, &cadmpeg_ir::identity_key!("token"), 7, u64::MAX, 18)
+                    .expect_err("the absolute carrier offset overflows");
+            assert!(matches!(overflow, CodecError::Malformed(detail)
+                if detail == "Inventor kernel-carrier offset overflows"));
         });
         let mut malformed = bytes;
         *malformed.last_mut().expect("footer byte") = 0;

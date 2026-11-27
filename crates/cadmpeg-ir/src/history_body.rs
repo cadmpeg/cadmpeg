@@ -100,7 +100,8 @@ impl BodyTopology {
             .iter()
             .filter_map(|face| face.name.as_deref())
             .chain(self.body.name.as_deref())
-            .fold(0, |total: usize, name| total.saturating_add(name.len()))
+            .map(str::len)
+            .sum()
     }
 
     /// The nest as a topology that holds only its records, for the topology checks.

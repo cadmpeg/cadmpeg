@@ -5,7 +5,6 @@
 use crate::decode::{
     DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceDimension, ResourceLimits,
 };
-use crate::CodecError;
 
 fn policy() -> DecodePolicy {
     DecodePolicy {
@@ -59,16 +58,23 @@ fn a_scratch_past_the_retained_allowance_gives_up_only_its_output() {
 }
 
 #[test]
-fn a_scratch_refused_in_another_dimension_refuses_its_context() {
+fn a_scratch_that_runs_out_of_entities_keeps_its_work_and_gives_up_its_value() {
     let policy = policy();
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    let refused = ctx.scratch(|scratch| scratch.charge_entities(14, "read and dropped"));
-    let Err(CodecError::ResourceLimit(limit)) = refused else {
-        panic!("expected a resource refusal: {refused:?}");
-    };
+    let limit = ctx
+        .scratch(|scratch| {
+            scratch.charge_entities(4, "read and dropped")?;
+            scratch.charge_entities(10, "past the scratch cap")
+        })
+        .unwrap()
+        .unwrap_err();
+
     assert_eq!(limit.dimension, ResourceDimension::Entities);
-    assert_eq!(ctx.resource_refusal(), Some(limit));
+    assert_eq!(limit.operation, "past the scratch cap");
+    assert!(ctx.resource_refusal().is_none());
+    ctx.charge_entities(9, "kept document records").unwrap();
+    assert!(ctx.charge_entities(1, "past the cap").is_err());
 }
 
 /// Retains 50 bytes, then 10 more when 45 bytes of room remain.
@@ -113,7 +119,7 @@ fn a_traced_scratch_composes_where_its_retained_decisions_hold() {
 }
 
 #[test]
-fn a_traced_given_up_scratch_composes_only_at_the_same_retained_room() {
+fn a_traced_given_up_scratch_runs_at_its_composition_position() {
     let policy = policy();
     let arena = DecodeArena::new();
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
@@ -126,15 +132,36 @@ fn a_traced_given_up_scratch_composes_only_at_the_same_retained_room() {
         })
         .unwrap();
     assert!(given_up.is_err());
-    let trace = task.take_trace();
 
-    let other_arena = DecodeArena::new();
-    let other = DecodeContext::new(&other_arena, &policy, DecodeDepth::Full);
-    other.retain_bytes(1, "prior").unwrap();
-    assert!(!other.accept_trace(&trace));
-
-    assert!(ctx.accept_trace(&trace));
+    assert!(!ctx.accept_trace(&task.take_trace()));
     assert_eq!(ctx.retained_bytes_available(), 100);
-    ctx.charge_entities(10, "remainder").unwrap();
-    assert!(ctx.charge_entities(1, "past the cap").is_err());
+    ctx.charge_entities(13, "all the room").unwrap();
+}
+
+#[test]
+fn a_trace_releases_retained_bytes_at_each_scratch_boundary() {
+    let policy = policy();
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let task_arena = DecodeArena::new();
+    let task = ctx.checkpoint().resume(&task_arena);
+    task.scratch(|outer| {
+        outer.retain_bytes(50, "outer scratch")?;
+        for _ in 0..2 {
+            outer
+                .scratch(|inner| inner.retain_bytes(40, "inner scratch"))?
+                .unwrap();
+        }
+        Ok(())
+    })
+    .unwrap()
+    .unwrap();
+    task.retain_bytes(10, "kept").unwrap();
+
+    let trace = task.take_trace();
+    ctx.retain_bytes(10, "earlier output").unwrap();
+    assert!(ctx.accept_trace(&trace));
+    assert_eq!(ctx.retained_bytes_available(), 80);
+    assert!(!ctx.accept_trace(&trace));
+    assert_eq!(ctx.retained_bytes_available(), 80);
 }

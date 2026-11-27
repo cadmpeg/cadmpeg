@@ -201,20 +201,16 @@ charges and its address spaces stay charged. The caller charges the bytes
 that it keeps of the output: an F3D or Inventor history body charges the
 names of its body and faces as `keep history body names`.
 
-Work that passes the retained allowance returns the refusal to its caller.
-The caller gives up the output and reports a loss:
-`feature.history-body-bounded` for a history body,
+A resource refusal inside scratch gives up its output. The caller reports a
+loss: `feature.history-body-bounded` for a history body,
 `feature.base-source-bounded` for the source check of an Inventor Base
 feature, and `feature.profile-body-undecoded` for an Inventor profile body.
-A refusal in another dimension fuses the caller, as the same charge in the
-caller does. `cadmpeg_asm::brep::inspect_with_header` and
-`inspect_with_table` take a `ScratchContext`, so an ASM graph that is decoded
-only to be read is always charged this way.
+`cadmpeg_asm::brep::inspect_with_header` and `inspect_with_table` take a
+`ScratchContext` for the temporary graph.
 
-A traced context records the retained bytes that the work needed as an
-allowance decision, and each allowance reading in the work relative to the
-room at its start. A trace that holds work that gave up composes only where
-the retained room is the room at which the trace was recorded.
+Trace replay checks the scratch charges and allowance observations in order.
+It releases the temporary retained bytes when the scratch ends. A trace of a
+bounded scratch requires executing the work at its composition position.
 
 ## Scan limits
 

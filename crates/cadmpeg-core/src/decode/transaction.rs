@@ -27,6 +27,9 @@ pub(super) enum Event {
     Expand(ExpandSpec),
     Space(usize),
     Batch(Charges),
+    ScratchStart,
+    ScratchEnd,
+    ExecuteHere,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -81,32 +84,6 @@ pub(super) fn record(events: &mut Vec<Event>, event: Event) {
     } else {
         events.push(Event::Batch(batch));
     }
-}
-
-/// Rewrites the events of work whose retained bytes are released when it
-/// returns. Its retained charges are dropped, and each allowance reading and
-/// decision is stated against the room the work had at its start, so a replay
-/// reaches the decisions the work reached.
-pub(super) fn release_retained(events: Vec<Event>) -> impl Iterator<Item = Event> {
-    let mut retained = 0_u64;
-    events.into_iter().filter_map(move |event| match event {
-        Event::Charge(ResourceDimension::RetainedBytes, amount, _) => {
-            retained = retained.saturating_add(amount);
-            None
-        }
-        Event::Batch(mut batch) => {
-            retained = retained.saturating_add(batch.amounts[1]);
-            batch.amounts[1] = 0;
-            Some(Event::Batch(batch))
-        }
-        Event::Available(available) => Some(Event::Available(available.saturating_add(retained))),
-        Event::Allowance(available) => Some(Event::Allowance(available.saturating_add(retained))),
-        Event::AllowanceUse(remaining, requested) => Some(Event::AllowanceUse(
-            remaining.saturating_add(retained),
-            requested.saturating_add(retained),
-        )),
-        event => Some(event),
-    })
 }
 
 impl Charges {
@@ -288,6 +265,7 @@ impl DecodeContext<'_> {
         *candidate.budget.trace.borrow_mut() = None;
         let mut allowance_delta = 0_i128;
         let mut exact_observation = false;
+        let mut scratch_scopes = Vec::new();
         let mut spaces = DecodeSpaceRebinding {
             old_start: 0,
             new_start: 0,
@@ -319,6 +297,35 @@ impl DecodeContext<'_> {
                     let adjusted = i128::from(remaining) + allowance_delta;
                     (adjusted >= i128::from(requested)) == (remaining >= requested)
                 }
+                Event::ScratchStart => {
+                    let state = candidate.budget.state();
+                    scratch_scopes.push((
+                        state.retained,
+                        state.depth,
+                        allowance_delta,
+                        exact_observation,
+                    ));
+                    allowance_delta = 0;
+                    exact_observation = false;
+                    true
+                }
+                Event::ScratchEnd => {
+                    let Some((retained, depth, delta, pending)) = scratch_scopes.pop() else {
+                        return false;
+                    };
+                    if exact_observation {
+                        return false;
+                    }
+                    candidate.budget.restore(&BudgetState {
+                        retained,
+                        depth,
+                        ..candidate.budget.state()
+                    });
+                    allowance_delta = delta;
+                    exact_observation = pending;
+                    true
+                }
+                Event::ExecuteHere => false,
                 Event::Expand(spec) => candidate.admit_expand(spec).is_ok(),
                 Event::Space(expected) => {
                     let Some(old_next) = expected.checked_add(1) else {
@@ -343,7 +350,7 @@ impl DecodeContext<'_> {
                 return false;
             }
         }
-        if exact_observation || !rebind(&spaces) {
+        if exact_observation || !scratch_scopes.is_empty() || !rebind(&spaces) {
             return false;
         }
         if let Some(events) = self.budget.trace.borrow_mut().as_mut() {

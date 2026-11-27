@@ -383,8 +383,7 @@ fn result_state_wants<'a>(
 /// history state. A Loft is absent when any of its output bodies does not
 /// decode at that state.
 ///
-/// The pass runs in a context resumed from a checkpoint and never commits its
-/// charges, so a refusal inside it leaves the session budget unchanged.
+/// The pass keeps body kinds and releases the bytes of its temporary nests.
 pub(crate) fn loft_result_kinds(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -421,31 +420,33 @@ pub(crate) fn loft_result_kinds(
     if wants.is_empty() {
         return HashMap::new();
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let local = ctx.checkpoint().resume(&arena);
-    local.take_trace();
     let mut bodies = Vec::new();
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
     let mut discarded = Vec::new();
-    #[cfg(test)]
-    if INJECTED_LOFT_PASS_REFUSAL.with(std::cell::Cell::take) {
-        let limit = local.policy().limits.max_entities;
-        local
-            .charge_entities(limit.saturating_add(1), "injected Loft pass charge")
-            .expect_err("the injected charge exceeds the entity limit");
-    }
-    let result = fill_requests(
-        &local,
-        scan,
-        (inputs.histories, None),
-        &wants,
-        &mut bodies,
-        &work,
-        &mut discarded,
-    );
+    let result = ctx.scratch(|scratch| {
+        #[cfg(test)]
+        if INJECTED_LOFT_PASS_REFUSAL.with(std::cell::Cell::take) {
+            let limit = scratch.policy().limits.max_entities;
+            return scratch.charge_entities(limit.saturating_add(1), "injected Loft pass charge");
+        }
+        fill_requests(
+            scratch,
+            scan,
+            (inputs.histories, None),
+            &wants,
+            &mut bodies,
+            &work,
+            &mut discarded,
+        )
+    });
     let bounded = F3dLossCode::FeatureHistoryBodyBounded.kind();
     losses.extend(discarded.into_iter().filter(|loss| loss.code == bounded));
-    if let Some(limit) = local.resource_refusal() {
+    let limit = match result {
+        Ok(Ok(())) => None,
+        Ok(Err(limit)) | Err(CodecError::ResourceLimit(limit)) => Some(limit),
+        Err(_) => return HashMap::new(),
+    };
+    if let Some(limit) = limit {
         let mut refused = expected.keys().collect::<Vec<_>>();
         refused.sort();
         losses.extend(refused.into_iter().map(|feature| {
@@ -454,9 +455,6 @@ pub(crate) fn loft_result_kinds(
                 CodecError::ResourceLimit(limit)
             ))
         }));
-        return HashMap::new();
-    }
-    if result.is_err() {
         return HashMap::new();
     }
     let mut kinds = HashMap::<_, Vec<_>>::new();
@@ -1085,13 +1083,16 @@ fn fill_history(
                     Ok(Ok(mut built)) => {
                         built.body.state_of =
                             finals.and_then(|finals| final_body(history, finals, want));
-                        place(
+                        if let Err(error) = place(
+                            ctx,
                             bodies,
                             &mut joinable,
                             built,
                             want.slot,
                             (consumed.is_some(), join),
-                        );
+                        ) {
+                            failure = Some(error);
+                        }
                     }
                     Ok(Err(Unbuilt::Undecoded)) => {
                         losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
@@ -1351,10 +1352,6 @@ fn build(
         Ok(None) => return Ok(Err(Unbuilt::Undecoded)),
         Err(unbuilt) => return Ok(Err(unbuilt)),
     };
-    ctx.retain_bytes(
-        cadmpeg_core::decode::u64_from_index(topology.name_bytes()),
-        "keep history body names",
-    )?;
     let records = keep_records.then(|| (*topology).clone());
     let mut map = IdentityMap::new(|id: &str| {
         let (_, rest) = id
@@ -1400,12 +1397,13 @@ fn build(
 /// Add a built nest, or join its producing feature onto the equal consumed
 /// nest that `join` names.
 fn place(
+    ctx: &DecodeContext<'_>,
     bodies: &mut Vec<HistoryBody>,
     joinable: &mut Vec<Joinable>,
     built: Built,
     slot: i64,
     (consumed, join): (bool, Option<usize>),
-) {
+) -> Result<(), CodecError> {
     let equal =
         join.filter(|&position| built.records.as_ref() == Some(&joinable[position].topology));
     if let Some(position) = equal {
@@ -1416,8 +1414,12 @@ fn place(
         if nest.state_of.is_none() {
             nest.state_of = built.body.state_of;
         }
-        return;
+        return Ok(());
     }
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(built.body.topology.name_bytes()),
+        "keep history body names",
+    )?;
     if consumed {
         if let Some(topology) = built.records {
             joinable.push(Joinable {
@@ -1428,6 +1430,7 @@ fn place(
         }
     }
     bodies.push(built.body);
+    Ok(())
 }
 
 /// The model body whose earlier state the body of `want` is: the result
@@ -1471,7 +1474,7 @@ fn final_body(
 enum Unbuilt {
     /// The state does not decode, or its body is not a closed nest.
     Undecoded,
-    /// The decode of the state passed the retained-byte allowance.
+    /// The decode of the state reached a resource limit.
     Bounded(ResourceLimit),
 }
 

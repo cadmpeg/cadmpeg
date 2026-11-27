@@ -912,9 +912,17 @@ fn decode_container<'a>(
                         "the history state scan passed its work cap",
                     ),
                 });
-                if let (Some((start, code, why)), None) = (unread, &given_up_carrier) {
+                let part =
+                    unread
+                        .filter(|_| given_up_carrier.is_none())
+                        .and_then(|(start, code, why)| {
+                            let chain = carrier.bytes.window().get(start..)?;
+                            let offset = carrier.stream_offset(start).ok()?;
+                            Some((history_chain_part(carrier, offset, chain), code, why))
+                        });
+                if let Some((part, code, why)) = part {
                     history_chain = Some((
-                        history_chain_part(carrier, start)?,
+                        part,
                         CodecError::malformed(format_args!("{}: {why}", code.kind())),
                     ));
                 }
@@ -2325,24 +2333,21 @@ fn carrier_part<'a>(carrier: &crate::kernel::ActiveCarrier<'a>) -> (Part<'a>, (S
     )
 }
 
-/// The `delta_state` chain of the active carrier as a `history-chain` part:
-/// the carrier bytes from its first `delta_state` record, at `start`.
+/// The active carrier's suffix that holds the history chain as a part of the
+/// expanded bulk stream.
 fn history_chain_part<'a>(
-    carrier: &crate::kernel::ActiveCarrier<'a>,
-    start: usize,
-) -> Result<Part<'a>, CodecError> {
-    let bytes = carrier.bytes.window();
-    let chain = bytes
-        .get(start..)
-        .ok_or_else(|| CodecError::malformed("Inventor history chain start is out of bounds"))?;
-    Ok(crate::rse::bulk_record_part(
+    carrier: &crate::kernel::ActiveCarrier<'_>,
+    offset: u64,
+    chain: &'a [u8],
+) -> Part<'a> {
+    crate::rse::bulk_record_part(
         "history-chain",
         (&carrier.segment_token, carrier.record_ordinal),
-        carrier.stream_offset(start)?,
+        offset,
         chain,
         ArenaClass::Design,
     )
-    .costing("the features have no history states"))
+    .costing("the features have no history states")
 }
 
 /// The topology record `record` that the kernel decode of `carrier` read and

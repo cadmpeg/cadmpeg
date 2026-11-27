@@ -902,7 +902,7 @@ fn body_given_up(
         ),
         Unbuilt::Bounded => (
             InventorLossCode::FeatureHistoryBodyBounded,
-            "the body passed the local cap of history bodies or the retained-byte budget",
+            "the body reached a history body resource limit",
         ),
     };
     cadmpeg_ir::unknown::part::GivenUpRecord::new(nest, format_args!("{}: {detail}", code.kind()))
@@ -934,7 +934,7 @@ fn body_losses(outcome: &super::history_bodies::Outcome) -> Vec<LossNote> {
     }
     if outcome.bounded > 0 {
         notes.push(InventorLossCode::FeatureHistoryBodyBounded.note(format!(
-            "{} body(ies) of Split and Base features passed the local cap of history bodies or the retained-byte budget; those bodies have no history body.",
+            "{} body(ies) of Split and Base features reached a history body resource limit; those bodies have no history body.",
             outcome.bounded
         )));
     }

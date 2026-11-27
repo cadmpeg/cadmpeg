@@ -3,6 +3,7 @@ use super::*;
 
 mod final_bodies;
 mod historical_split;
+mod retained_budget;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
@@ -1063,47 +1064,6 @@ fn history_body_caps_report_the_skipped_body() {
     }
 }
 
-/// The records that the decode of a history state transfers and drops pass
-/// the retained-byte budget: the decode gives up the body, and the document
-/// keeps decoding.
-#[test]
-fn a_history_decode_past_the_retained_budget_gives_up_only_its_body() {
-    use cadmpeg_core::decode::test_support::at_charge;
-    use cadmpeg_core::decode::ResourceDimension;
-
-    let bytes = carrier_bytes(RefWidth::Eight, true);
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::MAX;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let (bodies, losses) = at_charge(
-        ResourceDimension::RetainedBytes,
-        "serialize native record",
-        0,
-        || {
-            fill_roles(
-                &ctx,
-                &bytes,
-                RefWidth::Eight,
-                (1, MAX_HISTORY_BODY_WORK),
-                (true, false),
-                1,
-            )
-        },
-    )
-    .expect("the document keeps decoding");
-    assert!(bodies.is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss: {losses:?}")
-    };
-    assert_eq!(
-        loss.code,
-        F3dLossCode::FeatureHistoryBodyBounded.note("bounded").code
-    );
-    assert!(loss.message.contains("RetainedBytes"), "{}", loss.message);
-    assert!(ctx.resource_refusal().is_none());
-}
-
 #[test]
 fn the_output_blob_disambiguates_equal_state_identifiers() {
     let histories = ["a", "b"].map(|source| {
@@ -1719,48 +1679,66 @@ fn nest(id: &str, produced_by: Option<&str>, consumed_by: Option<&str>, state: i
 
 #[test]
 fn a_producer_of_equal_records_joins_the_nest_of_the_consumer() {
+    let arena = DecodeArena::new();
+    let ctx = DecodeContext::new(
+        &arena,
+        &DecodePolicy::default(),
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
+    let allowance = ctx.retained_bytes_available();
     let records = *cube_candidate().topology;
-    let built = |body, records: Option<&BodyTopology>| Built {
-        body,
-        records: records.cloned(),
+    let name = "source body name";
+    let built = |mut body: HistoryBody, records: &BodyTopology| {
+        body.topology.body.name = Some(name.into());
+        Built {
+            body,
+            records: Some(records.clone()),
+        }
     };
     let mut bodies = Vec::new();
     let mut joinable = Vec::new();
     place(
+        &ctx,
         &mut bodies,
         &mut joinable,
-        built(nest("a", None, Some("split"), 4), Some(&records)),
+        built(nest("a", None, Some("split"), 4), &records),
         7,
         (true, None),
-    );
+    )
+    .unwrap();
     assert_eq!((bodies.len(), joinable.len()), (1, 1));
     // A producer whose records differ keeps a nest of its own.
     let mut changed = records.clone();
     changed.points.clear();
     place(
+        &ctx,
         &mut bodies,
         &mut joinable,
-        Built {
-            body: nest("b", Some("base"), None, 1),
-            records: Some(changed),
-        },
+        built(nest("b", Some("base"), None, 1), &changed),
         7,
         (false, Some(0)),
-    );
+    )
+    .unwrap();
     assert_eq!((bodies.len(), joinable.len()), (2, 1));
     assert_eq!(bodies[0].produced_by, None);
     // A producer of equal records joins the consumer nest at its own state.
     place(
+        &ctx,
         &mut bodies,
         &mut joinable,
-        built(nest("c", Some("base"), None, 1), Some(&records)),
+        built(nest("c", Some("base"), None, 1), &records),
         7,
         (false, Some(0)),
-    );
+    )
+    .unwrap();
     assert_eq!((bodies.len(), joinable.len()), (2, 0));
     assert_eq!(bodies[0].produced_by, Some(feature("base").id));
     assert_eq!(bodies[0].consumed_by, Some(feature("split").id));
     assert_eq!(bodies[0].state.identifier, 1);
+    assert_eq!(
+        allowance - ctx.retained_bytes_available(),
+        2 * cadmpeg_core::decode::u64_from_index(name.len())
+    );
 }
 
 fn leak<T>(value: T) -> &'static T {

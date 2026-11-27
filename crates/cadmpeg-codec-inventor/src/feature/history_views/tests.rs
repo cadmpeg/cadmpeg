@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use cadmpeg_asm::history::walk_entity_versions;
 use cadmpeg_asm::kernel_header::RefWidth;
-use cadmpeg_core::decode::{work_units, DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{work_units, DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use std::rc::Rc;
 
@@ -12,7 +12,7 @@ use crate::feature::history_states::{
     frame_chain, index_chain, prepare, Closed, Framing, Prepared, Reading,
 };
 use crate::kernel::{parse_carrier, ActiveCarrier};
-use crate::test_support::history_carrier::{carrier_bytes, framed_carrier};
+use crate::test_support::history_carrier::{carrier_bytes, framed_carrier, put_plain, REF};
 
 /// Source index that a naming tag first lists in the older state of the
 /// carrier, and in its head state.
@@ -103,6 +103,47 @@ fn a_view_decodes_the_state_that_first_lists_the_source() {
         let head = decoded(views.after(ctx, HEAD));
         assert_eq!(head.geometry.bodies.len(), 1);
         assert_eq!(head.geometry.faces.len(), 1);
+    });
+}
+
+#[test]
+fn a_passthrough_record_over_the_scratch_limit_leaves_room_for_the_document() {
+    with_chain(|_, carrier, _| {
+        let header = carrier.header.as_ref().expect("carrier header");
+        let mut bytes = Vec::new();
+        put_plain(&mut bytes, header.width, "face", &[(REF, -1); 8]);
+        let span = cadmpeg_core::decode::u64_from_index(bytes.len());
+        let policy = DecodePolicy {
+            limits: ResourceLimits {
+                max_retained_bytes: span - 1,
+                ..ResourceLimits::default()
+            },
+        };
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input fits");
+        let records = cadmpeg_asm::sab::frame(&ctx, &bytes, 0, bytes.len(), header.width, None)
+            .expect("orphan face frames");
+        let [face] = records.as_slice() else {
+            panic!("one face record");
+        };
+        assert_eq!(face.head(), "face");
+        assert_eq!(face.len, bytes.len());
+        assert_eq!(face.ref_at(5), None);
+        let slot = i64::try_from(face.index).expect("face slot fits i64");
+        let decoded = decode_scratch(
+            &ctx,
+            &bytes,
+            header,
+            &HashMap::from([(slot, face.clone())]),
+            &BTreeMap::from([(slot, slot)]),
+            0,
+        )
+        .expect("an optional state leaves the document decoding");
+
+        assert!(matches!(decoded, Decoded::Bounded));
+        assert!(ctx.resource_refusal().is_none());
+        ctx.retain_bytes(span - 1, "kept document bytes")
+            .expect("kept output fits the full allowance");
     });
 }
 
