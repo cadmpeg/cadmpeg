@@ -2,9 +2,10 @@
 //! The sketches a timeline feature owns besides a placed planar sketch: a
 //! block definition, a spatial sketch, a sketch read from the records of one
 //! configuration's lane, a reference dimension whose parameter the tree
-//! does not list, a reference-dimension parameter no dimension binds, and a
-//! relation on a curve locus the sketch does not store
-//! (§5.2, §6.1).
+//! does not list, a reference-dimension parameter no dimension binds, a
+//! relation on a curve locus the sketch does not store, a curve point two
+//! point entities hold alike, and a coincidence of one point entity with
+//! itself (§5.2, §6.1).
 
 use cadmpeg_core::serde_erase::json;
 
@@ -395,6 +396,69 @@ fn a_relation_on_the_start_of_a_circle_states_the_circle_and_is_charged() {
             |note| note.code == SldprtLossCode::DesignSketchLocusUnplaced.kind()
                 && note.message.contains(ON)
         ),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn two_points_at_the_center_of_a_circle_leave_the_center_to_a_minted_point_with_a_loss() {
+    let (mut ir, native) = sketch_and_extrude();
+    let mut entities = json::to_value(&ir.model.sketch_entities).unwrap();
+    for key in ["center0", "center1"] {
+        entities.as_array_mut().unwrap().push(
+            cadmpeg_core::json!({"id": format!("sldprt:model:sketch-entity#test:{key}"),
+                "sketch": SKETCH, "construction": false,
+                "native_ref": format!("native:{key}"), "endpoint_refs": [],
+                "geometry": {"kind": "point", "position": {"u": 25.0, "v": 15.0}}}),
+        );
+    }
+    ir.model.sketch_entities = json::from_value(entities).unwrap();
+    let losses = project(
+        &mut ir,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+
+    let held = |key: &str| {
+        ir.design
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id.as_str().ends_with(key))
+            .unwrap()
+            .roles
+            .is_empty()
+    };
+    assert!(held(":center0") && held(":center1"));
+    assert!(
+        losses.iter().any(
+            |note| note.code == SldprtLossCode::DesignSketchLocusAmbiguous.kind()
+                && note.message.contains("test:hole")
+                && note.message.contains("test:center0")
+                && note.message.contains("test:center1")
+        ),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn a_coincidence_of_two_ends_one_point_holds_is_charged_and_not_restated() {
+    const SAME: &str = "sldprt:model:sketch-constraint#test:0";
+    let (mut ir, native) = sketch_and_extrude();
+    let losses = project(
+        &mut ir,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+
+    assert!(ir
+        .design
+        .sketch_constraints
+        .iter()
+        .all(|constraint| constraint.id.as_str() != SAME));
+    assert!(
+        losses.iter().any(|note| note.code
+            == SldprtLossCode::DesignSketchRelationSinglePoint.kind()
+            && note.message.contains(SAME)),
         "{losses:#?}"
     );
 }

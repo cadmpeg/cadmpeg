@@ -760,8 +760,9 @@ fn a_definition_no_column_holds_writes_and_is_charged() {
 /// A column that names a feature through its parameter scope, in a document
 /// whose parameter scopes the source-less Design stream has no form for: the
 /// generator writes the design from its neutral records and charges each
-/// configuration with the native Design stream (cadir-v11.md §3.4, W2). No
-/// table is written, so no feature state is written or read back otherwise.
+/// configuration with the native Design stream (cadir-v11.md §3.4, W2). The
+/// written Base Feature design holds empty configuration documents, so no
+/// feature state is written or read back otherwise.
 #[test]
 fn a_feature_column_beside_parameter_scopes_is_charged_with_its_configuration() {
     use crate::test_support::configuration_table::{bool_cell, object_target};
@@ -822,6 +823,9 @@ fn a_feature_column_beside_parameter_scopes_is_charged_with_its_configuration() 
             report.losses
         );
     }
-    assert!(f3d_native(round_trip.ir()).design_configurations.is_empty());
+    assert!(f3d_native(round_trip.ir())
+        .design_configurations
+        .iter()
+        .all(|document| document.payload().is_empty()));
     assert!(round_trip.ir().model.configurations.is_empty());
 }
