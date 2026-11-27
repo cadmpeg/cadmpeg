@@ -11,8 +11,11 @@ use cadmpeg_core::decode::DecodeContext;
 
 use crate::bytes::{lp_ascii_strict, take_reference};
 use crate::container::ContainerScan;
+#[cfg(test)]
+use crate::design::decode::meta::design_primary_frames;
 use crate::design::decode::meta::{
-    metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
+    metadata_for_bulk_stream, scan_design_primary_frames, typed_primary_frames_from,
+    DesignPrimaryFrame, TypedPrimaryFrame,
 };
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope_with_type_guid;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -1822,6 +1825,7 @@ fn mesh_filename_entries(
     entries
 }
 
+#[cfg(test)]
 fn parse_mesh_design_records<F>(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -1832,10 +1836,38 @@ fn parse_mesh_design_records<F>(
 where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
-    let stream = crate::ids::native_scope(source_entry_name);
     let records = IndexedRecordOffsets::build(bytes);
-    let collection_frames =
-        typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")?;
+    let primary_frames = design_primary_frames(bytes, meta)?;
+    parse_mesh_design_records_with_frames(
+        ctx,
+        bytes,
+        meta,
+        source_entry_name,
+        &records,
+        &primary_frames,
+        asset_for_filename,
+    )
+}
+
+fn parse_mesh_design_records_with_frames<F>(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    source_entry_name: &str,
+    records: &IndexedRecordOffsets,
+    primary_frames: &[DesignPrimaryFrame<'_>],
+    asset_for_filename: &mut F,
+) -> Result<Vec<DesignMeshFeature>, CodecError>
+where
+    F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
+{
+    let stream = crate::ids::native_scope(source_entry_name);
+    let collection_frames = typed_primary_frames_from(
+        primary_frames,
+        meta,
+        MESH_COLLECTION_TYPE_GUID,
+        "mesh-collection",
+    )?;
     if collection_frames.is_empty() {
         return Ok(Vec::new());
     }
@@ -1844,15 +1876,20 @@ where
         .map(|frame| parse_mesh_collection_record(bytes, meta, frame))
         .collect::<Result<Vec<_>, _>>()?;
     let mut entry_names = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
-            .into_iter()
-            .map(|frame| parse_mesh_entry_name_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        typed_primary_frames_from(
+            primary_frames,
+            meta,
+            MESH_ENTRY_NAME_TYPE_GUID,
+            "mesh-entry-name",
+        )?
+        .into_iter()
+        .map(|frame| parse_mesh_entry_name_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?,
         |record| record.entry.record().record_index(),
         "mesh-entry-name",
     )?;
     let mut guids = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
+        typed_primary_frames_from(primary_frames, meta, MESH_GUID_TYPE_GUID, "mesh-GUID")?
             .into_iter()
             .map(|frame| parse_mesh_guid_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1860,7 +1897,7 @@ where
         "mesh-GUID",
     )?;
     let mut bodies = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
+        typed_primary_frames_from(primary_frames, meta, MESH_BODY_TYPE_GUID, "mesh-body")?
             .into_iter()
             .map(|frame| parse_mesh_body_record(ctx, bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1869,8 +1906,8 @@ where
     )?;
     let collection_record_indices = mesh_collection_indices(&collections);
     let mut texture_tables = unique_record_map(
-        typed_primary_frames(
-            bytes,
+        typed_primary_frames_from(
+            primary_frames,
             meta,
             MESH_TEXTURE_TABLE_TYPE_GUID,
             "mesh-texture-table",
@@ -1882,7 +1919,7 @@ where
         "mesh-texture-table",
     )?;
     let mut wrappers = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
+        typed_primary_frames_from(primary_frames, meta, MESH_WRAPPER_TYPE_GUID, "mesh-wrapper")?
             .into_iter()
             .map(|frame| parse_mesh_wrapper_record(bytes, frame))
             .collect::<Result<Vec<_>, _>>()?,
@@ -1890,14 +1927,14 @@ where
         "mesh-wrapper",
     )?;
     let mut scopes = unique_record_map(
-        typed_primary_frames(
-            bytes,
+        typed_primary_frames_from(
+            primary_frames,
             meta,
             MESH_FEATURE_SCOPE_TYPE_GUID,
             "mesh-feature-scope",
         )?
         .into_iter()
-        .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
+        .map(|frame| parse_mesh_scope_record(bytes, meta, records, frame))
         .collect::<Result<Vec<_>, _>>()?,
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
@@ -1910,24 +1947,34 @@ where
         return Ok(Vec::new());
     }
     let mut states = unique_record_map(
-        typed_primary_frames(bytes, meta, MESH_SCENE_STATE_TYPE_GUID, "mesh-scene-state")?
-            .into_iter()
-            .map(|frame| parse_mesh_scene_state_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        typed_primary_frames_from(
+            primary_frames,
+            meta,
+            MESH_SCENE_STATE_TYPE_GUID,
+            "mesh-scene-state",
+        )?
+        .into_iter()
+        .map(|frame| parse_mesh_scene_state_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?,
         |record| record.record().record_index(),
         "mesh-scene-state",
     )?;
     let mut scene_nodes = unique_record_map(
-        typed_primary_frames(bytes, meta, SCENE_NODE_TYPE_GUID, "mesh-scene-node")?
-            .into_iter()
-            .map(|frame| parse_scene_node_record(bytes, frame))
-            .collect::<Result<Vec<_>, _>>()?,
+        typed_primary_frames_from(
+            primary_frames,
+            meta,
+            SCENE_NODE_TYPE_GUID,
+            "mesh-scene-node",
+        )?
+        .into_iter()
+        .map(|frame| parse_scene_node_record(bytes, frame))
+        .collect::<Result<Vec<_>, _>>()?,
         |record| record.node.record_index(),
         "mesh-scene-node",
     )?;
     let mut scene_auxiliary_frames = typed_frame_map(
-        typed_primary_frames(
-            bytes,
+        typed_primary_frames_from(
+            primary_frames,
             meta,
             SCENE_AUXILIARY_TYPE_GUID,
             "mesh-scene-auxiliary",
@@ -1935,8 +1982,8 @@ where
         "mesh-scene-auxiliary",
     )?;
     let filename_frames = typed_frame_map(
-        typed_primary_frames(
-            bytes,
+        typed_primary_frames_from(
+            primary_frames,
             meta,
             MESH_TEXTURE_FILENAME_TYPE_GUID,
             "mesh-texture-filename",
@@ -1944,8 +1991,8 @@ where
         "mesh-texture-filename",
     )?;
     let mut owner_records = Vec::new();
-    for frame in typed_primary_frames(
-        bytes,
+    for frame in typed_primary_frames_from(
+        primary_frames,
         meta,
         MESH_COLLECTION_OWNER_TYPE_GUID,
         "mesh-collection-owner",
@@ -1961,10 +2008,14 @@ where
         |record| record.owner.record().record_index(),
         "mesh-collection-owner",
     )?;
-    let mut body_owner_candidates =
-        typed_primary_frames(bytes, meta, MESH_BODY_OWNER_TYPE_GUID, "mesh-body-owner")?;
-    body_owner_candidates.extend(typed_primary_frames(
-        bytes,
+    let mut body_owner_candidates = typed_primary_frames_from(
+        primary_frames,
+        meta,
+        MESH_BODY_OWNER_TYPE_GUID,
+        "mesh-body-owner",
+    )?;
+    body_owner_candidates.extend(typed_primary_frames_from(
+        primary_frames,
         meta,
         MESH_BODY_OWNER_ALTERNATE_TYPE_GUID,
         "mesh-body-owner",
@@ -1973,14 +2024,19 @@ where
 
     let operation_context = MeshOperationContext {
         bytes,
-        records: &records,
+        records,
         scopes: typed_frame_map(
-            typed_primary_frames(bytes, meta, MESH_CUT_SCOPE_TYPE_GUID, "mesh-cut-scope")?,
+            typed_primary_frames_from(
+                primary_frames,
+                meta,
+                MESH_CUT_SCOPE_TYPE_GUID,
+                "mesh-cut-scope",
+            )?,
             "mesh-cut-scope",
         )?,
         groups: typed_frame_map(
-            typed_primary_frames(
-                bytes,
+            typed_primary_frames_from(
+                primary_frames,
                 meta,
                 MESH_OPERATION_GROUP_TYPE_GUID,
                 "mesh-operation-group",
@@ -1988,8 +2044,8 @@ where
             "mesh-operation-group",
         )?,
         members: typed_frame_map(
-            typed_primary_frames(
-                bytes,
+            typed_primary_frames_from(
+                primary_frames,
                 meta,
                 MESH_OPERATION_MEMBER_TYPE_GUID,
                 "mesh-operation-member",
@@ -2464,11 +2520,15 @@ fn decode_mesh_design_records(
             continue;
         };
         let mut asset_for_filename = |filename: &str| mesh_image_asset(scan, filename);
-        let records = parse_mesh_design_records(
+        let records = scan.design_record_offsets(&entry.name)?;
+        let primary_frames = scan_design_primary_frames(scan, &entry.name, &meta)?;
+        let records = parse_mesh_design_records_with_frames(
             ctx,
             scan.entry_bytes(&entry.name)?,
             &meta,
             &entry.name,
+            &records,
+            &primary_frames,
             &mut asset_for_filename,
         )?;
         if !records.is_empty() {

@@ -122,6 +122,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         body.losses
             .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
+    for part in build::report_coverage::give_up_unread_section_rows(ctx, &scan)? {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
     for expansion in &scan.framing.expansion_losses {
         let part = give_up_unexpanded_section(ctx, &scan, expansion)?;
         body.losses

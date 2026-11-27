@@ -420,6 +420,24 @@ pub fn read_edit_program(
     }))
 }
 
+/// The base field list of `kind` as an effective plan, when the base schema
+/// declares the type.
+pub(crate) fn base_plan(version: BaseVersion, kind: u16) -> Result<Option<SchemaPlan>, CodecError> {
+    base::fields(version, kind)
+        .map(|fields| own_definition(kind, fields))
+        .transpose()
+}
+
+/// Whether the base schema declares node type `kind`.
+pub(crate) fn in_base(version: BaseVersion, kind: u16) -> bool {
+    base::fields(version, kind).is_some()
+}
+
+/// The largest node type of the base schema.
+pub(crate) fn base_maximum(version: BaseVersion) -> u16 {
+    base::maximum(version)
+}
+
 fn own_definition(kind: u16, fields: &[BorrowedField<'_>]) -> Result<SchemaPlan, CodecError> {
     let mut owned = Vec::new();
     for field in fields {

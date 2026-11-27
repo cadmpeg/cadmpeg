@@ -686,8 +686,9 @@ fn written_under(mut ir: CadIr, stretch: Stretch, expected: &[&str]) -> (Vec<Los
     }
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the document is written");
     let losses = plan.report().losses.clone();
@@ -968,8 +969,9 @@ fn a_cylinder_face_that_states_no_loop_is_dropped_for_its_unbounded_domain() {
     .loopless();
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit(
+                IgesVersion::V5_3.descriptor().id.as_str(),
+            )),
         )
         .expect("the document is written");
     let omitted = charged(&plan.report().losses, "iges/writer.face-omitted");
