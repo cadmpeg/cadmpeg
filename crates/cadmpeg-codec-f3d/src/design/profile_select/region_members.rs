@@ -117,7 +117,7 @@ pub(super) fn resolve_later_curve_boundary(
             else {
                 return Ok(None);
             };
-            ring.insert(entity.id().clone());
+            ring.insert(entity.clone());
         }
         named.push(ring);
     }
