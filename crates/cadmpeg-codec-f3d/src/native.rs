@@ -1935,18 +1935,50 @@ pub(crate) struct F3dNative {
 }
 
 impl F3dNative {
+    /// Indexed record headers that the parameter machinery does not own. The
+    /// header arena also holds the headers of parameter scopes, parameters,
+    /// owners and companions, which state no geometry.
+    fn entity_record_header_count(&self) -> usize {
+        let mut parameter_records = std::collections::HashSet::new();
+        let mut note = |id: &str, record_index: u32| {
+            if let Some(stream) = crate::ids::native_stream(id) {
+                parameter_records.insert((stream.to_owned(), record_index));
+            }
+        };
+        for scope in &self.design_parameter_scopes {
+            note(&scope.id, scope.record_index);
+        }
+        for parameter in &self.design_parameters {
+            note(&parameter.id, parameter.record_index);
+        }
+        for owner in &self.design_parameter_owners {
+            note(owner.id(), owner.record_index());
+        }
+        for companion in &self.design_parameter_companions {
+            note(companion.id(), companion.record_index());
+        }
+        self.design_record_headers
+            .iter()
+            .filter(|header| {
+                crate::ids::native_stream(&header.id).is_none_or(|stream| {
+                    !parameter_records.contains(&(stream.to_owned(), header.record_index))
+                })
+            })
+            .count()
+    }
+
     /// Design records that state intended geometry: feature timeline items,
     /// framed records of no typed kind, sketch
     /// and construction carriers, component occurrences, mesh features,
     /// joints, selections, operands and dimension geometry. Parameters, their
-    /// scopes and owners, material assignments, configurations and image
+    /// scopes, owners and companions, material assignments, configurations and image
     /// carriers state no geometry and do not count.
     pub(crate) fn geometry_record_count(&self) -> usize {
         self.design_feature_timelines
             .iter()
             .map(|timeline| timeline.frame().items().len())
             .sum::<usize>()
-            + self.design_record_headers.len()
+            + self.entity_record_header_count()
             + self.design_sketch_placements.len()
             + self.design_placement_constructions.len()
             + self.sketch_points.len()
