@@ -1624,3 +1624,150 @@ fn a_world_path_proves_one_expanded_object_snapshot() {
         .iter()
         .all(|occurrence| occurrence.id != unresolved));
 }
+
+fn project_with_scopes(
+    carriers: &[DesignComponentOccurrence],
+    components: &BTreeMap<String, StreamComponents>,
+    paths: &[DesignComponentPath],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> super::super::LocalComponentProjection {
+    let empty = BTreeSet::new();
+    super::super::project_local_components(&super::super::LocalComponentSources {
+        hidden_bodies: None,
+        scopes,
+        occurrences: carriers,
+        paths,
+        components,
+        body_bindings: &[],
+        bodies: Some(&empty),
+        limits: cadmpeg_core::decode::ResourceLimits::default(),
+    })
+    .unwrap()
+}
+
+/// A `Qualified`-form assembly alignment without a frame sense whose two
+/// operand occurrence paths name `occurrence_guid`.
+fn qualifier_scope(occurrence_guid: &str) -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::assembly::{
+        DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+        DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier,
+    };
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayload,
+    };
+    use crate::records::identity::Located;
+    let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
+        reference_record_index: index,
+        reference_offset: 0,
+        transform: EYE_4.try_into().unwrap(),
+        transform_offset: 0,
+    });
+    let qualifiers = [11_u32, 21].map(|index| {
+        let link = DesignAssemblyOperandPathLink {
+            locator_reference_offset: 0,
+            locator_record_index: index - 1,
+            locator_class_tag: "337".to_owned().try_into().unwrap(),
+            locator_byte_offset: 0,
+            locator_scope_reference_offset: 0,
+            wrapper_record_index: index + 1,
+            wrapper_reference_offset: 0,
+            wrapper_class_tag: "341".to_owned().try_into().unwrap(),
+            wrapper_byte_offset: 0,
+            path_reference_offset: 0,
+        };
+        let occurrence = Located {
+            value: guid(occurrence_guid).into(),
+            offset: 200,
+        };
+        let identity = (0..4)
+            .map(|ordinal| Located {
+                value: guid("22222222-2222-2222-2222-22222222222b"),
+                offset: 300 + ordinal,
+            })
+            .collect();
+        let path = DesignAssemblyOperandPath::try_new(
+            link,
+            index,
+            "386".to_owned().try_into().unwrap(),
+            100,
+            vec![occurrence],
+            identity,
+        )
+        .unwrap();
+        DesignAssemblyOperandQualifier::OccurrencePath { path }
+    });
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#3"),
+        DesignFeatureKind::Assemble,
+        3,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.payload = DesignScopePayload::Assemble(Some(
+                DesignAssemblyAlignment::try_new(
+                    0.0,
+                    [0.0; 3],
+                    Vec::new(),
+                    Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
+                )
+                .unwrap(),
+            ));
+        })
+        .unwrap();
+    scope
+}
+
+const EYE_4: [[f64; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
+
+/// Guid of the module carrier, record 100.
+const MODULE_GUID: &str = "00000000-0000-4000-8000-000000000001";
+
+#[test]
+fn a_carrier_placed_by_an_operand_qualifier_still_reports_the_object_prelude_assumption() {
+    let (mut carriers, components) = fixture(1);
+    snapshot_of_the_module(&mut carriers);
+    let paths = [leaf_path()];
+    let baseline = project(&carriers, &components, &paths);
+    let projection = project_with_scopes(
+        &carriers,
+        &components,
+        &paths,
+        &[qualifier_scope(MODULE_GUID)],
+    );
+    let module = instance(&carriers, &[100]);
+    assert_close(world(&projection, &module), world(&baseline, &module));
+    let code = F3dLossCode::LocalOccurrenceObjectPreludeAssumed;
+    assert!(has(&baseline, code));
+    assert!(message(&baseline, code).starts_with("1 local occurrence(s)"));
+    assert_eq!(message(&projection, code), message(&baseline, code));
+}
+
+#[test]
+fn a_marked_carrier_placed_by_an_operand_qualifier_still_reports_the_marked_prelude_assumption() {
+    let (mut carriers, components) = fixture(1);
+    snapshot_of_the_module(&mut carriers);
+    let carrier = carriers
+        .iter_mut()
+        .find(|carrier| carrier.record_index == 100)
+        .unwrap();
+    let mut wire = cadmpeg_core::serde_erase::to_json_value(&*carrier).unwrap();
+    wire["attributed"]["guid_marker"] = 1.into();
+    *carrier = cadmpeg_core::serde_erase::from_json_value(&wire).unwrap();
+    let paths = [leaf_path()];
+    let baseline = project(&carriers, &components, &paths);
+    let projection = project_with_scopes(
+        &carriers,
+        &components,
+        &paths,
+        &[qualifier_scope(MODULE_GUID)],
+    );
+    let code = F3dLossCode::LocalOccurrenceMarkedPreludeAssumed;
+    assert!(has(&baseline, code));
+    assert!(message(&baseline, code).starts_with("1 local occurrence(s)"));
+    assert_eq!(message(&projection, code), message(&baseline, code));
+}

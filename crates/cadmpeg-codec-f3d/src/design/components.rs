@@ -82,6 +82,7 @@ pub(crate) fn project_local_components_with_types(
 ) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
     let mut projector = Projector::new(sources);
     let mut types_by_stream = std::collections::HashMap::new();
+    let mut qualifier_placed = BTreeSet::new();
     for scope in sources.scopes {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or_default();
         let relation_only = scope.assembly_alignment().is_some_and(|alignment| {
@@ -124,6 +125,13 @@ pub(crate) fn project_local_components_with_types(
                 let Some(root) = root else {
                     continue;
                 };
+                let occurrence_key = projector
+                    .occurrence_id(stream, &root.occurrence_guid)
+                    .as_str()
+                    .to_owned();
+                if !projector.occurrences.contains_key(&occurrence_key) {
+                    qualifier_placed.insert(occurrence_key);
+                }
                 projector.place(
                     stream,
                     ComponentIdentity::CarrierGuid(&root.component_guid),
@@ -171,7 +179,12 @@ pub(crate) fn project_local_components_with_types(
             )?;
         }
     }
-    projector.path_poses.operation_placed = projector.occurrences.keys().cloned().collect();
+    projector.path_poses.operation_placed = projector
+        .occurrences
+        .keys()
+        .filter(|key| !qualifier_placed.contains(*key))
+        .cloned()
+        .collect();
     projector.place_root_contained_carriers()?;
     projector.attach_root_occurrences();
     projector.expand_nested_carriers()?;
@@ -410,7 +423,9 @@ struct PathPoseOutcome {
     /// Design streams that store at least one component-path record.
     path_streams: BTreeSet<String>,
     /// Occurrences that an assembly operation or a derived-instance
-    /// construction placed before any carrier matrix was read.
+    /// construction placed from an operation matrix before any carrier
+    /// matrix was read. An occurrence that an assembly alignment qualifier
+    /// places from its carrier's closing matrix is not among them.
     operation_placed: BTreeSet<String>,
     /// Carriers of the occurrences that took a path pose.
     applied_carriers: BTreeSet<String>,
@@ -1507,6 +1522,7 @@ impl<'a> Projector<'a> {
             .filter(|(key, (_, carrier))| {
                 !rejected.contains(key.as_str())
                     && !self.path_poses.applied_instances.contains(key.as_str())
+                    && !self.path_poses.operation_placed.contains(key.as_str())
                     && carrier.is_some_and(|carrier| {
                         carrier.has_marked_object_prelude() && carrier.transform().is_some()
                     })
