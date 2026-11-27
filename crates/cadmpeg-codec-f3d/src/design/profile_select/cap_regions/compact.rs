@@ -11,7 +11,7 @@ use crate::design::geometry::{atomic_sketch_regions, ProfileGeometryWork};
 use crate::history_records::AsmHistoricalTopology;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::extents::{
-    ExtrudeDirection, ExtrudeExtent, ExtrudeStart, LinearTermination,
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
 };
 use cadmpeg_ir::features::operation_settings::BooleanOp;
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
@@ -168,45 +168,12 @@ pub(in crate::design::profile_select) fn selection_agrees(
         if covered.iter().any(|index| !selected.contains(index)) {
             return Ok(false);
         }
-        let mut cap = Cap::new(Vec::new(), Vec::new(), Vec::new(), 0.0, Vec::new());
-        let endpoints: Vec<_> = plane
-            .before
-            .iter()
-            .chain(&plane.after)
-            .flat_map(|source| &source.pieces)
-            .flat_map(|piece| {
-                let [start, _, end] = piece.points();
-                [start, end]
-            })
-            .collect();
-        for source in plane.before.iter().chain(&plane.after) {
-            for piece in &source.pieces {
-                for fragment in split_piece(piece, &endpoints, tolerance) {
-                    let Some((left, right)) = fragment.sides_of_middle(SIDE_OFFSET * tolerance)
-                    else {
-                        return Ok(false);
-                    };
-                    if changed(left) != changed(right) {
-                        cap.pieces.push(fragment);
-                    }
-                }
-            }
-        }
-        if cap.pieces.is_empty() && covered.is_empty() {
-            continue;
-        }
-        if !matches!(
-            outlines_agree(
-                &cap,
-                &sampled,
-                &covered,
-                resolution.entities,
-                tolerance,
-                resolution.ctx
-            )?,
-            Agreement::Exact
-        ) {
+        let Some(pieces) = changed_outline(plane, &sampled, &covered, resolution, tolerance)?
+        else {
             return Ok(false);
+        };
+        if pieces.is_empty() && covered.is_empty() {
+            continue;
         }
         for index in covered {
             let point = sampled[index].point;
@@ -219,7 +186,7 @@ pub(in crate::design::profile_select) fn selection_agrees(
                 return Ok(false);
             }
         }
-        outline.extend(cap.pieces);
+        outline.extend(pieces);
     }
     if witnessed.len() != selected.len() {
         return Ok(false);
@@ -234,6 +201,62 @@ pub(in crate::design::profile_select) fn selection_agrees(
         (far.min(0.0), far.max(0.0)),
         tolerance,
     ))
+}
+
+/// The pieces of the outline between the part of `plane` that the transition
+/// changed and the part it left, when they cover the boundaries of the
+/// `covered` regions exactly. `None` when they do not.
+fn changed_outline(
+    plane: &PlaneSides,
+    sampled: &[super::Sampled<'_>],
+    covered: &[usize],
+    resolution: super::super::ScopedExtrudeProfileResolution<'_>,
+    tolerance: f64,
+) -> Result<Option<Vec<Piece>>, CodecError> {
+    let changed = |point| {
+        plane.before.iter().any(|cap| cap.contains(point))
+            != plane.after.iter().any(|cap| cap.contains(point))
+    };
+    let mut cap = Cap::new(Vec::new(), Vec::new(), Vec::new(), 0.0, Vec::new());
+    let endpoints: Vec<_> = plane
+        .before
+        .iter()
+        .chain(&plane.after)
+        .flat_map(|source| &source.pieces)
+        .flat_map(|piece| {
+            let [start, _, end] = piece.points();
+            [start, end]
+        })
+        .collect();
+    for source in plane.before.iter().chain(&plane.after) {
+        for piece in &source.pieces {
+            for fragment in split_piece(piece, &endpoints, tolerance) {
+                let Some((left, right)) = fragment.sides_of_middle(SIDE_OFFSET * tolerance) else {
+                    return Ok(None);
+                };
+                if changed(left) != changed(right) {
+                    cap.pieces.push(fragment);
+                }
+            }
+        }
+    }
+    if cap.pieces.is_empty() && covered.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    if !matches!(
+        outlines_agree(
+            &cap,
+            sampled,
+            covered,
+            resolution.entities,
+            tolerance,
+            resolution.ctx
+        )?,
+        Agreement::Exact
+    ) {
+        return Ok(None);
+    }
+    Ok(Some(cap.pieces))
 }
 
 /// A lateral face that a transition deletes: its carrier and the heights of
@@ -975,14 +998,81 @@ fn edge_height_is_bounded(
     })
 }
 
-#[cfg(test)]
-pub(in crate::design::profile_select) mod tests;
+/// The heights above the sketch plane that the tool of a blind Extrude spans,
+/// from its start plane along its direction. `None` for a start, direction or
+/// side that is not a blind distance without draft.
+fn extent_interval(sweep: &Sweep<'_>) -> Option<(f64, f64)> {
+    let start = match sweep.start {
+        ExtrudeStart::ProfilePlane {} => 0.0,
+        ExtrudeStart::OffsetProfilePlane { offset } => offset.get(),
+        _ => return None,
+    };
+    let sign = match sweep.direction {
+        ExtrudeDirection::ProfileNormal {} => 1.0,
+        ExtrudeDirection::ReversedProfileNormal {} => -1.0,
+        _ => return None,
+    };
+    let blind = |side: &ExtrudeSide| match side.termination {
+        LinearTermination::Blind { length } if side.draft.is_none() => Some(length.get()),
+        _ => None,
+    };
+    let (first, second) = match sweep.extent {
+        ExtrudeExtent::OneSided { side } => (start, start + sign * blind(side)?),
+        ExtrudeExtent::TwoSided { first, second } => {
+            (start - sign * blind(second)?, start + sign * blind(first)?)
+        }
+        ExtrudeExtent::Symmetric { side } => {
+            let half = blind(side)? / 2.0;
+            (start - half, start + half)
+        }
+        _ => return None,
+    };
+    Some((first.min(second), first.max(second)))
+}
 
-/// The regions of an Intersect whose far plane the transition left untouched,
-/// when the transition removed at least one other region from the planes
-/// parallel to the sketch and every curve the selection names bounds a kept
-/// region. An Intersect keeps the body inside the profile, so a region whose
-/// material a changed plane lost lies outside it.
+/// Whether the changed planes show that `removed` are the regions an Intersect
+/// lost and nothing else: on each plane that held material before the
+/// transition, the regions whose material differs before and after are
+/// removed regions, and the outline between the differing and the unchanged
+/// material is the boundary of those regions. A plane that held no material
+/// before the transition is the end face of the tool.
+fn intersect_agrees(
+    planes: &[PlaneSides],
+    sampled: &[super::Sampled<'_>],
+    removed: &[usize],
+    resolution: super::super::ScopedExtrudeProfileResolution<'_>,
+    tolerance: f64,
+) -> Result<bool, CodecError> {
+    for plane in planes.iter().filter(|plane| !plane.before.is_empty()) {
+        let covered: Vec<_> = sampled
+            .iter()
+            .enumerate()
+            .filter(|(_, region)| {
+                plane.before.iter().any(|cap| cap.contains(region.point))
+                    != plane.after.iter().any(|cap| cap.contains(region.point))
+            })
+            .map(|(index, _)| index)
+            .collect();
+        if covered.iter().any(|index| !removed.contains(index))
+            || changed_outline(plane, sampled, &covered, resolution, tolerance)?.is_none()
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// The regions of an Intersect that its transition kept, when the transition
+/// removed at least one other region. An Intersect keeps the body inside the
+/// profile. Among the planes parallel to the sketch that the transition
+/// changed within the extent of the Intersect, a region is removed when a
+/// plane held its interior before the transition and not after it, and kept
+/// when a plane holds it on both sides. A region that no such plane holds is
+/// not selected. `None` when a region is both removed and kept, when a kept
+/// region encloses an island, when a plane within the extent has a cap that
+/// is not proven, when the removed regions disagree with the changed planes,
+/// or when a curve the selection names bounds no kept region or a kept region
+/// has no named boundary curve.
 pub(in crate::design::profile_select) fn intersect_candidate(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: super::super::ScopedExtrudeProfileResolution<'_>,
@@ -993,6 +1083,9 @@ pub(in crate::design::profile_select) fn intersect_candidate(
     if !matches!(sweep.operation, BooleanOp::Intersect) || named.is_empty() {
         return Ok(None);
     }
+    let Some((low, high)) = extent_interval(&sweep) else {
+        return Ok(None);
+    };
     let Some((after, state)) = unique_state(resolution.histories, state_ids.0) else {
         return Ok(None);
     };
@@ -1007,7 +1100,7 @@ pub(in crate::design::profile_select) fn intersect_candidate(
         return Ok(None);
     };
     let tolerance = resolution.linear_tolerance;
-    let Some(planes) = changed_planes(
+    let Some(mut planes) = changed_planes(
         sketch,
         (before, after),
         &transition.topology.faces,
@@ -1015,6 +1108,14 @@ pub(in crate::design::profile_select) fn intersect_candidate(
     ) else {
         return Ok(None);
     };
+    planes.retain(|plane| plane.offset >= low - tolerance && plane.offset <= high + tolerance);
+    if planes
+        .iter()
+        .flat_map(|plane| plane.before.iter().chain(&plane.after))
+        .any(Cap::assumed)
+    {
+        return Ok(None);
+    }
     let work = ProfileGeometryWork::new();
     let Some(regions) = atomic_sketch_regions(
         sketch,
@@ -1026,25 +1127,31 @@ pub(in crate::design::profile_select) fn intersect_candidate(
     else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance, resolution.profile_work) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, &work) else {
         return Ok(None);
     };
-    let removed = |region: &super::Sampled<'_>| {
-        planes.iter().any(|plane| {
-            plane.before.iter().any(|cap| cap.contains(region.point))
-                && !plane.after.iter().any(|cap| cap.contains(region.point))
-        })
-    };
-    if !sampled.iter().any(removed) {
-        return Ok(None);
+    let mut removed = Vec::new();
+    let mut kept = Vec::new();
+    for (index, region) in sampled.iter().enumerate() {
+        let (mut lost, mut held) = (false, false);
+        for plane in &planes {
+            let before = plane.before.iter().any(|cap| cap.contains(region.point));
+            let after = plane.after.iter().any(|cap| cap.contains(region.point));
+            match (before, after) {
+                (true, false) => lost = true,
+                (true, true) => held = true,
+                _ => {}
+            }
+        }
+        match (lost, held) {
+            (true, true) => return Ok(None),
+            (true, false) => removed.push(index),
+            (false, true) if region.region.encloses_island => return Ok(None),
+            (false, true) => kept.push(index),
+            (false, false) => {}
+        }
     }
-    let kept: Vec<usize> = sampled
-        .iter()
-        .enumerate()
-        .filter(|(_, region)| !removed(region) && !region.region.encloses_island)
-        .map(|(index, _)| index)
-        .collect();
-    if kept.is_empty() || kept.len() + 1 > sampled.len() {
+    if removed.is_empty() || kept.is_empty() {
         return Ok(None);
     }
     let bounding: HashSet<_> = kept
@@ -1073,5 +1180,20 @@ pub(in crate::design::profile_select) fn intersect_candidate(
     else {
         return Ok(None);
     };
-    Ok(PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok())
+    let Ok(candidate) = PlanarProfileRef::sketch_regions(sketch.id.clone(), regions) else {
+        return Ok(None);
+    };
+    if !intersect_agrees(&planes, &sampled, &removed, resolution, tolerance)? {
+        return Ok(None);
+    }
+    let local = work.assumed_flags();
+    let mut merged = resolution.profile_work.assumed_flags();
+    for (flag, local) in merged.iter_mut().zip(local) {
+        *flag |= local;
+    }
+    resolution.profile_work.set_assumed_flags(merged);
+    Ok(Some(candidate))
 }
+
+#[cfg(test)]
+pub(in crate::design::profile_select) mod tests;

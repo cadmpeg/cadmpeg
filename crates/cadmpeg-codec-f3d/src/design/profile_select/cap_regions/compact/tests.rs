@@ -591,29 +591,60 @@ fn a_lateral_edge_cut_by_a_transverse_cylinder_is_bounded_on_its_branch() {
     assert!(!bounded(&crossing_cylinders(2.5), -1.2, (-9.0, 9.0)));
 }
 
-/// Two unit squares side by side whose shared edge is a middle curve. A
-/// body over both squares loses the second square at the Intersect.
-#[test]
-fn an_intersect_keeps_the_regions_its_transition_did_not_remove() {
+type Line = (&'static str, (f64, f64), (f64, f64));
+
+/// The straight sketch curves of an axis-aligned rectangle from `x0` to `x1`.
+fn rectangle(name: &'static str, x0: f64, x1: f64) -> [Line; 4] {
+    let names: [&'static str; 4] = match name {
+        "island" => ["island-bottom", "island-right", "island-top", "island-left"],
+        _ => ["bottom", "right", "top", "left"],
+    };
+    let (y0, y1) = if name == "island" {
+        (0.25, 0.75)
+    } else {
+        (0.0, 1.0)
+    };
+    [
+        (names[0], (x0, y0), (x1, y0)),
+        (names[1], (x1, y0), (x1, y1)),
+        (names[2], (x1, y1), (x0, y1)),
+        (names[3], (x0, y1), (x0, y0)),
+    ]
+}
+
+/// A body face at `height` over the unit-high strip from `x0` to `x1`.
+fn strip(face: i64, height: f64, x0: f64, x1: f64) -> super::super::tests::PlaneFace {
+    (
+        face,
+        height,
+        vec![vec![(x0, 0.0), (x1, 0.0), (x1, 1.0), (x0, 1.0)]],
+    )
+}
+
+/// Run `intersect_candidate` on a sketch of `lines` and a transition from the
+/// body faces `before` to the body faces `after`. The result and the
+/// assumption flags the call left on the shared work.
+fn run_intersect(
+    lines: &[Line],
+    before: &[super::super::tests::PlaneFace],
+    after: &[super::super::tests::PlaneFace],
+    operation: BooleanOp,
+    named: &[&str],
+    sweep: (ExtrudeStart, ExtrudeDirection, ExtrudeExtent),
+) -> (Option<PlanarProfileRef>, [bool; 11]) {
     use super::super::tests::plane_faces;
     use crate::design::geometry::ProfileGeometryWork;
     use crate::design::profile_select::ScopedExtrudeProfileResolution;
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalTransition, AsmHistory, AsmStateSnapshot,
     };
-    use cadmpeg_ir::features::extents::{
-        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
-    };
-    use cadmpeg_ir::features::operation_settings::BooleanOp;
-    use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
-    use cadmpeg_ir::scalar::NonZeroLength;
     use cadmpeg_ir::sketches::{
         Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
         SketchPlacement, SketchProfiles,
     };
     use std::collections::{BTreeMap, HashSet};
 
-    let id = SketchId::mint("synthetic:test:sketch#intersect-pair").unwrap();
+    let id = SketchId::mint("synthetic:test:sketch#intersect").unwrap();
     let sketch = Sketch {
         id: id.clone(),
         name: None,
@@ -628,13 +659,6 @@ fn an_intersect_keeps_the_regions_its_transition_did_not_remove() {
         .unwrap(),
         profiles: SketchProfiles::default(),
     };
-    let lines = [
-        ("bottom", (0.0, 0.0), (2.0, 0.0)),
-        ("right", (2.0, 0.0), (2.0, 1.0)),
-        ("top", (2.0, 1.0), (0.0, 1.0)),
-        ("left", (0.0, 1.0), (0.0, 0.0)),
-        ("middle", (1.0, 0.0), (1.0, 1.0)),
-    ];
     let entities = lines
         .iter()
         .map(|(name, start, end)| {
@@ -649,11 +673,7 @@ fn an_intersect_keeps_the_regions_its_transition_did_not_remove() {
             )
         })
         .collect::<Vec<_>>();
-    let curve = |name: &str| SketchEntityId::mint(format!("synthetic:test:curve#{name}")).unwrap();
-    let ring = |width: f64| vec![(0.0, 0.0), (width, 0.0), (width, 1.0), (0.0, 1.0)];
-    let before = plane_faces(&[(1, 0.0, vec![ring(2.0)]), (2, -2.0, vec![ring(2.0)])]);
-    let after = plane_faces(&[(3, 0.0, vec![ring(1.0)]), (4, -2.0, vec![ring(1.0)])]);
-    let topologies = [before, after];
+    let topologies = [plane_faces(before), plane_faces(after)];
     let empty = BTreeMap::new();
     let snapshot = |index: usize| AsmStateSnapshot {
         state_id: i64::try_from(index + 1).unwrap(),
@@ -692,54 +712,208 @@ fn an_intersect_keeps_the_regions_its_transition_did_not_remove() {
         false,
         states,
     );
-    let run = |operation: BooleanOp, named: &[&str]| {
-        let named = named.iter().map(|name| curve(name)).collect::<HashSet<_>>();
-        crate::test_support::with_decode_context(|ctx| {
-            let work = ProfileGeometryWork::new();
-            let resolution = ScopedExtrudeProfileResolution {
-                entities: &entities,
-                spatial_entities: &[],
-                histories: std::slice::from_ref(&history),
-                linear_tolerance: TOLERANCE,
-                angular_tolerance: TOLERANCE,
-                profile_work: &work,
-                ctx,
-            };
-            super::intersect_candidate(
-                &sketch,
-                resolution,
-                (2, 1),
-                super::Sweep {
-                    operation: &operation,
-                    start: &ExtrudeStart::ProfilePlane {},
-                    direction: &ExtrudeDirection::ProfileNormal {},
-                    extent: &ExtrudeExtent::OneSided {
-                        side: ExtrudeSide {
-                            termination: LinearTermination::Blind {
-                                length: NonZeroLength::new(2.0).unwrap(),
-                            },
-                            draft: None,
-                        },
-                    },
-                },
-                &named,
-            )
-        })
-        .unwrap()
-    };
-    let Some(PlanarProfileRef::SketchRegions { regions, .. }) =
-        run(BooleanOp::Intersect, &["left", "middle", "bottom", "top"])
-    else {
+    let named = named
+        .iter()
+        .map(|name| SketchEntityId::mint(format!("synthetic:test:curve#{name}")).unwrap())
+        .collect::<HashSet<_>>();
+    let (start, direction, extent) = sweep;
+    crate::test_support::with_decode_context(|ctx| {
+        let work = ProfileGeometryWork::new();
+        let resolution = ScopedExtrudeProfileResolution {
+            entities: &entities,
+            spatial_entities: &[],
+            histories: std::slice::from_ref(&history),
+            linear_tolerance: TOLERANCE,
+            angular_tolerance: TOLERANCE,
+            profile_work: &work,
+            ctx,
+        };
+        let selected = super::intersect_candidate(
+            &sketch,
+            resolution,
+            (2, 1),
+            super::Sweep {
+                operation: &operation,
+                start: &start,
+                direction: &direction,
+                extent: &extent,
+            },
+            &named,
+        )
+        .unwrap();
+        (selected, work.assumed_flags())
+    })
+}
+
+fn blind(length: f64) -> ExtrudeSide {
+    ExtrudeSide {
+        termination: LinearTermination::Blind {
+            length: NonZeroLength::new(length).unwrap(),
+        },
+        draft: None,
+    }
+}
+
+/// The sweep of two units below the sketch plane.
+fn two_down() -> (ExtrudeStart, ExtrudeDirection, ExtrudeExtent) {
+    (
+        ExtrudeStart::ProfilePlane {},
+        ExtrudeDirection::ReversedProfileNormal {},
+        ExtrudeExtent::OneSided { side: blind(2.0) },
+    )
+}
+
+/// The curve identities of the boundary of the one selected region.
+fn selected_curves(selection: Option<PlanarProfileRef>) -> Vec<String> {
+    let Some(PlanarProfileRef::SketchRegions { regions, .. }) = selection else {
         panic!("sketch regions");
     };
     assert_eq!(regions.len(), 1);
-    assert!(matches!(
-        &regions[0],
-        SketchProfileRegion::Trimmed { outer_boundary, .. } if outer_boundary.len() == 4
-    ));
+    let SketchProfileRegion::Trimmed { outer_boundary, .. } = &regions[0] else {
+        panic!("trimmed region");
+    };
+    let mut curves: Vec<String> = outer_boundary
+        .iter()
+        .map(|use_| use_.entity.to_string())
+        .collect();
+    curves.sort();
+    curves.dedup();
+    curves
+}
+
+use cadmpeg_ir::features::extents::{
+    ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
+use cadmpeg_ir::scalar::NonZeroLength;
+
+/// Two unit squares side by side whose shared edge is a middle curve. A
+/// body over both squares loses the second square at the Intersect.
+#[test]
+fn an_intersect_keeps_the_regions_its_transition_did_not_remove() {
+    let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
+    lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
+    let before = [strip(1, 0.0, 0.0, 2.0), strip(2, -2.0, 0.0, 2.0)];
+    let after = [strip(3, 0.0, 0.0, 1.0), strip(4, -2.0, 0.0, 1.0)];
+    let run = |operation: BooleanOp, named: &[&str]| {
+        run_intersect(&lines, &before, &after, operation, named, two_down()).0
+    };
+    let selected = run(BooleanOp::Intersect, &["left", "middle", "bottom", "top"]);
+    let curves = selected_curves(selected);
+    assert!(curves.iter().any(|curve| curve.ends_with("#left")));
+    assert!(!curves.iter().any(|curve| curve.ends_with("#right")));
     // Only an Intersect reads its profile from the regions it did not lose.
     assert!(run(BooleanOp::Cut, &["left", "middle", "bottom", "top"]).is_none());
     // A named curve that bounds no kept region leaves the selection native.
     assert!(run(BooleanOp::Intersect, &["right"]).is_none());
     assert!(run(BooleanOp::Intersect, &[]).is_none());
+}
+
+/// Three squares B, A and C side by side. The body lies over B and A only, and
+/// the Intersect names the boundary of A, including the edge it shares with
+/// the empty square C. C holds no material on either side of the transition,
+/// so it is not kept.
+#[test]
+fn an_intersect_does_not_keep_a_region_over_no_material() {
+    let mut lines = rectangle("outer", 0.0, 3.0).to_vec();
+    lines.push(("first", (1.0, 0.0), (1.0, 1.0)));
+    lines.push(("second", (2.0, 0.0), (2.0, 1.0)));
+    let before = [strip(1, 0.0, 0.0, 2.0), strip(2, -2.0, 0.0, 2.0)];
+    let after = [strip(3, 0.0, 1.0, 2.0), strip(4, -2.0, 1.0, 2.0)];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &["first", "second", "bottom", "top"],
+        two_down(),
+    );
+    let curves = selected_curves(selected);
+    assert!(curves.iter().any(|curve| curve.ends_with("#first")));
+    assert!(curves.iter().any(|curve| curve.ends_with("#second")));
+    assert!(!curves.iter().any(|curve| curve.ends_with("#left")));
+    assert!(!curves.iter().any(|curve| curve.ends_with("#right")));
+}
+
+/// A plane that the Intersect loses because it lies beyond the extent of the
+/// tool changes every region over it. It is no evidence about the profile.
+#[test]
+fn an_intersect_ignores_the_planes_its_extent_does_not_reach() {
+    let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
+    lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
+    // The body reaches two units below the sketch plane. The tool reaches one
+    // unit: its end face lies inside the body, and the deeper face is lost.
+    let before = [strip(1, 0.0, 0.0, 2.0), strip(2, -2.0, 0.0, 2.0)];
+    let after = [strip(3, 0.0, 1.0, 2.0), strip(4, -1.0, 1.0, 2.0)];
+    let one_down = (
+        ExtrudeStart::ProfilePlane {},
+        ExtrudeDirection::ReversedProfileNormal {},
+        ExtrudeExtent::OneSided { side: blind(1.0) },
+    );
+    let named = ["middle", "right", "bottom", "top"];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &named,
+        one_down,
+    );
+    let curves = selected_curves(selected);
+    assert!(curves.iter().any(|curve| curve.ends_with("#right")));
+    assert!(!curves.iter().any(|curve| curve.ends_with("#left")));
+    // A tool that starts above the body reaches no changed plane.
+    let above = (
+        ExtrudeStart::OffsetProfilePlane {
+            offset: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+        },
+        ExtrudeDirection::ProfileNormal {},
+        ExtrudeExtent::OneSided { side: blind(1.0) },
+    );
+    assert!(
+        run_intersect(&lines, &before, &after, BooleanOp::Intersect, &named, above)
+            .0
+            .is_none()
+    );
+    // An extent that is not a blind distance has no height range.
+    let unbounded = (
+        ExtrudeStart::ProfilePlane {},
+        ExtrudeDirection::ReversedProfileNormal {},
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::ThroughAll {},
+                draft: None,
+            },
+        },
+    );
+    assert!(run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &named,
+        unbounded
+    )
+    .0
+    .is_none());
+}
+
+/// A kept region that encloses an island is not dropped from the selection.
+#[test]
+fn an_intersect_refuses_a_kept_region_that_encloses_an_island() {
+    let mut lines = rectangle("outer", 0.0, 2.0).to_vec();
+    lines.push(("middle", (1.0, 0.0), (1.0, 1.0)));
+    lines.extend(rectangle("island", 1.25, 1.75));
+    let before = [strip(1, 0.0, 0.0, 2.0), strip(2, -2.0, 0.0, 2.0)];
+    let after = [strip(3, 0.0, 1.0, 2.0), strip(4, -2.0, 1.0, 2.0)];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &["middle", "right", "bottom", "top"],
+        two_down(),
+    );
+    assert!(selected.is_none());
 }
