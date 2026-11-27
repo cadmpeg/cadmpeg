@@ -176,6 +176,7 @@ pub(super) fn referenced_revolve_reference_loss(
         .checked_sub(scope.byte_offset())?;
     let base_length = match (length, usize::try_from(operation).ok()?) {
         (361, referenced_revolve::OPERATION) => 351,
+        (383, referenced_revolve::OPERATION) => 373,
         (379, unmarked_revolve::OPERATION) => 369,
         _ => return None,
     };
@@ -224,6 +225,12 @@ fn referenced_angle_revolve_construction(
                 || (length, count) == (361, 6)
                     && View::u32_le_at(bytes, start + referenced_revolve::OPERATION)
                         == Some(4)
+                    && tail_second_reference(bytes, scope).is_some()
+                || (length, count) == (383, 8)
+                    && matches!(
+                        View::u32_le_at(bytes, start + referenced_revolve::OPERATION),
+                        Some(1..=3)
+                    )
                     && tail_second_reference(bytes, scope).is_some())
                 && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
