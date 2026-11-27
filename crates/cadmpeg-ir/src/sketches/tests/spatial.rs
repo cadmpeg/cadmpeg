@@ -578,7 +578,7 @@ fn spatial_sketch_paths_round_trip_through_json() {
 fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
     use crate::sketches::SpatialSketchGeometry;
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "nurbs",
         "curve": {
             "degree": 1,
@@ -595,15 +595,15 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
     let geometry: SpatialSketchGeometry = json::from_value(wire.clone()).unwrap();
     assert_eq!(json::to_value(&geometry).unwrap(), wire);
     for (field, value) in [
-        ("degree", serde_json::json!(2)),
-        ("knots", serde_json::json!([0.0, 1.0])),
+        ("degree", cadmpeg_core::json!(2)),
+        ("knots", cadmpeg_core::json!([0.0, 1.0])),
         (
             "poles",
-            serde_json::json!({"kind": "polynomial", "points": []}),
+            cadmpeg_core::json!({"kind": "polynomial", "points": []}),
         ),
         (
             "poles",
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "kind": "rational", "points": [{"point": {"x": 2.0, "y": 3.0, "z": 4.0}, "weight": 1.0}]
             }),
         ),
@@ -621,7 +621,7 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
 fn spatial_surface_wire_checks_rectangular_grid_and_full_knots() {
     use crate::sketches::SpatialSketchGeometry;
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind": "nurbs_surface",
         "surface": {
             "u_degree": 1, "v_degree": 1,
@@ -676,7 +676,7 @@ fn spatial_nurbs_rejects_general_curve_context_mismatches() {
         assert!(SpatialSketchNurbsCurve::try_from(curve.clone())
             .unwrap_err()
             .contains(field));
-        let wire = serde_json::json!({"kind": "nurbs", "curve": curve});
+        let wire = cadmpeg_core::json!({"kind": "nurbs", "curve": curve});
         assert!(json::from_value::<SpatialSketchGeometry>(wire)
             .unwrap_err()
             .to_string()
@@ -699,7 +699,7 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
         false,
     )
     .unwrap();
-    let wire = serde_json::json!({"kind": "nurbs", "curve": &curve});
+    let wire = cadmpeg_core::json!({"kind": "nurbs", "curve": &curve});
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();
     assert!(curve
@@ -826,7 +826,7 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
     use crate::scalar::Angle;
     use crate::sketches::{SpatialSketchGeometry, SpatialSketchGeometryDefinition};
 
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "kind":"arc", "center":{"x":1.0,"y":2.0,"z":3.0},
         "normal":{"x":0.0,"y":0.0,"z":1.0}, "reference_direction":{"x":1.0,"y":0.0,"z":0.0},
         "radius":2.0, "start_angle":-1.0, "end_angle":-2.0
@@ -834,13 +834,13 @@ fn spatial_analytic_geometry_preserves_wire_and_rejects_invalid_edits() {
     let mut geometry = json::from_value::<SpatialSketchGeometry>(wire.clone()).unwrap();
     assert_eq!(json::to_value(&geometry).unwrap(), wire);
     for (field, value) in [
-        ("radius", serde_json::json!(-1.0)),
-        ("normal", serde_json::json!({"x":0.0,"y":0.0,"z":2.0})),
+        ("radius", cadmpeg_core::json!(-1.0)),
+        ("normal", cadmpeg_core::json!({"x":0.0,"y":0.0,"z":2.0})),
         (
             "reference_direction",
-            serde_json::json!({"x":0.0,"y":0.0,"z":1.0}),
+            cadmpeg_core::json!({"x":0.0,"y":0.0,"z":1.0}),
         ),
-        ("end_angle", serde_json::json!(-1.0)),
+        ("end_angle", cadmpeg_core::json!(-1.0)),
         ("start_angle", serde_json::Value::Null),
     ] {
         let mut invalid = wire.clone();
@@ -904,7 +904,7 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
             crate::units::UnitVector3::X_AXIS
         ]
     );
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "origin": {"x": 1.0, "y": 2.0, "z": 3.0},
         "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
         "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0},
@@ -938,13 +938,22 @@ fn spatial_profile_admission_preserves_frame_boundary_and_wire() {
     )
     .is_ok());
     for (field, invalid) in [
-        ("origin", serde_json::json!({"x": null, "y": 0.0, "z": 0.0})),
-        ("normal", serde_json::json!({"x": 0.0, "y": 0.0, "z": 2.0})),
-        ("u_axis", serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})),
-        ("boundary", serde_json::json!([])),
+        (
+            "origin",
+            cadmpeg_core::json!({"x": null, "y": 0.0, "z": 0.0}),
+        ),
+        (
+            "normal",
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 2.0}),
+        ),
+        (
+            "u_axis",
+            cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0}),
+        ),
+        ("boundary", cadmpeg_core::json!([])),
         (
             "boundary",
-            serde_json::json!([wire["boundary"][0], wire["boundary"][0]]),
+            cadmpeg_core::json!([wire["boundary"][0], wire["boundary"][0]]),
         ),
     ] {
         let mut invalid_wire = wire.clone();
@@ -1134,7 +1143,7 @@ fn spatial_native_constraint_admission_requires_kind_and_operands() {
         SpatialSketchConstraintDefinition as Checked,
         SpatialSketchConstraintDefinitionInput as Kind,
     };
-    use serde_json::json;
+    use cadmpeg_core::json;
 
     let wire = json!({
         "kind": "native", "native_kind": "relation",

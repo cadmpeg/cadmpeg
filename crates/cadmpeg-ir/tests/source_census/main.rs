@@ -360,8 +360,8 @@ fn every_hand_written_deserialize_states_its_coverage() {
     // Namespace and arena names are open. Their values still have fixed shapes:
     // a namespace is an arena map, and an arena is a list of native records.
     for wire in [
-        serde_json::json!({"rhino": {"objects": []}, "zzbogus": {}}),
-        serde_json::json!({"rhino": {"objects": [], "zz_bogus": []}}),
+        cadmpeg_core::json!({"rhino": {"objects": []}, "zzbogus": {}}),
+        cadmpeg_core::json!({"rhino": {"objects": [], "zz_bogus": []}}),
     ] {
         let read: cadmpeg_ir::native::Native =
             json::from_value(wire.clone()).expect("native store reads back");
@@ -371,8 +371,8 @@ fn every_hand_written_deserialize_states_its_coverage() {
         );
     }
     for wire in [
-        serde_json::json!({"rhino": {"objects": []}, "zz_bogus": true}),
-        serde_json::json!({"rhino": {"objects": [], "zz_bogus": true}}),
+        cadmpeg_core::json!({"rhino": {"objects": []}, "zz_bogus": true}),
+        cadmpeg_core::json!({"rhino": {"objects": [], "zz_bogus": true}}),
     ] {
         assert!(
             json::from_value::<cadmpeg_ir::native::Native>(wire).is_err(),
@@ -386,19 +386,19 @@ fn every_hand_written_deserialize_states_its_coverage() {
 /// open native field map and a closed hand-written object adapter.
 #[test]
 fn compiled_hand_readers_keep_their_admission_boundaries() {
-    let native = json::from_value::<cadmpeg_ir::native::NativeRecord>(serde_json::json!({
+    let native = json::from_value::<cadmpeg_ir::native::NativeRecord>(cadmpeg_core::json!({
         "id": "test:source-census:record#0",
         "codec_field": {"preserved": true},
     }))
     .expect("NativeRecord's open field reader admits codec-owned fields");
     assert_eq!(
         native.field("codec_field"),
-        Some(serde_json::json!({"preserved": true}))
+        Some(cadmpeg_core::json!({"preserved": true}))
     );
 
     let unknown_configuration = json::from_value::<
         cadmpeg_ir::features::parameters::ConfigurationEvaluation,
-    >(serde_json::json!({
+    >(cadmpeg_core::json!({
         "kind": "suppressed",
         "unexpected": true,
     }));
@@ -1281,6 +1281,9 @@ fn record_unguarded_fields(
             .as_ref()
             .map_or_else(|| "<tuple field>".to_owned(), syn::Ident::to_string);
         let at = format!("{relative}:{} {}.{name}", span.start().line, reader.name);
+        if field_states(field, "skip") || field_states(field, "skip_deserializing") {
+            continue;
+        }
         match index.declarations.is_optional(reader, generics, &field.ty) {
             Ok(true) => {}
             Ok(false) => continue,

@@ -357,6 +357,12 @@ impl StreamHandle {
     pub fn new(stream: StreamName) -> Self {
         Self(Arc::new(stream))
     }
+
+    /// The shared stream name.
+    #[must_use]
+    pub fn name(&self) -> &StreamName {
+        &self.0
+    }
 }
 
 /// Update policy for one annotation builder.
@@ -432,87 +438,59 @@ impl<Storage: AnnotationStorage> AnnotationBuilder<Storage> {
     /// Record provenance and exactness within this builder's storage policy.
     pub fn annotate(
         &mut self,
-        id: impl Display,
+        key: impl Into<AnnotationKey>,
         stream: impl Display,
         offset: u64,
         tag: &str,
         exactness: Exactness,
     ) -> Result<(), CodecError> {
-        self.update(|state| state.annotate(id, stream, offset, tag, exactness))
+        self.update(|state| state.annotate(key.into(), stream, offset, tag, exactness))
     }
 
     /// Record provenance.
     pub fn note(
         &mut self,
-        id: impl Display,
-        stream: &StreamHandle,
-        offset: u64,
-        tag: Option<&str>,
-    ) {
-        self.state.note(id, stream, offset, tag);
-    }
-
-    /// Record provenance with an already admitted owned identity.
-    pub fn note_owned(
-        &mut self,
-        id: String,
+        key: impl Into<AnnotationKey>,
         stream: &StreamHandle,
         offset: u64,
         tag: Option<&str>,
     ) {
         self.state
-            .insert_provenance(std::borrow::Cow::Owned(id), stream, offset, tag);
+            .insert_provenance(key.into(), stream, offset, tag);
     }
 
     /// Set entity exactness.
-    pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
-        self.state.exactness(id, exactness);
-        self
-    }
-
-    /// Set exactness with an already admitted identity.
-    pub fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
-        self.state.exactness_owned(id, exactness);
+    pub fn exactness(&mut self, key: impl Into<AnnotationKey>, exactness: Exactness) -> &mut Self {
+        self.state.insert_exactness(key.into(), exactness);
         self
     }
 
     /// Mark a field as derived.
     pub fn derived(
         &mut self,
-        id: impl Display,
+        key: impl Into<AnnotationKey>,
         field: &str,
     ) -> Result<&mut Self, AnnotationFieldError> {
-        self.field_exactness(id, field, Exactness::Derived)
+        self.field_exactness(key, field, Exactness::Derived)
     }
 
-    /// Mark the field `field` of `id` derived.
-    pub fn derived_field(&mut self, id: impl Display, field: FieldName) -> &mut Self {
+    /// Mark the field `field` of `key` derived.
+    pub fn derived_field(&mut self, key: impl Into<AnnotationKey>, field: FieldName) -> &mut Self {
         self.state
-            .set_field_exactness(id.to_string(), field, Exactness::Derived);
+            .set_field_exactness(key.into(), field, Exactness::Derived);
         self
     }
 
     /// Set field exactness.
     pub fn field_exactness<'f>(
         &mut self,
-        id: impl Display,
+        key: impl Into<AnnotationKey>,
         field: impl Into<std::borrow::Cow<'f, str>>,
-        exactness: Exactness,
-    ) -> Result<&mut Self, AnnotationFieldError> {
-        self.update(|state| state.field_exactness(id, field, exactness).map(|_| ()))?;
-        Ok(self)
-    }
-
-    /// Set field exactness with already admitted owned keys.
-    pub fn field_exactness_owned(
-        &mut self,
-        id: String,
-        field: String,
         exactness: Exactness,
     ) -> Result<&mut Self, AnnotationFieldError> {
         self.update(|state| {
             state
-                .field_exactness_owned(id, field, exactness)
+                .insert_field_exactness(key.into(), field.into(), exactness)
                 .map(|_| ())
         })?;
         Ok(self)
@@ -563,73 +541,36 @@ impl AnnotationState {
     /// Record provenance and entity exactness for one stream offset.
     fn annotate(
         &mut self,
-        id: impl Display,
+        key: AnnotationKey,
         stream: impl Display,
         offset: u64,
         tag: &str,
         exactness: Exactness,
     ) -> Result<(), CodecError> {
-        let id = id.to_string();
         let stream = format!("{stream}");
         let stream = StreamName::try_from(stream)
             .map_err(|_| CodecError::malformed("annotation stream name is empty"))?;
         let stream = StreamHandle(Arc::new(stream));
-        self.insert_provenance(std::borrow::Cow::Borrowed(&id), &stream, offset, Some(tag));
-        self.insert_exactness(std::borrow::Cow::Owned(id), exactness);
+        self.insert_exactness(key.clone(), exactness);
+        self.insert_provenance(key, &stream, offset, Some(tag));
         Ok(())
     }
 
-    /// Format a temporary lookup identity before admitting its provenance.
-    fn note(&mut self, id: impl Display, stream: &StreamHandle, offset: u64, tag: Option<&str>) {
-        let id = id.to_string();
-        self.insert_provenance(std::borrow::Cow::Owned(id), stream, offset, tag);
-    }
-
-    /// Admit one provenance record, moving an owned identity when it is new.
+    /// Replace the provenance of `key`.
     fn insert_provenance(
         &mut self,
-        id: std::borrow::Cow<'_, str>,
+        key: AnnotationKey,
         stream: &StreamHandle,
         offset: u64,
         tag: Option<&str>,
     ) {
         let provenance =
             AnnotationProvenance::annotation(stream.0.clone(), offset, tag.map(str::to_owned));
-        match id {
-            std::borrow::Cow::Owned(id) => {
-                self.annotations
-                    .provenance
-                    .insert(AnnotationKey::read(id), provenance);
-            }
-            std::borrow::Cow::Borrowed(id) => {
-                if let Some(previous) = self.annotations.provenance.get_mut(id) {
-                    *previous = provenance;
-                } else {
-                    self.annotations
-                        .provenance
-                        .insert(AnnotationKey::read(id.to_owned()), provenance);
-                }
-            }
-        }
+        self.annotations.provenance.insert(key, provenance);
     }
 
-    /// Set entity exactness after admitting any new retained record.
-    fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
-        let id = id.to_string();
-        self.insert_exactness(std::borrow::Cow::Owned(id), exactness)
-    }
-
-    /// Move an admitted identity into an exactness entry after destination admission.
-    fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
-        self.insert_exactness(std::borrow::Cow::Owned(id), exactness)
-    }
-
-    fn insert_exactness(
-        &mut self,
-        id: std::borrow::Cow<'_, str>,
-        exactness: Exactness,
-    ) -> &mut Self {
-        if let Some(note) = self.annotations.exactness.get_mut(id.as_ref()) {
+    fn insert_exactness(&mut self, key: AnnotationKey, exactness: Exactness) -> &mut Self {
+        if let Some(note) = self.annotations.exactness.get_mut(&key) {
             let mut remove = exactness == Exactness::ByteExact;
             if remove {
                 for value in note.fields().values() {
@@ -641,7 +582,7 @@ impl AnnotationState {
             }
             if remove {
                 // Removal performs its own key comparisons. Refuse before changing fields.
-                self.annotations.exactness.remove(id.as_ref());
+                self.annotations.exactness.remove(&key);
             } else {
                 note.fields_mut().retain(|_, value| *value != exactness);
                 let fields = std::mem::take(note.fields_mut());
@@ -654,7 +595,7 @@ impl AnnotationState {
             }
         } else if let Ok(entity) = Inexactness::try_from(exactness) {
             self.annotations.exactness.insert(
-                AnnotationKey::read(id.into_owned()),
+                key,
                 ExactnessNote::Entity {
                     entity,
                     fields: BTreeMap::new(),
@@ -664,30 +605,9 @@ impl AnnotationState {
         self
     }
 
-    /// Set field exactness after admitting retained keys and records.
-    fn field_exactness<'f>(
-        &mut self,
-        id: impl Display,
-        field: impl Into<std::borrow::Cow<'f, str>>,
-        exactness: Exactness,
-    ) -> Result<&mut Self, AnnotationFieldError> {
-        let id = id.to_string();
-        self.insert_field_exactness(id, field.into(), exactness)
-    }
-
-    /// Admit map records for already owned identity and field strings.
-    fn field_exactness_owned(
-        &mut self,
-        id: String,
-        field: String,
-        exactness: Exactness,
-    ) -> Result<&mut Self, AnnotationFieldError> {
-        self.insert_field_exactness(id, std::borrow::Cow::Owned(field), exactness)
-    }
-
     fn insert_field_exactness(
         &mut self,
-        id: String,
+        key: AnnotationKey,
         field: std::borrow::Cow<'_, str>,
         exactness: Exactness,
     ) -> Result<&mut Self, AnnotationFieldError> {
@@ -697,13 +617,13 @@ impl AnnotationState {
             ));
         }
         let field = FieldName(std::borrow::Cow::Owned(field.into_owned()));
-        self.set_field_exactness(id, field, exactness);
+        self.set_field_exactness(key, field, exactness);
         Ok(self)
     }
 
-    fn set_field_exactness(&mut self, id: String, field: FieldName, exactness: Exactness) {
+    fn set_field_exactness(&mut self, key: AnnotationKey, field: FieldName, exactness: Exactness) {
         if exactness == Exactness::ByteExact {
-            if let Some(note) = self.annotations.exactness.get_mut(id.as_str()) {
+            if let Some(note) = self.annotations.exactness.get_mut(&key) {
                 match note {
                     ExactnessNote::Entity { fields, .. } => {
                         fields.insert(field, exactness);
@@ -713,11 +633,11 @@ impl AnnotationState {
                     }
                 }
                 if matches!(note, ExactnessNote::Fields { fields } if fields.0.is_empty()) {
-                    self.annotations.exactness.remove(id.as_str());
+                    self.annotations.exactness.remove(&key);
                 }
             }
         } else {
-            match self.annotations.exactness.entry(AnnotationKey::read(id)) {
+            match self.annotations.exactness.entry(key) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     entry.insert(ExactnessNote::Fields {
                         fields: NonEmptyMap(BTreeMap::from([(field, exactness)])),
@@ -803,7 +723,13 @@ impl Annotations {
 
     /// Annotate `to` as the entity `from` is annotated, replacing the
     /// annotations of `to`.
-    pub fn copy_entity(&mut self, from: &str, to: AnnotationKey) {
+    pub fn copy_entity(&mut self, from: &impl AsRef<crate::ids::Identity>, to: AnnotationKey) {
+        self.copy_annotations(from.as_ref().as_str(), to);
+    }
+
+    /// Annotate `to` as the record whose annotation key reads `from` is
+    /// annotated, replacing the annotations of `to`.
+    pub(crate) fn copy_annotations(&mut self, from: &str, to: AnnotationKey) {
         match self.provenance.get(from).cloned() {
             Some(provenance) => self.provenance.insert(to.clone(), provenance),
             None => self.provenance.remove(&to),
@@ -961,21 +887,17 @@ mod tests {
     }
 
     #[test]
-    fn owned_annotation_keys_preserve_note_and_exactness_semantics() {
+    fn a_repeated_note_and_exactness_keep_the_last_location_and_exactness() {
         let stream = StreamHandle::new(crate::stream_name!("native-stream"));
-        let mut formatted = AnnotationBuilder::new();
-        let mut owned = AnnotationBuilder::new();
+        let mut builder = AnnotationBuilder::new();
         for (offset, exactness) in [(7, Exactness::Derived), (11, Exactness::ByteExact)] {
-            formatted.note("entity", &stream, offset, Some("tag"));
-            formatted.exactness("entity", exactness);
-            owned.note_owned(String::from("entity"), &stream, offset, Some("tag"));
-            owned.exactness_owned(String::from("entity"), exactness);
+            builder.note("entity", &stream, offset, Some("tag"));
+            builder.exactness("entity", exactness);
         }
-        let owned = owned.build();
-        assert_eq!(owned, formatted.build());
-        assert_eq!(owned.provenance["entity"].offset, 11);
-        assert_eq!(owned.provenance["entity"].tag.as_deref(), Some("tag"));
-        assert!(owned.exactness().is_empty());
+        let annotations = builder.build();
+        assert_eq!(annotations.provenance["entity"].offset, 11);
+        assert_eq!(annotations.provenance["entity"].tag.as_deref(), Some("tag"));
+        assert!(annotations.exactness().is_empty());
     }
 
     #[test]
@@ -1026,7 +948,7 @@ mod tests {
         );
         assert_eq!(json::from_value::<Annotations>(value).unwrap(), annotations);
 
-        let error = json::from_value::<Annotations>(serde_json::json!({
+        let error = json::from_value::<Annotations>(cadmpeg_core::json!({
             "streams": ["f3d:native"],
             "provenance": {
                 "f3d:body#0": {"stream": "f3d:native", "offset": 42}
@@ -1036,7 +958,7 @@ mod tests {
         .to_string();
         assert!(error.contains("unknown field `streams`"), "{error}");
 
-        let error = json::from_value::<Annotations>(serde_json::json!({
+        let error = json::from_value::<Annotations>(cadmpeg_core::json!({
             "provenance": {
                 "f3d:body#0": {"stream": "", "offset": 42}
             }
@@ -1081,40 +1003,26 @@ mod tests {
     }
 
     #[test]
-    fn owned_field_exactness_matches_formatted_field_exactness() {
+    fn an_empty_field_name_leaves_the_annotations_unchanged() {
         for entity_first in [false, true] {
-            let mut borrowed = AnnotationBuilder::new();
-            let mut owned = AnnotationBuilder::new();
+            let mut builder = AnnotationBuilder::new();
             for exactness in [
                 Exactness::Derived,
                 Exactness::Inferred,
                 Exactness::ByteExact,
             ] {
                 if entity_first {
-                    borrowed.exactness("test:point#1", exactness);
-                    owned.exactness_owned("test:point#1".to_string(), exactness);
+                    builder.exactness("test:point#1", exactness);
                 }
-                borrowed
+                builder
                     .field_exactness("test:point#1", "position.x", exactness)
                     .unwrap();
-                owned
-                    .field_exactness_owned(
-                        "test:point#1".to_string(),
-                        "position.x".to_string(),
-                        exactness,
-                    )
-                    .unwrap();
-                assert_eq!(borrowed.annotations(), owned.annotations());
             }
-            let before = owned.annotations().clone();
-            assert!(owned
-                .field_exactness_owned(
-                    "test:point#1".to_string(),
-                    String::new(),
-                    Exactness::Derived
-                )
+            let before = builder.annotations().clone();
+            assert!(builder
+                .field_exactness("test:point#1", String::new(), Exactness::Derived)
                 .is_err());
-            assert_eq!(owned.annotations(), &before);
+            assert_eq!(builder.annotations(), &before);
         }
     }
 
@@ -1148,13 +1056,13 @@ mod tests {
 
     #[test]
     fn an_entity_note_refuses_byte_exact_and_a_field_note_refuses_an_empty_map() {
-        let error = json::from_value::<ExactnessNote>(serde_json::json!({
+        let error = json::from_value::<ExactnessNote>(cadmpeg_core::json!({
             "kind": "entity", "entity": "byte_exact"
         }))
         .expect_err("byte-exact is the implicit entity exactness");
         assert!(error.to_string().contains("unknown variant"), "{error}");
 
-        let error = json::from_value::<ExactnessNote>(serde_json::json!({
+        let error = json::from_value::<ExactnessNote>(cadmpeg_core::json!({
             "kind": "fields", "fields": {}
         }))
         .expect_err("a field note carries at least one override");
@@ -1166,7 +1074,7 @@ mod tests {
 
     #[test]
     fn explicit_field_exactness_survives_an_equal_entity_note() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "kind": "entity", "entity": "derived",
             "fields": {"geometry": "derived"}
         });
@@ -1189,7 +1097,7 @@ mod tests {
                 if entity_first {
                     wire.clone()
                 } else {
-                    serde_json::json!({"kind": "entity", "entity": "derived", "fields": {}})
+                    cadmpeg_core::json!({"kind": "entity", "entity": "derived", "fields": {}})
                 }
             );
         }
@@ -1248,8 +1156,8 @@ mod tests {
             before
         );
         for wire in [
-            serde_json::json!({"kind": "entity", "entity": "derived", "fields": {"": "derived"}}),
-            serde_json::json!({"kind": "fields", "fields": {"": "derived"}}),
+            cadmpeg_core::json!({"kind": "entity", "entity": "derived", "fields": {"": "derived"}}),
+            cadmpeg_core::json!({"kind": "fields", "fields": {"": "derived"}}),
         ] {
             let error = json::from_value::<ExactnessNote>(wire).expect_err("empty field key");
             assert!(
@@ -1257,7 +1165,7 @@ mod tests {
                 "{error}"
             );
         }
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "kind": "entity", "entity": "derived",
             "fields": {"position.x": "byte_exact"}
         });

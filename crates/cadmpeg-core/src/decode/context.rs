@@ -176,6 +176,18 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
+    /// Charges `bytes` that the session reads from memory as input, as a
+    /// writer reads its retained source: under `max_input_bytes`, and
+    /// raising the input-proportional allowances as a read root does.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CodecError::ResourceLimit`] where the input ceiling refuses
+    /// the charge or a refusal already fused the session.
+    pub fn charge_input(&self, bytes: u64, operation: &'static str) -> Result<(), CodecError> {
+        self.budget.charge_input(bytes, operation)
+    }
+
     /// Charges bytes that decoded output keeps for the rest of the session.
     ///
     /// This is the one retained-bytes chokepoint: native record text, arena

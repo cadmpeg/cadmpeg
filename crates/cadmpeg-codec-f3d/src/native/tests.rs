@@ -3,7 +3,6 @@
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::EditableDecodeResult;
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
 
@@ -114,7 +113,11 @@ fn native_load_refuses_orphan_history_row_with_child_and_parent() {
         )
         .unwrap(),
     );
-    let error = crate::native::F3dNative::load(&namespace).unwrap_err();
+    let error = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &namespace,
+    )
+    .unwrap_err();
     let message = error.to_string();
     assert!(message.contains("f3d:native:bulletin#1"));
     assert!(message.contains("f3d:native:missing-state#1"));
@@ -147,7 +150,11 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         )
         .unwrap();
     let original = decoded.ir().native.namespace("f3d").unwrap();
-    let typed = crate::native::F3dNative::load(original).unwrap();
+    let typed = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        original,
+    )
+    .unwrap();
     let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed
         .store(
@@ -155,7 +162,14 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             &mut round_trip,
         )
         .unwrap();
-    assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
+    assert_eq!(
+        typed,
+        crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &round_trip
+        )
+        .unwrap()
+    );
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
             round_trip.arenas().get(*name),
@@ -219,7 +233,7 @@ fn diff_reports_design_material_assignment_changes() {
         .get_mut("design_material_assignments")
         .unwrap()[0];
     let mut assignment_fields = assignment.fields().unwrap().clone();
-    assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
+    assignment_fields.insert("entity_suffix".into(), cadmpeg_core::json!(123_456));
     *assignment = cadmpeg_ir::NativeRecord::new(
         cadmpeg_ir::ids::Identity::new(assignment.id()).expect("valid identity"),
         assignment_fields,
@@ -581,7 +595,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         }];
     let mut generated = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut generated))
         .expect("source-less embedded use curves");
     let generated = F3dCodec
@@ -859,7 +873,7 @@ fn generated_cache_first_spring_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first spring encode");
     let round_trip = F3dCodec
@@ -925,7 +939,7 @@ fn generated_cache_first_parametric_curve_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first parametric encode");
     let round_trip = F3dCodec
@@ -1005,7 +1019,7 @@ fn generated_cache_first_surface_offset_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less cache-first surface-offset encode");
     let round_trip = F3dCodec
@@ -1390,18 +1404,26 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
             && loss.message.contains("T-spline control cage not decoded")));
 }
 
-#[test]
-fn malformed_paramesh_reports_its_entry_and_parser_failure() {
+const MALFORMED_PARAMESH: &str =
+    "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
+
+fn malformed_paramesh_archive() -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
-    let entry = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
-    zip.start_file(entry, stored).unwrap();
+    zip.start_file(MALFORMED_PARAMESH, stored).unwrap();
     zip.write_all(b"not a paramesh container").unwrap();
-    let archive = zip.finish().unwrap().into_inner();
+    zip.finish().unwrap().into_inner()
+}
 
+#[test]
+fn malformed_paramesh_reports_its_entry_and_parser_failure() {
+    let entry = MALFORMED_PARAMESH;
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(malformed_paramesh_archive()),
+            &DecodeOptions::default(),
+        )
         .expect("independent malformed mesh entry must not abort document decode");
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == F3dLossCode::MeshContainerUndecoded.kind()
@@ -1409,6 +1431,48 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
             && loss.message.contains(entry)
             && loss.message.contains("paramesh container has no magic")
     }));
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    let [unreadable] = unreadable.as_slice() else {
+        panic!("one given-up archive entry for the container: {unreadable:?}");
+    };
+    assert_eq!(unreadable.severity, Severity::Error);
+    assert!(
+        unreadable.message.starts_with(&format!(
+            "part {} {entry:?} stream=\"\" offset=",
+            crate::container::ENTRY_PART
+        )),
+        "{}",
+        unreadable.message
+    );
+}
+
+#[test]
+fn strict_decode_refuses_a_malformed_paramesh_through_record_unreadable() {
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = F3dCodec
+        .decode(&mut Cursor::new(malformed_paramesh_archive()), &options)
+        .expect_err("a pinned decode refuses the given-up mesh container");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        rejection.loss().message.starts_with(&format!(
+            "part {} {MALFORMED_PARAMESH:?} ",
+            crate::container::ENTRY_PART
+        )),
+        "{}",
+        rejection.loss().message
+    );
 }
 
 #[test]
@@ -1456,6 +1520,7 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
         &protein,
         &std::collections::BTreeMap::new(),
         &mut Vec::new(),
+        cadmpeg_core::decode::ResourceLimits::desktop(),
     )
     .expect_err("oversized nested Protein entry must be rejected");
     assert!(error.to_string().contains("inflated bytes"));

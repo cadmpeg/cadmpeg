@@ -337,7 +337,7 @@ fn sheet_metal_validation_checks_record_identity_and_operand_types() {
         .get(usize::try_from(ordinal).expect("fixture ordinal fits usize"))
         .map(String::as_str)));
     let mut wire = json::to_value(&located).expect("native wire");
-    wire["kind"]["definition"]["width"]["index"] = serde_json::json!(0x8000_0000_u32);
+    wire["kind"]["definition"]["width"]["index"] = cadmpeg_core::json!(0x8000_0000_u32);
     assert!(json::from_value::<PmDcFeatureProperty>(wire).is_err());
 }
 
@@ -399,7 +399,7 @@ fn attachment_state_can_reference_the_shared_hem_control_family() {
 }
 
 fn corner_loss_input() -> cadmpeg_ir::features::Feature {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "test:model:feature#corner", "ordinal": 1,
         "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "SheetMetalCorner", "parameters": {}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
     .expect("synthetic corner feature")

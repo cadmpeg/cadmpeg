@@ -1154,7 +1154,7 @@ mod tests {
             )
             .is_err());
             let mut wire = json::to_value(&frame).expect("frame wire");
-            wire["header_token"] = serde_json::json!(maximum + 1);
+            wire["header_token"] = cadmpeg_core::json!(maximum + 1);
             assert!(json::from_value::<ConsolidatedRawFrame<u64>>(wire).is_err());
         }
         let frame = ConsolidatedRawFrame::new(
@@ -1211,20 +1211,20 @@ mod tests {
     #[test]
     fn frame_states_admit_only_defined_widths_and_flags() {
         for byte in u8::MIN..=u8::MAX {
-            let width = json::from_value::<ConsolidatedFrameWidth>(serde_json::json!(byte));
+            let width = json::from_value::<ConsolidatedFrameWidth>(cadmpeg_core::json!(byte));
             assert_eq!(width.is_ok(), matches!(byte, 1..=4));
             if let Ok(width) = width {
                 assert_eq!(
                     json::to_value(width).expect("serialize frame width"),
-                    serde_json::json!(byte)
+                    cadmpeg_core::json!(byte)
                 );
             }
-            let flag = json::from_value::<ConsolidatedFrameFlag>(serde_json::json!(byte));
+            let flag = json::from_value::<ConsolidatedFrameFlag>(cadmpeg_core::json!(byte));
             assert_eq!(flag.is_ok(), matches!(byte, 0x03 | 0x13 | 0x83));
             if let Ok(flag) = flag {
                 assert_eq!(
                     json::to_value(flag).expect("serialize frame flag"),
-                    serde_json::json!(byte)
+                    cadmpeg_core::json!(byte)
                 );
             }
         }

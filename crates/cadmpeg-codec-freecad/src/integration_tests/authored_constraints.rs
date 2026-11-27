@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::FcstdCodec;
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SketchFeatureBinding};
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use cadmpeg_measure::test_support::round_trip::measured;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io::Cursor;
 
 const LENGTH_TOLERANCE: f64 = 1.0e-12;

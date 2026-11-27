@@ -22,7 +22,7 @@ fn analytic_circle_numeric_admission_is_shared_by_constructor_and_serde() {
     assert!(CircleCurve::try_new(Point3::new(f64::NAN, 0.0, 0.0), axis, reference, 1.0).is_err());
     assert!(CircleCurve::try_new(center, Vector3::new(0.0, 0.0, 2.0), reference, 1.0).is_err());
     assert!(CircleCurve::try_new(center, axis, axis, 1.0).is_err());
-    let wire = serde_json::json!({"kind": "solved", "value": {
+    let wire = cadmpeg_core::json!({"kind": "solved", "value": {
         "kind": "circle",
         "center": {"x": 0.0, "y": 0.0, "z": 0.0},
         "axis": {"x": 0.0, "y": 0.0, "z": 1.0},
@@ -32,7 +32,7 @@ fn analytic_circle_numeric_admission_is_shared_by_constructor_and_serde() {
     let curve: CurveGeometry = json::from_value(wire.clone()).unwrap();
     assert_eq!(json::to_value(curve).unwrap(), wire);
     let mut invalid = wire.clone();
-    invalid["value"]["radius"] = serde_json::json!(-1.0);
+    invalid["value"]["radius"] = cadmpeg_core::json!(-1.0);
     let error = json::from_value::<CurveGeometry>(invalid)
         .unwrap_err()
         .to_string();
@@ -41,7 +41,7 @@ fn analytic_circle_numeric_admission_is_shared_by_constructor_and_serde() {
         "{error}"
     );
     let mut invalid = wire;
-    invalid["value"]["ref_direction"] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0});
+    invalid["value"]["ref_direction"] = cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0});
     let error = json::from_value::<CurveGeometry>(invalid)
         .unwrap_err()
         .to_string();

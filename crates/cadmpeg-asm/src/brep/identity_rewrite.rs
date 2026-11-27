@@ -47,17 +47,17 @@ impl RewriteIdentities for UnboundedFace {
 impl RewriteIdentities for AnnotationRecord {
     fn visit_identity_references(
         &self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
     ) -> Result<(), CodecError> {
-        visitor(&self.id)
+        self.id.visit_identity_references(ctx, visitor)
     }
     fn rewrite_identities(
         mut self,
-        _ctx: &DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         map: &mut IdentityMap<'_>,
     ) -> Result<Self, CodecError> {
-        self.id = map.identity(&self.id)?;
+        self.id = self.id.rewrite_identities(ctx, map)?;
         Ok(self)
     }
 }

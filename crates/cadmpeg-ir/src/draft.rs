@@ -8,7 +8,7 @@ use std::hash::{Hash, Hasher};
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
-use crate::annotations::Annotations;
+use crate::annotations::{AnnotationKey, Annotations};
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
 use crate::document::{CadIr, Model, Topology};
@@ -244,7 +244,7 @@ pub struct ModelDraft<A = ()> {
 /// Exactness annotations that must accompany a draft commit.
 #[derive(Debug, Default)]
 pub struct DraftAccounting {
-    exactness: BTreeMap<String, Exactness>,
+    exactness: BTreeMap<AnnotationKey, Exactness>,
 }
 
 impl Default for ModelDraft {
@@ -433,12 +433,12 @@ impl<A> ModelDraft<A> {
 
 impl ModelDraft<DraftAccounting> {
     /// Record staged exactness.
-    pub fn exactness(&mut self, identity: impl std::fmt::Display, exactness: Exactness) {
-        let identity = identity.to_string();
+    pub fn exactness(&mut self, key: impl Into<AnnotationKey>, exactness: Exactness) {
+        let key = key.into();
         if exactness == Exactness::ByteExact {
-            self.accounting.exactness.remove(&identity);
+            self.accounting.exactness.remove(&key);
         } else {
-            self.accounting.exactness.insert(identity, exactness);
+            self.accounting.exactness.insert(key, exactness);
         }
     }
 
@@ -446,7 +446,7 @@ impl ModelDraft<DraftAccounting> {
     pub fn retain_exactness(&mut self, mut keep: impl FnMut(&str) -> bool) {
         self.accounting
             .exactness
-            .retain(|identity, _| keep(identity));
+            .retain(|key, _| keep(key.as_str()));
     }
 
     /// Commit decoded entities and transfer their owned exactness entries.
@@ -721,13 +721,13 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
         } else {
             None
         };
-        for (identity, exactness) in accounting.exactness {
+        for (key, exactness) in accounting.exactness {
             if let Some(Ok(owners)) = &annotation_owners {
-                annotations_admitted &= identity_index_contains(&staged, owners, &identity);
+                annotations_admitted &= identity_index_contains(&staged, owners, key.as_str());
             } else if annotation_owners.is_some() {
                 annotations_admitted = false;
             }
-            transaction.exactness(&identity, exactness);
+            transaction.exactness(key, exactness);
         }
         match self.state.commit_draft(
             ModelDraft {

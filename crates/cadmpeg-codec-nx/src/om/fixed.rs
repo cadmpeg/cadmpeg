@@ -146,10 +146,10 @@ mod numeric_tests {
         assert_eq!(decoded.scalars, scalars);
 
         let mut wrong_value = encoded.clone();
-        wrong_value["scalars"]["values"][1] = serde_json::json!(0.5);
+        wrong_value["scalars"]["values"][1] = cadmpeg_core::json!(0.5);
         assert!(json::from_value::<Pair>(wrong_value).is_err());
         let mut wrong_raw = encoded;
-        wrong_raw["scalars"]["raw_values"][1] = serde_json::json!("00000000000000");
+        wrong_raw["scalars"]["raw_values"][1] = cadmpeg_core::json!("00000000000000");
         assert!(json::from_value::<Pair>(wrong_raw).is_err());
     }
 }

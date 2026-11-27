@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super as topology;
-use serde_json::{json, Value};
+use cadmpeg_core::json;
+use serde_json::Value;
 
 #[test]
 fn tangent_propagation_follows_vertices_and_refuses_incomplete_chains() {

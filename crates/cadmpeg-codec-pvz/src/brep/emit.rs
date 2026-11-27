@@ -237,20 +237,23 @@ struct Writer<'w, 's, 'c, 'k> {
 }
 
 impl Writer<'_, '_, '_, '_> {
-    fn derived(&mut self, id: &impl std::fmt::Display) {
-        self.sink
-            .annotations
-            .exactness(id.to_string(), Exactness::Derived);
+    fn derived(&mut self, key: impl Into<cadmpeg_ir::annotations::AnnotationKey>) {
+        self.sink.annotations.exactness(key, Exactness::Derived);
     }
 
-    fn located(&mut self, id: &impl std::fmt::Display, offset: usize, tag: &str) {
+    fn located(
+        &mut self,
+        key: impl Into<cadmpeg_ir::annotations::AnnotationKey> + Copy,
+        offset: usize,
+        tag: &str,
+    ) {
         self.sink.annotations.note(
-            id.to_string(),
+            key,
             self.sink.stream,
             cadmpeg_core::decode::u64_from_index(offset),
             Some(tag),
         );
-        self.derived(id);
+        self.derived(key);
     }
 
     fn write(&mut self) -> Result<Vec<BodyId>, CodecError> {
@@ -296,7 +299,7 @@ impl Writer<'_, '_, '_, '_> {
                 native_ref: None,
             });
             self.sink.annotations.note(
-                id.to_string(),
+                &id,
                 self.sink.stream,
                 cadmpeg_core::decode::u64_from_index(face.offset),
                 Some("0x13"),
@@ -306,7 +309,7 @@ impl Writer<'_, '_, '_, '_> {
             } else {
                 Exactness::Unknown
             };
-            self.sink.annotations.exactness(id.to_string(), exactness);
+            self.sink.annotations.exactness(&id, exactness);
             carriers.push(Some(carrier.unwrap_or(FaceCarrier {
                 geometry: SolvedSurfaceGeometry::Unknown { record: None },
                 transfer: PcurveTransfer::Omitted,
@@ -676,9 +679,7 @@ impl Writer<'_, '_, '_, '_> {
             });
             self.located(&id, record.offset, "0x14");
             if merged {
-                self.sink
-                    .annotations
-                    .exactness(id.to_string(), Exactness::Inferred);
+                self.sink.annotations.exactness(&id, Exactness::Inferred);
             }
             vertices.extend([start, end]);
         }
@@ -728,7 +729,7 @@ impl Writer<'_, '_, '_, '_> {
             self.derived(&id);
             self.sink
                 .annotations
-                .field_exactness(id.to_string(), "tolerance", Exactness::Inferred)
+                .field_exactness(&id, "tolerance", Exactness::Inferred)
                 .map_err(annotation_error)?;
         }
         Ok(())
@@ -914,13 +915,13 @@ impl Writer<'_, '_, '_, '_> {
                 if !face_topology.side_derived {
                     self.sink
                         .annotations
-                        .field_exactness(face_id.to_string(), "sense", Exactness::Inferred)
+                        .field_exactness(&face_id, "sense", Exactness::Inferred)
                         .map_err(annotation_error)?;
                 }
                 if tolerance.is_some() {
                     self.sink
                         .annotations
-                        .field_exactness(face_id.to_string(), "tolerance", Exactness::Derived)
+                        .field_exactness(&face_id, "tolerance", Exactness::Derived)
                         .map_err(annotation_error)?;
                 }
                 ids.push(face_id);
@@ -1008,7 +1009,7 @@ impl Writer<'_, '_, '_, '_> {
         if fit.is_some() {
             self.sink
                 .annotations
-                .field_exactness(id.to_string(), "metadata", Exactness::Derived)
+                .field_exactness(&id, "metadata", Exactness::Derived)
                 .map_err(annotation_error)?;
         }
         let parameter_range = interval.and_then(|[start, end]| {

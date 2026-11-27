@@ -282,6 +282,7 @@ impl DecodeResult {
         record_digests: bool,
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
+        result.name_dropped_records(ctx)?;
         result.give_up_repeated_ids(ctx, format)?;
         if !ctx.container_only() {
             result.widen_vertex_tolerances(ctx.policy());
@@ -457,9 +458,9 @@ impl DecodeResult {
     /// position part 10 compares it with than the coincidence allowance
     /// there, and charges the pass's losses (§2.3).
     fn widen_vertex_tolerances(&mut self, policy: &DecodePolicy) {
-        let loss =
+        let losses =
             vertex_tolerance::widen(&mut self.ir, &mut self.source_fidelity.annotations, policy);
-        self.report.losses.extend(loss);
+        self.report.losses.extend(losses);
     }
 
     /// Records the SHA-256 of the canonical JSON of the document the decode
@@ -966,7 +967,8 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     }
 }
 
-mod loss;
+mod dropped;
+pub(crate) mod loss;
 mod vertex_tolerance;
 pub mod write;
 

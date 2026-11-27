@@ -146,7 +146,13 @@ fn extrusion_breaks_lie_at_the_directrix_knots_inside_the_domain_past_an_unknown
     ));
     let index = crate::index::ModelIndex::build(&ir);
     let breaks = |u: [f64; 2]| {
-        super::super::procedural_surface_breaks(&index, &surface, [u, [-5.0, 0.0]]).unwrap()
+        super::super::procedural_surface_breaks(
+            crate::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &surface,
+            [u, [-5.0, 0.0]],
+        )
+        .unwrap()
     };
     assert_eq!(breaks([0.0, 3.0]), [vec![1.0, 2.0], Vec::new()]);
     assert_eq!(breaks([0.5, 1.5]), [vec![1.0], Vec::new()]);

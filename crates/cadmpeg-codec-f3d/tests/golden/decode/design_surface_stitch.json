@@ -467,6 +467,7 @@
             "asm_body_key": 42,
             "asm_body_key_offset": 25,
             "body": "f3d:brep:entity#1",
+            "browser_node_entity": 900,
             "byte_offset": 719,
             "entity_suffix": 985,
             "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
@@ -1552,6 +1553,12 @@
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
         "transform_hints": [],
+        "unknowns": [
+          {
+            "id": "f3d:source:part#4f327350a3c4072fb0f3ecf5083ef30e16694c3b2ae593472f0c2fad039c4414",
+            "links": []
+          }
+        ],
         "vertex_ownerships": [
           {
             "id": "f3d:asm:vertex-ownership#13",
@@ -1621,6 +1628,23 @@
           "kind": "namespaced",
           "value": {
             "namespace": "f3d",
+            "code": "sketch.curve-record-undecoded",
+            "kind": "geometry_not_transferred"
+          }
+        },
+        "severity": "warning",
+        "message": "Sketch curve record 1500 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity",
+        "provenance": {
+          "format": "f3d",
+          "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
+          "offset": 3222
+        }
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
             "code": "feature.edge-reference-lost",
             "kind": "attributes_not_transferred"
           }
@@ -1675,6 +1699,25 @@
         },
         "severity": "warning",
         "message": "2 decoded sketch relation(s) have no neutral constraint."
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "namespace": "decode",
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "strict_floor": "error"
+          }
+        },
+        "severity": "error",
+        "message": "part design-record stream=\"FusionAssetName[Active]/Design1/BulkStream.dat\" offset=3222 length=190 record=f3d:source:part#4f327350a3c4072fb0f3ecf5083ef30e16694c3b2ae593472f0c2fad039c4414: malformed container: f3d/sketch.curve-record-undecoded: Sketch curve record 1500 in FusionAssetName[Active]/Design1/BulkStream.dat remains in the source archive because its decoding failed: malformed container: F3D sketch-curve record has no usable curve identity; dropped=[]",
+        "provenance": {
+          "format": "f3d",
+          "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
+          "offset": 3222,
+          "tag": "design-record"
+        }
       }
     ],
     "notes": [
@@ -2113,8 +2156,21 @@
         "offset": 0,
         "stream": "f3d",
         "untyped": []
+      },
+      "f3d:source:part#4f327350a3c4072fb0f3ecf5083ef30e16694c3b2ae593472f0c2fad039c4414": {
+        "bytes": {
+          "data": "AwAAADI2NNwFAAAAAAAAAAAAAAABAQAAABgAAABTdXJmYWNlU3RpdGNoR2FwU2V0dGluZ1gXAAAASW50cmluc2ljTWV0YVR5cGV1aW50NjQAAAAAAAAAAAEAAAABQAYAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAEAAAAAAAAAAADwPwEAAAAB3gUAAAAAAAAAAAAAAd0FAAAAAAAAAAAAAXgFAAAAAAAAAAADAAAAMjU53AUAAA==",
+          "kind": "inline"
+        },
+        "offset": 3222,
+        "stream": "FusionAssetName[Active]/Design1/BulkStream.dat",
+        "untyped": [
+          "design"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "design"
+    ]
   }
 }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::native::bytes::NativeBytes;
-use serde_json::json;
 
 use super::test_fixtures::{
     acis_kernel_stream, content, primary_envelope_fixture_with_design, push_u16, push_u32,

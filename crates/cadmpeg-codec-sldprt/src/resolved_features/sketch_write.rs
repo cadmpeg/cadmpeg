@@ -40,6 +40,7 @@ pub(super) fn sketch_brep(
             ))
         })?;
     let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.tolerances = source.tolerances;
     // The sketch identity is escaped into one key here, once, and every
     // generated id below is that key with a `:`-separated part appended.
     let prefix = cadmpeg_ir::ids::IdentityKey::try_new(
@@ -647,6 +648,7 @@ pub(super) fn same_sketch_point(left: Point2, right: Point2) -> bool {
 pub(super) fn patch_line_profiles(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut requested = BTreeMap::<(String, usize, u32), Point3>::new();
     let mut streams = BTreeMap::<(String, usize), StreamPatches>::new();
@@ -762,7 +764,7 @@ pub(super) fn patch_line_profiles(
                     "SLDPRT sketch lane {lane_id} is missing"
                 ))
             })?;
-        edit_stream(&mut lane.native_payload, stream, |ctx, body| {
+        edit_stream(&mut lane.native_payload, stream, limits, |ctx, body| {
             crate::brep::topology::patch_points(body, &patches.points).map_err(|attr| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT sketch point {attr} is missing"
@@ -1004,6 +1006,7 @@ fn patch_direct_curve_body(
 fn edit_stream(
     payload: &mut Vec<u8>,
     stream_ordinal: usize,
+    limits: cadmpeg_core::decode::ResourceLimits,
     edit: impl FnOnce(
         &cadmpeg_core::decode::DecodeContext<'_>,
         &mut [u8],
@@ -1013,7 +1016,7 @@ fn edit_stream(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::read_root(
         &mut std::io::Cursor::new(payload.as_slice()),
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
+        &cadmpeg_core::decode::DecodePolicy { limits },
         cadmpeg_core::decode::DecodeDepth::Full,
     )?;
     let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?

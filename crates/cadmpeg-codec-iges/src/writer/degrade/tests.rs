@@ -16,6 +16,16 @@ use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_f
 use crate::{IgesCodec, IgesVersion};
 use cadmpeg_core::CodecError;
 
+fn desktop<T>(write: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy {
+            limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+        },
+        write,
+    )
+}
+
 fn cube() -> CadIr {
     let mut ir = unit_cube().expect("the example cube builds");
     add_document_root(&mut ir);
@@ -48,7 +58,8 @@ fn the_faces_on_an_unwritable_edge_are_dropped_and_the_rest_is_written() {
         .iter()
         .map(|face| (*face).to_owned())
         .collect::<Vec<_>>();
-    let synthesis = synthesize_dropping(&ir, IgesVersion::V5_3).expect("the rest is written");
+    let synthesis = desktop(|ctx| synthesize_dropping(ctx, &ir, IgesVersion::V5_3))
+        .expect("the rest is written");
     let omitted = charged(&synthesis.losses, "iges/writer.face-omitted");
     assert_eq!(omitted.len(), faces.len(), "{omitted:?}");
     for face in &faces {
@@ -72,7 +83,8 @@ fn a_body_under_a_singular_transform_is_dropped_and_the_empty_file_is_written() 
         [0.0, 0.0, 0.0, 0.0],
     ]);
     let body = ir.geometry.bodies[0].id.to_string();
-    let synthesis = synthesize_dropping(&ir, IgesVersion::V5_3).expect("the rest is written");
+    let synthesis = desktop(|ctx| synthesize_dropping(ctx, &ir, IgesVersion::V5_3))
+        .expect("the rest is written");
     let omitted = charged(&synthesis.losses, "iges/writer.body-omitted");
     assert_eq!(omitted.len(), 1, "{omitted:?}");
     assert!(omitted[0].contains(&body));
@@ -94,8 +106,8 @@ fn the_empty_file_charges_each_record_that_no_body_uses() {
     free.id = "test:model:point#free".try_into().expect("valid identity");
     ir.geometry.points.push(free);
     let error = CodecError::NotImplemented("no culprit".into());
-    let synthesis =
-        empty_file(&ir, IgesVersion::V5_3, &error, Vec::new()).expect("the empty file is written");
+    let synthesis = desktop(|ctx| empty_file(ctx, &ir, IgesVersion::V5_3, &error, Vec::new()))
+        .expect("the empty file is written");
     let free = charged(&synthesis.losses, "iges/writer.free-geometry-omitted");
     assert_eq!(
         free,
@@ -173,7 +185,8 @@ fn a_subset_curve_that_cannot_be_restated_drops_only_the_faces_on_it() {
         .expect("the cube joins the document");
     ir.finalize();
 
-    let synthesis = synthesize_dropping(&ir, IgesVersion::V5_3).expect("the rest is written");
+    let synthesis = desktop(|ctx| synthesize_dropping(ctx, &ir, IgesVersion::V5_3))
+        .expect("the rest is written");
     let omitted = charged(&synthesis.losses, "iges/writer.face-omitted");
     assert_eq!(omitted.len(), faces.len(), "{omitted:?}");
     for face in &faces {

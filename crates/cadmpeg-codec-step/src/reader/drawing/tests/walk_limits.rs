@@ -40,7 +40,7 @@ fn drawing_target_records_are_charged_as_retained_bytes() {
         .expect("STEP native namespace")
         .arenas()["drawing_targets"];
     assert_eq!(targets.len(), 1);
-    let text = json::to_string(&serde_json::json!({
+    let text = json::to_string(&cadmpeg_core::json!({
         "id": targets[0].id(),
         "source_id": "#1",
         "source_type": "ITEM",

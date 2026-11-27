@@ -1093,7 +1093,7 @@ fn find_json_emits_the_envelope() {
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["subcommand"], "find");
     assert!(value["generator"].as_str().unwrap().starts_with("cadmpeg "));
-    assert_eq!(value["hits"], serde_json::json!([4, 14]));
+    assert_eq!(value["hits"], cadmpeg_core::json!([4, 14]));
     assert_eq!(value["truncated"], false);
 }
 

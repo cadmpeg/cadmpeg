@@ -2,7 +2,6 @@
 #![allow(clippy::unwrap_used)]
 //! Closed bodies that use an edge four times or a collapsed edge once.
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::geometry::FinitePoint3;
@@ -26,7 +25,7 @@ fn source_less_round_trip(ir: &CadIr) -> cadmpeg_ir::codec::DecodeResult {
     assert!(checked.is_ok(), "fixture findings: {:?}", checked.findings);
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less solid encode");
     F3dCodec

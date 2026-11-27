@@ -232,7 +232,7 @@ mod tests {
         CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| count.set(0));
         cadmpeg_test_support::native_serialization::assert_native_limit(
             &record,
-            serde_json::json!({"id":"nx:feature:csys-identity#0", "identity": "a".repeat(30)}),
+            cadmpeg_core::json!({"id":"nx:feature:csys-identity#0", "identity": "a".repeat(30)}),
         );
         CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }

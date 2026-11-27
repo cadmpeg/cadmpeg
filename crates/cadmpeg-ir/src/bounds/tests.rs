@@ -2,8 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::json;
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{
     read_json, text_depth, Bound, Measure, Measured, Outside, Place, DIGEST_WALK_DEPTH,
