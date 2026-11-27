@@ -42,6 +42,7 @@ fn generated_on(ir: &CadIr) -> (CadIr, Option<String>, Vec<LossNote>) {
         &decoded,
         &stated,
         &targets,
+        None,
         &mut losses,
     )
     .unwrap();

@@ -3,6 +3,8 @@
 //! with its decode sidecar: the written table states the configurations of
 //! the `design` records (cadir-v11.md §5.11).
 
+pub(crate) mod read_back;
+
 use std::io::{Cursor, Write};
 use std::num::NonZeroI8;
 
@@ -53,7 +55,7 @@ fn decode(bytes: &[u8]) -> DecodeResult {
 }
 
 /// `archive` with the member `entry` holding `payload`.
-fn replaced(archive: &[u8], entry: &str, payload: &[u8]) -> Vec<u8> {
+pub(crate) fn replaced(archive: &[u8], entry: &str, payload: &[u8]) -> Vec<u8> {
     let mut source = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -115,6 +117,10 @@ fn object(target: &ColumnTarget) -> Value {
 /// that names row `a` active and a `testRowData` entry of each column with
 /// the value of row `a`, decoded.
 pub(crate) fn fixture(width: bool) -> (DecodeResult, Fixture) {
+    fixture_with_description(width, false)
+}
+
+fn fixture_with_description(width: bool, description: bool) -> (DecodeResult, Fixture) {
     let plain = decode(SOURCE);
     let ir = plain.ir();
     let entry = empty_table(ir);
@@ -127,6 +133,9 @@ pub(crate) fn fixture(width: bool) -> (DecodeResult, Fixture) {
     let mut a = vec![("P", string_cell("A-1")), ("S", bool_cell(true))];
     let mut b = vec![("P", string_cell("B-1")), ("S", bool_cell(false))];
     let mut c = vec![("P", string_cell("C-1")), ("S", bool_cell(true))];
+    if description {
+        columns.push(("D", property_target("Description")));
+    }
     if width {
         columns.push(("W", object(&length_target)));
         a.push(("W", expression_cell("20 mm", 2.0)));
@@ -1135,4 +1144,86 @@ fn a_v10_cell_edit_the_design_configuration_states_otherwise_is_charged() {
         })
         .collect::<Vec<_>>();
     assert_eq!(charged.len(), 1, "{losses:#?}");
+}
+
+#[test]
+fn a_legacy_active_move_on_the_patch_path_names_the_requested_row() {
+    let (decoded, _) = fixture(true);
+    let mut ir = decoded.ir().clone();
+    let a = named(&ir, "A").id.clone();
+    let b = named(&ir, "B").id.clone();
+    for row in &mut ir.model.configurations {
+        row.active = row.id == b;
+    }
+    let (back, losses) = written_with_losses(&ir, decoded.source_fidelity());
+    assert_eq!(active(back.ir()), Some(&a));
+    let moves = losses
+        .iter()
+        .filter(|loss| {
+            loss.code.to_string() == "export/value.unwritable"
+                && loss.message.contains("DesignConfigurationRoot")
+                && loss.message.contains(b.as_str())
+        })
+        .count();
+    assert_eq!(moves, 1, "{losses:#?}");
+}
+
+#[test]
+fn an_authored_active_description_lost_on_v11_readback_is_charged() {
+    let (decoded, _) = fixture_with_description(true, true);
+    let mut ir = decoded.ir().clone();
+    let row_a = named_mut(&mut ir, "A");
+    let scope = row_a.scope.clone();
+    row_a
+        .overrides
+        .definitions
+        .entry(scope)
+        .or_default()
+        .description = Some("Blue".into());
+    let (back, losses) = written_with_losses(&ir, decoded.source_fidelity());
+    assert_eq!(
+        row(back.ir(), "A")
+            .properties
+            .get("property:Description")
+            .map(String::as_str),
+        Some("Blue")
+    );
+    assert!(
+        losses.iter().any(|loss| {
+            loss.message.contains("CADIR v11")
+                && loss.message.contains(".description")
+                && loss.message.contains("Blue")
+        }),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn an_added_property_column_leaves_an_unstated_cell_sparse_without_loss() {
+    let (decoded, _) = fixture(true);
+    let mut ir = decoded.ir().clone();
+    let row_b = named_mut(&mut ir, "B");
+    row_b
+        .overrides
+        .definitions
+        .entry(row_b.scope.clone())
+        .or_default()
+        .description = Some("Blue".into());
+    let (back, losses) = written_with_losses(&ir, decoded.source_fidelity());
+    assert!(!row(back.ir(), "A")
+        .properties
+        .contains_key("property:Description"));
+    assert_eq!(
+        row(back.ir(), "B")
+            .properties
+            .get("property:Description")
+            .map(String::as_str),
+        Some("Blue")
+    );
+    assert!(
+        losses.iter().all(|loss| !loss
+            .message
+            .contains("whose configurations state no value of the property")),
+        "{losses:#?}"
+    );
 }

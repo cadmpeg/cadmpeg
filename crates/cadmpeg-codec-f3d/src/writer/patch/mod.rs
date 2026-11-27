@@ -50,30 +50,6 @@ use records::{
     patch_tolerant_coedge_parameters, patch_transform_hints, patch_wire_topologies,
 };
 
-/// `target` with the configuration table documents that state its
-/// configurations, where its documents project others (cadir-v11.md
-/// §5.11). Adds to `losses` what the documents state otherwise.
-fn restated_tables(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    target: &CadIr,
-    losses: &mut Vec<LossNote>,
-) -> Result<Option<CadIr>, CodecError> {
-    let Some(native) = f3d_native(ctx, target)? else {
-        return Ok(None);
-    };
-    let patched = crate::writer::generate::configuration_table::patched(target, &native)?;
-    losses.extend(patched.losses);
-    let Some(documents) = patched.documents else {
-        return Ok(None);
-    };
-    let mut restated = target.clone();
-    restated
-        .native
-        .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
-        .set_arena(ctx, "design_configurations", &documents)?;
-    Ok(Some(restated))
-}
-
 /// Apply supported semantic edits to a retained F3D archive.
 ///
 /// `source_image` must match the F3D source represented by `target`. The
@@ -132,9 +108,14 @@ pub(crate) fn write_semantic(
         ));
     }
     let baseline_native = f3d_native(ctx, baseline.ir())?;
-    let restated = restated_tables(ctx, target, &mut table_losses)?;
-    let target = restated.as_ref().unwrap_or(target);
     let target_native = f3d_native(ctx, target)?;
+    let mut tables = target_native
+        .as_ref()
+        .map(|native| crate::writer::generate::configuration_table::patched(target, native))
+        .transpose()?;
+    if let Some(tables) = &mut tables {
+        table_losses.append(&mut tables.losses);
+    }
     validate_assembly_projection(ctx, target, target_native.as_ref())?;
     let natives = PatchNatives {
         baseline: baseline_native.as_ref(),
@@ -267,7 +248,19 @@ pub(crate) fn write_semantic(
             "F3D ACT table-reference edits require regeneration of the complete table graph".into(),
         ));
     }
-    let configuration_edits = validate_configuration_edits(natives)?;
+    let configuration_edits = validate_configuration_edits(
+        baseline_native
+            .as_ref()
+            .map_or(&[][..], |native| native.design_configurations.as_slice()),
+        tables
+            .as_ref()
+            .and_then(|tables| tables.documents.as_deref())
+            .unwrap_or_else(|| {
+                target_native
+                    .as_ref()
+                    .map_or(&[][..], |native| native.design_configurations.as_slice())
+            }),
+    )?;
     validate_act_appearance_bindings(natives, baseline.ir(), target)?;
     let body_transform_edits =
         validate_body_transform_edits(&baseline.ir().geometry.bodies, &target.geometry.bodies)?;
@@ -862,6 +855,15 @@ pub(crate) fn write_semantic(
         .finish()
         .map_err(|error| CodecError::malformed(format_args!("cannot finish F3D ZIP: {error}")))?
         .into_inner();
+    if let Some(tables) = tables {
+        tables.witness.read_back(
+            ctx,
+            &output,
+            target,
+            &target.model.parameters,
+            &mut table_losses,
+        )?;
+    }
     writer.write_all(&output)?;
     losses.extend(table_losses);
     Ok(())

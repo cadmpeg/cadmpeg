@@ -4,9 +4,9 @@
 //! documents project, the neutral record wins (cadir-v11.md §3.4, W2; §5.14):
 //! the write regenerates the rows of the table, their cells and order, and
 //! the targets of the rules from the configurations (f3d.md §1.2). A
-//! parameter, feature, part number or description with no column gets a
-//! column, whose cell in each row states what the row's configuration
-//! resolves, and an empty table document gets a table (cadir-v11.md §5.11).
+//! parameter or feature with a writable Design target can acquire a column.
+//! Part numbers and descriptions use property columns. Cells state the values
+//! each row resolves, and an empty table document can host the rows.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -22,6 +22,8 @@ use cadmpeg_ir::units::Tolerances;
 use cadmpeg_ir::CadIr;
 use serde_json::{Map, Value};
 
+pub(in crate::writer) mod read_back;
+
 use super::configuration_root::{plan, Plan};
 use super::presentation::deterministic_guid;
 use crate::design::configurations::{table_at, ConfigurationTargets, Projection};
@@ -30,15 +32,15 @@ use crate::design_v11::configurations::{agree, restate, ActiveRows, RestatedRows
 use crate::ids::neutral_configuration_id;
 use crate::native::F3dNative;
 use crate::records::configuration::table::{
-    new_document, new_row, property_component, push_column, push_property_column, push_row,
-    remove_row, set_cell, set_row_name, set_row_order, write_test_rows, AdmittedTables, CellData,
-    ColumnTarget, ConfigurationColumn, ConfigurationRow, ConfigurationTable, ConfiguredValue,
-    RowGuids, TableNames, TestRowTarget,
+    bind_parameter_column, new_document, new_row, property_component, push_column,
+    push_property_column, push_row, remove_row, set_cell, set_row_name, set_row_order,
+    write_test_rows, AdmittedTables, CellData, ColumnTarget, ConfigurationColumn, ConfigurationRow,
+    ConfigurationTable, ConfiguredValue, RowGuids, TableNames, TestRowTarget,
 };
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use crate::writer::primitives::{
     bases, configuration_targets, decoded_configurations, differences, projection, projects,
-    reconciled, same_row, Bases, Difference,
+    same_row, Bases, Difference,
 };
 
 /// The configuration documents the write holds, and what they read back as.
@@ -58,6 +60,7 @@ pub(super) struct Written<'a> {
     added: BTreeSet<String>,
     /// The configuration of the row the stored root record names active.
     stored_active: Option<Configuration>,
+    test_rows: Option<(usize, BTreeMap<String, TestRowTarget>)>,
 }
 
 /// The `tableName` and the `tableType` of a table the write creates in an
@@ -111,7 +114,6 @@ pub(super) fn regenerate<'a>(
                 added: BTreeSet::new(),
                 targets,
                 bases: &bases,
-                unfilled: Vec::new(),
                 components: Vec::new(),
             }
             .write(&decoded.configurations, configurations);
@@ -154,67 +156,60 @@ pub(super) fn regenerate<'a>(
             expected,
             added,
             stored_active,
+            test_rows: None,
         },
         losses,
     ))
 }
 
 impl Written<'_> {
-    /// The losses of what the written documents read back as otherwise than
-    /// the configurations and the features of `targets`, when the root
-    /// record names the row of the configuration `active`. The decoder
-    /// reconciles the features with that row (f3d.md §1.2: the design
-    /// stores the state of the active row). A feature whose suppression that
-    /// row states otherwise than the reconciled feature is written in a state
-    /// the row contradicts, unless the write keeps both the state its scope
-    /// stores and the cell of the source's active row: the source holds the
-    /// same contradiction. Each `pinned` cell is charged with the value the
-    /// write states in its place.
-    pub(super) fn read_back(
+    #[cfg(test)]
+    pub(super) fn compare_in_memory(
         &self,
         active: Option<&str>,
         targets: &ConfigurationTargets<'_>,
-        pinned: &[Pinned],
     ) -> Result<Vec<LossNote>, CodecError> {
         let mut read = self.projection.clone();
-        for configuration in &mut read.configurations {
-            configuration.active = self
+        for row in &mut read.configurations {
+            row.active = self
                 .expected
-                .get(configuration.id.as_str())
+                .get(row.id.as_str())
                 .is_some_and(|expected| Some(expected.id.as_str()) == active);
         }
         let mut features = targets.neutral_features.to_vec();
-        let read = reconciled(read, &mut features)?;
+        let read = crate::writer::primitives::reconciled(read, &mut features)?;
         let bases = bases(targets.neutral_features, targets.neutral_parameters);
-        let mut losses = compare(&self.expected, &read.configurations, &bases);
-        losses.extend(value_unwritable(
-            "F3D",
-            "writes these parameters of an active configuration at the expression and value of the Design stream, which stores the state of the active row (f3d.md §1.2) and which the writer cannot set to what the configuration resolves",
-            pinned.iter().map(|pinned| {
-                format!(
-                    "{}: {}",
-                    pinned.configuration,
-                    Difference::of(
-                        pinned.parameter.to_string(),
-                        Some(&pinned.stated),
-                        Some(&pinned.written),
-                    )
-                )
-            }),
+        let generated = self.generated.keys().map(String::as_str).collect();
+        let mut losses = compare(&self.expected, &read.configurations, &bases, &generated);
+        losses.extend(Self::compare_projected_features(
+            self.stored_active.as_ref(),
+            &read,
+            targets,
+            &features,
         ));
+        Ok(losses)
+    }
+
+    fn compare_projected_features(
+        stored_active: Option<&Configuration>,
+        read: &Projection,
+        targets: &ConfigurationTargets<'_>,
+        features: &[cadmpeg_ir::features::Feature],
+    ) -> Vec<LossNote> {
+        let mut losses = Vec::new();
         losses.extend(value_unwritable(
             "F3D",
             "writes these features in the current state that the active row of the written configuration table gives them: the Design stream stores the state of its active row",
             targets
                 .neutral_features
                 .iter()
-                .zip(&features)
-                .filter_map(|(stated, read)| {
+                .filter_map(|stated| {
+                    let read = features.iter().find(|read| read.id == stated.id)?;
                     let (stated_state, read_state) = (
                         stated.configuration_state().evaluation,
                         read.configuration_state().evaluation,
                     );
-                    (stated_state != read_state).then(|| {
+                    (stated_state.is_suppressed() != read_state.is_suppressed()).then(|| {
                         Difference::of(
                             stated.id.to_string(),
                             Some(&stated_state),
@@ -244,9 +239,7 @@ impl Written<'_> {
             feature
                 .suppressed
                 .is_some_and(|state| stored.get(&feature.id) == Some(&state))
-                && self
-                    .stored_active
-                    .as_ref()
+                && stored_active
                     .and_then(|stored| stored.feature_states.get(&feature.id))
                     .map(|state| state.evaluation.is_suppressed())
                     == Some(row)
@@ -272,7 +265,7 @@ impl Written<'_> {
                 })
             }),
         ));
-        Ok(losses)
+        losses
     }
 }
 
@@ -356,9 +349,9 @@ pub(super) fn stated_rows(
     };
     let RestatedRows {
         rows: mut restated,
-        active,
+        mut active,
         stated,
-        kept,
+        mut kept,
     } = restate(
         rows,
         decoded,
@@ -368,6 +361,43 @@ pub(super) fn stated_rows(
         which,
     )
     .into_rows(losses);
+    match which {
+        ActiveRows::Stored => {
+            if held {
+                let legacy = rows
+                    .iter()
+                    .filter(|row| row.active)
+                    .map(|row| &row.id)
+                    .collect::<BTreeSet<_>>();
+                let original = active.iter().collect::<BTreeSet<_>>();
+                if kept.is_empty() && legacy != original {
+                    let show = |ids: &BTreeSet<&ConfigurationId>| {
+                        if ids.is_empty() {
+                            "no configuration".to_owned()
+                        } else {
+                            ids.iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        }
+                    };
+                    kept.push(format!(
+                        "{} active in place of {}",
+                        show(&original),
+                        show(&legacy)
+                    ));
+                }
+            }
+        }
+        ActiveRows::Design => {
+            let chosen = restated
+                .iter()
+                .find(|row| active.contains(&row.id))
+                .or_else(|| restated.iter().find(|row| row.active))
+                .map(|row| row.id.clone());
+            active = chosen.into_iter().collect();
+        }
+    }
     let rewritten = match which {
         ActiveRows::Design => rewritten(targets, &target.tolerances),
         ActiveRows::Stored => BTreeSet::new(),
@@ -392,7 +422,14 @@ pub(super) fn stated_rows(
             };
             let design = stated
                 .parameters
-                .contains(&(row.id.clone(), parameter.clone()));
+                .contains(&(row.id.clone(), parameter.clone()))
+                || (matches!(which, ActiveRows::Design)
+                    && !stays
+                    && !target
+                        .design
+                        .configurations
+                        .iter()
+                        .any(|record| record.id == row.id));
             let edited = !source.is_some_and(|source| {
                 source.parameter_overrides.get(&parameter)
                     == row.parameter_overrides.get(&parameter)
@@ -438,6 +475,11 @@ pub(super) fn stated_rows(
             overridden(rows, decoded, &restated, targets),
         ));
     }
+    if matches!(which, ActiveRows::Stored) {
+        for row in &mut restated {
+            row.active = active.contains(&row.id);
+        }
+    }
     for pin in &pinned {
         if let Some(row) = restated.iter_mut().find(|row| row.id == pin.configuration) {
             row.parameter_overrides.remove(&pin.parameter);
@@ -460,12 +502,10 @@ fn overridden(
     restated: &[Configuration],
     targets: &ConfigurationTargets<'_>,
 ) -> Vec<String> {
+    fn by_id(rows: &[Configuration]) -> BTreeMap<&ConfigurationId, &Configuration> {
+        rows.iter().map(|row| (&row.id, row)).collect()
+    }
     let bases = bases(targets.neutral_features, targets.neutral_parameters);
-    let by_id = |rows: &[Configuration]| {
-        rows.iter()
-            .map(|row| (row.id.clone(), row.clone()))
-            .collect::<BTreeMap<_, _>>()
-    };
     let (decoded, restated) = (by_id(decoded), by_id(restated));
     let mut out = Vec::new();
     for row in rows {
@@ -519,6 +559,27 @@ fn rewritten(targets: &ConfigurationTargets<'_>, tolerances: &Tolerances) -> BTr
         .collect()
 }
 
+/// Allocated record index and stored name, keyed by the authored parameter.
+pub(super) type DestinationParameters<'a> = BTreeMap<ParameterId, (u32, &'a str)>;
+
+fn pin_losses(pinned: &[Pinned]) -> Option<LossNote> {
+    value_unwritable(
+        "F3D",
+        "writes these parameters of an active configuration at the expression and value of the Design stream, which stores the state of the active row (f3d.md §1.2) and which the writer cannot set to what the configuration resolves",
+        pinned.iter().map(|pinned| {
+            format!(
+                "{}: {}",
+                pinned.configuration,
+                Difference::of(
+                    pinned.parameter.to_string(),
+                    Some(&pinned.stated),
+                    Some(&pinned.written),
+                )
+            )
+        }),
+    )
+}
+
 /// The configuration documents a patch of the retained archive carries, and
 /// the losses of what the configurations state otherwise than the rows of
 /// the documents.
@@ -527,6 +588,7 @@ pub(in crate::writer) struct Patched {
     /// stored documents.
     pub(in crate::writer) documents: Option<Vec<DesignConfiguration>>,
     pub(in crate::writer) losses: Vec<LossNote>,
+    pub(in crate::writer) witness: read_back::Witness,
 }
 
 /// The configuration documents of `target`, whose native records are
@@ -555,12 +617,7 @@ pub(in crate::writer) fn patched(
         "keeps the archive's active configuration state in place of the requested state: the DesignConfigurationRoot names the row whose state the Design stream stores (f3d.md §1.2), and the patch preserves its parameter values",
         stated.kept.iter().cloned(),
     ));
-    if stated.pinned.is_empty() && projects(&stated.rows, documents, &targets)? {
-        return Ok(Patched {
-            documents: None,
-            losses,
-        });
-    }
+    let unchanged = stated.pinned.is_empty() && projects(&stated.rows, documents, &targets)?;
     let (mut written, regenerated) = regenerate(documents, &decoded, &stated.rows, &targets)?;
     losses.extend(regenerated);
     let active = decoded
@@ -568,10 +625,18 @@ pub(in crate::writer) fn patched(
         .iter()
         .find(|configuration| configuration.active)
         .map(|configuration| configuration.id.as_str());
-    written.finish(active, &targets, &stated, &mut losses)?;
+    if !unchanged {
+        written.finish(active, &targets, &stated, None, &mut losses)?;
+    }
+    let witness = read_back::Witness::retained(&written);
+    let documents = match written.documents {
+        Cow::Borrowed(_) => None,
+        Cow::Owned(documents) => Some(documents),
+    };
     Ok(Patched {
-        documents: Some(written.documents.into_owned()),
+        documents,
         losses,
+        witness,
     })
 }
 
@@ -585,12 +650,13 @@ pub(super) fn generated<'a>(
     decoded: &Projection,
     stated: &'a Stated,
     targets: &ConfigurationTargets<'_>,
+    destinations: Option<&DestinationParameters<'_>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(Written<'a>, Plan), CodecError> {
     let (mut written, regenerated) = regenerate(documents, decoded, &stated.rows, targets)?;
     losses.extend(regenerated);
     let plan = plan(target, documents, decoded.table, &written, &stated.rows);
-    written.finish(plan.active(), targets, stated, losses)?;
+    written.finish(plan.active(), targets, stated, destinations, losses)?;
     Ok((written, plan))
 }
 
@@ -603,13 +669,98 @@ impl Written<'_> {
         active: Option<&str>,
         targets: &ConfigurationTargets<'_>,
         stated: &Stated,
+        destinations: Option<&DestinationParameters<'_>>,
         losses: &mut Vec<LossNote>,
     ) -> Result<(), CodecError> {
-        if let Some((index, payload)) = self.test_rows(active, targets, &stated.rewritten, losses) {
-            let document = self.documents[index].with_payload(payload)?;
+        if let Some(test_rows) =
+            self.test_rows(active, targets, destinations, &stated.rewritten, losses)
+        {
+            if let Some(payload) = test_rows.payload {
+                let document = self.documents[test_rows.index].with_payload(payload)?;
+                self.documents.to_mut()[test_rows.index] = document;
+            }
+            self.test_rows = Some((test_rows.index, test_rows.target));
+        }
+        losses.extend(pin_losses(&stated.pinned));
+        if let Some(destinations) = destinations {
+            self.bind_columns(targets, destinations, losses)?;
+        }
+        Ok(())
+    }
+
+    fn bind_columns(
+        &mut self,
+        targets: &ConfigurationTargets<'_>,
+        destinations: &DestinationParameters<'_>,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<(), CodecError> {
+        let Some((index, table)) = host(&self.documents, self.projection.table) else {
+            return Ok(());
+        };
+        let document = &self.documents[index];
+        let mut payload = None;
+        let mut missing = Vec::new();
+        let mut occupied = destinations
+            .values()
+            .map(|(record, _)| *record)
+            .collect::<BTreeSet<_>>();
+        for column in &table.columns {
+            let (ColumnTarget::Parameter(record) | ColumnTarget::OwnedParameter(record)) =
+                column.target
+            else {
+                continue;
+            };
+            let id = column_parameter(&column.target, targets);
+            let destination = id.as_ref().and_then(|id| destinations.get(id));
+            let replacement = match destination {
+                Some((written, _)) if column.target == ColumnTarget::Parameter(*written) => {
+                    continue
+                }
+                Some((written, _)) => *written,
+                None => {
+                    if let Some(id) = id {
+                        missing.push(format!(
+                            "{} column {}: {id}",
+                            document.entry_name(),
+                            column.id
+                        ));
+                    }
+                    if !matches!(column.target, ColumnTarget::Parameter(_))
+                        || !occupied.contains(&record)
+                    {
+                        continue;
+                    }
+                    // Preserve column-local cells while avoiding a join to a different parameter.
+                    let Some(unbound) = (0..=u32::MAX).find(|record| !occupied.contains(record))
+                    else {
+                        continue;
+                    };
+                    occupied.insert(unbound);
+                    unbound
+                }
+            };
+            if !bind_parameter_column(
+                edit(&mut payload, document.payload()),
+                table.position,
+                &column.id,
+                replacement,
+            ) {
+                missing.push(format!(
+                    "{} column {}: destination record {replacement}",
+                    document.entry_name(),
+                    column.id
+                ));
+            }
+        }
+        losses.extend(value_unwritable(
+            "F3D",
+            "cannot bind these configuration columns to their Design records in the destination",
+            missing,
+        ));
+        if let Some(payload) = payload {
+            let document = document.with_payload(payload)?;
             self.documents.to_mut()[index] = document;
         }
-        losses.extend(self.read_back(active, targets, &stated.pinned)?);
         Ok(())
     }
 
@@ -625,9 +776,10 @@ impl Written<'_> {
         &self,
         active: Option<&str>,
         targets: &ConfigurationTargets<'_>,
+        destinations: Option<&DestinationParameters<'_>>,
         rewritten: &BTreeSet<ParameterId>,
         losses: &mut Vec<LossNote>,
-    ) -> Option<(usize, Map<String, Value>)> {
+    ) -> Option<PlannedTestRows> {
         let (index, table) = host(&self.documents, self.projection.table)?;
         let bases = bases(targets.neutral_features, targets.neutral_parameters);
         let configuration = active.and_then(|active| {
@@ -639,20 +791,34 @@ impl Written<'_> {
         let stored = self.stored_active.as_ref();
         let moved = active != stored.map(|stored| stored.id.as_str());
         let entry_name = self.documents[index].entry_name();
+        let stored_names = targets
+            .parameters
+            .iter()
+            .map(|record| (crate::ids::neutral_parameter_id(record), record.name()))
+            .collect::<BTreeMap<_, _>>();
         let expected = table
             .columns
             .iter()
             .filter_map(|column| {
-                let members = test_row(column, configuration, targets, &bases);
+                let parameter = column_parameter(&column.target, targets);
+                let name = parameter
+                    .as_ref()
+                    .and_then(|parameter| destinations?.get(parameter))
+                    .map(|(_, name)| *name);
+                let members = test_row(column, configuration, targets, &bases, name);
                 let added = self.added.contains(&column.id);
-                let rewritten = column_parameter(&column.target, targets)
-                    .is_some_and(|parameter| rewritten.contains(&parameter));
+                let rewritten = parameter.as_ref().is_some_and(|parameter| {
+                    rewritten.contains(parameter)
+                        || name
+                            .zip(stored_names.get(parameter))
+                            .is_some_and(|(name, stored)| name != *stored)
+                });
                 let restated = moved
                     || added
                     || rewritten
-                    || members != test_row(column, stored, targets, &bases);
+                    || members != test_row(column, stored, targets, &bases, None);
                 restated.then_some((
-                    column.id.as_str(),
+                    column.id.clone(),
                     TestRowTarget {
                         members,
                         required: added || rewritten || stored.is_some(),
@@ -679,13 +845,18 @@ impl Written<'_> {
                 [entry_name],
             ));
         }
-        losses.extend(value_unwritable(
-            "F3D",
-            "writes testRowData that reads back otherwise than the target value of these columns in the active row",
-            result.unwritten.into_iter().map(|column| format!("{entry_name}: column {column}")),
-        ));
-        (result.added || result.rewritten).then_some((index, payload))
+        Some(PlannedTestRows {
+            index,
+            payload: (result.added || result.rewritten).then_some(payload),
+            target: expected,
+        })
     }
+}
+
+struct PlannedTestRows {
+    index: usize,
+    payload: Option<Map<String, Value>>,
+    target: BTreeMap<String, TestRowTarget>,
 }
 
 /// The only table document of `documents`, where it is the empty object, as
@@ -739,7 +910,6 @@ struct Rows<'s, 'p> {
     /// What a configuration that states no override resolves to.
     bases: &'s Bases<'s>,
     /// Each row the write leaves with no cell of a property column it adds.
-    unfilled: Vec<String>,
     /// Each property column the write adds under a component id it
     /// generates.
     components: Vec<String>,
@@ -841,18 +1011,11 @@ impl Rows<'_, '_> {
         {
             set_row_order(edit(self.payload, self.source), table.position, &order);
         }
-        let mut losses = value_unwritable(
-            "F3D",
-            "writes no cell of the property column the write adds in these rows, whose configurations state no value of the property",
-            std::mem::take(&mut self.unfilled),
-        )
-        .into_iter()
-        .collect::<Vec<_>>();
-        losses.extend(record_residual_unavailable(
+        let losses = record_residual_unavailable(
             "F3D",
             "writes these property columns the write adds with a component id the writer generates: no property column of the table names the component, and f3d-open-items.md DR-1069 leaves the id of an added property column open",
             std::mem::take(&mut self.components),
-        ));
+        ).into_iter().collect();
         let expected = hosted
             .into_iter()
             .map(|(configuration, row)| {
@@ -893,16 +1056,10 @@ impl Rows<'_, '_> {
                 .and_then(|row| row.cells.iter().find(|cell| cell.column_id == column.id))
                 .map(|cell| &cell.value);
             let data = match cell(column, configuration, value, self.targets, self.bases) {
-                Cell::Keep => {
-                    if let (true, ColumnTarget::Property(key), None) =
-                        (added, &column.target, value)
-                    {
-                        self.unfilled.push(format!("{key} in {}", configuration.id));
-                    }
-                    continue;
-                }
+                Cell::Keep | Cell::UnresolvableBinding | Cell::Unrepresentable => continue,
                 Cell::Write(data) => Some(data),
-                Cell::Remove => None,
+                Cell::Absent if value.is_some() => None,
+                Cell::Absent => continue,
             };
             set_cell(
                 edit(self.payload, self.source),
@@ -1045,6 +1202,7 @@ fn test_row(
     active: Option<&Configuration>,
     targets: &ConfigurationTargets<'_>,
     bases: &Bases<'_>,
+    destination_name: Option<&str>,
 ) -> Option<Map<String, Value>> {
     let mut entry = Map::new();
     let mut set = |member: &str, value: Value| {
@@ -1064,19 +1222,25 @@ fn test_row(
             let value = evaluated(&parameter, value, targets)?;
             set("DataType", Value::from("ParameterDoubleValue"));
             set("ColumnUniqueID", Value::from(column.id.as_str()));
-            set("UserName", Value::from(base.name.as_str()));
+            set(
+                "UserName",
+                Value::from(destination_name.unwrap_or(&base.name)),
+            );
             set("Expression", Value::from(expression.as_str()));
             set("Value", Value::from(value.get()));
         }
         ColumnTarget::Feature(record) => {
-            let feature = &targets.feature(*record)?.id;
-            let state = match active {
-                Some(active) => bases.feature(active, feature)?,
-                None => bases.features.get(feature)?,
+            let computed = match active {
+                Some(active) => computed(column, *record, active, targets, bases)?,
+                None => !bases
+                    .features
+                    .get(&targets.feature(*record)?.id)?
+                    .evaluation
+                    .is_suppressed(),
             };
             set("DataType", Value::from("BoolValue"));
             set("ColumnUniqueID", Value::from(column.id.as_str()));
-            set("Value", Value::from(!state.evaluation.is_suppressed()));
+            set("Value", Value::from(computed));
         }
         ColumnTarget::Property(key) => {
             let active = active?;
@@ -1115,8 +1279,10 @@ fn column_parameter(
 /// What the write does with one cell of a row.
 enum Cell {
     Keep,
+    Absent,
+    UnresolvableBinding,
+    Unrepresentable,
     Write(CellData),
-    Remove,
 }
 
 /// The cell of `column` that states what `configuration` resolves for the
@@ -1131,18 +1297,13 @@ fn cell(
     targets: &ConfigurationTargets<'_>,
     bases: &Bases<'_>,
 ) -> Cell {
-    let absent = if stored.is_some() {
-        Cell::Remove
-    } else {
-        Cell::Keep
-    };
     match &column.target {
         ColumnTarget::Property(key) => {
             match configuration
                 .properties
                 .get(format!("property:{key}").as_str())
             {
-                None => absent,
+                None => Cell::Absent,
                 Some(text) if matches!(stored, Some(ConfiguredValue::Property { text: stored, .. }) if stored == text) => {
                     Cell::Keep
                 }
@@ -1150,23 +1311,16 @@ fn cell(
             }
         }
         ColumnTarget::Feature(record) => {
-            let computed = match targets.feature(*record) {
-                Some(feature) => bases
-                    .feature(configuration, &feature.id)
-                    .map(|state| !state.evaluation.is_suppressed()),
-                None => match configuration
+            let computed = computed(column, *record, configuration, targets, bases);
+            if computed.is_none()
+                && configuration
                     .properties
-                    .get(format!("suppressed:{}", column.id).as_str())
-                    .map(String::as_str)
-                {
-                    None => None,
-                    Some("true") => Some(false),
-                    Some("false") => Some(true),
-                    Some(_) => return Cell::Keep,
-                },
-            };
+                    .contains_key(format!("suppressed:{}", column.id).as_str())
+            {
+                return Cell::Unrepresentable;
+            }
             match computed {
-                None => absent,
+                None => Cell::Absent,
                 Some(computed) if matches!(stored, Some(ConfiguredValue::Feature { computed: stored, .. }) if *stored == computed) => {
                     Cell::Keep
                 }
@@ -1189,6 +1343,30 @@ fn cell(
             targets,
             bases,
         ),
+    }
+}
+
+/// Whether the configured feature is computed, including a column-local value.
+fn computed(
+    column: &ConfigurationColumn,
+    record: u32,
+    row: &Configuration,
+    targets: &ConfigurationTargets<'_>,
+    bases: &Bases<'_>,
+) -> Option<bool> {
+    if let Some(feature) = targets.feature(record) {
+        return bases
+            .feature(row, &feature.id)
+            .map(|state| !state.evaluation.is_suppressed());
+    }
+    match row
+        .properties
+        .get(format!("suppressed:{}", column.id).as_str())?
+        .as_str()
+    {
+        "true" => Some(false),
+        "false" => Some(true),
+        _ => None,
     }
 }
 
@@ -1215,11 +1393,7 @@ fn expression_cell(
         ),
     };
     let Some(expression) = expression else {
-        return if stored.is_some() {
-            Cell::Remove
-        } else {
-            Cell::Keep
-        };
+        return Cell::Absent;
     };
     if let Some(
         ConfiguredValue::Parameter {
@@ -1246,9 +1420,10 @@ fn expression_cell(
                 expression: expression.clone(),
                 value,
             }),
-            None => Cell::Keep,
+            None => Cell::Unrepresentable,
         },
-        _ => Cell::Keep,
+        (Some(_), None) => Cell::Unrepresentable,
+        (None, _) => Cell::UnresolvableBinding,
     }
 }
 
@@ -1376,6 +1551,7 @@ fn compare(
     expected: &BTreeMap<String, &Configuration>,
     read: &[Configuration],
     bases: &Bases<'_>,
+    assigned_ids: &BTreeSet<&str>,
 ) -> Vec<LossNote> {
     let read = read
         .iter()
@@ -1386,13 +1562,14 @@ fn compare(
     let mut names = Vec::new();
     let mut values = Vec::new();
     let mut dropped = Vec::new();
+    let mut unresolved = Vec::new();
     for (written, configuration) in expected {
         let id = configuration.id.as_str();
         let Some(back) = read.get(written.as_str()) else {
             dropped.push(format!("{id}: row"));
             continue;
         };
-        if written != id {
+        if assigned_ids.contains(written.as_str()) {
             generated.push(format!("{id} as {written}"));
         }
         if back.ordinal != configuration.ordinal {
@@ -1423,14 +1600,29 @@ fn compare(
             .collect::<BTreeSet<_>>();
         let fields = differences(configuration, back, bases)
             .into_iter()
-            .filter(|difference| !evaluated.contains(&difference.field))
-            .map(|difference| difference.to_string())
+            .filter_map(|difference| {
+                if evaluated.contains(&difference.field) {
+                    return None;
+                }
+                if difference.field.starts_with("properties.parameter:")
+                    && difference.stated.is_some()
+                {
+                    unresolved.push(format!("{id}: {difference}"));
+                    return None;
+                }
+                Some(difference.to_string())
+            })
             .collect::<Vec<_>>();
         if !fields.is_empty() {
             dropped.push(format!("{id}: {}", fields.join("; ")));
         }
     }
     let mut losses = Vec::new();
+    losses.extend(value_unwritable(
+        "F3D",
+        "cannot resolve the Design bindings of these configuration cells",
+        unresolved,
+    ));
     losses.extend(edit_dropped(
         EntityKind::Configuration,
         "F3D",

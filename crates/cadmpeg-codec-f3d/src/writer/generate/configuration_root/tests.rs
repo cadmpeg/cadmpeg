@@ -107,7 +107,7 @@ fn planning(
         &written,
         &ir.model.configurations,
     );
-    losses.extend(written.read_back(plan.active(), &TARGETS, &[]).unwrap());
+    losses.extend(written.compare_in_memory(plan.active(), &TARGETS).unwrap());
     losses.append(&mut plan.losses);
     plan.losses = losses;
     (plan, written.documents.into_owned())
@@ -266,11 +266,10 @@ fn a_row_id_cut_that_names_another_row_is_written_unique_with_a_charge() {
     assert!(losses[0].1.contains(id(&long).as_str()));
 
     let (plan, documents) = planning(&ir, &documents);
-    let written = plan.payload(0, &documents[0]).unwrap();
     let written = DesignConfiguration::try_new(
         TABLE.into(),
         DesignConfigurationKind::Table,
-        cadmpeg_core::serde_erase::json::from_slice(&written).unwrap(),
+        plan.payload(0, &documents[0]).into_owned(),
     )
     .unwrap();
     let rows = written.tables()[0]
@@ -312,8 +311,7 @@ fn written_by(
     DesignConfiguration::try_new(
         configuration.entry_name().clone(),
         DesignConfigurationKind::Table,
-        cadmpeg_core::serde_erase::json::from_slice(&plan.payload(index, configuration).unwrap())
-            .unwrap(),
+        plan.payload(index, configuration).into_owned(),
     )
     .unwrap()
 }

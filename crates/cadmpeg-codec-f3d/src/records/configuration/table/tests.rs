@@ -2,7 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{write_test_rows, AdmittedTables, ConfiguredValue, TestRowTarget};
+use super::{
+    test_row_differences, write_test_rows, AdmittedTables, ConfiguredValue, TestRowTarget,
+};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
 };
@@ -316,16 +318,16 @@ fn a_test_row_target_preserves_opaque_entries_and_checks_every_target_column() {
         required,
     };
     let target = BTreeMap::from([
-        ("A", target_entry("A", 4, true)),
-        ("B", target_entry("B", 5, true)),
+        ("A".to_owned(), target_entry("A", 4, true)),
+        ("B".to_owned(), target_entry("B", 5, true)),
         (
-            "C",
+            "C".to_owned(),
             TestRowTarget {
                 members: None,
                 required: true,
             },
         ),
-        ("D", target_entry("D", 6, false)),
+        ("D".to_owned(), target_entry("D", 6, false)),
     ]);
     let mut payload = json!({
         "testRowData": [
@@ -337,7 +339,10 @@ fn a_test_row_target_preserves_opaque_entries_and_checks_every_target_column() {
     });
     let written = write_test_rows(payload.as_object_mut().unwrap(), &target);
     assert!(written.added && written.rewritten);
-    assert_eq!(written.unwritten, BTreeSet::from(["C"]));
+    assert_eq!(
+        test_row_differences(payload.as_object().unwrap(), &target),
+        BTreeSet::from(["C"])
+    );
     let cells = payload["testRowData"].as_array().unwrap();
     assert_eq!(cells[0], "opaque");
     let entries = cells[1..]
@@ -357,6 +362,9 @@ fn a_test_row_target_preserves_opaque_entries_and_checks_every_target_column() {
     let mut malformed = json!({"testRowData": "opaque array"});
     let written = write_test_rows(malformed.as_object_mut().unwrap(), &target);
     assert!(!written.added && !written.rewritten);
-    assert_eq!(written.unwritten, BTreeSet::from(["A", "B"]));
+    assert_eq!(
+        test_row_differences(malformed.as_object().unwrap(), &target),
+        BTreeSet::from(["A", "B"])
+    );
     assert_eq!(malformed["testRowData"], "opaque array");
 }

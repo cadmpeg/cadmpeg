@@ -610,6 +610,18 @@ pub(in crate::writer::generate) fn encode(
 }
 
 impl ParameterPlan {
+    /// The records and names assigned to source parameters in the new stream.
+    pub(in crate::writer::generate) fn destinations(
+        &self,
+        indices: &[u32],
+    ) -> super::super::configuration_table::DestinationParameters<'_> {
+        self.written
+            .iter()
+            .zip(indices)
+            .map(|(parameter, &index)| (parameter.source.clone(), (index, parameter.name.as_str())))
+            .collect()
+    }
+
     /// The record indices of the written parameters, allocated in
     /// `registry`, in written order.
     pub(in crate::writer::generate) fn allocate(

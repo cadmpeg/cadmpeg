@@ -60,16 +60,16 @@ pub(crate) mod rebase;
 
 /// The configurations of the scopes keyed by document prefix in `scopes`,
 /// and each scope's active configuration.
-pub(super) struct Configurations {
-    pub(super) records: Vec<DesignConfiguration>,
-    pub(super) active: BTreeMap<ProductDefinitionId, ConfigurationId>,
+pub(crate) struct Configurations {
+    pub(crate) records: Vec<DesignConfiguration>,
+    pub(crate) active: BTreeMap<ProductDefinitionId, ConfigurationId>,
 }
 
 /// A document in `hosted`, or one `scopes` does not key, has no scope of its
 /// own. `features` holds the ids of the scopes' features and `parameters`
 /// their parameters. Each class of row or cell the design omits charges one
 /// loss to `losses`.
-pub(super) fn project(
+pub(crate) fn project(
     legacy: &[LegacyConfiguration],
     scopes: &BTreeMap<String, ProductDefinitionId>,
     hosted: &BTreeSet<String>,
@@ -430,7 +430,15 @@ pub(crate) fn restate(
     let restates = |scope: &ProductDefinitionId| {
         scoped.contains(scope) && named.get(scope).copied().unwrap_or(true)
     };
-    let (mut active, mut moved, mut kept) = (BTreeSet::new(), BTreeSet::new(), Vec::new());
+    let mut active = match which {
+        ActiveRows::Stored => stored
+            .iter()
+            .filter(|row| row.active)
+            .map(|row| &row.id)
+            .collect(),
+        ActiveRows::Design => BTreeSet::new(),
+    };
+    let (mut moved, mut kept) = (BTreeSet::new(), Vec::new());
     let shown = |id: Option<&ConfigurationId>| {
         id.map_or("no configuration".to_owned(), ToString::to_string)
     };
@@ -448,7 +456,6 @@ pub(crate) fn restate(
                 }
             }
             ActiveRows::Stored => {
-                active.extend(held);
                 if stated != held {
                     kept.push(format!(
                         "{} active in place of {}",

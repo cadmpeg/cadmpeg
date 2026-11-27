@@ -464,6 +464,37 @@ pub(crate) fn push_column(
     insert_column(payload, position, id, title, &object)
 }
 
+/// Set the indexed object that a typed parameter column configures.
+pub(crate) fn bind_parameter_column(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    column: &str,
+    target: u32,
+) -> bool {
+    let Some(object) = table_mut(payload, position)
+        .and_then(|table| table.get_mut("asset"))
+        .and_then(|asset| component_mut(asset, "tableDefinition"))
+        .and_then(|definition| definition.get_mut("columnData"))
+        .and_then(|columns| columns.get_mut("value"))
+        .and_then(|columns| columns.get_mut(column))
+        .and_then(|column| column.get_mut("value"))
+        .and_then(|column| column.get_mut("object"))
+        .and_then(|object| object.get_mut("value"))
+        .and_then(Value::as_object_mut)
+    else {
+        return false;
+    };
+    object.insert(
+        "id".to_owned(),
+        typed_value("String", Value::from(target.to_string())),
+    );
+    object.insert(
+        "type".to_owned(),
+        typed_value("String", Value::from("UserParameterValue")),
+    );
+    true
+}
+
 /// Add the column `id` that names the document property `key`, in the
 /// empty property set, of the component `component`, under the title
 /// `key`, to the table at `position` of the `tables` array. Returns whether
@@ -507,23 +538,23 @@ pub(crate) fn property_component(payload: &Map<String, Value>, position: usize) 
 }
 
 #[derive(Default)]
-pub(crate) struct TestRowWrite<'a> {
+pub(crate) struct TestRowWrite {
     pub(crate) added: bool,
     pub(crate) rewritten: bool,
-    pub(crate) unwritten: BTreeSet<&'a str>,
 }
 
+#[derive(Clone)]
 pub(crate) struct TestRowTarget {
     pub(crate) members: Option<Map<String, Value>>,
     pub(crate) required: bool,
 }
 
 /// Replace the known members of the targeted entries. Preserve opaque entries
-/// and extra members. Return which target columns read back differently.
-pub(crate) fn write_test_rows<'a>(
+/// and extra members.
+pub(crate) fn write_test_rows(
     payload: &mut Map<String, Value>,
-    target: &BTreeMap<&'a str, TestRowTarget>,
-) -> TestRowWrite<'a> {
+    target: &BTreeMap<String, TestRowTarget>,
+) -> TestRowWrite {
     let mut result = TestRowWrite::default();
     if let Some(cells) = payload.get_mut("testRowData").and_then(Value::as_array_mut) {
         let mut present = BTreeSet::new();
@@ -531,12 +562,12 @@ pub(crate) fn write_test_rows<'a>(
             let Some(mut entry) = test_row_members(cell) else {
                 continue;
             };
-            let Some((&column, expected)) =
+            let Some((column, expected)) =
                 test_row_column(&entry).and_then(|column| target.get_key_value(column))
             else {
                 continue;
             };
-            present.insert(column);
+            present.insert(column.as_str());
             if let Some(expected) = &expected.members {
                 if !test_row_agrees(&entry, expected) {
                     entry.extend(expected.clone());
@@ -545,15 +576,24 @@ pub(crate) fn write_test_rows<'a>(
                 }
             }
         }
-        for (&column, expected) in target {
-            let missing = expected.required && !present.contains(column);
+        for (column, expected) in target {
+            let missing = expected.required && !present.contains(column.as_str());
             if let Some(expected) = expected.members.as_ref().filter(|_| missing) {
                 cells.push(Value::from(Value::Object(expected.clone()).to_string()));
                 result.added = true;
             }
         }
     }
+    result
+}
+
+/// Read the declared test-row members and identify each differing target.
+pub(crate) fn test_row_differences<'a>(
+    payload: &Map<String, Value>,
+    target: &'a BTreeMap<String, TestRowTarget>,
+) -> BTreeSet<&'a str> {
     let mut read = BTreeSet::new();
+    let mut unwritten = BTreeSet::new();
     for entry in payload
         .get("testRowData")
         .and_then(Value::as_array)
@@ -561,28 +601,28 @@ pub(crate) fn write_test_rows<'a>(
         .flatten()
         .filter_map(test_row_members)
     {
-        if let Some((&column, expected)) =
+        if let Some((column, expected)) =
             test_row_column(&entry).and_then(|column| target.get_key_value(column))
         {
-            read.insert(column);
+            read.insert(column.as_str());
             if !expected
                 .members
                 .as_ref()
                 .is_some_and(|expected| test_row_agrees(&entry, expected))
             {
-                result.unwritten.insert(column);
+                unwritten.insert(column.as_str());
             }
         }
     }
-    result.unwritten.extend(
+    unwritten.extend(
         target
             .iter()
             .filter(|(column, expected)| {
-                expected.required && expected.members.is_some() && !read.contains(*column)
+                expected.required && expected.members.is_some() && !read.contains(column.as_str())
             })
-            .map(|(&column, _)| column),
+            .map(|(column, _)| column.as_str()),
     );
-    result
+    unwritten
 }
 
 fn test_row_members(cell: &Value) -> Option<Map<String, Value>> {

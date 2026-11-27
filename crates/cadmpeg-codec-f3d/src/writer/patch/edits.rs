@@ -1656,14 +1656,9 @@ fn validate_fixed_design_string(id: &str, before: &str, after: &str) -> Result<(
 }
 
 pub(super) fn validate_configuration_edits(
-    native: PatchNatives<'_>,
+    baseline: &[crate::records::configuration::DesignConfiguration],
+    target: &[crate::records::configuration::DesignConfiguration],
 ) -> Result<BTreeMap<String, Vec<u8>>, CodecError> {
-    let baseline = native
-        .baseline
-        .map_or(&[][..], |native| native.design_configurations.as_slice());
-    let target = native
-        .target
-        .map_or(&[][..], |native| native.design_configurations.as_slice());
     let baseline = baseline
         .iter()
         .map(|configuration| (configuration.entry_name().as_str(), configuration))

@@ -63,7 +63,7 @@ fn write_scoped<'a>(
         &written,
         configurations,
     );
-    losses.extend(written.read_back(plan.active(), &targets, &[]).unwrap());
+    losses.extend(written.compare_in_memory(plan.active(), &targets).unwrap());
     (written, losses)
 }
 
@@ -1414,10 +1414,17 @@ fn a_moved_active_row_writes_the_test_rows_of_its_row() {
     let tall = id("tall");
     let stored = id("c1");
     let mut losses = Vec::new();
-    let (index, payload) = written
-        .test_rows(Some(tall.as_str()), &targets, &BTreeSet::new(), &mut losses)
+    let test_rows = written
+        .test_rows(
+            Some(tall.as_str()),
+            &targets,
+            None,
+            &BTreeSet::new(),
+            &mut losses,
+        )
         .expect("rewritten testRowData");
-    assert_eq!(index, 0);
+    assert_eq!(test_rows.index, 0);
+    let payload = test_rows.payload.unwrap();
     let entries = payload["testRowData"]
         .as_array()
         .unwrap()
@@ -1447,6 +1454,7 @@ fn a_moved_active_row_writes_the_test_rows_of_its_row() {
         .test_rows(
             Some(stored.as_str()),
             &targets,
+            None,
             &BTreeSet::new(),
             &mut Vec::new()
         )
