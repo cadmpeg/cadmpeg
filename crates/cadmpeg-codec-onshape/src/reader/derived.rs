@@ -443,8 +443,6 @@ pub(super) fn map(
     Ok(payload)
 }
 
-/// A Boolean whose operands are bodies made by earlier features of a studio with a
-/// derived insert. The operands name the stored result topology of their producers.
 pub(super) struct BooleanInputs {
     pub operation: &'static str,
     pub keep: bool,
@@ -554,6 +552,8 @@ pub(super) fn boolean_inputs(
     })
 }
 
+/// A Boolean whose operands are bodies made by earlier features of a studio with a
+/// derived insert. The operands name the stored result topology of their producers.
 pub(super) fn boolean(
     feature: &Value,
     ordinal: usize,

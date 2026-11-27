@@ -2,6 +2,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{destinations, dormant, loss_message, Source, TABLE};
+use crate::loss::OnshapeLossCode;
 use crate::reader::id;
 use crate::test_support::{fixture, review};
 
@@ -95,7 +96,7 @@ fn every_stored_fixture_parameter_is_projected_or_named_by_a_loss() {
                                     path.starts_with('/') && operation.pointer(path).is_some()
                                 });
                         let charged = result.report().losses.iter().any(|loss| {
-                            loss.code.local_code() == "history.parameter-not-projected"
+                            OnshapeLossCode::DesignParameterUnprojected.matches(loss)
                                 && loss.message == loss_message(key, label)
                         });
                         assert!(

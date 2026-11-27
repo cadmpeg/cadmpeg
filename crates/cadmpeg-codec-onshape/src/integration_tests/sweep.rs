@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::loss::OnshapeLossCode;
 use crate::test_support::{fixture, review};
 use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
@@ -415,6 +416,11 @@ fn sweep_design_keeps_cut_intersect_twist_scale_and_profile_lock() {
             op["value"]["controls"]["scaling"]["value"]["value"]["end"]["value"],
             2.0
         );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| OnshapeLossCode::SweepScaleAssumed.matches(loss)));
         crate::test_support::review::validate(result);
     }
 }
