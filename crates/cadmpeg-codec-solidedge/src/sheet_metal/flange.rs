@@ -30,7 +30,7 @@ use crate::extents::{
 use crate::features::{feature_id, function_span, Kind, Listed};
 use crate::layout::standard_relation;
 use crate::loss::SolidEdgeLossCode;
-use crate::proxy::edge_selection;
+use crate::proxy::{edge_line, edge_selection};
 use crate::psm::{Cluster, Object, TypeTable};
 
 /// The function of a flange.
@@ -60,10 +60,15 @@ const PARTIAL_SHIFT: usize = 24;
 const OFFSET_SHIFT: usize = 44;
 const WIDTH_AFTER_NAME: usize = 512;
 
+/// Rounding tolerance of the setback from the end an offset and a width leave
+/// free, in millimetres.
+const EPS_SETBACK: f64 = 1e-9;
+
 /// The extent kinds.
 const EXTENT_FULL: f64 = 134.0;
 const EXTENT_CENTRED: f64 = 135.0;
-const EXTENT_OFFSET: f64 = 138.0;
+const EXTENT_OFFSET_FROM_START: f64 = 138.0;
+const EXTENT_OFFSET_FROM_END: f64 = 139.0;
 const EXTENT_FROM_ENDS: f64 = 140.0;
 /// The side value that turns the flange towards the base face normal.
 const SIDE_TOWARDS_NORMAL: f64 = 2.0;
@@ -184,6 +189,15 @@ impl Slots<'_, '_> {
             Err("the edge object does not store a straight edge".to_owned())
         }
     }
+
+    /// The length of the stored edge, in millimetres.
+    fn edge_length(&self) -> Result<f64, String> {
+        let id = slot(self.object, self.end, EDGE_AFTER_NAME)?;
+        let (proxy, _) = named(self.cluster, self.types, id, "edge")?;
+        edge_line(proxy.bytes)
+            .map(|line| line.length)
+            .ok_or_else(|| "the edge object does not store a straight edge".to_owned())
+    }
 }
 
 /// The unread-edge selection: a flange states its edge as unread where the
@@ -257,6 +271,54 @@ fn relief(
         width_ratio: None,
         depth,
     })
+}
+
+/// The setbacks of an offset and a width along the edge (§10.3): the offset
+/// counts from the start of the edge, or from its end where `from_end`, and the
+/// setback from the other end is the edge length less the offset and the width.
+fn offset_width(
+    slots: &Slots<'_, '_>,
+    from_end: bool,
+    object: u32,
+    losses: &mut Vec<LossNote>,
+) -> Option<FlangeWidth> {
+    let offset = take(
+        losses,
+        object,
+        slots.jdim(PARTIAL_WIDTH_AFTER_NAME, "offset"),
+    )?;
+    let width = take(
+        losses,
+        object,
+        slots
+            .jdim(WIDTH_AFTER_NAME, "width")
+            .and_then(|metres| positive_length(metres, "width").map(|_| metres)),
+    )?;
+    let length = take(losses, object, slots.edge_length())?;
+    let mut rest = length - (offset + width) * MM_PER_M;
+    // A width that ends at the edge end leaves no setback, within rounding.
+    if (-EPS_SETBACK..0.0).contains(&rest) {
+        rest = 0.0;
+    }
+    let (first, second) = if from_end {
+        (rest, offset * MM_PER_M)
+    } else {
+        (offset * MM_PER_M, rest)
+    };
+    let setbacks = NonNegativeLength::new(first)
+        .zip(NonNegativeLength::new(second))
+        .map(|(first, second)| FlangeWidth::FromEnds {
+            first: Dimension::Literal(first),
+            second: Dimension::Literal(second),
+        });
+    if setbacks.is_none() {
+        unread(
+            losses,
+            object,
+            "the offset and the width do not fit inside the edge",
+        );
+    }
+    setbacks
 }
 
 fn flange(
@@ -340,7 +402,13 @@ fn flange(
     );
     let shift = match extent {
         Some(kind) if is(kind, EXTENT_CENTRED) => Some(PARTIAL_SHIFT),
-        Some(kind) if is(kind, EXTENT_OFFSET) || is(kind, EXTENT_FROM_ENDS) => Some(OFFSET_SHIFT),
+        Some(kind)
+            if is(kind, EXTENT_OFFSET_FROM_START)
+                || is(kind, EXTENT_OFFSET_FROM_END)
+                || is(kind, EXTENT_FROM_ENDS) =>
+        {
+            Some(OFFSET_SHIFT)
+        }
         Some(kind) if is(kind, EXTENT_FULL) => Some(0),
         _ => None,
     };
@@ -354,14 +422,8 @@ fn flange(
                 .and_then(|metres| positive_length(metres, "partial width")),
         )
         .map(|width| FlangeWidth::Centered { width }),
-        Some(kind) if is(kind, EXTENT_OFFSET) => {
-            // The end that the offset counts from is not established.
-            unread(
-                losses,
-                object,
-                "the offset of the extent kind 138 does not state its end",
-            );
-            None
+        Some(kind) if is(kind, EXTENT_OFFSET_FROM_START) || is(kind, EXTENT_OFFSET_FROM_END) => {
+            offset_width(slots, is(kind, EXTENT_OFFSET_FROM_END), object, losses)
         }
         Some(kind) if is(kind, EXTENT_FROM_ENDS) => {
             let first = take(
@@ -386,7 +448,7 @@ fn flange(
             unread(
                 losses,
                 object,
-                &format!("the extent kind {kind} is not 134, 135, 138 or 140"),
+                &format!("the extent kind {kind} is not 134, 135, 138, 139 or 140"),
             );
             None
         }
