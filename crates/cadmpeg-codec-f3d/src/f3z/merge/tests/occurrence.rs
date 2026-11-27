@@ -571,6 +571,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         asm_body_key_offset: 20,
         asm_body_key: 3,
         entity_suffix: 1,
+        browser_node_entity: 2,
         visible: true,
     })
     .unwrap();
@@ -615,6 +616,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         "f3d:role/occurrence-0@brep:entity#1"
     );
     assert_eq!(merged_visibility[0].stream(), "Design/BulkStream.dat");
+    assert_eq!(merged_visibility[0].browser_node_entity, 2);
 
     let merged_configurations: Vec<DesignConfiguration> = root
         .namespace("f3d")
