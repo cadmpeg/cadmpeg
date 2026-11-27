@@ -179,15 +179,15 @@ fn a_withheld_record_whose_span_leaves_the_bytes_is_refused() {
     );
 }
 
-/// A history-state decode withholds the same face, marks its shell, and
-/// lists no record.
+/// An inspecting decode withholds the same face, marks its shell, and lists
+/// no record.
 #[test]
-fn a_state_decode_marks_the_shell_and_lists_no_record() {
+fn an_inspecting_decode_marks_the_shell_and_lists_no_record() {
     let source = edited(
         "face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #",
         "face $-1 -1 $-1 $-1 $6 $2 $-1 $99 forward single #",
     );
-    let brep = decode(&source, DecodePurpose::State);
+    let brep = decode(&source, DecodePurpose::Inspect);
     assert!(brep.withheld.is_empty());
     assert_eq!(brep.shells.len(), 1);
     assert_eq!(brep.shells[0].id.as_str(), "f3d:brep:entity#2");

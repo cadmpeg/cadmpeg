@@ -171,7 +171,7 @@ pub(crate) fn decode_scratch(
         Some(&header.metadata),
         &stream,
         cadmpeg_asm::asm_format!("inventor"),
-        DecodePurpose::State,
+        DecodePurpose::Inspect,
     ) {
         Ok(brep) => brep,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),

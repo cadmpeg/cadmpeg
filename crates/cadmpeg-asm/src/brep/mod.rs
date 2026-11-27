@@ -377,9 +377,10 @@ pub enum DecodePurpose {
     /// Transfer complete neutral geometry and retained native records.
     Model,
     /// Transfer the graph [`DecodePurpose::Model`] transfers, for a caller
-    /// that reads one history state and gives up no record: withheld records
-    /// mark their shells, and `withheld` stays empty.
-    State,
+    /// that reads it and gives up none of its records, such as the decode of
+    /// one history state: withheld records mark their shells, and `withheld`
+    /// stays empty.
+    Inspect,
     /// Transfer stable topology plus measurements used by history binding.
     History,
 }
@@ -604,7 +605,7 @@ pub fn decode_with_table(
         },
     )?;
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
-    if matches!(purpose, DecodePurpose::Model | DecodePurpose::State) {
+    if matches!(purpose, DecodePurpose::Model | DecodePurpose::Inspect) {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
         given_up::list_withheld(
             ctx,

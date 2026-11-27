@@ -671,12 +671,21 @@ fn decode_container<'a>(
     let mut carrier_given_up = false;
     let mut history_chain = None;
     let mut empty_kernel_stream = false;
+    let mut kernel_withheld = Vec::new();
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
             Ok(header) => {
-                match ctx.run_part(|| crate::kernel::decode_kernel_carrier(ctx, carrier, header))? {
+                match ctx.run_part(|| {
+                    crate::kernel::decode_kernel_carrier(
+                        ctx,
+                        carrier,
+                        header,
+                        cadmpeg_asm::brep::DecodePurpose::Model,
+                    )
+                })? {
                     Ok(decoded) => {
                         empty_kernel_stream = decoded.model_records == 0;
+                        kernel_withheld = decoded.withheld;
                         apply_kernel_header(
                             &mut ir,
                             carrier.family,
@@ -733,7 +742,7 @@ fn decode_container<'a>(
             stats: kernel_stats,
             annotation_records: kernel_annotations,
             unbounded_faces: kernel_unbounded_faces,
-            withheld: kernel_withheld,
+            withheld: _,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("inventor"), kernel_brep)?;
     let history_framing = match &container.rse.active_carrier {
@@ -1059,8 +1068,10 @@ fn decode_container<'a>(
         if let (ActiveCarrierState::Selected(carrier), false) =
             (&container.rse.active_carrier, carrier_given_up)
         {
-            for record in &kernel_withheld {
-                given_up.push(ctx.give_up_part(withheld_part(carrier, record), record.error())?);
+            for (offset, record) in &kernel_withheld {
+                given_up.push(
+                    ctx.give_up_part(withheld_part(carrier, *offset, record), record.error())?,
+                );
             }
         }
         if kernel_stats.unknown_surface_faces() != 0 {
@@ -2331,7 +2342,7 @@ fn history_chain_part<'a>(
     Ok(crate::rse::bulk_record_part(
         "history-chain",
         (&carrier.segment_token, carrier.record_ordinal),
-        carrier.stream_offset(start),
+        carrier.stream_offset(start)?,
         chain,
         ArenaClass::Design,
     )
@@ -2339,15 +2350,16 @@ fn history_chain_part<'a>(
 }
 
 /// The topology record `record` that the kernel decode of `carrier` read and
-/// left out, as a part over its bytes in the bulk stream.
+/// left out, as a part over its bytes at `offset` in the bulk stream.
 fn withheld_part<'r>(
     carrier: &crate::kernel::ActiveCarrier<'_>,
+    offset: u64,
     record: &'r cadmpeg_asm::brep::given_up::WithheldRecord,
 ) -> Part<'r> {
     crate::rse::bulk_record_part(
         record.kind,
         (&carrier.segment_token, carrier.record_ordinal),
-        carrier.stream_offset(record.offset),
+        offset,
         &record.bytes,
         ArenaClass::Model,
     )
