@@ -697,21 +697,39 @@ fn an_unparsed_xref_table_does_not_make_an_empty_design() {
     }
 }
 
-/// A Design that holds only a parameter scope, a parameter, its owner and its
-/// companion, under explicitly empty model-body maps, is an empty design: the
-/// count of geometry-stating carriers comes from the native store.
+/// A decoded mesh body is classified before any Design record counts: the mesh
+/// is the geometry carrier and the records loss does not apply.
 #[test]
-fn a_parameter_only_design_is_an_empty_design() {
-    let native = crate::test_support::parameter_machinery::parameter_machinery_native();
+fn a_decoded_mesh_body_precedes_the_records_loss() {
     let report = classify(
         &crate::decode::DesignCarriers {
-            design_records: native.geometry_record_count(),
+            decoded_meshes: 1,
+            design_records: 4,
             ..blank_design_carriers()
         },
         false,
     );
     assert!(report.transfer.geometry_transferred());
-    assert!(has_code(&report, F3dLossCode::EmptyDesign));
+    assert!(has_code(&report, F3dLossCode::MeshVertexPrecisionReduced));
     assert!(!has_code(&report, F3dLossCode::DesignRecordsUntransferred));
-    assert_eq!(report.losses.len(), 1);
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+}
+
+/// The mesh-only rule needs a Design asset with no BREP entry; an unselected
+/// BREP entry sends the untransferred mesh container to the records rule.
+#[test]
+fn an_unselected_brep_entry_leaves_the_mesh_only_rule_for_the_records_rule() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            paramesh_entries: 1,
+            brep_entries: 1,
+            design_records: 2,
+            ..blank_design_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(!has_code(&report, F3dLossCode::MeshOnlyDesignUntransferred));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+    assert!(has_code(&report, F3dLossCode::DesignRecordsUntransferred));
 }

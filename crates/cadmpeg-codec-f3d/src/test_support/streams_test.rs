@@ -1667,6 +1667,108 @@ pub(super) fn generated_design_form_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     (out, records)
 }
 
+pub(super) fn append_owner(
+    out: &mut Vec<u8>,
+    records: &mut Vec<(u64, u64)>,
+    owner_record_index: u32,
+    parameter_record_index: u32,
+    companion_record_index: u32,
+    scope_record_index: u32,
+    local_ordinal: u32,
+) {
+    records.push((
+        u64::from(owner_record_index),
+        u64::try_from(out.len()).expect("synthetic dimension owner offset"),
+    ));
+    let mut owner = crate::design::test_support::parameter_owner_frame();
+    owner[4..7].copy_from_slice(b"270");
+    owner[7..11].copy_from_slice(&owner_record_index.to_le_bytes());
+    owner[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
+    owner[40..48].copy_from_slice(&1.0_f64.to_le_bytes());
+    owner[49..53].copy_from_slice(&parameter_record_index.to_le_bytes());
+    owner[35..39].copy_from_slice(&local_ordinal.to_le_bytes());
+    owner[68..72].copy_from_slice(&scope_record_index.to_le_bytes());
+    owner[82..86].copy_from_slice(&companion_record_index.to_le_bytes());
+    owner[94..98].copy_from_slice(&scope_record_index.to_le_bytes());
+    out.extend_from_slice(&owner);
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"270");
+    out.extend_from_slice(&owner_record_index.to_le_bytes());
+}
+
+pub(super) fn append_parameter(
+    out: &mut Vec<u8>,
+    records: &mut Vec<(u64, u64)>,
+    owner_record_index: u32,
+    parameter_record_index: u32,
+    name: &str,
+    source_kind: &str,
+) {
+    records.push((
+        u64::from(parameter_record_index),
+        u64::try_from(out.len()).expect("synthetic dimension parameter offset"),
+    ));
+    let mut parameter = crate::design::test_support::parameter_record(
+        Some(owner_record_index),
+        "10 mm",
+        source_kind,
+        Some("mm"),
+        name,
+        1.0,
+    );
+    parameter[4..7].copy_from_slice(b"271");
+    parameter[7..11].copy_from_slice(&parameter_record_index.to_le_bytes());
+    out.extend_from_slice(&parameter);
+}
+
+pub(super) fn append_companion(
+    out: &mut Vec<u8>,
+    records: &mut Vec<(u64, u64)>,
+    owner_record_index: u32,
+    companion_record_index: u32,
+) {
+    records.push((
+        u64::from(companion_record_index),
+        u64::try_from(out.len()).expect("synthetic dimension companion offset"),
+    ));
+    let mut companion = vec![0_u8; 58];
+    companion[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    companion[4..7].copy_from_slice(b"272");
+    companion[7..11].copy_from_slice(&companion_record_index.to_le_bytes());
+    companion[31] = 1;
+    companion[32..36].copy_from_slice(&owner_record_index.to_le_bytes());
+    companion[42..50].copy_from_slice(&1_700_000_000_000_000_u64.to_le_bytes());
+    out.extend_from_slice(&companion);
+}
+
+/// A parameter scope of a native feature name that no feature grammar claims:
+/// it has no reference and states no geometry.
+pub(super) fn append_parameter_scope(
+    out: &mut Vec<u8>,
+    records: &mut Vec<(u64, u64)>,
+    scope_record: u32,
+    name: &str,
+) {
+    records.push((
+        u64::from(scope_record),
+        u64::try_from(out.len()).expect("synthetic parameter scope offset"),
+    ));
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"268");
+    out.extend_from_slice(&scope_record.to_le_bytes());
+    out.extend_from_slice(&[0; 10]);
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    lp_utf16(out, name);
+    let mut tail = [0_u8; 78];
+    tail[..4].copy_from_slice(&1_u32.to_le_bytes());
+    tail[30..34].copy_from_slice(&u32::MAX.to_le_bytes());
+    out.extend_from_slice(&tail);
+    out.extend_from_slice(&3_u32.to_le_bytes());
+    out.extend_from_slice(b"268");
+    out.extend_from_slice(&scope_record.to_le_bytes());
+}
+
 /// Add paired dimensional parameters and their companion payloads to the
 /// generated Sketch stream. The payload contains a paired two-locus frame over
 /// two additional point records and one construction recipe record.
@@ -1716,80 +1818,6 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
         out.extend_from_slice(&paired_record_index.to_le_bytes());
         out.extend_from_slice(&[0; 15]);
         push_reference_u64(out, u64::from(record_index));
-    }
-
-    fn append_owner(
-        out: &mut Vec<u8>,
-        records: &mut Vec<(u64, u64)>,
-        owner_record_index: u32,
-        parameter_record_index: u32,
-        companion_record_index: u32,
-        scope_record_index: u32,
-        local_ordinal: u32,
-    ) {
-        records.push((
-            u64::from(owner_record_index),
-            u64::try_from(out.len()).expect("synthetic dimension owner offset"),
-        ));
-        let mut owner = crate::design::test_support::parameter_owner_frame();
-        owner[4..7].copy_from_slice(b"270");
-        owner[7..11].copy_from_slice(&owner_record_index.to_le_bytes());
-        owner[25..29].copy_from_slice(&scope_record_index.to_le_bytes());
-        owner[40..48].copy_from_slice(&1.0_f64.to_le_bytes());
-        owner[49..53].copy_from_slice(&parameter_record_index.to_le_bytes());
-        owner[35..39].copy_from_slice(&local_ordinal.to_le_bytes());
-        owner[68..72].copy_from_slice(&scope_record_index.to_le_bytes());
-        owner[82..86].copy_from_slice(&companion_record_index.to_le_bytes());
-        owner[94..98].copy_from_slice(&scope_record_index.to_le_bytes());
-        out.extend_from_slice(&owner);
-        out.extend_from_slice(&3_u32.to_le_bytes());
-        out.extend_from_slice(b"270");
-        out.extend_from_slice(&owner_record_index.to_le_bytes());
-    }
-
-    fn append_parameter(
-        out: &mut Vec<u8>,
-        records: &mut Vec<(u64, u64)>,
-        owner_record_index: u32,
-        parameter_record_index: u32,
-        name: &str,
-        source_kind: &str,
-    ) {
-        records.push((
-            u64::from(parameter_record_index),
-            u64::try_from(out.len()).expect("synthetic dimension parameter offset"),
-        ));
-        let mut parameter = crate::design::test_support::parameter_record(
-            Some(owner_record_index),
-            "10 mm",
-            source_kind,
-            Some("mm"),
-            name,
-            1.0,
-        );
-        parameter[4..7].copy_from_slice(b"271");
-        parameter[7..11].copy_from_slice(&parameter_record_index.to_le_bytes());
-        out.extend_from_slice(&parameter);
-    }
-
-    fn append_companion(
-        out: &mut Vec<u8>,
-        records: &mut Vec<(u64, u64)>,
-        owner_record_index: u32,
-        companion_record_index: u32,
-    ) {
-        records.push((
-            u64::from(companion_record_index),
-            u64::try_from(out.len()).expect("synthetic dimension companion offset"),
-        ));
-        let mut companion = vec![0_u8; 58];
-        companion[0..4].copy_from_slice(&3_u32.to_le_bytes());
-        companion[4..7].copy_from_slice(b"272");
-        companion[7..11].copy_from_slice(&companion_record_index.to_le_bytes());
-        companion[31] = 1;
-        companion[32..36].copy_from_slice(&owner_record_index.to_le_bytes());
-        companion[42..50].copy_from_slice(&1_700_000_000_000_000_u64.to_le_bytes());
-        out.extend_from_slice(&companion);
     }
 
     let (mut out, mut records) = generated_design_sketch_bulkstream();
