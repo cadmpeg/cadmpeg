@@ -633,11 +633,6 @@ where
     })
 }
 
-/// Solve a standard mesh whose repeated edge-face rows still carry alternate
-/// second-face domains. Each concrete face assignment is handed to the
-/// existing solver, so optional incidences never become required trim uses.
-/// A second solved assignment is semantic ambiguity: no topology gauge may
-/// erase a different edge-to-face incidence graph.
 /// Return the subset of `ordered` edge-class pairs `(left, right)` (`left < right`)
 /// for which swapping `left <-> right` is a proven gauge automorphism of edge
 /// metadata, port identities, and incident face boundary domains, so enforcing
@@ -804,6 +799,11 @@ fn verified_symmetric_edge_class_pairs(
     verified
 }
 
+/// Solve a standard mesh whose repeated edge-face rows still carry alternate
+/// second-face domains. Each concrete face assignment is handed to the
+/// existing solver, so optional incidences never become required trim uses.
+/// A second solved assignment is semantic ambiguity: no topology gauge may
+/// erase a different edge-to-face incidence graph.
 pub(crate) fn parse_standard_mesh_candidate_outcome_with_face_assignments<F>(
     candidates: MeshFaceAssignmentCandidates<'_>,
     budget: &WorkBudget,
