@@ -19,10 +19,6 @@ use crate::loss::F3dLossCode;
 
 /// The record index of `AssetSettings`.
 const RECORD_INDEX: u32 = 0;
-/// The offset of the LP-ASCII key `AssetSettings` from the record start.
-const KEY_AT: usize = 15;
-/// The length of the LP-ASCII key.
-const KEY_LEN: usize = 17;
 /// The stored (front, up) pair of a Z-up document.
 pub(crate) const Z_UP_PAIR: ([f64; 3], [f64; 3]) = ([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]);
 /// The stored (front, up) pair of a Y-up document.
@@ -40,8 +36,11 @@ pub(crate) fn stored_pair(axis: Option<UpAxis>) -> ([f64; 3], [f64; 3]) {
 /// What the `AssetSettings` record states about the up axis.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum UpAxisRead {
-    /// No design stream holds an `AssetSettings` record.
+    /// No design stream holds a record 0.
     Absent,
+    /// A design stream holds a record 0 that is not a whole `AssetSettings`
+    /// record of the 494-byte form, or that holds another key.
+    RecordUnreadable,
     /// Both stored pairs agree and are one of the two stored forms.
     Stated(UpAxis),
     /// The record holds a pair that is not one of the two forms, or its two
@@ -75,8 +74,8 @@ fn same(a: [f64; 3], b: [f64; 3]) -> bool {
 fn pairs(bytes: &[u8], at: usize) -> Option<(Pair, Pair)> {
     let end = at.checked_add(settings::TEMPLATE.len())?;
     let record = bytes.get(at..end)?;
-    (record.get(KEY_AT..KEY_AT + KEY_LEN)? == &settings::TEMPLATE[KEY_AT..KEY_AT + KEY_LEN])
-        .then_some(())?;
+    let key_end = settings::KEY.checked_add(settings::KEY_VALUE.len())?;
+    (record.get(settings::KEY..key_end)? == settings::KEY_VALUE).then_some(())?;
     Some((
         (
             vector_at(record, settings::FRONT_A)?,
@@ -89,13 +88,17 @@ fn pairs(bytes: &[u8], at: usize) -> Option<(Pair, Pair)> {
     ))
 }
 
+/// What one stream states: `None` where it holds no record 0, and
+/// `RecordUnreadable` where it holds one that `pairs` cannot read.
 fn read_stream(bytes: &[u8]) -> Option<UpAxisRead> {
     let offsets = IndexedRecordOffsets::build(bytes);
-    offsets
-        .offsets(RECORD_INDEX)
-        .iter()
-        .find_map(|at| pairs(bytes, *at))
-        .map(|(first, second)| {
+    let record_zero = offsets.offsets(RECORD_INDEX);
+    if record_zero.is_empty() {
+        return None;
+    }
+    Some(record_zero.iter().find_map(|at| pairs(bytes, *at)).map_or(
+        UpAxisRead::RecordUnreadable,
+        |(first, second)| {
             let copies_agree = same(first.0, second.0) && same(first.1, second.1);
             let form = |pair: Pair| {
                 if same(pair.0, Z_UP_PAIR.0) && same(pair.1, Z_UP_PAIR.1) {
@@ -114,32 +117,48 @@ fn read_stream(bytes: &[u8]) -> Option<UpAxisRead> {
                     copies_agree,
                 },
             }
-        })
+        },
+    ))
 }
 
 /// The document up axis, read from the first design `BulkStream` that holds
-/// an `AssetSettings` record. An entry whose bytes cannot be read is skipped.
+/// a readable `AssetSettings` record. An entry whose bytes cannot be read is
+/// skipped. Where a stream holds a record 0 and none is readable, the result
+/// is `RecordUnreadable`.
 pub(crate) fn decode_document_up_axis(scan: &ContainerScan) -> UpAxisRead {
+    let mut unreadable = false;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         if let Ok(bytes) = scan.entry_bytes(&entry.name) {
-            if let Some(read) = read_stream(bytes) {
-                return read;
+            match read_stream(bytes) {
+                Some(UpAxisRead::RecordUnreadable) => unreadable = true,
+                Some(read) => return read,
+                None => {}
             }
         }
     }
-    UpAxisRead::Absent
+    if unreadable {
+        UpAxisRead::RecordUnreadable
+    } else {
+        UpAxisRead::Absent
+    }
 }
 
 /// Record the read: the stated axis on `up_axis`, or a loss for a pair that is
-/// not one of the two stored forms, leaving `up_axis` unstated.
+/// not one of the two stored forms or for an unreadable record 0, leaving `up_axis` unstated.
 pub(crate) fn apply(read: UpAxisRead, up_axis: &mut Option<UpAxis>, losses: &mut Vec<LossNote>) {
     match read {
         UpAxisRead::Absent => {}
         UpAxisRead::Stated(axis) => *up_axis = Some(axis),
+        UpAxisRead::RecordUnreadable => {
+            losses.push(F3dLossCode::SettingsUpAxisRecordUnreadable.note(
+                "record 0 is not a whole AssetSettings record of the 494-byte form with the \
+             AssetSettings key, so the document states no up axis",
+            ))
+        }
         UpAxisRead::Unrecognized {
             front,
             up,

@@ -76,11 +76,18 @@ fn a_pair_that_is_neither_form_states_no_axis() {
 }
 
 #[test]
-fn a_stream_without_the_record_or_a_short_record_reads_nothing() {
+fn a_stream_without_record_zero_reads_nothing() {
     assert_eq!(read_stream(&[0u8; 600]), None);
+}
+
+#[test]
+fn a_short_or_differently_keyed_record_zero_is_unreadable() {
     let mut bytes = stream(0, Z_UP_PAIR, Z_UP_PAIR);
     bytes.truncate(settings::UP_B + 8);
-    assert_eq!(read_stream(&bytes), None);
+    assert_eq!(read_stream(&bytes), Some(UpAxisRead::RecordUnreadable));
+    let mut keyed = stream(0, Z_UP_PAIR, Z_UP_PAIR);
+    keyed[settings::KEY + 4] ^= 0xFF;
+    assert_eq!(read_stream(&keyed), Some(UpAxisRead::RecordUnreadable));
 }
 
 #[test]
@@ -91,6 +98,13 @@ fn apply_sets_the_axis_or_charges_a_loss() {
     assert_eq!((axis, losses.len()), (None, 0));
     apply(UpAxisRead::Stated(UpAxis::Y), &mut axis, &mut losses);
     assert_eq!((axis, losses.len()), (Some(UpAxis::Y), 0));
+    apply(UpAxisRead::RecordUnreadable, &mut axis, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SettingsUpAxisRecordUnreadable.kind()
+    );
+    losses.clear();
 
     let mut axis = None;
     let bytes = stream(0, Z_UP_PAIR, Y_UP_PAIR);
