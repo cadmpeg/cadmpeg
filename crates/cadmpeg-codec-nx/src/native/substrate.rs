@@ -106,13 +106,15 @@ impl<'a> StreamView<'a> {
         }
     }
 
-    /// Parse cached primary families from their original stream bytes.
+    /// Parse cached primary families from their original stream bytes, also returning
+    /// the parsed [`PrimaryRecords`] for downstream stream consumers.
     fn parse_uniform(
         bytes: &'a [u8],
         point_layout: Option<crate::intersection::ChartPointLayout>,
-    ) -> Result<Self, CodecError> {
-        let graph = Rc::new(Graph::parse_source(bytes)?);
-        Ok(StreamView {
+    ) -> Result<(Self, Option<cadmpeg_parasolid::records::PrimaryRecords<'a>>), CodecError> {
+        let (graph, primary) = Graph::parse_source_with_primary(bytes)?;
+        let graph = Rc::new(graph);
+        let view = StreamView {
             source: bytes,
             offset_surfaces: graph.offset_surfaces(),
             swept_surfaces: graph.swept_surfaces(),
@@ -124,13 +126,15 @@ impl<'a> StreamView<'a> {
                 None => CurveScan::default(),
             },
             graph,
-        })
+        };
+        Ok((view, primary))
     }
 }
 
 /// One stream's shared parses, raw source, and deferred geometry inputs.
 struct StreamParse<'a> {
     view: StreamView<'a>,
+    primary: Option<cadmpeg_parasolid::records::PrimaryRecords<'a>>,
     deltas: Option<cadmpeg_parasolid::records::DeltasRecords<'a>>,
 }
 
@@ -147,16 +151,17 @@ impl<'a> ParsedStreams<'a> {
         let mut streams = Vec::with_capacity(scan.streams.len());
         for (ordinal, stream) in scan.streams.iter().enumerate() {
             let source = topology[ordinal].source;
-            let view = match &stream.body {
+            let (view, primary) = match &stream.body {
                 crate::parasolid::StreamBody::Parasolid { subtype, .. }
                     if stream.kind() != StreamKind::Deltas =>
                 {
                     StreamView::parse_uniform(&stream.inflated, subtype.chart_point_layout())?
                 }
-                _ => StreamView::without_geometry(source),
+                _ => (StreamView::without_geometry(source), None),
             };
             streams.push(StreamParse {
                 view,
+                primary,
                 deltas: topology[ordinal].deltas.take(),
             });
         }
@@ -184,6 +189,15 @@ impl<'a> ParsedStreams<'a> {
         &self.streams[ordinal].view
     }
 
+    /// The cached primary records of the stream at `ordinal`, when its header
+    /// framed under `PrimaryRecords::read`.
+    pub(crate) fn primary(
+        &self,
+        ordinal: usize,
+    ) -> Option<&cadmpeg_parasolid::records::PrimaryRecords<'a>> {
+        self.streams.get(ordinal)?.primary.as_ref()
+    }
+
     /// Iterate `(ordinal, parses)` over every stream.
     pub(super) fn iter(&self) -> impl Iterator<Item = (usize, &StreamView<'a>)> {
         self.streams
@@ -195,7 +209,11 @@ impl<'a> ParsedStreams<'a> {
     /// Parse NURBS geometry for the selected primary stream when requested.
     pub(crate) fn parse_nurbs(&self, ordinal: usize) -> crate::nurbs::Parsed {
         let stream = &self.streams[ordinal];
-        crate::nurbs::parse_with_graph(stream.view.source, &stream.view.graph)
+        crate::nurbs::parse_with_graph_and_primary(
+            stream.view.source,
+            &stream.view.graph,
+            stream.primary.as_ref(),
+        )
     }
 }
 

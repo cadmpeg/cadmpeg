@@ -1350,14 +1350,22 @@ pub(crate) fn limit_term_use(primary: &cadmpeg_parasolid::records::PrimaryRecord
 /// # Errors
 ///
 /// Returns an error when the node sequence's embedded schema does not read.
+#[cfg(test)]
 pub(crate) fn stream_term_use_records(
     stream: &[u8],
     layout: ChartPointLayout,
 ) -> Result<Vec<TermUse>, CodecError> {
-    let Some(primary) = cadmpeg_parasolid::records::PrimaryRecords::read(stream)?
-        .filter(|primary| primary.stop_offset().is_none())
-    else {
-        return Ok(term_use_records(stream, layout));
+    let primary = cadmpeg_parasolid::records::PrimaryRecords::read(stream)?;
+    Ok(stream_term_use_records_in(stream, layout, primary.as_ref()))
+}
+
+pub(crate) fn stream_term_use_records_in(
+    stream: &[u8],
+    layout: ChartPointLayout,
+    primary: Option<&cadmpeg_parasolid::records::PrimaryRecords<'_>>,
+) -> Vec<TermUse> {
+    let Some(primary) = primary.filter(|primary| primary.stop_offset().is_none()) else {
+        return term_use_records(stream, layout);
     };
     let records: Vec<_> = primary
         .records()
@@ -1366,9 +1374,9 @@ pub(crate) fn stream_term_use_records(
         .collect();
     let starts = RecordStarts::Nodes {
         records: &records,
-        limit_term_use: limit_term_use(&primary),
+        limit_term_use: limit_term_use(primary),
     };
-    Ok(term_use_records_from(stream, layout, starts))
+    term_use_records_from(stream, layout, starts)
 }
 
 /// Where the auxiliary records of a stream start.

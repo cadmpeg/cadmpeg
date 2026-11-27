@@ -36,7 +36,7 @@ cadmpeg_core::named_optional_field!(
     "local_frame"
 );
 /// Exact construction data of a solid primitive scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "primitive")]
 pub(crate) enum DesignSolidPrimitive {
     /// Axis-aligned box defined by five owned dimensions and offsets.

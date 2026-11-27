@@ -81,12 +81,25 @@ fn decode(file: &[u8]) -> Option<CadIr> {
 pub(super) fn write_and_read_back(file: &[u8]) -> Result<Checked, &'static str> {
     let source = decode(file).ok_or("decode")?;
     source.native.namespace("iges").ok_or("native namespace")?;
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(&source)
-        .map_err(|_| "edge recovery")?;
-    let (synthesis, native) =
-        crate::writer::target::synthesis_and_dispositions(&recovered.document, IgesVersion::V5_3)
+    let (synthesis, native, appearances) = crate::test_support::with_policy_context(
+        &[],
+        &cadmpeg_core::decode::DecodePolicy {
+            limits: cadmpeg_core::decode::ResourceLimits::desktop(),
+        },
+        |ctx| {
+            let recovered =
+                cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(&source, ctx)
+                    .map_err(|_| "edge recovery")?;
+            let (synthesis, native) = crate::writer::target::synthesis_and_dispositions(
+                ctx,
+                &recovered.document,
+                IgesVersion::V5_3,
+            )
             .map_err(|_| "write")?;
-    let appearances = AppearanceDrops::of(&recovered.document, &synthesis);
+            let appearances = AppearanceDrops::of(&recovered.document, &synthesis);
+            Ok::<_, &'static str>((synthesis, native, appearances))
+        },
+    )?;
     let output = decode(&synthesis.bytes).expect("the written file decodes");
     let output_global = GlobalFacts::of(&output);
     Ok(Checked {

@@ -1360,7 +1360,7 @@ macro_rules! declare_document_arenas {
                     let names: Vec<(String, String)> = crate::give_up::records(&self.$home.$field, id)
                         .iter()
                         .filter_map(|entity| {
-                            crate::give_up::Holder::named(arena, id, entity, |text| {
+                            crate::give_up::Holder::named(native_links, arena, id, entity, |text| {
                                 gone.get(text).map(String::as_str)
                             })
                         })

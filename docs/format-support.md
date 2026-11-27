@@ -76,7 +76,7 @@ its result.
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
 | IronCAD `.ics`                                    | L0    |
-| Onshape bundle                                    | L0    |
+| Onshape bundle                                    | L4    |
 
 <!-- /generated: ladder-table -->
 
@@ -752,11 +752,17 @@ Detected by compound-file content: the scene root class and the `Brep Data`,
 `Shape Data`, and `Document Data` streams. The reader lists streams, inflates
 the framed `Brep Data` stream, and walks its record tree. Each Parasolid record
 contributes a Parasolid dialect layer with its schema token, and each ACIS
-record contributes an ACIS layer from its binary header. The ACIS record that
-follows a part's child node decodes into B-rep topology and geometry in the
-part frame; ACIS feature records are retained. Parasolid bodies, part
-placements, and feature history are pending, and each produces a loss, as does
-every other non-empty scene stream. The headline is L0. The codec is read-only.
+record contributes an ACIS layer from its binary header. The ACIS or
+Parasolid record that follows a part's child node decodes into B-rep topology
+and geometry in the part frame; feature records are retained. Each part is
+placed by the matrix of its `Public Access` part record and carries its
+properties and mass density. When the assembly records and the assembly
+nodes of the record tree agree in count, each assembly node becomes an
+assembly definition, placed by the matrix of its assembly record, that holds
+its parts and member assemblies; otherwise every part is placed in the scene.
+The scene units come from `Document Data`. Feature history is pending, and
+each non-empty scene stream other than `Brep Data`, `Public Access`, and
+`Document Data` produces a loss. The headline is L0. The codec is read-only.
 
 See [`formats/ironcad.md`](formats/ironcad.md) and
 [`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).
@@ -776,7 +782,7 @@ See [`formats/ironcad.md`](formats/ironcad.md) and
 
 <!-- generated: dialects onshape -->
 
-**Ladder: L0.**
+**Ladder: L4.**
 
 | Dialect            | Read     | Write |
 | ------------------ | -------- | ----- |
@@ -786,11 +792,15 @@ See [`formats/ironcad.md`](formats/ironcad.md) and
 <!-- /generated: dialects onshape -->
 
 The decoder reads the Part Studios and the root assembly of an offline
-version 1 bundle. It composes final STEP geometry and maps supported
-sketches, variables, extrusions, revolves, fillets, chamfers and holes.
-Historical picks use rollback topology. An assembly maps to product
-definitions, occurrences with placements and suppression, grounded joints,
-and mate joints with evaluated connector frames. Mate limits and offsets stay
-in the native feature responses. Original members remain embedded assets. Synthetic tests
-pin the reader projection and resource bounds. Real-file evaluation is
-pending.
+version 1 bundle, with captured Derived studios. It composes final STEP
+geometry and maps sketches on default planes, offset planes and model faces,
+variables, extrusions (including up to next), revolves, sweeps, fillets,
+chamfers, holes, shells and subtractions after a Derived insert. Historical
+picks use rollback topology. An assembly maps to product definitions,
+occurrences with placements and suppression, grounded joints, and mate joints
+with evaluated connector frames. Mate limits and offsets stay in the native
+feature responses. Original members remain embedded assets. Typed features
+with operation semantics, sketch geometry, ordering and dependencies set L4. A
+recorded evaluation backs it. Body and face colours and the full sketch
+constraint and feature-family set are not yet established, so L5 and L6 are
+not claimed. Synthetic tests pin the reader projection and resource bounds.

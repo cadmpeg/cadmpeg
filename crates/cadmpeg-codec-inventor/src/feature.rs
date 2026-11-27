@@ -234,6 +234,9 @@ pub(crate) struct FeatureProjection {
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Surface lofts that stay native because an earlier feature names their
+    /// result wrapper.
+    pub(crate) refused_surface_lofts: std::collections::HashSet<String>,
     pub(crate) split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) thicken_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -250,7 +253,7 @@ pub(crate) struct PmDcFeaturePropertyPayload {
     pub(crate) kind: PmDcFeaturePropertyKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcFeaturePropertyKind {
     Derived {
@@ -1967,6 +1970,7 @@ pub(crate) enum FeatureFamily {
     Shell,
     Sweep,
     Loft,
+    SurfaceLoft,
     Revolve,
     Motion,
     Combine,
@@ -1989,6 +1993,7 @@ impl FeatureFamily {
             Self::Shell => &[SHELL_CLASS_ID],
             Self::Sweep => &[loft_sweep::slots::SWEEP_CLASS],
             Self::Loft => &[loft_sweep::slots::LOFT_CLASS],
+            Self::SurfaceLoft => &[loft_sweep::slots::SURFACE_LOFT_CLASS],
             Self::Revolve => &[REVOLVE_CLASS_ID],
             Self::Motion => &[
                 motion::MOVE_CLASS_ID,
@@ -2026,6 +2031,7 @@ impl FeatureFamily {
             Self::Shell => 9,
             Self::Sweep => 15,
             Self::Loft => 13,
+            Self::SurfaceLoft => 6,
             Self::Revolve => 17,
             Self::Motion if source.properties.references().len() == 13 => 8,
             Self::Motion => 0,
@@ -2048,6 +2054,7 @@ impl FeatureFamily {
             Self::Shell,
             Self::Sweep,
             Self::Loft,
+            Self::SurfaceLoft,
             Self::Revolve,
             Self::Motion,
             Self::Combine,
@@ -2113,6 +2120,9 @@ impl FeatureFamily {
                 Self::Loft,
                 FeatureDefinition::Operation(FeatureOperation::Loft { solid: true, .. })
             ) | (
+                Self::SurfaceLoft,
+                FeatureDefinition::Operation(FeatureOperation::Loft { solid: false, .. })
+            ) | (
                 Self::Revolve,
                 FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
             ) | (
@@ -2157,6 +2167,9 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Sweep { .. }) => Some(Self::Sweep),
             FeatureDefinition::Operation(FeatureOperation::Loft { solid: true, .. }) => {
                 Some(Self::Loft)
+            }
+            FeatureDefinition::Operation(FeatureOperation::Loft { solid: false, .. }) => {
+                Some(Self::SurfaceLoft)
             }
             FeatureDefinition::Operation(FeatureOperation::Revolve { .. }) => Some(Self::Revolve),
             FeatureDefinition::Operation(
@@ -2259,6 +2272,7 @@ pub(crate) fn project(
             revolve_losses: Vec::new(),
             edge_treatment_losses: Vec::new(),
             loft_losses: Vec::new(),
+            refused_surface_lofts: std::collections::HashSet::new(),
             split_losses: Vec::new(),
             thicken_losses: Vec::new(),
             plate_losses: (!inventory.sheet_metal_flanges.is_empty())
@@ -2493,6 +2507,7 @@ pub(crate) fn project(
     let mut revolve_losses = Vec::new();
     let mut edge_treatment_losses = Vec::new();
     let mut loft_losses = Vec::new();
+    let mut refused_surface_lofts = std::collections::HashSet::new();
     let mut split_losses = Vec::new();
     let mut thicken_losses = Vec::new();
     let mut plate_refusals = sheet_metal::projection::Refusals::default();
@@ -2575,14 +2590,35 @@ pub(crate) fn project(
                         project_thicken(ctx, feature, label, &index, inventory)
                     }
                     FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
-                    FeatureFamily::Sweep | FeatureFamily::Loft => loft_sweep::projection::project(
-                        ctx,
-                        feature,
-                        label,
-                        &index,
-                        family,
-                        &mut loft_losses,
-                    ),
+                    FeatureFamily::Sweep | FeatureFamily::Loft | FeatureFamily::SurfaceLoft => {
+                        if matches!(family, FeatureFamily::SurfaceLoft)
+                            && loft_sweep::projection::refuse_used_wrapper(
+                                feature,
+                                &inventory.features,
+                                &index.positions,
+                                &mut loft_losses,
+                            )
+                        {
+                            refused_surface_lofts.insert(feature.id());
+                            None
+                        } else {
+                            loft_sweep::projection::project(
+                                ctx,
+                                feature,
+                                label,
+                                &index,
+                                family,
+                                |ordinal| {
+                                    inventory
+                                        .record_types
+                                        .get(&feature.identity.segment_token)?
+                                        .get(&ordinal)?
+                                        .as_deref()
+                                },
+                                &mut loft_losses,
+                            )
+                        }
+                    }
                     FeatureFamily::Revolve => {
                         project_revolve(ctx, feature, label, &index, &mut revolve_losses)
                     }
@@ -2910,15 +2946,18 @@ pub(crate) fn project(
                     if groups.iter().any(|group| group.spec.is_unresolved()))
         })
         .count();
-    let unresolved_extrusion_profiles = features
+    let native_operand_features = features
         .iter()
-        .filter(|feature| extrusion::has_native_profile(feature.evaluation.definition()))
+        .filter(|feature| {
+            extrusion::has_native_profile(feature.evaluation.definition())
+                || loft_sweep::controls::has_native_section(feature.evaluation.definition())
+        })
         .count();
     Ok(FeatureProjection {
         unresolved_features: total
             .checked_sub(neutral)
             .and_then(|unresolved| unresolved.checked_add(unresolved_chamfers))
-            .and_then(|unresolved| unresolved.checked_add(unresolved_extrusion_profiles))
+            .and_then(|unresolved| unresolved.checked_add(native_operand_features))
             .ok_or_else(|| {
                 CodecError::malformed("Inventor feature projection exceeds inventory")
             })?,
@@ -2927,6 +2966,7 @@ pub(crate) fn project(
         revolve_losses,
         edge_treatment_losses,
         loft_losses,
+        refused_surface_lofts,
         split_losses,
         thicken_losses,
         plate_losses: plate_refusals
@@ -3219,6 +3259,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Shell => NativeFeatureKind::Other("Shell".into()),
             FeatureFamily::Sweep => NativeFeatureKind::Other("Sweep".into()),
             FeatureFamily::Loft => NativeFeatureKind::Other("Loft".into()),
+            FeatureFamily::SurfaceLoft => NativeFeatureKind::Other("LoftSurface".into()),
             FeatureFamily::Revolve => NativeFeatureKind::Other("Revolve".into()),
             FeatureFamily::Motion => NativeFeatureKind::Other(
                 NATIVE_CLASSES
@@ -3230,9 +3271,6 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Combine => NativeFeatureKind::Other("Combine".into()),
             FeatureFamily::Split => NativeFeatureKind::Other("Split".into()),
         };
-    }
-    if let Some(family) = loft_sweep::slots::Family::from_class_id(class_id) {
-        return NativeFeatureKind::Other(family.native_name().into());
     }
     NATIVE_CLASSES
         .iter()

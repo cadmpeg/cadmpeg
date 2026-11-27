@@ -3308,7 +3308,8 @@ fn store_bodyless_design(
 
 /// Bind the stored design's sketches and features to their product
 /// definitions, then project the configuration tables from the features as
-/// these passes leave them.
+/// these passes leave them, and with the output bodies the body history
+/// bound.
 pub(crate) fn attach_design(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -3316,9 +3317,10 @@ pub(crate) fn attach_design(
     ir: &mut CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
+    let producers = crate::design::configurations::body_producers(&ir.model.features);
     crate::design::decode::sketch_owners::attach(ctx, scan, native, &mut ir.model, losses)?;
     crate::design::owners::attach(scan, native, ir, losses)?;
-    crate::design::configurations::attach(native, &mut ir.model, losses)
+    crate::design::configurations::attach(native, &mut ir.model, &producers, losses)
 }
 
 /// Phase-2 outcome as product projection and finalization see it.

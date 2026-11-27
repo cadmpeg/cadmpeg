@@ -126,7 +126,7 @@ struct DesignJson {
     version_urn: String,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "type")]
 enum ReferenceJson {
     #[serde(rename = "XREF")]
@@ -151,7 +151,7 @@ enum PropertyJson {
     Data(StringProperty),
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "dataType", deny_unknown_fields)]
 enum StringProperty {
     #[serde(rename = "STRING")]

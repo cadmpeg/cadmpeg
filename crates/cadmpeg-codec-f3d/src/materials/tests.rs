@@ -11,7 +11,6 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
 
@@ -140,7 +139,13 @@ fn protein_rejections_preserve_valid_records_and_give_up_the_rejected_record() {
         .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
         .collect();
     let mut notes = Vec::new();
-    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes).unwrap();
+    let (patched, guids) = super::patch_protein_appearances(
+        &protein,
+        &edits,
+        &mut notes,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     assert_eq!(
         guids.into_iter().collect::<Vec<_>>(),
         ["first-guid", "third-guid"]
@@ -228,8 +233,13 @@ fn a_zstandard_protein_archive_decodes_and_patches() {
         .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
         .collect();
     let mut notes = Vec::new();
-    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes)
-        .expect("patch a Zstandard Protein archive");
+    let (patched, guids) = super::patch_protein_appearances(
+        &protein,
+        &edits,
+        &mut notes,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .expect("patch a Zstandard Protein archive");
     assert_eq!(
         guids.into_iter().collect::<Vec<_>>(),
         ["first-guid", "third-guid"]
@@ -1295,7 +1305,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&source, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less tolerant vertex encode");
     let round_trip = F3dCodec
@@ -1778,8 +1788,13 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
             properties: std::collections::BTreeMap::new(),
         },
     )]);
-    let error = crate::materials::patch_protein_appearances(&protein, &edits, &mut Vec::new())
-        .expect_err("a record that ends at its GUID places no colour carrier");
+    let error = crate::materials::patch_protein_appearances(
+        &protein,
+        &edits,
+        &mut Vec::new(),
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .expect_err("a record that ends at its GUID places no colour carrier");
     assert!(
         error
             .to_string()
