@@ -975,9 +975,12 @@ pub(crate) fn decode_design_assignments(
             continue;
         };
         let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
-        for presentation in
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
-        {
+        for presentation in crate::design::decode::presentation::scan_body_presentations(
+            scan,
+            &entry.name,
+            bytes,
+            &metadata,
+        )? {
             let Some(material) = presentation.material else {
                 continue;
             };
@@ -1056,9 +1059,12 @@ fn decode_body_appearance_overrides(
         };
         let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
         let mut appearances = browser_body_appearances(ctx, bytes)?;
-        for presentation in
-            crate::design::decode::presentation::body_presentations(bytes, &metadata)?
-        {
+        for presentation in crate::design::decode::presentation::scan_body_presentations(
+            scan,
+            &entry.name,
+            bytes,
+            &metadata,
+        )? {
             if presentation.owner
                 != crate::design::decode::presentation::BodyPresentationOwner::Bare
                 || presentation.browser_node.is_none()
