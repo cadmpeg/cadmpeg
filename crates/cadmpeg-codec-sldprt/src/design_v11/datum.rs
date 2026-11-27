@@ -96,7 +96,7 @@ pub(super) fn project(
             .native_ref
             .as_deref()
             .is_some_and(|native| reading.fixed.contains(native));
-        let alias = legacy_face_alias_owner(source);
+        let alias = legacy_face_alias(source);
         let Some(element) = element(definition, fixed, alias, &reading) else {
             projected.unresolved.push(named);
             return;
@@ -198,12 +198,12 @@ fn fixed_reference_planes(
 /// offset from a reference plane or face. A plane whose plane data is `fixed`
 /// states its frame as its definition; every other element states its
 /// geometry as the cache of the references it follows, which the decoder does
-/// not read. `alias` is the owner identifier of the plane's legacy face-alias
-/// reference.
+/// not read. `alias` is the type identity and the owner identifier of the
+/// plane's legacy face-alias reference.
 fn element(
     definition: &FeatureDefinition,
     fixed: bool,
-    alias: Option<u32>,
+    alias: Option<[u32; 2]>,
     reading: &Reading,
 ) -> Option<DatumElement> {
     let FeatureDefinition::Operation(operation) = definition else {
@@ -257,8 +257,11 @@ fn element(
 
 /// The input reference of an offset plane's reference: the datum feature it
 /// names, the plane the decoder resolved for it, or the face of the legacy
-/// face alias whose owner identifier is `alias`.
-fn plane_reference(reference: &DatumPlaneReference, alias: Option<u32>) -> Option<InputReference> {
+/// face-alias reference `alias`.
+fn plane_reference(
+    reference: &DatumPlaneReference,
+    alias: Option<[u32; 2]>,
+) -> Option<InputReference> {
     Some(match reference {
         DatumPlaneReference::Feature { feature } => {
             let pick = Picked {
@@ -289,25 +292,25 @@ fn plane_reference(reference: &DatumPlaneReference, alias: Option<u32>) -> Optio
     })
 }
 
-/// The owner identifier of the legacy face alias that `source`'s record
-/// references.
-fn legacy_face_alias_owner(source: &v10::Feature) -> Option<u32> {
+/// The type identity and the owner identifier of the legacy face-alias
+/// reference that `source`'s record stores.
+fn legacy_face_alias(source: &v10::Feature) -> Option<[u32; 2]> {
     let native = source.source_properties.get("ReferenceFaceNative")?;
-    let (_, owner) = native
-        .strip_prefix(LEGACY_FACE_ALIAS_NATIVE)?
-        .rsplit_once(':')?;
-    owner.parse().ok()
+    let mut fields = native.strip_prefix(LEGACY_FACE_ALIAS_NATIVE)?.rsplit(':');
+    let owner = fields.next()?.parse().ok()?;
+    let identity = fields.next()?.parse().ok()?;
+    Some([identity, owner])
 }
 
-/// The `Native` pick of the face of a legacy face alias, named by the
-/// alias's owner identifier (`sldprt.md` §2).
-fn face_alias(owner: u32) -> Option<OrderedSelection> {
+/// The `Native` pick of a legacy face-alias reference, named by its type
+/// identity and its owner identifier (`sldprt.md` §2).
+fn face_alias(alias: [u32; 2]) -> Option<OrderedSelection> {
     let pick = Picked {
         target: PickTarget::Native { within: None },
         context: None,
         native: Some(NativeName {
             codec: cadmpeg_ir::codec_id!("sldprt"),
-            value: NativeNameValue::Integers(vec![i64::from(owner)]),
+            value: NativeNameValue::Integers(alias.map(i64::from).to_vec()),
         }),
         domain: None,
         witness: None,

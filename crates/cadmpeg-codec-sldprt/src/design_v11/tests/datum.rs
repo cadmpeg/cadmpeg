@@ -537,14 +537,19 @@ fn a_plane_or_frame_off_square_beyond_the_angular_tolerance_stays_unresolved() {
     }
 }
 
-/// `part` with `Plane2` decoded as offset by 7 mm from the face whose
-/// selection, and whose record's `ReferenceFaceNative`, is `native`.
-fn part_with_face_offset(native: &str) -> (CadIr, SldprtNative) {
+/// The decoder's key of a legacy face alias with type identity 0x4c41ac95
+/// and owner identifier 31.
+const FACE_ALIAS: &str = "sldprt:feature-input:legacy-face-alias#7:120:1279372437:31";
+
+/// `part` with `Plane2` decoded as offset by 7 mm from the face `face`, whose
+/// record's `ReferenceFaceNative` is `native`.
+fn part_with_face_offset(
+    face: cadmpeg_ir::features::selections::FaceSelection,
+    native: &str,
+) -> (CadIr, SldprtNative) {
     let (mut ir, decoded) = part();
     let definition = FeatureDefinition::Operation(V10Operation::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face {
-            face: cadmpeg_ir::features::selections::FaceSelection::Native(native.to_owned()),
-        }),
+        reference: Some(DatumPlaneReference::Face { face }),
         distance: Length::new(7.0).unwrap(),
     });
     let plane2 = ir
@@ -562,8 +567,11 @@ fn part_with_face_offset(native: &str) -> (CadIr, SldprtNative) {
 }
 
 #[test]
-fn an_offset_plane_from_a_legacy_face_alias_picks_the_face_by_the_alias_owner() {
-    let (ir, native) = part_with_face_offset("sldprt:feature-input:legacy-face-alias#7:120:31");
+fn an_offset_plane_from_a_legacy_face_alias_picks_the_alias_by_its_stored_identifiers() {
+    let (ir, native) = part_with_face_offset(
+        cadmpeg_ir::features::selections::FaceSelection::Native(FACE_ALIAS.to_owned()),
+        FACE_ALIAS,
+    );
     let (timeline, _, typed) = typed_timeline(&ir, &native);
     let DatumElement::Plane(plane) = element(&timeline, "Plane2") else {
         panic!("a plane datum");
@@ -592,7 +600,7 @@ fn an_offset_plane_from_a_legacy_face_alias_picks_the_face_by_the_alias_owner() 
     assert_eq!(native_name.codec, cadmpeg_ir::codec_id!("sldprt"));
     assert_eq!(
         native_name.value,
-        cadmpeg_ir::design::names::NativeNameValue::Integers(vec![31])
+        cadmpeg_ir::design::names::NativeNameValue::Integers(vec![0x4c41_ac95, 31])
     );
     let plane2 = &timeline_feature(&timeline, "Plane2").id;
     assert!(
@@ -607,7 +615,11 @@ fn an_offset_plane_from_a_legacy_face_alias_picks_the_face_by_the_alias_owner() 
 
 #[test]
 fn an_offset_plane_from_a_surface_component_face_stays_unresolved() {
-    let (ir, native) = part_with_face_offset("sldprt:feature-input:surface-component-ids#7:120:5");
+    let key = "sldprt:feature-input:surface-component-ids#7:120:5";
+    let (ir, native) = part_with_face_offset(
+        cadmpeg_ir::features::selections::FaceSelection::Native(key.to_owned()),
+        key,
+    );
     let (timeline, _, typed) = typed_timeline(&ir, &native);
     let plane2 = timeline_feature(&timeline, "Plane2");
     assert_eq!(
@@ -618,4 +630,26 @@ fn an_offset_plane_from_a_surface_component_face_stays_unresolved() {
     );
     let message = note(&typed, SldprtLossCode::DesignDatumUnresolved);
     assert!(message.contains(plane2.id.as_str()), "{message}");
+}
+
+#[test]
+fn an_offset_plane_picks_the_alias_its_record_stores_whatever_face_the_decoder_resolved() {
+    let (ir, native) = part_with_face_offset(
+        cadmpeg_ir::features::selections::FaceSelection::Faces(Vec::new()),
+        FACE_ALIAS,
+    );
+    let (timeline, _, _) = typed_timeline(&ir, &native);
+    let DatumElement::Plane(plane) = element(&timeline, "Plane2") else {
+        panic!("a plane datum");
+    };
+    let Some(InputReference::Picks(selection)) = &plane.inputs[0].reference else {
+        panic!("a picked reference");
+    };
+    let Picks::Named(picks) = &selection.picks else {
+        panic!("named picks");
+    };
+    assert_eq!(
+        picks.as_slice()[0].native.as_ref().unwrap().value,
+        cadmpeg_ir::design::names::NativeNameValue::Integers(vec![0x4c41_ac95, 31])
+    );
 }

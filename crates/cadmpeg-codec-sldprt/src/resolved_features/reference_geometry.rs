@@ -197,12 +197,12 @@ pub(crate) fn enrich_history_reference_planes(
                 let source = source.to_string();
                 reference_candidates.entry(index).or_default().push(source);
             }
-            if let Some((relative_offset, owner)) = legacy_offset_plane_face_alias(bytes) {
+            if let Some((relative_offset, identity, owner)) = legacy_offset_plane_face_alias(bytes)
+            {
                 let native = format!(
-                    "{LEGACY_FACE_ALIAS_NATIVE}{}:{}:{}",
+                    "{LEGACY_FACE_ALIAS_NATIVE}{}:{}:{identity}:{owner}",
                     lane.id,
                     start + relative_offset,
-                    owner,
                 );
                 face_native_candidates
                     .entry((history_index, feature_index))
@@ -2550,7 +2550,7 @@ fn offset_plane_reference_source(
     unique
 }
 
-fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
+fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32, u32)> {
     const TERMINATOR: &[u8] = b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff";
     let mut unique = None;
     let finder = memchr::memmem::Finder::new(TERMINATOR);
@@ -2583,8 +2583,9 @@ fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
             {
                 return None;
             }
+            let identity = View::u32_le_at(body, 73)?;
             let owner = View::u32_le_at(body, 91)?;
-            (owner != 0 && owner != u32::MAX).then_some((offset, owner))
+            (owner != 0 && owner != u32::MAX).then_some((offset, identity, owner))
         })();
         let Some(alias) = alias else {
             continue;
