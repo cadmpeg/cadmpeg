@@ -45,6 +45,21 @@ fn extrude(key: &str, ordinal: u64) -> LegacyFeature {
     )
 }
 
+fn stored(key: &str, ordinal: u64) -> LegacyFeature {
+    feature(key, ordinal, FeatureOperation::StoredGeometry {})
+}
+
+fn split(key: &str, ordinal: u64) -> LegacyFeature {
+    let operation = json::from_value(cadmpeg_core::json!({
+        "kind": "split_body",
+        "value": {
+            "targets": {"kind": "native", "value": "inventor:pmdc:property#target"},
+            "tool": {"kind": "faces", "value": {"kind": "native", "value": "inventor:pmdc:property#tool"}}
+        }
+    })).expect("split");
+    feature(key, ordinal, operation)
+}
+
 fn sketch(key: &str, ordinal: u64) -> LegacyFeature {
     feature(
         key,
@@ -66,8 +81,9 @@ fn body(slot: u32) -> Body {
 fn history_body(key: &str, ordinal: u32, consumed: bool, slot: u32) -> HistoryBody {
     let feature = FeatureId::mint(format!("inventor:design:feature#{key}")).expect("id");
     let mut nest = body(slot);
-    nest.id = cadmpeg_ir::ids::BodyId::mint(format!("inventor:history-body:entity#h0000-{slot}"))
-        .expect("nest body");
+    nest.id =
+        cadmpeg_ir::ids::BodyId::mint(format!("inventor:history-body:entity#h{ordinal:04}-{slot}"))
+            .expect("nest body");
     HistoryBody {
         id: HistoryBodyId::mint(format!("inventor:history-body:nest#h{ordinal:04}")).expect("nest"),
         produced_by: (!consumed).then(|| feature.clone()),
@@ -106,6 +122,34 @@ fn state(bodies: Vec<Body>) -> StateRecords {
 /// State 0 holds body slot 9 in place of the current body.
 fn states() -> BTreeMap<u32, StateRecords> {
     BTreeMap::from([(0, state(vec![body(9)]))])
+}
+
+fn joined_state(nest: &HistoryBody, bodies: Vec<Body>, slot: u32) -> StateRecords {
+    let mut state = state(bodies);
+    state.body_slots.insert(nest.id.clone(), body(slot).id);
+    state
+}
+
+fn bound_history(
+    feature: &str,
+    kind: &str,
+    after: u32,
+    body_key: Option<i64>,
+) -> FeatureHistoryState {
+    FeatureHistoryState {
+        id: format!("inventor:pmdc:feature-history-state#{feature}"),
+        feature: format!("inventor:pmdc:feature#{feature}"),
+        source_index: after,
+        kind: kind.to_owned(),
+        state_after: Some(StateRef {
+            ordinal: after,
+            state_id: 12 + i64::from(after),
+        }),
+        state_before: after.checked_sub(1),
+        body_key,
+        history_body: None,
+        binding: Binding::Bound,
+    }
 }
 
 fn project_part(ir: &mut CadIr, states: &BTreeMap<u32, StateRecords>) -> Vec<LossNote> {
@@ -162,6 +206,22 @@ fn project_over(
     states: &BTreeMap<u32, StateRecords>,
     document: Vec<UnknownRecord>,
 ) -> (Vec<LossNote>, Vec<(u32, UnknownRecord)>) {
+    project_with_evidence(
+        ir,
+        Evidence {
+            active: None,
+            features: &[],
+            states,
+        },
+        document,
+    )
+}
+
+fn project_with_evidence(
+    ir: &mut CadIr,
+    history: Evidence<'_>,
+    document: Vec<UnknownRecord>,
+) -> (Vec<LossNote>, Vec<(u32, UnknownRecord)>) {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, root) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
@@ -181,7 +241,7 @@ fn project_over(
         .attach_native_unknown_records(ir, "inventor", document, &ctx)
         .expect("document records");
     let mut retained = Vec::new();
-    super::project(&ctx, ir, states, &fidelity, &mut retained, &mut losses).expect("evaluations");
+    super::project(&ctx, ir, history, &fidelity, &mut retained, &mut losses).expect("evaluations");
     (losses, retained)
 }
 
@@ -228,7 +288,7 @@ fn ids(ordinal: u32) -> (String, String) {
 #[test]
 fn the_state_before_a_split_is_an_evaluation_that_carries_its_history_body() {
     let mut ir = part(
-        vec![extrude("a", 0), sketch("k", 1), extrude("s", 2)],
+        vec![extrude("a", 0), sketch("k", 1), split("s", 2)],
         vec![history_body("s", 0, true, 9)],
     );
     let losses = project_part(&mut ir, &states());
@@ -334,11 +394,25 @@ fn history_states(ir: &CadIr) -> Vec<String> {
 #[test]
 fn a_base_state_the_current_geometry_holds_is_the_current_state() {
     let mut ir = part(
-        vec![extrude("a", 0), extrude("base", 1)],
+        vec![extrude("a", 0), stored("base", 1)],
         vec![history_body("base", 0, false, 7)],
     );
-    let states = BTreeMap::from([(0, state(vec![body(7)]))]);
-    let losses = project_part(&mut ir, &states);
+    let states = BTreeMap::from([(
+        0,
+        joined_state(&ir.model.history_bodies[0], vec![body(7)], 7),
+    )]);
+    let (losses, _) = project_with_evidence(
+        &mut ir,
+        Evidence {
+            active: Some(StateRef {
+                ordinal: 0,
+                state_id: 12,
+            }),
+            features: &[],
+            states: &states,
+        },
+        Vec::new(),
+    );
     assert!(losses.is_empty(), "{losses:?}");
     assert!(ir.design.evaluations.is_empty());
     let native = ids(0).1;
@@ -355,7 +429,7 @@ fn a_base_state_the_current_geometry_holds_is_the_current_state() {
 /// current state holds its history body as it holds a Base's.
 #[test]
 fn a_rolled_back_split_enters_the_current_state() {
-    let mut split = extrude("s", 1);
+    let mut split = split("s", 1);
     split.suppressed = Some(true);
     split.source_properties.insert(
         cadmpeg_core::text::NonBlankString::new("end_of_part".to_owned()).expect("key"),
@@ -365,8 +439,25 @@ fn a_rolled_back_split_enters_the_current_state() {
         vec![extrude("a", 0), split],
         vec![history_body("s", 0, true, 7)],
     );
-    let states = BTreeMap::from([(0, state(vec![body(7)]))]);
-    let losses = project_part(&mut ir, &states);
+    let states = BTreeMap::from([(
+        0,
+        joined_state(&ir.model.history_bodies[0], vec![body(7)], 7),
+    )]);
+    let (losses, _) = project_with_evidence(
+        &mut ir,
+        Evidence {
+            active: Some(StateRef {
+                ordinal: 0,
+                state_id: 12,
+            }),
+            features: &[
+                bound_history("a", "extrude", 0, None),
+                bound_history("s", "split_body", 1, Some(7)),
+            ],
+            states: &states,
+        },
+        Vec::new(),
+    );
     assert!(losses.is_empty(), "{losses:?}");
     assert!(ir.design.evaluations.is_empty());
     assert_eq!(current_state_record(&ir), Some(ids(0).1.as_str()));
@@ -381,11 +472,25 @@ fn a_rolled_back_split_enters_the_current_state() {
 #[test]
 fn a_base_followed_only_by_sketches_holds_the_current_state() {
     let mut ir = part(
-        vec![extrude("a", 0), extrude("base", 1), sketch("k", 2)],
+        vec![extrude("a", 0), stored("base", 1), sketch("k", 2)],
         vec![history_body("base", 0, false, 7)],
     );
-    let states = BTreeMap::from([(0, state(vec![body(7)]))]);
-    let losses = project_part(&mut ir, &states);
+    let states = BTreeMap::from([(
+        0,
+        joined_state(&ir.model.history_bodies[0], vec![body(7)], 7),
+    )]);
+    let (losses, _) = project_with_evidence(
+        &mut ir,
+        Evidence {
+            active: Some(StateRef {
+                ordinal: 0,
+                state_id: 12,
+            }),
+            features: &[],
+            states: &states,
+        },
+        Vec::new(),
+    );
     assert!(losses.is_empty(), "{losses:?}");
     assert!(ir.design.evaluations.is_empty());
     let nest = ir.model.history_bodies[0].id.as_str();
@@ -509,12 +614,22 @@ fn unclosed(ir: &CadIr) -> Vec<String> {
 #[test]
 fn a_state_closes_through_its_undecoded_records() {
     let mut ir = part(
-        vec![extrude("a", 0), sketch("k", 1), extrude("s", 2)],
+        vec![extrude("a", 0), sketch("k", 1), split("s", 2)],
         vec![history_body("s", 0, true, 9)],
     );
     let mut state = spline_state();
     state.unknowns = vec![spline(&[1, 2, 3])];
-    let (losses, retained) = project_retaining(&mut ir, &BTreeMap::from([(0, state)]));
+    state
+        .provenance
+        .push(cadmpeg_asm::brep::annotations::AnnotationRecord {
+            id: cadmpeg_ir::ids::Identity::new("inventor:brep:spline#20").expect("id"),
+            stream: "RSeStorage/Bfixture:record:3".to_owned(),
+            offset: 0,
+            tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("spline".to_owned()),
+            derived_fields: Vec::new(),
+        });
+    let states = BTreeMap::from([(0, state)]);
+    let (losses, retained) = project_retaining(&mut ir, &states);
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(ir.design.evaluations.len(), 1);
     assert_eq!(retained, vec![(0, spline(&[1, 2, 3]))]);
@@ -525,14 +640,15 @@ fn a_state_closes_through_its_undecoded_records() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, root) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    cadmpeg_ir::SourceFidelity::for_root(root)
-        .attach_native_unknown_records(
-            &mut ir,
-            "inventor",
-            retained.into_iter().map(|(_, record)| record).collect(),
-            &ctx,
-        )
+    let mut fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
+    crate::decode::retain_history_unknowns(&ctx, &mut ir, &mut fidelity, &states, retained)
         .expect("retain");
+    let record = fidelity
+        .retained_record("inventor:brep:spline#20")
+        .expect("record");
+    assert_eq!(record.data(), Some([1, 2, 3].as_slice()));
+    assert_eq!(record.stream(), "inventor:RSeStorage/Bfixture:record:3");
+    assert_eq!(record.offset(), 0);
     assert!(unclosed(&ir).is_empty(), "{:?}", unclosed(&ir));
 }
 
@@ -578,7 +694,7 @@ fn an_undecoded_record_that_a_later_state_holds_with_other_bytes_is_charged() {
 #[test]
 fn a_state_record_that_differs_from_the_document_record_of_its_id_is_charged() {
     let mut ir = part(
-        vec![extrude("a", 0), sketch("k", 1), extrude("s", 2)],
+        vec![extrude("a", 0), sketch("k", 1), split("s", 2)],
         vec![history_body("s", 0, true, 9)],
     );
     let mut state = spline_state();
@@ -608,7 +724,7 @@ fn a_state_record_that_differs_from_the_document_record_of_its_id_is_charged() {
 #[test]
 fn a_state_record_equal_to_the_document_record_of_its_id_is_shared() {
     let mut ir = part(
-        vec![extrude("a", 0), sketch("k", 1), extrude("s", 2)],
+        vec![extrude("a", 0), sketch("k", 1), split("s", 2)],
         vec![history_body("s", 0, true, 9)],
     );
     let mut state = spline_state();
@@ -630,7 +746,7 @@ fn a_state_record_equal_to_the_document_record_of_its_id_is_shared() {
 #[test]
 fn a_state_that_names_a_record_it_does_not_hold_is_charged() {
     let mut ir = part(
-        vec![extrude("a", 0), sketch("k", 1), extrude("s", 2)],
+        vec![extrude("a", 0), sketch("k", 1), split("s", 2)],
         vec![history_body("s", 0, true, 9)],
     );
     let states = BTreeMap::from([(0, spline_state())]);
@@ -651,13 +767,15 @@ fn a_state_that_names_a_record_it_does_not_hold_is_charged() {
 /// on the current state.
 #[test]
 fn earlier_states_are_based_on_later_ones() {
-    let mut states = states();
-    states.insert(1, state(vec![body(9), body(11)]));
-    let mut later = history_body("b", 1, false, 11);
-    later.id = HistoryBodyId::mint("inventor:history-body:nest#h0001").expect("nest");
+    let first = history_body("a", 0, false, 9);
+    let later = history_body("b", 1, false, 11);
+    let states = BTreeMap::from([
+        (0, joined_state(&first, vec![body(9)], 9)),
+        (1, joined_state(&later, vec![body(9), body(11)], 11)),
+    ]);
     let mut ir = part(
-        vec![extrude("a", 0), extrude("b", 1), extrude("c", 2)],
-        vec![history_body("a", 0, false, 9), later],
+        vec![stored("a", 0), stored("b", 1), extrude("c", 2)],
+        vec![first, later],
     );
     let losses = project_part(&mut ir, &states);
     assert!(losses.is_empty(), "{losses:?}");
@@ -713,4 +831,118 @@ fn two_evaluations_of_one_history_state_take_distinct_ids() {
             (format!("{id}-1"), Some(native)),
         ]
     );
+}
+
+#[test]
+fn a_consumed_base_names_its_result_in_the_earlier_two_body_state() {
+    let base = history_body("base", 4, false, 7);
+    let states = BTreeMap::from([(4, joined_state(&base, vec![body(7), body(8)], 7))]);
+    let mut ir = part(vec![stored("base", 0), split("s", 1)], vec![base]);
+    ir.geometry.bodies = vec![body(8)];
+    ir.model.product_definitions[0].bodies = vec![body(8).id];
+
+    assert!(project_part(&mut ir, &states).is_empty());
+    let (omitted, read) = write(&ir);
+    assert_stated(&omitted, ir.model.history_bodies[0].id.as_str());
+    let operation = &read.design.features[0].definition.operation;
+    assert!(matches!(operation,
+        cadmpeg_ir::design::feature::FeatureOperation::Stored { bodies: Some(bodies), .. }
+            if bodies == &[body(7).id]));
+    let evaluation = &read.design.evaluations[0];
+    let resolved = read
+        .resolved_evaluation_state(&evaluation.id, &DecodePolicy::service().limits)
+        .expect("state resolves");
+    assert_eq!(resolved.records().bodies, vec![body(7), body(8)]);
+    assert!(validate_operations_findings(&ir).is_empty());
+}
+
+#[test]
+fn an_unlinked_result_only_restates_the_state() {
+    let base = history_body("base", 4, false, 7);
+    let states = BTreeMap::from([(4, state(vec![body(7), body(8)]))]);
+    let mut ir = part(vec![stored("base", 0), split("s", 1)], vec![base]);
+    assert!(project_part(&mut ir, &states).is_empty());
+    let nest = &ir.model.history_bodies[0];
+    let cut = ir
+        .model
+        .restated()
+        .get(nest.id.as_str())
+        .expect("evaluation states the topology")
+        .cut_by(|_| true)
+        .expect("one restater");
+    assert_eq!(cut.into_iter().collect::<Vec<_>>(), ["produced_by"]);
+}
+
+#[test]
+fn the_active_body_state_ref_survives_an_omitted_legacy_nest() {
+    let cap = crate::feature::history_bodies::MAX_HISTORY_BODIES;
+    let mut features = (0..=cap)
+        .map(|ordinal| {
+            stored(
+                &format!("base{ordinal}"),
+                u64::try_from(ordinal).expect("ordinal"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let final_base = features.last_mut().expect("final Base");
+    final_base
+        .evaluation
+        .set_outputs([body(7).id].into_iter().collect());
+    let mut ir = part(features, Vec::new());
+    let (losses, _) = project_with_evidence(
+        &mut ir,
+        Evidence {
+            active: Some(StateRef {
+                ordinal: u32::try_from(cap + 1).expect("ordinal"),
+                state_id: 33,
+            }),
+            features: &[],
+            states: &BTreeMap::new(),
+        },
+        Vec::new(),
+    );
+    assert!(losses.is_empty());
+    let (_, read) = write(&ir);
+    assert_eq!(
+        current_state_record(&read),
+        Some(ids(u32::try_from(cap + 1).expect("ordinal")).1.as_str())
+    );
+    let native = read.native.namespace("inventor").expect("namespace");
+    let records = native
+        .arenas()
+        .iter()
+        .find(|(name, _)| name.as_str() == HISTORY_STATES)
+        .expect("state arena");
+    let [record] = records.1.as_slice() else {
+        panic!("one state");
+    };
+    assert_eq!(
+        record.fields().expect("record fields")["identifier"],
+        cadmpeg_core::json!(33)
+    );
+    assert!(read.design.evaluations.is_empty());
+}
+
+#[test]
+fn a_split_cannot_enter_a_state_older_than_its_predecessors_bound_result() {
+    let mut ir = part(
+        vec![extrude("a", 0), sketch("k", 1), split("s", 2)],
+        vec![history_body("s", 0, true, 9)],
+    );
+    let (losses, _) = project_with_evidence(
+        &mut ir,
+        Evidence {
+            active: None,
+            features: &[
+                bound_history("a", "extrude", 1, None),
+                bound_history("s", "split_body", 1, Some(9)),
+            ],
+            states: &states(),
+        },
+        Vec::new(),
+    );
+    assert!(ir.design.evaluations.is_empty());
+    assert!(losses.iter().any(|loss| loss
+        .message
+        .contains("ordinal conflicts with its timeline boundary")));
 }

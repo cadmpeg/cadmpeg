@@ -263,6 +263,19 @@ pub(crate) enum Framing {
     Framed(FramedChain),
 }
 
+impl Read<'_> {
+    pub(crate) fn active_state(&self) -> Option<StateRef> {
+        let Self::Closed(closed) = self else {
+            return None;
+        };
+        let states = &closed.index.states;
+        Some(StateRef {
+            ordinal: u32::try_from(states.len().checked_sub(1)?).ok()?,
+            state_id: states.last()?.state_id,
+        })
+    }
+}
+
 /// Frame the `delta_state` chain of `bytes` as a stream of the given reference width.
 pub(crate) fn frame_chain(
     ctx: &DecodeContext<'_>,
@@ -889,6 +902,10 @@ fn body_given_up(
         Unbuilt::Undecoded => (
             InventorLossCode::FeatureHistoryBodyUndecoded,
             "the history state of the body did not materialize or decode",
+        ),
+        Unbuilt::Ambiguous => (
+            InventorLossCode::FeatureHistoryBodyUndecoded,
+            "more than one body of the state has the feature's body key",
         ),
         Unbuilt::Unsolved => (
             InventorLossCode::FeatureHistoryBodyUndecoded,

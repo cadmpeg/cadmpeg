@@ -227,6 +227,7 @@ pub(crate) fn validate_operations(
             current.native_ref.clone_from(&decoded.native_ref);
         }
     }
+    evaluations::restate_stored_links(ir, &mut expected);
     if ir.design == expected.design {
         return Ok(Vec::new());
     }

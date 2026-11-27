@@ -19,6 +19,7 @@ use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::evaluation::{
     Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
 };
+use cadmpeg_ir::design::feature::{Feature as DesignFeature, FeatureOperation};
 use cadmpeg_ir::design::ids::{ContainerId, EvaluationId};
 use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
@@ -31,6 +32,7 @@ use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 use serde::Serialize;
 
 use crate::feature::history_bodies::StateRecords;
+use crate::feature::history_states::{Binding, FeatureHistoryState, StateRef};
 use crate::loss::InventorLossCode;
 
 /// The native arena of the history states that evaluations and the
@@ -74,10 +76,15 @@ struct Planned<'a> {
     ordinal: u32,
     state: &'a StateRecords,
     identifier: i64,
-    bodies: Vec<HistoryBodyId>,
+    bodies: Vec<&'a HistoryBody>,
 }
 
-type Why = Cow<'static, str>;
+#[derive(Clone, Copy)]
+pub(crate) struct Evidence<'a> {
+    pub(crate) active: Option<StateRef>,
+    pub(crate) features: &'a [FeatureHistoryState],
+    pub(crate) states: &'a BTreeMap<u32, StateRecords>,
+}
 
 /// State each decoded history state that holds a history body as the
 /// evaluation of its timeline position, state the history state at the
@@ -95,21 +102,26 @@ type Why = Cow<'static, str>;
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    states: &BTreeMap<u32, StateRecords>,
+    history: Evidence<'_>,
     fidelity: &SourceFidelity,
     retained: &mut Vec<(u32, UnknownRecord)>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if ir.model.history_bodies.is_empty() {
+    let Evidence {
+        active,
+        features,
+        states,
+    } = history;
+    if ir.model.history_bodies.is_empty() && active.is_none() {
         return Ok(());
     }
-    let mut unplaced: Vec<(&HistoryBody, Why)> = Vec::new();
+    let mut unplaced: Vec<(&HistoryBody, Cow<'static, str>)> = Vec::new();
     let Some(Timeline {
         scope,
         at,
         id: container,
         members,
-        mut records,
+        records: current_records,
     }) = timeline(ir)
     else {
         for body in &ir.model.history_bodies {
@@ -122,7 +134,7 @@ pub(crate) fn project(
     let mut planned = BTreeMap::<Option<usize>, Planned<'_>>::new();
     let mut held = Vec::new();
     for body in &ir.model.history_bodies {
-        let placed = match place(ir, &container, &members, body) {
+        let placed = match place(ir, &container, &members, body, features) {
             Ok(placed) => placed,
             Err(why) => {
                 unplaced.push((body, why.into()));
@@ -133,6 +145,15 @@ pub(crate) fn project(
             unplaced.push((body, "the state is not decoded".into()));
             continue;
         };
+        if active.is_some_and(|active| {
+            active.ordinal == placed.ordinal && active.state_id != body.state.identifier
+        }) {
+            unplaced.push((
+                body,
+                "its identifier conflicts with the active state".into(),
+            ));
+            continue;
+        }
         if placed.index > current {
             unplaced.push((body, "the state is after the rollback position".into()));
             continue;
@@ -148,13 +169,13 @@ pub(crate) fn project(
             identifier: body.state.identifier,
             bodies: Vec::new(),
         });
-        if entry.ordinal == placed.ordinal {
-            entry.bodies.push(body.id.clone());
+        if entry.ordinal == placed.ordinal && entry.identifier == body.state.identifier {
+            entry.bodies.push(body);
         } else {
             unplaced.push((body, "another history state holds the position".into()));
         }
     }
-    if planned.is_empty() && held.is_empty() {
+    if planned.is_empty() && held.is_empty() && active.is_none() {
         charge(&unplaced, losses);
         return Ok(());
     }
@@ -165,10 +186,12 @@ pub(crate) fn project(
         .flat_map(|state| state.unknowns.iter().map(|record| record.id().as_str()))
         .collect::<BTreeSet<_>>();
     let mut document = BTreeMap::<String, Option<&[u8]>>::new();
-    for record in ir.native_unknowns_iter("inventor") {
-        let record = record.map_err(|error| CodecError::malformed(error.to_string()))?;
-        if wanted.contains(record.id.as_str()) {
-            document.insert(record.id.as_str().to_owned(), None);
+    if !wanted.is_empty() {
+        for record in ir.native_unknowns_iter("inventor") {
+            let record = record.map_err(|error| CodecError::malformed(error.to_string()))?;
+            if wanted.contains(record.id.as_str()) {
+                document.insert(record.id.as_str().to_owned(), None);
+            }
         }
     }
     for id in wanted {
@@ -176,39 +199,44 @@ pub(crate) fn project(
             document.insert(id.to_owned(), record.data());
         }
     }
-    let mut restated: Vec<(HistoryBodyId, String, Vec<&'static str>)> = Vec::new();
+    let mut restated = Vec::new();
     let mut native = BTreeMap::<u32, HistoryState>::new();
-    let mut current_state = None::<HistoryState>;
+    if let Some(active) = active {
+        native.insert(
+            active.ordinal,
+            HistoryState::new(active.ordinal, active.state_id),
+        );
+    }
     let mut unknowns = Vec::new();
     for (body, feature, state) in held {
-        if StateDelta::between(&records, &state.geometry) != StateDelta::default() {
+        if current_records != state.geometry
+            && StateDelta::between(&current_records, &state.geometry) != StateDelta::default()
+        {
             unplaced.push((body, "the state differs from the current geometry".into()));
             continue;
         }
-        if ir
+        let Ok(feature_index) = ir
             .design
             .features
             .binary_search_by(|item| item.id.cmp(feature))
-            .is_err()
-        {
+        else {
             unplaced.push((body, "the feature has no design record".into()));
             continue;
-        }
+        };
         let ordinal = body.state.ordinal;
         if let Some(why) = close_state(ctx, ir, (ordinal, state), &mut document, &mut unknowns)? {
             unplaced.push((body, why));
             continue;
         }
-        restated.push((body.id.clone(), feature.as_str().to_owned(), vec!["state"]));
-        let record =
-            current_state.get_or_insert_with(|| HistoryState::new(ordinal, body.state.identifier));
-        if record.ordinal == ordinal {
-            restated.push((
-                body.id.clone(),
-                scope.as_str().to_owned(),
-                all_but_state(body),
-            ));
-        }
+        let same_state = active.is_some_and(|record| record.ordinal == ordinal);
+        restate_body(
+            &mut restated,
+            body,
+            state,
+            scope.as_str(),
+            same_state,
+            Some(&mut ir.design.features[feature_index]),
+        );
     }
     let mut open = Vec::new();
     for (index, plan) in planned.iter().rev() {
@@ -224,16 +252,11 @@ pub(crate) fn project(
     }
     for (index, why) in open {
         if let Some(plan) = planned.remove(&index) {
-            unplaced.extend(
-                ir.model
-                    .history_bodies
-                    .iter()
-                    .filter(|body| plan.bodies.contains(&body.id))
-                    .map(|body| (body, why.clone())),
-            );
+            unplaced.extend(plan.bodies.into_iter().map(|body| (body, why.clone())));
         }
     }
     charge(&unplaced, losses);
+    let mut records = &current_records;
     let mut base = StateBase::Current(at.clone());
     let mut evaluations = Vec::with_capacity(planned.len());
     let mut minted = BTreeMap::<u32, usize>::new();
@@ -245,7 +268,7 @@ pub(crate) fn project(
         bodies,
     } in planned.into_values().rev()
     {
-        let delta = StateDelta::between(&records, &state.geometry);
+        let delta = StateDelta::between(records, &state.geometry);
         ctx.charge_entities(1, "state an Inventor history state")?;
         let repeat = minted.entry(ordinal).or_default();
         let id = match *repeat {
@@ -259,11 +282,18 @@ pub(crate) fn project(
             .or_insert_with(|| HistoryState::new(ordinal, identifier))
             .id
             .clone();
-        restated.extend(
-            bodies
-                .into_iter()
-                .map(|body| (body, id.as_str().to_owned(), Vec::new())),
-        );
+        for body in bodies {
+            let feature = body.produced_by.as_ref().or(body.consumed_by.as_ref());
+            let feature = feature
+                .and_then(|feature| {
+                    ir.design
+                        .features
+                        .binary_search_by(|item| item.id.cmp(feature))
+                        .ok()
+                })
+                .map(|index| &mut ir.design.features[index]);
+            restate_body(&mut restated, body, state, id.as_str(), true, feature);
+        }
         evaluations.push(Evaluation {
             id: id.clone(),
             scope: scope.clone(),
@@ -274,9 +304,9 @@ pub(crate) fn project(
             native_ref: Some(native_ref),
         });
         base = StateBase::Evaluation(id);
-        records.clone_from(&state.geometry);
+        records = &state.geometry;
     }
-    if let Some(record) = current_state {
+    if let Some(record) = active.and_then(|active| native.get(&active.ordinal)) {
         if let Some(current) = ir
             .design
             .scopes
@@ -285,7 +315,6 @@ pub(crate) fn project(
         {
             current.native_ref = Some(record.id.clone());
         }
-        native.entry(record.ordinal).or_insert(record);
     }
     if !native.is_empty() {
         let native = native.into_values().collect::<Vec<_>>();
@@ -295,10 +324,10 @@ pub(crate) fn project(
     }
     ir.design.evaluations.extend(evaluations);
     ir.design.evaluations.sort_by(|a, b| a.id.cmp(&b.id));
-    for (body, by, cut) in restated {
+    for Restatement { nest, by, cut } in restated {
         ir.model
             .restated_mut()
-            .record(body.as_str(), Restater::Record(by), cut);
+            .record(nest.as_str(), Restater::Record(by), cut);
     }
     retained.extend(unknowns);
     Ok(())
@@ -312,7 +341,7 @@ fn close_state<'a>(
     (ordinal, state): (u32, &'a StateRecords),
     document: &mut BTreeMap<String, Option<&'a [u8]>>,
     retained: &mut Vec<(u32, UnknownRecord)>,
-) -> Result<Option<Why>, CodecError> {
+) -> Result<Option<Cow<'static, str>>, CodecError> {
     let own = state
         .unknowns
         .iter()
@@ -354,20 +383,147 @@ fn close_state<'a>(
     Ok(None)
 }
 
-/// The wire keys of the fields of `body` other than its state, which a
-/// current state restates only through its native record.
-fn all_but_state(body: &HistoryBody) -> Vec<&'static str> {
-    let mut keys = vec!["id", "topology"];
-    for (key, held) in [
+struct Restatement {
+    nest: HistoryBodyId,
+    by: String,
+    cut: Vec<&'static str>,
+}
+
+fn restate_body(
+    restated: &mut Vec<Restatement>,
+    body: &HistoryBody,
+    state: &StateRecords,
+    state_writer: &str,
+    writes_state_id: bool,
+    feature: Option<&mut DesignFeature>,
+) {
+    let association = body
+        .produced_by
+        .as_ref()
+        .map_or("consumed_by", |_| "produced_by");
+    let mut cut = vec![association];
+    if !writes_state_id {
+        cut.push("state");
+    }
+    if body.state_of.is_some() {
+        cut.push("state_of");
+    }
+    restated.push(Restatement {
+        nest: body.id.clone(),
+        by: state_writer.to_owned(),
+        cut,
+    });
+    if let Some(feature) = feature {
+        if associates(body, state, feature, writes_state_id) {
+            restated.push(Restatement {
+                nest: body.id.clone(),
+                by: feature.id.as_str().to_owned(),
+                cut: body_fields(body)
+                    .filter(|&field| field != association)
+                    .collect(),
+            });
+        }
+    }
+}
+
+fn associates(
+    body: &HistoryBody,
+    state: &StateRecords,
+    feature: &mut DesignFeature,
+    can_write_slot: bool,
+) -> bool {
+    if body.produced_by.is_none() {
+        return matches!(feature.definition.operation, FeatureOperation::Split(_));
+    }
+    let FeatureOperation::Stored { bodies, .. } = &mut feature.definition.operation else {
+        return false;
+    };
+    let Some(slot) = state
+        .body_slots
+        .get(&body.id)
+        .filter(|slot| state.geometry.bodies.iter().any(|body| &body.id == *slot))
+    else {
+        return false;
+    };
+    if can_write_slot {
+        *bodies = Some(vec![slot.clone()]);
+    }
+    bodies.as_deref() == Some(std::slice::from_ref(slot))
+}
+
+/// Reapply the stored-body links backed by admitted states when validating the
+/// operation projection against the legacy arenas.
+pub(super) fn restate_stored_links(ir: &CadIr, expected: &mut CadIr) {
+    let current = ir
+        .design
+        .scopes
+        .first()
+        .and_then(|scope| scope.current.first());
+    let current_member = current.and_then(|current| {
+        let Container::Ordered { members, .. } = super::timeline_of(ir, &current.at)? else {
+            return None;
+        };
+        state_index(ir, members, &current.at).map(|index| &members[index])
+    });
+    for body in &ir.model.history_bodies {
+        let Some(feature) = &body.produced_by else {
+            continue;
+        };
+        let member = Member::Feature(feature.clone());
+        let by_feature = Restater::Record(feature.as_str().to_owned());
+        if !ir
+            .model
+            .restated()
+            .get(body.id.as_str())
+            .is_some_and(|entry| {
+                entry
+                    .restaters()
+                    .any(|(by, cut)| *by == by_feature && !cut.contains("produced_by"))
+            })
+        {
+            continue;
+        }
+        let state_id = HistoryState::new(body.state.ordinal, body.state.identifier).id;
+        let is_named = |native: Option<&str>| native == Some(state_id.as_str());
+        let stated = current_member == Some(&member)
+            && current.is_some_and(|current| is_named(current.native_ref.as_deref()))
+            || ir.design.evaluations.iter().any(|evaluation| {
+                is_named(evaluation.native_ref.as_deref())
+                    && evaluation.of == Evaluated::State(Position::After(member.clone()))
+                    && evaluation.content.is_some()
+            });
+        if !stated {
+            continue;
+        }
+        let Ok(index) = expected
+            .design
+            .features
+            .binary_search_by(|item| item.id.cmp(feature))
+        else {
+            continue;
+        };
+        let FeatureOperation::Stored { bodies, .. } =
+            &mut expected.design.features[index].definition.operation
+        else {
+            continue;
+        };
+        if let Some(slot) = crate::feature::history_bodies::original_body_slot(body) {
+            *bodies = Some(vec![slot]);
+        }
+    }
+}
+
+fn body_fields(body: &HistoryBody) -> impl Iterator<Item = &'static str> {
+    [
+        ("id", true),
+        ("topology", true),
+        ("state", true),
         ("produced_by", body.produced_by.is_some()),
         ("consumed_by", body.consumed_by.is_some()),
         ("state_of", body.state_of.is_some()),
-    ] {
-        if held {
-            keys.push(key);
-        }
-    }
-    keys
+    ]
+    .into_iter()
+    .filter_map(|(key, held)| held.then_some(key))
 }
 
 /// The ordered container that holds the current state of the part scope.
@@ -423,6 +579,7 @@ fn place<'a>(
     timeline: &ContainerId,
     members: &[Member],
     body: &'a HistoryBody,
+    bindings: &[FeatureHistoryState],
 ) -> Result<Placed<'a>, &'static str> {
     let (feature, entering) = match (&body.produced_by, &body.consumed_by) {
         (Some(feature), None) => (feature, false),
@@ -449,6 +606,30 @@ fn place<'a>(
     let earlier = members[..index]
         .iter()
         .rposition(|member| has_state(ir, member));
+    let bound = |member: &Member| {
+        let Member::Feature(id) = member else {
+            return None;
+        };
+        let feature = ir
+            .design
+            .features
+            .binary_search_by(|item| item.id.cmp(id))
+            .ok()?;
+        let native = ir.design.features[feature].native_ref.as_deref()?;
+        let mut rows = bindings
+            .iter()
+            .filter(|row| row.feature == native && row.binding == Binding::Bound);
+        let row = rows.next()?;
+        rows.next().is_none().then_some(row)
+    };
+    if bound(&member).is_some_and(|row| row.state_before != Some(ordinal))
+        || earlier
+            .and_then(|at| bound(&members[at]))
+            .and_then(|row| row.state_after)
+            .is_some_and(|after| after.ordinal > ordinal)
+    {
+        return Err("the Split input ordinal conflicts with its timeline boundary");
+    }
     Ok(match earlier {
         Some(at) => Placed {
             feature,
@@ -474,7 +655,7 @@ fn has_state(ir: &CadIr, member: &Member) -> bool {
     matches!(member, Member::Feature(feature) if !stateless(ir, feature))
 }
 
-fn charge(unplaced: &[(&HistoryBody, Why)], losses: &mut Vec<LossNote>) {
+fn charge(unplaced: &[(&HistoryBody, Cow<'static, str>)], losses: &mut Vec<LossNote>) {
     for (body, why) in unplaced {
         let feature = body
             .produced_by

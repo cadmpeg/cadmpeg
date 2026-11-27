@@ -671,6 +671,7 @@ fn decode_container<'a>(
     let mut carrier_given_up = false;
     let mut history_chain = None;
     let mut decoded_states = std::collections::BTreeMap::new();
+    let mut feature_history_states = Vec::new();
     let mut state_unknowns = Vec::new();
     let mut empty_kernel_stream = false;
     let mut kernel_withheld = Vec::new();
@@ -730,6 +731,7 @@ fn decode_container<'a>(
         }
         ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => None,
     };
+    let active_geometry = kernel_brep.is_some();
     let kernel_brep = kernel_brep.unwrap_or_else(AsmBrep::default);
     let body_keys = kernel_brep.body_native_keys.clone();
     let face_keys = kernel_brep
@@ -929,6 +931,7 @@ fn decode_container<'a>(
                         CodecError::malformed(format_args!("{}: {why}", code.kind())),
                     ));
                 }
+                feature_history_states = history.records;
                 ir.model.history_bodies = history.bodies.bodies;
                 decoded_states = history.bodies.states;
                 crate::feature::body_selection::name_states(
@@ -1891,10 +1894,6 @@ fn decode_container<'a>(
             )),
         ),
         (
-            crate::coverage::KERNEL_UNKNOWN_RECORDS,
-            kernel_unknown_record_count,
-        ),
-        (
             crate::coverage::KERNEL_UNKNOWN_SURFACE_FACES,
             kernel_stats.unknown_surface_faces(),
         ),
@@ -1909,7 +1908,7 @@ fn decode_container<'a>(
             feature_inventory.sheet_metal_flanges.len(),
         ),
     ];
-    let coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
+    let mut coverage: cadmpeg_ir::report::decode::Coverage = coverage_entries
         .into_iter()
         .chain(
             sheet_metal_coverage
@@ -1946,42 +1945,33 @@ fn decode_container<'a>(
             crate::design_v11::evaluations::project(
                 ctx,
                 ir,
-                &decoded_states,
+                crate::design_v11::evaluations::Evidence {
+                    active: if active_geometry {
+                        history_read.active_state()
+                    } else {
+                        None
+                    },
+                    features: &feature_history_states,
+                    states: &decoded_states,
+                },
                 &source_fidelity,
                 &mut state_unknowns,
                 losses,
             )
         })?;
     }
-    if !state_unknowns.is_empty() {
-        let mut provenance = AnnotationBuilder::new();
-        for (ordinal, record) in &state_unknowns {
-            let located = decoded_states
-                .get(ordinal)
-                .into_iter()
-                .flat_map(|state| &state.provenance)
-                .filter(|located| located.id.as_str() == record.id().as_str());
-            for located in located {
-                let stream = cadmpeg_ir::StreamName::try_from(located.stream.clone())
-                    .map_err(CodecError::malformed)?;
-                provenance.note(
-                    &located.id,
-                    &StreamHandle::new(stream),
-                    located.offset,
-                    Some(located.tag.as_str()),
-                );
-            }
-        }
-        source_fidelity
-            .annotations
-            .provenance
-            .extend(provenance.build().provenance);
-        let records = state_unknowns
-            .into_iter()
-            .map(|(_, record)| record)
-            .collect();
-        retain_kernel_unknowns(ctx, &mut ir, &mut source_fidelity, records)?;
-    }
+    let state_unknown_record_count = state_unknowns.len();
+    retain_history_unknowns(
+        ctx,
+        &mut ir,
+        &mut source_fidelity,
+        &decoded_states,
+        state_unknowns,
+    )?;
+    coverage.record(
+        crate::coverage::KERNEL_UNKNOWN_RECORDS,
+        kernel_unknown_record_count + state_unknown_record_count,
+    );
     let mut body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
@@ -2445,6 +2435,39 @@ fn retain_kernel_unknowns(
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
     }
+    Ok(())
+}
+
+pub(crate) fn retain_history_unknowns(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    source_fidelity: &mut SourceFidelity,
+    decoded_states: &BTreeMap<u32, crate::feature::history_bodies::StateRecords>,
+    state_unknowns: Vec<(u32, UnknownRecord)>,
+) -> Result<(), CodecError> {
+    if state_unknowns.is_empty() {
+        return Ok(());
+    }
+    let mut provenance = AnnotationBuilder::new();
+    for (ordinal, record) in &state_unknowns {
+        let located = decoded_states
+            .get(ordinal)
+            .into_iter()
+            .flat_map(|state| &state.provenance)
+            .filter(|located| located.id.as_str() == record.id().as_str());
+        for located in located {
+            admit_kernel_annotation(&mut provenance, located)?;
+        }
+    }
+    source_fidelity
+        .annotations
+        .provenance
+        .extend(provenance.build().provenance);
+    let records = state_unknowns
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect();
+    retain_kernel_unknowns(ctx, ir, source_fidelity, records)?;
     Ok(())
 }
 

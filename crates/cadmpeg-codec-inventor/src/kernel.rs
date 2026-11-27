@@ -59,6 +59,13 @@ pub(crate) struct ActiveCarrier<'a> {
 }
 
 impl ActiveCarrier<'_> {
+    pub(crate) fn record_stream(&self) -> String {
+        format!(
+            "RSeStorage/B{}:record:{}",
+            self.segment_token, self.record_ordinal
+        )
+    }
+
     /// The offset in the expanded bulk stream of the carrier byte at
     /// `within`.
     pub(crate) fn stream_offset(&self, within: usize) -> Result<u64, CodecError> {
@@ -149,10 +156,7 @@ pub(crate) fn decode_kernel_carrier(
             ))
         })
     })?;
-    let stream = format!(
-        "RSeStorage/B{}:record:{}",
-        carrier.segment_token, carrier.record_ordinal
-    );
+    let stream = carrier.record_stream();
     let mut brep = decode_with_header(
         ctx,
         &records,

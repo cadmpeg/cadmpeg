@@ -151,7 +151,7 @@ impl<'c, 'a> StateViews<'c, 'a> {
                 header,
                 archive,
                 &versions,
-                ordinal,
+                &self.carrier.record_stream(),
             )? {
                 Some(scratch) => StateModel::Model(Box::new(scratch.model)),
                 None => StateModel::Failed,
@@ -172,8 +172,8 @@ pub(crate) struct Scratch {
     pub(crate) provenance: Vec<AnnotationRecord>,
 }
 
-/// Materialize the records of the state at `ordinal` from its `versions` and
-/// transfer them into a scratch model. `None` when the state does not
+/// Materialize the records of a state from its `versions` and transfer them
+/// into a scratch model. `None` when the state does not
 /// materialize, decode or transfer. Only a resource limit is an error.
 pub(crate) fn decode_scratch(
     ctx: &DecodeContext<'_>,
@@ -181,18 +181,17 @@ pub(crate) fn decode_scratch(
     header: &BinaryHeader,
     archive: &HashMap<i64, Record>,
     versions: &BTreeMap<i64, i64>,
-    ordinal: u32,
+    stream: &str,
 ) -> Result<Option<Scratch>, CodecError> {
     let Some(table) = materialize_record_table(versions, |revision| archive.get(&revision)) else {
         return Ok(None);
     };
-    let stream = format!("inventor:history:{ordinal}");
     let brep = match decode_with_header(
         ctx,
         &table,
         bytes,
         Some(&header.metadata),
-        &stream,
+        stream,
         cadmpeg_asm::asm_format!("inventor"),
         DecodePurpose::Inspect,
     ) {

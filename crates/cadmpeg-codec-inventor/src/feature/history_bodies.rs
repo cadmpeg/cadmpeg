@@ -19,7 +19,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::history_body::{BodyTopology, HistoryBody, HistoryStateRef};
-use cadmpeg_ir::ids::HistoryBodyId;
+use cadmpeg_ir::ids::{BodyId, HistoryBodyId};
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier};
@@ -85,6 +85,8 @@ pub(crate) struct Outcome {
 #[derive(Debug, Default)]
 pub(crate) struct StateRecords {
     pub(crate) geometry: Topology,
+    /// Original body slots of the nests admitted from this state.
+    pub(crate) body_slots: BTreeMap<HistoryBodyId, BodyId>,
     /// The records that the transfer keeps undecoded.
     pub(crate) unknowns: Vec<UnknownRecord>,
     /// The source location of each record of `unknowns`.
@@ -115,6 +117,8 @@ pub(crate) enum Unbuilt {
     Undecoded,
     /// A carrier of the body has no solved form.
     Unsolved,
+    /// The state has more than one body with the key.
+    Ambiguous,
     /// The body is not a closed manifold solid.
     NotClosed(Open),
     /// The feature of the body is not a projected feature.
@@ -137,6 +141,8 @@ enum Extract {
     Absent,
     /// A carrier of the body has no solved form.
     Unsolved,
+    /// The state has more than one body with the key.
+    Ambiguous,
     /// The body is not a closed manifold solid.
     NotClosed(Open),
 }
@@ -258,6 +264,7 @@ pub(crate) fn build(
     let mut failure = None;
     let mut bounded = HashSet::<usize>::new();
     let mut visited = 0_usize;
+    let stream = carrier.record_stream();
     walk_entity_versions(views, *active_count, archived_ids, |slot, versions| {
         let visit = visited;
         visited += 1;
@@ -286,7 +293,7 @@ pub(crate) fn build(
             model: scratch,
             unknowns,
             provenance,
-        } = match decode_scratch(ctx, bytes, header, archive, versions, ordinal) {
+        } = match decode_scratch(ctx, bytes, header, archive, versions, &stream) {
             Ok(Some(scratch)) => scratch,
             Ok(None) => return,
             Err(error) => {
@@ -296,13 +303,11 @@ pub(crate) fn build(
         };
         for &index in indices {
             let key = u64::try_from(wants[index].key).ok();
-            let body = keys
-                .iter()
-                .find(|(_, candidate)| Some(*candidate) == key)
-                .map(|(body, _)| body.as_str());
-            let result = match body {
-                Some(body) => extract(ctx, &scratch.geometry, body),
-                None => Ok(Extract::Absent),
+            let mut slots = keys.iter().filter(|(_, candidate)| Some(*candidate) == key);
+            let result = match (slots.next(), slots.next()) {
+                (Some((body, _)), None) => extract(ctx, &scratch.geometry, body),
+                (Some(_), Some(_)) => Ok(Extract::Ambiguous),
+                _ => Ok(Extract::Absent),
             };
             match result {
                 Ok(result) => {
@@ -323,6 +328,7 @@ pub(crate) fn build(
                 ordinal,
                 StateRecords {
                     geometry: scratch.geometry,
+                    body_slots: BTreeMap::new(),
                     unknowns,
                     provenance,
                 },
@@ -348,6 +354,10 @@ pub(crate) fn build(
                 built.outcome.undecoded += 1;
                 built.give_up(want, Unbuilt::Undecoded)?;
             }
+            Some(Extract::Ambiguous) => {
+                built.outcome.undecoded += 1;
+                built.give_up(want, Unbuilt::Ambiguous)?;
+            }
             Some(Extract::Unsolved) => {
                 built.outcome.undecoded += 1;
                 built.give_up(want, Unbuilt::Unsolved)?;
@@ -367,11 +377,15 @@ pub(crate) fn build(
                     built.give_up(want, Unbuilt::Unlinked)?;
                     continue;
                 };
+                let slot = topology.body.id.clone();
                 let body = nest(ctx, want, feature, *topology)?;
                 ctx.charge_entities(
                     cadmpeg_core::decode::u64_from_index(body.topology.record_count()),
                     "admit history body records",
                 )?;
+                if let Some(state) = decoded.get_mut(&want.ordinal) {
+                    state.body_slots.insert(body.id.clone(), slot);
+                }
                 built.links.insert(want.record, body.id.clone());
                 built.bodies.push(body);
                 built.outcome.built += 1;
@@ -393,6 +407,23 @@ pub(crate) fn build(
 fn nest_id(ordinal: usize) -> Result<HistoryBodyId, CodecError> {
     HistoryBodyId::mint(format!("inventor:{NEST_SCOPE}:nest#h{ordinal:04}"))
         .map_err(|error| CodecError::malformed(format_args!("{error}")))
+}
+
+/// The slot in the ASM state from which this nest's body ID was composed.
+pub(crate) fn original_body_slot(body: &HistoryBody) -> Option<BodyId> {
+    let request = body
+        .id
+        .as_str()
+        .strip_prefix("inventor:history-body:nest#")?;
+    let key = body
+        .topology
+        .body
+        .id
+        .as_str()
+        .strip_prefix("inventor:history-body:entity#")?
+        .strip_prefix(request)?
+        .strip_prefix('-')?;
+    BodyId::mint(format!("inventor:brep:entity#{key}")).ok()
 }
 
 /// The nest in the history-body scope, with the feature link of its role.

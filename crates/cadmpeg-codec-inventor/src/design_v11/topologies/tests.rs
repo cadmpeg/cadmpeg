@@ -342,3 +342,118 @@ fn unpicked_edges_and_unheld_slots_are_stated_in_part() {
         "{omitted:?}"
     );
 }
+
+#[test]
+fn an_unequal_distance_chamfer_restates_its_reference_face() {
+    let mut input = input(&[41]);
+    let face =
+        cadmpeg_ir::ids::HistoricalFaceId::mint("inventor:input-face#fillet-43").expect("face");
+    input.faces = [face.clone()].into_iter().collect();
+    input.edge_geometry[0].faces = [face].into_iter().collect();
+    let mut ir = part(input);
+    ir.model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(
+        json::from_value(cadmpeg_core::json!({
+            "kind": "chamfer",
+            "value": {
+                "groups": [{
+                    "edges": {"kind":"historical","value":{
+                        "state":STATE,"edges":[edge(41)],"native":"inventor:pmdc:selection#chamfer"
+                    }},
+                    "spec": {"kind":"two_distances","first":1.0,"second":2.0}
+                }],
+                "flip_direction":false
+            }
+        }))
+        .expect("chamfer"),
+    ));
+    project_part(&mut ir);
+    let FeatureOperation::Chamfer(chamfer) = &ir.design.features[0].definition.operation else {
+        panic!("typed chamfer");
+    };
+    let reference = chamfer.sets[0]
+        .reference
+        .as_ref()
+        .expect("support reference");
+    let Picks::Named(picks) = &reference.picks else {
+        panic!("named reference");
+    };
+    assert_eq!(
+        picks.as_slice()[0].native.as_ref().expect("name").value,
+        NativeNameValue::Integers(vec![43])
+    );
+    let losses = omitted(&ir);
+    let message = losses
+        .iter()
+        .find(|message| message.contains(STATE))
+        .expect("association is cut");
+    assert!(message.contains("edge_geometry"), "{message}");
+    assert!(!message.contains("faces"), "{message}");
+}
+
+#[test]
+fn a_selector_covers_only_its_kind_and_input_anchor() {
+    let mut input = input(&[7]);
+    input.faces =
+        [cadmpeg_ir::ids::HistoricalFaceId::mint("inventor:input-face#fillet-7").expect("face")]
+            .into_iter()
+            .collect();
+    let mut ir = part(input);
+    project_part(&mut ir);
+    let operation = &mut ir.design.features[0].definition.operation;
+    assert_eq!(
+        input_cut(
+            &ir.model.feature_input_topologies[0],
+            &InputOperands::of(operation)
+        ),
+        ["faces"]
+    );
+    let FeatureOperation::Fillet(fillet) = operation else {
+        panic!("fillet");
+    };
+    let FilletSet::Edges { edges, .. } = &mut fillet.sets[0] else {
+        panic!("edge set");
+    };
+    edges.at = Anchor::Current;
+    assert_eq!(
+        input_cut(
+            &ir.model.feature_input_topologies[0],
+            &InputOperands::of(operation)
+        ),
+        ["faces", "edges", "edge_geometry"]
+    );
+}
+
+#[test]
+fn a_face_offset_states_its_historical_faces() {
+    let mut input = input(&[]);
+    let face =
+        cadmpeg_ir::ids::HistoricalFaceId::mint("inventor:input-face#fillet-43").expect("face");
+    input.faces = [face.clone()].into_iter().collect();
+    let faces = cadmpeg_ir::features::selections::FaceSelection::historical(
+        input.id.clone(),
+        vec![face],
+        "inventor:pmdc:selection#offset".to_owned(),
+    )
+    .expect("selection");
+    let mut ir = part(input);
+    ir.model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(LegacyOperation::MoveFace {
+            faces,
+            motion: cadmpeg_ir::features::direct_edit::FaceMotion::Offset {
+                distance: cadmpeg_ir::scalar::Length::new(2.0).expect("length"),
+            },
+        }));
+    project_part(&mut ir);
+    assert!(matches!(
+        ir.design.features[0].definition.operation,
+        FeatureOperation::Offset(_)
+    ));
+    let losses = omitted(&ir);
+    assert!(
+        !losses.iter().any(|loss| loss.contains(STATE)),
+        "{losses:?}"
+    );
+}

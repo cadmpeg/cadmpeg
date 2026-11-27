@@ -14,8 +14,10 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
+use cadmpeg_ir::design::ops::dressup::FilletSet;
+use cadmpeg_ir::design::ops::sheet_metal::SheetMetalKind;
 use cadmpeg_ir::design::projection::restated::Restater;
-use cadmpeg_ir::design::selection::{Picked, Witness};
+use cadmpeg_ir::design::selection::{Anchor, MemberOrder, PickTarget, Picks, Selection, Witness};
 use cadmpeg_ir::features::evaluation::{FeatureInputTopology, FeatureResultTopology};
 use cadmpeg_ir::features::selections::EdgeSelection;
 use cadmpeg_ir::features::{Feature as LegacyFeature, FeatureOperation as LegacyOperation};
@@ -35,48 +37,58 @@ pub(super) fn restate(
     ir: &mut CadIr,
     properties: &BTreeSet<String>,
 ) -> Result<(), CodecError> {
-    let mut typed = Vec::new();
-    for feature in &ir.model.features {
-        let Ok(index) = ir
-            .design
-            .features
-            .binary_search_by(|item| item.id.cmp(&feature.id))
-        else {
-            continue;
-        };
-        let operation = &ir.design.features[index].definition.operation;
-        if matches!(
-            operation,
-            FeatureOperation::Native { .. } | FeatureOperation::Unresolved { .. }
-        ) {
-            continue;
-        }
-        typed.push(Typed {
-            feature,
-            references: references(ctx, feature)?,
-            named: named(&operation.picks(ctx)?),
-        });
+    let typed = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let index = ir
+                .design
+                .features
+                .binary_search_by(|item| item.id.cmp(&feature.id))
+                .ok()?;
+            let operation = &ir.design.features[index].definition.operation;
+            (!matches!(
+                operation,
+                FeatureOperation::Native { .. } | FeatureOperation::Unresolved { .. }
+            ))
+            .then_some((&feature.id, (feature, operation)))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut inputs = BTreeMap::new();
+    for input in &ir.model.feature_input_topologies {
+        inputs
+            .entry(&input.input_of)
+            .and_modify(|unique| *unique = false)
+            .or_insert(true);
     }
     let mut restated = Vec::new();
     for input in &ir.model.feature_input_topologies {
-        let Some(typed) = typed
-            .iter()
-            .find(|typed| typed.feature.id == input.input_of)
-        else {
+        let Some(&(feature, operation)) = typed.get(&input.input_of) else {
             continue;
         };
-        if !typed.references.0.contains(input.id.as_str()) {
+        let mut referenced = false;
+        feature.visit_identity_references(ctx, &mut |id| {
+            referenced |= id == input.id.as_str();
+            Ok(())
+        })?;
+        if !referenced {
             continue;
         }
+        let operands = if inputs.get(&input.input_of) == Some(&true) {
+            InputOperands::of(operation)
+        } else {
+            InputOperands::default()
+        };
         restated.push((
             input.id.as_str().to_owned(),
             input.input_of.as_str().to_owned(),
-            input_cut(input, &typed.references.1, &typed.named),
+            input_cut(input, &operands),
         ));
     }
     let picked: BTreeSet<(&str, &str)> = typed
-        .iter()
-        .flat_map(|typed| generated_edges(typed.feature))
+        .values()
+        .flat_map(|(feature, _)| generated_edges(feature))
         .collect();
     for result in &ir.model.feature_result_topologies {
         if ir
@@ -101,86 +113,121 @@ pub(super) fn restate(
     Ok(())
 }
 
-/// A legacy feature that a typed design feature restates.
-struct Typed<'a> {
-    feature: &'a LegacyFeature,
-    /// The identities the feature references and the state-local members it
-    /// names.
-    references: (BTreeSet<String>, BTreeSet<String>),
-    /// The source selectors that the picks of the design feature name, each
-    /// with the witnesses of those picks.
-    named: BTreeMap<i64, Vec<&'a Witness>>,
+/// Selectors stated by an operation's geometry operands in its input state.
+#[derive(Default)]
+struct InputOperands<'a> {
+    edges: BTreeMap<u32, Vec<&'a Witness>>,
+    faces: BTreeMap<u32, Vec<&'a Witness>>,
 }
 
-/// The identities a feature references and the state-local members it names.
-fn references(
-    ctx: &DecodeContext<'_>,
-    feature: &LegacyFeature,
-) -> Result<(BTreeSet<String>, BTreeSet<String>), CodecError> {
-    let mut references = BTreeSet::new();
-    feature.visit_identity_references(ctx, &mut |id| {
-        references.insert(id.to_owned());
-        Ok(())
-    })?;
-    let mut members = BTreeSet::new();
-    feature.visit_local_members(ctx, &mut |id| {
-        members.insert(id.to_owned());
-        Ok(())
-    })?;
-    Ok((references, members))
-}
-
-/// The source selector that each Inventor pick of `picks` names, with the
-/// witnesses of the picks that name it. A source-selector pick names one
-/// integer, the selector; a contour-attachment pick names six, of which the
-/// fourth is the selector.
-fn named<'a>(picks: &[&'a Picked]) -> BTreeMap<i64, Vec<&'a Witness>> {
-    let mut named: BTreeMap<i64, Vec<&Witness>> = BTreeMap::new();
-    for pick in picks {
-        let Some(NativeName {
-            codec,
-            value: NativeNameValue::Integers(values),
-        }) = &pick.native
-        else {
-            continue;
-        };
-        if *codec != cadmpeg_ir::codec_id!("inventor") {
-            continue;
+impl<'a> InputOperands<'a> {
+    fn of(operation: &'a FeatureOperation) -> Self {
+        let mut operands = Self::default();
+        match operation {
+            FeatureOperation::Chamfer(chamfer) => {
+                for set in &chamfer.sets {
+                    Self::names(&mut operands.edges, &set.edges, false);
+                    if let Some(reference) = &set.reference {
+                        Self::names(&mut operands.faces, reference, false);
+                    }
+                }
+            }
+            FeatureOperation::Fillet(fillet) => {
+                for set in &fillet.sets {
+                    if let FilletSet::Edges { edges, .. } = set {
+                        Self::names(&mut operands.edges, edges, false);
+                    }
+                }
+            }
+            FeatureOperation::SheetMetal(operation) => {
+                if let SheetMetalKind::ContourFlange {
+                    edges: Some(edges), ..
+                } = &operation.kind
+                {
+                    Self::names(&mut operands.edges, edges, true);
+                }
+            }
+            FeatureOperation::MoveFaces(operation) => {
+                Self::names(&mut operands.faces, &operation.faces, false);
+            }
+            FeatureOperation::Offset(operation) => {
+                for set in &operation.sets {
+                    Self::names(&mut operands.faces, &set.faces, false);
+                }
+            }
+            FeatureOperation::Shell(operation) => {
+                Self::names(&mut operands.faces, &operation.removed, false);
+            }
+            FeatureOperation::Thread(operation) => {
+                Self::names(&mut operands.faces, &operation.face, false);
+            }
+            FeatureOperation::Thicken(operation) => {
+                Self::names(&mut operands.faces, &operation.faces, false);
+            }
+            _ => {}
         }
-        let selector = match values.as_slice() {
-            [selector] | [_, _, _, selector, _, _] => *selector,
-            _ => continue,
-        };
-        named.entry(selector).or_default().extend(&pick.witness);
+        operands
     }
-    named
+
+    fn names<O: MemberOrder>(
+        named: &mut BTreeMap<u32, Vec<&'a Witness>>,
+        selection: &'a Selection<O>,
+        attachment: bool,
+    ) {
+        if selection.at != Anchor::Input {
+            return;
+        }
+        let Picks::Named(picks) = &selection.picks else {
+            return;
+        };
+        for pick in picks.as_slice() {
+            if !matches!(pick.target, PickTarget::Native { within: None })
+                || pick.context.is_some()
+                || pick.domain.is_some()
+            {
+                continue;
+            }
+            let Some(NativeName {
+                codec,
+                value: NativeNameValue::Integers(values),
+            }) = &pick.native
+            else {
+                continue;
+            };
+            if *codec != cadmpeg_ir::codec_id!("inventor") {
+                continue;
+            }
+            let selector = match (attachment, values.as_slice()) {
+                (false, [selector]) | (true, [_, _, _, selector, _, _]) => *selector,
+                _ => continue,
+            };
+            if let Ok(selector) = u32::try_from(selector) {
+                named.entry(selector).or_default().extend(&pick.witness);
+            }
+        }
+    }
 }
 
-/// The wire keys of the fields of `input` that the picks of the feature
-/// leave out. A face or edge member is stated where the legacy feature names
-/// it (`members`) and a pick of the design feature names its source
-/// selector (`named`); an edge sample is stated where, in addition, one of
-/// those picks holds the edge's interior point, tangent and end points as
-/// its witness.
-fn input_cut(
-    input: &FeatureInputTopology,
-    members: &BTreeSet<String>,
-    named: &BTreeMap<i64, Vec<&Witness>>,
-) -> Vec<&'static str> {
-    let witnesses = |id: &str| {
-        members
-            .contains(id)
-            .then(|| id.rsplit_once('-'))
-            .flatten()
-            .and_then(|(_, selector)| selector.parse::<i64>().ok())
-            .and_then(|selector| named.get(&selector))
-    };
-    let unpicked = |id: &str| witnesses(id).is_none();
+fn selector(id: &str) -> Option<u32> {
+    id.rsplit_once('-')?.1.parse().ok()
+}
+
+/// The wire keys of the input fields that the typed operands leave out.
+fn input_cut(input: &FeatureInputTopology, operands: &InputOperands<'_>) -> Vec<&'static str> {
+    let edge_witnesses = |id| selector(id).and_then(|selector| operands.edges.get(&selector));
     let mut cut = Vec::new();
-    if input.faces.iter().any(|face| unpicked(face.as_str())) {
+    if input
+        .faces
+        .iter()
+        .any(|face| !selector(face.as_str()).is_some_and(|key| operands.faces.contains_key(&key)))
+    {
         cut.push("faces");
     }
-    if input.edges.iter().any(|edge| unpicked(edge.as_str())) {
+    if input
+        .edges
+        .iter()
+        .any(|edge| edge_witnesses(edge.as_str()).is_none())
+    {
         cut.push("edges");
     }
     if input.edge_geometry.iter().any(|sample| {
@@ -188,7 +235,7 @@ fn input_cut(
             || !sample.supports.is_empty()
             || sample.carrier.is_some()
             || sample.start.is_some() != sample.end.is_some()
-            || !witnesses(sample.edge.as_str()).is_some_and(|witnesses| {
+            || !edge_witnesses(sample.edge.as_str()).is_some_and(|witnesses| {
                 let witness = super::operations::selections::edge_witness(sample);
                 witnesses.iter().any(|held| **held == witness)
             })

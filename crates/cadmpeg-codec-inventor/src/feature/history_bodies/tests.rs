@@ -477,6 +477,10 @@ fn a_base_reads_the_state_after_it() {
         Some("inventor:model:feature#base")
     );
     assert!(body.consumed_by.is_none());
+    let state = &built.states[&body.state.ordinal];
+    let slot = &state.body_slots[&body.id];
+    assert_eq!(state.geometry.bodies[0].id, *slot);
+    assert_eq!(original_body_slot(body).as_ref(), Some(slot));
 }
 
 #[test]
