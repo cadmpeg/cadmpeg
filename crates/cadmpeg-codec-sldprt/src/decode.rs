@@ -3355,6 +3355,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.withheld_fin_links += source.stats.withheld_fin_links;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
+    target.stats.unlinked_body_records |= source.stats.unlinked_body_records;
     Ok(())
 }
 
@@ -5248,12 +5249,12 @@ fn build_geometry_report(
         )));
     }
     if s.synthetic_body_grouping {
-        losses.push(
-            SldprtLossCode::TopologyBodyHierarchyDerived.note(
-                "No body record was available; one body/region/shell hierarchy was derived."
-                    .to_string(),
-            ),
-        );
+        let text = if s.unlinked_body_records {
+            "The body records do not link up with the faces; one body/region/shell hierarchy was derived, with the kind they state."
+        } else {
+            "No body record was available; one body/region/shell hierarchy was derived."
+        };
+        losses.push(SldprtLossCode::TopologyBodyHierarchyDerived.note(text.to_string()));
     }
     append_parasolid_container_losses(scan, &mut losses);
     append_swift_pmi_losses(ctx, scan, &mut losses)?;

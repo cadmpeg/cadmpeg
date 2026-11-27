@@ -34,7 +34,8 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, FaceBoundary, Loop, Point, Region, Sense, Shell, Unstated,
+    Vertex,
 };
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
@@ -60,7 +61,11 @@ use crate::parasolid::StreamHeader;
 mod grouping;
 mod prune;
 
-use grouping::{shell_face_components, unclassified_body_kind};
+use grouping::{
+    chain_cut_note, dropped_with_lost_faces, dropped_without_faces, first_lost_face,
+    mark_derived_shells, native_region, shell_face_components, stated_face_ids,
+    unclassified_body_kind, withheld_counts,
+};
 use prune::{prune_rejected_topology, RingLoss};
 
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
@@ -576,6 +581,9 @@ pub(crate) struct Stats {
     pub(crate) surface_solver_capped: crate::loss::NamedCount,
     /// No explicit body record was available, so one body hierarchy was derived.
     pub(crate) synthetic_body_grouping: bool,
+    /// The derived hierarchy's BODY records do not link up with its faces;
+    /// the body takes the kind they state.
+    pub(crate) unlinked_body_records: bool,
 }
 
 /// The `sldprt:brep` shell namespace, which three routes mint under.
@@ -764,9 +772,9 @@ struct WalkedFace {
     /// The loop records of the face whose FIN ring does not close, by cause,
     /// in sibling order.
     lost_loops: Vec<(u32, RingLoss)>,
-    /// The loop chain names a loop the walk does not reach: a missing record
-    /// or a loop of another face.
-    chain_cut: bool,
+    /// The loop the face's loop chain names and the walk does not reach: a
+    /// missing record or a loop of another face.
+    chain_cut: Option<u32>,
 }
 
 impl WalkedFace {
@@ -1302,6 +1310,8 @@ fn face_has_exact_boundary(
         && face.vertex_loops.is_empty()
         && face.unresolved_loop.is_none()
         && face.unresolved_fins.is_empty()
+        && face.lost_loops.is_empty()
+        && face.chain_cut.is_none()
         && face.loops.iter().all(|(_, ring)| {
             !ring.is_empty()
                 && ring.iter().all(|fin| {
@@ -1410,7 +1420,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let mut withheld_forward_links = 0usize;
     let mut unlinked_loops = HashSet::new();
     let mut lost_loops = Vec::new();
-    let mut chain_cut = false;
+    let mut chain_cut = None;
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 {
         if !loop_guard.insert(loop_ref) {
@@ -1420,12 +1430,12 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             if t.loop_is_ambiguous(loop_ref) {
                 unresolved_loop = Some(loop_ref);
             }
-            chain_cut = loop_ref > 1;
+            chain_cut = (loop_ref > 1).then_some(loop_ref);
             break;
         };
         let owner_bridge = lp.refs[2];
         if owner_bridge != bridge.attr {
-            chain_cut = true;
+            chain_cut = Some(loop_ref);
             break;
         }
         let first = lp.refs[1];
@@ -3595,28 +3605,19 @@ fn report_withheld_ownership(
             &[id_surf(attr)],
         ));
     }
-    out.dropped.extend(given_up);
-    let mut bodies = 0;
-    let mut shells = 0;
+    // A body or shell a dropped record names is charged there.
+    let (mut bodies, mut shells) = (0, 0);
+    let mut with = Vec::new();
     if let Some(hierarchies) = facts.hierarchies(&attrs) {
-        let body_ids: HashSet<_> = out.bodies.iter().map(|body| body.id.as_str()).collect();
-        let shell_ids: HashSet<_> = out.shells.iter().map(|shell| shell.id.as_str()).collect();
-        bodies = hierarchies
-            .iter()
-            .filter(|hierarchy| {
-                let id = BodyId::compose(&body_namespace(), hierarchy.body.attr);
-                !body_ids.contains(id.as_str())
-            })
-            .count();
-        shells = hierarchies
-            .iter()
-            .flat_map(|hierarchy| &hierarchy.shells)
-            .filter(|native| {
-                let id = ShellId::compose(&shell_namespace(), native.attr);
-                !shell_ids.contains(id.as_str())
-            })
-            .count();
+        with = dropped_with_lost_faces(out, &hierarchies, &accounted);
+        accounted.extend(with.iter().filter_map(|dropped| match dropped {
+            DroppedRecord::With { record, .. } => Some(record.as_str()),
+            DroppedRecord::GivenUp { .. } => None,
+        }));
+        (bodies, shells) = withheld_counts(out, &hierarchies, &accounted);
     }
+    out.dropped.extend(given_up);
+    out.dropped.extend(with);
     let withheld = bodies + shells + faces;
     if withheld > 0 {
         out.losses.push(crate::loss::SldprtLossCode::TopologyOwnershipWithheld.note(format!(
@@ -3636,6 +3637,7 @@ fn decode_graph(
     let mut out = decode_graph_inner(ctx, carriers, t, entity_facts, typed_facts, stream)?;
     out.losses.extend(out.approximations.take_notes());
     report_withheld_ownership(&mut out, typed_facts, stream);
+    mark_derived_shells(&mut out);
     Ok(out)
 }
 
@@ -4759,7 +4761,7 @@ fn decode_graph_inner(
             .filter(|loop_attr| loop_set.contains(loop_attr))
             .map(id_loop)
             .collect();
-        let partial = f.chain_cut
+        let partial = f.chain_cut.is_some()
             || f.unresolved_loop.is_some()
             || !f.lost_loops.is_empty()
             || loops.len() < f.loop_attrs().count();
@@ -5283,6 +5285,9 @@ fn decode_graph_inner(
             u64_from_index(surf_off),
             Some("00_0e"),
         );
+        if let (Some(loop_attr), None) = (f.chain_cut, f.unresolved_loop) {
+            out.losses.push(chain_cut_note(f.bridge_attr, loop_attr, t));
+        }
         admit_brep_entity(ctx)?;
         let shell_attr = match bridge_shell.get(&f.bridge_attr).copied() {
             Some(shell_attr) => shell_attr,
@@ -5393,16 +5398,24 @@ fn decode_graph_inner(
         .count();
 
     if out.faces.is_empty() {
+        let mut dropped = out.dropped;
+        dropped.extend(dropped_without_faces(&body_records));
         return Ok(Brep {
             approximations: out.approximations,
             losses: out.losses,
-            dropped: out.dropped,
+            dropped,
             stats: out.stats,
             ..Brep::default()
         });
     }
     let synthetic_grouping = body_records.is_empty();
     out.stats.synthetic_body_grouping = synthetic_grouping;
+    // BODY records that do not link up still classify the derived body.
+    let stored_kind = synthetic_grouping
+        .then(|| typed_facts.stored_body_kind())
+        .flatten();
+    out.stats.unlinked_body_records = stored_kind.is_some();
+    let stated_faces = stated_face_ids(&out);
 
     for (group, body_record) in body_records
         .iter()
@@ -5431,6 +5444,7 @@ fn decode_graph_inner(
         )?;
         let native_regions = body_record.map_or(&[][..], |record| record.regions.as_slice());
         let mut body_regions = Vec::new();
+        let mut lost_region = None;
         let mut body_faces = HashSet::new();
         if native_regions.is_empty() {
             let region_id = RegionId::compose(&region_namespace(), group);
@@ -5478,8 +5492,11 @@ fn decode_graph_inner(
                     Some((region.offset, "00_51_region")),
                 )?;
                 let mut region_shells = Vec::new();
+                let mut lost_shell = None;
                 for shell in &region.shells {
                     let native_shell_id = ShellId::compose(&shell_namespace(), shell.attr);
+                    let lost_face = first_lost_face(&shell.refs, &stated_faces);
+                    let mut stated = false;
                     for (component, faces) in shell_face_components(&out, native_shell_id.as_str())
                         .into_iter()
                         .enumerate()
@@ -5504,19 +5521,40 @@ fn decode_graph_inner(
                         if faces.is_empty() {
                             continue;
                         }
-                        out.shells
-                            .push(Shell::new(shell_id.clone(), region_id.clone()));
+                        let mut built = Shell::new(shell_id.clone(), region_id.clone());
+                        if lost_face.is_some() {
+                            built.unstated = Some(Unstated::Members);
+                        }
+                        out.shells.push(built);
+                        stated = true;
                         region_shells.push(shell_id);
+                    }
+                    if let (false, Some(face)) = (stated, lost_face) {
+                        out.dropped
+                            .push(DroppedRecord::with(native_shell_id.as_str(), face.as_str()));
+                        lost_shell.get_or_insert(native_shell_id);
                     }
                 }
                 admit_brep_entity(ctx)?;
-                out.regions.push(Region::new(
+                if let (true, Some(shell)) = (region_shells.is_empty(), &lost_shell) {
+                    out.dropped
+                        .push(DroppedRecord::with(region_id.as_str(), shell.as_str()));
+                    lost_region.get_or_insert(region_id);
+                    continue;
+                }
+                out.regions.push(native_region(
                     region_id.clone(),
                     body_id.clone(),
                     region_shells,
+                    lost_shell.is_some(),
                 ));
                 body_regions.push(region_id);
             }
+        }
+        if let (true, Some(region)) = (body_regions.is_empty(), &lost_region) {
+            out.dropped
+                .push(DroppedRecord::with(body_id.as_str(), region.as_str()));
+            continue;
         }
         admit_brep_entity(ctx)?;
         let res_linear = body_record.map(|record| record.linear_resolution);
@@ -5537,7 +5575,7 @@ fn decode_graph_inner(
             }
         }
         let kind = body_record.map_or_else(
-            || unclassified_body_kind(&out, &body_faces),
+            || stored_kind.unwrap_or_else(|| unclassified_body_kind(&out, &body_faces)),
             |record| record.kind,
         );
         out.bodies.push(Body {
@@ -5548,7 +5586,7 @@ fn decode_graph_inner(
             color: None,
             visible: None,
             native_ref: None,
-            unstated: None,
+            unstated: lost_region.map(|_| Unstated::Members),
         });
     }
 

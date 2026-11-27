@@ -1909,12 +1909,21 @@ fn legacy_single_parent_face(
         };
         children.push(child);
     }
-    if children.iter().any(|sequence| {
-        entries
-            .get(sequence)
-            .is_some_and(|child| child.entity_type != 108)
-    }) {
+    let planes = children
+        .iter()
+        .filter(|sequence| {
+            entries
+                .get(sequence)
+                .is_some_and(|child| child.entity_type == 108)
+        })
+        .count();
+    if planes == 0 {
         return Ok(None);
+    }
+    if planes < children.len() {
+        return Err(
+            "legacy single-parent plane hole names a child that is not a Type 108 plane".into(),
+        );
     }
     if children.iter().any(|sequence| {
         entries

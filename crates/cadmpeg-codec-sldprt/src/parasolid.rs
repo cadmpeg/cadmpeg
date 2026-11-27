@@ -51,8 +51,8 @@ pub(crate) struct ExtractedStreams {
     /// The legacy zlib probe reached its work limit before trying every
     /// candidate, so a later embedded body may be missing.
     pub(crate) probe_capped: bool,
-    /// The byte ranges of the outer payload whose ZLB-wrapped zlib member
-    /// does not inflate to its declared size, in payload order.
+    /// The byte ranges of the outer payload whose ZLB-wrapped frames do not
+    /// read, in payload order.
     pub(crate) unread: Vec<Range<usize>>,
 }
 
@@ -128,7 +128,7 @@ pub(crate) fn extract_streams_with_offsets(
                     out.push(stream);
                 }
             }
-            Wrapped::Uninflated(span) => unread.push(span),
+            Wrapped::Unread(span) => unread.push(span),
             Wrapped::None => {}
         }
     }
@@ -221,9 +221,11 @@ pub(crate) fn extract_streams_with_offsets(
 enum Wrapped {
     /// The wrapper's members inflate to a Parasolid stream.
     Stream(ExtractedStream),
-    /// The wrapper frames a zlib member that does not inflate to its declared
-    /// size; the range spans the wrapper in the outer payload.
-    Uninflated(Range<usize>),
+    /// The wrapper's frames do not read: a zlib member does not inflate to
+    /// its declared size or declares more than the frame ceiling, or a frame
+    /// runs past its section. The range spans the wrapper in the outer
+    /// payload.
+    Unread(Range<usize>),
     /// The bytes at the magic frame no member, the frame states an empty
     /// stream, or the inflated bytes are not a Parasolid stream.
     None,
@@ -289,8 +291,7 @@ fn single_wrapped_stream(
     }
     match inflate_zlib_frame(ctx, member, uncompressed_size)? {
         Some(bytes) => extracted_stream(magic_at, bytes).map(Wrapped::stream),
-        None if uncompressed_size > MAX_WRAPPED_FRAME_UNCOMPRESSED => Ok(Wrapped::None),
-        None => Ok(Wrapped::Uninflated(magic_at..member_end)),
+        None => Ok(Wrapped::Unread(magic_at..member_end)),
     }
 }
 
@@ -318,59 +319,60 @@ fn chained_wrapped_stream(
     let Some(mut frame_at) = magic_at.checked_add(WRAPPED_MAGIC_PREFIX.len()) else {
         return Ok(Wrapped::None);
     };
+    // A frame that runs past the section, or bytes after the frames that are
+    // neither a frame nor zero padding, leave the section unread.
+    let unread = Wrapped::Unread(chain_len_at..section_end);
     let mut frames = 0usize;
     let mut frame_outputs = Vec::new();
     while frame_at < section_end {
         let Some(remaining) = payload.get(frame_at..section_end) else {
-            return Ok(Wrapped::None);
+            return Ok(unread);
         };
         if remaining.iter().all(|byte| *byte == 0) {
             break;
         }
         if remaining.len() < WRAPPED_FRAME_HEADER_LEN {
-            return Ok(Wrapped::None);
+            return Ok(unread);
         }
         let Some(uncompressed_size) = frame_at
             .checked_add(chain_frame_hdr::UNCOMPRESSED_SIZE)
             .and_then(|at| View::u32_le_at(payload, at))
             .and_then(as_usize)
         else {
-            return Ok(Wrapped::None);
+            return Ok(unread);
         };
         let Some(member_size) = frame_at
             .checked_add(chain_frame_hdr::ZLIB_MEMBER_SIZE)
             .and_then(|at| View::u32_le_at(payload, at))
             .and_then(as_usize)
         else {
-            return Ok(Wrapped::None);
+            return Ok(unread);
         };
-        if uncompressed_size == 0 || member_size == 0 {
-            return Ok(Wrapped::None);
-        }
         let Some(member_start) = frame_at.checked_add(WRAPPED_FRAME_HEADER_LEN) else {
-            return Ok(Wrapped::None);
+            return Ok(unread);
         };
         let Some(member_end) = member_start.checked_add(member_size) else {
-            return Ok(Wrapped::None);
+            return Ok(unread);
         };
         if member_end > section_end {
-            return Ok(Wrapped::None);
+            return Ok(unread);
+        }
+        frame_at = member_end;
+        // A frame with no bytes on either side holds an empty stream.
+        if uncompressed_size == 0 || member_size == 0 {
+            continue;
         }
         let Some(member) = payload.get(member_start..member_end) else {
-            return Ok(Wrapped::None);
+            return Ok(unread);
         };
         let Some(frame) = inflate_zlib_frame(ctx, member, uncompressed_size)? else {
-            if uncompressed_size > MAX_WRAPPED_FRAME_UNCOMPRESSED {
-                return Ok(Wrapped::None);
-            }
-            return Ok(Wrapped::Uninflated(chain_len_at..section_end));
+            return Ok(unread);
         };
         frame_outputs.push(frame);
         let Some(next_frames) = frames.checked_add(1) else {
-            return Ok(Wrapped::None);
+            return Ok(unread);
         };
         frames = next_frames;
-        frame_at = member_end;
     }
     if frames == 0 {
         return Ok(Wrapped::None);

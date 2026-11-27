@@ -182,6 +182,25 @@ type OwnershipMaps = (
 );
 
 impl Facts {
+    /// The kind that every BODY record naming a stored REGION states, when
+    /// there is one and they agree. A BODY that names no region, such as one
+    /// that owns only vertices, says nothing of the faces' body.
+    pub(super) fn stored_body_kind(&self) -> Option<BodyKind> {
+        let regions: HashSet<u32> = self.regions.iter().map(|region| region.attr).collect();
+        let mut kinds = self
+            .bodies
+            .iter()
+            .filter(|body| {
+                body.topology_refs
+                    .iter()
+                    .chain(&body.ownership_refs)
+                    .any(|attr| regions.contains(attr))
+            })
+            .map(|body| body.kind);
+        let first = kinds.next()?;
+        kinds.all(|kind| kind == first).then_some(first)
+    }
+
     /// Ownership classes claimed for each stream-local transmit index.
     fn topology_class_masks(&self) -> HashMap<u32, u8> {
         let mut classes = HashMap::new();

@@ -381,12 +381,40 @@ fn malformed_chained_continuation_is_not_emitted_as_a_prefix_stream() {
     let mut payload = u32::try_from(section.len()).unwrap().to_le_bytes().to_vec();
     payload.extend_from_slice(&section);
 
-    assert!(
-        crate::parasolid::extract_streams_with_offsets(&payload, &ctx)
-            .unwrap()
-            .streams
-            .is_empty()
-    );
+    let extracted = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+    assert!(extracted.streams.is_empty());
+    // The section is not read, so it is reported for a give-up.
+    let whole = 0..payload.len();
+    assert_eq!(extracted.unread, [whole]);
+}
+
+/// A frame of a chained section whose sizes are zero holds an empty stream:
+/// the frames on either side of it make the section's stream.
+#[test]
+fn a_zero_frame_between_chained_frames_adds_no_bytes() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let stream = parasolid_with_body("partition body", "SCH_SW_33103_11000", &vec![0x31; 5000]);
+    let split = 11;
+    let mut section = WRAPPED_MAGIC.to_vec();
+    for (index, frame) in [&stream[..split], &stream[split..]].into_iter().enumerate() {
+        if index == 1 {
+            section.extend_from_slice(&[0; 8]);
+        }
+        let member = zlib_member(frame);
+        section.extend_from_slice(&u32::try_from(frame.len()).unwrap().to_le_bytes());
+        section.extend_from_slice(&u32::try_from(member.len()).unwrap().to_le_bytes());
+        section.extend_from_slice(&member);
+    }
+    section.extend_from_slice(&[0; 8]);
+    let mut payload = u32::try_from(section.len()).unwrap().to_le_bytes().to_vec();
+    payload.extend_from_slice(&section);
+
+    let extracted = crate::parasolid::extract_streams_with_offsets(&payload, &ctx).unwrap();
+    assert_eq!(extracted.streams.len(), 1);
+    assert_eq!(extracted.streams[0].offset, 0);
+    assert_eq!(extracted.streams[0].payload, stream);
+    assert!(extracted.unread.is_empty());
 }
 
 #[test]

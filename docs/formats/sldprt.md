@@ -63,7 +63,9 @@ field, or the end of the payload. It includes the magic, every frame, and the
 section's zero padding. Each frame inflates to exactly `uncompressed_size`;
 the declared member extent is the complete zlib member. Concatenating the
 inflated frames of one section in payload order produces one complete
-Parasolid stream. The concatenation occurs before stream-header parsing and
+Parasolid stream. A frame whose uncompressed byte count or zlib-member byte
+count is zero adds no bytes to the concatenation, and the next frame starts
+after its declared member. The concatenation occurs before stream-header parsing and
 record scanning, so records may cross frame boundaries. Every section is
 extracted independently, including partition and deltas sections. A section
 with one frame is the degenerate chained form.
@@ -368,7 +370,7 @@ The part kind names the part in a `record.unreadable` loss.
 | `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) |
 | `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) |
 | `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) |
-| `wrapped-member` | One ZLB-wrapped zlib member whose inflated size is not its declared size | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) |
+| `wrapped-member` | One ZLB wrapper or chained section whose frames do not read: a zlib member whose inflated size is not its declared size or whose declared size passes the frame ceiling, or a frame that runs past its section | The wrapper: its magic, its declared sizes, and its member; for a chained section, the section from its chain length to its end (§3.1.1) |
 | `property-carrier` | One default-property or configuration-property carrier whose content is malformed | The block or compound stream that holds the carrier (§1) |
 
 A compound stream's bytes are the sectors its chain reaches through the
@@ -388,8 +390,7 @@ trees. Each tree section is then given up as a `component-tree` part. The
 section that the decoder reads is also kept whole, so the part keeps only
 the length and digest of its bytes.
 
-The decoder gives up a wrapped member only when its declared size is within
-the frame ceiling. A property carrier that stores its properties in a form
+A property carrier that stores its properties in a form
 that the decoder does not read is kept with the loss
 `metadata.default-carrier-unsupported` or
 `metadata.configuration-property-carrier-unsupported`.
@@ -2673,7 +2674,10 @@ The loss `geometry.carrier-approximated` counts intersection chart curves, fitte
 A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
 A vertex loop decodes to a vertex boundary on its vertex-use. A vertex loop whose vertex-use does not resolve is given up with the loss `topology.vertex-loop-withheld`; its FACE keeps its other loops in the partial form.
 A FACE with a loop whose FIN is ambiguous is the loss `topology.ambiguous-fin-face-withheld`.
-The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. One loss note gives the count for each kind.
+The loss `topology.ownership-withheld` counts current typed ownership nodes with no decoded node of the same kind and identity. The face count covers every valid typed ownership face. When hierarchy selection from the full typed face set resolves, the body and shell counts cover the nodes in that hierarchy set. A body or shell dropped with a face it needs (below) is charged with that face and not counted. One loss note gives the count for each kind.
+A FACE whose loop chain names a loop record that is missing, or one that another FACE owns, keeps the loops before it in the partial form and carries the loss `topology.loop-chain-cut`.
+A SHELL that lists a FACE the decode gives up states its members in the partial form. A SHELL with none of its faces stated is dropped with the first FACE it lists; a REGION with no stated shell is dropped with the first SHELL it lost, and a BODY with no stated region with the first REGION it lost. A REGION that keeps some shells and loses one leaves its shells unclassified, since which is the exterior is no longer stated.
+Where the BODY, REGION and SHELL nodes do not link up with the faces, the decode derives one body, region and shell (`topology.body-hierarchy-derived`). The derived body takes the kind that every BODY node states when they agree, and is classified from its faces otherwise. Once a face is given up, each derived shell states its members in the partial form, since no node says which shell held that face.
 
 ### 4.1 XT ownership nodes
 

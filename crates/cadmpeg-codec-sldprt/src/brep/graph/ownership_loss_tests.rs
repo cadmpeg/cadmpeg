@@ -19,12 +19,18 @@ fn a_given_up_face_is_not_counted_again_by_the_ownership_note() {
     .unwrap();
     let mut out = out;
     assert!(out.faces.is_empty());
-    assert_eq!(out.losses.len(), 1);
-    assert_eq!(
-        out.losses[0].code.local_code(),
-        "topology.ownership-withheld"
-    );
-    assert_eq!(out.losses[0].message, "2 current typed ownership node(s) are withheld: 1 body node(s), 1 shell node(s), and 0 face node(s).");
+    // The shell, region and body are dropped with the face, so the note
+    // counts none of them.
+    assert!(out.losses.is_empty(), "{:#?}", out.losses);
+    let with: Vec<_> = out
+        .dropped
+        .iter()
+        .filter_map(|dropped| match dropped {
+            super::DroppedRecord::With { record, .. } => Some(record.as_str()),
+            super::DroppedRecord::GivenUp { .. } => None,
+        })
+        .collect();
+    assert_eq!(with.len(), 3, "{with:?}");
     let losses = out.take_losses().unwrap();
     assert_eq!(
         losses

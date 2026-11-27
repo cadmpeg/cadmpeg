@@ -451,48 +451,67 @@ pub(crate) fn bounded_associativity_forms_file_with_global(global: &[u8]) -> Vec
     )
 }
 
+fn legacy_perforated_plane_entities() -> Vec<OwnedTestEntity> {
+    vec![
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 1,
+            label: "PPLANE".into(),
+            status: "00000000",
+            parameters: "108,0,0,1,0,5,0,0,0,0,1,9,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 108,
+            form: -1,
+            label: "CPLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,7,0,0,0,0,1,9,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "OUTER".into(),
+            status: "00010000",
+            parameters: "106,1,5,0,0,0,10,0,10,10,0,10,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 63,
+            label: "INNER".into(),
+            status: "00010000",
+            parameters: "106,1,5,0,2,2,4,2,4,4,2,4,2,2;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 9,
+            label: "PERFOR8".into(),
+            status: "00000200",
+            parameters: "402,1,1,1,3;".into(),
+        },
+    ]
+}
+
 pub(crate) fn legacy_perforated_plane_file(global: &[u8]) -> Vec<u8> {
     owned_test_file_with_global_and_line_fonts(
-        &[
-            OwnedTestEntity {
-                entity_type: 108,
-                form: 1,
-                label: "PPLANE".into(),
-                status: "00000000",
-                parameters: "108,0,0,1,0,5,0,0,0,0,1,9,0;".into(),
-            },
-            OwnedTestEntity {
-                entity_type: 108,
-                form: -1,
-                label: "CPLANE".into(),
-                status: "00010000",
-                parameters: "108,0,0,1,0,7,0,0,0,0,1,9,0;".into(),
-            },
-            OwnedTestEntity {
-                entity_type: 106,
-                form: 63,
-                label: "OUTER".into(),
-                status: "00010000",
-                parameters: "106,1,5,0,0,0,10,0,10,10,0,10,0,0;".into(),
-            },
-            OwnedTestEntity {
-                entity_type: 106,
-                form: 63,
-                label: "INNER".into(),
-                status: "00010000",
-                parameters: "106,1,5,0,2,2,4,2,4,4,2,4,2,2;".into(),
-            },
-            OwnedTestEntity {
-                entity_type: 402,
-                form: 9,
-                label: "PERFOR8".into(),
-                status: "00000200",
-                parameters: "402,1,1,1,3;".into(),
-            },
-        ],
+        &legacy_perforated_plane_entities(),
         global,
         &[(1, 1), (3, 1), (5, 1), (7, 1)],
     )
+}
+
+/// [`legacy_perforated_plane_file`] with a second Form 9 child, a Type 116
+/// point at DE 11, beside its Type 108 hole.
+pub(crate) fn legacy_mixed_single_parent_file(global: &[u8]) -> Vec<u8> {
+    let mut entities = legacy_perforated_plane_entities();
+    entities[4].parameters = "402,1,2,1,3,11;".into();
+    entities.push(OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "CHILD".into(),
+        status: "00000000",
+        parameters: "116,1,2,3,0,1,9,0;".into(),
+    });
+    owned_test_file_with_global_and_line_fonts(&entities, global, &[(1, 1), (3, 1), (5, 1), (7, 1)])
 }
 
 pub(crate) fn legacy_generic_single_parent_file(global: &[u8]) -> Vec<u8> {

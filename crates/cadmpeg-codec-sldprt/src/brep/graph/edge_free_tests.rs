@@ -145,13 +145,50 @@ fn a_compact_trimmed_face_supplies_topology_for_its_null_loop_ownership_face() {
 }
 
 #[test]
-fn a_loopless_plane_stays_withheld_with_ownership_loss() {
+fn a_loopless_plane_drops_its_shell_region_and_body_with_it() {
     let out = decode(&loopless_nodes(50));
     assert!(out.faces.is_empty());
-    assert!(out
+    assert_eq!(given_up(&out, SldprtLossCode::TopologyFaceWithheld), 1);
+    let with: Vec<_> = out
+        .dropped
+        .iter()
+        .filter_map(|dropped| match dropped {
+            super::DroppedRecord::With { record, needs } => Some((record.as_str(), needs.as_str())),
+            super::DroppedRecord::GivenUp { .. } => None,
+        })
+        .collect();
+    assert_eq!(
+        with,
+        [
+            ("sldprt:brep:shell#4", "sldprt:brep:face#5"),
+            ("sldprt:brep:region#3", "sldprt:brep:shell#4"),
+            ("sldprt:brep:body#2", "sldprt:brep:region#3"),
+        ]
+    );
+    // The records dropped with the face are charged there, not counted.
+    assert!(!out
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "topology.ownership-withheld"));
+}
+
+#[test]
+fn a_derived_shell_states_no_members_once_a_face_is_given_up() {
+    use cadmpeg_ir::ids::{RegionId, ShellId};
+    use cadmpeg_ir::topology::{Shell, Unstated};
+    let shell = ShellId::compose(&super::shell_namespace(), 1);
+    let region = RegionId::compose(&super::region_namespace(), 1);
+    let mut out = super::Brep::default();
+    out.stats.synthetic_body_grouping = true;
+    out.shells.push(Shell::new(shell, region));
+    super::mark_derived_shells(&mut out);
+    assert_eq!(out.shells[0].unstated, None);
+    out.dropped.push(super::DroppedRecord::with(
+        "sldprt:brep:face#5",
+        "sldprt:brep:surface#20",
+    ));
+    super::mark_derived_shells(&mut out);
+    assert_eq!(out.shells[0].unstated, Some(Unstated::Members));
 }
 
 #[test]
@@ -476,7 +513,7 @@ fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
         withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
         lost_loops: Vec::new(),
-        chain_cut: false,
+        chain_cut: None,
     };
     let mut refusal = crate::lane_refusal::LaneRefusals::new();
     let resolved = super::resolve_sweep_surface(
@@ -632,4 +669,40 @@ fn a_derived_body_is_a_solid_only_where_its_faces_close() {
         };
         assert_eq!(body.kind, kind);
     }
+}
+
+#[test]
+fn body_records_that_do_not_link_up_still_state_the_derived_body_kind() {
+    use cadmpeg_ir::topology::BodyKind;
+    let mut nodes = loopless_nodes(53);
+    // A sheet BODY record that its region does not name.
+    nodes[0].2[14] = F::B(3);
+    nodes[1].2[2] = F::P(9);
+    let out = decode(&nodes);
+    assert!(out.stats.synthetic_body_grouping);
+    assert!(out.stats.unlinked_body_records);
+    let [body] = out.bodies.as_slice() else {
+        panic!("one derived body");
+    };
+    assert_eq!(body.kind, BodyKind::Sheet);
+}
+
+#[test]
+fn a_face_whose_loop_chain_is_cut_is_noted() {
+    let mut nodes = loopless_nodes(53);
+    nodes[3].2[5] = F::P(6);
+    let out = decode(&nodes);
+    let notes: Vec<_> = out
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "topology.loop-chain-cut")
+        .collect();
+    let [note] = notes.as_slice() else {
+        panic!("one chain-cut note: {:#?}", out.losses);
+    };
+    assert!(
+        note.message.contains("no loop record states"),
+        "{}",
+        note.message
+    );
 }

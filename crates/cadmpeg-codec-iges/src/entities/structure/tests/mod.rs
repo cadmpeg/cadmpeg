@@ -17,6 +17,7 @@ use crate::loss::IgesLossCode;
 use crate::test_support::test_drawing_and_trimming::associativity_definition_file;
 use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file;
 use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file_with_global;
+use crate::test_support::test_drawing_and_trimming::legacy_mixed_single_parent_file;
 use crate::test_support::test_drawing_and_trimming::legacy_perforated_plane_file;
 use crate::test_support::test_owned::owned_test_file;
 use crate::test_support::test_owned::owned_test_file_with_global;
@@ -1624,6 +1625,59 @@ fn a_legacy_hole_that_fails_marks_its_parent_face_partial() {
     assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model")
         .is_ok());
+}
+
+/// A legacy single-parent relation whose children are a Type 108 hole and a
+/// point does not describe a perforated plane: its parent face keeps its
+/// outer loop in partial form, and the relation's face is given up naming
+/// the parent it marks (CADIR §3.3, §5.6).
+#[test]
+fn a_legacy_hole_beside_a_child_that_is_no_plane_marks_its_parent_face_partial() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(legacy_mixed_single_parent_file(global)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let parent = crate::ids::face(&crate::ids::Stem::word_directory(
+        crate::ids::Word::BoundedPlane,
+        1_u32,
+    ));
+    let hole = crate::ids::face(&crate::ids::Stem::word_directory(
+        crate::ids::Word::LegacySingleParent,
+        9_u32,
+    ));
+    let [face] = result.ir().geometry.faces.as_slice() else {
+        panic!("one face: {:#?}", result.report().losses);
+    };
+    assert_eq!(face.id, parent);
+    assert!(face.loops.is_partial(), "{:?}", face.loops);
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .filter(|loss| {
+            loss.message
+                .starts_with(&format!("record {} ", hole.as_str()))
+        })
+        .collect::<Vec<_>>();
+    let [charge] = charges.as_slice() else {
+        panic!("one charge names the hole: {:#?}", result.report().losses);
+    };
+    assert!(
+        charge.message.contains("not a Type 108 plane"),
+        "{}",
+        charge.message
+    );
+    assert!(
+        charge
+            .message
+            .ends_with(&format!("; marked=[{}]", parent.as_str())),
+        "{}",
+        charge.message
+    );
 }
 
 mod flow;

@@ -340,6 +340,9 @@ pub(crate) enum SldprtLossCode {
     /// A face names no loop and does not cover a whole closed surface, so
     /// the face and its surface are withheld.
     TopologyFaceWithheld,
+    /// A face's loop chain names a loop that is missing or that another face
+    /// owns; the face keeps the loops before it and is stated partial.
+    TopologyLoopChainCut,
     /// Current typed ownership nodes are absent from the decoded topology.
     TopologyOwnershipWithheld,
     /// Referenced FIN records have conflicting complete frames.
@@ -785,6 +788,7 @@ impl SldprtLossCode {
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyFaceUnclaimed,
         Self::TopologyFaceWithheld,
+        Self::TopologyLoopChainCut,
         Self::TopologyOwnershipWithheld,
         Self::TopologyFinRecordAmbiguous,
         Self::TopologyFinPartnerUnresolved,
@@ -1027,6 +1031,7 @@ impl SldprtLossCode {
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyOwnershipWithheld => "topology.ownership-withheld",
             Self::TopologyFaceWithheld => "topology.face-withheld",
+            Self::TopologyLoopChainCut => "topology.loop-chain-cut",
             Self::TopologyFinRecordAmbiguous => "topology.fin-record-ambiguous",
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
             Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
@@ -1340,6 +1345,7 @@ impl SldprtLossCode {
             | Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
+            | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
@@ -1521,6 +1527,7 @@ impl SldprtLossCode {
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
             | Self::TopologyFaceWithheld
+            | Self::TopologyLoopChainCut
             | Self::TopologyFinRecordAmbiguous
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
@@ -1960,6 +1967,7 @@ mod tests {
                 "topology.body-hierarchy-derived",
                 "topology.face-unclaimed",
                 "topology.face-withheld",
+                "topology.loop-chain-cut",
                 "topology.ownership-withheld",
                 "topology.fin-record-ambiguous",
                 "topology.fin-partner-unresolved",
