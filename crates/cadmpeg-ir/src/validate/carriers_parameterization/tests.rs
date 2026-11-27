@@ -10,6 +10,7 @@ use crate::report::check::Check;
 use crate::test_support::make_first_face_surface_unknown;
 use crate::unknown::NativeUnknownRecord;
 use crate::validate::validate_neutral;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn parameter_domain_accepts_serialization_rounding_at_a_boundary() {
@@ -60,7 +61,6 @@ fn face_on_unknown_surface_validates_clean() {
 fn unknown_surface_without_record_is_legal() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     make_first_face_surface_unknown(&mut ir, None);
-    crate::examples::add_document_root(&mut ir);
     let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(
         report.is_ok(),
@@ -111,8 +111,8 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     let carrier_id = carrier.id.as_str().to_owned();
     ir.geometry.curves.push(carrier);
     ir.finalize();
-    let mut wire = serde_json::to_value(&ir).unwrap();
-    wire["native"] = serde_json::json!({"test": {"unknowns": [
+    let mut wire = json::to_value(&ir).unwrap();
+    wire["native"] = cadmpeg_core::json!({"test": {"unknowns": [
         {"id": "test:source:unknown#good", "links": [carrier_id]},
         {"id": "test:source:unknown#malformed", "links": [null]}
     ]}});
@@ -132,7 +132,7 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
         "{findings:?}"
     );
 
-    wire["native"]["test"]["unknowns"][0]["links"] = serde_json::json!([]);
+    wire["native"]["test"]["unknowns"][0]["links"] = cadmpeg_core::json!([]);
     let orphan = crate::CadIr::from_json(&wire.to_string()).unwrap();
     assert!(validate_neutral(&orphan, Vec::new())
         .expect("validate the neutral model")

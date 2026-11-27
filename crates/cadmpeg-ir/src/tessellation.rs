@@ -223,7 +223,7 @@ impl<'de, V: Deserialize<'de>> Deserialize<'de> for Strips<V> {
 // A source states raw positions and normals. A `Tessellation` holds the
 // admitted mesh, whose positions are `FinitePoint3` values and whose normals
 // are `FiniteVector3` values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

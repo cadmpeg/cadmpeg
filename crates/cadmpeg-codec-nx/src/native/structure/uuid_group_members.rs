@@ -75,13 +75,14 @@ impl<'de> Deserialize<'de> for UuidGroupMembers {
 #[cfg(test)]
 mod tests {
     use super::UuidGroupMembers;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn group_lists_preserve_each_order_and_require_equal_nonempty_cardinality() {
         let json =
             r#"{"occurrences":["use-b","use-a"],"object_uuid_values":["value-a","value-b"]}"#;
         let members: UuidGroupMembers = serde_json::from_str(json).unwrap();
-        assert_eq!(serde_json::to_string(&members).unwrap(), json);
+        assert_eq!(json::to_string(&members).unwrap(), json);
         for json in [
             r#"{"occurrences":[],"object_uuid_values":[]}"#,
             r#"{"occurrences":["use"],"object_uuid_values":[]}"#,

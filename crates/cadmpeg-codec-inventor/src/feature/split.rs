@@ -428,6 +428,7 @@ pub(crate) mod tests {
         PmDcFeaturePropertyPayload,
     };
     use crate::test_support::test_fixtures::{content_at, parse};
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_core::CodecError;
 
     fn header(version: u8) -> Vec<u8> {
@@ -476,9 +477,9 @@ pub(crate) mod tests {
                             value,
                         }
                     );
-                    let wire = serde_json::to_value(&property).expect("serialize property");
+                    let wire = json::to_value(&property).expect("serialize property");
                     assert_eq!(
-                        serde_json::from_value::<PmDcFeaturePropertyPayload>(wire)
+                        json::from_value::<PmDcFeaturePropertyPayload>(wire)
                             .expect("deserialize property"),
                         property
                     );

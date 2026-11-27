@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::ViewAttributes;
+use cadmpeg_core::serde_erase::json;
 
 struct AttributesField<'a>(Option<&'a ViewAttributes>);
 
@@ -35,8 +36,8 @@ fn sample_attributes() -> ViewAttributes {
 #[test]
 fn view_attributes_projection_emits_the_documented_keys_in_order() {
     let attributes = sample_attributes();
-    let json = serde_json::to_string(&AttributesField(Some(&attributes)))
-        .expect("view attributes serialize");
+    let json =
+        json::to_string(&AttributesField(Some(&attributes))).expect("view attributes serialize");
     let keys = [
         "\"view_type\":1",
         "\"page_width_mm\":210.0",
@@ -56,7 +57,7 @@ fn view_attributes_projection_emits_the_documented_keys_in_order() {
 
 #[test]
 fn view_attributes_projection_emits_null_keys_when_absent() {
-    let json = serde_json::to_string(&AttributesField(None)).expect("view attributes serialize");
+    let json = json::to_string(&AttributesField(None)).expect("view attributes serialize");
     assert_eq!(
         json,
         concat!(

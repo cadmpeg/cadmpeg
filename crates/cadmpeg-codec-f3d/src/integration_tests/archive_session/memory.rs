@@ -31,6 +31,7 @@ fn archive_session_deflated_members_preserve_decode_and_composition_equivalence(
                 .members()
                 .iter()
                 .map(|member| session.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
         )
     };
     session.require_original_spaces_for_test(true);

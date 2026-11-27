@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 pub(crate) fn scope(
     placement: &crate::records::placement_construction::DesignPlacementConstruction,
 ) -> crate::records::feature::scope::DesignParameterScope {
@@ -40,7 +42,7 @@ pub(crate) fn placements(
         .map(|fixture| {
             let fixture: serde_json::Value = serde_json::from_str(fixture).unwrap();
             let mut placement: crate::records::placement_construction::DesignPlacementConstruction =
-                serde_json::from_value(fixture["native"].clone()).unwrap();
+                json::from_value(fixture["native"].clone()).unwrap();
             placement.fields.inferred_x_axis.value = 0;
             placement.fields.inferred_z_axis.value = 0;
             placement.fields.z_flip.value = 0;

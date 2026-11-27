@@ -238,7 +238,7 @@ fn row(
         *index = (u64::from(middle) << 32) | u64::from(low);
     }
     Ok(DisplayPose {
-        id: format!("f3d:{stream}:display-pose#{offset}"),
+        id: crate::ids::native_scoped_id(stream, "display-pose", offset),
         stream: stream.to_owned(),
         byte_offset: offset,
         path: ScenePath(path),

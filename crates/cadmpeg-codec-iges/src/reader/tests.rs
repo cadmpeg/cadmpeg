@@ -84,6 +84,60 @@ fn the_source_image_is_untyped_model_content_while_it_holds_undecoded_geometry()
 }
 
 #[test]
+fn the_source_image_is_untyped_model_content_while_it_holds_an_undecoded_copious_path() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+
+    let copious = |form, parameters: &str| {
+        owned_test_file(&[OwnedTestEntity {
+            entity_type: 106,
+            form,
+            label: "COPIOUS".into(),
+            status: "00000000",
+            parameters: parameters.into(),
+        }])
+    };
+    let model = vec![cadmpeg_core::decode::ArenaClass::Model];
+    for (bytes, depth, untyped) in [
+        (
+            copious(11, "106,1,2,0,0,0,1,0,1,1,0;"),
+            cadmpeg_core::decode::DecodeDepth::Container,
+            model.clone(),
+        ),
+        (
+            copious(11, "106,1,0,0;"),
+            cadmpeg_core::decode::DecodeDepth::Full,
+            model,
+        ),
+        (
+            copious(40, "106,1,3,0,0,0,1,0,1,1;"),
+            cadmpeg_core::decode::DecodeDepth::Full,
+            vec![],
+        ),
+    ] {
+        let result = cadmpeg_test_support::EditableDecodeResult::from(
+            IgesCodec
+                .decode(
+                    &mut Cursor::new(bytes),
+                    &DecodeOptions {
+                        depth,
+                        ..DecodeOptions::default()
+                    },
+                )
+                .unwrap(),
+        );
+        let image = result
+            .source_fidelity()
+            .retained_record(crate::SOURCE_IMAGE_ID)
+            .unwrap();
+        assert_eq!(
+            image.untyped().iter().copied().collect::<Vec<_>>(),
+            untyped,
+            "{depth:?}"
+        );
+    }
+}
+
+#[test]
 fn decode_reports_a_transformation_chain_over_its_projection_limit() {
     let decoded = IgesCodec
         .decode(

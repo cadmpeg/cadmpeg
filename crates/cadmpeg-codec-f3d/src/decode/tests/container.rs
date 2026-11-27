@@ -583,7 +583,7 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
     };
     let root = "f3d:model:component#root";
     let child = "f3d:model:component#child";
-    let member = "f3d:xref/role-a/reference-0/occurrence-0/archive:product-definition#0";
+    let member = "f3d:xref:product-definition#role-a/reference-0/occurrence-0";
     let file_definition = |model: &cadmpeg_ir::document::Model| {
         super::super::file_definition(model).map(|id| id.as_str().to_owned())
     };

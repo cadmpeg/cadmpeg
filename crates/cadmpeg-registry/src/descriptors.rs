@@ -32,6 +32,7 @@ type CompoundScanProbe = fn(
     feature = "pvz",
     feature = "usd",
     feature = "solidedge",
+    feature = "ironcad",
     feature = "edrawings",
     feature = "onshape"
 ))]
@@ -65,6 +66,7 @@ macro_rules! scan_backend {
     feature = "pvz",
     feature = "usd",
     feature = "solidedge",
+    feature = "ironcad",
     feature = "edrawings",
     feature = "onshape"
 ))]
@@ -95,6 +97,7 @@ macro_rules! compound_scan_probe {
     feature = "pvz",
     feature = "usd",
     feature = "solidedge",
+    feature = "ironcad",
     feature = "edrawings",
     feature = "onshape"
 ))]
@@ -170,6 +173,7 @@ pub(crate) enum FormatKind {
         feature = "fcstd",
         feature = "f3d",
         feature = "solidedge",
+        feature = "ironcad",
         feature = "inventor",
         feature = "sldprt",
         feature = "catia",
@@ -243,6 +247,7 @@ impl FormatDescriptor {
                 feature = "fcstd",
                 feature = "f3d",
                 feature = "solidedge",
+                feature = "ironcad",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -271,6 +276,7 @@ impl FormatDescriptor {
                 feature = "fcstd",
                 feature = "f3d",
                 feature = "solidedge",
+                feature = "ironcad",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -296,6 +302,7 @@ impl FormatDescriptor {
                 feature = "fcstd",
                 feature = "f3d",
                 feature = "solidedge",
+                feature = "ironcad",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -317,6 +324,7 @@ impl FormatDescriptor {
 
 #[cfg(any(
     feature = "solidedge",
+    feature = "ironcad",
     feature = "inventor",
     feature = "catia",
     feature = "creo",
@@ -413,6 +421,10 @@ reader!(
     &["par", "psm", "asm"],
     || Box::new(cadmpeg_codec_solidedge::SolidEdgeCodec)
 );
+#[cfg(feature = "ironcad")]
+reader!(IRONCAD, FormatId::new("ironcad"), &["ics"], || {
+    Box::new(cadmpeg_codec_ironcad::IronCadCodec)
+});
 #[cfg(feature = "inventor")]
 reader!(INVENTOR, FormatId::new("inventor"), &["ipt", "iam"], || {
     Box::new(cadmpeg_codec_inventor::InventorCodec)
@@ -537,6 +549,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &INVENTOR,
     #[cfg(feature = "solidedge")]
     &SOLIDEDGE,
+    #[cfg(feature = "ironcad")]
+    &IRONCAD,
     #[cfg(feature = "sldprt")]
     &SLDPRT,
     #[cfg(feature = "catia")]

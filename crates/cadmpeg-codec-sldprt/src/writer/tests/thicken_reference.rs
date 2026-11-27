@@ -49,7 +49,7 @@ fn thicken_writer_keeps_stored_result_and_chain_settings_it_cannot_encode() {
                     *result = Some(SolidFeatureResult::NewBody {});
                 }
             });
-        let unwritten =
+        let (unwritten, _) =
             crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
         assert!(
             unwritten
@@ -445,16 +445,11 @@ fn semantic_writer_retains_partial_native_scale_construction() {
     for index in 0..2 {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        let error = crate::test_support::plan_fixture_write_with_native_envelope(
+        let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
             &detached,
             decoded.source_fidelity(),
-            &mut Vec::new(),
-        )
-        .unwrap_err();
-        assert!(
-            error.to_string().contains("unresolved scale construction"),
-            "{error}"
         );
+        assert!(error.contains("unresolved scale construction"), "{error}");
     }
 
     for (index, feature) in decoded.ir_mut().model.features.iter_mut().enumerate() {
@@ -747,7 +742,7 @@ fn semantic_writer_keeps_the_stored_draft_for_a_two_sided_edit() {
             *second_side = Some(DraftSecondSide::Symmetric {});
         });
     }
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
         unwritten
@@ -1462,7 +1457,7 @@ fn semantic_writer_keeps_stored_face_motion_without_losing_a_component() {
             };
         });
     }
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert_eq!(unwritten.len(), 1, "{unwritten:?}");
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {
@@ -1578,13 +1573,11 @@ fn semantic_writer_retains_partial_native_dome_construction() {
 
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+    let error = crate::test_support::plan_fixture_write_with_native_envelope_declined(
         &detached,
         decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(error.to_string().contains("unresolved dome construction"));
+    );
+    assert!(error.contains("unresolved dome construction"));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed dome".into());
     let mut encoded = Vec::new();

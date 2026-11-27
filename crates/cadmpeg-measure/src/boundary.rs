@@ -125,7 +125,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryPartialFace,
                 Some(self.face.id.as_str()),
-                "the face does not state every loop, so its extent is not stated",
+                "the face does not state its boundary in full, so its extent is not stated",
             ));
         };
         for loop_id in boundary {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use cadmpeg_core::serde_erase::json;
 
 fn row(state: u32, numbered: bool) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -67,20 +68,20 @@ fn wire_rejects_unknown_keys_and_explicit_null_labels() {
     let member = members(&row(0x0001_0001, false), 0x8e)
         .pop()
         .expect("valid storage member fixture");
-    let wire = serde_json::to_value(&member).expect("valid storage member fixture");
+    let wire = json::to_value(&member).expect("valid storage member fixture");
     assert!(wire.get("label").is_none());
     assert_eq!(
-        serde_json::from_value::<CatiaStoragePropertyMember>(wire.clone())
+        json::from_value::<CatiaStoragePropertyMember>(wire.clone())
             .expect("valid storage member fixture"),
         member
     );
     for (key, value) in [
         ("label", serde_json::Value::Null),
-        ("unknown", serde_json::json!(1)),
+        ("unknown", cadmpeg_core::json!(1)),
     ] {
         let mut damaged = wire.clone();
         damaged[key] = value;
-        let error = serde_json::from_value::<CatiaStoragePropertyMember>(damaged)
+        let error = json::from_value::<CatiaStoragePropertyMember>(damaged)
             .expect_err("invalid storage member must be refused");
         assert!(error.to_string().contains(key), "{error}");
     }

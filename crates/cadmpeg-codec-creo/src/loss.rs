@@ -246,6 +246,8 @@ pub(crate) enum CreoLossCode {
     TopologyExplicitUnownedSurface,
     /// A half-edge orbit is past the stated topological vertex identifier width.
     TopologyVertexIdentifierUnstatable,
+    /// A face states no loop on a plane, cylinder, or cone and is stated partial.
+    TopologyFaceBoundaryUnstated,
     /// Neutral feature, configuration, graph, material, and display data remain open.
     FeatureNeutralSemanticsIncomplete,
     /// Profile sweep history features retain incomplete required operands.
@@ -454,6 +456,7 @@ impl CreoLossCode {
             Self::TopologyUnownedComponent => "topology.unowned-component",
             Self::TopologyExplicitUnownedSurface => "topology.explicit-unowned-surface",
             Self::TopologyVertexIdentifierUnstatable => "topology.vertex-identifier-unstatable",
+            Self::TopologyFaceBoundaryUnstated => "topology.face-boundary-unstated",
             Self::FeatureNeutralSemanticsIncomplete => "feature.neutral-semantics-incomplete",
             Self::FeatureSweepIncomplete => "feature.sweep-incomplete",
             Self::FeatureSurfaceOperationIncomplete => "feature.surface-operation-incomplete",
@@ -639,6 +642,7 @@ impl CreoLossCode {
             | Self::AssemblyMemberReferenceUnresolved
             | Self::AssemblyConstraintsNotTransferred
             | Self::DesignParameterReferenceAsText
+            | Self::TopologyFaceBoundaryUnstated
             | Self::NonVisibleCarrierVisibilityNotStated => Severity::Warning,
         }
     }
@@ -753,6 +757,7 @@ impl CreoLossCode {
             | Self::TopologyUnownedComponent
             | Self::TopologyExplicitUnownedSurface
             | Self::TopologyVertexIdentifierUnstatable
+            | Self::TopologyFaceBoundaryUnstated
             | Self::ExtrusionBodyRejected => LossTaxonomy::TopologyNotTransferred,
             Self::FeatureNeutralSemanticsIncomplete
             | Self::FeatureSweepIncomplete
@@ -812,7 +817,7 @@ impl CreoLossCode {
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
     /// The structured code is `creo/<local>`. Severity comes from the local
-    /// code; the strict floor comes from the taxonomy.
+    /// code.
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -941,6 +946,7 @@ mod tests {
                 "topology.unowned-component",
                 "topology.explicit-unowned-surface",
                 "topology.vertex-identifier-unstatable",
+                "topology.face-boundary-unstated",
                 "feature.neutral-semantics-incomplete",
                 "feature.sweep-incomplete",
                 "feature.surface-operation-incomplete",

@@ -57,7 +57,10 @@ pub(super) struct Site<'a> {
 /// Check the sketches and every stated operation of `index` against the
 /// rules of §6.1 to §6.7.
 pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
-    let wire = serde_json::to_value(&index.ir.design).unwrap_or(Value::Null);
+    let wire = cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| {
+        serde::Serialize::serialize(&index.ir.design, adapter)
+    })
+    .unwrap_or(Value::Null);
     sketches::check_sketches(index, &wire, findings);
     options::check_native_keys(&wire, findings);
     for (site, definition) in definitions(index) {
@@ -69,7 +72,7 @@ pub(super) fn check_operations(index: &DesignRecords<'_>, findings: &mut Vec<Fin
     for feature in &index.ir.design.features {
         check_feature(index, feature, findings);
     }
-    body::check_template_inputs(index, findings);
+    body::check_generators(index, findings);
     assembly::check_occurrence_creators(index, findings);
     assembly::check_spans(index, findings);
     sheet_metal::check_rules(index, findings);
@@ -347,7 +350,7 @@ fn strings(value: &Value) -> BTreeSet<&str> {
 
 /// The strings of a value's wire form.
 fn wire_strings<T: serde::Serialize>(value: &T) -> BTreeSet<String> {
-    serde_json::to_value(value)
+    cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| value.serialize(adapter))
         .map(|value| strings(&value).into_iter().map(str::to_owned).collect())
         .unwrap_or_default()
 }

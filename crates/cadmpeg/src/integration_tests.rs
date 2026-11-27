@@ -21,7 +21,7 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
         original: &cadmpeg_ir::CadIr,
     ) {
         let plan = codec
-            .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
             .expect("recover and plan the solid");
         assert!(!plan
             .report()

@@ -2,6 +2,7 @@
 //! Design content IGES has no place for is left out and reported; the shape
 //! beside it is written (§3.4, Content the target cannot hold).
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -37,7 +38,7 @@ fn tetrahedron() -> CadIr {
 /// design content a part from a history-based system holds beside its shape.
 fn with_design_content(ir: &mut CadIr) {
     ir.model.features.push(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "id": "cadir:model:feature#boss", "ordinal": 0, "name": "Boss", "suppressed": false,
             "definition": {"kind": "operation", "value": {"kind": "stored_geometry", "value": {}}},
             "outputs": [], "dependencies": [], "source_properties": {},
@@ -102,43 +103,111 @@ fn a_solid_with_design_content_is_written_and_the_content_reported() {
     assert_eq!(decoded.ir().geometry.faces.len(), 4);
 }
 
+/// The written Type 314 restates the source Type 314 with its red, green,
+/// and blue, so it states the source Directory colour number, and no loss
+/// names the colour definition record.
 #[test]
-fn a_native_record_synthesis_does_not_encode_is_named_not_refused() {
+fn a_colour_definition_is_written_with_its_source_colour_number() {
     let source = include_bytes!("../../../tests/golden/fixtures/colored_explicit_vertex_loop.igs");
     let decoded = IgesCodec
         .decode(&mut Cursor::new(source.to_vec()), &DecodeOptions::default())
         .expect("decode");
-    let colors = decoded
-        .ir()
-        .native
-        .namespace("iges")
-        .and_then(|namespace| namespace.arenas().get("colors"))
-        .map_or(0, Vec::len);
-    assert_ne!(colors, 0, "the fixture holds a native color record");
+    let numbers = |ir: &CadIr| {
+        ir.native
+            .namespace("iges")
+            .and_then(|namespace| namespace.arenas().get("colors"))
+            .into_iter()
+            .flatten()
+            .map(|record| {
+                (
+                    record.id().to_owned(),
+                    record
+                        .field("fallback_color_number")
+                        .and_then(|value| value.as_i64()),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let colors = numbers(decoded.ir());
+    assert!(
+        colors
+            .iter()
+            .any(|(_, number)| number.is_some_and(|n| n != 0)),
+        "the fixture holds a colour definition with a colour number: {colors:?}"
+    );
 
     let plan = IgesCodec
         .plan(
             EncodeInput::new(decoded.ir(), None),
             TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
         )
-        .expect("the loop is written without its native color records");
-    assert!(
-        plan.report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.starts_with(&format!(
-                "the IGES write omits {colors} native record(s) of native arena `colors`"
-            ))),
-        "{:?}",
-        plan.report().losses
-    );
+        .expect("the loop is written");
+    for (color, _) in &colors {
+        assert!(
+            !plan.report().losses.iter().any(|loss| loss
+                .message
+                .split_whitespace()
+                .any(|token| token.trim_end_matches([',', ':', ';']) == color)),
+            "{color}: {:?}",
+            plan.report().losses
+        );
+    }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write");
     let written = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("the written file decodes");
+    let written_numbers = numbers(written.ir())
+        .into_iter()
+        .map(|(_, number)| number)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        written_numbers,
+        colors
+            .into_iter()
+            .map(|(_, number)| number)
+            .collect::<Vec<_>>()
+    );
     assert_eq!(
         written.ir().geometry.faces.len(),
         decoded.ir().geometry.faces.len()
+    );
+}
+
+#[test]
+fn a_given_up_part_stub_is_not_charged() {
+    let source = include_bytes!("../../../tests/golden/fixtures/colored_explicit_vertex_loop.igs");
+    let mut ir = IgesCodec
+        .decode(&mut Cursor::new(source.to_vec()), &DecodeOptions::default())
+        .expect("decode")
+        .into_parts()
+        .0;
+    ir.native
+        .namespace_mut(cadmpeg_ir::codec_id!("iges"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("unknowns"),
+            vec![cadmpeg_ir::NativeRecord::new(
+                cadmpeg_ir::ids::Identity::new("iges:test:unknown#0").expect("valid identity"),
+                serde_json::Map::default(),
+            )
+            .expect("valid native identity")],
+        );
+    ir.finalize();
+
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("the stub does not refuse the write");
+    assert!(
+        !plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("iges:test:unknown#0")),
+        "{:?}",
+        plan.report().losses
     );
 }

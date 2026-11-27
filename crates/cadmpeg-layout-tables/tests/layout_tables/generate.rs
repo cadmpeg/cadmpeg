@@ -284,6 +284,7 @@ pub(crate) const GENERATED_LAYOUT_RS: &[(&str, &str)] = &[
     ("freecad", "crates/cadmpeg-codec-freecad/src/layout.rs"),
     ("iges", "crates/cadmpeg-codec-iges/src/layout.rs"),
     ("inventor", "crates/cadmpeg-codec-inventor/src/layout.rs"),
+    ("ironcad", "crates/cadmpeg-codec-ironcad/src/layout.rs"),
     ("nx", "crates/cadmpeg-codec-nx/src/layout.rs"),
     ("protein", "crates/cadmpeg-protein/src/layout.rs"),
     ("rhino", "crates/cadmpeg-codec-rhino/src/layout.rs"),

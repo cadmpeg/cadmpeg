@@ -8,6 +8,7 @@ use crate::features::sweeps::{
 };
 use crate::features::{FaceBlendOperands, SewBodySelection};
 use crate::scalar::{InteriorAngle, PositiveLength};
+use cadmpeg_core::serde_erase::json;
 
 fn positive(value: f64) -> PositiveLength {
     PositiveLength::new(value).unwrap()
@@ -60,12 +61,11 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
     let mut sheet =
         SweepShape::sheet_sections(SweepMode::Surface {}, SweepSection::Unresolved, Vec::new());
     assert!(sheet.generated_sections_mut().next().is_none());
-    let wire = serde_json::to_value(&sweep).expect("a sweep shape serializes");
+    let wire = json::to_value(&sweep).expect("a sweep shape serializes");
     assert_eq!(wire["kind"], "solid");
-    let mut sheet_wire = serde_json::to_value(&sheet).expect("a sweep shape serializes");
+    let mut sheet_wire = json::to_value(&sheet).expect("a sweep shape serializes");
     sheet_wire["sections"] = wire["sections"].clone();
-    serde_json::from_value::<SweepShape>(sheet_wire)
-        .expect_err("a sheet result generates no geometry");
+    json::from_value::<SweepShape>(sheet_wire).expect_err("a sheet result generates no geometry");
 }
 
 #[test]

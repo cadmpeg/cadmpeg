@@ -1017,8 +1017,7 @@
           "value": {
             "code": "geometry.document-angle-unit-unresolved",
             "kind": "geometry_not_transferred",
-            "namespace": "step",
-            "strict_floor": "warning"
+            "namespace": "step"
           }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
