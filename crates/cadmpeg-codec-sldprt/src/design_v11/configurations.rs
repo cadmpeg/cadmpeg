@@ -97,7 +97,10 @@ pub(super) fn configurations(
 /// `expression` that is the stored text, a feature's suppression through
 /// `suppressed`, and its definition and dependencies through `definition`.
 /// Its bodies are those of its stated state. The active configuration's
-/// bodies are the current bodies `current`.
+/// bodies are the current bodies `current`. The configurations keep the
+/// order of their ordinals, and the native record its `native_ref` names
+/// holds the native slot. Each compared configuration is recorded, also where it
+/// leaves out no field.
 pub(super) fn restate(
     ir: &mut CadIr,
     configurations: &Configurations,
@@ -119,12 +122,47 @@ pub(super) fn restate(
         .filter(|evaluation| evaluation.content.is_some())
         .filter_map(|evaluation| evaluation.configuration.as_ref())
         .collect::<HashSet<_>>();
+    let designed = configurations
+        .records
+        .iter()
+        .map(|design| design.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut order = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| designed.contains(configuration.id.as_str()))
+        .collect::<Vec<_>>();
+    order.sort_by_key(|configuration| (configuration.ordinal, configuration.id.as_str()));
+    let listed = configurations
+        .records
+        .iter()
+        .filter(|design| model.contains_key(design.id.as_str()))
+        .collect::<Vec<_>>();
     let mut restated = Vec::new();
     for design in &configurations.records {
         let Some(own) = model.get(design.id.as_str()).copied() else {
             continue;
         };
         let mut cut = Vec::new();
+        if order.iter().position(|record| record.id == own.id)
+            != listed.iter().position(|record| record.id == design.id)
+        {
+            cut.push("ordinal");
+        }
+        if own.active != (configurations.active.as_ref() == Some(&design.id)) {
+            cut.push("active");
+        }
+        if own.source_index.is_some() && design.native_ref.is_none() {
+            cut.push("source_index");
+        }
+        if own
+            .native_ref
+            .as_ref()
+            .is_some_and(|native| design.native_ref.as_ref() != Some(native))
+        {
+            cut.push("native_ref");
+        }
         if !own.properties.is_empty() {
             cut.push("properties");
         }
@@ -149,9 +187,7 @@ pub(super) fn restate(
         if let Some(base) = base.filter(|base| base.id != own.id) {
             cut.extend(override_cut(design, own, base));
         }
-        if !cut.is_empty() {
-            restated.push((design.id.as_str().to_owned(), cut));
-        }
+        restated.push((design.id.as_str().to_owned(), cut));
     }
     for (id, cut) in restated {
         let by = Restater::Record(id.clone());

@@ -345,7 +345,7 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         overrides: Overrides::default(),
         active_arrangements: BTreeSet::new(),
         materials: Vec::new(),
-        native_ref: None,
+        native_ref: Some(key.to_owned()),
     };
     let mut ir = CadIr::empty();
     ir.model.configurations = vec![
@@ -369,7 +369,12 @@ fn a_configuration_is_restated_without_what_its_record_does_not_state() {
         active: Some(id("default")),
     };
     super::configurations::restate(&mut ir, &configurations, &[], &[]);
-    assert_eq!(ir.model.restated().get(id("default").as_str()), None);
+    let default = ir.model.restated().get(id("default").as_str()).unwrap();
+    let active = Restater::Record(id("default").as_str().to_owned());
+    assert_eq!(
+        default.cut_by(|restater| restater == &active),
+        Some(BTreeSet::new())
+    );
     let short = ir.model.restated().get(id("short").as_str()).unwrap();
     let by = Restater::Record(id("short").as_str().to_owned());
     assert_eq!(
@@ -1610,6 +1615,54 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
         ["Origin", "Boss", "Fillet1", "Odd", "Sketch1"]
     );
     assert!(timeline.folders.is_empty());
+}
+
+const NESTED_FOLDERS: &[u8] = br#"<Keywords Name="Bracket">
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Feature Name="Group" Type="FtrFolder" id="110">
+                <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                    <Sketch Name="Sketch1" Type="ProfileFeature" id="8"/>
+                </Extrusion>
+                <Feature Name="Inner" Type="FtrFolder" id="120">
+                    <Fillet Name="Fillet1" id="9"/>
+                </Feature>
+            </Feature>
+        </Keywords>"#;
+
+/// A folder's run holds the sketch its extrude absorbs and the members of
+/// the folder nested in it, so the `Folder` states the folder node's
+/// children: the timeline restates both folder nodes without `definition`.
+#[test]
+fn a_folder_states_its_nested_folder_and_absorbed_sketch_as_children() {
+    let ir = part_with_history(
+        NESTED_FOLDERS,
+        &[
+            ("moOriginProfileFeature_c", "Origin", 106),
+            ("moFtrFolder_c", "Group", 110),
+            ("moFtrFolder_c", "Inner", 120),
+        ],
+    );
+    let [Container::Ordered { id, folders, .. }] = ir.design.containers.as_slice() else {
+        panic!("one timeline: {:#?}", ir.design.containers);
+    };
+    assert_eq!(folders.len(), 2, "{folders:?}");
+    let timeline =
+        cadmpeg_ir::design::projection::restated::Restater::Record(id.as_str().to_owned());
+    for name in ["Group", "Inner"] {
+        let folder = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let cut = ir
+            .model
+            .restated()
+            .get(folder.id.as_str())
+            .and_then(|restating| restating.cut_by(|by| by == &timeline))
+            .unwrap_or_else(|| panic!("the timeline restates {name}"));
+        assert!(!cut.contains("definition"), "{name}: {cut:?}");
+    }
 }
 
 #[test]

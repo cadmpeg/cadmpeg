@@ -7,12 +7,15 @@
 //! omits the record's arena charges the record by them (§3.2): the fields
 //! that every restater it writes leaves out, and the whole record when it
 //! writes none of them. A cut is computed by comparing what the record holds
-//! with what its restater holds.
+//! with what its restater holds. The write compares a record with the design
+//! record of its identity where no projection did ([`same_id_cuts`]).
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use serde::Serialize;
 
 use crate::design::dimension::Dimension;
 use crate::design::feature::{Feature, FeatureOperation};
@@ -25,6 +28,9 @@ use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use crate::schema::ArenaRecord;
 
 use super::fields::{Field, ModelFeatureField};
+
+mod parameters;
+mod sketches;
 
 /// What restates a record.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -256,10 +262,7 @@ pub fn restate_features(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), C
             let Some(legacy) = model.get(id) else {
                 continue;
             };
-            let fields = feature_cut(ctx, feature, legacy, &facts)?;
-            if !fields.is_empty() {
-                cut.push((id.to_owned(), fields));
-            }
+            cut.push((id.to_owned(), feature_cut(ctx, feature, legacy, &facts)?));
         }
         cut
     };
@@ -270,8 +273,8 @@ pub fn restate_features(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), C
     Ok(())
 }
 
-/// Every string a design record's wire form holds.
-fn wire_strings(feature: &Feature) -> HashSet<String> {
+/// Every string the wire form of `record` holds.
+fn json_strings(record: &impl Serialize) -> HashSet<String> {
     fn collect(value: serde_json::Value, into: &mut HashSet<String>) {
         match value {
             serde_json::Value::String(text) => {
@@ -292,7 +295,7 @@ fn wire_strings(feature: &Feature) -> HashSet<String> {
         }
     }
     let mut strings = HashSet::new();
-    if let Ok(value) = cadmpeg_core::serde_erase::json::to_value(feature) {
+    if let Ok(value) = cadmpeg_core::serde_erase::json::to_value(record) {
         collect(value, &mut strings);
     }
     strings
@@ -369,7 +372,7 @@ fn feature_cut(
     model: &ModelFeature,
     facts: &Facts<'_>,
 ) -> Result<Vec<&'static str>, CodecError> {
-    let strings = wire_strings(design);
+    let strings = json_strings(design);
     let mut cut = Vec::new();
     if !definition_stated(ctx, design, model, &strings)? {
         cut.extend(definition_cut(model));
@@ -469,3 +472,188 @@ fn tree_node_cut(model: &ModelFeature, stated: &NodeStatement) -> Vec<&'static s
     cut.extend(source_cut(model, model.native_ref.is_some()));
     cut
 }
+
+/// Whether `restated` holds a statement by the design record of the
+/// identity `id` for the record of that identity.
+fn stated_under_own_id(restated: &Restatements, id: &str) -> bool {
+    restated.get(id).is_some_and(|restating| {
+        restating
+            .restaters()
+            .any(|(by, _)| matches!(by, Restater::Record(restater) if restater == id))
+    })
+}
+
+/// The fields each record of an arena the CADIR wire omits leaves out
+/// where `written` holds the identity of the record, so a design record of
+/// its identity is written, and no projection stated what that design
+/// record leaves out: the write compares the two records (§3.2). A feature,
+/// a parameter, a sketch and a sketch entity are compared field by field; a record of another kind
+/// leaves out each field whose value the design record does not hold under
+/// the field's name. A record the comparison cannot read is left out of the
+/// result, so the write charges it whole.
+pub(crate) fn same_id_cuts<'ir>(
+    ir: &'ir CadIr,
+    written: &HashSet<&'ir str>,
+) -> HashMap<&'ir str, BTreeSet<Cow<'static, str>>> {
+    let compared = |id: &str| written.contains(id) && !stated_under_own_id(&ir.model.restated, id);
+    let mut cuts = HashMap::new();
+    let mut insert = |id: &'ir str, cut: BTreeSet<&'static str>| {
+        cuts.insert(id, cut.into_iter().map(Cow::Borrowed).collect());
+    };
+    let design = ir
+        .design
+        .features
+        .iter()
+        .map(|feature| (feature.record_identity(), feature))
+        .collect::<HashMap<_, _>>();
+    let features = ir
+        .model
+        .features
+        .iter()
+        .filter(|model| compared(model.record_identity()))
+        .filter_map(|model| Some((model, *design.get(model.record_identity())?)))
+        .collect::<Vec<_>>();
+    if !features.is_empty() {
+        let facts = Facts::of(ir);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        if let Ok((ctx, _)) = DecodeContext::from_root_bytes(&[], &arena, &policy) {
+            for (model, design) in features {
+                if let Ok(cut) = feature_cut(&ctx, design, model, &facts) {
+                    insert(model.record_identity(), cut.into_iter().collect());
+                }
+            }
+        }
+    }
+    for (id, cut) in parameters::parameter_cuts(ir, &compared)
+        .into_iter()
+        .chain(sketches::sketch_cuts(ir, &compared))
+    {
+        insert(id, cut);
+    }
+    let models = model_values(ir, &compared);
+    let wanted = models.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
+    let designs = design_values(ir, &wanted);
+    for (id, model) in models {
+        if let (Some(model), Some(design)) = (model, designs.get(id)) {
+            cuts.insert(id, record_cut(&model, design));
+        }
+    }
+    cuts
+}
+
+/// The wire fields `model` holds that `design` does not hold under the same
+/// name with the same value. A model `product_definition` is also held by
+/// the same value under `scope`.
+fn record_cut(
+    model: &serde_json::Value,
+    design: &serde_json::Value,
+) -> BTreeSet<Cow<'static, str>> {
+    let Some(fields) = model.as_object() else {
+        return BTreeSet::from([Cow::Borrowed("*")]);
+    };
+    fields
+        .iter()
+        .filter(|(key, value)| {
+            let empty = match value {
+                serde_json::Value::Null => true,
+                serde_json::Value::Array(items) => items.is_empty(),
+                serde_json::Value::Object(fields) => fields.is_empty(),
+                serde_json::Value::Bool(_)
+                | serde_json::Value::Number(_)
+                | serde_json::Value::String(_) => false,
+            };
+            let held = design.get(key.as_str()) == Some(value)
+                || (key.as_str() == "product_definition" && design.get("scope") == Some(value));
+            key.as_str() != "id" && !empty && !held
+        })
+        .map(|(key, _)| Cow::Owned(key.clone()))
+        .collect()
+}
+
+/// Adds the identity and wire form of each record of `records` that
+/// `compared` accepts to `into`.
+fn record_values<'ir, T: ArenaRecord + Serialize>(
+    records: &'ir [T],
+    compared: &dyn Fn(&str) -> bool,
+    into: &mut Vec<(&'ir str, Option<serde_json::Value>)>,
+) {
+    into.extend(
+        records
+            .iter()
+            .filter(|record| compared(record.record_identity()))
+            .map(|record| {
+                (
+                    record.record_identity(),
+                    cadmpeg_core::serde_erase::json::to_value(record).ok(),
+                )
+            }),
+    );
+}
+
+/// Adds the records of a model arena the CADIR wire omits to `$into`,
+/// except the features, parameters, sketches and sketch entities, which are
+/// compared field by field.
+macro_rules! compared_model_arena {
+    (features, $ir:ident, $compared:ident, $into:ident) => {};
+    (parameters, $ir:ident, $compared:ident, $into:ident) => {};
+    (sketches, $ir:ident, $compared:ident, $into:ident) => {};
+    (sketch_entities, $ir:ident, $compared:ident, $into:ident) => {};
+    ($field:ident, $ir:ident, $compared:ident, $into:ident) => {
+        record_values(&$ir.model.$field, $compared, &mut $into);
+    };
+}
+
+macro_rules! declare_model_values {
+    ($($field:ident: $ty:ty, $class:ident, $home:ident;)*) => {
+        /// The identity and wire form of each record of the arenas the CADIR
+        /// wire omits that `compared` accepts, except the features,
+        /// parameters, sketches and sketch entities.
+        fn model_values<'ir>(
+            ir: &'ir CadIr,
+            compared: &dyn Fn(&str) -> bool,
+        ) -> Vec<(&'ir str, Option<serde_json::Value>)> {
+            let mut values = Vec::new();
+            $(compared_model_arena!($field, ir, compared, values);)*
+            values
+        }
+    };
+}
+
+crate::document::wire_omitted_arenas!(declare_model_values);
+
+/// Adds the wire form of each record of a `design` arena whose identity
+/// `$wanted` holds to `$into`.
+macro_rules! wanted_design_arena {
+    ($ir:ident, $field:ident, design, $wanted:ident, $into:ident) => {
+        for record in &$ir.design.$field {
+            let id = record.record_identity();
+            if $wanted.contains(id) {
+                if let Ok(value) = cadmpeg_core::serde_erase::json::to_value(record) {
+                    $into.insert(id, value);
+                }
+            }
+        }
+    };
+    ($ir:ident, $field:ident, $home:ident, $wanted:ident, $into:ident) => {};
+}
+
+macro_rules! declare_design_values {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+        /// The wire form of each `design` record whose identity `wanted`
+        /// holds.
+        fn design_values<'ir>(
+            ir: &'ir CadIr,
+            wanted: &HashSet<&str>,
+        ) -> HashMap<&'ir str, serde_json::Value> {
+            let mut values = HashMap::new();
+            $(wanted_design_arena!(ir, $field, $home, wanted, values);)*
+            values
+        }
+    };
+}
+
+crate::document::every_arena_registry!(declare_design_values);
+
+#[cfg(test)]
+mod tests;
