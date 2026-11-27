@@ -103,17 +103,22 @@ fn synthesized_body(
     ))
 }
 
-/// The file synthesized from `document` with the losses of the appearances
-/// and appearance bindings it does not state, and what it does with each
-/// native record of `document`.
+/// The file synthesized from `document` with the losses of the body names,
+/// the colours, the opacities, the appearances, and the appearance bindings
+/// it does not state, and what it does with each native record of
+/// `document`.
 pub(super) fn synthesis_and_dispositions(
     document: &CadIr,
     version: crate::IgesVersion,
 ) -> Result<(super::Synthesis, NativeDispositions), CodecError> {
     let mut synthesis = super::degrade::synthesize_dropping(document, version)?;
     let native = super::dispositions::native_dispositions(document, &synthesis, version);
-    let appearances = AppearanceDrops::of(document, &synthesis).losses();
-    synthesis.losses.extend(appearances);
+    let appearances = AppearanceDrops::of(document, &synthesis);
+    let presentation =
+        super::dispositions::presentation::losses(document, &synthesis, &appearances);
+    synthesis
+        .losses
+        .extend(presentation.into_iter().chain(appearances.losses()));
     Ok((synthesis, native))
 }
 

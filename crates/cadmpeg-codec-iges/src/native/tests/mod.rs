@@ -103,7 +103,7 @@ fn codes_charged_to(report: &DecodeReport, sequence: u32) -> Vec<String> {
 /// Run the overdeclared-count contract for one defective Directory Entry: the
 /// loss is charged once in both decode modes, it is the entry's only loss when
 /// no projection runs, a full decode also refuses that entry's projection, and
-/// a strict decode refuses the document on the count.
+/// a strict decode refuses the document on the count or on the entry given up.
 fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     let overdeclared = IgesLossCode::ParameterCountOverdeclared.kind();
     for depth in [
@@ -160,7 +160,13 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert!(
                 rejection.loss().code == overdeclared
-                    || rejection.loss().code == IgesLossCode::GeometryNotProjected.kind()
+                    || rejection.loss().code == cadmpeg_ir::unknown::part::record_unreadable_kind(),
+                "{:#?}",
+                rejection.loss()
+            );
+            assert_eq!(
+                code_count(rejection.report(), IgesLossCode::ParameterCountOverdeclared),
+                1
             );
         }
         other => panic!("expected a strict refusal, got {other:?}"),

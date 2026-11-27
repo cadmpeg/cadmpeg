@@ -72,6 +72,7 @@ mod deltas_source;
 mod dialect;
 mod enlarge;
 mod extract_face;
+mod part_tolerances;
 mod swp104;
 mod symbolic_thread;
 

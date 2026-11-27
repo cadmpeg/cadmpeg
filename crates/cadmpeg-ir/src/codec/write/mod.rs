@@ -800,8 +800,12 @@ impl EncoderBackend for CadirEncoder {
         body.annotations = input.fidelity.map(|fidelity| {
             let mut annotations = fidelity.annotations.clone();
             if !annotations.is_empty() {
-                annotations
-                    .remove(&crate::annotations::Removed::before(input.ir).after_writing(ir));
+                let removed = if std::ptr::eq(ir, input.ir) {
+                    crate::annotations::Removed::omitted_by_the_wire(ir)
+                } else {
+                    crate::annotations::Removed::before(input.ir).after_writing(ir)
+                };
+                annotations.remove(&removed);
             }
             annotations
         });

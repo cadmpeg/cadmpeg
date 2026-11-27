@@ -261,6 +261,26 @@ impl BrepTransferDiagnostics {
         )
     }
 
+    /// The id each rejected face would hold as a face, once per face, with
+    /// the reason of its first rejection.
+    pub(in super::super) fn rejected_faces(
+        &self,
+    ) -> Result<Vec<(FaceId, &'static str)>, cadmpeg_core::CodecError> {
+        let mut faces = BTreeMap::new();
+        for diagnostic in &self.face_rejection_diagnostics {
+            faces
+                .entry(diagnostic.detail.face_id)
+                .or_insert(diagnostic.reason.key());
+        }
+        faces
+            .into_iter()
+            .map(|(face, reason)| {
+                crate::identity::compose_checked(&crate::identity::VISIBGEOM_FACE, face)
+                    .map(|face| (face, reason))
+            })
+            .collect()
+    }
+
     pub(in super::super) fn face_admission_rejection_records(
         &self,
     ) -> Vec<CreoFaceAdmissionRejectionRecord> {

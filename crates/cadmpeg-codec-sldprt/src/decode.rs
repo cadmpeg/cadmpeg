@@ -229,7 +229,7 @@ fn decode_inner(
     let part = assembly.is_none();
     let mut decoded = decode_scan(ctx, scan, &placed_virtual, part)?;
     if let Some(assembly) = assembly {
-        assembly.apply(&mut decoded);
+        assembly.apply(ctx, &mut decoded)?;
     }
     // The root is stated once, after the assembly projection has added its
     // definitions, so an assembly states its own root and no bare part root.
@@ -284,6 +284,7 @@ fn decode_scan(
             container::PARASOLID_STREAMS_PART
                 | container::COMPOUND_STREAM_PART
                 | container::NATIVE_BLOCK_PART
+                | container::WRAPPED_MEMBER_PART
         )
     });
     let classification = crate::dialect::classify_layers(&scan)?;
@@ -2720,6 +2721,7 @@ fn merge_local_bodies(
     scan: &ContainerScan<'_>,
     configuration: Option<usize>,
     decoded: &mut Brep,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<(), CodecError> {
     let Some(configuration) = configuration else {
         return Ok(());
@@ -2732,20 +2734,38 @@ fn merge_local_bodies(
         u64_from_index(streams.len()),
         "admit SLDPRT imported body streams",
     )?;
-    let mut unreadable = 0_usize;
+    let mut unreadable = 0;
     for (site, stream) in &streams {
-        match decode_bodies(
-            ctx,
-            &[(stream.payload, stream.header)],
-            stream.source_stream(),
-        ) {
+        match ctx.run_part(|| {
+            decode_bodies(
+                ctx,
+                &[(stream.payload, stream.header)],
+                stream.source_stream(),
+            )
+        })? {
             Ok(mut bodies) => {
                 bodies.qualify_ids(site)?;
                 bind_opaque_geometry(&mut bodies, &stream.section.native_id());
                 merge_brep(decoded, bodies)?;
             }
-            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
-            Err(_) => unreadable += 1,
+            Err(error) => {
+                unreadable += 1;
+                let part = Part::at(
+                    "sldprt",
+                    IMPORTED_BODY_PART,
+                    u64_from_index(stream.offset),
+                    stream.payload,
+                    [ArenaClass::Model],
+                )
+                .named(stream.header.description.as_str())
+                .in_stream(stream.source_stream().clone())
+                .digest_only();
+                let error = CodecError::malformed(format_args!(
+                    "{}: {error}",
+                    SldprtLossCode::GeometryImportedBodiesNotTransferred.kind()
+                ));
+                given_up.push(ctx.give_up_part(part, error)?);
+            }
         }
     }
     decoded
@@ -2753,6 +2773,10 @@ fn merge_local_bodies(
         .extend(imported_bodies_loss(unreadable, streams.len()));
     Ok(())
 }
+
+/// The part an imported-feature body stream is: one stream of a
+/// `Config-N-FeatureBodies` section, decoded alone.
+const IMPORTED_BODY_PART: &str = "imported-body-stream";
 
 /// One loss for each configuration whose partition holds no body, or that
 /// has no partition, and whose `Config-N-FeatureBodies` streams the decode
@@ -2807,6 +2831,27 @@ fn untaken_local_bodies_losses(
         .collect()
 }
 
+/// Gives up the Parasolid site `part` whose entity records frame and build
+/// no geometry. A site that holds no entity record gives up nothing.
+fn give_up_unbuilt_site(
+    ctx: &DecodeContext<'_>,
+    part: Part<'_>,
+    decoded: &Brep,
+    given_up: &mut Vec<GivenUpPart>,
+) -> Result<(), CodecError> {
+    let records = decoded.stats.source_entity_records;
+    if records > 0 {
+        given_up.push(ctx.give_up_part(
+            part,
+            CodecError::malformed(format_args!(
+                "{}: {records} Parasolid entity record(s) frame and build no geometry",
+                SldprtLossCode::GeometryParasolidNotTransferred.kind()
+            )),
+        )?);
+    }
+    Ok(())
+}
+
 /// The loss for `unreadable` of `total` imported body streams.
 fn imported_bodies_loss(
     unreadable: usize,
@@ -2856,7 +2901,7 @@ fn try_decode_brep(
         let mut decoded = Brep::default();
         merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded, given_up)?;
         if decoded.bodies.is_empty() {
-            fallback_losses.append(&mut decoded.losses);
+            fallback_losses.extend(decoded.take_losses()?);
             return Ok(None);
         }
         let report = build_geometry_report(
@@ -2901,8 +2946,15 @@ fn try_decode_brep(
         selected_is_empty_model && (resolved_active_site.is_some() || !any_site_has_geometry);
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
-            fallback_losses.extend(decoded_sites[selected_site].2.losses.iter().cloned());
-            append_topology_record_losses(&decoded_sites[selected_site].2.stats, fallback_losses);
+            let (site, _, decoded) = &mut decoded_sites[selected_site];
+            fallback_losses.extend(decoded.take_losses()?);
+            append_topology_record_losses(&decoded.stats, fallback_losses);
+            give_up_unbuilt_site(
+                ctx,
+                site_part(streams, &sites[site.as_str()]),
+                decoded,
+                given_up,
+            )?;
             return Ok(None);
         }
     } else {
@@ -2919,9 +2971,16 @@ fn try_decode_brep(
                 })
         });
         if !any_site_has_geometry && !any_empty_model {
-            for (_, _, decoded) in &decoded_sites {
-                fallback_losses.extend(decoded.losses.iter().cloned());
+            for (site, _, decoded) in &mut decoded_sites {
+                decoded.qualify_ids(site)?;
+                fallback_losses.extend(decoded.take_losses()?);
                 append_topology_record_losses(&decoded.stats, fallback_losses);
+                give_up_unbuilt_site(
+                    ctx,
+                    site_part(streams, &sites[site.as_str()]),
+                    decoded,
+                    given_up,
+                )?;
             }
             return Ok(None);
         }
@@ -2965,7 +3024,7 @@ fn try_decode_brep(
         })
         .flatten();
     if takes_local_bodies {
-        merge_local_bodies(ctx, scan, taken, &mut decoded)?;
+        merge_local_bodies(ctx, scan, taken, &mut decoded, given_up)?;
     }
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(streams[selected].source_stream().as_str()) {
@@ -3026,7 +3085,8 @@ fn partitions_given_up(parts: &[GivenUpPart]) -> BTreeSet<usize> {
         .filter_map(|part| match part.kind() {
             container::PARASOLID_STREAMS_PART
             | container::COMPOUND_STREAM_PART
-            | container::NATIVE_BLOCK_PART => part.name(),
+            | container::NATIVE_BLOCK_PART
+            | container::WRAPPED_MEMBER_PART => part.name(),
             PARASOLID_SITE_PART => part.stream().map(cadmpeg_ir::StreamName::as_str),
             _ => None,
         })
@@ -3268,8 +3328,12 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target
         .native_body_identities
         .append(&mut source.native_body_identities);
+    target
+        .body_linear_precisions
+        .append(&mut source.body_linear_precisions);
     target.body_modifiers.append(&mut source.body_modifiers);
     target.losses.append(&mut source.losses);
+    target.dropped.append(&mut source.dropped);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_procedural_supports += source.stats.unknown_procedural_supports;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
@@ -3289,10 +3353,6 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
     target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
     target.stats.withheld_fin_links += source.stats.withheld_fin_links;
-    target.stats.withheld_faces += source.stats.withheld_faces;
-    target.stats.withheld_vertex_loop_faces += source.stats.withheld_vertex_loop_faces;
-    target.stats.withheld_ambiguous_fin_faces += source.stats.withheld_ambiguous_fin_faces;
-    target.stats.withheld_ring_edges += source.stats.withheld_ring_edges;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
@@ -3627,6 +3687,10 @@ fn push_display_meshes(
                 Exactness::ByteExact,
             )?;
             display_links.push(id.clone());
+            let tessellation_id =
+                cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
+                    CodecError::malformed(format_args!("invalid display tessellation: {error}"))
+                })?;
             if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
                 let definition = &resolved_definition.definition;
                 let source_entity_id =
@@ -3645,7 +3709,7 @@ fn push_display_meshes(
                             .then(display.ordinal())
                             .colon(table_index),
                     ),
-                    target: AppearanceTarget::Tessellation(id.clone()).into(),
+                    target: AppearanceTarget::Tessellation(tessellation_id.clone()).into(),
                     appearance,
                     precedence: None,
                     source_entity_id: Some(source_entity_id),
@@ -3657,16 +3721,11 @@ fn push_display_meshes(
             }
             let mesh = display_face.mesh;
             mesh_count += 1;
-            ir.model.tessellations.push(
-                mesh.into_tessellation(
-                    cadmpeg_ir::tessellation::TessellationId::mint(id).map_err(|error| {
-                        CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                    })?,
-                )
-                .map_err(|error| {
+            ir.model
+                .tessellations
+                .push(mesh.into_tessellation(tessellation_id).map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
-                })?,
-            );
+                })?);
         }
         let display_id = UnknownId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "displaylist", "record"),
@@ -3750,9 +3809,19 @@ fn build_geometry_ir(
         metadata_header.as_ref(),
         display_summary,
     )?);
+    ir.tolerances =
+        cadmpeg_parasolid::precision::part_tolerances(brep.body_linear_precisions.iter().copied());
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
-    let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut history_given_up = Vec::new();
+    let mut histories = crate::history::histories(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+        &mut history_given_up,
+    )?;
+    retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
@@ -4022,7 +4091,15 @@ fn build_geometry_ir(
         sketch_lanes,
     );
     stamp_feature_baseline(ctx, &mut ir)?;
-    let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut carriers_given_up = Vec::new();
+    let mut attributes = crate::metadata::attributes(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+        &mut carriers_given_up,
+    )?;
+    retention.give_up(carriers_given_up);
     let custom_properties = crate::history::project::custom_property_attributes(&histories)?;
     attributes.extend(custom_properties);
     ir.model.attributes = attributes;
@@ -5064,7 +5141,7 @@ fn append_topology_record_losses(
     }
     if stats.withheld_fin_partners > 0 {
         losses.push(SldprtLossCode::TopologyFinPartnerUnresolved.note(format!(
-            "{} edge(s) were withheld because an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints or a mutual twin FIN contradicts the ring-order endpoint; no dummy enters a public face loop.",
+            "{} edge(s) with no edge record were withheld because an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints or a mutual twin FIN contradicts the ring-order endpoint; no dummy enters a public face loop.",
             stats.withheld_fin_partners,
         )));
     }
@@ -5072,30 +5149,6 @@ fn append_topology_record_losses(
         losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
             "{} ring(s) were withheld because a FIN forward link names no reciprocal same-loop backward link; the ring is not walked on doubt.",
             stats.withheld_fin_links,
-        )));
-    }
-    if stats.withheld_faces > 0 {
-        losses.push(SldprtLossCode::TopologyFaceWithheld.note(format!(
-            "{} face(s) were withheld with their surface because no loop of the face decodes.",
-            stats.withheld_faces,
-        )));
-    }
-    if stats.withheld_vertex_loop_faces > 0 {
-        losses.push(SldprtLossCode::TopologyVertexLoopWithheld.note(format!(
-            "{} face(s) were withheld with their surface because a vertex loop of the face names no resolved vertex.",
-            stats.withheld_vertex_loop_faces,
-        )));
-    }
-    if stats.withheld_ambiguous_fin_faces > 0 {
-        losses.push(SldprtLossCode::TopologyAmbiguousFinFaceWithheld.note(format!(
-            "{} face(s) were withheld with their surface because a loop of the face holds an ambiguous FIN.",
-            stats.withheld_ambiguous_fin_faces,
-        )));
-    }
-    if stats.withheld_ring_edges > 0 {
-        losses.push(SldprtLossCode::TopologyRingEdgeWithheld.note(format!(
-            "{} vertexless ring edge(s) fail reciprocal closed-carrier single-loop admission.",
-            stats.withheld_ring_edges,
         )));
     }
 }
@@ -5107,6 +5160,7 @@ fn build_geometry_report(
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
+    let mut brep_losses = decoded.take_losses()?;
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -5130,7 +5184,7 @@ fn build_geometry_report(
         }
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
-    losses.append(&mut decoded.losses);
+    losses.append(&mut brep_losses);
     if s.unknown_curve_edges > 0 {
         losses.push(
             SldprtLossCode::GeometryEdgeSupportCurveUntyped.note(format!(
@@ -5278,6 +5332,7 @@ fn build_container_ir(
     classification: &crate::dialect::LayerClassification,
 ) -> Result<(CadIr, Annotations, Vec<UnknownRecord>, retention::Retention), CodecError> {
     let mut ir = CadIr::empty();
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances([]);
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
@@ -5305,11 +5360,20 @@ fn build_metadata_ir(
     let equation_managers = crate::design_v11::equation_managers(scan);
     let length_places = crate::design_v11::length_places(scan);
     let mut ir = CadIr::empty();
+    ir.tolerances = cadmpeg_parasolid::precision::part_tolerances([]);
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
-    let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut history_given_up = Vec::new();
+    let mut histories = crate::history::histories(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+        &mut history_given_up,
+    )?;
+    retention.give_up(history_given_up);
     let (mut lanes, exact_profiles, mark_owners, mark_spans, configuration_maps, walked_patterns) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let rollback = part
@@ -5359,8 +5423,15 @@ fn build_metadata_ir(
         &mut sketch_streams_given_up,
     )?;
     retention.give_up(sketch_streams_given_up);
-    let mut model_attributes =
-        crate::metadata::attributes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let mut carriers_given_up = Vec::new();
+    let mut model_attributes = crate::metadata::attributes(
+        ctx,
+        scan,
+        &mut annotations,
+        &mut pmi_losses,
+        &mut carriers_given_up,
+    )?;
+    retention.give_up(carriers_given_up);
     let custom_properties = crate::history::project::custom_property_attributes(&histories)?;
     model_attributes.extend(custom_properties);
     ir.model.attributes = model_attributes;
@@ -6621,10 +6692,15 @@ pub(crate) fn stamp_local_digests(
 ) -> Result<(), CodecError> {
     ir.finalize();
     let brep_hash = brep_local_sha256_in_place(ctx, ir)?;
+    let tolerance_hash = crate::writer::linear_tolerance_local_sha256(ir)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("brep_local_sha256"),
             brep_hash,
+        );
+        source.attributes.insert(
+            cadmpeg_core::nonblank_const!(crate::writer::LINEAR_TOLERANCE_LOCAL_DIGEST_ATTRIBUTE),
+            tolerance_hash,
         );
     }
     let has_swobjects_semantics = ir.model.attributes.iter().any(|attribute| {

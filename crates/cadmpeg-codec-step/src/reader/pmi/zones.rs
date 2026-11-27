@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use crate::reader::{give_up_instance, instance_is_lost};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -111,9 +112,13 @@ pub(super) fn attach(
         if let Some((zone, projection)) = projection(id, record, exchange, geometry, losses, ctx)? {
             projections.entry(zone).or_default().push((id, projection));
         } else {
-            losses.push(StepLossCode::PmiZoneUnresolved.note(format!(
-                "projected tolerance zone #{id} has no complete end, boundary, length, and offset"
-            )));
+            losses.extend(give_up_instance(
+                exchange,
+                id,
+                StepLossCode::PmiZoneUnresolved.note(format!(
+                    "projected tolerance zone #{id} has no complete end, boundary, length, and offset"
+                )),
+            ));
         }
     }
     for (id, record) in exchange.entities("TOLERANCE_ZONE") {
@@ -135,11 +140,15 @@ pub(super) fn attach(
                 .map(|form| (id, form))
             })
             .and_then(|(id, form)| NonBlankString::new(form).map(|form| (id, zone_form(&form))));
+        let zone_projections = projections.get(&id).map(Vec::as_slice).unwrap_or_default();
         let Some((form_id, form)) = form else {
-            losses.push(
+            losses.extend(give_up_zone(
+                exchange,
+                id,
+                zone_projections,
                 StepLossCode::PmiZoneUnresolved
                     .note(format!("tolerance zone #{id} has no zone form")),
-            );
+            ));
             continue;
         };
         let Some(owners) = introduced(record, "TOLERANCE_ZONE", 4, 0) else {
@@ -147,15 +156,19 @@ pub(super) fn attach(
         };
         let owners = references(owners, ctx).collect::<Result<Vec<_>, _>>()?;
         if owners.len() != 1 {
-            losses.push(StepLossCode::PmiZoneUnresolved.note(format!(
-                "tolerance zone #{id} has {} defining tolerances; shared zone ownership is not transferred",
-                owners.len()
-            )));
+            losses.extend(give_up_zone(
+                exchange,
+                id,
+                zone_projections,
+                StepLossCode::PmiZoneUnresolved.note(format!(
+                    "tolerance zone #{id} has {} defining tolerances; shared zone ownership is not transferred",
+                    owners.len()
+                )),
+            ));
             continue;
         }
-        let zone_projections = projections.get(&id).map(Vec::as_slice).unwrap_or_default();
         let mut attached = false;
-        for owner in owners {
+        for &owner in &owners {
             let Some(index) = annotations.get(owner) else {
                 continue;
             };
@@ -181,13 +194,41 @@ pub(super) fn attach(
         if attached {
             typed.extend([id, form_id]);
             typed.extend(zone_projections.iter().map(|(id, _)| *id));
-        } else {
+        } else if owners
+            .iter()
+            .any(|&owner| instance_is_lost(exchange, owner))
+        {
+            // The zone is a value of the given-up tolerance, which its charge
+            // names.
             losses.push(StepLossCode::PmiZoneUnresolved.note(format!(
-                "tolerance zone #{id} has no transferred geometric tolerance"
+                "tolerance zone #{id} belongs to a given-up geometric tolerance"
             )));
+        } else {
+            losses.extend(give_up_zone(
+                exchange,
+                id,
+                zone_projections,
+                StepLossCode::PmiZoneUnresolved.note(format!(
+                    "tolerance zone #{id} names no transferred geometric tolerance"
+                )),
+            ));
         }
     }
     Ok(())
+}
+
+/// The losses of tolerance zone `id`, which the reader gives up for `why`
+/// with the projections that define it.
+fn give_up_zone(
+    exchange: &Exchange,
+    id: u64,
+    projections: &[(u64, ToleranceProjection)],
+    why: LossNote,
+) -> [LossNote; 1] {
+    for (projection, _) in projections {
+        exchange.lost().drop_with(*projection, id);
+    }
+    give_up_instance(exchange, id, why)
 }
 
 fn projection(

@@ -213,10 +213,18 @@ fn loss_count(losses: &[LossNote], code: IgesLossCode) -> usize {
         .count()
 }
 
-fn directory_count(ir: &CadIr) -> usize {
-    let namespace = ir.native.namespace("iges").expect("iges namespace");
-    let arena = |name: &str| namespace.arenas().get(name).map_or(0, Vec::len);
-    arena("entities") + arena("quarantined_directory_records")
+fn directory_count(decoded: &DecodeResult) -> usize {
+    let namespace = decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace");
+    let entities = namespace.arenas().get("entities").map_or(0, Vec::len);
+    entities
+        + loss_count(
+            &decoded.report().losses,
+            IgesLossCode::DirectoryRecordQuarantined,
+        )
 }
 
 fn point_ids(ir: &CadIr) -> BTreeSet<String> {
@@ -238,7 +246,7 @@ fn point_ids(ir: &CadIr) -> BTreeSet<String> {
 fn outcome_of(decoded: &DecodeResult) -> Outcome {
     let ir = decoded.ir();
     Outcome {
-        directory: directory_count(ir),
+        directory: directory_count(decoded),
         point_ids: point_ids(ir),
         points: ir.geometry.points.len(),
         curves: ir.geometry.curves.len(),

@@ -27,6 +27,7 @@ use cadmpeg_ir::codec::Decoded;
 use cadmpeg_ir::design::projection::fields::{
     FeatureField, ModelFeatureField, ModelParameterField, ParameterField,
 };
+use cadmpeg_ir::unknown::part::{record_given_up, GivenUpPart};
 
 type Mapping<T> = Result<T, String>;
 pub(super) const ROWS: usize = 10_000;
@@ -115,7 +116,10 @@ fn mapping_loss_code(
     valid_suppression: bool,
     reason: &str,
 ) -> OnshapeLossCode {
-    if !region_budget_exhausted
+    if features::is_custom(feature) {
+        // A namespaced feature keeps its own reason whatever its feature type.
+        OnshapeLossCode::HistoryNotSupported
+    } else if !region_budget_exhausted
         && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
         && features::value(feature, "bodyType") == Some("THIN")
     {
@@ -391,6 +395,12 @@ fn rollback_bar(
 fn suppression(feature: &Value) -> Mapping<bool> {
     Ok(boolean_field(feature, "suppressed")? | boolean_field(feature, "parentSuppressed")?)
 }
+/// Whether `feature` holds a `suppressed` or `parentSuppressed` key.
+pub(super) fn suppression_stated(feature: &Value) -> bool {
+    ["suppressed", "parentSuppressed"]
+        .iter()
+        .any(|key| feature.get(key).is_some())
+}
 fn reserve_history<T>(rows: &mut Vec<T>, count: usize) -> Result<(), Error> {
     rows.try_reserve(count)
         .map_err(|_| Error::Decode("Onshape history allocation failed".into()))
@@ -444,6 +454,7 @@ pub(super) fn read(
 ) -> Result<Model, Error> {
     let mut bundle = Bundle::open(ctx, root)?;
     report.notes.append(&mut bundle.losses);
+    report.parts.append(&mut bundle.given_up);
     let manifest = bundle.json("manifest.json")?;
     if manifest.get("schema").and_then(Value::as_str) != Some(SCHEMA) {
         return Err(Error::Decode(
@@ -464,7 +475,9 @@ pub(super) fn read(
         }
     }
     if ctx.container_only() {
-        return Ok(Model::from_decoded(empty(ctx, root), None));
+        let mut model = Model::from_decoded(empty(ctx, root), None);
+        report.commit_parts(ctx, &mut model.ir, &mut model.source_fidelity)?;
+        return Ok(model);
     }
     let document = manifest.get("document").unwrap_or(&Value::Null);
     let mid = text(document, "microversion").map_err(Error::Decode)?;
@@ -472,9 +485,8 @@ pub(super) fn read(
     for key in ["sourceMicroversion", "microversionId"] {
         microversion(manifest, key, &mid).map_err(Error::Decode)?;
     }
-    bundle.admit_microversions(&mid);
-    bundle.admit_topology(ctx)?;
-    report.notes.append(&mut bundle.losses);
+    bundle.admit_microversions(ctx, &mid, report)?;
+    bundle.admit_topology(ctx, report)?;
     let manifest = bundle.json("manifest.json")?;
     let elements = rows(manifest, "elements").map_err(Error::Decode)?;
     let mut model = if studio_root(manifest, elements)?.is_some() {
@@ -492,6 +504,7 @@ pub(super) fn read(
     report
         .notes
         .extend(bundle.retain_assets(ctx, &mut model.ir)?);
+    report.commit_parts(ctx, &mut model.ir, &mut model.source_fidelity)?;
     Ok(model)
 }
 
@@ -603,11 +616,13 @@ fn studio_in(
                 rollback_bar(response, features, report, &history_path),
             ),
             Err(reason) => {
-                report.push_coded(
+                report.give_up(
+                    ctx,
+                    bundle,
                     &history_path,
                     OnshapeLossCode::HistoryNotSupported,
                     format!("{reason}; feature history is missing"),
-                );
+                )?;
                 (&[][..], RollbackBar::default())
             }
         },
@@ -638,11 +653,13 @@ fn studio_in(
             Ok((decoded, text)) => Some(Model::from_decoded(decoded, Some(text))),
             Err(error) if features.is_empty() => return Err(error.into()),
             Err(error) => {
-                report.push_coded(
+                report.give_up(
+                    ctx,
+                    bundle,
                     &step_path,
                     OnshapeLossCode::StepUnreadable,
                     format!("{error}; final geometry is missing"),
-                );
+                )?;
                 None
             }
         }
@@ -736,24 +753,39 @@ fn studio_in(
         reserve_history(&mut model.ir.design.containers, 1)?;
         reserve_history(&mut model.ir.design.scopes, 1)?;
     }
-    let mut seen = std::collections::BTreeSet::new();
+    let mut seen = std::collections::BTreeMap::<&str, &Value>::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
     let mut assumed_sides = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
         let design_length = model.ir.design.features.len();
         let note_start = report.notes.len();
         let native = match text(feature, "featureId") {
-            Ok(native) if seen.insert(native) => native,
-            Ok(native) => {
-                report.push_coded(
-                    native,
-                    OnshapeLossCode::RecordMalformed,
-                    "a feature repeats an earlier feature id; omitted the feature",
-                );
-                continue;
-            }
+            Ok(native) => match seen.entry(native) {
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(feature);
+                    native
+                }
+                std::collections::btree_map::Entry::Occupied(first) if *first.get() == feature => {
+                    report.push_coded(
+                        native,
+                        OnshapeLossCode::RecordMalformed,
+                        "a feature repeats an earlier feature with the same id and content; kept the earlier feature",
+                    );
+                    continue;
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    report.give_up_as(
+                        &format!("{history_path}#/features/{ordinal}"),
+                        native,
+                        OnshapeLossCode::RecordMalformed,
+                        "a feature repeats an earlier feature id with different content; omitted the feature",
+                    );
+                    continue;
+                }
+            },
             Err(reason) => {
-                report.push_coded(
+                report.give_up_as(
+                    &format!("{history_path}#/features/{ordinal}"),
                     &format!("feature #{ordinal}"),
                     OnshapeLossCode::RecordMalformed,
                     format!("{reason}; omitted the feature"),
@@ -762,10 +794,7 @@ fn studio_in(
             }
         };
         let feature_id = id("feature", native);
-        let name = feature
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or(native);
+        let name = text(feature, "name").unwrap_or(native);
         let suppressed = suppression(feature);
         let bindings: Vec<_> =
             if feature.get("featureType").and_then(Value::as_str) == Some("assignVariable") {
@@ -1092,7 +1121,8 @@ fn studio_in(
             .cloned()
             .collect();
         let mut row = json!({"id": feature_id, "ordinal": ordinal, "name": name, "dependencies": dependencies, "source_properties": source_properties, "source_content": [], "outputs": outputs, "definition": definition});
-        if let Ok(suppressed) = suppressed {
+        // A source with neither key does not state suppression (§5.10).
+        if let (Ok(suppressed), true) = (suppressed, suppression_stated(feature)) {
             row["suppressed"] = json!(suppressed);
         }
         if let Err(reason) = push(&mut model.ir.model.features, row) {
@@ -1105,7 +1135,8 @@ fn studio_in(
                     && !OnshapeLossCode::ThinNotSupported.matches(note)
             });
             report.notes.extend(tail);
-            report.push_coded(
+            report.give_up_as(
+                &format!("{history_path}#/features/{ordinal}"),
                 name,
                 OnshapeLossCode::RecordMalformed,
                 format!("{reason}; omitted the feature"),
@@ -1167,11 +1198,53 @@ pub(super) struct Model {
 #[derive(Default)]
 pub(super) struct Report {
     pub(super) notes: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// The members the decode gives up, in the order it gives them up.
+    pub(super) parts: Vec<GivenUpPart>,
 }
 impl Report {
     fn push_coded(&mut self, subject: &str, code: OnshapeLossCode, detail: impl Into<String>) {
         self.notes
             .push(code.note(format!("{}; subject: {subject}", detail.into())));
+    }
+    /// Pushes the coded note for `record`, a member path of `bundle`, and
+    /// gives the member up as a part over its stored bytes. The member
+    /// stays an asset.
+    fn give_up(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        bundle: &Bundle<'_>,
+        record: &str,
+        code: OnshapeLossCode,
+        detail: impl Into<String>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let note = code.note(format!("{}; subject: {record}", detail.into()));
+        bundle.give_up_member(ctx, record, note, &mut self.notes, &mut self.parts)
+    }
+    /// Commits the given-up members to `ir` and `fidelity`, and pushes
+    /// their `record.unreadable` losses.
+    fn commit_parts(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        ir: &mut cadmpeg_ir::CadIr,
+        fidelity: &mut cadmpeg_ir::SourceFidelity,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        for part in std::mem::take(&mut self.parts) {
+            self.notes.push(part.commit(ctx, ir, fidelity)?);
+        }
+        Ok(())
+    }
+    /// Pushes the coded note for `subject` and the `record.unreadable` of
+    /// `record`, its source address.
+    fn give_up_as(
+        &mut self,
+        record: &str,
+        subject: &str,
+        code: OnshapeLossCode,
+        detail: impl Into<String>,
+    ) {
+        let note = code.note(format!("{}; subject: {subject}", detail.into()));
+        self.notes
+            .extend(record_given_up(archive::source_record(record), note));
     }
 }
 fn empty(ctx: &DecodeContext<'_>, root: View<'_>) -> Decoded {
@@ -1293,14 +1366,10 @@ fn annotate(
                 )
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
-        if source.get("suppressed").is_none() && source.get("parentSuppressed").is_none() {
-            let feature = cadmpeg_ir::ids::Identity::new(id("feature", native))
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            annotations
-                .field_exactness(feature, "suppressed", Exactness::Inferred)
-                .map_err(cadmpeg_core::CodecError::from)?;
-        }
     }
+    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations, RESTATEMENT)?;
+    // The side is marked on the restated note, so the rest of the design
+    // `definition` keeps its mark.
     for feature in &model.ir.design.features {
         if assumed_sides.contains(feature.id.as_str()) {
             annotations
@@ -1308,7 +1377,6 @@ fn annotate(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
     }
-    cadmpeg_ir::design::projection::restate_exactness(&model.ir, &mut annotations, RESTATEMENT)?;
     model.source_fidelity.annotations = annotations.build();
     Ok(())
 }

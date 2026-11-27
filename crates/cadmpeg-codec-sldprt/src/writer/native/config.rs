@@ -16,9 +16,8 @@ const PART_HEAD_WORD: u32 = 0x100;
 /// The first object identifier the part's bodies and atoms take.
 pub(super) const FIRST_BODY_ID: u32 = 101;
 
-/// Density in kg/m³ and modelling tolerance in metres.
+/// Density in kg/m³.
 const DENSITY: f64 = 1000.0;
-const TOLERANCE: f64 = 1.0e-8;
 
 /// The colours a `moTransRefPlaneData_c` writes (`0x00BBGGRR`).
 const PLANE_COLOUR: u32 = 0x00f7_8553;
@@ -155,7 +154,7 @@ pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs),
     transformed_planes(&mut a);
     a.zeros(16);
     a.f64(DENSITY);
-    a.f64(TOLERANCE);
+    a.f64(facts.linear_resolution);
     a.u32(2);
     a.u16(0);
     let next_id = facts

@@ -282,6 +282,7 @@ impl DecodeResult {
         record_digests: bool,
     ) -> Result<Self, DecodeFailure> {
         let mut result = DecodeResult::new(decoded, format, ctx.depth(), ctx.policy())?;
+        result.name_dropped_records(ctx)?;
         result.give_up_repeated_ids(ctx, format)?;
         if !ctx.container_only() {
             result.widen_vertex_tolerances(ctx.policy());
@@ -920,7 +921,8 @@ impl<C: CodecBackend + ?Sized> Codec for C {
     }
 }
 
-mod loss;
+mod dropped;
+pub(crate) mod loss;
 mod vertex_tolerance;
 pub mod write;
 
