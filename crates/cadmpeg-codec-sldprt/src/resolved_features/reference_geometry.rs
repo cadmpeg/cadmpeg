@@ -106,6 +106,9 @@ pub(crate) fn enrich_history_reference_planes(
     let mut data_heads = BTreeMap::<(usize, usize), Vec<(Point3, Vector3)>>::new();
     let mut candidates = BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
     let mut candidate_sources = BTreeMap::<(usize, usize), Vec<SketchPlaneUAxisSource>>::new();
+    let mut tagged_candidates =
+        BTreeMap::<(usize, usize), Vec<((Point3, Vector3, Vector3), SketchPlaneUAxisSource)>>::new(
+        );
     let mut reference_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let mut reference_frame_candidates =
         BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
@@ -273,14 +276,17 @@ pub(crate) fn enrich_history_reference_planes(
                 reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right))
             });
             anchored_frames.dedup_by_key(|frame| reference_plane_frame_key(frame));
+            let mut from_tag = false;
             let explicit = if offset_frames.is_some() {
                 None
             } else if anchored_frames.is_empty() {
-                let tagged = || {
-                    constraint
+                let mut tagged = || {
+                    let frame = constraint
                         .is_none()
                         .then(|| tagged_plane_data_frame(lane, start, end))
-                        .flatten()
+                        .flatten();
+                    from_tag = frame.is_some();
+                    frame
                 };
                 match explicit_reference_plane_frame(bytes) {
                     Ok(Some(frame)) => Some(frame),
@@ -304,6 +310,13 @@ pub(crate) fn enrich_history_reference_planes(
             };
             let (origin, normal, u_axis) = frame;
             let index = (history_index, feature_index);
+            if from_tag {
+                tagged_candidates
+                    .entry(index)
+                    .or_default()
+                    .push(((origin, normal, u_axis), u_axis_source));
+                continue;
+            }
             candidates
                 .entry(index)
                 .or_default()
@@ -312,6 +325,15 @@ pub(crate) fn enrich_history_reference_planes(
                 .entry(index)
                 .or_default()
                 .push(u_axis_source);
+        }
+    }
+    for (index, tagged) in tagged_candidates {
+        if candidates.contains_key(&index) {
+            continue;
+        }
+        for (frame, source) in tagged {
+            candidates.entry(index).or_default().push(frame);
+            candidate_sources.entry(index).or_default().push(source);
         }
     }
     record_offset_plane_distances(histories, &stored_distances, length_unit);
@@ -656,32 +678,35 @@ fn plane_data_head(lane: &FeatureInputLane, start: usize, end: usize) -> Option<
 
 /// The frame at the head of the plane-data object of the reference plane
 /// whose object spans `start..end`, where that object follows a class token
-/// behind six zero bytes (`sldprt.md` §2): the 121-byte matrix frame, else the
-/// 97-byte fixed frame, else the 81-byte frame.
+/// behind six zero bytes (`sldprt.md` §2): the one frame that the 121-byte
+/// matrix form, the 97-byte pairwise-orthogonal form and the 81-byte form
+/// read there within the object.
 fn tagged_plane_data_frame(
     lane: &FeatureInputLane,
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    let payload: &[u8] = &lane.native_payload;
-    let end = end.min(payload.len());
-    let at = (plane_name_end(payload, start)?..end).find(|at| {
-        behind_class_token(payload, *at) && plane_data_head_at(payload, *at).is_some()
+    let payload = lane
+        .native_payload
+        .get(..end.min(lane.native_payload.len()))?;
+    let at = (plane_name_end(payload, start)?..payload.len()).find(|at| {
+        at.checked_sub(PLANE_DATA_TOKEN_ZEROS + 2)
+            .is_some_and(|zeros| zeros >= start)
+            && behind_class_token(payload, *at)
+            && plane_data_head_at(payload, *at).is_some()
     })?;
-    let frame = |len: usize| payload.get(at..at.checked_add(len)?.min(end));
-    frame(matrix_plane::LEN)
-        .filter(|bytes| bytes.len() == matrix_plane::LEN)
-        .and_then(matrix_reference_plane_frame)
-        .or_else(|| {
-            frame(fixed_plane::LEN)
-                .filter(|bytes| bytes.len() == fixed_plane::LEN)
-                .and_then(fixed_reference_plane_frame)
-        })
-        .or_else(|| {
-            frame(minimal_plane::LEN)
-                .filter(|bytes| bytes.len() == minimal_plane::LEN)
-                .and_then(minimal_reference_plane_frame)
-        })
+    let bytes = |len: usize| payload.get(at..at.checked_add(len)?);
+    let mut frames = [
+        bytes(matrix_plane::LEN).and_then(matrix_reference_plane_frame),
+        bytes(fixed_plane::LEN).and_then(fixed_reference_plane_frame),
+        bytes(minimal_plane::LEN).and_then(minimal_reference_plane_frame),
+    ]
+    .into_iter()
+    .flatten();
+    let frame = frames.next()?;
+    frames
+        .all(|other| reference_plane_frame_key(&other) == reference_plane_frame_key(&frame))
+        .then_some(frame)
 }
 
 /// The offset after the name of the feature object that starts at `start`.

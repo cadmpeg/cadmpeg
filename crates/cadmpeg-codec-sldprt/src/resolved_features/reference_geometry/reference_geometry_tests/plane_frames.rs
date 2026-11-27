@@ -194,10 +194,10 @@ fn a_line_point_plane_reads_its_81_byte_frame() {
     );
 }
 
-/// A matrix frame at origin `(0.0125, 0, 0)` m whose rows are `rows`.
-fn matrix_rows(normal: [f64; 3], rows: [[f64; 3]; 3]) -> [u8; matrix_plane::LEN] {
+/// A matrix frame at origin `(x, 0, 0)` m whose rows are `rows`.
+fn matrix_rows(x: f64, normal: [f64; 3], rows: [[f64; 3]; 3]) -> [u8; matrix_plane::LEN] {
     let mut frame = [0; matrix_plane::LEN];
-    let values = [0.0125, 0.0, 0.0]
+    let values = [x, 0.0, 0.0]
         .into_iter()
         .chain(normal)
         .enumerate()
@@ -215,13 +215,20 @@ fn matrix_rows(normal: [f64; 3], rows: [[f64; 3]; 3]) -> [u8; matrix_plane::LEN]
     frame
 }
 
+/// A matrix frame whose rows read in no other frame form.
+fn matrix_only(x: f64) -> [u8; matrix_plane::LEN] {
+    matrix_rows(
+        x,
+        [1.0, 0.0, 0.0],
+        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+    )
+}
+
 /// A plane object named `Plane3` whose plane-data object is written as
 /// `token` behind six zero bytes and stores `frame`, and the offset of the
 /// frame.
 fn tagged_plane_object(token: u16, frame: &[u8]) -> (Vec<u8>, usize) {
-    let mut payload = NAME_MARKER.to_vec();
-    payload.push(6);
-    payload.extend("Plane3".encode_utf16().flat_map(u16::to_le_bytes));
+    let mut payload = plane_name();
     payload.extend([0x05, 0x01, 0x02]);
     payload.extend([0; 6]);
     payload.extend(token.to_le_bytes());
@@ -230,15 +237,22 @@ fn tagged_plane_object(token: u16, frame: &[u8]) -> (Vec<u8>, usize) {
     (payload, at)
 }
 
-fn plane_lane(payload: Vec<u8>) -> FeatureInputLane {
+fn plane_name() -> Vec<u8> {
+    let mut payload = NAME_MARKER.to_vec();
+    payload.push(6);
+    payload.extend("Plane3".encode_utf16().flat_map(u16::to_le_bytes));
+    payload
+}
+
+fn plane_lane(id: &str, payload: Vec<u8>) -> FeatureInputLane {
     FeatureInputLane {
-        id: "lane".into(),
+        id: id.into(),
         configuration: None,
         native_payload: payload.into(),
         classes: Vec::new(),
         names: vec![FeatureInputName {
-            id: "name".into(),
-            parent: "lane".into(),
+            id: format!("{id} name"),
+            parent: id.into(),
             ordinal: 0,
             offset: 0,
             object_id: ObjectId::from_value(2080),
@@ -256,51 +270,9 @@ fn plane_lane(payload: Vec<u8>) -> FeatureInputLane {
     }
 }
 
-const UP_ROWS: [[f64; 3]; 3] = [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]];
-
-#[test]
-fn a_tagged_plane_data_object_stores_its_frame_after_the_token() {
-    let frame = matrix_rows([0.0, 0.0, 1.0], UP_ROWS);
-    let (payload, _) = tagged_plane_object(0x816d, &frame);
-    let end = payload.len();
-    let lane = plane_lane(payload);
-    assert_eq!(
-        tagged_plane_data_frame(&lane, 0, end),
-        Some((
-            Point3::new(12.5, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(0.0, -1.0, 0.0),
-        ))
-    );
-    let lane = plane_lane(tagged_plane_object(0, &frame).0);
-    assert_eq!(tagged_plane_data_frame(&lane, 0, end), None);
-}
-
-#[test]
-fn a_tagged_plane_frame_is_read_within_its_object() {
-    let (payload, at) = tagged_plane_object(0x816d, &matrix_rows([0.0, 0.0, 1.0], UP_ROWS));
-    let lane = plane_lane(payload);
-    assert_eq!(
-        tagged_plane_data_frame(&lane, 0, at + fixed_plane::LEN),
-        Some((
-            Point3::new(12.5, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(0.0, 1.0, 0.0),
-        ))
-    );
-}
-
-#[test]
-fn a_plane_with_a_tagged_frame_and_a_second_frame_states_the_tagged_one() {
-    let (mut payload, _) = tagged_plane_object(0x816d, &matrix_rows([0.0, 0.0, 1.0], UP_ROWS));
-    payload.extend([0xaa; 16]);
-    let mut other = matrix_rows(
-        [1.0, 0.0, 0.0],
-        [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-    );
-    other[..8].copy_from_slice(&0.5_f64.to_le_bytes());
-    payload.extend_from_slice(&other);
-    payload.extend([0xaa; 16]);
+/// The frame properties `enrich_history_reference_planes` gives a plane
+/// named `Plane3` in `lanes`.
+fn enriched_plane(lanes: &[FeatureInputLane]) -> [Option<String>; 3] {
     let mut histories = vec![FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -325,20 +297,94 @@ fn a_plane_with_a_tagged_frame_and_a_second_frame_states_the_tagged_one() {
             content: Vec::new(),
         }],
     }];
-
     enrich_history_reference_planes(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut histories,
-        &[plane_lane(payload)],
+        lanes,
         None,
     )
     .unwrap();
-
     let properties = &histories[0].features[0].properties;
+    ["Origin", "Normal", "UAxis"].map(|key| properties.get(key).cloned())
+}
+
+/// A tagged plane object whose interval also holds a second, different frame.
+fn ambiguous_tagged_plane() -> Vec<u8> {
+    let (mut payload, _) = tagged_plane_object(0x816d, &matrix_only(0.0125));
+    payload.extend([0xaa; 16]);
+    payload.extend_from_slice(&matrix_only(0.5));
+    payload.extend([0xaa; 16]);
+    payload
+}
+
+#[test]
+fn a_tagged_plane_data_object_stores_its_frame_after_the_token() {
+    let (payload, _) = tagged_plane_object(0x816d, &matrix_only(0.0125));
+    let end = payload.len();
     assert_eq!(
-        properties.get("Origin"),
-        Some(&"12.5mm,0mm,0mm".to_string())
+        tagged_plane_data_frame(&plane_lane("lane", payload), 0, end),
+        Some((
+            Point3::new(12.5, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ))
     );
-    assert_eq!(properties.get("Normal"), Some(&"0,0,1".to_string()));
-    assert_eq!(properties.get("UAxis"), Some(&"0,-1,0".to_string()));
+    let lane = plane_lane("lane", tagged_plane_object(0, &matrix_only(0.0125)).0);
+    assert_eq!(tagged_plane_data_frame(&lane, 0, end), None);
+}
+
+#[test]
+fn a_tagged_plane_frame_read_in_two_forms_that_differ_is_unread() {
+    let frame = matrix_rows(
+        0.0125,
+        [0.0, 0.0, 1.0],
+        [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+    );
+    let (payload, _) = tagged_plane_object(0x816d, &frame);
+    let end = payload.len();
+    assert_eq!(
+        tagged_plane_data_frame(&plane_lane("lane", payload), 0, end),
+        None
+    );
+}
+
+#[test]
+fn a_tagged_plane_frame_is_read_within_its_object() {
+    let (payload, at) = tagged_plane_object(0x816d, &matrix_only(0.0125));
+    let lane = plane_lane("lane", payload);
+    assert_eq!(
+        tagged_plane_data_frame(&lane, 0, at + fixed_plane::LEN),
+        None
+    );
+}
+
+#[test]
+fn a_plane_with_a_tagged_frame_and_a_second_frame_states_the_tagged_one() {
+    assert_eq!(
+        enriched_plane(&[plane_lane("lane", ambiguous_tagged_plane())]),
+        [
+            Some("12.5mm,0mm,0mm".to_string()),
+            Some("1,0,0".to_string()),
+            Some("0,1,0".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn a_frame_another_lane_reads_without_a_token_precedes_a_tagged_frame() {
+    let mut untagged = plane_name();
+    untagged.extend([0xaa; 16]);
+    untagged.extend_from_slice(&matrix_only(0.25));
+    untagged.extend([0xaa; 16]);
+    assert_eq!(
+        enriched_plane(&[
+            plane_lane("lane", untagged),
+            plane_lane("other", ambiguous_tagged_plane()),
+        ]),
+        [
+            Some("250mm,0mm,0mm".to_string()),
+            Some("1,0,0".to_string()),
+            Some("0,1,0".to_string()),
+        ]
+    );
 }
