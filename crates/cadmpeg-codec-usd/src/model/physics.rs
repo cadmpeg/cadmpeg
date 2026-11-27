@@ -32,6 +32,8 @@ use cadmpeg_ir::transform::Transform;
 
 use cadmpeg_ir::physics::solver::SolverTarget;
 
+use cadmpeg_ir::unknown::part::{dropped_with, Cause, GivenUpRecord};
+
 use crate::schema::physics::{Drive, JointData, JointType, Limit};
 use crate::schema::physx::Holder;
 use crate::schema::xform::{compose, quaternion, Affine};
@@ -51,6 +53,29 @@ pub(super) enum PhysicsOwner {
 pub(super) struct PendingJoint {
     pub(super) path: String,
     pub(super) data: JointData,
+}
+
+/// Why the decoder leaves a joint prim out of the document.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum JointRejection {
+    /// A joint frame is not a finite rigid transform.
+    FrameMalformed,
+    /// A body relationship names a prim that is not a transferred
+    /// occurrence.
+    BodyNotTransferred,
+    /// Both body relationships are empty, so each side is the world.
+    NoBody,
+}
+
+impl JointRejection {
+    /// The cause, as the predicate of one joint.
+    const fn one(self) -> &'static str {
+        match self {
+            Self::FrameMalformed => "has a malformed frame",
+            Self::BodyNotTransferred => "names a body that is not a transferred prim",
+            Self::NoBody => "names no body",
+        }
+    }
 }
 
 fn frame_axis(letter: char) -> FrameAxis {
@@ -439,6 +464,8 @@ impl super::Builder<'_, '_, '_, '_> {
         pending.sort_by_key(|joint| {
             matches!(joint.data.kind, JointType::Gear | JointType::RackPinion)
         });
+        // The joints left out so far.
+        let mut rejected = BTreeSet::new();
         for PendingJoint { path, data } in pending {
             let alignment = match data.kind {
                 JointType::Revolute | JointType::Prismatic => {
@@ -446,18 +473,19 @@ impl super::Builder<'_, '_, '_, '_> {
                 }
                 _ => crate::schema::xform::IDENTITY,
             };
+            let id = crate::ids::joint(&path);
             let mut connectors = Vec::new();
-            let mut unresolved = false;
+            let mut rejection = None;
             for side in 0..2 {
                 let Some(frame) = self.joint_frame(&data, side, &alignment) else {
-                    unresolved = true;
+                    rejection = Some(JointRejection::FrameMalformed);
                     break;
                 };
                 let operand = match &data.bodies[side] {
                     Some(body) => {
                         let occurrence = crate::ids::occurrence(body);
                         if !occurrences.contains(occurrence.as_str()) {
-                            unresolved = true;
+                            rejection = Some(JointRejection::BodyNotTransferred);
                             break;
                         }
                         Some(JointOperand::occurrence(
@@ -470,9 +498,34 @@ impl super::Builder<'_, '_, '_, '_> {
                 };
                 connectors.push((operand, frame));
             }
-            if unresolved || connectors.iter().all(|(operand, _)| operand.is_none()) {
-                self.tallies.rejected_joints.push(path);
+            let rejection = rejection.or_else(|| {
+                connectors
+                    .iter()
+                    .all(|(operand, _)| operand.is_none())
+                    .then_some(JointRejection::NoBody)
+            });
+            if let Some(rejection) = rejection {
+                self.tallies.given_up.push(GivenUpRecord::new(
+                    &id,
+                    Cause::Undecoded,
+                    format_args!("the joint {}", rejection.one()),
+                ));
+                rejected.insert(id);
                 continue;
+            }
+            // A coupling needs each joint it couples.
+            if matches!(data.kind, JointType::Gear | JointType::RackPinion) {
+                if let Some(needed) = data
+                    .coupled
+                    .iter()
+                    .flatten()
+                    .map(|target| crate::ids::joint(target))
+                    .find(|target| rejected.contains(target))
+                {
+                    self.tallies.dependents.push(dropped_with(&id, &needed));
+                    rejected.insert(id);
+                    continue;
+                }
             }
             let connector = |(operand, frame): (Option<JointOperand>, Transform)| JointConnector {
                 operand: operand.unwrap_or_else(|| JointOperand::root("/", Vec::new())),
@@ -487,7 +540,6 @@ impl super::Builder<'_, '_, '_, '_> {
             let generic = (data.kind == JointType::Generic)
                 .then(|| generic_kind(&data.limits, scale))
                 .flatten();
-            let id = crate::ids::joint(&path);
             let mut joint = match data.kind {
                 JointType::Fixed if connectors.iter().any(|(operand, _)| operand.is_none()) => {
                     let (grounded, world): (Vec<_>, Vec<_>) = connectors

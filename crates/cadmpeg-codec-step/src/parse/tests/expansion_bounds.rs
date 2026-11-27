@@ -76,7 +76,13 @@ fn given_up_with(text: &str) -> Vec<String> {
         .given_up()
         .iter()
         .find(|statement| &source[statement.span.clone()] == text)
-        .map(|statement| statement.dropped.clone())
+        .map(|statement| {
+            statement
+                .dropped
+                .iter()
+                .map(|record| record.name.clone())
+                .collect()
+        })
         .unwrap_or_default()
 }
 

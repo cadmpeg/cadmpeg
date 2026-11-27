@@ -28,7 +28,8 @@ pub(crate) enum SldprtLossCode {
     MetadataPartRootUnsupported,
     /// Configuration-manager class has no proven scalar roles or serializer.
     MetadataConfigurationManagerOpaque,
-    /// Default-property carrier has no complete supported reading.
+    /// Default-property carrier stores its properties in a form the decoder
+    /// does not read.
     MetadataDefaultCarrierUnsupported,
     /// Default properties have multiple physical namespace owners.
     MetadataDefaultOwnerAmbiguous,
@@ -40,7 +41,8 @@ pub(crate) enum SldprtLossCode {
     MetadataMassPropertiesNotCompared,
     /// Configuration-property namespace has multiple physical owners.
     MetadataConfigurationPropertyOwnerAmbiguous,
-    /// Configuration-property XML has no complete unambiguous reading.
+    /// Configuration-property carrier stores its properties in a form the
+    /// decoder does not read.
     MetadataConfigurationPropertyCarrierUnsupported,
     /// Configuration-property record has no supported literal scalar fact.
     MetadataConfigurationPropertyValueUnsupported,
@@ -336,8 +338,9 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN forward link names no reciprocal same-loop backward link, so
-    /// its ring is withheld instead of walked on doubt.
+    /// A FIN ring does not close, or a FIN forward link names no reciprocal
+    /// same-loop backward link, so its loop is withheld instead of walked on
+    /// doubt; the face keeps its other loops.
     TopologyFinLinkUnresolved,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
@@ -535,8 +538,8 @@ pub(crate) enum SldprtLossCode {
     /// Suppressed component instances, and the instances below them, are
     /// omitted from the occurrence tree.
     AssemblySuppressedComponentsOmitted,
-    /// A component instance has no valid placement or names no component
-    /// model; the instance and the instances below it are omitted.
+    /// A component instance has no valid identity, placement, or component
+    /// model; the instance is omitted.
     AssemblyPlacementUnresolved,
     /// Assembly configurations other than the active one are not transferred.
     AssemblyConfigurationsNotTransferred,

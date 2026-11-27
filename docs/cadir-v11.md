@@ -186,7 +186,7 @@ pub struct Native(BTreeMap<CodecId, BTreeMap<NonBlankString, Vec<NativeRecord>>>
 - **Scalars.** Each is a JSON number read as a 64-bit float, finite. `PositiveLength`, `PositiveAngle` and `PositiveReal` are greater than 0. The `NonNegative` forms and `FitTolerance` are at least 0. The `NonZero` forms are not 0. `Fraction` lies in [0, 1], `InteriorAngle` in (0, π), and `SlopeAngle` in (−π/2, π/2). `Length` and its forms are millimetres, `Angle` and its forms radians, and the rest dimensionless.
 - **Tuples.** A `UnitVector2` is a JSON array `[x, y]`. A `Transform` is three rows of four finite numbers, row-major: the linear part in the first three columns and the translation in the fourth. The fourth row, `[0, 0, 0, 1]`, is not written. A `Transform2` is two rows of three finite numbers, the same layout as `Transform`. `FinitePoint2`, `FinitePoint3`, `FiniteVector3`, and `UnitVector3` hold finite coordinates in the order of their frame's axes, and their JSON form is stated in Annex A. A `UnitVector2` or `UnitVector3` has length 1 within 10⁻⁹.
 - **Strings.** A `NonBlankString` holds at least one character that is not white space. White space here and in §2.2 is the Unicode `White_Space` property. A `Sha256Digest` is 64 lower-case hexadecimal digits. `NativeSelections` is checked: at least one name, each holding a character that is not white space, no two equal, in source order. `Base64Bytes` is a byte string written in RFC 4648 base64. A `CodecName` is a codec id (§2.2), `:`, and a name holding at least one character that is not white space, as in `fcstd:Transition` and `sldprt:auto_select`; the name may hold further colons. It is checked. The texts this document writes `codec:name` are of this type: a native option or source setting key, a `Native` operation's kind, a `Native` selection rule, propagation, or relation, and an `Other` generation role. Any other `Native` arm holds the source's kind identifier as a `NonBlankString` (§6), which may carry a codec prefix and need not.
-- **The id types** are newtypes over a string of §2.2's form, one per arena: the arena ids `BodyId`, `RegionId`, `ShellId`, `FaceId`, `LoopId`, `CoedgeId`, `EdgeId`, `VertexId`, the carrier ids, `ProductDefinitionId`, `OccurrenceId`, `FeatureId`, `ParameterId`, and every `…Id` this document declares with its arena; and `ContainerId`, `EvaluationId`, `PublicationId`, `ArrangementId`, `ParameterProgramId`, `SheetMetalRuleId`, `SpatialSketchConstraintId`, `PointCloudId`, `SetupId`, `OperationId`, `MachiningFeatureId`, `ToolId`, `PresetId`, `MachineId`, `ProgramId`, `ProcessGroupId`, `ProcessParameterId`, `ToolpathId`, and `ProcessStateId`.
+- **The id types** are newtypes over a string of §2.2's form, one per arena: the arena ids `BodyId`, `RegionId`, `ShellId`, `FaceId`, `LoopId`, `CoedgeId`, `EdgeId`, `VertexId`, the carrier ids, `ProductDefinitionId`, `OccurrenceId`, `FeatureId`, `ParameterId`, and every `…Id` this document declares with its arena; and `ContainerId`, `EvaluationId`, `PublicationId`, `ArrangementId`, `ParameterProgramId`, `SheetMetalRuleId`, `SpatialSketchConstraintId`, `PointCloudId`, `SetupId`, `OperationId`, `MachiningFeatureId`, `ToolId`, `PresetId`, `MachineId`, `ProgramId`, `ProcessGroupId`, `ProcessParameterId`, `ToolpathId`, and `ProcessStateId`. An `Identity` is a string of §2.2's form that names a record: the `id` of a `Record` target (§8), whose arena a field beside it names; the `object` of a drawing, a view presentation, or a semantic annotation; and a member of the `assets` of a presentation state, a drawing, or a semantic annotation.
 - **`IrVersion`** writes the string `"11"` and reads no other value (§3.6).
 - **`SourceMeta`** is a file's source. `identity` is either the dialect layers its codec classified (`primary` first, then `extra` in the order the codec found them), or, where none was classified, the bare codec id (`{"kind": "unclassified", "format": "step"}`). A `DialectMatch` names a registry dialect id (`rhino:archive-80`). A `DialectId` is `<format>:<name>`: the format is lower-case ASCII letters and digits; the name is lower-case ASCII letters, digits, `.`, and `-`, and neither starts nor ends with `-`. A `Grammar` is a name of that second form. `DialectLayers` is checked: no two of its layers have the same format and `instance`. `declared` holds the version fields the source declares, verbatim, under keys its codec's format specification lists. `instance` names which occurrence of a layer inside the containing file it is, where there is more than one. `admission` states how the decoder read the layer: `Admitted`, with the grammar of the identified dialect; `Unverified`, with another grammar of the same format, named by `using`, its format-local name; `Residual`, with no declared grammar; `Refused`, identified, with its content not decoded. The decoder charges its dialect-unverified loss for `Unverified` and `Residual`. `attributes` holds the properties the source file states about itself, under keys its codec's format specification lists. It holds nothing a decoder computes (§3.1, Rule B).
 - **`BundleMetadata`** is a fragment's reproduction metadata (§2.6). `signature` identifies the finding the fragment reproduces. `check` is the wire name of the check that found it, an open name, so that a new check is no change of wire. `numbers` holds each number the finding's message stated, with the band inside which a reproduction agrees; `hash` is the first eight bytes of the SHA-256 of the signature's other fields less `numbers`, in lower-case hexadecimal. `entity_kind` is the entity's kind and may be empty. `roots` are the stripped root identities, and `context` is the caller's opaque data. `manifest` lists each arena the cut keeps, with its row count and its serialized size. `incomplete_reason` states why a bounded cut is incomplete.
@@ -273,6 +273,7 @@ A decoder gives up only the part it cannot read, decodes the rest, and reports w
   - **A member the reader does not know** is not stated: the document holds nothing of it, and no rewrite of the document holds it. The reader charges `read/member.ignored` (Warning), naming its path and the record that held it. An omitted collection in a record that holds such a member has no one reading and is a given-up part.
   - **Every other value that breaks its type** (an invalid UTF-8 sequence in an id or a key among them) and a required member that is missing are given up as parts, under the rules above, and charge `record.unreadable`, naming the path and the records dropped and marked. A record nested past a bound of §2.5, a record that holds an expression past the bound of an expression, a record that a ceiling of the read cuts, and a record whose refusals take more repairs than the reader makes are given up in the same way and charge `record.undecoded`. The part's text is retained `untyped` with its `unknowns` stub. The reader states a partial form only where the input holds what the form needs: an operation whose variant it reads, as `Unresolved` with that variant's family; a carrier, as `Unknown`; and topology as §5.6 marks it. An expression or a pick it cannot read has no partial form on read, and is a given-up part of the record that holds it.
   - Where the text stops being JSON, every record that closes before that point is read.
+  - **A native record that names a record the read gives up** keeps that name and all its typed fields (§3.1, Linkage). A writer drops it under W1 (§3.4).
   - **A sidecar read with the document** loses the annotations of each record the read gives up or drops (§3.2). `CadirRead::with_sidecar` takes the sidecar's `SourceFidelity`, removes them, and adds the retained text of each part the read gives up.
   - **Reading refuses** only another `ir_version` (§3.6), another `units` record (§2), input that holds no JSON object, `ResourceLimit` of `scope: Session`, and `Io`. The scope is read as written; a breach of §2.1 is a rule of part 10. The caller's `strictness` (§3.4, Refusals) refuses a read on its report, as it does a decode.
 
@@ -1353,7 +1354,7 @@ pub struct NestedArrangement { pub path: OccurrencePath, pub arrangement: Arrang
 pub enum ArrangementRef { Local(ArrangementId), Named(NonBlankString) }
 ```
 
-- The stored design of a scope (features, parameters, occurrences and their `OccurrenceDesign`) is its base (D13). The base material of its definition is the model layer's material assignment: the `material` of the mass-properties records that target the definition or one of its bodies (§8). The base is the one the source provides (a Creo generic, a Fusion default row, an Inventor primary model state), or the configuration active at decode where the source's configurations are peers (SolidWorks); that configuration then states no overrides.
+- The stored design of a scope (features, parameters, occurrences and their `OccurrenceDesign`) is its base (D13). The base material of its definition is the model layer's material assignment: the `material` of the mass-properties records that target the definition or one of its bodies (§8). The base is the one the source provides (a Creo generic, an Inventor primary model state), or the configuration active at decode where the source's configurations are peers (SolidWorks; Fusion, whose Design stream stores the state of the row its `DesignConfigurationRoot` record names); that configuration then states no overrides.
 - **Resolution.** A configuration's value for a parameter, feature state, occurrence state, or material, and its arrangement in force of each kind, is its own (an entry of its `overrides`, `materials`, or `active_arrangements`) where it states one, else its parent's resolved value, else the base's. Process records resolve their per-configuration states the same way (part 7).
 - **Nested overrides.** An occurrence's nested overrides resolve the same way, per nested path and per field: for one path, a field that the configuration's `OccurrenceOverride.nested` entry states wins over its parent's resolved entry, which wins over the base list's entry (`Occurrence.overrides`, §8.1). The base list holds what no configuration changes (hiding one bolt of a sub-assembly used twice). A flexible solution of one parent configuration lives in that configuration's `nested`, so two configurations can hold two solutions. `effective_transform`, `effective_visibility`, and `effective_suppression` apply both lists (§4).
 - **Current values.** An occurrence's current suppression, visibility, placement, representation, prototype configuration and arrangements, grounding, and flexibility are its base values (`Occurrence`, §8.1; `OccurrenceDesign`, §5.1) resolved through the configuration that applies to it: the configuration its nearest ancestor occurrence selects for the prototype that owns it, else its scope's active configuration (§4); and then through the arrangements in force in it (Arrangements in force, below). Its placement is then its current state's pose where one is stated (§5.5). `effective_transform`, `effective_visibility`, and `effective_suppression` apply that resolution (§4).
@@ -4589,7 +4590,7 @@ pub enum AppearanceTarget {
     Body(BodyId), Occurrence(OccurrenceId), Definition(ProductDefinitionId), Face(FaceId), Edge(EdgeId), Vertex(VertexId),
     Surface(SurfaceId), Curve(CurveId), Point(PointId), Tessellation(TessellationId),
     TriangleGroup { tessellation: TessellationId, group: String },
-    Record { arena: NonBlankString, id: String },
+    Record { arena: NonBlankString, id: Identity },
     Unresolved,
 }
 
@@ -4616,12 +4617,12 @@ pub struct PresentationDocument {
     pub states: Vec<PresentationState>,
     pub native_ref: Option<String>,
 }
-pub struct PresentationState { pub kind: PresentationStateKind, pub order: u32, pub attributes: BTreeMap<NonBlankString, String>, pub assets: Vec<String> }
+pub struct PresentationState { pub kind: PresentationStateKind, pub order: u32, pub attributes: BTreeMap<NonBlankString, String>, pub assets: Vec<Identity> }
 pub enum PresentationStateKind { Camera(CameraState), Native(String) }
 pub struct CameraState { pub position: Option<[FiniteReal; 3]>, pub orientation: Option<[FiniteReal; 4]>, pub properties: BTreeMap<NonBlankString, String> }
 pub struct ViewPresentation {
     pub id: PresentationId,
-    pub object: Option<String>,
+    pub object: Option<Identity>,
     pub order: u32,
     pub expanded: Option<bool>,
     pub visible: Option<bool>,
@@ -4645,7 +4646,7 @@ pub enum AttributeTarget {
     Region(RegionId), Surface(SurfaceId), Curve(CurveId), Point(PointId), Feature(FeatureId), Sketch(SketchId),
     Parameter(ParameterId), ProductDefinition(ProductDefinitionId), Occurrence(OccurrenceId), Tessellation(TessellationId),
     Pmi(PmiId), SemanticAnnotation(SemanticAnnotationId), Drawing(DrawingId), ViewPresentation(PresentationId),
-    Configuration(ConfigurationId), Record { arena: NonBlankString, id: String },
+    Configuration(ConfigurationId), Record { arena: NonBlankString, id: Identity },
 }
 pub enum AttributeValue {
     Integer(i64),
@@ -4679,7 +4680,7 @@ pub enum AttributeJson {
 ```rust
 pub struct Drawing {
     pub id: DrawingId,
-    pub object: String,
+    pub object: Identity,
     pub kind: DrawingKind,
     pub runtime_type: String,
     pub order: u32,
@@ -4702,7 +4703,7 @@ pub struct Drawing {
     pub edge_classes: Option<EdgeClasses>,
     pub hidden_line: Option<HiddenLineMethod>,
     pub parameters: BTreeMap<NonBlankString, String>,
-    pub assets: Vec<String>,
+    pub assets: Vec<Identity>,
     pub native_ref: Option<String>,
 }
 pub enum DrawingKind { Page, Template, View, Projection, Section, Detail, Dimension, Annotation, Balloon, Symbol, Image, Leader, Other }
@@ -4726,7 +4727,7 @@ pub struct TemplateText { pub text: String, pub position: [FiniteReal; 2], pub h
 
 pub struct SemanticAnnotation {
     pub id: SemanticAnnotationId,
-    pub object: String,
+    pub object: Identity,
     pub kind: SemanticAnnotationKind,
     pub runtime_type: String,
     pub order: u32,
@@ -4748,7 +4749,7 @@ pub struct SemanticAnnotation {
     pub negated: Option<bool>,
     pub line_directions: Option<LineDirections>,
     pub parameters: BTreeMap<NonBlankString, String>,
-    pub assets: Vec<String>,
+    pub assets: Vec<Identity>,
     pub native_ref: String,
 }
 pub enum SemanticAnnotationKind { Dimension, Text, Balloon, Leader, Symbol, Other }
@@ -8121,6 +8122,15 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       ]
     }
   ]
+}
+```
+
+### `Identity`
+
+```json
+{
+  "type": "string",
+  "pattern": "^[a-z0-9]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+:[^:#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+#[^#\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+(?![\\s\\S])"
 }
 ```
 

@@ -140,22 +140,37 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
 
     let image = super::CardImage::new(&[], crate::representation::Representation::FixedAscii);
     let ids = super::GivenUpIds::new(&image, &[], &[]).unwrap();
-    let entries = (1..=15).step_by(2).map(curve_entry).collect::<Vec<_>>();
+    let mut entries = (1..=19).step_by(2).map(curve_entry).collect::<Vec<_>>();
+    // D15 is a loop, which the projection names by no record of its own.
+    entries[7].entity_type = 508;
     let entry = |sequence: u32| &entries[usize::try_from(sequence / 2).unwrap()];
     let note = |sequence| super::geometry_note(entry(sequence), format_args!("D{sequence}"));
+    let needing = |losses: &mut Vec<_>, sequence, needs, cause| {
+        super::give_up_needing(
+            losses,
+            entry(sequence),
+            super::projected_record(entry(sequence)),
+            Some(needs),
+            cause,
+            note(sequence),
+        );
+    };
     let mut losses = Vec::new();
     // D1 is unreadable. D3 needs D1, and D5 needs D3.
     super::give_up(&mut losses, entry(1), Cause::Unreadable, note(1));
-    super::give_up_needing(&mut losses, entry(3), Some(1), Cause::Unreadable, note(3));
-    super::give_up_needing(&mut losses, entry(5), Some(3), Cause::Undecoded, note(5));
+    needing(&mut losses, 3, 1, Cause::Unreadable);
+    needing(&mut losses, 5, 3, Cause::Undecoded);
     // D7 needs D17, which has no give-up.
-    super::give_up_needing(&mut losses, entry(7), Some(17), Cause::Unreadable, note(7));
+    needing(&mut losses, 7, 17, Cause::Unreadable);
     // D9 and D11 need each other.
-    super::give_up_needing(&mut losses, entry(9), Some(11), Cause::Undecoded, note(9));
-    super::give_up_needing(&mut losses, entry(11), Some(9), Cause::Undecoded, note(11));
+    needing(&mut losses, 9, 11, Cause::Undecoded);
+    needing(&mut losses, 11, 9, Cause::Undecoded);
     // D13 is unreadable and also needs D1.
-    super::give_up_needing(&mut losses, entry(13), Some(1), Cause::Undecoded, note(13));
+    needing(&mut losses, 13, 1, Cause::Undecoded);
     super::give_up(&mut losses, entry(13), Cause::Unreadable, note(13));
+    // D15 needs D1, and D19 needs D15.
+    needing(&mut losses, 15, 1, Cause::Undecoded);
+    needing(&mut losses, 19, 15, Cause::Undecoded);
     let by_sequence = entries
         .iter()
         .map(|entry| (entry.sequence, entry))
@@ -178,15 +193,17 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
             (13, Cause::Unreadable.kind()),
         ]
     );
-    // Each give-up keeps the `why` that `give_up_entities` folds into it;
-    // the `why` of a dropped entity or of a settled marker goes.
+    // Each give-up keeps the `why` that `give_up_entities` folds into it,
+    // and D15, which has no projected record to drop, keeps its `why` alone;
+    // the `why` of another dropped entity or of a settled marker goes.
     let whys = losses
         .iter()
         .filter(|loss| loss.code == crate::loss::IgesLossCode::GeometryNotProjected.kind())
         .map(|loss| super::entity_tag(loss).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(whys, [1, 7, 9, 13]);
+    assert_eq!(whys, [1, 7, 9, 13, 15]);
     let part = |sequence| ids.entity(entry(sequence)).unwrap();
+    let curve = |sequence: u32| crate::ids::curve(&crate::ids::Stem::directory(sequence));
     let notes = losses
         .iter()
         .filter(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some())
@@ -195,9 +212,10 @@ fn an_entity_that_needs_a_given_up_entity_is_dropped_with_it_and_others_keep_the
     assert_eq!(
         notes,
         [
-            dropped_with(super::entity_record(3), part(1)).message,
-            dropped_with(super::entity_record(5), super::entity_record(3)).message,
-            dropped_with(super::entity_record(11), part(9)).message,
+            dropped_with(curve(3), part(1)).message,
+            dropped_with(curve(5), curve(3)).message,
+            dropped_with(curve(11), part(9)).message,
+            dropped_with(curve(19), part(1)).message,
         ]
     );
 }

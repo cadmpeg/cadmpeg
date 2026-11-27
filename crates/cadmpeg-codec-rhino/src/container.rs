@@ -212,9 +212,9 @@ pub(crate) const VIEW_RECORD_PART: &str = "view-record";
 pub(crate) const V1_RECORD_PART: &str = "v1-record";
 
 /// Gives up the framed record of `kind` at `range` of `data` for `cause`,
-/// with the text `error`. A retained source record keeps the same bytes, so
-/// the part keeps only their digest. The part links to `holder`, the
-/// document record that contains it, when there is one.
+/// with the text `error`. The part keeps the length and digest of the
+/// record's bytes until [`commit_given_up`] commits it. The part links to
+/// `holder`, the document record that contains it, when there is one.
 pub(crate) fn give_up_retained(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -224,11 +224,13 @@ pub(crate) fn give_up_retained(
     cause: Cause,
     error: impl std::fmt::Display,
 ) -> Result<GivenUpPart, CodecError> {
+    let offset = cadmpeg_core::decode::u64_from_index(range.start);
+    let bytes = &data[range];
     let mut part = Part::at(
         "rhino",
         kind,
-        cadmpeg_core::decode::u64_from_index(range.start),
-        &data[range],
+        offset,
+        bytes,
         [cadmpeg_core::decode::ArenaClass::Model],
     )
     .digest_only();
@@ -238,9 +240,70 @@ pub(crate) fn give_up_retained(
     ctx.give_up_part(part, cause, CodecError::malformed(error))
 }
 
+/// The owner of the retained records that the decoder keeps from the file's
+/// own bytes. The root owner names the same bytes.
+pub(crate) const FILE_OWNER: &str = "rhino";
+
+/// Whether the retained records of owners `a` and `b` index one byte space.
+fn same_bytes(a: &str, b: &str) -> bool {
+    let in_file = |owner: &str| owner.is_empty() || owner == FILE_OWNER;
+    a == b || (in_file(a) && in_file(b))
+}
+
+/// Commits each part of `given_up` to `ir` and `fidelity` and returns its
+/// loss. A part keeps the bytes of `data` it spans where no retained record
+/// of its stream keeps them. Where those bytes pass the caller's
+/// retained-bytes ceiling, the part keeps their length and digest, and its
+/// loss names the ceiling (`rhino_3dm.md` §21).
+///
+/// # Errors
+///
+/// A resource refusal for the retained bytes or a stub, or a malformed
+/// error when a part's span lies outside `data` or its stub is present.
+pub(crate) fn commit_given_up(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    ir: &mut CadIr,
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
+    given_up: Vec<GivenUpPart>,
+) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::with_capacity(given_up.len());
+    for mut part in given_up {
+        let record = part.retained();
+        let (start, end, length) = (record.offset(), record.end_offset(), record.byte_len());
+        let covered = fidelity.retained_records().iter().any(|(_, kept)| {
+            kept.data().is_some()
+                && same_bytes(kept.stream(), record.stream())
+                && kept.offset() <= start
+                && end <= kept.end_offset()
+        });
+        if !covered && length <= ctx.retained_bytes_available() {
+            let bytes = usize::try_from(start)
+                .ok()
+                .zip(usize::try_from(end).ok())
+                .and_then(|(start, end)| data.get(start..end))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "given-up part {} lies outside the source",
+                        part.id()
+                    ))
+                })?;
+            part.keep_bytes(ctx, bytes)?;
+        } else if !covered {
+            part.costing(
+                ctx,
+                "its bytes pass the caller's retained-bytes ceiling (max_retained_bytes); \
+                 the part keeps their length and digest",
+            )?;
+        }
+        losses.push(part.commit(ctx, ir, fidelity)?);
+    }
+    Ok(losses)
+}
+
 /// Gives up the framed object record at `source_order`, spanning `range`,
 /// for `cause`, with the text `error`. Its object record in the document
-/// keeps its bytes and contains the part.
+/// contains the part.
 pub(crate) fn give_up_object_record(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -261,7 +324,7 @@ pub(crate) fn give_up_object_record(
 }
 
 /// Gives up the framed table record `record` for `cause`, with the text
-/// `error`. Its opaque record in the source fidelity keeps its bytes.
+/// `error`.
 pub(crate) fn give_up_table_record(
     ctx: &DecodeContext<'_>,
     data: &[u8],

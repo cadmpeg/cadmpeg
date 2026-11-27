@@ -173,7 +173,9 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
                     "test:model:semantic#note",
                 )
                 .expect("identity grammar"),
-                "note".into(),
+                "test:source:object#note"
+                    .try_into()
+                    .expect("identity grammar"),
                 cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
                 "TextNote".into(),
                 0,

@@ -533,6 +533,7 @@ pub(crate) mod sketch_records;
 pub(crate) mod surfaces;
 pub(crate) mod swift;
 pub(crate) mod tessellation;
+pub(crate) mod topology;
 
 /// The machine-local digest of `ir` without `scope`, by which a test compares
 /// two decodes of one part; see [`cadmpeg_ir::hash::document_local_sha256`].

@@ -321,7 +321,7 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
     assert!(layer.items.iter().any(|item| matches!(
         &item.entity,
         cadmpeg_ir::presentation::PresentationItem::Tessellation { tessellation }
-            if tessellation.ends_with("#7")
+            if tessellation.as_str().ends_with("#7")
     )));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");

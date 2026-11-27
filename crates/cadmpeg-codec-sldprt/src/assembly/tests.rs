@@ -321,8 +321,7 @@ fn a_reference_to_an_undefined_model_is_omitted_and_reported() {
         .iter()
         .all(|occurrence| !occurrence.id.as_str().ends_with("#7")));
     assert!(codes(&projection).contains(
-        &SldprtLossCode::AssemblyPlacementUnresolved
-            .kind()
+        &cadmpeg_ir::unknown::part::record_unreadable_kind()
             .local_code()
             .to_string()
     ));
@@ -1009,12 +1008,24 @@ fn an_invalid_or_repeated_reference_is_omitted_and_reported() {
     .concat();
     let projection = project(&ctx(), &tree_with(&references, "")).expect("project");
     assert_eq!(projection.occurrences().len(), 1);
+    for id in [
+        "sldprt:assembly:occurrence#5",
+        "sldprt:assembly:occurrence#6",
+    ] {
+        assert_eq!(charges(&projection, id).len(), 1, "{id}");
+    }
     let unresolved = projection
         .losses()
         .iter()
-        .find(|loss| loss.code == SldprtLossCode::AssemblyPlacementUnresolved.kind())
-        .expect("the unresolved loss");
-    assert!(unresolved.message.starts_with("5 component instance(s)"));
+        .filter(|loss| loss.code == SldprtLossCode::AssemblyPlacementUnresolved.kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert!(unresolved
+        .iter()
+        .any(|message| message.starts_with("2 component instance(s) have no valid identity")));
+    assert!(unresolved
+        .iter()
+        .any(|message| message.starts_with("1 component instance(s) repeat")));
 }
 
 #[test]
@@ -1027,8 +1038,7 @@ fn a_reference_cycle_is_omitted_and_reported() {
         project(&ctx(), &tree_with(&reference("4", "5", IDENTITY), &models)).expect("project");
     assert_eq!(projection.occurrences().len(), 1);
     assert!(codes(&projection).contains(
-        &SldprtLossCode::AssemblyPlacementUnresolved
-            .kind()
+        &cadmpeg_ir::unknown::part::record_unreadable_kind()
             .local_code()
             .to_string()
     ));
@@ -1218,4 +1228,110 @@ fn a_mirrored_placement_is_omitted_and_reported_as_mirrored() {
         && loss
             .message
             .contains("1 component instance(s) have a mirrored placement")));
+}
+
+/// The give-ups of the projection that name `id` given up.
+fn charges<'p>(projection: &'p super::AssemblyProjection, id: &str) -> Vec<&'p str> {
+    let head = format!("record {id} ");
+    projection
+        .losses()
+        .iter()
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .filter(|loss| loss.message.starts_with(&head))
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+fn placed(projection: &super::AssemblyProjection, id: &str) -> bool {
+    projection
+        .occurrences()
+        .iter()
+        .any(|occurrence| occurrence.id.as_str() == id)
+}
+
+#[test]
+fn an_instance_without_a_valid_placement_is_given_up_by_its_occurrence_id() {
+    let references = [
+        reference("4", "8", IDENTITY),
+        reference("5", "8", "1 0 0"),
+        reference("6", "99", IDENTITY),
+        r#"<swReference id="9" swName="Pin" swTransform="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>"#
+            .to_owned(),
+    ]
+    .concat();
+    let projection = project(&ctx(), &tree_with(&references, "")).expect("project");
+    assert!(placed(&projection, "sldprt:assembly:occurrence#4"));
+    assert!(charges(&projection, "sldprt:assembly:occurrence#4").is_empty());
+    for id in [
+        "sldprt:assembly:occurrence#5",
+        "sldprt:assembly:occurrence#6",
+        "sldprt:assembly:occurrence#9",
+    ] {
+        assert!(!placed(&projection, id), "{id} is placed");
+        assert_eq!(charges(&projection, id).len(), 1, "{id}");
+    }
+}
+
+#[test]
+fn a_given_up_occurrence_id_is_not_placed_by_a_later_instance() {
+    let references = [reference("4", "8", "1 0 0"), reference("4", "8", IDENTITY)].concat();
+    let projection = project(&ctx(), &tree_with(&references, "")).expect("project");
+    assert!(!placed(&projection, "sldprt:assembly:occurrence#4"));
+    assert_eq!(
+        charges(&projection, "sldprt:assembly:occurrence#4").len(),
+        1
+    );
+}
+
+#[test]
+fn an_omitted_sub_assembly_instance_keeps_the_instances_its_model_places() {
+    let models = format!(
+        r#"<swModel id="5" swFileRef="6">{}</swModel>"#,
+        reference("7", "8", IDENTITY)
+    );
+    let projection =
+        project(&ctx(), &tree_with(&reference("4", "5", "1 0 0"), &models)).expect("project");
+    assert!(!placed(&projection, "sldprt:assembly:occurrence#4"));
+    assert_eq!(
+        charges(&projection, "sldprt:assembly:occurrence#4").len(),
+        1
+    );
+    assert!(placed(&projection, "sldprt:assembly:occurrence#7"));
+    assert_eq!(
+        owned(&projection, "sldprt:assembly:model#5"),
+        ["sldprt:assembly:occurrence#7"]
+    );
+}
+
+#[test]
+fn an_instance_that_closes_a_cycle_is_given_up_by_its_occurrence_id() {
+    let models = format!(
+        r#"<swModel id="5" swFileRef="6">{}</swModel>"#,
+        reference("7", "5", IDENTITY)
+    );
+    let projection =
+        project(&ctx(), &tree_with(&reference("4", "5", IDENTITY), &models)).expect("project");
+    assert!(placed(&projection, "sldprt:assembly:occurrence#4"));
+    assert!(!placed(&projection, "sldprt:assembly:occurrence#7"));
+    assert_eq!(
+        charges(&projection, "sldprt:assembly:occurrence#7").len(),
+        1
+    );
+}
+
+#[test]
+fn an_instance_without_an_identity_or_with_a_repeated_one_charges_no_record() {
+    let references = [
+        reference("4", "8", IDENTITY),
+        reference("4", "8", IDENTITY),
+        reference("a b", "8", IDENTITY),
+        r#"<swReference swName="Pin" swModelRef="8"/>"#.to_owned(),
+    ]
+    .concat();
+    let projection = project(&ctx(), &tree_with(&references, "")).expect("project");
+    assert_eq!(projection.occurrences().len(), 1);
+    assert!(projection
+        .losses()
+        .iter()
+        .all(|loss| loss.code != cadmpeg_ir::unknown::part::record_unreadable_kind()));
 }

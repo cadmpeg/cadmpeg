@@ -474,6 +474,8 @@ fn native_project(
         definitions: BTreeSet::new(),
         expanded: BTreeSet::new(),
         occurrences: BTreeSet::new(),
+        claimed: BTreeSet::new(),
+        given_up: Vec::new(),
         native: &mut native,
         tally: &mut tally,
     };
@@ -492,8 +494,19 @@ fn native_project(
     let mut path = BTreeSet::from([root_model]);
     walk.expanded.insert(root_model);
     walk.children(root_model, &root_definition, &mut path)?;
+    walk.report_given_up()?;
     tally.report(&mut native);
     Ok(native)
+}
+
+/// A component instance the walk gives up: its occurrence, its name, the
+/// cause and why, and the occurrences below it that have no owner without it.
+struct GivenUpInstance {
+    occurrence: OccurrenceId,
+    name: String,
+    cause: Cause,
+    why: String,
+    below: Vec<OccurrenceId>,
 }
 
 /// Counts and names for the occurrence-level losses.
@@ -503,7 +516,10 @@ struct Tally {
     external_documents: BTreeSet<String>,
     virtual_components: Vec<String>,
     suppressed: Vec<String>,
-    unresolved: Vec<String>,
+    /// Instances without an identity that names an occurrence.
+    unnamed: Vec<String>,
+    /// Instances whose identity an earlier instance holds.
+    repeated: Vec<String>,
     mirrored: Vec<String>,
     excluded_from_bom: Vec<String>,
 }
@@ -534,18 +550,24 @@ impl Tally {
                 named(&self.suppressed)
             )));
         }
-        if !self.unresolved.is_empty() {
+        if !self.unnamed.is_empty() {
             native.push_loss(SldprtLossCode::AssemblyPlacementUnresolved.note(format!(
-                "{} component instance(s) have no valid identity, placement, or component \
-                 model and are omitted with the instances below them: {}.",
-                self.unresolved.len(),
-                named(&self.unresolved)
+                "{} component instance(s) have no valid identity and are omitted: {}.",
+                self.unnamed.len(),
+                named(&self.unnamed)
+            )));
+        }
+        if !self.repeated.is_empty() {
+            native.push_loss(SldprtLossCode::AssemblyPlacementUnresolved.note(format!(
+                "{} component instance(s) repeat the identity of an earlier instance and are \
+                 omitted: {}.",
+                self.repeated.len(),
+                named(&self.repeated)
             )));
         }
         if !self.mirrored.is_empty() {
             native.push_loss(SldprtLossCode::AssemblyPlacementUnresolved.note(format!(
-                "{} component instance(s) have a mirrored placement and are omitted with the \
-                 instances below them: {}.",
+                "{} component instance(s) have a mirrored placement and are omitted: {}.",
                 self.mirrored.len(),
                 named(&self.mirrored)
             )));
@@ -576,6 +598,11 @@ struct Walk<'w, 'a> {
     expanded: BTreeSet<&'a str>,
     /// Occurrence identities already placed.
     occurrences: BTreeSet<OccurrenceId>,
+    /// Occurrence identities placed or given up: a later instance with one
+    /// of them repeats it.
+    claimed: BTreeSet<OccurrenceId>,
+    /// The instances given up, in walk order.
+    given_up: Vec<GivenUpInstance>,
     native: &'w mut NativeAssembly,
     tally: &'w mut Tally,
 }
@@ -682,6 +709,118 @@ impl<'a> Walk<'_, 'a> {
         Ok(Some(id))
     }
 
+    fn give_up(&mut self, occurrence: OccurrenceId, name: String, cause: Cause, why: String) {
+        self.given_up.push(GivenUpInstance {
+            occurrence,
+            name,
+            cause,
+            why,
+            below: Vec::new(),
+        });
+    }
+
+    /// Project the instances of the assembly model `child`, which an omitted
+    /// instance places, into its definition, which no instance then places.
+    /// The instances of a model without a valid identity have no owner; they
+    /// are added to the list `below` of the omitted instance.
+    fn adopt(
+        &mut self,
+        child: Option<&'a str>,
+        path: &mut BTreeSet<&'a str>,
+    ) -> Result<(), CodecError> {
+        let Some(child) = child else {
+            return Ok(());
+        };
+        if !self
+            .models
+            .get(child)
+            .is_some_and(|model| self.is_assembly_model(model))
+            || path.contains(child)
+            || self.expanded.contains(child)
+        {
+            return Ok(());
+        }
+        let Some(definition) = self.definition(child)? else {
+            return Ok(());
+        };
+        self.expanded.insert(child);
+        path.insert(child);
+        self.children(child, &definition, path)?;
+        path.remove(child);
+        Ok(())
+    }
+
+    /// Collect in `below` the occurrences of the assembly model `model`,
+    /// which has no valid identity and so no definition to own them, and
+    /// project the assembly models they place as unplaced definitions.
+    fn orphan(
+        &mut self,
+        model: &'a str,
+        path: &mut BTreeSet<&'a str>,
+        below: &mut Vec<OccurrenceId>,
+    ) -> Result<(), CodecError> {
+        if !self.expanded.insert(model) {
+            return Ok(());
+        }
+        let _depth = self.ctx.enter_nested("project SolidWorks component tree")?;
+        let references = self
+            .models
+            .get(model)
+            .map(|model| model.references.clone())
+            .unwrap_or_default();
+        path.insert(model);
+        for reference in references {
+            self.ctx
+                .charge_entities(1, "visit SolidWorks component instance")?;
+            if reference.attribute("swSuppressed") == Some("YES") {
+                continue;
+            }
+            if let Some((_, occurrence)) = reference
+                .attribute("id")
+                .and_then(NativePlacement::tree_occurrence_id)
+            {
+                below.push(occurrence);
+            }
+            let child = reference.attribute("swModelRef");
+            match child.and_then(|child| self.models.get(child).map(|data| (child, data))) {
+                Some((child, data)) if self.is_assembly_model(data) && !path.contains(child) => {
+                    if NativeDefinition::tree_model(child, None).is_some() {
+                        self.adopt(Some(child), path)?;
+                    } else {
+                        self.orphan(child, path, below)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        path.remove(model);
+        Ok(())
+    }
+
+    /// Charge each instance the walk gave up. An occurrence listed below a
+    /// given-up instance that the walk placed or gave up itself is not
+    /// dropped with it.
+    fn report_given_up(&mut self) -> Result<(), CodecError> {
+        for instance in std::mem::take(&mut self.given_up) {
+            let below = instance
+                .below
+                .into_iter()
+                .filter(|occurrence| !self.claimed.contains(occurrence))
+                .collect::<BTreeSet<_>>();
+            let given_up = cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                &instance.occurrence,
+                instance.cause,
+                format!("component instance `{}` {}", instance.name, instance.why),
+            )
+            .dropping(&below)
+            .loss();
+            self.ctx
+                .charge_entities(1, "report SolidWorks component instance")?;
+            self.native.push_loss(given_up);
+        }
+        Ok(())
+    }
+
     /// Project the component instances of `model`, which its definition
     /// `owner` places, and those of each assembly model they place, once.
     fn children(
@@ -704,14 +843,36 @@ impl<'a> Walk<'_, 'a> {
                 self.tally.suppressed.push(name);
                 continue;
             }
-            let (Some(id), Some(child)) =
-                (reference.attribute("id"), reference.attribute("swModelRef"))
+            let child = reference.attribute("swModelRef");
+            let Some((id, instance)) = reference
+                .attribute("id")
+                .and_then(|id| Some((id, NativePlacement::tree_occurrence_id(id)?)))
             else {
-                self.tally.unresolved.push(name);
+                self.tally.unnamed.push(name);
+                self.adopt(child, path)?;
+                continue;
+            };
+            if !self.claimed.insert(instance.1.clone()) {
+                self.tally.repeated.push(name);
+                self.adopt(child, path)?;
+                continue;
+            }
+            let Some(child) = child else {
+                self.give_up(
+                    instance.1,
+                    name,
+                    Cause::Undecoded,
+                    "names no component model".into(),
+                );
                 continue;
             };
             let Some(child_model) = self.models.get(child) else {
-                self.tally.unresolved.push(name);
+                self.give_up(
+                    instance.1,
+                    name,
+                    Cause::Unreadable,
+                    format!("names model `{child}`, which the component tree does not define"),
+                );
                 continue;
             };
             let text = reference.attribute("swTransform");
@@ -719,24 +880,37 @@ impl<'a> Walk<'_, 'a> {
                 if text.is_some_and(is_mirrored) {
                     self.tally.mirrored.push(name);
                 } else {
-                    self.tally.unresolved.push(name);
+                    self.give_up(
+                        instance.1,
+                        name,
+                        Cause::Undecoded,
+                        "has no proper rigid placement".into(),
+                    );
                 }
+                self.adopt(Some(child), path)?;
                 continue;
             };
             if path.contains(child) {
-                self.tally.unresolved.push(name);
+                self.give_up(
+                    instance.1,
+                    name,
+                    Cause::Unreadable,
+                    format!("places model `{child}`, which contains the instance"),
+                );
                 continue;
             }
-            let Some(instance) = NativePlacement::tree_occurrence_id(id)
-                .filter(|(_, occurrence)| !self.occurrences.contains(occurrence))
-            else {
-                self.tally.unresolved.push(name);
-                continue;
-            };
             let expands = self.is_assembly_model(child_model);
             let prototype = if expands {
                 let Some(definition) = self.definition(child)? else {
-                    self.tally.unresolved.push(name);
+                    let mut below = Vec::new();
+                    self.orphan(child, path, &mut below)?;
+                    self.given_up.push(GivenUpInstance {
+                        occurrence: instance.1,
+                        name,
+                        cause: Cause::Undecoded,
+                        why: format!("places model `{child}`, which has no valid identity"),
+                        below,
+                    });
                     continue;
                 };
                 NativePrototype::Local(definition)

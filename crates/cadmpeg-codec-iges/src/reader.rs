@@ -650,13 +650,14 @@ fn decode_with_occurrence_limits(
     // The source image is the only home of a geometry entry that no typed
     // record carries.
     let untyped_geometry = parse.directory.iter().any(|entry| {
-        matches!(
+        (matches!(
             entry.entity_type,
             100 | 102 | 104 | 108 | 110 | 112 | 114 | 116 | 118 | 120 | 122 | 126 | 128 | 130 | 140
                 ..=144 | 186 | 190 | 192 | 194 | 196 | 198 | 502 | 504 | 508 | 510 | 514
-        ) && (ctx.container_only()
-            || (!projection.decoded.contains(&entry.sequence)
-                && !projection.consumed.contains(&entry.sequence)))
+        ) || (entry.entity_type == 106 && entities::copious::geometry_form(entry.form)))
+            && (ctx.container_only()
+                || (!projection.decoded.contains(&entry.sequence)
+                    && !projection.consumed.contains(&entry.sequence)))
     });
     if untyped_geometry {
         source_fidelity.mark_untyped(

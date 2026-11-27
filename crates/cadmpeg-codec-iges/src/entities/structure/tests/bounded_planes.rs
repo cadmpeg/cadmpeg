@@ -358,3 +358,61 @@ fn linear_nurbs_boundary_points_close_a_square_loop() {
     assert_eq!(points.len(), 5);
     assert_eq!(points[0], points[4]);
 }
+
+#[test]
+fn a_rejected_bounded_plane_face_is_given_up_by_its_face_id() {
+    // The boundary line is open, so the plane has no face.
+    let result = decode(bounded_plane_entity_file(
+        GLOBAL_V5_0,
+        110,
+        "110,0,0,0,1,0,0;",
+    ));
+
+    assert!(result.ir().geometry.faces.is_empty());
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect::<Vec<_>>();
+    assert_eq!(given_up.len(), 1, "{given_up:#?}");
+    assert!(
+        given_up[0]
+            .message
+            .starts_with("record iges:model:face#bounded-plane-D1 "),
+        "{}",
+        given_up[0].message
+    );
+}
+
+#[test]
+fn a_bounded_plane_face_is_dropped_with_its_given_up_boundary() {
+    let result = decode(bounded_plane_entity_file(GLOBAL_V5_0, 110, "110,0;"));
+
+    assert!(result
+        .ir()
+        .geometry
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
+    assert!(result.ir().geometry.faces.is_empty());
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 3)]);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .unwrap();
+    assert!(
+        given_up
+            .message
+            .ends_with("; dropped=[iges:model:face#bounded-plane-D1]"),
+        "{}",
+        given_up.message
+    );
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
+}

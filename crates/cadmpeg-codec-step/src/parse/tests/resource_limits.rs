@@ -89,7 +89,11 @@ fn given_up_with(exchange: &crate::parse::Exchange, source: &str, text: &str) ->
     let [statement] = statements.as_slice() else {
         panic!("one given-up statement starts with {text}");
     };
-    statement.dropped.clone()
+    statement
+        .dropped
+        .iter()
+        .map(|record| record.name.clone())
+        .collect()
 }
 
 /// The messages of the statements given up as undecoded at an expansion

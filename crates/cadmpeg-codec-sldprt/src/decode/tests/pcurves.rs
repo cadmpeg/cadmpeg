@@ -99,26 +99,10 @@ fn sentinel_vertices_without_partners_withhold_the_rim_edges() {
         )
         .unwrap();
 
-    assert_eq!(decoded.ir().geometry.faces.len(), 0);
-    let edges: std::collections::BTreeSet<&str> = decoded
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| {
-            loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
-                && loss.message.contains("the vertexless ring edge fails")
-        })
-        .map(|loss| loss.message.split_once(' ').expect("record").1)
-        .map(|rest| rest.split_once(' ').expect("record id").0)
-        .collect();
-    assert_eq!(edges.len(), 2, "{edges:?}");
+    let faces = &decoded.ir().geometry.faces;
+    assert!(!faces.is_empty() && faces.iter().all(|face| face.loops.is_partial()));
     assert_eq!(
-        decoded
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.message.contains("the vertexless ring edge fails"))
-            .count(),
+        super::given_up(&decoded, crate::test_support::topology::RING_EDGE_WITHHELD),
         2
     );
 }

@@ -7149,8 +7149,9 @@ sections above state for each such field, so the output holds what the stored
 form does not state as the format requires. No other Rhino loss code carries a
 strict floor. The decoder gives up a framed
 record as a part (CADIR §3.3) when its framing does not decode, its payload
-does not parse, its version or form has no typed reading, its unit system does
-not bind, or a count is above its bound. The part kind identifies the record:
+does not parse, its reading fails the model-class rules of the document, its
+unit system does not bind, its variant has no typed reading, or its list count
+is above its bound. The part kind identifies the record:
 
 | Part kind | Record |
 |---|---|
@@ -7159,13 +7160,20 @@ not bind, or a count is above its bound. The part kind identifies the record:
 | `view-record` | One view record of a named-view or active-view list. |
 | `v1-record` | One record of the version 1 flat stream. |
 
-A retained record keeps the bytes of each given-up record. For an object
-record, this is the object record `rhino:object:record#NNNNNN` of the document.
-For a table record or a view list, this is its opaque record in the source
-fidelity. For a version 1 record, this is its legacy record in the source
-fidelity. The part keeps the length and digest of its bytes. The `unknowns`
-stub of an `object-record` part links to its object record. The stubs of the
-other part kinds have no links.
+The part keeps the bytes of the record. Where the bytes pass the caller's
+retained-bytes ceiling (`max_retained_bytes`), the part keeps their length and
+digest, and its charge names that ceiling. The record also stays as a source
+record: an object record as the object record `rhino:object:record#NNNNNN` of
+the document, a table record or a view list as its opaque record in the source
+fidelity, and a version 1 record as its legacy record in the source fidelity.
+The `unknowns` stub of an `object-record` part links to its object record. The
+stubs of the other part kinds have no links.
+
+An instance expansion that a member stops is rejected as a whole, and the
+reference stays as its product occurrence. A definition member that does not
+decode is given up once as an `object-record` part when no expansion that the
+document keeps decodes it. A member that the instance entity bound refuses
+stays as its object record.
 
 The cause of the give-up selects the charge of the part:
 

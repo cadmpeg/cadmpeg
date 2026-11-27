@@ -417,7 +417,7 @@ impl Reader<'_, '_> {
             self.ctx,
             document,
             &ids,
-            crate::give_up::References::new(crate::give_up::Naming::Text),
+            crate::give_up::References::default(),
             &mut released,
         );
         self.removed = Removed::of_records(

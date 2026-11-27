@@ -91,15 +91,15 @@ fn a_given_up_instance_is_one_part_and_its_dependents_drop_with_it() {
         charge.contains("DIRECTION #1 is invalid or zero"),
         "{charge}"
     );
-    assert!(
-        charge.ends_with("; dropped=[step:data:instance#2]"),
-        "{charge}"
-    );
+    // The vector is a value of no record: it keeps its exact source as an
+    // opaque record, and the charge lists no record for it.
+    assert!(charge.ends_with("; dropped=[]"), "{charge}");
     let stub = charge[head.len()..]
         .split_once(": ")
         .map(|(stub, _)| stub.to_owned())
         .expect("the stub");
     let (_, _, fidelity) = decoded.into_parts();
+    assert!(fidelity.retained_record("step:data:vector#2").is_some());
     // The untyped instance keeps its exact source as an opaque record.
     assert_eq!(
         fidelity
@@ -120,15 +120,17 @@ fn an_anchor_whose_name_holds_a_space_drops_with_its_bounded_part() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<#x 23>);ENDSEC;END-ISO-10303-21;"
     );
+    // The parser keeps the exact source of the dropped anchor as an omitted
+    // record, and the charge names that record.
+    let anchor = source.find("<y z>=#1;").expect("the dropped anchor");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("a permissive decode refuses no anchor name");
+    let dropped = format!("; dropped=[step:file:omitted#{anchor}]");
     assert!(
         decoded.report().losses.iter().any(|loss| {
             loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()
-                && loss
-                    .message
-                    .ends_with("; dropped=[step:anchor:name#<y%20z>]")
+                && loss.message.ends_with(&dropped)
         }),
         "{:?}",
         decoded.report().losses

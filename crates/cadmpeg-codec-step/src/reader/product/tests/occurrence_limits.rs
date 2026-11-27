@@ -15,6 +15,7 @@ fn given_up(exchange: &crate::parse::Exchange) -> Vec<(u64, Cause, String)> {
     exchange
         .lost()
         .take()
+        .instances
         .into_iter()
         .filter_map(|(id, lost)| match lost {
             Lost::GivenUp { cause, error } => Some((id, cause, error)),

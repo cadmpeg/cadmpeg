@@ -67,9 +67,20 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     continue;
                 }
             };
+            let stream_name = cadmpeg_ir::stream_name!("solidedge:").with_suffix(entry.path());
             let mut cause = Cause::Unreadable;
             let result = ctx.run_part(|| {
                 let payload = partition::payload(source).map_err(CodecError::from)?;
+                let origin = brep::Origin::new(
+                    stream_name.clone(),
+                    cadmpeg_core::decode::u64_from_index(
+                        payload.start().checked_sub(source.start()).ok_or_else(|| {
+                            CodecError::Malformed(
+                                "Parasolid payload lies before its partition stream".into(),
+                            )
+                        })?,
+                    ),
+                );
                 let Some(records) = PrimaryRecords::read(payload.window())? else {
                     cause = Cause::Undecoded;
                     return Err(CodecError::Malformed(
@@ -91,7 +102,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     CodecError::Malformed("too many partition streams".into())
                 })?;
                 let (mut candidate, resolutions) =
-                    brep::project(ctx, &records, stream, &mut partition_losses)?;
+                    brep::project(ctx, &records, stream, &origin, &mut partition_losses)?;
                 candidate.finalize();
                 // A partition is admitted as a document of its own; the decoded
                 // document states one root over the bodies of every partition.
@@ -145,7 +156,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         source.window(),
                         [ArenaClass::Model],
                     )
-                    .in_stream(cadmpeg_ir::stream_name!("solidedge:").with_suffix(entry.path()));
+                    .in_stream(stream_name);
                     given_up.push(ctx.give_up_part(part, cause, error)?);
                 }
             }

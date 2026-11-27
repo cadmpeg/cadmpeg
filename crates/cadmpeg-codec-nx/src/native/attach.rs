@@ -482,7 +482,7 @@ fn attach_records(
                 ir,
                 annotations,
                 &annotation_stream,
-                (tessellation.id.as_str(), source_offset),
+                (&tessellation.id, source_offset),
                 color,
             )?;
         }
@@ -778,10 +778,11 @@ fn attach_display_jt_color(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
-    (tessellation, source_offset): (&str, u64),
+    (tessellation, source_offset): (&cadmpeg_ir::tessellation::TessellationId, u64),
     color: Color,
 ) -> Result<(), CodecError> {
     let key = tessellation
+        .as_str()
         .split_once('#')
         .map(|(_, key)| key)
         .ok_or_else(|| CodecError::malformed("NX Display-JT tessellation id has no key"))?;
@@ -829,7 +830,7 @@ fn attach_display_jt_color(
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding_id,
-        target: AppearanceTarget::Tessellation(tessellation.to_owned()).into(),
+        target: AppearanceTarget::Tessellation(tessellation.clone()).into(),
         appearance: id,
         precedence: None,
         source_entity_id: None,
@@ -5803,7 +5804,7 @@ fn text_semantic_annotation(
         assets: Vec::new(),
         ..SemanticAnnotation::new(
             id,
-            native_ref.to_owned(),
+            cadmpeg_ir::ids::Identity::try_from(native_ref).map_err(CodecError::malformed)?,
             SemanticAnnotationKind::Text,
             "TEXT".to_owned(),
             order,

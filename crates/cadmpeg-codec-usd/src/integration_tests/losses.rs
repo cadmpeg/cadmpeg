@@ -456,10 +456,6 @@ fn unknown_schema_losses_are_emitted() {
 #[test]
 fn physics_losses_are_emitted() {
     assert_decode_emits(
-        "#usda 1.0\ndef PhysicsFixedJoint \"J\"\n{\n    rel physics:body1 = </Missing>\n}\n",
-        UsdLossCode::JointRejected,
-    );
-    assert_decode_emits(
         "#usda 1.0\ndef Xform \"B\"\n{\n}\ndef PhysicsFixedJoint \"J\"\n{\n    rel physics:body1 = </B>\n    float physics:breakForce = 10\n}\n",
         UsdLossCode::JointPropertyNotTransferred,
     );
@@ -480,6 +476,63 @@ fn physics_losses_are_emitted() {
     joint.kind = cadmpeg_ir::design::ops::shared::JointKind::Parallel;
     let (_, report) = encode(&ir);
     assert!(emitted(&report.losses, UsdLossCode::ExportJointNotWritten));
+}
+
+/// A joint that the decoder reads and leaves out is given up by its id, one
+/// `record.undecoded` per joint with its own cause.
+#[test]
+fn a_rejected_joint_is_given_up_with_its_cause() {
+    let cases = [
+        ("", "names no body"),
+        (
+            "rel physics:body1 = </Missing>",
+            "names a body that is not a transferred prim",
+        ),
+        (
+            "rel physics:body1 = </B>\n    quatf physics:localRot0 = (0, 0, 0, 0)",
+            "has a malformed frame",
+        ),
+    ];
+    for (body, cause) in cases {
+        let text = format!(
+            "#usda 1.0\ndef Xform \"B\"\n{{\n}}\ndef PhysicsFixedJoint \"J\"\n{{\n    {body}\n}}\n"
+        );
+        let result = decode(&text);
+        let joint = crate::ids::joint("/J");
+        assert!(
+            result
+                .ir()
+                .model
+                .assembly_joints
+                .iter()
+                .all(|record| record.id != joint),
+            "{text}"
+        );
+        let feature = crate::ids::joint_feature("/J");
+        assert!(result
+            .ir()
+            .design
+            .features
+            .iter()
+            .all(|record| record.id != feature));
+        let losses = &result.report().losses;
+        let charges: Vec<&str> = losses
+            .iter()
+            .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+            .map(|loss| loss.message.as_str())
+            .collect();
+        assert_eq!(
+            charges,
+            [format!(
+                "record {joint} given up: the joint {cause}; dropped=[]"
+            )],
+            "{text}"
+        );
+        assert!(losses
+            .iter()
+            .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+            .all(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()));
+    }
 }
 
 #[test]

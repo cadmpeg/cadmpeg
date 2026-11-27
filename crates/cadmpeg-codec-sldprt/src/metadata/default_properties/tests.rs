@@ -19,7 +19,17 @@ fn properties(members: &[(&str, &[u8])]) -> (Vec<SourceAttribute>, Annotations, 
         DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
     let (mut out, mut notes, mut losses) = (Vec::new(), Annotations::default(), Vec::new());
-    append(&ctx, &scan, &mut out, &mut notes, &mut losses).unwrap();
+    let mut given_up = Vec::new();
+    append(
+        &ctx,
+        &scan,
+        &mut out,
+        &mut notes,
+        &mut losses,
+        &mut given_up,
+    )
+    .unwrap();
+    losses.extend(given_up.iter().map(GivenUpPart::loss));
     (out, notes, losses)
 }
 const MEMBER: &str = "docProps/ISolidWorksInformation.xml";
@@ -333,7 +343,17 @@ fn compound_default_owner_requires_the_complete_root_stream_path() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (mut rows, mut notes, mut losses) = (Vec::new(), Annotations::default(), Vec::new());
-    append(&ctx, &scan, &mut rows, &mut notes, &mut losses).unwrap();
+    let mut given_up = Vec::new();
+    append(
+        &ctx,
+        &scan,
+        &mut rows,
+        &mut notes,
+        &mut losses,
+        &mut given_up,
+    )
+    .unwrap();
+    losses.extend(given_up.iter().map(GivenUpPart::loss));
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].values, vec![Some(AttributeValue::Integer(7))]);
     assert!(losses.is_empty());

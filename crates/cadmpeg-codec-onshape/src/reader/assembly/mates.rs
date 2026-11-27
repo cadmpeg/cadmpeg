@@ -2,30 +2,40 @@
 //! Evaluated mate connector projection.
 
 use super::{key, Structure};
+use super::{split_rows, Rows};
+use crate::archive::source_record;
 use crate::error::Error;
 use crate::loss::OnshapeLossCode;
 use crate::reader::{id, optional_rows, rows, text, Mapping};
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::products::JointId;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointConnector, JointOperand, PairedJointKind, PlaneSense,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::unknown::part::dropped_with;
+use cadmpeg_ir::unknown::part::Cause;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 const MATE_AXIS_DOT_TOLERANCE: f64 = 1e-12;
 
+/// Projects the mates of the assembly `assembly`, the source record at
+/// `source`, at the occurrence path `path`.
 pub(super) fn project(
     structure: &mut Structure<'_, '_>,
     assembly: &Value,
     path: &[String],
     suppressed: bool,
+    source: &str,
 ) -> Result<(), Error> {
     let mut notes = 0;
     if structure.mate_exhausted {
         return Ok(());
     }
-    let features = match optional_rows(assembly, "features") {
-        Ok(features) => features,
-        Err(reason) => {
+    let features = match split_rows(assembly, "features") {
+        Rows::Read(features) => features,
+        Rows::Bounded(reason) => {
             structure.mate_loss(
                 &mut notes,
                 &key(path),
@@ -34,8 +44,18 @@ pub(super) fn project(
             )?;
             return Ok(());
         }
+        Rows::Malformed(reason) => {
+            structure.report.give_up_as(
+                &format!("{source}/features"),
+                &key(path),
+                (Cause::Unreadable, OnshapeLossCode::MateUnsupported),
+                reason,
+            );
+            return Ok(());
+        }
     };
-    for feature in features {
+    let mut kept = BTreeMap::<JointId, &Value>::new();
+    for (position, feature) in features.iter().enumerate() {
         if !structure.admit_mate_work()? {
             break;
         }
@@ -56,17 +76,34 @@ pub(super) fn project(
             )?;
             continue;
         }
+        if let Some((joint, needs)) = dropped_joint(structure, feature, path) {
+            structure
+                .report
+                .notes
+                .push(dropped_with(joint, source_record(&needs)));
+            continue;
+        }
         match mate(structure, feature, path, suppressed) {
             Ok(mapped) => {
                 if !structure.joint_ids.insert(mapped.joint.id.clone()) {
-                    structure.mate_loss(
-                        &mut notes,
-                        native,
-                        OnshapeLossCode::MateUnsupported,
-                        "mate identity repeats; retained the first joint",
-                    )?;
+                    if kept.get(&mapped.joint.id) == Some(&feature) {
+                        structure.mate_loss(
+                            &mut notes,
+                            native,
+                            OnshapeLossCode::MateUnsupported,
+                            "mate identity repeats with the same content; retained the first joint",
+                        )?;
+                    } else {
+                        structure.report.give_up_as(
+                            &format!("{source}/features/{position}"),
+                            native,
+                            (Cause::Unreadable, OnshapeLossCode::AssemblyRecordRepeated),
+                            "mate identity repeats with different content; retained the first joint",
+                        );
+                    }
                     continue;
                 }
+                kept.insert(mapped.joint.id.clone(), feature);
                 structure.model.ir.model.assembly_joints.push(mapped.joint);
                 if mapped.nested {
                     structure.mate_loss(
@@ -94,6 +131,56 @@ pub(super) fn project(
         }
     }
     Ok(())
+}
+
+/// The mate types that map to a paired joint.
+const PAIRED_MATE_TYPES: [&str; 6] = [
+    "FASTENED",
+    "REVOLUTE",
+    "SLIDER",
+    "CYLINDRICAL",
+    "PLANAR",
+    "BALL",
+];
+
+/// The joint that the mate `feature` at the occurrence path `path` maps to
+/// where the instance that one of its connectors names is given up, and
+/// the source address of that instance. A mate names such a joint where
+/// each of its two connectors states a valid occurrence path and frame, and
+/// each connector under no given-up instance resolves. A planar mate takes
+/// its sense from the placements of both connectors, so it names none.
+fn dropped_joint(
+    structure: &Structure<'_, '_>,
+    feature: &Value,
+    path: &[String],
+) -> Option<(Identity, String)> {
+    let data = feature.get("featureData")?;
+    if !text(data, "mateType")
+        .is_ok_and(|kind| kind != "PLANAR" && PAIRED_MATE_TYPES.contains(&kind))
+    {
+        return None;
+    }
+    let native = text(feature, "id").ok()?;
+    let [first, second] = rows(data, "matedEntities").ok()? else {
+        return None;
+    };
+    let mut needs = None;
+    for entity in [first, second] {
+        let occurrence = occurrence_path(entity, path).ok()?;
+        let given_up = (path.len() + 1..=occurrence.len())
+            .find_map(|end| structure.given_up.get(&occurrence[..end]));
+        match given_up {
+            Some(record) => {
+                mated_frame(entity).ok()?;
+                needs.get_or_insert_with(|| record.clone());
+            }
+            None => {
+                connector(structure, entity, path).ok()?;
+            }
+        }
+    }
+    let joint = Identity::try_from(id("joint", &format!("{}:{native}", key(path)))).ok()?;
+    Some((joint, needs?))
 }
 
 struct MappedMate {
@@ -205,11 +292,8 @@ fn sense(first: Option<Transform>, second: Option<Transform>) -> Option<PlaneSen
         None
     }
 }
-fn connector(
-    structure: &Structure<'_, '_>,
-    entity: &Value,
-    parent: &[String],
-) -> Mapping<Connector> {
+/// The occurrence path that the mated `entity` of a mate at `parent` names.
+fn occurrence_path(entity: &Value, parent: &[String]) -> Mapping<Vec<String>> {
     let mut path = parent.to_vec();
     let components = rows(entity, "matedOccurrence")?;
     if parent.len() + components.len() > super::ASSEMBLY_DEPTH {
@@ -224,10 +308,42 @@ fn connector(
                 .to_owned(),
         );
     }
+    Ok(path)
+}
+
+fn connector(
+    structure: &Structure<'_, '_>,
+    entity: &Value,
+    parent: &[String],
+) -> Mapping<Connector> {
+    let path = occurrence_path(entity, parent)?;
     let placement = structure
         .placements
         .get(&path)
         .ok_or("mate occurrence path is unresolved")?;
+    let frame = mated_frame(entity)?;
+    let world = placement
+        .world
+        .map(|world| world.compose(frame))
+        .transpose()
+        .map_err(|reason| format!("solved connector world frame is invalid: {reason}"))?;
+    Ok(Connector {
+        joint: JointConnector {
+            operand: JointOperand::occurrence(
+                placement.id.clone(),
+                path.last().cloned().unwrap_or_default(),
+                Vec::new(),
+            ),
+            frame,
+            detached: false,
+        },
+        world,
+        nested: path.len() - parent.len() > 1,
+    })
+}
+
+/// The frame that the mated `entity` states in its occurrence.
+fn mated_frame(entity: &Value) -> Mapping<Transform> {
     let cs = entity
         .get("matedCS")
         .ok_or("evaluated mate coordinate system is missing")?;
@@ -255,24 +371,7 @@ fn connector(
     if !frame.is_proper_rigid() {
         return Err("mate axes do not form a proper rigid frame".into());
     }
-    let world = placement
-        .world
-        .map(|world| world.compose(frame))
-        .transpose()
-        .map_err(|reason| format!("solved connector world frame is invalid: {reason}"))?;
-    Ok(Connector {
-        joint: JointConnector {
-            operand: JointOperand::occurrence(
-                placement.id.clone(),
-                path.last().cloned().unwrap_or_default(),
-                Vec::new(),
-            ),
-            frame,
-            detached: false,
-        },
-        world,
-        nested: components.len() > 1,
-    })
+    Ok(frame)
 }
 
 fn quantities(

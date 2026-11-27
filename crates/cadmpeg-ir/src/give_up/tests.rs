@@ -620,7 +620,7 @@ fn a_name_of_a_lost_feature_keeps_its_native_name_or_is_released() {
 }
 
 #[test]
-fn a_native_record_that_names_a_lost_record_is_dropped() {
+fn a_native_record_that_states_a_lost_id_is_kept() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let point = ir.geometry.points[0].id.as_str().to_owned();
     let native = "test:native:mark#1";
@@ -634,8 +634,9 @@ fn a_native_record_that_names_a_lost_record_is_dropped() {
         .set_arena_records("marks", vec![record])
         .unwrap();
     let (outcome, _) = run(&mut ir, seed("geometry", "points", &point));
-    assert!(outcome.dropped.contains(native));
-    assert!(!holds(&ir, native));
+    assert!(!outcome.dropped.contains(native));
+    assert!(!outcome.marked.contains(native));
+    assert!(holds(&ir, native));
     assert_closed(&ir, &point, &outcome);
 }
 
@@ -1458,12 +1459,12 @@ fn projected_cube() -> CadIr {
     ir
 }
 
-/// Under the decode wrapper's naming, the typed walk of a record names
-/// each id that the walk of its JSON, typed by the CADIR schema, names,
-/// other than the record's own, and no other (§3.3).
+/// The typed walk of a record names each id that the walk of its JSON,
+/// typed by the CADIR schema, names, other than the record's own, and no
+/// other (§3.3).
 #[test]
 fn the_typed_walk_names_what_the_schema_walk_names() {
-    use super::{Naming, References, Walk};
+    use super::{NativeLinks, References, Walk};
 
     assert_eq!(Walk::of("geometry", "faces"), Walk::Typed);
     assert_eq!(Walk::of("model", "product_definitions"), Walk::Typed);
@@ -1511,13 +1512,13 @@ fn the_typed_walk_names_what_the_schema_walk_names() {
             }
             names_by_holder(&ir, references)
         };
-        let typed = walk(References::new(Naming::References));
-        let schema = walk(References::json_walk(Naming::References));
+        let typed = walk(References::new(NativeLinks::Unread));
+        let schema = walk(References::json_walk(NativeLinks::Unread));
         assert!(!typed.is_empty(), "{label}");
         assert_eq!(typed, schema, "{label}");
     }
 
-    let typed = names_by_holder(&projected_cube(), References::new(Naming::References));
+    let typed = names_by_holder(&projected_cube(), References::new(NativeLinks::Unread));
     let cube = projected_cube();
     let faces = Arena::home("geometry", "faces").unwrap();
     let face = |at: usize| {
@@ -1601,10 +1602,10 @@ fn release_shell(references: super::References) -> (serde_json::Value, Releases)
 /// in the delta of a stored state (§3.3).
 #[test]
 fn a_release_by_the_typed_walk_drops_and_marks_what_the_schema_walk_does() {
-    use super::{Naming, References};
+    use super::{NativeLinks, References};
 
-    let (typed_ir, typed) = release_shell(References::new(Naming::References));
-    let (schema_ir, schema) = release_shell(References::json_walk(Naming::References));
+    let (typed_ir, typed) = release_shell(References::new(NativeLinks::Unread));
+    let (schema_ir, schema) = release_shell(References::json_walk(NativeLinks::Unread));
 
     let (cube, shell, _, _) = stored_state();
     let faces: BTreeSet<String> = cube

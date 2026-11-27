@@ -189,7 +189,7 @@ fn missing_definition_or_root_and_duplicate_instances_remain_partial() {
         .push(first);
     let (model, report) = read(definition);
     assert_eq!(model.ir.model.occurrences.len(), 2);
-    assert!(loss(&report, "onshape/assembly.record-unsupported"));
+    assert!(loss(&report, "onshape/assembly.record-repeated"));
 }
 #[test]
 fn repeated_subassembly_has_distinct_paths_and_local_joints() {

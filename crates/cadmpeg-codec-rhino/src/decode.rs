@@ -335,17 +335,20 @@ impl ExpansionBudget {
 
 /// Source-record links and object outcomes that one top-level instance
 /// expansion added. A rejected expansion removes exactly these, so rollback
-/// work follows the expansion, not the document.
+/// work follows the expansion, not the document. `capped` lists the members
+/// that the instance entity cap refused.
 #[derive(Debug, Default)]
 struct ExpansionUndo {
     links: Vec<(usize, String)>,
     outcomes: Vec<usize>,
+    capped: Vec<usize>,
 }
 
 impl ExpansionUndo {
     fn absorb(&mut self, mut inner: Self) {
         self.links.append(&mut inner.links);
         self.outcomes.append(&mut inner.outcomes);
+        self.capped.append(&mut inner.capped);
     }
 }
 
@@ -417,6 +420,8 @@ pub(crate) struct DecodeContext<'a> {
     definition_candidates: HashMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
     expansion_undo: Option<ExpansionUndo>,
+    /// Definition members that failed to decode in a rejected expansion.
+    failed_members: BTreeMap<usize, Failure>,
     /// The mesh objects committed, by tessellation id: each is a mesh body of
     /// the root, stated with its own name, colour, and visibility once the
     /// root exists.
@@ -475,6 +480,7 @@ impl<'a> DecodeContext<'a> {
             definition_candidates,
             expansion_budget: ExpansionBudget::new(),
             expansion_undo: None,
+            failed_members: BTreeMap::new(),
             mesh_bodies: HashMap::new(),
             object_presentations: HashMap::new(),
         };
@@ -660,6 +666,7 @@ impl<'a> DecodeContext<'a> {
         let entity_count = candidate.entity_count();
         let mut budget = self.expansion_budget;
         let expanding = self.instance_selection.is_some();
+        let mut capped = false;
         let appended = self.session.try_admit_append(
             candidate,
             annotations,
@@ -675,6 +682,7 @@ impl<'a> DecodeContext<'a> {
                     ))));
                 }
                 if expanding && !budget.entities(entity_count) {
+                    capped = true;
                     return Ok(Err(CandidateError::Admission(
                         ENTITY_BUDGET_EXCEEDED.to_string(),
                     )));
@@ -684,6 +692,9 @@ impl<'a> DecodeContext<'a> {
                 Ok(Ok((value, annotations)))
             },
         );
+        if capped {
+            self.note_entity_cap();
+        }
         let (value, annotations) = appended??;
         annotations.apply(&mut self.annotations);
         self.expansion_budget = budget;
@@ -2177,6 +2188,11 @@ impl<'a> DecodeContext<'a> {
         }
         for source_order in undo.outcomes {
             if let Some(status) = self.statuses.get_mut(source_order) {
+                if let Some(GeometryOutcome::Failed(failure)) = status.take() {
+                    if !undo.capped.contains(&source_order) {
+                        self.failed_members.insert(source_order, failure);
+                    }
+                }
                 *status = None;
             }
         }
@@ -2717,6 +2733,9 @@ impl<'a> DecodeContext<'a> {
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
+        for (source_order, failure) in std::mem::take(&mut self.failed_members) {
+            self.transition(source_order, GeometryOutcome::Failed(failure));
+        }
         let ctx = self.expand.ctx();
         for loss in &self.scan.metadata.losses {
             self.report.phase_losses.push(loss.clone());
@@ -2914,18 +2933,23 @@ impl<'a> DecodeContext<'a> {
         );
         let (mut ir, unknowns) = self.session.into_parts();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
-        for part in given_up {
-            losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
-        }
         let untyped = self
             .opaque_records
             .iter()
             .map(|record| record.id().clone())
             .collect::<Vec<_>>();
-        source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
+        source_fidelity
+            .retain_unknown_records(crate::container::FILE_OWNER, self.opaque_records)?;
         for id in untyped {
             source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
         }
+        losses.extend(crate::container::commit_given_up(
+            ctx,
+            self.scan.data,
+            &mut ir,
+            &mut source_fidelity,
+            given_up,
+        )?);
         let primary = crate::container::dialect_match(self.scan);
         // Charged from the admission the source records, so the document-level
         // residual admission and its loss cannot be reported apart.
@@ -3103,6 +3127,7 @@ impl<'a> DecodeContext<'a> {
         let mut budget = self.expansion_budget;
         if self.instance_selection.is_some() && !budget.entities(amount) {
             self.scan_warning(source_order, format_args!("{ENTITY_BUDGET_EXCEEDED}"));
+            self.note_entity_cap();
             return Ok(false);
         }
         self.expand
@@ -3110,6 +3135,14 @@ impl<'a> DecodeContext<'a> {
             .charge_entities(u64_from_index(amount), "rhino_instance_entities")?;
         self.expansion_budget = budget;
         Ok(true)
+    }
+
+    /// Records that the instance entity cap refused the selected member, so a
+    /// rejected expansion does not give it up.
+    fn note_entity_cap(&mut self) {
+        if let (Some(undo), Some(selected)) = (&mut self.expansion_undo, &self.instance_selection) {
+            undo.capped.push(selected.source_order);
+        }
     }
 
     fn commit_geometry(
@@ -3649,10 +3682,13 @@ impl<'a> DecodeContext<'a> {
                 self.append_link(source_order, &link)?;
             }
             Err(CandidateError::Codec(error)) => return Err(error),
-            Err(findings) => self.scan_warning(
-                source_order,
-                format_args!("unknown surface validation rejected candidate: {findings}"),
-            ),
+            Err(findings) => {
+                self.mark_failed(
+                    source_order,
+                    Cause::Undecoded,
+                    format_args!("unknown surface validation rejected candidate: {findings}"),
+                );
+            }
         }
         Ok(())
     }
@@ -3855,23 +3891,25 @@ impl<'a> DecodeContext<'a> {
                     !full_topology && !emitted_geometry && !draft.model().tessellations.is_empty();
                 let entity_count = draft.entity_count();
                 let mut budget = self.expansion_budget;
-                let committed =
-                    if self.instance_selection.is_none() || budget.entities(entity_count) {
-                        match self.session.validate_source_records()? {
-                            Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
-                                Ok(()) => Ok(()),
-                                Err(error) => Err(format!("{error}")),
-                            },
+                let admitted = self.instance_selection.is_none() || budget.entities(entity_count);
+                let committed = if admitted {
+                    match self.session.validate_source_records()? {
+                        Ok(()) => match self.session.commit(draft, &mut self.annotations)? {
+                            Ok(()) => Ok(()),
                             Err(error) => Err(format!("{error}")),
-                        }
-                    } else {
-                        Err(ENTITY_BUDGET_EXCEEDED.to_string())
-                    };
+                        },
+                        Err(error) => Err(format!("{error}")),
+                    }
+                } else {
+                    Err(ENTITY_BUDGET_EXCEEDED.to_string())
+                };
                 if let Err(error) = committed {
-                    self.scan_warning(
-                        source_order,
-                        format_args!("Brep draft rejected before commit: {error}"),
-                    );
+                    let reason = format_args!("Brep draft rejected before commit: {error}");
+                    if admitted {
+                        self.mark_failed(source_order, Cause::Undecoded, reason);
+                    } else {
+                        self.scan_warning(source_order, reason);
+                    }
                 } else {
                     self.expansion_budget = budget;
                     self.append_links(source_order, &links)?;
@@ -3911,9 +3949,16 @@ impl<'a> DecodeContext<'a> {
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
-            Err(error) => {
+            Err(error @ crate::curves::GeometryError::UnsupportedVersion { .. }) => {
                 self.scan_warning(
                     source_order,
+                    format_args!("Brep geometry/topology degraded: {error}"),
+                );
+            }
+            Err(error) => {
+                self.mark_failed(
+                    source_order,
+                    error.cause(),
                     format_args!("Brep geometry/topology degraded: {error}"),
                 );
             }

@@ -10,7 +10,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::evaluation::FeatureInputTopology;
-use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
+use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::geometry::Surface;
 use cadmpeg_ir::products::{AssemblyJoint, Occurrence};
@@ -286,7 +286,6 @@ impl DesignNative {
 /// phase 2 reads them and does not change them.
 #[derive(Debug, Default)]
 pub(super) struct DesignModel {
-    pub(super) configurations: Vec<DesignConfiguration>,
     pub(super) features: Vec<Feature>,
     pub(super) history_bodies: Vec<cadmpeg_ir::history_body::HistoryBody>,
     pub(super) parameters: Vec<DesignParameter>,
@@ -307,7 +306,6 @@ impl DesignModel {
     /// Move every arena into the neutral model.
     pub(super) fn store(self, model: &mut Model) {
         let Self {
-            configurations,
             features,
             history_bodies,
             parameters,
@@ -321,7 +319,6 @@ impl DesignModel {
             spatial_sketch_entities,
             spatial_sketch_constraints,
         } = self;
-        model.configurations = configurations;
         model.features = features;
         model.history_bodies = history_bodies;
         model.parameters = parameters;
@@ -1641,26 +1638,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         inputs.ctx,
         &model.features,
         &mut model.feature_input_topologies,
-    )?;
-    model.configurations = crate::design::decode::record::recover_partial(
-        crate::design::configurations::project_configurations(
-            &design.design_configurations,
-            &crate::design::configurations::ConfigurationTargets {
-                parameters: &prereqs.design_parameters,
-                owners: &prereqs.design_parameter_owners,
-                scopes: &design.design_parameter_scopes,
-                neutral_parameters: &model.parameters,
-                neutral_features: &model.features,
-            },
-        ),
-        &mut losses,
-        F3dLossCode::ConfigurationProjectionNative,
-        "Configuration projection",
-    )?
-    .unwrap_or_default();
-    crate::design::configurations::reconcile_active_configurations(
-        &mut model.features,
-        &mut model.configurations,
     )?;
     losses.extend(
         crate::design::decode::operands::sketch_profiles::sketchless_profile_selection_losses(

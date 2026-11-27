@@ -1764,3 +1764,61 @@ fn linear_boundary_relationship_accepts_corner_touching_rings_and_rejects_a_non_
         Some(false)
     );
 }
+
+#[test]
+fn a_trimmed_face_on_a_surface_over_the_pole_limit_is_dropped_with_the_surface() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+
+    let boundary = "106,1,5,0,0.2,0.2,0.2,0.8,0.8,0.8,0.8,0.2,0.2,0.2;";
+    let entity = |entity_type, form, label: &str, status, parameters: &str| OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status,
+        parameters: parameters.into(),
+    };
+    // The surface declares a 1001 by 1001 pole grid.
+    let bytes = owned_test_file(&[
+        entity(
+            128,
+            0,
+            "SURFACE",
+            "00010000",
+            "128,1000,1000,1,1,0,0,1,0,0;",
+        ),
+        entity(106, 63, "MODEL", "00010000", boundary),
+        entity(106, 63, "PCURVE", "00010500", boundary),
+        entity(142, 0, "ONSURF", "00010000", "142,0,1,5,3,3;"),
+        entity(144, 0, "TRIMMED", "00000000", "144,1,1,0,7;"),
+    ]);
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    crate::test_support::assert_gives_up(result.report(), &[("entity", 1)]);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .unwrap();
+    assert!(
+        given_up.message.contains("surface pole count exceeds"),
+        "{}",
+        given_up.message
+    );
+    let dropped = given_up
+        .message
+        .split("dropped=[")
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .unwrap_or_default();
+    assert_eq!(dropped, "iges:model:face#D9", "{}", given_up.message);
+    assert!(result.ir().geometry.faces.is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| cadmpeg_ir::unknown::part::needs(loss).is_some()));
+}

@@ -170,25 +170,28 @@ fn lost_members(
         .collect()
 }
 
-/// Gives up each lost member of a wireframe model that committed a body.
-/// A model that committed no body gives up as a whole, and its lost members
-/// drop with it.
+/// Settles the lost members of a wireframe model `owner`. The members of a
+/// model that committed a body join `unresolved`, each with the reason it is
+/// lost. A model that committed no body gives up as a whole for `failure`,
+/// and each lost member drops with it as the record `record` names for it.
 fn settle_lost_members(
     exchange: &Exchange,
     owner: u64,
     committed: bool,
     failure: String,
     lost: Vec<(u64, String)>,
+    record: impl Fn(u64) -> cadmpeg_ir::ids::Identity,
+    unresolved: &mut Vec<(u64, String)>,
 ) {
     if committed {
-        for (member, why) in lost {
-            exchange.lost().give_up(member, Cause::Undecoded, why);
-        }
+        unresolved.extend(lost);
         return;
     }
     exchange.lost().give_up(owner, Cause::Undecoded, failure);
     for (member, _) in lost {
-        exchange.lost().drop_with(member, owner);
+        exchange
+            .lost()
+            .drop_record_with(member, record(member), owner);
     }
 }
 
@@ -518,6 +521,11 @@ pub(super) fn decode(
         }
     }
     let mut built_wire_models = BTreeSet::new();
+    // The edge sets and shells that a model omits or a commit rejects. Each
+    // that no other model or root builds is given up after every model and
+    // root is built.
+    let mut unresolved = Vec::new();
+    let mut built_wire_sets = BTreeSet::new();
     for (&representation, record) in exchange.records() {
         let Some(items) = representation_item_values(record) else {
             continue;
@@ -556,6 +564,7 @@ pub(super) fn decode(
                 } else {
                     committed += 1;
                     built_wire_models.insert(model);
+                    built_wire_sets.extend(built.shell_sources.iter().copied());
                     built.typed.insert(representation);
                     result
                         .body_by_root
@@ -565,6 +574,11 @@ pub(super) fn decode(
                     merge_claims(&mut result.claims, std::mem::take(&mut built.typed));
                 }
             }
+            let scoped = exchange
+                .records()
+                .get(&model)
+                .and_then(|record| named_reference_values(record, "EDGE_BASED_WIREFRAME_MODEL", 1))
+                .is_some_and(|sets| sets.len() > 1);
             settle_lost_members(
                 exchange,
                 model,
@@ -574,6 +588,8 @@ pub(super) fn decode(
                     rejected.reasons()
                 ),
                 lost_members(&label, "connected edge set", failures, rejected),
+                |set| wire_set_shell(model, set, scoped).into(),
+                &mut unresolved,
             );
         }
     }
@@ -624,6 +640,8 @@ pub(super) fn decode(
                 rejected.reasons()
             ),
             lost_members(&label, "wire shell", failures, rejected),
+            |shell| shell_identity(model, shell, scope_root).into(),
+            &mut unresolved,
         );
     }
     let mut decoded_pcurves = BTreeSet::new();
@@ -796,32 +814,59 @@ pub(super) fn decode(
                     body_by_shell,
                 },
             );
-            for (shell, why) in lost_members(&label, "shell", failures, rejected) {
-                exchange.lost().give_up(shell, Cause::Undecoded, why);
+            unresolved.extend(lost_members(&label, "shell", failures, rejected));
+        }
+    }
+    // A failed root drops the base shell of each of its shells and the faces
+    // of that shell, each named by the id the root mints for it. A shell
+    // that another root built, and a face that another root holds, stay in
+    // the document.
+    let held_faces = commit_session
+        .document()
+        .geometry
+        .faces
+        .iter()
+        .filter_map(|face| source_numeric_id(face.id.as_str(), "face"))
+        .collect::<BTreeSet<_>>();
+    for (id, record) in failed_roots {
+        let Some(shell_steps) = root_shell_steps(record, exchange, &shells) else {
+            continue;
+        };
+        let face_based = record.partial("FACE_BASED_SURFACE_MODEL").is_some();
+        let scope_faces = shell_steps.len() > 1 || scope_distinct_roots;
+        for reference in shell_steps {
+            let base = if face_based {
+                reference
+            } else {
+                shells.get(&reference).map_or(reference, |shell| shell.base)
+            };
+            if result.body_by_shell.contains_key(&base) {
+                continue;
+            }
+            exchange.lost().drop_record_with(
+                base,
+                shell_identity(id, base, scope_distinct_roots).into(),
+                id,
+            );
+            let suffix = face_suffix(id, base, scope_faces, scope_distinct_roots);
+            for face in shell_faces(base, exchange) {
+                if held_faces.contains(&face) {
+                    continue;
+                }
+                let record = ids::data(kind!("face"), IdentityKey::from(face).with_tail(&suffix));
+                exchange.lost().drop_record_with(face, record, id);
             }
         }
     }
-    // A shell or face of a failed root that another root built stays in
-    // the document, so only the members no root holds drop with the root.
-    let held = &commit_session.document().geometry.faces;
-    for (id, record) in failed_roots {
-        for shell in root_shell_steps(record, exchange, &shells)
-            .into_iter()
-            .flatten()
+    // A shell or edge set that another model or root built stays in the
+    // document.
+    for (source, why) in unresolved {
+        let base = shells.get(&source).map_or(source, |shell| shell.base);
+        if !(result.body_by_shell.contains_key(&source)
+            || result.body_by_shell.contains_key(&base)
+            || built_wire_sets.contains(&source))
         {
-            let (named, faces) = shell_members(shell, exchange, &shells);
-            for shell in named {
-                if !result.body_by_shell.contains_key(&shell) {
-                    let record = shell_identity(id, shell, scope_distinct_roots);
-                    exchange.lost().drop_record_with(shell, record.into(), id);
-                }
-            }
-            for face in faces {
-                let record = ids::data(kind!("face"), face);
-                if !held.iter().any(|held| held.id.as_str() == record.as_str()) {
-                    exchange.lost().drop_record_with(face, record, id);
-                }
-            }
+            exchange.lost().give_up(source, Cause::Undecoded, why);
         }
     }
     // Every admitted relation shares one class of unproved invariant, so the
@@ -1362,10 +1407,7 @@ fn build_wire_set(
         kind!("region"),
         IdentityKey::from(id).with_tail(&suffix),
     ));
-    let shell = ShellId::from(ids::data(
-        kind!("shell"),
-        IdentityKey::from(id).with_tail(&suffix),
-    ));
+    let shell = wire_set_shell(id, set_id, scoped);
     if wire_edges.is_empty() {
         losses.push(StepLossCode::DecodeWarning.note(format!(
             "CONNECTED_EDGE_SET #{set_id}: {}",
@@ -2979,30 +3021,16 @@ fn root_shell_steps(
     None
 }
 
-/// The shells a topology root's shell `shell` names, from `shell` to its
-/// base shell, and the faces of the base shell.
-fn shell_members(
-    shell: u64,
-    exchange: &Exchange,
-    shells: &BTreeMap<u64, ShellDef>,
-) -> (Vec<u64>, Vec<u64>) {
-    let definition = shells.get(&shell);
-    let base = definition.map_or(shell, |definition| definition.base);
-    let mut named = BTreeSet::from([shell, base]);
-    named.extend(
-        definition
-            .into_iter()
-            .flat_map(|definition| &definition.typed),
-    );
-    let faces = exchange
+/// The faces of the connected face set `shell`.
+fn shell_faces(shell: u64, exchange: &Exchange) -> Vec<u64> {
+    exchange
         .records()
-        .get(&base)
+        .get(&shell)
         .and_then(|record| connected_set_members(record, connected_face_set_type(record)?))
         .into_iter()
         .flatten()
         .filter_map(ValueExt::reference)
-        .collect();
-    (named.into_iter().collect(), faces)
+        .collect()
 }
 
 fn root_key(
@@ -3409,21 +3437,7 @@ fn build_one(
             for claim in face_info.typed {
                 typed.insert(claim);
             }
-            let face_suffix = if scope_faces {
-                if scope_root {
-                    IdentityKeyTail::empty()
-                        .dash(key_word!("root"))
-                        .dash(id)
-                        .dash(key_word!("shell"))
-                        .dash(shell_step)
-                } else {
-                    IdentityKeyTail::empty()
-                        .dash(key_word!("shell"))
-                        .dash(shell_step)
-                }
-            } else {
-                IdentityKeyTail::empty()
-            };
+            let face_suffix = face_suffix(id, shell_step, scope_faces, scope_root);
             let surface_id = if let Some(surface_step) = face_info.surface {
                 SurfaceId::from(ids::data(kind!("surface"), surface_step))
             } else {
@@ -4308,6 +4322,34 @@ fn insert_connected_face_group<'a>(
 ) {
     let group = groups.entry(key).or_default();
     group.insert(face);
+}
+
+/// The tail of the id of each face that root `root` mints from its shell
+/// `shell_step`.
+fn face_suffix(root: u64, shell_step: u64, scope_faces: bool, scope_root: bool) -> IdentityKeyTail {
+    if !scope_faces {
+        return IdentityKeyTail::empty();
+    }
+    let tail = if scope_root {
+        IdentityKeyTail::empty().dash(key_word!("root")).dash(root)
+    } else {
+        IdentityKeyTail::empty()
+    };
+    tail.dash(key_word!("shell")).dash(shell_step)
+}
+
+/// The shell that wireframe model `id` mints from its connected edge set
+/// `set_id`. A model of more than one set scopes the shell by the set.
+fn wire_set_shell(id: u64, set_id: u64, scoped: bool) -> ShellId {
+    let suffix = if scoped {
+        IdentityKeyTail::empty().dash(key_word!("set")).dash(set_id)
+    } else {
+        IdentityKeyTail::empty()
+    };
+    ShellId::from(ids::data(
+        kind!("shell"),
+        IdentityKey::from(id).with_tail(&suffix),
+    ))
 }
 
 fn shell_identity(root_id: u64, shell_step: u64, scope_root: bool) -> ShellId {

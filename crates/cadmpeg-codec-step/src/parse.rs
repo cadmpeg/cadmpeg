@@ -663,12 +663,21 @@ pub(crate) struct GivenUpStatement {
     pub(crate) span: Range<usize>,
     /// Why the statement could not be read.
     pub(crate) cause: GiveUpCause,
-    /// The names (`#12`, `<name>`) of the records dropped because they need
-    /// it.
-    pub(crate) dropped: Vec<String>,
+    /// The statements dropped because they need it.
+    pub(crate) dropped: Vec<DroppedStatement>,
     /// Instance names of kept records and of the entries they lost from an
     /// unordered aggregate because the entries need it.
     pub(crate) lost: Vec<(u64, u64)>,
+}
+
+/// A statement the parser drops because it needs a given-up statement. The
+/// parser keeps its exact source as an omitted statement.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DroppedStatement {
+    /// The statement's name: `#12` or `<name>`.
+    pub(crate) name: String,
+    /// The byte offset of the statement, which keys its omitted record.
+    pub(crate) offset: usize,
 }
 
 /// Why a statement was given up.

@@ -105,8 +105,6 @@ pub(crate) enum UsdLossCode {
     /// holds an edge or a vertex, so it states no extent. The face is stated
     /// partial.
     TopologyFaceBoundaryUnstated,
-    /// A joint whose bodies or frames do not resolve was not transferred.
-    JointRejected,
     /// Joint properties with no neutral form were not transferred.
     JointPropertyNotTransferred,
     /// A `PhysX` property was not carried: its value or its target did not
@@ -191,7 +189,6 @@ impl UsdLossCode {
         Self::BrepElementNotTransferred,
         Self::BrepSubsetNotTransferred,
         Self::TopologyFaceBoundaryUnstated,
-        Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
         Self::PhysicsPropertyNotTransferred,
@@ -365,11 +362,6 @@ impl UsdLossCode {
                 "topology.face-boundary-unstated",
                 Warning,
                 T::TopologyNotTransferred,
-            ),
-            Self::JointRejected => (
-                "physics.joint-rejected",
-                Warning,
-                T::AssemblyPlacementsNotTransferred,
             ),
             Self::JointPropertyNotTransferred => (
                 "physics.joint-property-not-transferred",

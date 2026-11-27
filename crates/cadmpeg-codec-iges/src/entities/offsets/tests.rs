@@ -796,7 +796,7 @@ fn an_offset_of_a_given_up_source_is_dropped_with_the_source() {
     assert_eq!(given_up.len(), 1, "{given_up:#?}");
     crate::test_support::assert_given_up(given_up[0], ("entity", 1));
     assert!(
-        dropped_ids(&given_up[0].message).contains(&"iges:entity:directory#3"),
+        dropped_ids(&given_up[0].message) == ["iges:model:curve#D3"],
         "{}",
         given_up[0].message
     );

@@ -856,7 +856,10 @@ fn transfer_neutral_presentation(
             };
             let mut assets = Vec::new();
             for entry in &state.side_entries {
-                assets.push(crate::native::native_id("entry", entry));
+                assets.push(
+                    cadmpeg_ir::ids::Identity::try_from(crate::native::native_id("entry", entry))
+                        .map_err(CodecError::malformed)?,
+                );
             }
             states.push(PresentationState {
                 kind,
@@ -931,7 +934,9 @@ fn transfer_neutral_presentation(
             object: provider
                 .object
                 .as_ref()
-                .map(|object| object.as_str().to_owned()),
+                .map(|object| cadmpeg_ir::ids::Identity::try_from(object.as_str()))
+                .transpose()
+                .map_err(CodecError::malformed)?,
             order: u32::try_from(provider.order).map_err(|_| {
                 CodecError::malformed(format_args!(
                     "FreeCAD ordinal {} exceeds u32",
