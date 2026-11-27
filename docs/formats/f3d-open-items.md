@@ -20,7 +20,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
-### DR-XXXX. Island in the profile of an Intersect Extrude
+### DR-1078. Island in the profile of an Intersect Extrude
 
 **Question.** Does the counted region selection of an Intersect Extrude ever name a face that encloses an island?
 
