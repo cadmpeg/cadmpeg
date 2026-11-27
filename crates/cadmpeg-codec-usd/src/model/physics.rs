@@ -66,11 +66,17 @@ pub(super) enum JointRejection {
     BodyNotTransferred,
     /// Both body relationships are empty, so each side is the world.
     NoBody,
+    /// A coupling relationship targets no joint that the decoder adds.
+    CouplingUnresolved,
 }
 
 impl JointRejection {
-    pub(super) const ALL: [Self; 3] =
-        [Self::NoBody, Self::BodyNotTransferred, Self::FrameMalformed];
+    pub(super) const ALL: [Self; 4] = [
+        Self::NoBody,
+        Self::BodyNotTransferred,
+        Self::FrameMalformed,
+        Self::CouplingUnresolved,
+    ];
 
     /// The cause, as the predicate of one joint.
     const fn one(self) -> &'static str {
@@ -78,6 +84,7 @@ impl JointRejection {
             Self::FrameMalformed => "has a malformed frame",
             Self::BodyNotTransferred => "names a body that is not a transferred prim",
             Self::NoBody => "names no body",
+            Self::CouplingUnresolved => "couples a joint that is not a transferred joint",
         }
     }
 
@@ -87,6 +94,7 @@ impl JointRejection {
             Self::FrameMalformed => "have a malformed frame",
             Self::BodyNotTransferred => "name a body that is not a transferred prim",
             Self::NoBody => "name no body",
+            Self::CouplingUnresolved => "couple a joint that is not a transferred joint",
         }
     }
 }
@@ -326,10 +334,10 @@ impl super::Builder<'_, '_, '_, '_> {
         Ok(())
     }
 
-    /// The joints that the coupling joint at `path` names, when each names
-    /// one joint that was added; otherwise none, reported.
-    fn coupled_joints(&mut self, path: &str, coupled: &[Option<String>]) -> Vec<JointId> {
-        let ids: Option<Vec<JointId>> = coupled
+    /// The joints that a coupling joint names, when each relationship names
+    /// one joint that was added.
+    fn coupled_joints(&self, coupled: &[Option<String>]) -> Option<Vec<JointId>> {
+        coupled
             .iter()
             .map(|target| {
                 let id = crate::ids::joint(target.as_deref()?);
@@ -340,13 +348,27 @@ impl super::Builder<'_, '_, '_, '_> {
                     .any(|joint| joint.id == id)
                     .then_some(id)
             })
-            .collect();
-        ids.unwrap_or_else(|| {
-            self.tallies
-                .joint_properties
-                .push(format!("{path}: the coupled joints do not resolve"));
-            Vec::new()
-        })
+            .collect()
+    }
+
+    /// Leaves the joint `id` at `path` out of the document for `rejection`.
+    fn reject_joint(
+        &mut self,
+        id: JointId,
+        rejection: JointRejection,
+        path: String,
+        rejected: &mut BTreeSet<JointId>,
+    ) {
+        self.tallies.given_up.push(GivenUpRecord::new(
+            &id,
+            format_args!(
+                "{}: the joint {}",
+                UsdLossCode::JointRejected.kind(),
+                rejection.one()
+            ),
+        ));
+        self.tallies.rejected_joints.push((rejection, path));
+        rejected.insert(id);
     }
 
     /// The physics material that `prim` binds: its physics-purpose binding,
@@ -518,19 +540,11 @@ impl super::Builder<'_, '_, '_, '_> {
                     .then_some(JointRejection::NoBody)
             });
             if let Some(rejection) = rejection {
-                self.tallies.given_up.push(GivenUpRecord::new(
-                    &id,
-                    format_args!(
-                        "{}: the joint {}",
-                        UsdLossCode::JointRejected.kind(),
-                        rejection.one()
-                    ),
-                ));
-                self.tallies.rejected_joints.push((rejection, path));
-                rejected.insert(id);
+                self.reject_joint(id, rejection, path, &mut rejected);
                 continue;
             }
             // A coupling needs each joint it couples.
+            let mut coupled_joints = Vec::new();
             if matches!(data.kind, JointType::Gear | JointType::RackPinion) {
                 if let Some(needed) = data
                     .coupled
@@ -543,6 +557,12 @@ impl super::Builder<'_, '_, '_, '_> {
                     rejected.insert(id);
                     continue;
                 }
+                let Some(ids) = self.coupled_joints(&data.coupled) else {
+                    let rejection = JointRejection::CouplingUnresolved;
+                    self.reject_joint(id, rejection, path, &mut rejected);
+                    continue;
+                };
+                coupled_joints = ids;
             }
             let connector = |(operand, frame): (Option<JointOperand>, Transform)| JointConnector {
                 operand: operand.unwrap_or_else(|| JointOperand::root("/", Vec::new())),
@@ -592,7 +612,6 @@ impl super::Builder<'_, '_, '_, '_> {
                                 .and_then(|value| FiniteReal::new(value * scale)),
                         },
                         JointType::Gear | JointType::RackPinion => {
-                            let coupled_joints = self.coupled_joints(&path, &data.coupled);
                             if data.kind == JointType::Gear {
                                 PairedJointKind::Gears {
                                     distance: None,

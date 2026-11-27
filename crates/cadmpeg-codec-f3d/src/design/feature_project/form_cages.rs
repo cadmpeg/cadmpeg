@@ -3030,22 +3030,12 @@ fn body_membership(
     if slots.is_empty() {
         return Ok(ordinary.unwrap_or_else(|| FormConstruction::default().membership().clone()));
     }
-    if slots.len() > 1 {
-        note(
-            losses,
-            F3dLossCode::FeatureFormCageOrderAssumed,
-            &scope.id,
-            "body-record index establishes cage order",
-        );
-    }
     let cardinality = if closed {
         Some(u32::try_from(slots.len()).map_err(CodecError::malformed)?)
     } else {
         None
     };
-    let order = if slots.len() > 1 {
-        FormOrder::Assumed
-    } else if closed {
+    let order = if slots.len() > 1 || closed {
         FormOrder::Source
     } else {
         FormOrder::Unknown
