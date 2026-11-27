@@ -575,6 +575,73 @@ fn gear_and_rack_joints_couple_their_joints_and_survive_a_write() {
     );
 }
 
+/// A coupling joint needs the joints it couples. Where one of them is given
+/// up, the couplings that name it leave the document with it, named in its
+/// `record.unreadable` and charged nothing of their own.
+#[test]
+fn couplings_of_a_given_up_hinge_are_dropped_with_it() {
+    let text = COUPLINGS.replacen(
+        "rel physics:body1 = </Rig/A>\n    }\n    def PhysicsRevoluteJoint \"HingeB\"",
+        "rel physics:body1 = </Rig/Missing>\n    }\n    def PhysicsRevoluteJoint \"HingeB\"",
+        1,
+    );
+    assert_ne!(text, COUPLINGS);
+    let result = decode(&text);
+    let gone = ["/Rig/HingeA", "/Rig/Gear", "/Rig/Pinion"];
+    let model = &result.ir().model;
+    for path in gone {
+        let joint = crate::ids::joint(path);
+        assert!(
+            model
+                .assembly_joints
+                .iter()
+                .all(|record| record.id != joint),
+            "{path}"
+        );
+        let feature = crate::ids::joint_feature(path);
+        assert!(
+            result
+                .ir()
+                .design
+                .features
+                .iter()
+                .all(|record| record.id != feature),
+            "{path}"
+        );
+    }
+    for path in ["/Rig/HingeB", "/Rig/Track"] {
+        let joint = crate::ids::joint(path);
+        assert!(
+            model
+                .assembly_joints
+                .iter()
+                .any(|record| record.id == joint),
+            "{path}"
+        );
+    }
+    let mut dropped = [
+        crate::ids::joint("/Rig/Gear").to_string(),
+        crate::ids::joint("/Rig/Pinion").to_string(),
+    ];
+    dropped.sort();
+    let charges: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(
+        charges,
+        [format!(
+            "record {} given up: usd/physics.joint-rejected: the joint names a body that is not a \
+             transferred prim; dropped=[{}]",
+            crate::ids::joint("/Rig/HingeA"),
+            dropped.join(", ")
+        )]
+    );
+}
+
 /// A negative `physics:gearRatio` turns both gears the same way, as an
 /// internal gear does: a positive ratio, written back as it was read. A
 /// negative rack ratio moves the rack against the pinion's turn.
@@ -984,4 +1051,82 @@ fn an_infinite_lock_bound_locks_the_axis_as_a_revolute_joint() {
         losses.iter().all(|loss| !loss.contains("limit:transZ")),
         "{losses:#?}"
     );
+}
+
+const MESH_RIG: &str = "#usda 1.0\ndef Xform \"Rig\"\n{\n    def Mesh \"Base\" (\n        prepend apiSchemas = [\"PhysicsRigidBodyAPI\"]\n    )\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n    def Mesh \"Arm\" (\n        prepend apiSchemas = [\"PhysicsRigidBodyAPI\"]\n    )\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 2), (1, 0, 2), (0, 1, 2)]\n    }\n    def PhysicsRevoluteJoint \"Hinge\"\n    {\n        rel physics:body0 = </Rig/Base>\n        rel physics:body1 = </Rig/Arm>\n    }\n}\n";
+
+/// The `export:value.unwritable` notes of `report`.
+fn unwritable(report: &cadmpeg_ir::report::export::ExportReport) -> Vec<&str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/value.unwritable")
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+/// A joint whose body prim is left out for a point past the binary32 range
+/// is left out with it: no written relationship names a prim the layer
+/// does not hold.
+#[test]
+fn a_joint_to_a_prim_left_out_is_left_out_with_it() {
+    let (mut ir, _, _) = decode(MESH_RIG).into_parts();
+    let (written, _) = encode(&ir);
+    let target = written
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("rel physics:body1 = <"))
+        .and_then(|rest| rest.strip_suffix('>'))
+        .expect("the joint names its second body")
+        .to_owned();
+    let arm = ir
+        .model
+        .tessellations
+        .iter()
+        .position(|tessellation| tessellation.id.as_str().contains("Arm"))
+        .expect("the arm mesh");
+    ir.model.tessellations[arm]
+        .edit_vertices(|point| {
+            point.x = 1e300;
+            Ok(())
+        })
+        .expect("a finite point");
+    let (text, report) = encode(&ir);
+    assert!(!text.contains("def Mesh \"Arm\""), "{text}");
+    assert!(!text.contains(&format!("<{target}")), "{text}");
+    assert!(!text.contains("PhysicsRevoluteJoint"), "{text}");
+    let notes = unwritable(&report);
+    assert!(
+        notes.iter().any(|note| note.contains(&target))
+            && notes.iter().any(|note| note.contains("Hinge")),
+        "{:#?}",
+        report.losses
+    );
+    let read = decode(&text);
+    assert!(read.ir().model.assembly_joints.is_empty());
+    assert_eq!(read.ir().model.rigid_bodies.len(), 1);
+}
+
+/// A mass past the binary32 range is left out; its body stays and takes
+/// the fallback mass.
+#[test]
+fn a_mass_past_the_binary32_range_is_left_out_and_its_body_stays() {
+    let (mut ir, _, _) = decode(LAYER).into_parts();
+    ir.model.mass_properties[0].mass = cadmpeg_ir::scalar::PositiveReal::new(1e39);
+    let (text, report) = encode(&ir);
+    assert!(!text.contains("physics:mass"), "{text}");
+    let notes = unwritable(&report);
+    assert!(
+        notes.len() == 1 && notes[0].contains("/A/Base.physics:mass"),
+        "{:#?}",
+        report.losses
+    );
+    let read = decode(&text);
+    assert_eq!(read.ir().model.rigid_bodies.len(), 2);
+    assert_eq!(read.ir().model.assembly_joints.len(), 1);
+    assert!(read
+        .ir()
+        .model
+        .mass_properties
+        .iter()
+        .all(|mass| mass.mass.is_none()));
 }

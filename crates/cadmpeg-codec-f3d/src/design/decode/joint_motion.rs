@@ -205,7 +205,7 @@ fn decode_stream(
         let (freedoms, words): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
         let usual = words.iter().all(|entry| entry.word == 3);
         out.push(DesignJointMotion {
-            id: format!("f3d:{entry_name}:design-joint-motion#{motion_start}"),
+            id: crate::ids::native_scoped_id(entry_name, "design-joint-motion", motion_start),
             joint_record_index: joint_index,
             joint_byte_offset: u64_from_index(joint_start),
             motion_record_index: motion_index,

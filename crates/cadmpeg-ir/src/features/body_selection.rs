@@ -17,6 +17,7 @@ pub(super) fn known_body_count(selection: &BodySelection) -> Option<usize> {
         BodySelection::Historical { bodies, .. } => Some(bodies.len()),
         BodySelection::HistoricalSet { members, .. } => Some(members.count()),
         BodySelection::Generated { bodies, .. } => Some(bodies.len()),
+        BodySelection::GeneratedSet { members } => Some(members.count()),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => None,
     }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -42,8 +43,8 @@ fn f30_insertions_follow_the_captured_owner_subtree_move() {
         }
         let native = f3d_native(ir);
         assert_eq!(native.xref_references.len(), 2);
-        let wire = serde_json::to_vec(ir).unwrap();
-        let restored: CadIr = serde_json::from_slice(&wire).unwrap();
+        let wire = json::to_vec(ir).unwrap();
+        let restored: CadIr = json::from_slice(&wire).unwrap();
         assert_eq!(restored.model.occurrences, ir.model.occurrences);
         let mut poses = Vec::new();
         let mut world_vertices = Vec::new();
@@ -99,7 +100,7 @@ fn f30_insertions_follow_the_captured_owner_subtree_move() {
             }
         }
         for display in &native.display_poses {
-            let wire = serde_json::to_value(display).unwrap();
+            let wire = json::to_value(display).unwrap();
             assert_eq!(wire["binding"]["state"], "bound");
         }
         let validation = cadmpeg_ir::validate_neutral(ir, result.report().losses.clone()).unwrap();

@@ -65,15 +65,23 @@ use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
+mod body_placement;
+mod cages;
 mod closed_edge_range;
+mod covered_uses;
 mod design_content;
 mod encode;
+mod exact_equivalents;
 mod extrusion_directrix;
+mod native_omissions;
+mod native_restatement;
+mod open_shell_restatement;
 mod ownership;
 mod partial;
 mod pcurve_orientation;
 mod physical_dependence;
 mod quarantine;
+mod revolved_restatement;
 mod roundtrip;
 
 fn accepts_procedural_reduction_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxonomy) -> bool {
@@ -98,7 +106,7 @@ fn accepts_non_manifold_write_loss(taxonomy: cadmpeg_ir::report::loss::LossTaxon
 }
 
 #[test]
-fn drops_a_mixed_unclassified_bounded_surface_representation() {
+fn completes_a_mixed_unclassified_plane_boundary_with_computed_parameter_curves() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(trimmed_plane_with_inner_loop_file()),
@@ -155,11 +163,22 @@ fn drops_a_mixed_unclassified_bounded_surface_representation() {
         .expect("the representable part is written");
     let losses = &plan.report().losses;
     assert!(
-        losses
+        !losses
             .iter()
             .any(|loss| loss.code.to_string() == "iges/writer.face-omitted"),
         "{losses:#?}"
     );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("the file is written");
+    let read = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("the written file decodes");
+    let geometry = &read.ir().geometry;
+    assert_eq!(geometry.faces.len(), decoded.ir().geometry.faces.len());
+    assert!(geometry
+        .coedges
+        .iter()
+        .all(|coedge| !coedge.pcurves.is_empty()));
 }
 
 fn line_pcurve(id: &str, direction: [f64; 2]) -> Pcurve {
@@ -397,7 +416,14 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),
         (IgesVersion::V5_0, "5.0", "260714.000000", ",8,0,0H;"),
     ] {
-        let global_bytes = generated_global(version, timestamp, real(0.001), real(1000.0));
+        let global_bytes = generated_global(
+            version,
+            timestamp,
+            real(0.001),
+            real(1000.0),
+            &crate::writer::source_global::GlobalRestatement::default(),
+            &mut Vec::new(),
+        );
         let fixture = fixed_ascii_with_global(&global_bytes);
         let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
         let (global, losses) =
@@ -543,6 +569,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: Vec::new(),
         transform: None,
+        restates: Vec::new(),
     };
     for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
         let entities = emitted_forms
@@ -594,6 +621,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
+        restates: Vec::new(),
     };
     assert!(matches!(
         ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V4_0),
@@ -951,12 +979,15 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
         status: super::EntityStatus::Independent,
         parameter_body,
         transform: None,
+        restates: Vec::new(),
     };
     assert!(encode_file(
         &[entity],
         &std::collections::BTreeMap::new(),
         IgesVersion::V5_3,
         0.001,
+        &crate::writer::source_global::GlobalRestatement::default(),
+        &mut Vec::new(),
     )
     .is_ok());
 }

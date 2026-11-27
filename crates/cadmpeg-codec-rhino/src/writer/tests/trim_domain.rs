@@ -8,7 +8,7 @@ use cadmpeg_ir::{
     },
     ids::{CurveId, EdgeId, PcurveId, VertexId},
     math::{Point2, Point3},
-    topology::{Edge, EdgeCarrier, Sense},
+    topology::{Edge, EdgeCarrier},
 };
 const EPS_FIT: f64 = 1e-6;
 #[test]
@@ -92,10 +92,13 @@ fn numerical_audit_trim_domain_check_ignores_surface_knot_units() {
                 source: &p,
                 payload: ([0; 16], vec![]),
                 domain_extent_points: uv,
+                domain: [0., 1.],
+                reversed: false,
             };
+            let ends = [Point3::new(x, 0., 0.), Point3::new(x, 1., 0.)];
             assert_eq!(
                 matches!(
-                    validate_nurbs_trim(&surface, EPS_FIT, &edge, Sense::Forward, &explicit),
+                    validate_nurbs_trim(&surface, EPS_FIT, &edge, ends, &explicit),
                     Ok(None)
                 ),
                 x == 0.5
@@ -177,8 +180,14 @@ fn trim_refusal_on(
         source: &p,
         payload: ([0; 16], vec![]),
         domain_extent_points: vec![Point2::new(0.5, 0.), Point2::new(0.5, 1.)],
+        domain,
+        reversed: false,
     };
-    validate_nurbs_trim(surface, EPS_FIT, &edge, Sense::Forward, &explicit)
+    let ends = [
+        Point3::new(0.5, domain[0], 0.),
+        Point3::new(0.5, domain[1], 0.),
+    ];
+    validate_nurbs_trim(surface, EPS_FIT, &edge, ends, &explicit)
         .expect("the trim check completes")
         .expect("the pcurve has no point in the surface domain")
 }
@@ -228,10 +237,11 @@ fn a_trim_pcurve_whose_placed_point_overflows_leaves_the_surface_domain() {
 }
 
 #[test]
-fn a_trim_edge_curve_whose_point_overflows_misses_its_pcurve_by_the_distance_it_reached() {
+fn a_trim_edge_curve_whose_point_overflows_misses_its_pcurve() {
     // At t = 1/2 the homogeneous weight of (1, -1 + 2^-40) is 2^-41, so the
-    // projected second pole row reaches y = -inf; the pcurve maps the same
-    // parameter to (1/2, 1/2, 0), infinitely far from the edge point.
+    // projected second pole row reaches y = -inf, and past it the weight is
+    // negative and |y| exceeds 1e300; the pcurve maps into the unit square,
+    // that far from every edge point.
     let curve = NurbsCurve::from_lanes(
         1,
         vec![0., 0., 1., 1.],
@@ -251,10 +261,14 @@ fn a_trim_edge_curve_whose_point_overflows_misses_its_pcurve_by_the_distance_it_
         &curve,
         [0.5, 0.75],
     );
+    let distance = error
+        .rsplit(' ')
+        .next()
+        .and_then(|value| value.parse::<f64>().ok())
+        .expect("the finding ends with the distance");
     assert!(
-        error.contains(
-            "pcurve test:overflow:pcurve#1 misses directed edge curve overflow-line by inf"
-        ),
+        error.contains("pcurve test:overflow:pcurve#1 misses edge curve overflow-line by")
+            && distance >= 1.0e300,
         "{error}"
     );
 }
@@ -299,9 +313,7 @@ fn a_trim_surface_whose_point_overflows_misses_the_edge_by_the_distance_it_reach
         [0., 1.],
     );
     assert!(
-        error.contains(
-            "pcurve test:overflow:pcurve#1 misses directed edge curve overflow-line by inf"
-        ),
+        error.contains("pcurve test:overflow:pcurve#1 misses edge curve overflow-line by inf"),
         "{error}"
     );
 }

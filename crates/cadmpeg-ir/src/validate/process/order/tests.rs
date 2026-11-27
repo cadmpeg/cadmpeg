@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::ContentScope;
@@ -161,20 +162,20 @@ fn nested(depth: usize) -> CadIr {
 /// `CadIr`, so validation reports no nesting.
 #[test]
 fn step_folders_nest_to_the_document_bound() {
-    let depth = |folders: usize| text_depth(&serde_json::to_string(&nested(folders)).unwrap());
+    let depth = |folders: usize| text_depth(&json::to_string(&nested(folders)).unwrap());
     let past = (1..=MAX_DOCUMENT_DEPTH + 1)
         .find(|&folders| depth(folders) > MAX_DOCUMENT_DEPTH)
         .unwrap();
 
     let admitted = nested(past - 1);
     assert_no_process_finding(&admitted);
-    let text = serde_json::to_string(&admitted).unwrap();
+    let text = json::to_string(&admitted).unwrap();
     let back = CadIr::from_json(&text).unwrap();
-    assert_eq!(serde_json::to_string(&back).unwrap(), text);
+    assert_eq!(json::to_string(&back).unwrap(), text);
 
     let refused = nested(past);
     assert_no_process_finding(&refused);
-    let text = serde_json::to_string(&refused).unwrap();
+    let text = json::to_string(&refused).unwrap();
     let error = CadIr::from_json(&text).unwrap_err();
     assert!(
         error.to_string().contains("levels of a CADIR document"),
@@ -185,6 +186,6 @@ fn step_folders_nest_to_the_document_bound() {
 #[test]
 fn an_empty_process_is_not_checked() {
     let mut ir = crate::validate::design::fixture::document();
-    ir.set_scope(ContentScope::full()).unwrap();
+    ir.set_scope(ContentScope::full());
     assert_no_process_finding(&ir);
 }

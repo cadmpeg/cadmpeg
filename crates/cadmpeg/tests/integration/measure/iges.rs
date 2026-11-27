@@ -2,6 +2,7 @@
 //! `measure` over the in-tree IGES fixtures, with expectations from the
 //! vertices and curves the files state.
 
+use cadmpeg_core::serde_erase::json;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -164,7 +165,7 @@ fn iges_no_geometry_transferred() {
         stderr.contains("note: the decode transferred no geometry"),
         "{stderr}"
     );
-    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let report: Value = json::from_slice(&output.stdout).unwrap();
     let caveats = report["measure"]["caveats"].as_array().unwrap();
     assert!(caveats.iter().any(|caveat| {
         caveat["code"] == "measure.geometry-not-transferred" && caveat["category"] == "input"

@@ -4,6 +4,7 @@
 //! Expected values are closed-form expressions of the fixture geometry
 //! (`tests/fixtures/measure/README.md`).
 
+use cadmpeg_core::serde_erase::json;
 #[cfg(feature = "step")]
 use std::fs;
 #[cfg(any(feature = "step", feature = "iges", feature = "fcstd"))]
@@ -62,7 +63,7 @@ fn measure_json(args: &[&str]) -> Value {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    serde_json::from_slice(&output.stdout).unwrap()
+    json::from_slice(&output.stdout).unwrap()
 }
 
 #[cfg(feature = "step")]
@@ -329,7 +330,7 @@ fn measures_cylinder_body() {
     // their two axes are undetermined; the axial one is measured.
     assert_eq!(
         document["unavailable"],
-        serde_json::json!({"undefined": {"mass.principal-axes-degenerate": 2}}),
+        cadmpeg_core::json!({"undefined": {"mass.principal-axes-degenerate": 2}}),
         "{document:#}"
     );
     assert_eq!(document["work"]["exhausted"], false);
@@ -589,7 +590,7 @@ fn surface_rows_hold_carrier_parameters_only() {
     assert_eq!(surfaces.len(), 1);
     let row = &surfaces[0];
     assert_eq!(row["surface"], "step:data:surface#16");
-    assert_eq!(row["placement"], serde_json::json!({"space": "model"}));
+    assert_eq!(row["placement"], cadmpeg_core::json!({"space": "model"}));
     assert_eq!(row["carrier"]["kind"], "cylinder");
     assert_measured(&row["carrier"]["parameters"]["radius"], 10.0, 10.0);
     assert_measured(&row["carrier"]["parameters"]["diameter"], 20.0, 10.0);
@@ -598,7 +599,7 @@ fn surface_rows_hold_carrier_parameters_only() {
         [0.0, 0.0, 1.0],
         1.0,
     );
-    assert_eq!(row["faces"], serde_json::json!(["step:data:face#46"]));
+    assert_eq!(row["faces"], cadmpeg_core::json!(["step:data:face#46"]));
     assert_eq!(row["bodies"].as_array().unwrap().len(), 1);
     assert!(row.get("area").is_none() && row.get("bbox").is_none());
     assert_eq!(row["status"], "measured");
@@ -748,7 +749,7 @@ fn report_flag_aliases() {
             .arg(&report)
             .assert()
             .success();
-        let value: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+        let value: Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
         assert_eq!(value["command"], "measure");
         assert_eq!(value["status"], "ok");
         assert!(value["measure"]["bodies"].is_array());
@@ -764,7 +765,7 @@ fn report_flag_aliases() {
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert_eq!(stdout.lines().next(), Some(FACE_HEADER));
-    let value: Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    let value: Value = json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["command"], "measure");
     assert_eq!(value["measure"]["faces"].as_array().unwrap().len(), 1);
 
@@ -854,7 +855,7 @@ fn container_depth_cadir_charges_output_empty() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(0));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = json::from_slice(&output.stdout).unwrap();
     let losses = value["measure"]["losses"].as_array().unwrap();
     assert_eq!(losses.len(), 1, "{value:#}");
     assert_eq!(losses[0]["code"]["value"]["namespace"], "measure");
@@ -869,7 +870,7 @@ fn container_depth_cadir_charges_output_empty() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["code"], "strict_measure_rejected");
     assert_eq!(value["refusal"]["stage"], "measure");
@@ -881,7 +882,7 @@ fn ring_order_caveat_is_visible() {
     let dir = tempdir().unwrap();
     let cadir = dir.path().join("plate.cadir.json");
     dump(&fixture("measure_plane_hole.p21"), &cadir, &[]);
-    let mut document: Value = serde_json::from_slice(&fs::read(&cadir).unwrap()).unwrap();
+    let mut document: Value = json::from_slice(&fs::read(&cadir).unwrap()).unwrap();
     let outer = document["geometry"]["loops"]
         .as_array_mut()
         .unwrap()
@@ -892,7 +893,7 @@ fn ring_order_caveat_is_visible() {
     assert_eq!(coedges.len(), 4);
     coedges[1..].reverse();
     let reversed = dir.path().join("reversed.cadir.json");
-    fs::write(&reversed, serde_json::to_vec(&document).unwrap()).unwrap();
+    fs::write(&reversed, json::to_vec(&document).unwrap()).unwrap();
 
     let report = measure_json(&[reversed.to_str().unwrap(), "--face", "face#69"]);
     let row = face(&report, "step:data:face#69");
@@ -923,7 +924,7 @@ fn json_refusal_envelope() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let value: Value = json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["status"], "refused");
     assert_eq!(value["command"], "measure");
     let mut keys: Vec<&str> = value
@@ -979,7 +980,7 @@ fn orientation_conflict_is_visible() {
     assert!((candidate("loop_winding") - 1000.0).abs() <= TEST_ABSOLUTE_FLOOR * 1000.0);
     assert_eq!(
         body["orientation"]["inconsistent_faces"],
-        serde_json::json!([flipped])
+        cadmpeg_core::json!([flipped])
     );
     let unavailable = &report["measure"]["document"]["unavailable"]["input"];
     assert!(

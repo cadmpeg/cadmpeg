@@ -1288,15 +1288,20 @@ pub(super) fn validate_parameter_scopes(
                 let actual_selections = selections.iter().copied().collect::<HashSet<_>>();
                 let valid_external =
                     |selection: &records::feature::combine::DesignCombineBodySelection| {
-                        selection.external_identity.as_ref().is_none_or(|identity| {
-                            let Some(header) =
-                                records_by_index.get(&(native_stream, selection.record_index))
-                            else {
-                                return false;
-                            };
-                            header.byte_offset.checked_add(44)
-                                == Some(identity.selector_asset_id_offset())
-                        })
+                        let selector_asset_id_offset = match (
+                            &selection.external_identity,
+                            &selection.legacy_external_identity,
+                        ) {
+                            (None, None) => return true,
+                            (Some(identity), None) => identity.selector_asset_id_offset(),
+                            (None, Some(identity)) => identity.selector_asset_id_offset,
+                            (Some(_), Some(_)) => return false,
+                        };
+                        records_by_index
+                            .get(&(native_stream, selection.record_index))
+                            .is_some_and(|header| {
+                                header.byte_offset.checked_add(44) == Some(selector_asset_id_offset)
+                            })
                     };
                 let compact_scope = scope.class_tag.as_str() == "387"
                     && scope.paired_class_tag.as_str() == "258"

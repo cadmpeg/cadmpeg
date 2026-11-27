@@ -213,10 +213,13 @@ fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
         .export
         .expect("the refusal retains the completed export plan report");
     assert!(
-        report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+        report.losses.iter().any(
+            |loss| loss.code.to_string() == "export/native.records-omitted"
+                && loss.message.ends_with(
+                    "of `f3d` arena `asm_histories` which the STEP writer does not write: \
+                         f3d:test:asm-history#0"
+                )
+        ),
         "{:?}",
         report.losses
     );
@@ -240,7 +243,13 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
             .report()
             .losses
             .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+            .any(
+                |loss| loss.code.to_string() == "export/native.records-omitted"
+                    && loss.message.ends_with(
+                        "of `f3d` arena `asm_histories` which the STEP writer does not \
+                             write: f3d:test:asm-history#0"
+                    )
+            ),
         "{:?}",
         planned.plan.report().losses
     );
@@ -316,6 +325,7 @@ struct NotImplementedEncoder;
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
     const FORMAT: cadmpeg_ir::codec::FormatId =
         cadmpeg_ir::codec::FormatId::new("notimplementedtest");
+    const NAME: &'static str = "test";
     const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
     type Target = cadmpeg_ir::codec::write::target::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
@@ -386,17 +396,18 @@ fn a_failed_plan_returns_its_own_refusal_under_reject_errors() {
     }
 }
 
-/// Flag absence is always `Inherit`; the encoder decides what that means.
+/// Flag absence is a request that names no target; the encoder decides what
+/// that means.
 ///
 /// The selection is an owned-string adapter and nothing else. The
 /// cross-format catalog default is owned by write resolution, so the command
 /// line does not decide it a second time.
 #[cfg(feature = "iges")]
 #[test]
-fn flag_absence_is_always_an_inherit_request() {
+fn flag_absence_is_a_request_that_names_no_target() {
     assert_eq!(
         TargetSelection::new(Format::Iges, None).request(),
-        TargetRequest::Inherit
+        TargetRequest::Unnamed
     );
     let named = TargetSelection::new(Format::Iges, Some("iges:5.1-fixed-ascii".to_owned()));
     assert_eq!(
@@ -410,7 +421,7 @@ fn flag_absence_is_always_an_inherit_request() {
 fn target_selection_owns_format_and_dialect_grammar() {
     let format_only = TargetSelection::resolve(Some("iges"), None).expect("format resolves");
     assert_eq!(format_only.format, Format::Iges);
-    assert_eq!(format_only.request(), TargetRequest::Inherit);
+    assert_eq!(format_only.request(), TargetRequest::Unnamed);
 
     let qualified = TargetSelection::resolve(Some("iges:5.1"), None).expect("alias resolves");
     assert_eq!(qualified.format, Format::Iges);
@@ -428,7 +439,7 @@ fn a_format_alias_does_not_become_a_dialect_request() {
     let selection = TargetSelection::resolve(Some("stp"), Some(Path::new("part.stp")))
         .expect("the identity registry owns the STEP alias");
     assert_eq!(selection.format, Format::Step);
-    assert_eq!(selection.request(), TargetRequest::Inherit);
+    assert_eq!(selection.request(), TargetRequest::Unnamed);
 }
 
 #[test]
@@ -449,7 +460,7 @@ fn rejecting_export_losses_does_not_name_a_target() {
     let target = export_target(TargetSelection::new(Format::Step, None));
 
     assert!(target.selection.request.is_none(), "{:?}", target.selection);
-    assert_eq!(target.selection.request(), TargetRequest::Inherit);
+    assert_eq!(target.selection.request(), TargetRequest::Unnamed);
 
     let named = export_target(TargetSelection::new(
         Format::Step,
@@ -631,7 +642,7 @@ fn checked_design_history() -> (LoadedDocument, cadmpeg_ir::report::check::Valid
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/freecad_fcstd/fixtures/design_history.FCStd");
     let options = cadmpeg_ir::codec::DecodeOptions::default();
-    let document = crate::loader::load_artifact(&inputs, &path, options, None)
+    let document = crate::loader::load_artifact(&inputs, &path, &options, None)
         .expect("load the FreeCAD design-history fixture");
     let validation = crate::application::validators::validate_loaded(
         &inputs,
@@ -651,7 +662,7 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path, reject_errors: bool) -> Prepa
     use cadmpeg_registry::InputCatalog;
 
     CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .expect("plan the mutated CADIR document")
         .write_to(&mut std::fs::File::create(path).expect("create CADIR input"))
         .expect("write the mutated CADIR document");
@@ -962,8 +973,202 @@ fn an_output_extension_that_names_a_dialect_selects_it() {
     assert_eq!(explicit.request(), TargetRequest::Explicit("usda-1.0"));
     let layer = TargetSelection::resolve(None, Some(Path::new("assembly.usda")))
         .expect("format from the extension");
-    assert_eq!(layer.request(), TargetRequest::Inherit);
+    assert_eq!(layer.request(), TargetRequest::Unnamed);
     let binary = TargetSelection::resolve(None, Some(Path::new("assembly.usdc")))
         .expect("format from the extension");
     assert_eq!(binary.request(), TargetRequest::Explicit("usdc"));
+}
+
+/// A decode report that states nothing, for a sidecar.
+fn empty_decode_report() -> cadmpeg_ir::report::decode::DecodeReport {
+    cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
+        "identity": {"kind": "unclassified", "format": "test"},
+        "transfer": {"kind": "full", "geometry_transferred": false},
+        "coverage": {},
+        "losses": [],
+        "notes": [],
+        "transfer_ledger": {"entries": []},
+    }))
+    .unwrap()
+}
+
+/// Writes `ir` as CADIR to `path` from `origin`, with the origin's fidelity,
+/// and returns the provenance keys of the sidecar the write leaves.
+fn sidecar_keys_of_cadir_write(
+    path: &Path,
+    ir: &CadIr,
+    origin: &crate::application::document::LoadOrigin,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) -> Vec<String> {
+    use cadmpeg_ir::codec::write::CadirEncoder;
+    let plan = CadirEncoder
+        .plan(
+            EncodeInput::new(ir, fidelity),
+            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
+        )
+        .unwrap();
+    super::emit_export_plan(
+        plan,
+        Format::Cadir,
+        &ResolvedDestination::File(path.to_owned()),
+        origin,
+    )
+    .unwrap();
+    let sidecar = cadmpeg_ir::DecodeSidecar::from_json(
+        &std::fs::read_to_string(cadmpeg_ir::decode_sidecar_path(path).unwrap()).unwrap(),
+    )
+    .unwrap();
+    let mut keys: Vec<String> = sidecar
+        .fidelity
+        .annotations
+        .provenance
+        .keys()
+        .map(|key| key.as_str().to_owned())
+        .collect();
+    keys.sort_unstable();
+    keys
+}
+
+/// The sidecar of a CADIR document written from a read that gave up a record
+/// holds no annotation of the record or of a record dropped with it (§3.3).
+#[test]
+fn the_sidecar_of_a_document_written_after_a_give_up_names_no_removed_record() {
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("part.cadir.json");
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let given_up = ir.geometry.points[0].id.as_str().to_owned();
+    let kept = ir.geometry.points[1].id.as_str().to_owned();
+    let mut value = cadmpeg_core::serde_erase::json::to_value(&ir).unwrap();
+    value["geometry"]["points"][0]["position"] = cadmpeg_core::json!("not a point");
+    let text = value.to_string();
+    std::fs::write(&input, &text).unwrap();
+    let stream =
+        cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:source"));
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    annotations.note(
+        cadmpeg_ir::ids::Identity::new(given_up.as_str()).expect("identity grammar"),
+        &stream,
+        0,
+        None,
+    );
+    annotations.note(
+        cadmpeg_ir::ids::Identity::new(kept.as_str()).expect("identity grammar"),
+        &stream,
+        0,
+        None,
+    );
+    let mut fidelity =
+        cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source"));
+    fidelity.annotations = annotations.build();
+    let sidecar = cadmpeg_ir::DecodeSidecar::bind_sha256(
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(text.as_bytes()),
+        empty_decode_report(),
+        fidelity,
+    );
+    std::fs::write(
+        cadmpeg_ir::decode_sidecar_path(&input).unwrap(),
+        sidecar.to_canonical_json().unwrap(),
+    )
+    .unwrap();
+    let loaded = crate::loader::load_artifact(
+        &cadmpeg_registry::InputCatalog::with_builtins(),
+        &input,
+        &cadmpeg_ir::codec::DecodeOptions::default(),
+        Some(cadmpeg_registry::ForcedInput::Cadir),
+    )
+    .unwrap();
+
+    let keys = sidecar_keys_of_cadir_write(
+        &directory.path().join("written.cadir.json"),
+        &loaded.ir,
+        &loaded.origin,
+        loaded.fidelity(),
+    );
+
+    assert_eq!(keys, [kept]);
+}
+
+/// A CADIR write leaves the annotation of a record of an arena the wire
+/// omits out of the sidecar, and keeps that of a written design record that
+/// shares its id with one (§3.2, §3.4).
+#[test]
+fn the_sidecar_keeps_the_annotations_of_a_written_record_that_shares_an_omitted_id() {
+    use cadmpeg_ir::design::feature::{
+        Feature, FeatureDefinition, FeatureOperation, OperationFamily,
+    };
+    use cadmpeg_ir::features::FeatureId;
+
+    const SHARED: &str = "test:writer:feature#shared";
+    const OMITTED: &str = "test:writer:feature#omitted";
+    let legacy = |id: &str| cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::StoredGeometry {},
+            ),
+        ),
+        native_ref: None,
+    };
+    let directory = tempfile::tempdir().unwrap();
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.set_scope(cadmpeg_core::decode::ContentScope::full());
+    let point = ir.geometry.points[0].id.as_str().to_owned();
+    ir.model.features.push(legacy(OMITTED));
+    ir.model.features.push(legacy(SHARED));
+    ir.design.features.push(Feature {
+        id: FeatureId::mint(SHARED).unwrap(),
+        name: None,
+        suppressed: None,
+        definition: FeatureDefinition {
+            operation: FeatureOperation::Unresolved {
+                family: OperationFamily::Extrude,
+            },
+            assembly: None,
+            refine: None,
+            fuzzy_tolerance: None,
+        },
+        placement: None,
+        component: None,
+        driven_by: None,
+        native_ref: None,
+    });
+    ir.finalize();
+    let stream =
+        cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:source"));
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    for key in [point.as_str(), SHARED, OMITTED] {
+        annotations.note(
+            cadmpeg_ir::ids::Identity::new(key).expect("identity grammar"),
+            &stream,
+            0,
+            None,
+        );
+    }
+    let mut fidelity =
+        cadmpeg_ir::SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source"));
+    fidelity.annotations = annotations.build();
+    let origin = crate::application::document::LoadOrigin::Restored {
+        report: empty_decode_report(),
+        fidelity: Box::new(fidelity.clone()),
+    };
+
+    let keys = sidecar_keys_of_cadir_write(
+        &directory.path().join("written.cadir.json"),
+        &ir,
+        &origin,
+        Some(&fidelity),
+    );
+
+    let mut expected = vec![point, SHARED.to_owned()];
+    expected.sort_unstable();
+    assert_eq!(keys, expected);
 }

@@ -43,7 +43,7 @@ use crate::records::parameters::{
     DesignParameterDiscriminator, DesignParameterDraft, DesignParameterSource,
 };
 use crate::writer::generate::presentation::GeneratedDesignRegistry;
-use crate::writer::generate::records::encode_document_parameters;
+use crate::writer::generate::records::{encode_document_parameters, ParameterRecords};
 use crate::writer::generate::reduce::named_loss;
 
 /// The parameter collection the native path's parameter tails name.
@@ -53,6 +53,7 @@ const NATIVE_PARAMETER_COLLECTION: u32 = 19;
 const OWNED_STEM: &str = "d";
 
 /// The parameters written as Fusion user parameters, and the losses taken.
+#[derive(Clone)]
 pub(in crate::writer::generate) struct ParameterPlan {
     written: Vec<PlannedParameter>,
     /// The parameters taken out of the user parameters by the feature that
@@ -67,6 +68,7 @@ pub(in crate::writer::generate) struct ParameterPlan {
 }
 
 /// A `Driven` parameter (the parameter of a driven dimension).
+#[derive(Clone)]
 struct DrivenParameter {
     source: ParameterId,
     name: String,
@@ -102,7 +104,7 @@ impl RecordLiteral {
             return None;
         };
         let node = crate::design_v11::parameters::literal(text.as_str(), &parameter.kind)?;
-        let canonical = expression::evaluate(&node, &|_| None)?;
+        let canonical = expression::evaluate(&node, &|_| None).filter(|value| value.is_finite())?;
         Some(Self {
             text: text.as_str().to_owned(),
             value: form.database(canonical),
@@ -123,6 +125,7 @@ pub(super) struct Driven {
 /// What the record of a written parameter does not hold of its source, each
 /// an entry of its loss: a source name other than the written one, a
 /// container or attribute owner, and a display presentation.
+#[derive(Clone)]
 struct Unheld {
     renamed: Option<String>,
     unbound: Option<String>,
@@ -177,6 +180,7 @@ pub(super) struct OwnedParameter {
 }
 
 /// One user parameter as the record holds it.
+#[derive(Clone)]
 struct PlannedParameter {
     source: ParameterId,
     name: String,
@@ -234,6 +238,16 @@ impl Form {
                 .and_then(|unit| expression::fusion_unit(unit, quantity))
                 .unwrap_or(default),
         )
+    }
+
+    /// The unit of the canonical value, in which every finite value has a
+    /// finite literal.
+    fn canonical_unit(self) -> Option<UnitSymbol> {
+        match self {
+            Self::Length => Some(UnitSymbol::Mm),
+            Self::Angle => Some(UnitSymbol::Rad),
+            Self::Real => None,
+        }
     }
 
     /// A canonical value in Fusion's database units (f3d.md §3.1: lengths in
@@ -319,6 +333,10 @@ pub(in crate::writer::generate) fn plan(
     let mut written = Vec::new();
     let mut flattened = Vec::new();
     let mut unwritten = Vec::new();
+    let mut flattened_dependents = Vec::new();
+    let mut unwritten_dependents = Vec::new();
+    let mut unbounded = Vec::new();
+    let mut restated = Vec::new();
     let mut renamed = Vec::new();
     let mut unbound = Vec::new();
     let mut displayed = Vec::new();
@@ -328,7 +346,7 @@ pub(in crate::writer::generate) fn plan(
     let mut general = false;
     for index in order {
         let (parameter, form) = candidates[index];
-        let unit = form.unit(parameter.unit.as_ref());
+        let mut unit = form.unit(parameter.unit.as_ref());
         let name_of = |id: &ParameterId| written_names.get(id).copied();
         let printed = if forced.contains(&index) {
             broken.push(parameter.id.to_string());
@@ -336,6 +354,12 @@ pub(in crate::writer::generate) fn plan(
         } else {
             printed_expression(&parameter.definition, &name_of)
         };
+        let dependent = printed.is_none()
+            && !forced.contains(&index)
+            && references(&parameter.definition)
+                .into_iter()
+                .filter_map(expression::referenced)
+                .any(|id| !written_names.contains_key(id));
         let canonical = cached(parameter).or_else(|| match (&printed, &parameter.definition) {
             (Some(_), ParameterDefinition::Expression(Expression::Neutral(neutral))) => {
                 expression::evaluate(&neutral.0, &|id| written_values.get(id).copied())
@@ -343,18 +367,38 @@ pub(in crate::writer::generate) fn plan(
             _ => None,
         });
         let Some(canonical) = canonical else {
-            unwritten.push(parameter.id.to_string());
+            if dependent {
+                unwritten_dependents.push(parameter.id.to_string());
+            } else {
+                unwritten.push(parameter.id.to_string());
+            }
             continue;
         };
+        if !canonical.is_finite() {
+            unbounded.push(parameter.id.to_string());
+            continue;
+        }
         let printed_expression = printed.is_some();
         let text = match printed {
             Some(text) => text,
             None => {
-                let Some(text) = expression::quantity_literal(canonical, unit) else {
-                    unwritten.push(parameter.id.to_string());
-                    continue;
+                let text = if let Some(text) = expression::quantity_literal(canonical, unit) {
+                    text
+                } else {
+                    let Some(text) = expression::quantity_literal(canonical, form.canonical_unit())
+                    else {
+                        unwritten.push(parameter.id.to_string());
+                        continue;
+                    };
+                    unit = form.canonical_unit();
+                    restated.push(parameter.id.to_string());
+                    text
                 };
-                flattened.push(parameter.id.to_string());
+                if dependent {
+                    flattened_dependents.push(parameter.id.to_string());
+                } else {
+                    flattened.push(parameter.id.to_string());
+                }
                 text
             }
         };
@@ -408,6 +452,26 @@ pub(in crate::writer::generate) fn plan(
         "F3D",
         "omits these parameters: their expressions have no established Fusion form and they hold no cached value",
         unwritten,
+    ));
+    losses.extend(parameter_flattened(
+        "F3D",
+        "states these parameters by their cached values: their expressions reference parameters the file does not write",
+        flattened_dependents,
+    ));
+    losses.extend(parameter_flattened(
+        "F3D",
+        "omits these parameters: their expressions reference parameters the file does not write, and they hold no cached value",
+        unwritten_dependents,
+    ));
+    losses.extend(value_unwritable(
+        "F3D",
+        "omits these parameters: their expressions evaluate to no finite number, and a Fusion parameter holds its value",
+        unbounded,
+    ));
+    losses.extend(value_unwritable(
+        "F3D",
+        "writes these parameters in their canonical unit: their value in their own unit is no finite number",
+        restated,
     ));
     losses.extend(parameter_renamed(
         "F3D",
@@ -541,7 +605,7 @@ pub(in crate::writer::generate) fn encode(
     source: &ParameterSource,
     native: &F3dNative,
     registry: &mut GeneratedDesignRegistry,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<ParameterRecords, CodecError> {
     match source {
         ParameterSource::Native => {
             encode_document_parameters(&native.design_parameters, NATIVE_PARAMETER_COLLECTION)
@@ -571,9 +635,9 @@ impl ParameterPlan {
         registry: &mut GeneratedDesignRegistry,
         indices: &[u32],
         collection: Option<u32>,
-    ) -> Result<Vec<u8>, CodecError> {
+    ) -> Result<ParameterRecords, CodecError> {
         if self.written.is_empty() {
-            return Ok(Vec::new());
+            return Ok(ParameterRecords::default());
         }
         let class_tag = registry.register(super::types::PARAMETER, indices)?;
         let collection = match collection {
@@ -615,7 +679,7 @@ impl ParameterPlan {
                 parameter.record(class_tag.clone(), record_index, ordinal, discriminator)?;
             out.primaries.push((record_index, out.bytes.len()));
             out.bytes
-                .extend(encode_document_parameters(&[record], collection)?);
+                .extend(encode_document_parameters(&[record], collection)?.bytes);
         }
         Ok(())
     }

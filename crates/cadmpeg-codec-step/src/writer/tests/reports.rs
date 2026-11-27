@@ -8,7 +8,6 @@ use cadmpeg_test_support::edit;
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
@@ -174,7 +173,9 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
                     "test:model:semantic#note",
                 )
                 .expect("identity grammar"),
-                "note".into(),
+                "test:source:object#note"
+                    .try_into()
+                    .expect("identity grammar"),
                 cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
                 "TextNote".into(),
                 0,
@@ -1396,13 +1397,18 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         instance_path: Vec::new(),
     };
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.geometry.subds.push(cadmpeg_ir::SubdSurface {
-        id: cadmpeg_ir::ids::SubdId::mint("test:step:subd#0").expect("identity grammar"),
-        scheme: cadmpeg_ir::SubdScheme::CatmullClark,
-        source_object: Some(source_object.clone()),
-        cage: cadmpeg_ir::subd::SubdCage::default(),
-        native_ref: None,
-    });
+    ir.geometry.push_cage_object(
+        cadmpeg_ir::SubdSurface {
+            id: cadmpeg_ir::ids::SubdId::mint("test:step:subd#0").expect("identity grammar"),
+            scheme: cadmpeg_ir::SubdScheme::CatmullClark,
+            source_object: Some(source_object.clone()),
+            cage: cadmpeg_ir::subd::SubdCage::default(),
+            native_ref: None,
+        },
+        cadmpeg_ir::ids::BodyId::mint("test:step:body#cage").expect("identity grammar"),
+        cadmpeg_ir::ids::RegionId::mint("test:step:region#cage").expect("identity grammar"),
+        cadmpeg_ir::ids::ShellId::mint("test:step:shell#cage").expect("identity grammar"),
+    );
     ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("test:step:tessellation#0")
@@ -1417,13 +1423,17 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         .with_source_object(Some(source_object)),
     );
 
+    let mut bytes = Vec::new();
     let report = write_step(
         &ir,
-        &mut Vec::new(),
+        &mut bytes,
         StepSchema::Ap214,
         &StepWriteOptions::default(),
     )
     .unwrap();
+    // The cage's body is not written as an empty sheet beside the cube.
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(!text.contains("OPEN_SHELL") && !text.contains("SHELL_BASED_SURFACE_MODEL"));
     assert!(report.losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::report::Severity::Warning
@@ -1744,17 +1754,9 @@ fn transformed_cone_basis(ratio: f64, half_angle: f64) -> SolvedSurfaceGeometry 
 }
 
 #[test]
-fn transformed_cone_basis_outside_wr2_is_refused_at_planning() {
+fn a_face_on_a_transformed_cone_outside_wr2_is_left_out() {
     let ir = transformed_surface_ir(transformed_cone_basis(1.0, std::f64::consts::FRAC_PI_2));
-    let error = StepCodec::default()
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
-        )
-        .expect_err("transformed cone basis remains outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+    super::cones::assert_first_surface_faces_omitted(&ir);
 }
 
 #[test]
@@ -1857,7 +1859,7 @@ fn degenerate_torus_with_a_negative_tube_radius_is_reported() {
 }
 
 #[test]
-fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
+fn a_face_on_a_cone_cache_outside_wr2_of_an_unwritable_construction_is_left_out() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -1893,15 +1895,7 @@ fn a_cone_cache_for_an_unwritable_construction_is_refused_at_planning() {
         )
         .expect("a cone carrier admits a compound construction");
 
-    let error = StepCodec::default()
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
-        )
-        .expect_err("a cached cone outside WR2 cannot be written");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
+    super::cones::assert_first_surface_faces_omitted(&ir);
 }
 
 #[test]
@@ -1950,18 +1944,20 @@ fn procedural_construction_reduction_is_reported() {
 
 #[test]
 fn source_native_record_reduction_is_reported() {
+    use cadmpeg_core::nonblank_literal;
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.native
+    let arenas = ir
+        .native
         .namespace_mut(cadmpeg_ir::codec_id!("f3d"))
-        .arenas_mut()
-        .insert(
-            cadmpeg_core::nonblank_literal!("asm_histories"),
-            vec![cadmpeg_ir::NativeRecord::new(
-                cadmpeg_ir::ids::Identity::new("f3d:test:asm-history#0").expect("valid identity"),
-                Default::default(),
-            )
-            .expect("valid native identity")],
-        );
+        .arenas_mut();
+    for (arena, id) in [
+        (nonblank_literal!("asm_histories"), "f3d:test:asm-history#0"),
+        (nonblank_literal!("unknowns"), "f3d:test:unknown#0"),
+    ] {
+        let id = cadmpeg_ir::ids::Identity::new(id).expect("valid identity");
+        let record = cadmpeg_ir::NativeRecord::new(id, Default::default());
+        arenas.insert(arena, vec![record.expect("valid native identity")]);
+    }
     ir.finalize();
 
     let mut buf = Vec::new();
@@ -1972,8 +1968,15 @@ fn source_native_record_reduction_is_reported() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(report.losses.iter().any(|loss| {
-        loss.message
-            .contains("source-native record(s) were not represented in STEP")
-    }));
+    let omitted = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/native.records-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    // A given-up part's `unknowns` stub incurs no omission loss.
+    assert_eq!(
+        omitted,
+        ["the STEP write omits 1 native record(s) of `f3d` arena `asm_histories` which the STEP writer does not write: f3d:test:asm-history#0"]
+    );
 }

@@ -4,6 +4,7 @@
 //! refuses a cycle (§2.5, §7.9).
 
 use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimits};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 
 use super::fixtures::{id, setup_id};
@@ -101,13 +102,13 @@ fn document(evaluations: Vec<Evaluation>, states: Vec<ProcessState>) -> String {
     ir.design.evaluations = evaluations;
     ir.process.states = states;
     ir.finalize();
-    serde_json::to_string(&ir).unwrap()
+    json::to_string(&ir).unwrap()
 }
 
 fn admitted(text: &str, limits: &ResourceLimits) {
     let back = read::from_str::<CadIr>(text, limits)
         .unwrap_or_else(|error| panic!("a chain within the ceiling is refused: {error}"));
-    assert_eq!(serde_json::to_string(&back).unwrap(), text);
+    assert_eq!(json::to_string(&back).unwrap(), text);
 }
 
 fn refused_past(text: &str, limits: &ResourceLimits) {

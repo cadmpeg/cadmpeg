@@ -480,8 +480,11 @@ struct SourceFidelityWriteWire<'a> {
     retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,
 }
 
-impl Serialize for SourceFidelity {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+impl SourceFidelity {
+    fn serialize_erased(
+        &self,
+        serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
         SourceFidelityWriteWire {
             decode_digest: &self.decode_digest,
             file_digests: &self.file_digests,
@@ -492,6 +495,14 @@ impl Serialize for SourceFidelity {
             retained_records: &self.retained_records,
         }
         .serialize(serializer)
+    }
+}
+
+impl Serialize for SourceFidelity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        cadmpeg_core::serde_erase::serialize_with(serializer, |adapter| {
+            self.serialize_erased(adapter)
+        })
     }
 }
 
@@ -787,6 +798,7 @@ mod tests {
     mod unknown_keys;
     mod unrepresented;
 
+    use cadmpeg_core::serde_erase::json;
     use std::path::{Path, PathBuf};
 
     use super::{
@@ -893,18 +905,18 @@ mod tests {
         assert_eq!(inline.sha256(), crate::hash::sha256_hex(&[1, 2, 3]));
         assert_eq!(inline.data(), Some([1, 2, 3].as_slice()));
 
-        let wire = serde_json::to_value(&inline).expect("serializes");
+        let wire = json::to_value(&inline).expect("serializes");
         assert_eq!(wire["bytes"]["kind"], "inline");
         assert!(wire["bytes"].get("byte_len").is_none());
         assert!(wire["bytes"].get("sha256").is_none());
         assert_eq!(
-            serde_json::from_value::<RetainedSourceRecord>(wire.clone()).expect("round trip"),
+            json::from_value::<RetainedSourceRecord>(wire.clone()).expect("round trip"),
             inline
         );
 
         let mut restated = wire;
-        restated["bytes"]["byte_len"] = serde_json::json!(3);
-        let error = serde_json::from_value::<RetainedSourceRecord>(restated)
+        restated["bytes"]["byte_len"] = cadmpeg_core::json!(3);
+        let error = json::from_value::<RetainedSourceRecord>(restated)
             .unwrap_err()
             .to_string();
         assert!(error.contains("byte_len"), "{error}");
@@ -917,7 +929,7 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test context");
         for attach in [false, true] {
-            let unknown: UnknownRecord = serde_json::from_value(serde_json::json!({
+            let unknown: UnknownRecord = json::from_value(cadmpeg_core::json!({
                 "id": "synthetic:model:unknown#0",
                 "offset": 7,
                 "retention": {"kind": "inline", "data": "AQID"},
@@ -954,7 +966,7 @@ mod tests {
     #[test]
     fn a_restated_record_id_is_refused_by_name() {
         let record = |stream: &str| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "stream": stream,
                 "offset": 0,
                 "bytes": {
@@ -1006,7 +1018,7 @@ mod tests {
         );
         assert_eq!(
             sidecar.to_canonical_json().expect("the sidecar writes"),
-            serde_json::to_string_pretty(&sidecar).expect("an independent writer writes it too")
+            json::to_string_pretty(&sidecar).expect("an independent writer writes it too")
         );
 
         let refused =
@@ -1067,6 +1079,48 @@ mod tests {
     }
 
     #[test]
+    fn the_sidecar_reader_round_trips_a_key_qualified_by_an_evaluation() {
+        let evaluation =
+            crate::design::ids::EvaluationId::mint("synthetic:design:evaluation#1").unwrap();
+        let key = crate::annotations::AnnotationKey::in_delta(
+            &evaluation,
+            &crate::ids::FaceId::mint("synthetic:brep:face#2").unwrap(),
+        );
+        let mut builder = crate::AnnotationBuilder::new();
+        let stream = crate::annotations::StreamHandle::new(crate::stream_name!("source"));
+        builder.note(&key, &stream, 5, None);
+        builder
+            .field_exactness(&key, "tolerance", crate::provenance::Exactness::Derived)
+            .unwrap();
+        let sidecar = DecodeSidecar::bind_sha256(
+            crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
+            report(),
+            SourceFidelity::with_annotations(builder.build(), root_digest()),
+        );
+
+        let json = sidecar.to_canonical_json().expect("serialize sidecar");
+        assert!(
+            json.contains(r#""synthetic:design:evaluation#1 synthetic:brep:face#2""#),
+            "{json}"
+        );
+        let parsed = DecodeSidecar::from_json(&json).expect("parse sidecar");
+        assert_eq!(parsed, sidecar);
+        let annotations = &parsed.fidelity.annotations;
+        let (read, _) = annotations.provenance.first_key_value().unwrap();
+        assert_eq!(
+            read.target(),
+            crate::annotations::AnnotationTarget::Delta {
+                qualifier: "synthetic:design:evaluation#1",
+                record: "synthetic:brep:face#2",
+            }
+        );
+        assert_eq!(
+            annotations.exactness()[&key].fields()["tolerance"],
+            crate::provenance::Exactness::Derived
+        );
+    }
+
+    #[test]
     fn decode_sidecar_states_its_report_identity_once() {
         let sidecar = DecodeSidecar::bind_sha256(
             crate::hash::digest::Sha256Digest::digest(b"cad-ir"),
@@ -1095,7 +1149,7 @@ mod tests {
             report(),
             fidelity(),
         );
-        let mut value = serde_json::to_value(sidecar).unwrap();
+        let mut value = json::to_value(sidecar).unwrap();
         value.as_object_mut().unwrap().remove("report");
 
         let error = DecodeSidecar::from_json(&value.to_string())
@@ -1117,7 +1171,7 @@ mod tests {
             report(),
             fidelity,
         );
-        let mut value = serde_json::to_value(sidecar).unwrap();
+        let mut value = json::to_value(sidecar).unwrap();
         value["fidelity"]["retained_records"]["synthetic:source:record#record"]["bytes"]
             ["byte_len"] = 1.into();
         let json = value.to_string();

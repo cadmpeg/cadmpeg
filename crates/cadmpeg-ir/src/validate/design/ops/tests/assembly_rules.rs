@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    assert_no_finding_containing, empty_construction, entity, feature, hole, in_context, joint,
-    named, own_occurrences, participant, split_by_tools, unread, with,
+    assert_no_finding_containing, combine, empty_construction, entity, feature, hole, in_context,
+    joint, named, own_occurrences, participant, split_by_tools, unread, with,
 };
 use crate::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use crate::design::feature::{Driver, FeatureOperation, OperationFamily};
@@ -15,9 +15,10 @@ use crate::design::names::NameKind;
 use crate::design::ops::assembly::{
     AssemblyContext, ContextEffect, Place, PlaceSet, PlacementBase,
 };
-use crate::design::ops::body::{Kept, SplitMode};
+use crate::design::ops::body::{Kept, NewComponent, SplitMode};
 use crate::design::ops::dressup::StageHole;
 use crate::design::ops::shared::{Coupling, JointConnector, JointKind};
+use crate::design::options::BooleanOp;
 use crate::design::refs::Member;
 use crate::design::scope::DesignScope;
 use crate::design::selection::{OccurrencePath, PathStep, PickContext, Picked, StepRef};
@@ -109,6 +110,28 @@ fn placements_of_one_occurrence_are_ordered() {
     const FRAGMENT: &str = "are not ordered in one container chain";
     assert_no_finding_containing(&placed_twice(true), FRAGMENT);
     assert_finding(&placed_twice(false), FRAGMENT);
+}
+
+/// `placed_twice(ordered)` with its `Place` a combine whose new component is
+/// `a`.
+fn combined(ordered: bool) -> CadIr {
+    let mut ir = placed_twice(ordered);
+    let mut creating = combine(
+        Some(named(vec![entity(NameKind::Body, 1)])),
+        BooleanOp::Join,
+    );
+    creating.new_component = Some(NewComponent {
+        occurrence: id("occurrence", "a"),
+    });
+    ir.design.features[0].definition.operation = FeatureOperation::Combine(Box::new(creating));
+    ir
+}
+
+#[test]
+fn a_combine_is_before_every_placement_of_its_new_component() {
+    const FRAGMENT: &str = "which this combine's new_component creates";
+    assert_no_finding_containing(&combined(true), FRAGMENT);
+    assert_finding(&combined(false), FRAGMENT);
 }
 
 /// The fixture with an assembly `assembly` that has a scope of its own, and a

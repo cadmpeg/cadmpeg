@@ -36,6 +36,10 @@
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-0"
             }
           ],
@@ -48,6 +52,10 @@
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-1"
             }
           ],
@@ -60,6 +68,10 @@
           "owner_loop": "rhino:object:loop#record-000000-offset-177.slot-0",
           "pcurves": [
             {
+              "parameter_range": [
+                0.0,
+                1.0
+              ],
               "pcurve": "rhino:object:pcurve#record-000000-offset-177.trim-2"
             }
           ],
@@ -678,8 +690,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0xe0495fe4",
@@ -727,8 +738,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2410",
@@ -740,8 +750,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2518",
@@ -753,8 +762,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep anonymous CRC mismatch at offset 2390",
@@ -766,8 +774,7 @@
           "value": {
             "code": "container.integrity-failure",
             "kind": "integrity_failure",
-            "namespace": "rhino",
-            "strict_floor": "warning"
+            "namespace": "rhino"
           }
         },
         "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep region wrapper checksum mismatch",

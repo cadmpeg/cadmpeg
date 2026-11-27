@@ -94,7 +94,7 @@ pub(crate) fn f3d_with_reference_table_and_identity_xrefs(
     f3d_with_xref_placements(doc_type, own_name, &placements, Some(redirections))
 }
 
-fn f3d_with_xref_placements(
+pub(crate) fn f3d_with_xref_placements(
     doc_type: &str,
     own_name: &str,
     placements: &[(&str, &str, [[f64; 4]; 4])],

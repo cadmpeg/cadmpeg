@@ -38,7 +38,7 @@ fn angular_tolerance_above_pi_is_written_as_the_default_and_named() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable")
+            .any(|loss| loss.starts_with("rhino/writer.value-omitted")
                 && loss.contains("document angular tolerance")),
         "{losses:?}"
     );
@@ -90,7 +90,7 @@ fn name_with_null_character_is_written_up_to_it_and_named() {
     assert!(
         losses
             .iter()
-            .any(|loss| loss.starts_with("export/value.unwritable") && loss.contains(&body)),
+            .any(|loss| loss.starts_with("rhino/writer.attributes-omitted") && loss.contains(&body)),
         "{losses:?}"
     );
 }
@@ -169,7 +169,7 @@ fn nonempty_user_string_presentation_is_omitted_and_named() {
         let mut fields = original.fields().unwrap().clone();
         fields.insert(
             "user_strings".into(),
-            serde_json::json!([{ "key": "name", "value": "value" }]),
+            cadmpeg_core::json!([{ "key": "name", "value": "value" }]),
         );
         records[0] = cadmpeg_ir::NativeRecord::new(
             cadmpeg_ir::ids::Identity::new(id.clone()).expect("valid identity"),
@@ -223,7 +223,7 @@ fn nonempty_mesh_modifier_presentation_is_omitted_and_named() {
         let mut fields = original.fields().unwrap().clone();
         fields.insert(
             "mesh_modifiers".into(),
-            serde_json::json!({ "displacement": { "on": true } }),
+            cadmpeg_core::json!({ "displacement": { "on": true } }),
         );
         records[0] = cadmpeg_ir::NativeRecord::new(
             cadmpeg_ir::ids::Identity::new(id.clone()).expect("valid identity"),
@@ -277,7 +277,7 @@ fn nonempty_layer_per_viewport_settings_are_omitted_and_named() {
         let mut fields = original.fields().unwrap().clone();
         fields.insert(
             "per_viewport_settings".into(),
-            serde_json::json!([{
+            cadmpeg_core::json!([{
                 "viewport_uuid": "01020304-0506-0708-090a-0b0c0d0e0f10",
                 "settings_mask": 3,
                 "color": "0a141e28"

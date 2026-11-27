@@ -108,6 +108,10 @@ pub(crate) enum UsdLossCode {
     /// Geometry subsets of a `BrepArray` prim that are not `face` or `brep`
     /// subsets binding a material were not transferred.
     BrepSubsetNotTransferred,
+    /// A `BrepArray` face on a plane, cylinder, or cone has no loop that
+    /// holds an edge or a vertex, so it states no extent. The face is stated
+    /// partial.
+    TopologyFaceBoundaryUnstated,
     /// A joint whose bodies or frames do not resolve was not transferred.
     JointRejected,
     /// Joint properties with no neutral form were not transferred.
@@ -196,6 +200,7 @@ impl UsdLossCode {
         Self::BrepRejected,
         Self::BrepElementNotTransferred,
         Self::BrepSubsetNotTransferred,
+        Self::TopologyFaceBoundaryUnstated,
         Self::JointRejected,
         Self::JointPropertyNotTransferred,
         Self::SolverPropertyNotTransferred,
@@ -370,6 +375,11 @@ impl UsdLossCode {
                 "brep.subset-not-transferred",
                 Info,
                 T::MaterialNotTransferred,
+            ),
+            Self::TopologyFaceBoundaryUnstated => (
+                "topology.face-boundary-unstated",
+                Warning,
+                T::TopologyNotTransferred,
             ),
             Self::JointRejected => (
                 "physics.joint-rejected",

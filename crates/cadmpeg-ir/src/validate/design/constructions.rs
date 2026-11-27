@@ -7,12 +7,14 @@
 //! or an unread one, its pick count is not stated and is not checked.
 
 use crate::report::check::Ruled;
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::construction::{
-    CurveValue, FrameValue, InputReference, PlaneValue, PostStep, Relation, ScalarDimension,
-    Subject,
+    AnyConstruction, ConstructionInput, CurveValue, FrameValue, InputReference, PlaneValue,
+    PostStep, Relation, ScalarDimension, Subject,
 };
+use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::feature::FeatureOperation;
 use crate::design::names::NameKind;
@@ -21,13 +23,14 @@ use crate::design::ops::sketch::{
     EntityDefinition, EntityForm, PlanarCurve, SketchSpace, SpatialCurve,
 };
 use crate::design::selection::{
-    DatumPart, PickContext, PickTarget, Picked, Picks, PrincipalEntity,
+    DatumPart, OrderedSelection, PickContext, PickTarget, Picked, Picks, PrincipalEntity,
 };
 use crate::math::portable::Portable;
 use crate::math::{Point3, Vector3};
 use crate::report::check::Finding;
 use crate::units::UnitVector3;
 
+use super::frames::values_frame;
 use super::index::DesignIndex;
 use super::names::derived_kinds;
 use super::records::MemberKey;
@@ -41,8 +44,14 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
         linear: tolerances.linear.get(),
         angular: tolerances.angular.get(),
     };
+    let current = OnceCell::new();
     for record in held {
         let at = record.holder.record();
+        let feature = record.holder.feature();
+        let frame = |configuration: Option<&str>| match feature {
+            Some(feature) => values_frame(&index.records, feature, configuration),
+            None => Some(None),
+        };
         let scope = match record.holder {
             Holder::Record { scope, .. } => scope.map(crate::ids::ProductDefinitionId::as_str),
             Holder::Definition(_) | Holder::Owned { .. } => record
@@ -57,28 +66,49 @@ pub(super) fn check<'a>(index: &DesignIndex<'a>, held: &[Held<'a>], findings: &m
                 &index.records,
                 construction,
                 scope,
+                &frame,
+                &current,
                 at,
                 findings,
             );
         }
     }
+    let mut placements = Vec::new();
     for feature in &index.records.ir.design.features {
         let at = feature.id.as_str();
         let primitive = match &feature.definition.operation {
             FeatureOperation::Primitive(primitive) => primitive.placement.as_ref(),
             _ => None,
         };
-        for placement in feature.placement.as_deref().into_iter().chain(primitive) {
-            if placement.inputs.is_empty()
-                && placement.after.iter().all(literal_step)
-                && placement.resolved.as_ref().is_some_and(is_identity)
-            {
-                super::error(findings, at, crate::rule!("design.placement-no-inputs-no-bound-step", "a placement with no inputs and no bound step resolves to the identity; it is absent"),
-                );
-            }
-        }
+        placements.extend(
+            feature
+                .placement
+                .as_deref()
+                .into_iter()
+                .chain(primitive)
+                .map(|placement| (at, placement)),
+        );
         if let FeatureOperation::Datum(datum) = &feature.definition.operation {
             check_datum_link(datum, at, findings);
+        }
+    }
+    for container in &index.records.ir.design.containers {
+        if let Container::Ordered {
+            id,
+            placement: Some(placement),
+            ..
+        } = container
+        {
+            placements.push((id.as_str(), &**placement));
+        }
+    }
+    for (at, placement) in placements {
+        if placement.inputs.is_empty()
+            && placement.after.iter().all(literal_step)
+            && placement.resolved.as_ref().is_some_and(is_identity)
+        {
+            super::error(findings, at, crate::rule!("design.placement-no-inputs-no-bound-step", "a placement with no inputs and no bound step resolves to the identity; it is absent"),
+            );
         }
     }
     check_principal_datums(index, held, findings);
@@ -1014,3 +1044,30 @@ fn arc_ok(curve: &CurveValue, geometry: Geometry) -> bool {
     };
     on_circle(start.get()) && on_circle(end.get())
 }
+
+/// The selections the inputs of a construction pick, through every
+/// construction nested in them.
+pub(super) fn input_selections(inputs: &[ConstructionInput]) -> Vec<&OrderedSelection> {
+    let mut pending = vec![inputs];
+    let mut found = Vec::new();
+    while let Some(inputs) = pending.pop() {
+        for input in inputs {
+            match &input.reference {
+                Some(InputReference::Picks(selection)) => found.push(selection),
+                Some(InputReference::Built(built)) => pending.push(match built.as_ref() {
+                    AnyConstruction::Point(nested) => &nested.inputs,
+                    AnyConstruction::Direction(nested) => &nested.inputs,
+                    AnyConstruction::Axis(nested) => &nested.inputs,
+                    AnyConstruction::Plane(nested) => &nested.inputs,
+                    AnyConstruction::Frame(nested) => &nested.inputs,
+                    AnyConstruction::Curve(nested) => &nested.inputs,
+                }),
+                None => {}
+            }
+        }
+    }
+    found
+}
+
+#[cfg(test)]
+mod tests;

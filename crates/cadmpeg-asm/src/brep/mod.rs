@@ -45,7 +45,6 @@ use cadmpeg_ir::ids::{CurveId, FaceId, RegionId, SurfaceId};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::{Deserialize, Serialize};
-use serde_value::Value;
 use std::collections::{HashMap, HashSet};
 
 use self::annotations::{emit_annotation_records, AnnotationRecord};
@@ -133,10 +132,26 @@ pub struct AsmBrep {
     /// Source locations for emitted B-rep and synthetic child records.
     #[serde(skip)]
     pub annotation_records: Vec<AnnotationRecord>,
+    /// Faces whose record states no loop on a plane, cylinder, or cone. The
+    /// IR states each partial; the embedding codec charges
+    /// `topology.face-boundary-unstated` for each.
+    #[serde(skip)]
+    pub unbounded_faces: Vec<UnboundedFace>,
     /// Source order of the region and face chains, which the neutral
     /// arenas derive from parent pointers instead of storing.
     #[serde(skip)]
     pub chain_order: ChainOrder,
+}
+
+/// A face record that states no loop on a surface whose domain is unbounded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnboundedFace {
+    /// The emitted face, stated partial with no loop.
+    pub face: FaceId,
+    /// Source record index of the face.
+    pub record_index: u32,
+    /// The surface kind: `plane`, `cylinder`, or `cone`.
+    pub surface_kind: &'static str,
 }
 
 /// The children of each body and shell record in their source chain order,
@@ -222,6 +237,7 @@ impl<'de> Deserialize<'de> for AsmBrep {
             unknowns: wire.unknowns,
             stats: wire.stats,
             annotation_records: Vec::new(),
+            unbounded_faces: Vec::new(),
             chain_order: ChainOrder::default(),
         })
     }
@@ -267,185 +283,10 @@ impl AsmBrep {
             attributes,
             unknowns,
             annotation_records,
+            unbounded_faces,
         );
         self.stats.merge(other.stats);
     }
-}
-
-/// Collect every `id` field value in a serialized value tree.
-pub fn collect_owned_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &Value,
-    out: &mut HashSet<String, std::collections::hash_map::RandomState>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let _depth = ctx.enter_nested("collect ASM owned ids")?;
-    match value {
-        Value::Map(fields) => {
-            if let Some(id) = fields
-                .iter()
-                .find(|(key, _)| matches!(key, Value::String(name) if name == "id"))
-                .map(|(_, value)| value)
-                .and_then(value_string)
-            {
-                out.insert(id.to_owned());
-            }
-            for (key, value) in fields {
-                collect_owned_ids(ctx, key, out)?;
-                collect_owned_ids(ctx, value, out)?;
-            }
-        }
-        Value::Seq(items) => {
-            for item in items {
-                collect_owned_ids(ctx, item, out)?;
-            }
-        }
-        Value::Option(Some(value)) | Value::Newtype(value) => collect_owned_ids(ctx, value, out)?,
-        _ => {}
-    }
-    Ok(())
-}
-
-/// The string payload of a serialized value, unwrapping newtype layers.
-pub fn value_string(value: &Value) -> Option<&str> {
-    match value {
-        Value::String(value) => Some(value),
-        Value::Newtype(value) => value_string(value),
-        _ => None,
-    }
-}
-
-/// Build the undirected id-adjacency of every entity in the top-level
-/// sequences of a serialized value tree.
-pub fn collect_entity_adjacency(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &Value,
-    owned: &HashSet<String, std::collections::hash_map::RandomState>,
-    out: &mut HashMap<
-        String,
-        HashSet<String, std::collections::hash_map::RandomState>,
-        std::collections::hash_map::RandomState,
-    >,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let Value::Map(fields) = value else {
-        return Ok(());
-    };
-    for value in fields.values() {
-        let Value::Seq(items) = value else {
-            continue;
-        };
-        for item in items {
-            let Some(id) = entity_id(item) else {
-                continue;
-            };
-            let mut references = HashSet::new();
-            collect_references(ctx, item, owned, &mut references)?;
-            references.remove(id);
-            for reference in references {
-                insert_adjacency(out, id, &reference);
-                insert_adjacency(out, &reference, id);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn insert_adjacency(out: &mut HashMap<String, HashSet<String>>, owner: &str, reference: &str) {
-    out.entry(owner.to_owned())
-        .or_default()
-        .insert(reference.to_owned());
-}
-
-/// The `id` field of a serialized entity map.
-pub fn entity_id(value: &Value) -> Option<&str> {
-    let Value::Map(fields) = value else {
-        return None;
-    };
-    fields
-        .iter()
-        .find(|(key, _)| matches!(key, Value::String(name) if name == "id"))
-        .map(|(_, value)| value)
-        .and_then(value_string)
-}
-
-/// Collect every string in a serialized value tree that names an owned id.
-pub fn collect_references(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &Value,
-    owned: &HashSet<String, std::collections::hash_map::RandomState>,
-    out: &mut HashSet<String, std::collections::hash_map::RandomState>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let _depth = ctx.enter_nested("collect ASM references")?;
-    match value {
-        Value::String(id) if owned.contains(id) => {
-            out.insert(id.to_owned());
-        }
-        Value::Seq(items) => {
-            for item in items {
-                collect_references(ctx, item, owned, out)?;
-            }
-        }
-        Value::Map(fields) => {
-            for (key, value) in fields {
-                collect_references(ctx, key, owned, out)?;
-                collect_references(ctx, value, owned, out)?;
-            }
-        }
-        Value::Option(Some(value)) | Value::Newtype(value) => {
-            collect_references(ctx, value, owned, out)?;
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-/// Retain only entities with a reachable `id` in the top-level sequences of a
-/// serialized value tree.
-pub fn retain_root_entities(
-    value: &mut Value,
-    reachable: &HashSet<String, std::collections::hash_map::RandomState>,
-) {
-    let Value::Map(fields) = value else {
-        return;
-    };
-    for value in fields.values_mut() {
-        if let Value::Seq(items) = value {
-            items.retain(|item| entity_id(item).is_none_or(|id| reachable.contains(id)));
-        }
-    }
-}
-
-/// Rewrite every string in a serialized value tree through `replacements`.
-pub fn remap_owned_ids(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    value: &mut Value,
-    replacements: &HashMap<String, String, std::collections::hash_map::RandomState>,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let _depth = ctx.enter_nested("remap ASM owned ids")?;
-    match value {
-        Value::String(id) => {
-            if let Some(replacement) = replacements.get(id) {
-                *id = replacement.to_owned();
-            }
-        }
-        Value::Seq(items) => {
-            for item in items {
-                remap_owned_ids(ctx, item, replacements)?;
-            }
-        }
-        Value::Map(fields) => {
-            let entries = std::mem::take(fields);
-            for (mut key, mut item) in entries {
-                remap_owned_ids(ctx, &mut key, replacements)?;
-                remap_owned_ids(ctx, &mut item, replacements)?;
-                fields.insert(key, item);
-            }
-        }
-        Value::Option(Some(value)) | Value::Newtype(value) => {
-            remap_owned_ids(ctx, value, replacements)?;
-        }
-        _ => {}
-    }
-    Ok(())
 }
 
 fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>, kind: &str) {
@@ -825,7 +666,7 @@ mod supplied_subtype_tests {
             &ctx,
             &records,
             &[],
-            crate::ids::IdFormat::from_literal("f3d").unwrap(),
+            crate::ids::IdFormat::from_literal("f3d"),
             &table
         )
         .is_err());
@@ -834,7 +675,7 @@ mod supplied_subtype_tests {
             &records,
             &[],
             "history",
-            crate::ids::IdFormat::from_literal("f3d").unwrap(),
+            crate::ids::IdFormat::from_literal("f3d"),
             super::DecodePurpose::History
         )
         .is_ok());

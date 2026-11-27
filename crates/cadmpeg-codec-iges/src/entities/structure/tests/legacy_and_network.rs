@@ -208,7 +208,7 @@ fn type316_scale_is_scoped_to_the_property_owner() {
     let units = &native.arenas()["units_data"][0];
     assert_eq!(
         units.fields().unwrap()["owners"],
-        serde_json::json!(["iges:entity:directory#1"])
+        cadmpeg_core::json!(["iges:entity:directory#1"])
     );
     let unowned = native.arenas()["entities"]
         .iter()
@@ -270,7 +270,7 @@ fn decode_rejects_cyclic_solid_assembly_definitions() {
         },
     ]);
     let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas()["solid_assemblies"].len(),
@@ -287,6 +287,15 @@ fn decode_rejects_cyclic_solid_assembly_definitions() {
             .count(),
         2
     );
+    // The pass only validates the assemblies, whose native records the
+    // document keeps, so its findings give up nothing and pin no floor.
+    crate::test_support::assert_gives_up(result.report(), &[]);
+    IgesCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &crate::test_support::strict_options(),
+        )
+        .unwrap();
 }
 
 #[test]
@@ -626,15 +635,12 @@ fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
 
 #[test]
 fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
-    for mode in [
-        cadmpeg_core::decode::DecodeMode::Strict,
-        cadmpeg_core::decode::DecodeMode::Salvage,
-    ] {
+    for pinned in [true, false] {
         let mut options = DecodeOptions::default();
-        options.policy.mode = mode;
+        options.strictness.pinned = pinned;
         let result = crate::reader::decode_with_test_occurrence_limits(
             &occurrence_limit_file(),
-            options,
+            &options,
             100,
             crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
         )
@@ -671,7 +677,7 @@ fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
 fn decode_bounds_product_occurrence_member_output_with_a_named_loss() {
     let result = crate::reader::decode_with_test_occurrence_limits(
         &nested_subfigure_file(),
-        DecodeOptions::default(),
+        &DecodeOptions::default(),
         1,
         crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
     )
@@ -691,12 +697,9 @@ fn decode_bounds_product_occurrence_member_output_with_a_named_loss() {
 
 #[test]
 fn decode_reports_product_occurrence_depth_truncation() {
-    for mode in [
-        cadmpeg_core::decode::DecodeMode::Strict,
-        cadmpeg_core::decode::DecodeMode::Salvage,
-    ] {
+    for pinned in [true, false] {
         let mut options = DecodeOptions::default();
-        options.policy.mode = mode;
+        options.strictness.pinned = pinned;
         let result = IgesCodec
             .decode(&mut Cursor::new(occurrence_depth_limit_file()), &options)
             .unwrap();
@@ -871,7 +874,7 @@ fn decode_omits_occurrences_for_rejected_structure_entities() {
     assert_eq!(expansion.fields().unwrap()["truncated"], true);
     assert_eq!(
         expansion.fields().unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
     assert_eq!(
         result
@@ -899,7 +902,7 @@ fn decode_does_not_promote_subfigure_instance_in_rejected_definition() {
     assert_eq!(expansion.fields().unwrap()["truncated"], true);
     assert_eq!(
         expansion.fields().unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
 
     let admitted = IgesCodec
@@ -949,7 +952,7 @@ fn decode_does_not_promote_network_instance_in_rejected_definition() {
     assert_eq!(expansion.fields().unwrap()["truncated"], true);
     assert_eq!(
         expansion.fields().unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
 
     let admitted = IgesCodec
@@ -1098,6 +1101,7 @@ fn network_connectivity_uses_versioned_null_pointer_rules() {
 fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
     let entry = |line_font, subordinate, use_flag, hierarchy| DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type: 308,
         parameter_start: 0,
@@ -1381,7 +1385,7 @@ fn decode_reports_occurrence_issue_for_rejected_subfigure_definition() {
         native.arenas()["product_occurrence_expansion"][0]
             .fields()
             .unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
 }
 
@@ -1412,6 +1416,6 @@ fn invalid_network_metadata_does_not_hide_a_rejected_definition() {
         native.arenas()["product_occurrence_expansion"][0]
             .fields()
             .unwrap()["issues"],
-        serde_json::json!(["malformed_placement"])
+        cadmpeg_core::json!(["malformed_placement"])
     );
 }

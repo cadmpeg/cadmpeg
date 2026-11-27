@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::io::Cursor;
@@ -29,7 +30,7 @@ fn sweep_history_keeps_branches_and_body_links_without_inventing_policies() {
     assert!(arenas
         .get("feature_body_write_group_partition_uses")
         .is_none_or(Vec::is_empty));
-    let branches = serde_json::to_value(&arenas["feature_swp104_leading_branches"]).unwrap();
+    let branches = json::to_value(&arenas["feature_swp104_leading_branches"]).unwrap();
     assert_eq!(branches.as_array().unwrap().len(), 2);
     assert_eq!(branches[0]["parameter_class_index"], 17);
     assert_eq!(branches[0]["profile_class_index"], 18);
@@ -45,7 +46,7 @@ fn sweep_history_keeps_branches_and_body_links_without_inventing_policies() {
     for branch in branches.as_array().unwrap() {
         assert_eq!(
             branch["raw_scalars"],
-            serde_json::json!([
+            cadmpeg_core::json!([
                 "2f03ec460ed80a18",
                 "2f60624dd2f1a9fc",
                 "2f14f8b588e368f1",
@@ -54,7 +55,7 @@ fn sweep_history_keeps_branches_and_body_links_without_inventing_policies() {
         );
         assert_eq!(
             branch["scalars"],
-            serde_json::json!([0.000_038, 0.002, 0.00008, 0.00004])
+            cadmpeg_core::json!([0.000_038, 0.002, 0.00008, 0.00004])
         );
     }
 }
