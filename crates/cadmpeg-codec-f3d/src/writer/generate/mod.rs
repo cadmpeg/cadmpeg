@@ -413,7 +413,7 @@ fn attempt(
     let mut renamed = BTreeMap::<EntryNameFault, Vec<String>>::new();
     let mut root = None;
     let mut table_losses = Vec::new();
-    let mut witness = configuration_table::read_back::Witness::default();
+    let mut destination = None;
     let mut own = Vec::new();
     let mut expected_parameters = target.model.parameters.as_slice();
     if write_design {
@@ -438,7 +438,12 @@ fn attempt(
                 .map(|record| {
                     (
                         crate::ids::neutral_parameter_id(record),
-                        (record.record_index, record.name()),
+                        configuration_table::DestinationParameter {
+                            index: record.record_index,
+                            name: record.name(),
+                            expression: record.expression(),
+                            evaluated: record.evaluated_value().get(),
+                        },
                     )
                 })
                 .collect(),
@@ -447,10 +452,9 @@ fn attempt(
             }
             None => BTreeMap::new(),
         };
-        witness = configuration_table::read_back::Witness::new(&destinations);
         let decoded = decoded_configurations(&native.design_configurations, &targets)
             .map_err(Failure::design)?;
-        let stated = configuration_table::stated_rows(
+        let mut stated = configuration_table::stated_rows(
             target,
             &decoded.configurations,
             &targets,
@@ -460,6 +464,18 @@ fn attempt(
             ActiveRows::Design,
             &mut table_losses,
         );
+        if matches!(
+            &native_parameters,
+            Some(design::parameters::ParameterSource::Neutral(_))
+        ) {
+            stated.place_expressions(
+                target,
+                targets.neutral_parameters,
+                &destinations,
+                &mut table_losses,
+            );
+        }
+        let part_numbers = std::mem::take(&mut stated.part_numbers);
         let (written, plan) = configuration_table::generated(
             target,
             &native.design_configurations,
@@ -471,6 +487,7 @@ fn attempt(
         )
         .map_err(Failure::design)?;
         let names = configuration_entry_names(&written.documents);
+        let mut placed = Vec::with_capacity(names.len());
         for (index, (configuration, (name, fault))) in
             written.documents.iter().zip(names).enumerate()
         {
@@ -482,15 +499,34 @@ fn attempt(
                     configuration.entry_name()
                 ));
             }
-            let bytes =
-                crate::records::configuration::encode_configuration_payload(&name, &payload)
-                    .map_err(Failure::design)?;
-            witness
-                .add(&written, index, &name, payload.into_owned())
-                .map_err(Failure::design)?;
-            configurations.push((name, bytes));
+            placed.push(
+                crate::records::configuration::DesignConfiguration::try_new(
+                    name,
+                    configuration.kind(),
+                    payload.into_owned(),
+                )
+                .map_err(Failure::design)?,
+            );
         }
-        witness.expect_root(plan.active_ids());
+        let planned = configuration_table::read_back::Destination::synthesized(
+            written,
+            placed,
+            &plan,
+            part_numbers,
+            &destinations,
+            design::root_scope(target).map(|scope| scope.definition.clone()),
+        )
+        .map_err(Failure::design)?;
+        for document in &*planned.documents {
+            let name = document.entry_name();
+            let bytes = crate::records::configuration::encode_configuration_payload(
+                name,
+                document.payload(),
+            )
+            .map_err(Failure::design)?;
+            configurations.push((name.clone(), bytes));
+        }
+        destination = Some(planned);
         root = Some(plan);
     }
     let mut configuration_losses = table_losses;
@@ -533,15 +569,18 @@ fn attempt(
         },
     )
     .map_err(Failure::archive)?;
-    witness
-        .read_back(
-            ctx,
-            staged.get_ref(),
-            target,
-            expected_parameters,
-            &mut configuration_losses,
-        )
-        .map_err(Failure::design)?;
+    if let Some(destination) = destination {
+        destination
+            .read_back(
+                ctx,
+                staged.get_ref(),
+                target,
+                expected_parameters,
+                &native.design_parameter_scopes,
+                &mut configuration_losses,
+            )
+            .map_err(Failure::design)?;
+    }
     let parameters = match native_parameters {
         Some(design::parameters::ParameterSource::Native) => ArenaDisposition::Written,
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
