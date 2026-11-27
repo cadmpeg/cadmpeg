@@ -212,7 +212,7 @@ fn an_item_whose_state_several_histories_stand_at_commits_no_state_and_the_walk_
         loss.message.contains(feature_id("u").as_str())
             && loss
                 .message
-                .contains("leave none or several of them at that state")
+                .contains("does not establish a unique history with a consistent state sequence")
             && loss.message.contains("taken to commit no history state"),
         "{}",
         loss.message
@@ -411,7 +411,7 @@ fn the_state_after_an_item_before_a_gap_of_its_history_is_based_on_the_state_aft
 
 #[test]
 fn an_ambiguous_item_whose_state_before_it_is_below_its_historys_earlier_item_is_not_bound() {
-    let design = design(&["a", "u"], "u", Vec::new());
+    let design = design(&["a", "u", "c"], "c", Vec::new());
     let stored = [
         Stored {
             name: "BREP.x",
@@ -419,7 +419,7 @@ fn an_ambiguous_item_whose_state_before_it_is_below_its_historys_earlier_item_is
         },
         Stored {
             name: "BREP.y",
-            states: &[3, 4],
+            states: &[2, 3, 4],
         },
     ];
     let (entries, inferred) = walk(
@@ -431,6 +431,7 @@ fn an_ambiguous_item_whose_state_before_it_is_below_its_historys_earlier_item_is
                 stored: vec![0, 1],
                 previous: Some(1),
             },
+            bound(1, 4, Some(2)),
         ],
         &stored,
     );
@@ -442,8 +443,20 @@ fn an_ambiguous_item_whose_state_before_it_is_below_its_historys_earlier_item_is
         planned,
         [Planned {
             entry: 0,
-            targets: vec![Some(2), Some(4)],
+            targets: vec![Some(2), Some(2)],
         }]
+    );
+    let [loss] = unresolved(&design.scope.definition, &entries)
+        .try_into()
+        .expect("one loss");
+    assert_eq!(loss.code, F3dLossCode::HistoryStateUnread.kind());
+    assert!(
+        loss.message.contains(feature_id("u").as_str())
+            && loss
+                .message
+                .contains("does not establish a unique history with a consistent state sequence"),
+        "{}",
+        loss.message
     );
 }
 

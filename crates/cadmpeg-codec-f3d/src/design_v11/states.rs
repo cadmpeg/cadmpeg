@@ -777,7 +777,7 @@ fn unresolved(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Vec<Lo
                 Kind::Unresolved(reason) => reason.clone(),
                 Kind::Tailless => "its scope tail is not read".to_owned(),
                 Kind::Ambiguous { state, stored, .. } => format!(
-                    "{} ASM histories store state {state}, its parameter scope binds none of them, and the items after it leave none or several of them at that state",
+                    "{} ASM histories store state {state}, its parameter scope binds none of them, and the timeline does not establish a unique history with a consistent state sequence",
                     stored.len()
                 ),
                 Kind::Bound { .. } | Kind::NoState => return None,
