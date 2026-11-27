@@ -45,17 +45,61 @@ fn cross(a: Vec3, b: Vec3) -> Vec3 {
 pub(crate) enum ParameterKind {
     Length,
     Angle,
+    /// A unitless real: a `DOUBLEPARAMETER` whose unit code is 3.
+    Real,
+    /// An `INTEGERPARAMETER`, with its value.
+    Integer(i64),
 }
 
-/// A `DOUBLEPARAMETER` or `ANGLEPARAMETER` record.
+/// The unit code of a `DOUBLEPARAMETER` (attribute 5) that holds a unitless real.
+const UNITLESS_CODE: i64 = 3;
+
+/// A `DOUBLEPARAMETER`, `ANGLEPARAMETER` or `INTEGERPARAMETER` record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Parameter {
     pub(crate) record: u32,
     pub(crate) name: String,
     pub(crate) guid: Option<String>,
     pub(crate) kind: ParameterKind,
-    /// Millimetres or radians.
+    /// The authored equation (attribute 1), where the parameter states one.
+    pub(crate) equation: Option<String>,
+    /// Millimetres, radians, or the unitless value.
     pub(crate) value: f64,
+}
+
+/// A parameter equation the decoder translates: one parameter name, optionally
+/// multiplied or divided by a positive number.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Equation {
+    pub(crate) name: String,
+    /// `Some((divides, factor))` where the name is scaled.
+    pub(crate) scale: Option<(bool, f64)>,
+}
+
+fn is_name(text: &str) -> bool {
+    text.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && text.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Reads `NAME`, `NAME/NUMBER` or `NAME*NUMBER`. Any other text is `None`.
+pub(crate) fn parse_equation(text: &str) -> Option<Equation> {
+    let text = text.trim();
+    let (name, rest, divides) = if let Some((name, rest)) = text.split_once('/') {
+        (name, rest, true)
+    } else if let Some((name, rest)) = text.split_once('*') {
+        (name, rest, false)
+    } else {
+        return is_name(text).then(|| Equation {
+            name: text.to_owned(),
+            scale: None,
+        });
+    };
+    let name = name.trim();
+    let factor: f64 = rest.trim().parse().ok()?;
+    (is_name(name) && factor.is_finite() && factor > 0.0).then(|| Equation {
+        name: name.to_owned(),
+        scale: Some((divides, factor)),
+    })
 }
 
 /// The point of a sketch that a line or circle of the sketch owns.
@@ -309,15 +353,34 @@ impl<'a> Reader<'a> {
             .ok_or_else(|| bad("a parameter has no name"))?
             .to_owned();
         let guid = instance.arg(2).and_then(Value::as_str).map(str::to_owned);
+        let equation = instance
+            .arg(1)
+            .and_then(Value::as_str)
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned);
         let (kind, value) = match instance.name.as_str() {
-            "DOUBLEPARAMETER" => (
-                ParameterKind::Length,
-                instance
+            "DOUBLEPARAMETER" => {
+                let number = instance
                     .arg(11)
                     .and_then(Value::as_real)
-                    .ok_or_else(|| bad("a DOUBLEPARAMETER has no value"))?
-                    * CM_TO_MM,
-            ),
+                    .ok_or_else(|| bad("a DOUBLEPARAMETER has no value"))?;
+                if instance.arg(5).and_then(Value::as_int) == Some(UNITLESS_CODE) {
+                    (ParameterKind::Real, number)
+                } else {
+                    (ParameterKind::Length, number * CM_TO_MM)
+                }
+            }
+            "INTEGERPARAMETER" => {
+                let number = instance
+                    .arg(11)
+                    .and_then(Value::as_int)
+                    .ok_or_else(|| bad("an INTEGERPARAMETER has no value"))?;
+                let real = instance
+                    .arg(11)
+                    .and_then(Value::as_real)
+                    .ok_or_else(|| bad("an INTEGERPARAMETER has no value"))?;
+                (ParameterKind::Integer(number), real)
+            }
             "ANGLEPARAMETER" => {
                 let angle = reference(instance, 11, "an ANGLEPARAMETER has no angle")?;
                 let angle = self.get(angle, "ANGLEUV", "an angle value is not an ANGLEUV")?;
@@ -336,6 +399,7 @@ impl<'a> Reader<'a> {
             name,
             guid,
             kind,
+            equation,
             value,
         });
         Ok(self.history.parameters.len() - 1)
@@ -1029,6 +1093,40 @@ impl<'a> Reader<'a> {
                 reference(placement, 2, "a placement has no direction")?,
             )?,
         ))
+    }
+}
+
+#[cfg(test)]
+mod equation_tests {
+    use super::{parse_equation, Equation};
+
+    #[test]
+    fn a_name_and_a_scaled_name_read() {
+        assert_eq!(
+            parse_equation("AD_Thickness"),
+            Some(Equation {
+                name: "AD_Thickness".to_owned(),
+                scale: None
+            })
+        );
+        assert_eq!(
+            parse_equation(" AD_Thickness/2 "),
+            Some(Equation {
+                name: "AD_Thickness".to_owned(),
+                scale: Some((true, 2.0))
+            })
+        );
+        assert_eq!(
+            parse_equation("D1*1.5").and_then(|e| e.scale),
+            Some((false, 1.5))
+        );
+    }
+
+    #[test]
+    fn other_text_does_not_read() {
+        for text in ["", "2", "D1+D2", "D1/0", "D1/x", "/2", "D1/2/3", "D1*-2"] {
+            assert_eq!(parse_equation(text), None, "{text}");
+        }
     }
 }
 

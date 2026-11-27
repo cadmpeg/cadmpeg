@@ -75,6 +75,10 @@ pub(crate) enum AlibreLossCode {
     HistoryStreamUnread,
     /// The document profile and presentation records of the stream carry no decoded content in the IR.
     HistoryPresentationUnmapped,
+    /// A parameter states an equation that the history does not translate, and keeps its value.
+    HistoryParameterEquationUnmapped,
+    /// Sheet-metal settings of the part that the rule does not state or maps only as a native option.
+    HistorySheetMetalSettingsUnmapped,
 }
 
 impl AlibreLossCode {
@@ -109,6 +113,8 @@ impl AlibreLossCode {
         Self::HistoryHolePositionUnresolved,
         Self::HistoryStreamUnread,
         Self::HistoryPresentationUnmapped,
+        Self::HistoryParameterEquationUnmapped,
+        Self::HistorySheetMetalSettingsUnmapped,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -142,6 +148,8 @@ impl AlibreLossCode {
             Self::HistoryHolePositionUnresolved => "history.hole-position-unresolved",
             Self::HistoryStreamUnread => "history.stream-unread",
             Self::HistoryPresentationUnmapped => "history.presentation-unmapped",
+            Self::HistoryParameterEquationUnmapped => "history.parameter-equation-unmapped",
+            Self::HistorySheetMetalSettingsUnmapped => "history.sheet-metal-settings-unmapped",
         }
     }
 
@@ -174,7 +182,9 @@ impl AlibreLossCode {
             | Self::HistoryStateIndexMismatch
             | Self::HistoryHolePositionUnresolved
             | Self::HistoryStreamUnread
-            | Self::HistoryPresentationUnmapped => Severity::Warning,
+            | Self::HistoryPresentationUnmapped
+            | Self::HistoryParameterEquationUnmapped
+            | Self::HistorySheetMetalSettingsUnmapped => Severity::Warning,
         }
     }
 
@@ -209,7 +219,9 @@ impl AlibreLossCode {
             | Self::HistoryStateIndexMismatch
             | Self::HistoryHolePositionUnresolved
             | Self::HistoryStreamUnread
-            | Self::HistoryPresentationUnmapped => LossTaxonomy::FeatureHistoryRetained,
+            | Self::HistoryPresentationUnmapped
+            | Self::HistoryParameterEquationUnmapped
+            | Self::HistorySheetMetalSettingsUnmapped => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -266,6 +278,8 @@ mod tests {
                 "history.hole-position-unresolved",
                 "history.stream-unread",
                 "history.presentation-unmapped",
+                "history.parameter-equation-unmapped",
+                "history.sheet-metal-settings-unmapped",
             ]
         );
     }

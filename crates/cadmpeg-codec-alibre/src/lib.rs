@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![cfg_attr(test, allow(clippy::unwrap_used))]
-//! Reads Alibre Design part files (`.AD_PRT`) into [`cadmpeg_ir::CadIr`].
+//! Reads Alibre Design part files (`.AD_PRT`) and sheet-metal part files
+//! (`.AD_SMP`) into [`cadmpeg_ir::CadIr`].
 //!
 //! An `.AD_PRT` is a Microsoft Compound File. [`AlibreCodec`] detects a part
 //! from the `SAB_DATA` and `STEP_DATA` streams of the compound-file directory

@@ -13,10 +13,11 @@ use cadmpeg_ir::design::construction::{
 };
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
-use cadmpeg_ir::design::expr::{Expression, Neutral, Node};
+use cadmpeg_ir::design::expr::{Expression, MulOp, Neutral, Node};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation};
-use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::ids::{ContainerId, SheetMetalRuleId};
 use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::ops::dressup::{
@@ -24,6 +25,7 @@ use cadmpeg_ir::design::ops::dressup::{
     HoleShape,
 };
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
+use cadmpeg_ir::design::ops::sheet_metal::{BendAllowance, BendSpec, Relief, SheetMetalRule};
 use cadmpeg_ir::design::ops::sketch::{
     DefiningRole, EntityDefinition, EntityRole, Operand, Planar, PlanarCurve, Sketch,
     SketchConstraint, SketchEntity, SketchPlane, SketchRelation, SketchSolve,
@@ -52,8 +54,8 @@ use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
 use crate::history::{
-    Constraint, Curve, End, Feature as HistoryFeature, Frame, History, Operation, Parameter,
-    ParameterKind, PointRole, Sketch as HistorySketch, SketchAxis, Support, Vec3,
+    parse_equation, Constraint, Curve, End, Feature as HistoryFeature, Frame, History, Operation,
+    Parameter, ParameterKind, PointRole, Sketch as HistorySketch, SketchAxis, Support, Vec3,
 };
 use crate::loss::AlibreLossCode;
 
@@ -553,30 +555,192 @@ impl Projection<'_> {
         }
     }
 
-    fn parameter(&self, at: usize, parameter: &Parameter) -> Result<DesignParameter, CodecError> {
-        let (quantity, symbol) = match parameter.kind {
-            ParameterKind::Length => (Quantity::LENGTH, UnitSymbol::Mm),
-            ParameterKind::Angle => (Quantity::ANGLE, UnitSymbol::Rad),
+    /// The index of the parameter with this name.
+    fn parameter_named(&self, name: &str) -> Option<usize> {
+        self.history
+            .parameters
+            .iter()
+            .position(|parameter| parameter.name == name)
+    }
+
+    /// The expression of a parameter that states an equation of another
+    /// parameter of its own kind, or `None` where it states none or states one
+    /// the decoder does not translate.
+    fn equation(&self, at: usize, parameter: &Parameter) -> Option<Expression> {
+        let equation = parse_equation(parameter.equation.as_deref()?)?;
+        let target = self.parameter_named(&equation.name)?;
+        let own = std::mem::discriminant(&parameter.kind);
+        let translated = matches!(parameter.kind, ParameterKind::Length | ParameterKind::Real)
+            && target != at
+            && std::mem::discriminant(&self.history.parameters[target].kind) == own;
+        if !translated {
+            return None;
+        }
+        let reference = Node::Reference(ParameterRef {
+            target: RefTarget::Parameter(self.parameters[target].clone()),
+            through: None,
+        });
+        let node = match equation.scale {
+            None => reference,
+            Some((divides, factor)) => Node::Product {
+                first: Box::new(reference),
+                rest: vec![(
+                    if divides {
+                        MulOp::Divide
+                    } else {
+                        MulOp::Multiply
+                    },
+                    Node::Number {
+                        value: NonNegativeReal::new(factor)?,
+                        unit: Unit(Vec::new()),
+                    },
+                )],
+            },
         };
-        let unit = Unit(vec![UnitFactor {
-            symbol,
-            power: std::num::NonZeroI8::new(1).ok_or_else(|| invalid("unit power"))?,
-        }]);
+        Some(Expression::Neutral(Neutral(node)))
+    }
+
+    /// The parameter with this name, where its kind satisfies `kind`.
+    fn typed(&self, name: &str, kind: impl Fn(ParameterKind) -> bool) -> Option<usize> {
+        let at = self.parameter_named(name)?;
+        kind(self.history.parameters[at].kind).then_some(at)
+    }
+
+    /// A positive length that binds the parameter with this name. A parameter
+    /// that is no positive length is named in `unread`.
+    fn positive_length(
+        &self,
+        name: &str,
+        unread: &mut Vec<String>,
+    ) -> Option<Dimension<PositiveLength>> {
+        let at = self.parameter_named(name)?;
+        let parameter = &self.history.parameters[at];
+        if parameter.kind == ParameterKind::Length && parameter.value > 0.0 {
+            Some(Dimension::Parameter(self.parameters[at].clone()))
+        } else {
+            unread.push(name.to_owned());
+            None
+        }
+    }
+
+    /// The sheet-metal rule of the root definition, where `STEP_DATA` declares
+    /// the `AD_Thickness` parameter of a sheet-metal part.
+    fn sheet_metal_rule(
+        &self,
+        definition: &ProductDefinitionId,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<Option<SheetMetalRule>, CodecError> {
+        let Some(thickness_at) = self.parameter_named("AD_Thickness") else {
+            return Ok(None);
+        };
+        let mut unread = Vec::new();
+        let Some(thickness) = self.positive_length("AD_Thickness", &mut unread) else {
+            losses.push(AlibreLossCode::HistorySheetMetalSettingsUnmapped.note(
+                "the AD_Thickness parameter is no positive length, so the part states no sheet-metal rule",
+            ));
+            return Ok(None);
+        };
+        let radius = self.positive_length("AD_GlobalBendRadius", &mut unread);
+        let width = self.positive_length("AD_BendReliefWidth", &mut unread);
+        let depth = self.positive_length("AD_BendReliefDepth", &mut unread);
+        let bound = |at: usize| self.parameters[at].clone();
+        let allowance = self
+            .typed("AD_KFactor", |kind| kind == ParameterKind::Real)
+            .map(|at| BendAllowance::KFactor(Dimension::Parameter(bound(at))));
+        let mut native_options = NativeOptions::new();
+        if let Some(at) = self.typed("AD_MinimumBendRadius", |kind| kind == ParameterKind::Length) {
+            native_options.insert(
+                cadmpeg_ir::codec_name!("alibre:minimum-bend-radius"),
+                NativeOption::Length(Dimension::Parameter(bound(at))),
+            );
+        }
+        if let Some(at) = self.typed("AD_MINIMUM_RIP_WIDTH", |kind| kind == ParameterKind::Length) {
+            native_options.insert(
+                cadmpeg_ir::codec_name!("alibre:minimum-rip-width"),
+                NativeOption::Length(Dimension::Parameter(bound(at))),
+            );
+        }
+        if let Some(at) = self.typed("AD_BendReliefType", |kind| {
+            matches!(kind, ParameterKind::Integer(_))
+        }) {
+            native_options.insert(
+                cadmpeg_ir::codec_name!("alibre:bend-relief-type"),
+                NativeOption::Integer(Dimension::Parameter(bound(at))),
+            );
+            if let ParameterKind::Integer(code) = self.history.parameters[at].kind {
+                losses.push(AlibreLossCode::HistorySheetMetalSettingsUnmapped.note(format!(
+                    "the bend relief type code {code} stays the native option alibre:bend-relief-type; no relief shape is mapped from it"
+                )));
+            }
+        }
+        if !unread.is_empty() {
+            losses.push(
+                AlibreLossCode::HistorySheetMetalSettingsUnmapped.note(format!(
+                    "the sheet-metal parameters {} are no positive length and are not projected",
+                    unread.join(", ")
+                )),
+            );
+        }
+        let relief = (width.is_some() || depth.is_some()).then_some(Relief {
+            shape: None,
+            width,
+            width_ratio: None,
+            depth,
+        });
+        Ok(Some(SheetMetalRule {
+            id: mint::<SheetMetalRuleId>(
+                "sheet-metal-rule",
+                self.history.parameters[thickness_at].record,
+            )?,
+            scope: definition.clone(),
+            name: None,
+            thickness: Some(thickness),
+            bend: BendSpec {
+                radius,
+                radius_side: None,
+                relief,
+            },
+            allowance,
+            native_options,
+            source_settings: NativeOptions::new(),
+            native_ref: Some(self.parameters[thickness_at].as_str().to_owned()),
+        }))
+    }
+
+    fn parameter(&self, at: usize, parameter: &Parameter) -> Result<DesignParameter, CodecError> {
+        let (kind, symbol) = match parameter.kind {
+            ParameterKind::Length => (ValueKind::Quantity(Quantity::LENGTH), Some(UnitSymbol::Mm)),
+            ParameterKind::Angle => (ValueKind::Quantity(Quantity::ANGLE), Some(UnitSymbol::Rad)),
+            ParameterKind::Real => (ValueKind::Quantity(Quantity::REAL), None),
+            ParameterKind::Integer(_) => (ValueKind::Integer, None),
+        };
+        let unit = symbol
+            .map(|symbol| -> Result<Unit, CodecError> {
+                Ok(Unit(vec![UnitFactor {
+                    symbol,
+                    power: std::num::NonZeroI8::new(1).ok_or_else(|| invalid("unit power"))?,
+                }]))
+            })
+            .transpose()?;
+        let literal_unit = unit.clone().unwrap_or_else(|| Unit(Vec::new()));
         let value = FiniteReal::new(parameter.value)
             .ok_or_else(|| invalid("a parameter value is not finite"))?;
-        let definition = match NonNegativeReal::new(parameter.value) {
-            Some(number) => Expression::Neutral(Neutral(Node::Number {
-                value: number,
-                unit: unit.clone(),
-            })),
-            None => Expression::Source {
-                dialect: cadmpeg_ir::design::expr::ExpressionDialect::Native(
-                    NonBlankString::new("alibre")
-                        .ok_or_else(|| invalid("the dialect name is blank"))?,
-                ),
-                tokens: vec![cadmpeg_ir::design::expr::ExpressionToken::Text(
-                    parameter.value.to_string(),
-                )],
+        let definition = match self.equation(at, parameter) {
+            Some(expression) => expression,
+            None => match NonNegativeReal::new(parameter.value) {
+                Some(number) => Expression::Neutral(Neutral(Node::Number {
+                    value: number,
+                    unit: literal_unit,
+                })),
+                None => Expression::Source {
+                    dialect: cadmpeg_ir::design::expr::ExpressionDialect::Native(
+                        NonBlankString::new("alibre")
+                            .ok_or_else(|| invalid("the dialect name is blank"))?,
+                    ),
+                    tokens: vec![cadmpeg_ir::design::expr::ExpressionToken::Text(
+                        parameter.value.to_string(),
+                    )],
+                },
             },
         };
         let owner = self
@@ -600,10 +764,13 @@ impl Projection<'_> {
             scope: self.scope.clone(),
             owner,
             name: NonBlankString::new(parameter.name.clone()),
-            kind: ValueKind::Quantity(quantity),
-            unit: Some(unit),
+            kind,
+            unit,
             definition: ParameterDefinition::Expression(definition),
-            value: Some(ParameterValue::Number(value)),
+            value: Some(match parameter.kind {
+                ParameterKind::Integer(number) => ParameterValue::Integer(number),
+                _ => ParameterValue::Number(value),
+            }),
             display: diameter.then_some(DimensionDisplay::Diameter),
             tolerance: None,
             decimals: None,
@@ -758,6 +925,17 @@ pub(crate) fn project(
     for (at, parameter) in history.parameters.iter().enumerate() {
         parameters.push(projection.parameter(at, parameter)?);
     }
+    for (at, parameter) in history.parameters.iter().enumerate() {
+        if let Some(equation) = &parameter.equation {
+            if projection.equation(at, parameter).is_none() {
+                notes.push(AlibreLossCode::HistoryParameterEquationUnmapped.note(format!(
+                    "parameter {} states the equation {equation:?}, which is not translated; the parameter keeps its value",
+                    parameter.name
+                )));
+            }
+        }
+    }
+    let rule = projection.sheet_metal_rule(definition, &mut notes)?;
     let timeline: ContainerId = mint("container", "timeline")?;
     let members = features
         .iter()
@@ -779,6 +957,7 @@ pub(crate) fn project(
     ir.design.sketch_entities.extend(sketch_entities);
     ir.design.sketch_constraints.extend(sketch_constraints);
     ir.design.parameters.extend(parameters);
+    ir.design.sheet_metal_rules.extend(rule);
     ir.design.features.extend(features);
     ir.design.containers.push(Container::Ordered {
         id: timeline.clone(),

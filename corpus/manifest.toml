@@ -2373,6 +2373,32 @@ sha256 = "88eec89bb1339b0aa2914a491fbf04b04d27a77df1fda26eea7c4b8437e6b08f"
 notes = "Square loft to a circle: two planes and four spline faces on skinning surfaces. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
 
 [[file]]
+filename = "alibre/smp_box.AD_SMP"
+format = "alibre"
+dialect = "alibre:cfb-acis-binary"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-27"
+license = "CC0-1.0"
+sha256 = "2c59fb42c87dfd04875a8ad95fa7a20d0594d308525482bbba21893a894b7d2e"
+notes = "Sheet-metal part, one 20 x 30 mm rectangle extruded 1.5 mm: six planar faces, volume 900 mm3, thickness 1 mm, K-factor 0.33. Authored by the repository owner from a blank sheet-metal part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
+filename = "alibre/smp_box.stp"
+format = "step"
+dialect = "step:ap214"
+author = "cadmpeg project contributors"
+authoring_app = "Alibre Design Expert"
+authoring_app_version = "28.1.1"
+generator = "alibre/scrub_cc0.py"
+acquisition_date = "2026-11-27"
+license = "CC0-1.0"
+sha256 = "98b7e7243a6475bc0ef451d5f84cb76fd9f53c6637a4a75008569d64bc937ce1"
+notes = "Sheet-metal part, one 20 x 30 mm rectangle extruded 1.5 mm: six planar faces, volume 900 mm3. Alibre-exported STEP twin of the part. Authored by the repository owner from a blank sheet-metal part through the Alibre Design API; CC0-1.0. The ACIS key string in SAB_DATA, the repository GUID in VERSION and all local times (normalised to UTC) were overwritten in place at the same length."
+
+[[file]]
 filename = "ironcad/Block_ACIS_100x50x20.ics"
 format = "ironcad"
 dialect = "ironcad:cfb"

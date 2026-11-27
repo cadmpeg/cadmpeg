@@ -70,13 +70,13 @@ This document uses ASD-STE100 Simplified Technical English.
 
 ## 3. Documents other than parts
 
-### ALB-04. Assemblies and sheet metal
+### ALB-04. Assemblies
 
-**Question.** How do `.AD_ASM` assemblies and sheet-metal parts store their geometry?
+**Question.** How do `.AD_ASM` assemblies store their geometry?
 
-**Known.** An assembly file holds the streams `STEP_DATA`, `CONSTITUENTS`, `PROP_DATA`, `VERSION`, `GLOBAL_PARAMETER_DATA_CACHE`, and `LIGHT_CONFIGURATION_DATA`, and holds no `SAB_DATA` stream. The decoder does not claim these files.
+**Known.** An assembly file holds the streams `STEP_DATA`, `CONSTITUENTS`, `PROP_DATA`, `VERSION`, `GLOBAL_PARAMETER_DATA_CACHE`, and `LIGHT_CONFIGURATION_DATA`, and holds no `SAB_DATA` stream. The decoder does not claim these files. A sheet-metal part stores the same streams as a part, and its settings are parameters (`alibre.md` §4.4.1). The sheet-metal features that a flange or a bend adds are not read; a part with one flange would show their entities.
 
-**Need.** An assembly of two parts with a known placement, and a part with one flange, with the `CONSTITUENTS` stream and the sheet-metal entities compared.
+**Need.** An assembly of two parts with a known placement, with the `CONSTITUENTS` stream compared.
 
 ### ALB-05. Entity base integers
 

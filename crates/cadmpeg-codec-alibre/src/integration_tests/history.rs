@@ -20,7 +20,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::report::Severity;
 
-use super::{decode, BOX, BOX_HOLE, CONE, CYLINDER, CYLINDER_FILLET, LOFT};
+use super::{decode, BOX, BOX_HOLE, CONE, CYLINDER, CYLINDER_FILLET, LOFT, SMP_BOX};
 use crate::loss::AlibreLossCode;
 
 const TOLERANCE_MM: f64 = 1.0e-9;
@@ -437,6 +437,142 @@ fn a_step_data_stream_that_does_not_read_keeps_the_body_and_charges_the_history(
     assert!(has_loss(&result, AlibreLossCode::HistoryStreamUnread));
 }
 
+#[test]
+fn a_sheet_metal_part_states_its_rule() {
+    use cadmpeg_ir::design::ops::sheet_metal::BendAllowance;
+    let result = decode(SMP_BOX);
+    let ir = result.ir();
+    let [rule] = ir.design.sheet_metal_rules.as_slice() else {
+        panic!("one rule");
+    };
+    assert_eq!(rule.scope, ir.model.product_definitions[0].id);
+    assert_eq!(rule.id.as_str(), "alibre:step:sheet-metal-rule#201");
+    assert_eq!(
+        rule.native_ref.as_deref(),
+        Some("alibre:step:parameter#201")
+    );
+    let Some(Dimension::Parameter(thickness)) = &rule.thickness else {
+        panic!("a thickness bound to its parameter");
+    };
+    close(parameter(ir, thickness), 1.0);
+    let Some(Dimension::Parameter(radius)) = &rule.bend.radius else {
+        panic!("a radius bound to its parameter");
+    };
+    close(parameter(ir, radius), 0.5);
+    let Some(BendAllowance::KFactor(Dimension::Parameter(factor))) = &rule.allowance else {
+        panic!("a K-factor bound to its parameter");
+    };
+    assert_eq!(parameter(ir, factor), 0.33);
+    let relief = rule.bend.relief.as_ref().unwrap();
+    let Some(Dimension::Parameter(depth)) = &relief.depth else {
+        panic!("a relief depth");
+    };
+    let Some(Dimension::Parameter(width)) = &relief.width else {
+        panic!("a relief width");
+    };
+    close(parameter(ir, depth), 1.0);
+    close(parameter(ir, width), 0.5);
+    let options: Vec<_> = rule.native_options.keys().map(|key| key.as_str()).collect();
+    assert_eq!(
+        options,
+        [
+            "alibre:bend-relief-type",
+            "alibre:minimum-bend-radius",
+            "alibre:minimum-rip-width"
+        ]
+    );
+}
+
+#[test]
+fn a_sheet_metal_radius_is_an_equation_of_the_thickness() {
+    use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
+    use cadmpeg_ir::design::expr::{Expression, MulOp, Node};
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+    let result = decode(SMP_BOX);
+    let ir = result.ir();
+    let named = |name: &str| {
+        ir.design
+            .parameters
+            .iter()
+            .find(|p| p.name.as_ref().map(|n| n.as_str()) == Some(name))
+            .unwrap()
+    };
+    let thickness = named("AD_Thickness");
+    let radius = named("AD_GlobalBendRadius");
+    let ParameterDefinition::Expression(Expression::Neutral(tree)) = &radius.definition else {
+        panic!("a neutral expression");
+    };
+    let Node::Product { first, rest } = &tree.0 else {
+        panic!("a product");
+    };
+    assert_eq!(
+        **first,
+        Node::Reference(ParameterRef {
+            target: RefTarget::Parameter(thickness.id.clone()),
+            through: None
+        })
+    );
+    assert!(matches!(
+        rest.as_slice(),
+        [(MulOp::Divide, Node::Number { .. })]
+    ));
+    let ParameterDefinition::Expression(Expression::Neutral(depth)) =
+        &named("AD_BendReliefDepth").definition
+    else {
+        panic!("a neutral expression");
+    };
+    assert!(matches!(depth.0, Node::Reference(_)));
+}
+
+#[test]
+fn a_sheet_metal_part_keeps_its_integer_and_unitless_parameters() {
+    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+    let result = decode(SMP_BOX);
+    let ir = result.ir();
+    let named = |name: &str| {
+        ir.design
+            .parameters
+            .iter()
+            .find(|p| p.name.as_ref().map(|n| n.as_str()) == Some(name))
+            .unwrap()
+    };
+    let kind = named("AD_BendReliefType");
+    assert_eq!(kind.kind, ValueKind::Integer);
+    assert_eq!(kind.value, Some(ParameterValue::Integer(1)));
+    let factor = named("AD_KFactor");
+    assert_eq!(factor.kind, ValueKind::Quantity(Quantity::REAL));
+    assert!(factor.unit.is_none());
+    let kinds: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.clone())
+        .collect();
+    assert!(kinds.contains(&AlibreLossCode::HistorySheetMetalSettingsUnmapped.kind()));
+    assert!(!kinds.contains(&AlibreLossCode::HistoryParameterEquationUnmapped.kind()));
+}
+
+#[test]
+fn a_plain_part_states_no_sheet_metal_rule() {
+    for (name, bytes) in super::specimens() {
+        if name != "smp_box" {
+            assert!(
+                decode(bytes).ir().design.sheet_metal_rules.is_empty(),
+                "{name}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_sheet_metal_part_has_its_base_feature_history() {
+    let result = decode(SMP_BOX);
+    let ir = result.ir();
+    assert_eq!(names(ir), expected_names(&["S1", "E1"]));
+    assert_rectangle(ir, "S1", 20.0, 30.0);
+    close(extrude_depth(ir, "E1"), 1.5);
+}
+
 mod synthetic {
     use std::collections::BTreeMap;
 
@@ -466,6 +602,7 @@ mod synthetic {
             name: name.to_owned(),
             guid: guid.map(str::to_owned),
             kind: ParameterKind::Length,
+            equation: None,
             value,
         }
     }
@@ -527,6 +664,75 @@ mod synthetic {
             ],
             losses: Vec::new(),
         }
+    }
+
+    fn sheet_metal_history(thickness: f64) -> History {
+        let mut history = history();
+        let real = |record, name: &str, value| Parameter {
+            kind: ParameterKind::Real,
+            ..parameter(record, name, None, value)
+        };
+        history.parameters.extend([
+            parameter(30, "AD_Thickness", None, thickness),
+            Parameter {
+                equation: Some("AD_Thickness/2".to_owned()),
+                ..parameter(31, "AD_GlobalBendRadius", None, thickness / 2.0)
+            },
+            real(32, "AD_KFactor", 0.4),
+        ]);
+        history
+    }
+
+    #[test]
+    fn a_part_without_the_thickness_parameter_states_no_rule() {
+        let (ir, _) = project();
+        assert!(ir.design.sheet_metal_rules.is_empty());
+    }
+
+    #[test]
+    fn the_declared_parameters_make_one_rule() {
+        let (ir, losses) = project_of(&sheet_metal_history(1.0));
+        let [rule] = ir.design.sheet_metal_rules.as_slice() else {
+            panic!("one rule");
+        };
+        assert_eq!(rule.id.as_str(), "alibre:step:sheet-metal-rule#30");
+        assert!(rule.bend.relief.is_none());
+        assert!(rule.native_options.is_empty());
+        assert!(rule.allowance.is_some());
+        assert!(!losses
+            .iter()
+            .any(|loss| loss.code == AlibreLossCode::HistorySheetMetalSettingsUnmapped.kind()));
+    }
+
+    #[test]
+    fn a_thickness_that_is_no_positive_length_states_no_rule_and_is_charged() {
+        let (ir, losses) = project_of(&sheet_metal_history(0.0));
+        assert!(ir.design.sheet_metal_rules.is_empty());
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == AlibreLossCode::HistorySheetMetalSettingsUnmapped.kind()));
+    }
+
+    #[test]
+    fn an_equation_that_is_not_translated_is_charged_and_keeps_its_value() {
+        let mut history = sheet_metal_history(1.0);
+        history.parameters[3].equation = Some("AD_Thickness+1".to_owned());
+        let (ir, losses) = project_of(&history);
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == AlibreLossCode::HistoryParameterEquationUnmapped.kind()));
+        let radius = ir
+            .design
+            .parameters
+            .iter()
+            .find(|p| p.name.as_ref().map(|n| n.as_str()) == Some("AD_GlobalBendRadius"))
+            .unwrap();
+        assert_eq!(
+            radius.value,
+            Some(ParameterValue::Number(
+                cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap()
+            ))
+        );
     }
 
     fn project() -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {

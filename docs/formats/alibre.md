@@ -1,10 +1,10 @@
-# Alibre Design part (`.AD_PRT`): Format Specification
+# Alibre Design part (`.AD_PRT`, `.AD_SMP`): Format Specification
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
 ---
 
-An Alibre Design part file is a Microsoft Compound File (CFB). The part body is an ACIS binary stream in the stream `SAB_DATA`. The decoder reads the part geometry from that stream through the shared ASM/ACIS decoders described in [`asm.md`](asm.md). Unknown fields are in [`alibre-open-items.md`](alibre-open-items.md).
+An Alibre Design part file is a Microsoft Compound File (CFB). A sheet-metal part (`.AD_SMP`) has the same streams as a part (`.AD_PRT`); the decoder detects both by the streams and not by the file extension. The part body is an ACIS binary stream in the stream `SAB_DATA`. The decoder reads the part geometry from that stream through the shared ASM/ACIS decoders described in [`asm.md`](asm.md). Unknown fields are in [`alibre-open-items.md`](alibre-open-items.md).
 
 ## 1. Container
 
@@ -72,7 +72,7 @@ The entity families are:
 - Product structure: `PRODUCT`, `PRODUCT_DEFINITION`, `DESIGNPARTCONFIGURATION`, `DESIGNWORKSPACE`, `DESIGNPART`.
 - Feature history: `DESIGNSTATE`, `DESIGNPARTSTATECONTEXT`, the operation entities of §4.2, and the end-condition entities of §4.5.
 - Sketches: `DESIGNSKETCH`, `BLOCKDEFINITION`, `BLOCKPRIMITIVE`, `LINE`, `CIRCLE`, `NODEUV`, `REFERENCEPOINTUV`, `REFERENCEAXISUV`, `REFERENCECIRCLEUV`, `REFERENCEDEPENDENTUV`, `CONSTRAINTPAIRUV`, `CONSTRAINTCONTEXTUV`.
-- Parameters and dimensions: `DOUBLEPARAMETER`, `ANGLEPARAMETER`, `ANGLEUV`, `PARAMETERTABLE`, `MEASUREMENT`, `LINEARDIMENSION`, `DESIGNDIMENSION`, `DIMENSIONANNOTATION`.
+- Parameters and dimensions: `DOUBLEPARAMETER`, `INTEGERPARAMETER`, `ANGLEPARAMETER`, `ANGLEUV`, `PARAMETERTABLE`, `MEASUREMENT`, `LINEARDIMENSION`, `DESIGNDIMENSION`, `DIMENSIONANNOTATION`.
 - Document profile: `PROFILE` with `INTEGERVALUEPAIR`, `REALVALUEPAIR`, `STRINGVALUEPAIR`, `BOOLEANVALUEPAIR`, `MEASUREMENTFORMATPAIR`, `FONTDESCRIPTIONPAIR`, and `HATCHPATTERNPAIR` entities.
 
 ### 4.1 Geometry entities
@@ -135,7 +135,26 @@ The reference entities of a primitive are:
 
 ### 4.4 Parameters
 
-`DOUBLEPARAMETER` holds the name (0), a GUID or null (2), and the value (11) in centimetres. `ANGLEPARAMETER` holds the name (0), a GUID or null (2), and the `ANGLEUV` of the value (11), whose attribute 0 is the angle in radians. `PARAMETERTABLE` attribute 0 lists the parameters of the part. A parameter name starts with `D` for a distance, `R` for a radius, and `A` for an angle.
+`DOUBLEPARAMETER` holds the name (0), the equation text or the empty string (1), a GUID or null (2), the unit code (5), and the value (11). The unit code is 0 for a length, and the value is in centimetres; the unit code 3 is a unitless real, and its value is unscaled. `INTEGERPARAMETER` holds the same attributes, with the unit code 2 and an integer value (11). `ANGLEPARAMETER` holds the name (0), a GUID or null (2), and the `ANGLEUV` of the value (11), whose attribute 0 is the angle in radians. `PARAMETERTABLE` attribute 0 lists the parameters of the part. A parameter name starts with `D` for a distance, `R` for a radius, and `A` for an angle.
+
+An equation is the name of another parameter, optionally followed by `/` or `*` and a positive number, for example `AD_Thickness/2`. The value (11) is the evaluated equation.
+
+### 4.4.1 Sheet-metal parameters
+
+A sheet-metal part (`.AD_SMP`) holds its sheet-metal settings as parameters of the `PARAMETERTABLE`, in the part's own `STEP_DATA`:
+
+| Parameter | Entity | Meaning |
+|---|---|---|
+| `AD_Thickness` | `DOUBLEPARAMETER` | The sheet thickness. |
+| `AD_GlobalBendRadius` | `DOUBLEPARAMETER` | The default bend radius; the equation is `AD_Thickness/2` by default. |
+| `AD_MinimumBendRadius` | `DOUBLEPARAMETER` | The least bend radius; the equation is `AD_Thickness/2` by default. |
+| `AD_BendReliefDepth` | `DOUBLEPARAMETER` | The bend relief depth; the equation is `AD_Thickness` by default. |
+| `AD_BendReliefWidth` | `DOUBLEPARAMETER` | The bend relief width; the equation is `AD_Thickness/2` by default. |
+| `AD_MINIMUM_RIP_WIDTH` | `DOUBLEPARAMETER` | The least rip width. |
+| `AD_KFactor` | `DOUBLEPARAMETER` with unit code 3 | The unitless K-factor of the bend allowance. |
+| `AD_BendReliefType` | `INTEGERPARAMETER` | The bend relief type code. |
+
+A part with a parameter named `AD_Thickness` is a sheet-metal part, and a part without one is not.
 
 ### 4.5 End conditions and holes
 
@@ -150,4 +169,4 @@ An extrusion starts on the sketch plane and ends at the depth along the sketch n
 
 ### 4.6 Decode
 
-The decoder reads one feature for each state in state order and maps it to the design layer of the IR: the origin, axes, and planes to datums, an associated plane to an offset plane, a sketch to a placed sketch with its line, circle, and point entities, and the extrusion, revolution, fillet, hole, and loft to their operations. A parameter is a design parameter in millimetres or radians, and an operation refers to it by dimension. The decoder converts centimetres to millimetres. A hole takes every point primitive of its sketch as a centre, and a hole whose sketch has no point is reported by `alibre/history.hole-position-unresolved` with the feature name. A parameter GUID is the source setting `alibre:guid` of the design parameter. The decode reports `alibre/history.edge-selection-unresolved` for the topology signatures of a fillet, `alibre/history.face-selection-unresolved` for a sketch on a face, `alibre/history.dimension-annotation-unmapped` for the dimension list of an extrusion or revolution, `alibre/history.direction-flag-assumed` for the logical of a blind end condition, and the other `alibre/history.*` codes for records that no feature maps. The remaining entities of the document profile are in `alibre/history.presentation-unmapped`. A state that does not read is reported by one `alibre/history.state-unread` with the count and the first examples, and the features that read are kept; the features that depend on an unread state are unread too. A `STEP_DATA` stream that does not read as Part 21, whose state list does not read, or whose history does not project, leaves the body intact and reports `alibre/history.stream-unread`; a resource limit still refuses the decode.
+The decoder reads one feature for each state in state order and maps it to the design layer of the IR: the origin, axes, and planes to datums, an associated plane to an offset plane, a sketch to a placed sketch with its line, circle, and point entities, and the extrusion, revolution, fillet, hole, and loft to their operations. A parameter is a design parameter in millimetres, radians, or unitless, or an integer parameter, and an operation refers to it by dimension. A parameter whose equation is a parameter name, optionally scaled by `/` or `*` and a positive number, has that neutral expression, with a reference to the named parameter; the value is the cached value. Any other equation is reported by `alibre/history.parameter-equation-unmapped`, and the parameter keeps its value. The decoder converts centimetres to millimetres. A hole takes every point primitive of its sketch as a centre, and a hole whose sketch has no point is reported by `alibre/history.hole-position-unresolved` with the feature name. A parameter GUID is the source setting `alibre:guid` of the design parameter. A part with an `AD_Thickness` parameter has one sheet-metal rule in its design: the rule's scope is the root product definition, its id is `alibre:step:sheet-metal-rule#` and the record number of `AD_Thickness`, and its thickness, bend radius (`AD_GlobalBendRadius`), relief width and depth, and K-factor allowance are bound to the design parameters of those names. The minimum bend radius, the minimum rip width, and the relief type are the native options `alibre:minimum-bend-radius`, `alibre:minimum-rip-width`, and `alibre:bend-relief-type` of the rule, bound to their parameters. The relief type code has no mapped relief shape, and `alibre/history.sheet-metal-settings-unmapped` reports it; the same code reports a sheet-metal parameter that is no positive length. A part without an `AD_Thickness` parameter has no rule. The decode reports `alibre/history.edge-selection-unresolved` for the topology signatures of a fillet, `alibre/history.face-selection-unresolved` for a sketch on a face, `alibre/history.dimension-annotation-unmapped` for the dimension list of an extrusion or revolution, `alibre/history.direction-flag-assumed` for the logical of a blind end condition, and the other `alibre/history.*` codes for records that no feature maps. The remaining entities of the document profile are in `alibre/history.presentation-unmapped`. A state that does not read is reported by one `alibre/history.state-unread` with the count and the first examples, and the features that read are kept; the features that depend on an unread state are unread too. A `STEP_DATA` stream that does not read as Part 21, whose state list does not read, or whose history does not project, leaves the body intact and reports `alibre/history.stream-unread`; a resource limit still refuses the decode.
