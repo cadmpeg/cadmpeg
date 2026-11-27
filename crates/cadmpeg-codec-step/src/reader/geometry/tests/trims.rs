@@ -622,3 +622,38 @@ fn trimmed_curve_reports_a_fallback_when_the_preferred_form_is_absent() {
         1
     );
 }
+
+#[test]
+fn a_trimmed_surface_whose_construction_fails_is_one_unknown_carrier() {
+    let source = "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=CYLINDRICAL_SURFACE('',#4,2.);
+#6=RECTANGULAR_TRIMMED_SURFACE('trim',#5,6.283185307179586,0.,1.,3.,.T.,.T.);
+#7=GEOMETRIC_SET('',(#6));
+#8=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#7),#9);
+#9=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));";
+    let decoded = decode_inline(source);
+    let carriers: Vec<_> = decoded
+        .ir()
+        .geometry
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id.as_str() == "step:data:surface#6")
+        .collect();
+    assert_eq!(carriers.len(), 1, "{carriers:?}");
+    assert!(
+        matches!(
+            carriers[0].geometry,
+            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        ),
+        "{:?}",
+        carriers[0].geometry
+    );
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != cadmpeg_ir::unknown::part::record_unreadable_kind()));
+}
