@@ -56,8 +56,9 @@ pub(super) fn projection(
 
 /// `projection` with its active configuration reconciled with `features`,
 /// and `features` with the suppression that the active configuration gives
-/// them, as the decoder reconciles both. A reconciliation that fails leaves
-/// both as they are.
+/// them, as the decoder reconciles both. The features state their own
+/// suppression, so the reconciliation infers none from their scopes. A
+/// reconciliation that fails leaves both as they are.
 pub(super) fn reconciled(
     projection: Projection,
     features: &mut [Feature],
@@ -74,6 +75,7 @@ pub(super) fn reconciled(
     match crate::design::configurations::reconcile_active_configurations(
         &mut reconciled,
         &mut configurations,
+        &BTreeSet::new(),
     ) {
         Ok(()) => {
             features.clone_from_slice(&reconciled);

@@ -10,7 +10,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::unknown::part::GivenUpPart;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod json;
 
@@ -446,7 +446,13 @@ pub(crate) fn attach(
         "Configuration projection",
     )?
     .unwrap_or_default();
-    reconcile_active_configurations(&mut model.features, &mut configurations)?;
+    let unstored = native
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| scope.tail_flags.is_none() && scope.companion_suppressed.is_none())
+        .map(crate::ids::neutral_feature_id)
+        .collect();
+    reconcile_active_configurations(&mut model.features, &mut configurations, &unstored)?;
     model.configurations = configurations;
     Ok(())
 }
@@ -454,13 +460,17 @@ pub(crate) fn attach(
 /// Make the active configurations and the current feature states agree where
 /// the source leaves one of them silent. A table lists only the features it
 /// toggles, so a suppressed feature with no row keeps that state in the active
-/// row. A Sketch scope's state identities do not decide its suppression, and a
-/// feature can have no stored state, so the active row supplies it. A row with
+/// row. The active row supplies the state of a feature whose records do not
+/// decide it (f3d.md §1.2): a Sketch, whose state identities do not decide its
+/// suppression, a feature with no state, and a feature of `unstored`, whose
+/// scope tail stores no feature item state and no Thread companion
+/// suppression flag, so that feature projection infers its state. A row with
 /// a suppression column that names no feature could name the feature that
 /// gained a row, so that row records the assumption in a property.
 pub(crate) fn reconcile_active_configurations(
     features: &mut [cadmpeg_ir::features::Feature],
     configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
+    unstored: &BTreeSet<cadmpeg_ir::features::FeatureId>,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -471,17 +481,17 @@ pub(crate) fn reconcile_active_configurations(
             .any(|key| key.as_str().starts_with("suppressed:"));
         for feature in features.iter_mut() {
             match configuration.feature_states.get(&feature.id) {
-                Some(state) if state.evaluation.is_suppressed() => {
+                Some(state) => {
                     let undecided = feature.suppressed.is_none()
+                        || unstored.contains(&feature.id)
                         || matches!(
                             feature.evaluation.definition(),
                             FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
                         );
                     if undecided {
-                        feature.suppressed = Some(true);
+                        feature.suppressed = Some(state.evaluation.is_suppressed());
                     }
                 }
-                Some(_) => {}
                 None => {
                     if feature.suppressed == Some(true) {
                         configuration

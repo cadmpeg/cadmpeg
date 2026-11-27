@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 
 use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
@@ -23,6 +24,7 @@ use crate::records::configuration::table::ConfiguredValue;
 use crate::records::configuration::{
     DesignConfiguration, DesignConfigurationActiveRow, DesignConfigurationKind,
 };
+use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, neutral_feature, object_target, property_target, scope,
     string_cell, table_document, Natives,
@@ -349,16 +351,22 @@ fn a_feature_the_written_active_row_suppresses_is_charged() {
             assert_eq!(losses.len(), 1, "{state:?} {change:?}: {losses:#?}");
             let (code, message) = &losses[0];
             assert_eq!(code, "export/value.unwritable");
+            let decided = matches!(state, State::Decided);
+            let row = if decided {
+                "the active row states"
+            } else {
+                "reads back"
+            };
             assert!(
                 message.contains(&format!(
-                    "{} stated {{\"kind\":\"active\",\"outputs\":[]}}, reads back {{\"kind\":\"suppressed\"}}",
+                    "{} stated {{\"kind\":\"active\",\"outputs\":[]}}, {row} {{\"kind\":\"suppressed\"}}",
                     feature.id
                 )),
                 "{state:?} {change:?}: {losses:#?}"
             );
             assert_eq!(
                 message.contains("the active row of the written configuration table states"),
-                matches!(state, State::Decided),
+                decided,
                 "{state:?} {change:?}: {message}"
             );
         }
@@ -378,11 +386,38 @@ fn a_feature_the_decoder_suppressed_with_the_active_row_is_not_charged() {
         })
         .unwrap();
     let mut decoded = project(&documents, &natives.targets()).unwrap();
-    reconcile_active_configurations(&mut natives.neutral_features, &mut decoded.configurations)
-        .unwrap();
+    reconcile_active_configurations(
+        &mut natives.neutral_features,
+        &mut decoded.configurations,
+        &BTreeSet::new(),
+    )
+    .unwrap();
     assert_eq!(natives.neutral_features[0].suppressed, Some(true));
     let (written, losses) = write(&documents, &decoded, &decoded.configurations, &natives);
     assert!(matches!(written.documents, Cow::Borrowed(_)));
+    assert!(losses.is_empty(), "{losses:#?}");
+}
+
+/// The Base Feature of column `F`, whose scope stores no suppression and
+/// which feature projection infers active, decoded under active row `tall`,
+/// which suppresses it: the decoder gives it the row's state, and an
+/// unedited write is not charged.
+#[test]
+fn an_unedited_feature_whose_state_the_active_row_supplies_is_not_charged() {
+    let mut natives = natives();
+    natives.scopes[0] =
+        DesignParameterScope::empty(&natives.scopes[0].id, DesignFeatureKind::BaseFeature, 314);
+    natives.neutral_features[0] = neutral_feature(&natives.scopes[0], "f3d:model:feature#sketch");
+    assert_eq!(natives.neutral_features[0].suppressed, Some(false));
+    let documents = active_in_source("tall");
+    let configurations = natives.attach(&documents);
+    assert_eq!(natives.neutral_features[0].suppressed, Some(true));
+    let decoded = Projection {
+        configurations,
+        ..project(&documents, &natives.targets()).unwrap()
+    };
+    let (unchanged, losses) = charged(&natives, &documents, &decoded, &decoded.configurations);
+    assert!(unchanged);
     assert!(losses.is_empty(), "{losses:#?}");
 }
 
@@ -419,7 +454,7 @@ fn a_feature_edited_against_an_unchanged_active_row_is_charged_as_a_moved_row() 
     assert_eq!(edited_losses[0].0, "export/value.unwritable");
     assert!(
         edited_losses[0].1.contains(&format!(
-            "{feature} stated {{\"kind\":\"active\",\"outputs\":[]}}, reads back {{\"kind\":\"suppressed\"}}"
+            "{feature} stated {{\"kind\":\"active\",\"outputs\":[]}}, the active row states {{\"kind\":\"suppressed\"}}"
         )),
         "{edited_losses:#?}"
     );
@@ -646,6 +681,7 @@ fn an_inferred_state_of_an_unedited_active_row_is_not_charged() {
     reconcile_active_configurations(
         &mut natives.neutral_features.clone(),
         &mut decoded.configurations,
+        &BTreeSet::new(),
     )
     .unwrap();
     let tall = decoded
@@ -704,6 +740,7 @@ fn reconciled(
     reconcile_active_configurations(
         &mut natives.neutral_features.clone(),
         &mut decoded.configurations,
+        &BTreeSet::new(),
     )
     .unwrap();
     decoded
@@ -772,7 +809,7 @@ fn moving_the_active_row_is_charged_where_the_features_contradict_the_row() {
     assert_eq!(losses[0].0, "export/value.unwritable");
     assert!(
         losses[0].1.contains(&format!(
-            "{feature} stated {{\"kind\":\"suppressed\"}}, reads back {{\"kind\":\"active\""
+            "{feature} stated {{\"kind\":\"suppressed\"}}, the active row states {{\"kind\":\"active\""
         )),
         "{losses:#?}"
     );

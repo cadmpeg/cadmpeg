@@ -11,7 +11,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, value_unwritable};
 use cadmpeg_ir::features::parameters::{
-    ConfigurationFeatureState, DesignConfiguration as Configuration, ParameterValue,
+    ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as Configuration,
+    ParameterValue,
 };
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -165,7 +166,15 @@ impl Written<'_> {
                 let row = &active_states.get(&feature.id)?.evaluation;
                 let current = feature.configuration_state().evaluation;
                 (row.is_suppressed() != current.is_suppressed()).then(|| {
-                    Difference::of(feature.id.to_string(), Some(&current), Some(row)).to_string()
+                    let shown = |state: &ConfigurationEvaluation| {
+                        serde_json::to_string(state).unwrap_or_default()
+                    };
+                    format!(
+                        "{} stated {}, the active row states {}",
+                        feature.id,
+                        shown(&current),
+                        shown(row)
+                    )
                 })
             }),
         ));
