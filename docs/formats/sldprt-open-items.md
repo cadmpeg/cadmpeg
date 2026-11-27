@@ -1445,6 +1445,14 @@ The other axis-parallel support frames include the frames of those families whos
 
 **Need.** A sketch with two points on no common axis, dimensioned three times with point-to-point dimensions placed aligned, horizontal and vertical, saved, and the three relation objects and their `moDisplayDistanceDim_c` display objects compared, together with a second save in which a point marker is added before the dimensioned points.
 
+### DI-96. The state after a feature whose records name two marks, and the tree order against the mark order
+
+**Question.** Which state of the main line is the state after a feature whose `moPMarkRecord_c` records name two marks of the main line, and which order of the feature tree holds where the order of the feature elements of `Keywords` differs from the order of the features' marks on the main line?
+
+**Known.** A record's features run from the nearest named object before it back to its holder (`sldprt.md` §3.4). A feature can hold records that name two different marks of the main line. The marks of the records follow the main line in stream order. The feature elements of `Keywords`, with each feature after the features it depends on, can place a feature after a feature whose record names a mark nearer the current mark. The decoder leaves the states after the features of such a record unread and charges `history.states-unread`.
+
+**Need.** A part with three boss extrusions on independent sketches, saved, and saved again after the third extrusion is moved before the second in the feature tree, with the `Keywords` order and the marks of the three records compared in the two saves. A part with a hole-wizard hole on a face of a boss extrusion, saved, with the marks of every record of the hole compared to the marks of the main line.
+
 ## 8. Edited parts
 
 ### DR-1062. The edits a stored part can hold

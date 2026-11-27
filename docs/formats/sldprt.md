@@ -2558,6 +2558,14 @@ The records follow the order of their features. A record's feature is the innerm
 
 A feature that holds no record sets no mark. Where such a feature lies after the feature at the current mark and before the first unbuilt feature that is not suppressed (or the end of the tree), the marks do not place the bar before or after it.
 
+The deltas transmit also stores the states before the current mark. The deltas of the main line, applied from the current mark back, give the node set of the state at each earlier mark of the main line (`parasolid.md`). The state at the mark of a record is the state after one feature of the record:
+
+- The features of a record are the named objects with an object id before the record, from the nearest back to the first feature that changes the state, its holder. A named object whose history record is no feature of the timeline is a part of the holder. A feature that does not change the state, such as a sketch or a datum, and a cosmetic thread come inside the feature that they belong to.
+- The state at the mark is the state after the last feature of the record, in the timeline, that changes the state.
+- An imported body (`moBaseBody_c`) has no state of its own: its bodies merge into the delta of the next feature.
+
+A later record names the same mark as an earlier record or a mark nearer the current mark.
+
 ## 4. Typed topology records
 
 Primary ownership chain:

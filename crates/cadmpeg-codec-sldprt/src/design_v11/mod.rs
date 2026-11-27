@@ -36,6 +36,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
@@ -52,6 +53,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitio
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchEntityId;
 
+use crate::container::ContainerScan;
 use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
 use crate::resolved_features::assembly::ConfigurationMaps;
@@ -88,6 +90,9 @@ pub(crate) struct Part<'a> {
     pub(crate) outside_profile: &'a HashSet<SketchEntityId>,
     /// The native ids of the configurations whose partition was given up.
     pub(crate) given_up_configurations: &'a BTreeSet<String>,
+    /// The container whose partitions store the states between features,
+    /// where the decode reads the partitions.
+    pub(crate) scan: Option<&'a ContainerScan<'a>>,
 }
 
 /// What [`project`] stated.
@@ -100,6 +105,9 @@ pub(crate) struct Projection {
     /// configuration whose state holds each. They are no part of the current
     /// geometry (§5.5).
     pub(crate) retired: BTreeMap<String, ConfigurationId>,
+    /// The annotations of the records of the deltas of the states between
+    /// features.
+    pub(crate) annotations: Annotations,
 }
 
 /// Project the design of a part document into `ir.design`, beside its v10
@@ -128,6 +136,7 @@ pub(crate) fn project(
         rollback,
         outside_profile,
         given_up_configurations,
+        scan,
     } = part;
     let active = equations::active_slot(histories, ir.source.as_ref());
     let mut timeline = tree::timeline(histories)?;
@@ -225,7 +234,7 @@ pub(crate) fn project(
         }
     };
     let current = (!bodies.is_empty())
-        .then(|| current_state(at, bodies.clone()))
+        .then(|| current_state(at.clone(), bodies.clone()))
         .into_iter()
         .collect();
     let designed = sketches
@@ -240,21 +249,36 @@ pub(crate) fn project(
     let names = names::Names::new(persistent, histories, &timeline.features_by_record)
         .with_generators(generators);
     let table = names.entries(&ir.geometry, &bodies, |_| true);
-    let states = states::configuration_states(
-        ctx,
-        ir,
-        &states::Scope {
-            definition: &definition,
-            timeline: &id,
-            features: &timeline.features,
-            configurations: &configurations.records,
-            active: configurations.active.as_ref(),
-            current: &bodies,
-            given_up: given_up_configurations,
-        },
-        &names,
-        losses,
-    )?;
+    let scope = states::Scope {
+        definition: &definition,
+        timeline: &id,
+        features: &timeline.features,
+        configurations: &configurations.records,
+        active: configurations.active.as_ref(),
+        current: &bodies,
+        given_up: given_up_configurations,
+    };
+    let states = states::configuration_states(ctx, ir, &scope, &names, losses)?;
+    let between = match scan {
+        Some(scan) => states::between::states(
+            ctx,
+            ir,
+            &scope,
+            &states::between::Latest {
+                at: &at,
+                names: &table,
+                evaluations: &states.evaluations,
+            },
+            &names,
+            &states::between::Sources {
+                scan,
+                histories,
+                lanes,
+            },
+            losses,
+        )?,
+        None => states::between::Between::default(),
+    };
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
@@ -273,7 +297,9 @@ pub(crate) fn project(
         + configurations.records.len()
         + table.len()
         + states.evaluations.len()
-        + states.records;
+        + states.records
+        + between.evaluations.len()
+        + between.records;
     let mut root = ProductDefinition::root(definition.clone(), ExternalDocument::default());
     root.kind = Some(ProductDefinitionKind::Part);
     root.units = length.map(|length| UnitSystem {
@@ -301,10 +327,12 @@ pub(crate) fn project(
     ir.design.parameters.extend(parameters);
     ir.design.configurations.extend(configurations.records);
     ir.design.evaluations.extend(states.evaluations);
+    ir.design.evaluations.extend(between.evaluations);
     ir.design.names = NameTable::from(table);
     Ok(Projection {
         added,
         retired: states.retired,
+        annotations: between.annotations,
     })
 }
 

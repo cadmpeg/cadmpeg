@@ -37,6 +37,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 mod digest_partition;
+pub(crate) mod replayed_states;
 mod retention;
 pub(crate) mod retired_states;
 
@@ -4800,6 +4801,7 @@ fn build_geometry_ir(
                 rollback,
                 outside_profile: &outside_profile,
                 given_up_configurations: &given_up_configurations,
+                scan: Some(&*scan),
             },
             &mut pmi_losses,
         )?;
@@ -4839,6 +4841,7 @@ fn project_design(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut retired = std::collections::BTreeMap::new();
+    let mut between = Annotations::default();
     cadmpeg_ir::design::projection::project_layer(ctx, "sldprt", ir, losses, |ir, losses| {
         let projection = crate::design_v11::project(ctx, ir, part, losses)?;
         ctx.charge_entities(
@@ -4846,9 +4849,11 @@ fn project_design(
             "admit SLDPRT design records",
         )?;
         retired = projection.retired;
+        between = projection.annotations;
         Ok(())
     })?;
     retired_states::retire(ir, annotations, unknowns, &retired, losses);
+    annotations.append(between).map_err(CodecError::from)?;
     if retired.is_empty() {
         return Ok(());
     }
@@ -5914,6 +5919,7 @@ fn build_metadata_ir(
                 rollback,
                 outside_profile: &outside_profile,
                 given_up_configurations: &given_up_configurations,
+                scan: None,
             },
             &mut pmi_losses,
         )?;

@@ -13,19 +13,17 @@
 //! A configuration whose partition is not stored charges a loss that names
 //! it.
 //!
-//! The states between features are deferred to unit `SW2b`, which builds on
-//! the Parasolid reader's delta replay (unit PS-R, #1634). The replay is
-//! established: a partition's Deltas stream replays as data, mark by mark
-//! along the main line, to the node set of every earlier state (§3.1, Stored
-//! states). What is not yet established is the join of a feature to its
-//! mark; the first word of a feature's `moPMarkRecord_c` matching a PMARK id
-//! of the chain is the candidate. Once both hold, a state joined to a feature
-//! is the state after it,
-//! `of: State(After(feature))`, its records those the partition's builder
-//! makes of that node set and its names those of [`Names::entries`], based on
-//! the next later stored state and the last one on `Current` (§5.4). Until
-//! then a state between two features has no evaluation, which §5.4 reads as
-//! not read.
+//! The states between features are in [`between`]. A configuration's
+//! partition stores them as its Deltas stream, which replays mark by mark
+//! along the main line to the node set of every earlier state (§3.1, Stored
+//! states). The first word of a feature's `moPMarkRecord_c` is the PMARK id
+//! of the mark set after it. A state joined to a feature is the state after
+//! it, `of: State(After(feature))`: its records those the partition's
+//! builder makes of that node set, its names those of [`Names::entries`],
+//! and its base the next later stated state, the last one on the
+//! configuration's latest state (§5.4). A stored state that is not stated
+//! has no evaluation, which §5.4 reads as not read, and charges a loss of
+//! its configuration.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -48,6 +46,8 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::{EntityKind, EntitySchema};
 
 use super::names::Names;
+
+pub(super) mod between;
 use crate::loss::SldprtLossCode;
 
 /// The scope whose configurations' states are stated.

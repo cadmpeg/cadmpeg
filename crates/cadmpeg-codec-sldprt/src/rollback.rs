@@ -147,9 +147,9 @@ impl std::fmt::Display for Unread {
 /// A `moPMarkRecord_c` found by its class tag: where its body starts and the
 /// mark it names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MarkRecord {
-    at: usize,
-    mark: u32,
+pub(crate) struct MarkRecord {
+    pub(crate) at: usize,
+    pub(crate) mark: u32,
 }
 
 /// Where the class index of `moPMarkRecord_c` comes from.
@@ -163,7 +163,7 @@ enum MarkClass {
 
 /// The current mark and the main line back from it, current first.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct MarkChain {
+pub(crate) struct MarkChain {
     current: u32,
     main: Vec<u32>,
 }
@@ -195,8 +195,46 @@ pub(crate) fn read(
     let Some(chain) = mark_chain(&records) else {
         return Ok(Reading::Unread(Unread::NoCurrentMark));
     };
-    let Some(configuration) = site.section.name().and_then(configuration_stream) else {
+    let Some(partition) = site.section.name() else {
         return Ok(Reading::Unread(Unread::NoFeatureStreams));
+    };
+    let marks = match site_marks(ctx, scan, partition, &chain)? {
+        Ok(marks) => marks,
+        Err(unread) => return Ok(Reading::Unread(unread)),
+    };
+    if marks.inferred {
+        losses.push(mark_class_inferred(&marks.configuration));
+    }
+    let owners = owners
+        .get(&marks.configuration.to_ascii_lowercase())
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    Ok(join(&chain, &marks.records, owners))
+}
+
+/// The `moPMarkRecord_c` records of one configuration.
+pub(crate) struct SiteMarks<'s> {
+    /// The configuration's `Contents/Config-<N>` stream name.
+    pub(crate) configuration: String,
+    /// The configuration's `ResolvedFeatures` stream.
+    pub(crate) resolved: &'s [u8],
+    /// The records, in stream order.
+    pub(crate) records: Vec<MarkRecord>,
+    /// The class index comes from the token scan.
+    pub(crate) inferred: bool,
+}
+
+/// The `moPMarkRecord_c` records of the configuration whose partition
+/// section is named `partition`, and whose deltas transmit has the main line
+/// `chain`.
+pub(crate) fn site_marks<'s>(
+    ctx: &DecodeContext<'_>,
+    scan: &'s ContainerScan<'_>,
+    partition: &str,
+    chain: &MarkChain,
+) -> Result<Result<SiteMarks<'s>, Unread>, CodecError> {
+    let Some(configuration) = configuration_stream(partition) else {
+        return Ok(Err(Unread::NoFeatureStreams));
     };
     let section = |name: &str| {
         scan.sections()
@@ -211,31 +249,32 @@ pub(crate) fn read(
         section(&configuration),
         section(&format!("{configuration}{RESOLVED_FEATURES_SUFFIX}")),
     ) else {
-        return Ok(Reading::Unread(Unread::NoFeatureStreams));
+        return Ok(Err(Unread::NoFeatureStreams));
     };
     let count = crate::archive::resolved_count(resolved);
     let map = match count {
         Some(count) => crate::archive::class_index_map(config, count, ctx)?,
         None => None,
     };
-    let index = match mark_class_index(map.as_ref(), count, resolved, &chain) {
-        Ok(MarkClass::Mapped(index)) => index,
-        Ok(MarkClass::Scanned(index)) => {
-            losses.push(
-                SldprtLossCode::HistoryRollbackMarkClassInferred.note(format!(
-                    "The {MARK_CLASS} class of {configuration} is the class token whose records \
-                 name the most main-line marks; the configuration's class map does not state it."
-                )),
-            );
-            index
-        }
-        Err(unread) => return Ok(Reading::Unread(unread)),
+    let (index, inferred) = match mark_class_index(map.as_ref(), count, resolved, chain) {
+        Ok(MarkClass::Mapped(index)) => (index, false),
+        Ok(MarkClass::Scanned(index)) => (index, true),
+        Err(unread) => return Ok(Err(unread)),
     };
-    let owners = owners
-        .get(&configuration.to_ascii_lowercase())
-        .map(Vec::as_slice)
-        .unwrap_or_default();
-    Ok(join(&chain, &mark_records(resolved, index), owners))
+    Ok(Ok(SiteMarks {
+        records: mark_records(resolved, index),
+        configuration,
+        resolved,
+        inferred,
+    }))
+}
+
+/// The loss of a `moPMarkRecord_c` class index that the token scan gives.
+pub(crate) fn mark_class_inferred(configuration: &str) -> LossNote {
+    SldprtLossCode::HistoryRollbackMarkClassInferred.note(format!(
+        "The {MARK_CLASS} class of {configuration} is the class token whose records name the \
+         most main-line marks; the configuration's class map does not state it."
+    ))
 }
 
 /// The `Contents/Config-<N>` stream name of a `Contents/Config-<N>-Partition`
@@ -248,7 +287,7 @@ fn configuration_stream(partition: &str) -> Option<String> {
 }
 
 /// The current mark of a deltas transmit and the main line back from it.
-fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
+pub(crate) fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
     let mut current = None;
     let mut marks = BTreeMap::<u32, PmarkState>::new();
     for event in records.events() {

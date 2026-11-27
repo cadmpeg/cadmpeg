@@ -121,6 +121,9 @@ pub(crate) enum SldprtLossCode {
     HistoryIncompleteReferences,
     /// The stored marks do not fix the rollback position of the feature tree.
     HistoryRollbackUnread,
+    /// A configuration stores states between features that its states
+    /// between features do not state.
+    HistoryStatesUnread,
     /// The `moPMarkRecord_c` class index of a configuration is the class
     /// token whose records name the most main-line marks.
     HistoryRollbackMarkClassInferred,
@@ -706,6 +709,7 @@ impl SldprtLossCode {
         Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
         Self::HistoryRollbackUnread,
+        Self::HistoryStatesUnread,
         Self::HistoryRollbackMarkClassInferred,
         Self::HistoryUnread,
         Self::HistoryApplicationNotTransferred,
@@ -944,6 +948,7 @@ impl SldprtLossCode {
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
             Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryStatesUnread => "history.states-unread",
             Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
             Self::HistoryUnread => "history.unread",
             Self::HistoryApplicationNotTransferred => "history.application-not-transferred",
@@ -1270,6 +1275,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
             | Self::HistoryRollbackUnread
+            | Self::HistoryStatesUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -1608,6 +1614,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
             | Self::HistoryRollbackUnread
+            | Self::HistoryStatesUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -1885,6 +1892,7 @@ mod tests {
                 "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
                 "history.rollback-unread",
+                "history.states-unread",
                 "history.rollback-mark-class-inferred",
                 "history.unread",
                 "history.application-not-transferred",
