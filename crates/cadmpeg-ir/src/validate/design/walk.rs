@@ -200,6 +200,26 @@ pub(super) fn rule_picks(rule: &SelectionRule) -> impl Iterator<Item = &Picked> 
     one.into_iter().chain(many)
 }
 
+impl crate::design::feature::FeatureOperation {
+    /// Every pick that the operation's selections hold, those of its
+    /// constructions included, in walk order: listed picks, rule seeds and
+    /// the picks a rule names, cached rule results, and the limiting picks
+    /// of each domain.
+    ///
+    /// # Errors
+    ///
+    /// Returns a codec error where `ctx` refuses a nesting level.
+    pub fn picks<'a>(&'a self, ctx: &DecodeContext<'_>) -> Result<Vec<&'a Picked>, CodecError> {
+        let mut into = Collect::new(ctx);
+        self.walk(&mut into)?;
+        Ok(into
+            .selections
+            .iter()
+            .flat_map(SelectionView::picks)
+            .collect())
+    }
+}
+
 fn term_view<O: MemberOrder>(term: &RuleTerm<O>) -> TermView<'_> {
     TermView {
         rule: &term.rule,

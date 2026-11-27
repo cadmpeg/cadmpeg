@@ -8,12 +8,14 @@
 //! through the native output records and the generated-edge picks of the
 //! later features that select it.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::projection::restated::Restater;
+use cadmpeg_ir::design::selection::{Picked, Witness};
 use cadmpeg_ir::features::evaluation::{FeatureInputTopology, FeatureResultTopology};
 use cadmpeg_ir::features::selections::EdgeSelection;
 use cadmpeg_ir::features::{Feature as LegacyFeature, FeatureOperation as LegacyOperation};
@@ -33,45 +35,48 @@ pub(super) fn restate(
     ir: &mut CadIr,
     properties: &BTreeSet<String>,
 ) -> Result<(), CodecError> {
-    let typed: Vec<(&LegacyFeature, &FeatureOperation)> = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| {
-            let index = ir
-                .design
-                .features
-                .binary_search_by(|item| item.id.cmp(&feature.id))
-                .ok()?;
-            let operation = &ir.design.features[index].definition.operation;
-            (!matches!(
-                operation,
-                FeatureOperation::Native { .. } | FeatureOperation::Unresolved { .. }
-            ))
-            .then_some((feature, operation))
-        })
-        .collect();
-    let mut restated = Vec::new();
-    for input in &ir.model.feature_input_topologies {
-        let Some((feature, operation)) = typed
-            .iter()
-            .find(|(feature, _)| feature.id == input.input_of)
+    let mut typed = Vec::new();
+    for feature in &ir.model.features {
+        let Ok(index) = ir
+            .design
+            .features
+            .binary_search_by(|item| item.id.cmp(&feature.id))
         else {
             continue;
         };
-        let (references, members) = references(ctx, feature)?;
-        if !references.contains(input.id.as_str()) {
+        let operation = &ir.design.features[index].definition.operation;
+        if matches!(
+            operation,
+            FeatureOperation::Native { .. } | FeatureOperation::Unresolved { .. }
+        ) {
+            continue;
+        }
+        typed.push(Typed {
+            feature,
+            references: references(ctx, feature)?,
+            named: named(&operation.picks(ctx)?),
+        });
+    }
+    let mut restated = Vec::new();
+    for input in &ir.model.feature_input_topologies {
+        let Some(typed) = typed
+            .iter()
+            .find(|typed| typed.feature.id == input.input_of)
+        else {
+            continue;
+        };
+        if !typed.references.0.contains(input.id.as_str()) {
             continue;
         }
         restated.push((
             input.id.as_str().to_owned(),
             input.input_of.as_str().to_owned(),
-            input_cut(input, &members, &witnesses(operation)?)?,
+            input_cut(input, &typed.references.1, &typed.named),
         ));
     }
     let picked: BTreeSet<(&str, &str)> = typed
         .iter()
-        .flat_map(|(feature, _)| generated_edges(feature))
+        .flat_map(|typed| generated_edges(typed.feature))
         .collect();
     for result in &ir.model.feature_result_topologies {
         if ir
@@ -96,6 +101,17 @@ pub(super) fn restate(
     Ok(())
 }
 
+/// A legacy feature that a typed design feature restates.
+struct Typed<'a> {
+    feature: &'a LegacyFeature,
+    /// The identities the feature references and the state-local members it
+    /// names.
+    references: (BTreeSet<String>, BTreeSet<String>),
+    /// The source selectors that the picks of the design feature name, each
+    /// with the witnesses of those picks.
+    named: BTreeMap<i64, Vec<&'a Witness>>,
+}
+
 /// The identities a feature references and the state-local members it names.
 fn references(
     ctx: &DecodeContext<'_>,
@@ -114,54 +130,52 @@ fn references(
     Ok((references, members))
 }
 
-/// The witnesses that the picks of `operation` hold, serialized.
-fn witnesses(operation: &FeatureOperation) -> Result<Vec<serde_json::Value>, CodecError> {
-    fn collect(value: serde_json::Value, into: &mut Vec<serde_json::Value>) {
-        match value {
-            serde_json::Value::Object(fields) => {
-                for (key, value) in fields {
-                    if key == "witness" && !value.is_null() {
-                        into.push(value);
-                    } else {
-                        collect(value, into);
-                    }
-                }
-            }
-            serde_json::Value::Array(values) => {
-                for value in values {
-                    collect(value, into);
-                }
-            }
-            _ => {}
+/// The source selector that each Inventor pick of `picks` names, with the
+/// witnesses of the picks that name it. A source-selector pick names one
+/// integer, the selector; a contour-attachment pick names six, of which the
+/// fourth is the selector.
+fn named<'a>(picks: &[&'a Picked]) -> BTreeMap<i64, Vec<&'a Witness>> {
+    let mut named: BTreeMap<i64, Vec<&Witness>> = BTreeMap::new();
+    for pick in picks {
+        let Some(NativeName {
+            codec,
+            value: NativeNameValue::Integers(values),
+        }) = &pick.native
+        else {
+            continue;
+        };
+        if *codec != cadmpeg_ir::codec_id!("inventor") {
+            continue;
         }
+        let selector = match values.as_slice() {
+            [selector] | [_, _, _, selector, _, _] => *selector,
+            _ => continue,
+        };
+        named.entry(selector).or_default().extend(&pick.witness);
     }
-    let mut witnesses = Vec::new();
-    collect(
-        cadmpeg_core::serde_erase::to_json_value(operation)
-            .map_err(|error| CodecError::malformed(error.to_string()))?,
-        &mut witnesses,
-    );
-    Ok(witnesses)
+    named
 }
 
 /// The wire keys of the fields of `input` that the picks of the feature
-/// leave out: the legacy feature names each face and edge that a pick
-/// holds the source selector of (`picked`), and a pick of the design
-/// feature holds the interior point, tangent and end points of an edge as
-/// one of its `witnesses`.
+/// leave out. A face or edge member is stated where the legacy feature names
+/// it (`members`) and a pick of the design feature names its source
+/// selector (`named`); an edge sample is stated where, in addition, one of
+/// those picks holds the edge's interior point, tangent and end points as
+/// its witness.
 fn input_cut(
     input: &FeatureInputTopology,
-    picked: &BTreeSet<String>,
-    witnesses: &[serde_json::Value],
-) -> Result<Vec<&'static str>, CodecError> {
-    let unpicked = |id: &str| !picked.contains(id);
-    let unwitnessed = |sample| -> Result<bool, CodecError> {
-        let witness = cadmpeg_core::serde_erase::to_json_value(
-            &super::operations::selections::edge_witness(sample),
-        )
-        .map_err(|error| CodecError::malformed(error.to_string()))?;
-        Ok(!witnesses.contains(&witness))
+    members: &BTreeSet<String>,
+    named: &BTreeMap<i64, Vec<&Witness>>,
+) -> Vec<&'static str> {
+    let witnesses = |id: &str| {
+        members
+            .contains(id)
+            .then(|| id.rsplit_once('-'))
+            .flatten()
+            .and_then(|(_, selector)| selector.parse::<i64>().ok())
+            .and_then(|selector| named.get(&selector))
     };
+    let unpicked = |id: &str| witnesses(id).is_none();
     let mut cut = Vec::new();
     if input.faces.iter().any(|face| unpicked(face.as_str())) {
         cut.push("faces");
@@ -169,17 +183,16 @@ fn input_cut(
     if input.edges.iter().any(|edge| unpicked(edge.as_str())) {
         cut.push("edges");
     }
-    let mut partial = false;
-    for sample in &input.edge_geometry {
-        partial = partial
-            || unpicked(sample.edge.as_str())
-            || !sample.faces.is_empty()
+    if input.edge_geometry.iter().any(|sample| {
+        !sample.faces.is_empty()
             || !sample.supports.is_empty()
             || sample.carrier.is_some()
             || sample.start.is_some() != sample.end.is_some()
-            || unwitnessed(sample)?;
-    }
-    if partial {
+            || !witnesses(sample.edge.as_str()).is_some_and(|witnesses| {
+                let witness = super::operations::selections::edge_witness(sample);
+                witnesses.iter().any(|held| **held == witness)
+            })
+    }) {
         cut.push("edge_geometry");
     }
     for (key, held) in [
@@ -193,7 +206,7 @@ fn input_cut(
             cut.push(key);
         }
     }
-    Ok(cut)
+    cut
 }
 
 /// The wire keys of the fields of `result` that no written record holds:

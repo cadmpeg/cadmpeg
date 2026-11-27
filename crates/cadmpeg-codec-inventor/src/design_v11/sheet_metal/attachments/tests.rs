@@ -403,8 +403,9 @@ fn attachment_picks_witness_their_input_edges() {
     assert!(input_cut(&ir).is_empty(), "{:?}", input_cut(&ir));
 }
 
-/// An attachment edge whose input state stores no sample has no witness,
-/// so the sample that no pick holds stays charged in the restatement.
+/// An attachment edge whose input state stores no sample has no witness, and
+/// the input edge 901 that the plate's input state holds is named by no pick,
+/// so the restatement cuts the edges and the samples.
 #[test]
 fn an_input_sample_that_no_pick_witnesses_is_stated_in_part() {
     let (mut parent, _, _) = fixture();
@@ -421,5 +422,5 @@ fn an_input_sample_that_no_pick_witnesses_is_stated_in_part() {
             None
         ]
     );
-    assert_eq!(input_cut(&ir), ["edge_geometry"]);
+    assert_eq!(input_cut(&ir), ["edge_geometry", "edges"]);
 }

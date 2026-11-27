@@ -112,16 +112,8 @@ fn project_part(ir: &mut CadIr, states: &BTreeMap<u32, StateRecords>) -> Vec<Los
     project_retaining(ir, states).0
 }
 
-/// Project `ir` and return the losses and the undecoded records that the
-/// stated states reference.
-fn project_retaining(
-    ir: &mut CadIr,
-    states: &BTreeMap<u32, StateRecords>,
-) -> (Vec<LossNote>, Vec<(u32, UnknownRecord)>) {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let sketches = crate::sketch::SketchInventory {
+fn no_sketches() -> crate::sketch::SketchInventory {
+    crate::sketch::SketchInventory {
         sketches: Vec::new(),
         entities: Vec::new(),
         transforms: Vec::new(),
@@ -129,20 +121,67 @@ fn project_retaining(
         constraints: Vec::new(),
         text_members: Vec::new(),
         issues: Vec::new(),
-    };
+    }
+}
+
+/// The messages of the findings of the check that re-projects the design of
+/// `ir` from its admitted source operands.
+fn validate_operations_findings(ir: &CadIr) -> Vec<String> {
+    assert!(ir.model.omitted_arenas_held(), "the check runs");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    super::super::validate_operations(
+        &ctx,
+        ir,
+        &crate::feature::FeatureInventory::default(),
+        &no_sketches(),
+        &[],
+        &[],
+    )
+    .expect("check")
+    .into_iter()
+    .map(|finding| finding.message)
+    .collect()
+}
+
+/// Project `ir` and return the losses and the undecoded records that the
+/// stated states reference.
+fn project_retaining(
+    ir: &mut CadIr,
+    states: &BTreeMap<u32, StateRecords>,
+) -> (Vec<LossNote>, Vec<(u32, UnknownRecord)>) {
+    project_over(ir, states, Vec::new())
+}
+
+/// Project `ir` into a document that already holds the undecoded records
+/// `document`, and return the losses and the undecoded records that the
+/// stated states reference.
+fn project_over(
+    ir: &mut CadIr,
+    states: &BTreeMap<u32, StateRecords>,
+    document: Vec<UnknownRecord>,
+) -> (Vec<LossNote>, Vec<(u32, UnknownRecord)>) {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, root) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
     let mut losses = Vec::new();
     super::super::project(
         &ctx,
         ir,
         &crate::feature::FeatureInventory::default(),
-        &sketches,
+        &no_sketches(),
         &[],
         &[],
         &mut losses,
     )
     .expect("projection");
+    fidelity
+        .attach_native_unknown_records(ir, "inventor", document, &ctx)
+        .expect("document records");
     let mut retained = Vec::new();
-    super::project(&ctx, ir, states, &mut retained, &mut losses).expect("evaluations");
+    super::project(&ctx, ir, states, &fidelity, &mut retained, &mut losses).expect("evaluations");
     (losses, retained)
 }
 
@@ -180,24 +219,6 @@ fn ids(ordinal: u32) -> (String, String) {
         format!("inventor:design:evaluation#{ordinal}"),
         format!("inventor:history:state#{ordinal}"),
     )
-}
-
-/// A CADIR write states the history body `nest` in every field except its
-/// state ordinal and identifier, which the feature that restates it does
-/// not hold.
-fn assert_stated_but_state(omitted: &[String], nest: &str) {
-    assert!(
-        omitted
-            .iter()
-            .any(|message| message.contains(&format!("{nest} (state)"))),
-        "{omitted:?}"
-    );
-    assert!(
-        !omitted.iter().any(|message| message
-            .split_once("record(s) omitted: ")
-            .is_some_and(|(_, ids)| ids.split("; ").next().unwrap_or("").contains(nest))),
-        "{omitted:?}"
-    );
 }
 
 /// The state entering a Split is the state after the nearest earlier feature
@@ -290,10 +311,28 @@ fn a_current_state_that_differs_from_the_current_geometry_is_charged() {
     );
 }
 
+/// The native history-state record that the current state names.
+fn current_state_record(ir: &CadIr) -> Option<&str> {
+    ir.design.scopes[0].current[0].native_ref.as_deref()
+}
+
+/// The ordinals of the native history-state records of `ir`.
+fn history_states(ir: &CadIr) -> Vec<String> {
+    ir.native
+        .namespace("inventor")
+        .into_iter()
+        .flat_map(cadmpeg_ir::NativeNamespace::arenas)
+        .filter(|(name, _)| name.as_str() == HISTORY_STATES)
+        .flat_map(|(_, records)| records.iter().map(|record| record.id().to_owned()))
+        .collect()
+}
+
 /// A Base feature whose state is the current geometry record for record
-/// restates its history body through its stored bodies.
+/// holds the current state: the current state names the native record of
+/// the history state, and a CADIR write states the history body in full
+/// through the feature and the current state.
 #[test]
-fn a_base_state_the_current_geometry_holds_is_restated_by_its_feature() {
+fn a_base_state_the_current_geometry_holds_is_the_current_state() {
     let mut ir = part(
         vec![extrude("a", 0), extrude("base", 1)],
         vec![history_body("base", 0, false, 7)],
@@ -302,18 +341,38 @@ fn a_base_state_the_current_geometry_holds_is_restated_by_its_feature() {
     let losses = project_part(&mut ir, &states);
     assert!(losses.is_empty(), "{losses:?}");
     assert!(ir.design.evaluations.is_empty());
+    let native = ids(0).1;
+    assert_eq!(current_state_record(&ir), Some(native.as_str()));
+    assert_eq!(history_states(&ir), [native]);
     let nest = ir.model.history_bodies[0].id.as_str().to_owned();
-    let restating = ir.model.restated().get(&nest).expect("restated");
-    assert_eq!(
-        restating
-            .restaters()
-            .map(|(by, _)| by)
-            .next()
-            .expect("restater"),
-        &Restater::Record("inventor:design:feature#base".to_owned())
+    let (omitted, read) = write(&ir);
+    assert_stated(&omitted, &nest);
+    assert_eq!(read.design.scopes, ir.design.scopes);
+    assert_eq!(validate_operations_findings(&ir), Vec::<String>::new());
+}
+
+/// A Split rolled back to the end of part enters the current state, so the
+/// current state holds its history body as it holds a Base's.
+#[test]
+fn a_rolled_back_split_enters_the_current_state() {
+    let mut split = extrude("s", 1);
+    split.suppressed = Some(true);
+    split.source_properties.insert(
+        cadmpeg_core::text::NonBlankString::new("end_of_part".to_owned()).expect("key"),
+        "below".to_owned(),
     );
+    let mut ir = part(
+        vec![extrude("a", 0), split],
+        vec![history_body("s", 0, true, 7)],
+    );
+    let states = BTreeMap::from([(0, state(vec![body(7)]))]);
+    let losses = project_part(&mut ir, &states);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert!(ir.design.evaluations.is_empty());
+    assert_eq!(current_state_record(&ir), Some(ids(0).1.as_str()));
+    let nest = ir.model.history_bodies[0].id.as_str().to_owned();
     let (omitted, _) = write(&ir);
-    assert_stated_but_state(&omitted, &nest);
+    assert_stated(&omitted, &nest);
 }
 
 /// A Base feature followed only by sketches holds the current state, so
@@ -425,11 +484,65 @@ fn an_undecoded_record_that_a_later_state_holds_with_other_bytes_is_charged() {
         panic!("one loss: {losses:?}");
     };
     assert!(
-        loss.message
-            .ends_with("the state names a record that it does not hold."),
+        loss.message.ends_with(
+            "its undecoded record inventor:brep:spline#20 differs from the document's record of that id."
+        ),
         "{}",
         loss.message
     );
+}
+
+/// A state whose own undecoded record differs from the document's record
+/// of that id cannot read its own record, so the decode charges its
+/// history body, names the state and the record, and keeps the document's
+/// record.
+#[test]
+fn a_state_record_that_differs_from_the_document_record_of_its_id_is_charged() {
+    let mut ir = part(
+        vec![extrude("a", 0), sketch("k", 1), extrude("s", 2)],
+        vec![history_body("s", 0, true, 9)],
+    );
+    let mut state = spline_state();
+    state.unknowns = vec![spline(&[4, 5, 6])];
+    let (losses, retained) = project_over(
+        &mut ir,
+        &BTreeMap::from([(0, state)]),
+        vec![spline(&[1, 2, 3])],
+    );
+    assert!(ir.design.evaluations.is_empty());
+    assert!(retained.is_empty(), "{retained:?}");
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert!(
+        loss.message.contains("in history state 0")
+            && loss.message.ends_with(
+                "its undecoded record inventor:brep:spline#20 differs from the document's record of that id."
+            ),
+        "{}",
+        loss.message
+    );
+}
+
+/// A state whose own undecoded record holds the bytes of the document's
+/// record of that id shares the document's record.
+#[test]
+fn a_state_record_equal_to_the_document_record_of_its_id_is_shared() {
+    let mut ir = part(
+        vec![extrude("a", 0), sketch("k", 1), extrude("s", 2)],
+        vec![history_body("s", 0, true, 9)],
+    );
+    let mut state = spline_state();
+    state.unknowns = vec![spline(&[1, 2, 3])];
+    let (losses, retained) = project_over(
+        &mut ir,
+        &BTreeMap::from([(0, state)]),
+        vec![spline(&[1, 2, 3])],
+    );
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(ir.design.evaluations.len(), 1);
+    assert!(retained.is_empty(), "{retained:?}");
+    assert!(unclosed(&ir).is_empty(), "{:?}", unclosed(&ir));
 }
 
 /// A decoded state whose surface names a record that neither the state nor

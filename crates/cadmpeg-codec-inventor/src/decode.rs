@@ -913,13 +913,11 @@ fn decode_container<'a>(
                 }
                 ir.model.history_bodies = history.bodies.bodies;
                 decoded_states = history.bodies.states;
-                for state in decoded_states.values_mut() {
-                    crate::feature::body_selection::name_bodies(
-                        &mut state.geometry,
-                        &joined,
-                        &feature_inventory,
-                    );
-                }
+                crate::feature::body_selection::name_states(
+                    &mut decoded_states,
+                    &joined,
+                    &feature_inventory,
+                );
             }
             losses.extend(crate::feature::body_selection::native_losses(
                 &ir.model, &joined,
@@ -983,14 +981,7 @@ fn decode_container<'a>(
             }
         })
         .collect::<HashMap<_, _>>();
-    let state_faces = decoded_states
-        .values_mut()
-        .flat_map(|state| state.geometry.faces.iter_mut());
-    for face in ir.geometry.faces.iter_mut().chain(state_faces) {
-        if face.color.is_none() {
-            face.color = face_colors.get(&face.id).copied();
-        }
-    }
+    colour_faces(&mut ir.geometry, &mut decoded_states, &face_colors);
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
     if let Some((part, error)) = history_chain {
@@ -1887,6 +1878,7 @@ fn decode_container<'a>(
                 ctx,
                 ir,
                 &decoded_states,
+                &source_fidelity,
                 &mut state_unknowns,
                 losses,
             )
@@ -2262,6 +2254,23 @@ fn carrier_unknown_id(carrier: &crate::kernel::ActiveCarrier<'_>) -> UnknownId {
         &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
         carrier.segment_token.clone().dash(carrier.record_ordinal),
     )
+}
+
+/// Give each face of the current geometry and of the decoded history states
+/// that holds no colour the colour bound to its id.
+fn colour_faces(
+    geometry: &mut Topology,
+    states: &mut BTreeMap<u32, crate::feature::history_bodies::StateRecords>,
+    colours: &HashMap<cadmpeg_ir::ids::FaceId, cadmpeg_ir::topology::Color>,
+) {
+    let state_faces = states
+        .values_mut()
+        .flat_map(|state| state.geometry.faces.iter_mut());
+    for face in geometry.faces.iter_mut().chain(state_faces) {
+        if face.color.is_none() {
+            face.color = colours.get(&face.id).copied();
+        }
+    }
 }
 
 /// Retain the undecoded kernel records `records` in the document's unknown

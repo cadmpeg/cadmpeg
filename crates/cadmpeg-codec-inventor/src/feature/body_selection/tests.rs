@@ -805,22 +805,38 @@ fn body_takes_the_stored_name_of_the_label_that_owns_its_wrapper() {
 /// the current bodies: a state body under the identity of a joined current
 /// body takes its name, and a body that no wrapper joins keeps none.
 #[test]
-fn a_history_state_body_takes_the_name_of_its_joined_body() {
+fn every_decoded_history_state_names_its_joined_bodies() {
     let wrapper = wrapper_at(7);
-    let mut state = model_with_bodies(&[("body:a", None), ("body:b", None)]).geometry;
+    let state = |bodies: &[(&str, Option<&str>)]| crate::feature::history_bodies::StateRecords {
+        geometry: model_with_bodies(bodies).geometry,
+        ..Default::default()
+    };
+    let mut states = std::collections::BTreeMap::from([
+        (2, state(&[("body:a", None)])),
+        (5, state(&[("body:b", None), ("body:a", None)])),
+    ]);
     let joins = HashMap::from([(wrapper.id(), body("body:a"))]);
     let inventory = FeatureInventory {
         properties: vec![wrapper],
         labels: vec![name_label(7, 3)],
         ..FeatureInventory::default()
     };
-    name_bodies(&mut state, &joins, &inventory);
-    let names = state
-        .bodies
-        .iter()
-        .map(|body| body.name.as_deref())
+    super::name_states(&mut states, &joins, &inventory);
+    let names = states
+        .values()
+        .map(|state| {
+            state
+                .geometry
+                .bodies
+                .iter()
+                .map(|body| body.name.as_deref())
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
-    assert_eq!(names, [Some("Feature 3"), None]);
+    assert_eq!(
+        names,
+        [vec![Some("Feature 3")], vec![None, Some("Feature 3")]]
+    );
 }
 
 #[test]

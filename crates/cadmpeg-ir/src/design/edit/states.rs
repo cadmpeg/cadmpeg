@@ -364,7 +364,9 @@ impl CadIr {
     /// The ids that the records of `state` reference and that keep `state`
     /// from closing as the state of an evaluation of this document (§5.4):
     /// each id that `state` does not hold and that is a `Topology` record of
-    /// the document or no record of it.
+    /// the document, no record of it, or one of `own`, the records the state
+    /// holds outside its topology, which the caller compares with the
+    /// document's records of those ids.
     ///
     /// # Errors
     ///
@@ -373,6 +375,7 @@ impl CadIr {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         state: &Topology,
+        own: &BTreeSet<&str>,
     ) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
         use crate::schema::rewrite::typed::RewriteIdentities;
 
@@ -400,12 +403,12 @@ impl CadIr {
             ($($field:ident $arm:ident),*) => {$(
                 for record in &state.$field {
                     record.visit_identity_references(ctx, &mut |target| {
-                        if crate::validate::design::resolved::leaves_state(
-                            held.contains(target),
-                            target,
-                            &topology,
-                            &index,
-                        ) {
+                        let inside = held.contains(target);
+                        if (!inside && own.contains(target))
+                            || crate::validate::design::resolved::leaves_state(
+                                inside, target, &topology, &index,
+                            )
+                        {
                             open.insert(target.to_owned());
                         }
                         Ok(())

@@ -215,12 +215,18 @@ pub(crate) fn validate_operations(
         units,
         &mut Vec::new(),
     )?;
-    // The evaluations come from the decoded history states, which this
-    // check does not rebuild; the state check resolves each one.
+    // The evaluations and the current states' native records come from the
+    // decoded history states, which this check does not rebuild; the state
+    // check resolves each one.
     expected
         .design
         .evaluations
         .clone_from(&ir.design.evaluations);
+    for (scope, decoded) in expected.design.scopes.iter_mut().zip(&ir.design.scopes) {
+        for (current, decoded) in scope.current.iter_mut().zip(&decoded.current) {
+            current.native_ref.clone_from(&decoded.native_ref);
+        }
+    }
     if ir.design == expected.design {
         return Ok(Vec::new());
     }

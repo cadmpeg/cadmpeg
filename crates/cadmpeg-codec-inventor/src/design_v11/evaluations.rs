@@ -7,7 +7,10 @@
 //! based on the next later one, and the latest on the current state. A
 //! decoded state holds every record of the state in the slot ids of the
 //! current geometry, so its delta is the difference of the two record sets.
+//! The state at the current position is the current state, which names the
+//! history state as its native record (§5.5).
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -24,18 +27,18 @@ use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::history_body::HistoryBody;
 use cadmpeg_ir::ids::{HistoryBodyId, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::{CadIr, UnknownRecord};
+use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 use serde::Serialize;
 
 use crate::feature::history_bodies::StateRecords;
 use crate::loss::InventorLossCode;
 
-/// The native arena of the history states that evaluations state.
+/// The native arena of the history states that evaluations and the
+/// current state name.
 const HISTORY_STATES: &str = "history_states";
-const NO_CUT: &[&str] = &[];
 
-/// One history state that an evaluation states: the native record its
-/// `native_ref` names.
+/// One history state that an evaluation or a current state states: the
+/// native record its `native_ref` names.
 #[derive(Serialize)]
 struct HistoryState {
     id: String,
@@ -45,8 +48,20 @@ struct HistoryState {
     identifier: i64,
 }
 
+impl HistoryState {
+    fn new(ordinal: u32, identifier: i64) -> Self {
+        Self {
+            id: format!("inventor:history:state#{ordinal}"),
+            ordinal,
+            identifier,
+        }
+    }
+}
+
 /// The place in the timeline of the state that holds a history body.
-struct Placed {
+struct Placed<'a> {
+    /// The feature the body is the result or the input of.
+    feature: &'a FeatureId,
     /// Index of the position's member in the timeline; `None` for the start.
     index: Option<usize>,
     position: Position,
@@ -60,32 +75,38 @@ struct Planned<'a> {
     state: &'a StateRecords,
     identifier: i64,
     bodies: Vec<HistoryBodyId>,
-    /// The undecoded records of the state that its records reference.
+    /// The undecoded records of the state that its records reference and
+    /// that the document does not hold yet.
     unknowns: Vec<UnknownRecord>,
 }
 
+type Why = Cow<'static, str>;
+
 /// State each decoded history state that holds a history body as the
-/// evaluation of its timeline position, restate the body of a Base feature
-/// whose state is the current geometry by that feature, and charge each
-/// other history body. The undecoded records that the stated states
-/// reference are added to `retained`, with the ordinal of their state.
+/// evaluation of its timeline position, state the history state at the
+/// current position as the current state's record where it is the current
+/// geometry, and charge each other history body. `fidelity` holds the
+/// bytes of the undecoded records the document holds. The undecoded
+/// records that the stated states reference and the document does not hold
+/// are added to `retained`, with the ordinal of their state.
 ///
 /// # Errors
 ///
 /// Returns a codec error where an evaluation id does not mint, the history
-/// states do not serialize, or the decode's resource policy refuses the
-/// work.
+/// states do not serialize, the document's undecoded records do not read,
+/// or the decode's resource policy refuses the work.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     states: &BTreeMap<u32, StateRecords>,
+    fidelity: &SourceFidelity,
     retained: &mut Vec<(u32, UnknownRecord)>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if ir.model.history_bodies.is_empty() {
         return Ok(());
     }
-    let mut unplaced = Vec::new();
+    let mut unplaced: Vec<(&HistoryBody, Why)> = Vec::new();
     let Some(Timeline {
         scope,
         at,
@@ -95,7 +116,7 @@ pub(crate) fn project(
     }) = timeline(ir)
     else {
         for body in &ir.model.history_bodies {
-            unplaced.push((body, "the part has no timeline with a current state"));
+            unplaced.push((body, "the part has no timeline with a current state".into()));
         }
         charge(&unplaced, losses);
         return Ok(());
@@ -107,23 +128,20 @@ pub(crate) fn project(
         let placed = match place(ir, &container, &members, body) {
             Ok(placed) => placed,
             Err(why) => {
-                unplaced.push((body, why));
+                unplaced.push((body, why.into()));
                 continue;
             }
         };
         let Some(state) = states.get(&placed.ordinal) else {
-            unplaced.push((body, "the state is not decoded"));
+            unplaced.push((body, "the state is not decoded".into()));
             continue;
         };
         if placed.index > current {
-            unplaced.push((body, "the state is after the rollback position"));
+            unplaced.push((body, "the state is after the rollback position".into()));
             continue;
         }
         if placed.index == current {
-            match &body.produced_by {
-                Some(feature) => held.push((body, feature, state)),
-                None => unplaced.push((body, "the current geometry holds the state")),
-            }
+            held.push((body, placed.feature, state));
             continue;
         }
         let entry = planned.entry(placed.index).or_insert_with(|| Planned {
@@ -137,17 +155,20 @@ pub(crate) fn project(
         if entry.ordinal == placed.ordinal {
             entry.bodies.push(body.id.clone());
         } else {
-            unplaced.push((body, "another history state holds the position"));
+            unplaced.push((body, "another history state holds the position".into()));
         }
     }
     if planned.is_empty() && held.is_empty() {
         charge(&unplaced, losses);
         return Ok(());
     }
-    let mut restated: Vec<(HistoryBodyId, String, &'static [&'static str])> = Vec::new();
-    // A Base feature whose state is the current state restates its body
-    // through its stored bodies where the decoded state is the current
-    // geometry record for record.
+    let mut restated: Vec<(HistoryBodyId, String, Vec<&'static str>)> = Vec::new();
+    let mut native = BTreeMap::<u32, HistoryState>::new();
+    // A history state at the current position whose records are the
+    // current geometry's is the current state: the feature that the body
+    // is the result or the input of restates the body, and the current
+    // state's native record restates the state that holds it.
+    let mut current_state = None::<HistoryState>;
     for (body, feature, state) in held {
         let same = StateDelta::between(&records, &state.geometry) == StateDelta::default();
         let written = ir
@@ -157,45 +178,96 @@ pub(crate) fn project(
             .is_ok();
         match (same, written) {
             (true, true) => {
-                restated.push((body.id.clone(), feature.as_str().to_owned(), &["state"]));
+                restated.push((body.id.clone(), feature.as_str().to_owned(), vec!["state"]));
+                let record = current_state.get_or_insert_with(|| {
+                    HistoryState::new(body.state.ordinal, body.state.identifier)
+                });
+                if record.ordinal == body.state.ordinal {
+                    restated.push((
+                        body.id.clone(),
+                        scope.as_str().to_owned(),
+                        all_but_state(body),
+                    ));
+                }
             }
-            (false, _) => unplaced.push((body, "the state differs from the current geometry")),
-            (true, false) => unplaced.push((body, "the feature has no design record")),
+            (false, _) => {
+                unplaced.push((body, "the state differs from the current geometry".into()));
+            }
+            (true, false) => unplaced.push((body, "the feature has no design record".into())),
         }
     }
-    // The document holds one undecoded record per id, so a state closes
-    // through the records of its own that a later stated state does not
-    // hold with other bytes.
+    // The document holds one undecoded record per id. A state reads its
+    // own record of an id where the document holds none, and shares the
+    // document's where that holds the same bytes.
+    let wanted = planned
+        .values()
+        .flat_map(|plan| {
+            let state: &StateRecords = plan.state;
+            state.unknowns.iter().map(|record| record.id().as_str())
+        })
+        .collect::<BTreeSet<_>>();
+    let mut document = BTreeMap::<String, Option<&[u8]>>::new();
+    for record in ir.native_unknowns_iter("inventor") {
+        let record = record.map_err(|error| CodecError::malformed(error.to_string()))?;
+        if wanted.contains(record.id.as_str()) {
+            document.insert(record.id.as_str().to_owned(), None);
+        }
+    }
+    for id in wanted {
+        if let Some(record) = fidelity.retained_record(id) {
+            document.insert(id.to_owned(), record.data());
+        }
+    }
     let mut open = Vec::new();
-    let mut claimed = BTreeMap::<&str, &UnknownRecord>::new();
     for (index, plan) in planned.iter_mut().rev() {
-        let targets = ir.open_references(ctx, &plan.state.geometry)?;
-        let mut kept = BTreeMap::new();
-        for record in &plan.state.unknowns {
-            let id = record.id().as_str();
-            if targets.contains(id)
-                && claimed
-                    .get(id)
-                    .is_none_or(|other| other.data() == record.data())
-            {
-                kept.entry(id).or_insert(record);
+        let own = plan
+            .state
+            .unknowns
+            .iter()
+            .map(|record| (record.id().as_str(), record))
+            .collect::<BTreeMap<_, _>>();
+        let targets =
+            ir.open_references(ctx, &plan.state.geometry, &own.keys().copied().collect())?;
+        let mut kept = Vec::new();
+        let mut why = None::<Why>;
+        for target in &targets {
+            let Some(&record) = own.get(target.as_str()) else {
+                why = Some("the state names a record that it does not hold".into());
+                break;
+            };
+            match document.get(target) {
+                None => kept.push(record),
+                Some(Some(bytes)) if record.data() == Some(*bytes) => {}
+                Some(_) => {
+                    why = Some(
+                        format!(
+                            "its undecoded record {target} differs from the document's record of that id"
+                        )
+                        .into(),
+                    );
+                    break;
+                }
             }
         }
-        if kept.len() == targets.len() {
-            plan.unknowns = kept.values().copied().cloned().collect();
-            claimed.extend(kept);
-        } else {
-            open.push(*index);
+        match why {
+            None => {
+                document.extend(
+                    kept.iter()
+                        .map(|record| (record.id().as_str().to_owned(), record.data())),
+                );
+                plan.unknowns = kept.into_iter().cloned().collect();
+            }
+            Some(why) => open.push((*index, why)),
         }
     }
-    for index in open {
+    for (index, why) in open {
         if let Some(plan) = planned.remove(&index) {
             unplaced.extend(
                 ir.model
                     .history_bodies
                     .iter()
                     .filter(|body| plan.bodies.contains(&body.id))
-                    .map(|body| (body, "the state names a record that it does not hold")),
+                    .map(|body| (body, why.clone())),
             );
         }
     }
@@ -203,7 +275,6 @@ pub(crate) fn project(
     let mut base = StateBase::Current(at.clone());
     let mut evaluations = Vec::with_capacity(planned.len());
     let mut minted = BTreeMap::<u32, usize>::new();
-    let mut native = BTreeMap::<u32, HistoryState>::new();
     let mut unknowns = Vec::new();
     for Planned {
         position,
@@ -225,17 +296,13 @@ pub(crate) fn project(
         let id = EvaluationId::mint(id).map_err(CodecError::malformed)?;
         let native_ref = native
             .entry(ordinal)
-            .or_insert_with(|| HistoryState {
-                id: format!("inventor:history:state#{ordinal}"),
-                ordinal,
-                identifier,
-            })
+            .or_insert_with(|| HistoryState::new(ordinal, identifier))
             .id
             .clone();
         restated.extend(
             bodies
                 .into_iter()
-                .map(|body| (body, id.as_str().to_owned(), NO_CUT)),
+                .map(|body| (body, id.as_str().to_owned(), Vec::new())),
         );
         unknowns.extend(kept.into_iter().map(|record| (ordinal, record)));
         evaluations.push(Evaluation {
@@ -250,6 +317,17 @@ pub(crate) fn project(
         base = StateBase::Evaluation(id);
         records.clone_from(&state.geometry);
     }
+    if let Some(record) = current_state {
+        if let Some(current) = ir
+            .design
+            .scopes
+            .first_mut()
+            .and_then(|scope| scope.current.first_mut())
+        {
+            current.native_ref = Some(record.id.clone());
+        }
+        native.entry(record.ordinal).or_insert(record);
+    }
     if !native.is_empty() {
         let native = native.into_values().collect::<Vec<_>>();
         ir.native
@@ -261,15 +339,26 @@ pub(crate) fn project(
     for (body, by, cut) in restated {
         ir.model
             .restated_mut()
-            .record(body.as_str(), Restater::Record(by), cut.iter().copied());
+            .record(body.as_str(), Restater::Record(by), cut);
     }
-    let mut kept = BTreeSet::new();
-    retained.extend(
-        unknowns
-            .into_iter()
-            .filter(|(_, record)| kept.insert(record.id().as_str().to_owned())),
-    );
+    retained.extend(unknowns);
     Ok(())
+}
+
+/// The wire keys of the fields of `body` other than its state, which a
+/// current state restates only through its native record.
+fn all_but_state(body: &HistoryBody) -> Vec<&'static str> {
+    let mut keys = vec!["id", "topology"];
+    for (key, held) in [
+        ("produced_by", body.produced_by.is_some()),
+        ("consumed_by", body.consumed_by.is_some()),
+        ("state_of", body.state_of.is_some()),
+    ] {
+        if held {
+            keys.push(key);
+        }
+    }
+    keys
 }
 
 /// The ordered container that holds the current state of the part scope.
@@ -320,12 +409,12 @@ fn state_index(ir: &CadIr, members: &[Member], at: &Position) -> Option<usize> {
 /// The position whose state holds `body`: the state after a Base, and the
 /// state entering a Split, which is after the nearest earlier member that
 /// is a feature with a state, else the timeline's start.
-fn place(
+fn place<'a>(
     ir: &CadIr,
     timeline: &ContainerId,
     members: &[Member],
-    body: &HistoryBody,
-) -> Result<Placed, &'static str> {
+    body: &'a HistoryBody,
+) -> Result<Placed<'a>, &'static str> {
     let (feature, entering) = match (&body.produced_by, &body.consumed_by) {
         (Some(feature), None) => (feature, false),
         (None, Some(feature)) => (feature, true),
@@ -342,6 +431,7 @@ fn place(
             return Err("the feature is stateless");
         }
         return Ok(Placed {
+            feature,
             index: Some(index),
             position: Position::After(member),
             ordinal,
@@ -352,11 +442,13 @@ fn place(
         .rposition(|member| has_state(ir, member));
     Ok(match earlier {
         Some(at) => Placed {
+            feature,
             index: Some(at),
             position: Position::After(members[at].clone()),
             ordinal,
         },
         None => Placed {
+            feature,
             index: None,
             position: Position::Start(timeline.clone()),
             ordinal,
@@ -373,7 +465,7 @@ fn has_state(ir: &CadIr, member: &Member) -> bool {
     matches!(member, Member::Feature(feature) if !stateless(ir, feature))
 }
 
-fn charge(unplaced: &[(&HistoryBody, &str)], losses: &mut Vec<LossNote>) {
+fn charge(unplaced: &[(&HistoryBody, Why)], losses: &mut Vec<LossNote>) {
     for (body, why) in unplaced {
         let feature = body
             .produced_by
