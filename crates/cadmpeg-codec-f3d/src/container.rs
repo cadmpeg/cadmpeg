@@ -401,14 +401,30 @@ impl<'a> ContainerScan<'a> {
         name: &str,
         error: CodecError,
     ) -> Result<Option<GivenUpPart>, CodecError> {
-        if !self.has_entry(name) {
-            return Ok(None);
-        }
         let classes = self
             .entries
             .iter()
             .find(|entry| entry.name == name)
             .map_or(&ArenaClass::ALL[..], |entry| held_classes(entry.role));
+        self.give_up_entry_holding(ctx, name, classes, error)
+    }
+
+    /// [`Self::give_up_entry`] for a part holding content of the classes in
+    /// `holds`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::give_up_entry`].
+    pub(crate) fn give_up_entry_holding(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+        holds: &[ArenaClass],
+        error: CodecError,
+    ) -> Result<Option<GivenUpPart>, CodecError> {
+        if !self.has_entry(name) {
+            return Ok(None);
+        }
         let stored = self
             .stored_ranges
             .get(name)
@@ -420,13 +436,54 @@ impl<'a> ContainerScan<'a> {
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("F3D entry {name} has no stored span"))
             })?;
-        let mut part = Part::new("f3d", ENTRY_PART, stored, classes.iter().copied())
+        let mut part = Part::new("f3d", ENTRY_PART, stored, holds.iter().copied())
             .named(name)
             .digest_only();
         if let Some(stream) = &self.stream {
             part = part.in_stream(stream.clone());
         }
         ctx.give_up_part(part, error).map(Some)
+    }
+
+    /// The stream name of the archive entry `name`: the entry path, inside
+    /// the outer document's stream for a scanned F3Z member.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError::Malformed`] when the path forms no stream name.
+    pub(crate) fn entry_stream(&self, name: &str) -> Result<StreamName, CodecError> {
+        let path = match &self.stream {
+            Some(outer) => format!("{}/{name}", outer.as_str()),
+            None => name.to_owned(),
+        };
+        StreamName::try_from(path).map_err(CodecError::malformed)
+    }
+
+    /// Gives up bytes `span` of the opened archive entry `entry` as a part
+    /// of `kind` in the entry's stream, holding content of the classes in
+    /// `holds`. The inflated entry bytes are retained in no other record, so
+    /// the part keeps them.
+    ///
+    /// # Errors
+    ///
+    /// [`CodecError::Malformed`] when the scan holds no such entry or
+    /// `span` leaves it, `error` itself when it is fatal to the session, or
+    /// a refusal of the part helper.
+    pub(crate) fn give_up_entry_span(
+        &self,
+        ctx: &DecodeContext<'_>,
+        entry: &str,
+        kind: &'static str,
+        span: std::ops::Range<usize>,
+        holds: impl IntoIterator<Item = ArenaClass>,
+        error: CodecError,
+    ) -> Result<GivenUpPart, CodecError> {
+        let bytes = self.entry_bytes(entry)?.get(span.clone()).ok_or_else(|| {
+            CodecError::malformed(format_args!("F3D {kind} part leaves the entry {entry}"))
+        })?;
+        let part = Part::at("f3d", kind, u64_from_index(span.start), bytes, holds)
+            .in_stream(self.entry_stream(entry)?);
+        ctx.give_up_part(part, error)
     }
 
     pub(crate) fn member_view<'b>(

@@ -19,8 +19,8 @@ use crate::validate::design::records::{MemberKey, PositionKey};
 use crate::validate::design::selections::{self, ProcessPick};
 
 pub(super) fn check_scope<'a>(
-    records: &'a ProcessRecords<'_>,
-    walked: &'a [Walked<'_>],
+    records: &ProcessRecords<'a>,
+    walked: &[Walked<'a>],
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
     findings: &mut Vec<Finding>,
@@ -38,21 +38,21 @@ pub(super) fn check_scope<'a>(
             );
         }
     }
-    let moved = selections::moved_occurrences(records.ir);
+    let moved = records.design.moved_occurrences();
     let mut picks = Vec::new();
     for record in walked {
-        check_record(records, record, &moved, &mut picks, findings);
+        check_record(records, record, moved, &mut picks, findings);
     }
     super::as_process(findings, |findings| {
         selections::check_process_picks(index, matchers, &picks, findings);
     });
 }
 
-fn check_record<'a>(
-    records: &'a ProcessRecords<'_>,
-    record: &'a Walked<'_>,
+fn check_record<'w, 'a>(
+    records: &ProcessRecords<'a>,
+    record: &'w Walked<'a>,
     moved: &BTreeSet<&str>,
-    picks: &mut Vec<ProcessPick<'a>>,
+    picks: &mut Vec<ProcessPick<'w>>,
     findings: &mut Vec<Finding>,
 ) {
     let id = record.id;
@@ -133,8 +133,8 @@ fn check_record<'a>(
             Anchor::Pinned(position) => {
                 let position = PositionKey::of(position);
                 let exists = super::as_process(findings, |findings| {
-                    check_position(records.design, position, id, findings)
-                        && check_resulting_position(records.design, position, id, findings)
+                    check_position(&records.design, position, id, findings)
+                        && check_resulting_position(&records.design, position, id, findings)
                 });
                 if exists {
                     let member = match position {
@@ -228,7 +228,7 @@ fn check_path(
     findings: &mut Vec<Finding>,
 ) {
     super::as_process(findings, |findings| {
-        selections::check_path(records.design, Some(from), path, moved, id, findings);
+        selections::check_path(&records.design, Some(from), path, moved, id, findings);
     });
 }
 
