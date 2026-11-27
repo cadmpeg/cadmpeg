@@ -165,7 +165,9 @@ impl StateDelta {
     /// `base` whose id `state` does not hold, each name entry of `state` that
     /// differs from the base's, and `None` for each entity that `base` names
     /// and `state` does not. A record that both hold with equal content is
-    /// shared through the base.
+    /// shared through the base. A changed procedural construction also
+    /// needs its carrier. A changed carrier with a solved cache also
+    /// needs its construction.
     #[must_use]
     pub fn between(state: &HeldState, base: &HeldState) -> Self {
         let (records, removed) = super::edit::states::difference(&state.records, &base.records);

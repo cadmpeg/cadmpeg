@@ -4,13 +4,18 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::serde_erase::json;
+
 use super::{ChainBack, HeldState, StateBase, StateContent, StateDelta};
 use crate::design::ids::{ContainerId, EvaluationId};
 use crate::design::names::{NameEntry, NativeName, NativeNameValue};
 use crate::design::refs::{EntityRef, Position, RecordRef};
 use crate::document::Topology;
 use crate::features::geometry::FinitePoint3;
-use crate::ids::FaceId;
+use crate::geometry::procedural_curves::ProceduralCurveDefinition;
+use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
+use crate::geometry::{CurveGeometry, ProceduralCurve, ProceduralSurface};
+use crate::ids::{FaceId, ProceduralCurveId, ProceduralSurfaceId};
 use crate::math::Point3;
 
 fn cube() -> Topology {
@@ -66,6 +71,64 @@ fn between_holds_changed_records_and_removes_absent_ones() {
     assert_eq!(delta.records, expected);
     let dropped = base.vertices.last().unwrap().id.clone();
     assert_eq!(delta.removed, vec![RecordRef::Vertex(dropped)]);
+}
+
+#[test]
+fn a_changed_procedural_construction_or_carrier_keeps_its_pair_on_the_wire() {
+    let mut base = cube();
+    let curve = base.curves[0].id.clone();
+    let surface = base.surfaces[0].id.clone();
+    base.add_procedural_curve(
+        &curve,
+        ProceduralCurve::new(
+            ProceduralCurveId::mint("test:design:construction#curve").unwrap(),
+            ProceduralCurveDefinition::Exact { cache: None },
+        ),
+    )
+    .unwrap();
+    let direct = base.curves[1].id.clone();
+    let direct_construction = ProceduralCurveId::mint("test:design:construction#direct").unwrap();
+    base.curves[1].geometry = CurveGeometry::Procedural {
+        construction: direct_construction.clone(),
+        cache: None,
+    };
+    base.add_procedural_curve(
+        &direct,
+        ProceduralCurve::new(
+            direct_construction,
+            ProceduralCurveDefinition::Exact { cache: None },
+        ),
+    )
+    .unwrap();
+    base.add_procedural_surface(
+        &surface,
+        ProceduralSurface::new(
+            ProceduralSurfaceId::mint("test:design:construction#surface").unwrap(),
+            ProceduralSurfaceDefinition::Unknown {
+                record: None,
+                cache: None,
+            },
+            None,
+        ),
+    )
+    .unwrap();
+    assert!(base.surfaces[0].geometry.solved_cache().is_some());
+    let mut state = base.clone();
+    state.procedural_curves[0].native_ref = Some("earlier construction".to_owned());
+    state.curves[1].native_ref = Some("earlier curve".to_owned());
+    state.surfaces[0].native_ref = Some("earlier surface".to_owned());
+    let delta = StateDelta::between(&held(state.clone()), &held(base));
+    assert_eq!(delta.records.curves, state.curves[..2]);
+    assert_eq!(delta.records.surfaces, state.surfaces[..1]);
+    assert_eq!(
+        delta.records.procedural_curves,
+        state.procedural_curves[..1]
+    );
+    assert_eq!(delta.records.procedural_surfaces, state.procedural_surfaces);
+    assert!(delta.removed.is_empty());
+    let wire = json::to_vec(&delta).unwrap();
+    let read: StateDelta = json::from_slice(&wire).unwrap();
+    assert_eq!(read, delta);
 }
 
 #[test]
