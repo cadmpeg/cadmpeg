@@ -1671,9 +1671,7 @@ pub(super) fn append_owner(
     out: &mut Vec<u8>,
     records: &mut Vec<(u64, u64)>,
     class_tag: &[u8; 3],
-    owner_record_index: u32,
-    parameter_record_index: u32,
-    companion_record_index: u32,
+    [owner_record_index, parameter_record_index, companion_record_index]: [u32; 3],
     scope_record_index: u32,
     local_ordinal: u32,
 ) {
@@ -1838,9 +1836,7 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
         &mut out,
         &mut records,
         b"270",
-        1200,
-        1201,
-        1202,
+        [1200, 1201, 1202],
         scope_record_index,
         0,
     );
@@ -1889,9 +1885,7 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
         &mut out,
         &mut records,
         b"270",
-        1203,
-        1204,
-        1205,
+        [1203, 1204, 1205],
         scope_record_index,
         1,
     );

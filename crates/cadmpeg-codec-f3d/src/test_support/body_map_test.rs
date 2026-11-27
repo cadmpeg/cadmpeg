@@ -198,9 +198,7 @@ fn empty_model_maps_archive(
             &mut bulk,
             &mut records,
             b"261",
-            1200,
-            1201,
-            1202,
+            [1200, 1201, 1202],
             scope_record,
             0,
         );
