@@ -81,13 +81,13 @@ fn a_stream_without_record_zero_reads_nothing() {
 }
 
 #[test]
-fn a_short_settings_record_is_unreadable_and_another_record_zero_states_nothing() {
+fn a_short_or_differently_keyed_record_zero_is_unreadable() {
     let mut bytes = stream(0, Z_UP_PAIR, Z_UP_PAIR);
     bytes.truncate(settings::UP_B + 8);
     assert_eq!(read_stream(&bytes), Some(UpAxisRead::RecordUnreadable));
-    let mut other = stream(0, Z_UP_PAIR, Z_UP_PAIR);
-    other[settings::KEY + 4] ^= 0xFF;
-    assert_eq!(read_stream(&other), None);
+    let mut keyed = stream(0, Z_UP_PAIR, Z_UP_PAIR);
+    keyed[settings::KEY + 4] ^= 0xFF;
+    assert_eq!(read_stream(&keyed), Some(UpAxisRead::RecordUnreadable));
 }
 
 #[test]
