@@ -4,6 +4,10 @@
 use super::*;
 use crate::feature::extrusion::Output;
 
+/// A face-surface form the decoder does not read: not the plane form 25
+/// nor the parametric forms 29 and 73.
+const UNREAD_SURFACE_FORM: u32 = 27;
+
 const EPS_SAME_COORDINATE: f64 = 1e-12;
 
 fn reals(values: [f64; 3]) -> [cadmpeg_ir::scalar::FiniteReal; 3] {
@@ -945,7 +949,7 @@ fn parses_kernel_entity_link_work_plane_termination_flag_and_surface() {
     let mut cylinder = content(12);
     cylinder.extend_from_slice(&[0; 12]);
     cylinder.push(1);
-    cylinder.extend_from_slice(&29u32.to_le_bytes());
+    cylinder.extend_from_slice(&UNREAD_SURFACE_FORM.to_le_bytes());
     cylinder.extend_from_slice(&1u32.to_le_bytes());
     push_f64s(&mut cylinder, &frame);
     assert!(parse(&cylinder, |_, source| crate::feature::parse_surface(
@@ -1593,14 +1597,14 @@ fn parses_plane_surface_extension_from_segment_version_22() {
         assert_eq!(surface_form, crate::feature::PLANE_SURFACE_FORM);
         assert_eq!(origin[0].get(), 1.5);
 
-        // The same bytes read without the extension are not a plane.
+        // The same bytes with a form the decoder does not read are not a plane.
         let mut cylinder = crate::test_support::test_fixtures::content_at(12, version, stamps);
         cylinder.extend_from_slice(&[0; 12]);
         if extended {
             cylinder.extend_from_slice(&0u32.to_le_bytes());
         }
         cylinder.push(1);
-        cylinder.extend_from_slice(&29u32.to_le_bytes());
+        cylinder.extend_from_slice(&UNREAD_SURFACE_FORM.to_le_bytes());
         cylinder.extend_from_slice(&1u32.to_le_bytes());
         push_f64s(&mut cylinder, &frame);
         assert!(parse(&cylinder, |_, source| crate::feature::parse_surface(
