@@ -109,31 +109,6 @@ pub(super) fn project(
                         .find(|property| property.owner == record.object() && property.name == name)
                 };
                 let [first, second] = connectors.as_ref();
-                let mut native_options = NativeOptions::new();
-                let connectors = [("1", first), ("2", second)].map(|(index, connector)| {
-                    let reference = connector.reference.as_ref()?;
-                    if record.parameters().bool_value(&format!("Detach{index}")) != Some(true) {
-                        return products.connector(
-                            definition,
-                            reference,
-                            connector.placement,
-                            connector.offset,
-                        );
-                    }
-                    let offset = (connector.offset.transform() != Transform::identity())
-                        .then(|| owned(&format!("Offset{index}")))
-                        .flatten()
-                        .and_then(crate::placement::placement_values);
-                    let (connector, options) = products.detached(
-                        definition,
-                        reference,
-                        connector.placement,
-                        index,
-                        offset,
-                    )?;
-                    native_options.extend(options);
-                    Some(connector)
-                });
                 let float_distance = owned("Distance")
                     .is_some_and(|property| property.type_name == "App::PropertyFloat");
                 let classified = kind.as_str().eq_ignore_ascii_case("distance").then(|| {
@@ -147,6 +122,39 @@ pub(super) fn project(
                     };
                     distance::classify([&first, &second])
                 });
+                // `swapJCS` exchanges the references and placements of the two
+                // slots; each slot keeps its offset and detach flag.
+                let placed = match classified {
+                    Some(Ok((true, _))) => [second, first],
+                    _ => [first, second],
+                };
+                let mut native_options = NativeOptions::new();
+                let connectors = [("1", first, placed[0]), ("2", second, placed[1])].map(
+                    |(index, slot, placed)| {
+                        let reference = placed.reference.as_ref()?;
+                        if record.parameters().bool_value(&format!("Detach{index}")) != Some(true) {
+                            return products.connector(
+                                definition,
+                                reference,
+                                placed.placement,
+                                slot.offset,
+                            );
+                        }
+                        let offset = (slot.offset.transform() != Transform::identity())
+                            .then(|| owned(&format!("Offset{index}")))
+                            .flatten()
+                            .and_then(crate::placement::placement_values);
+                        let (connector, options) = products.detached(
+                            definition,
+                            reference,
+                            placed.placement,
+                            index,
+                            offset,
+                        )?;
+                        native_options.extend(options);
+                        Some(connector)
+                    },
+                );
                 let [Some(first), Some(second)] = connectors else {
                     losses.push(FreecadLossCode::FeatureJointUnresolved.note(format!(
                         "joint {} names no object for a connector; the joint stays in its \
@@ -161,7 +169,7 @@ pub(super) fn project(
                     [first, second],
                     native_options,
                     float_distance,
-                    classified,
+                    classified.map(|classified| classified.map(|(_, form)| form)),
                 ) else {
                     losses.push(FreecadLossCode::FeatureJointUnresolved.note(format!(
                         "joint {} stores a blank joint type; the joint stays in its native \
@@ -252,8 +260,8 @@ pub(super) fn project(
 /// connectors `connectors`, whose detached connectors keep `native_options`.
 /// `float_distance` states that the joint stores `Distance` as a float, the
 /// form in which an Angle joint stores its angle there in degrees.
-/// `classified` is the form of a `Distance` joint and whether `FreeCAD` swaps
-/// its connectors. Each parameter the joint does not hold is a source setting
+/// `classified` is the form of a `Distance` joint, whose connectors are
+/// already in the order `FreeCAD` solves them. Each parameter the joint does not hold is a source setting
 /// under its own name, and a native option of a family the decoder does not
 /// read. The code is the loss a `Distance` joint charges. `None` where the
 /// family is blank.
@@ -263,7 +271,7 @@ fn joint(
     mut connectors: [JointConnector; 2],
     mut native_options: NativeOptions,
     float_distance: bool,
-    classified: Option<Result<(bool, distance::Form), distance::Unresolved>>,
+    classified: Option<Result<distance::Form, distance::Unresolved>>,
 ) -> Option<(Joint, Option<FreecadLossCode>)> {
     let family = label.to_ascii_lowercase();
     let mut charge = None;
@@ -316,10 +324,7 @@ fn joint(
             let restated = classified
                 .unwrap_or(Err(distance::Unresolved))
                 .map_err(|_| FreecadLossCode::FeatureJointDistanceUnresolved)
-                .and_then(|(swap, form)| {
-                    if swap {
-                        connectors.swap(0, 1);
-                    }
+                .and_then(|form| {
                     distance::restatement(form, stored.unwrap_or(0.0))
                         .ok_or(FreecadLossCode::FeatureJointDistanceUnsatisfiable)
                 });

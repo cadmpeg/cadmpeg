@@ -213,7 +213,8 @@ fn a_line_and_a_circle_hold_parallel_axes_apart_by_the_distance_and_radius() {
 
 #[test]
 fn a_cylinder_and_a_plane_put_the_plane_first_and_keep_the_axis_in_it() {
-    // The pin's first face is a cylinder of radius 3.
+    // The pin's first face is a cylinder of radius 3. The swap exchanges the
+    // references; the first slot stays detached.
     let decoded = decode(
         &link("PinOccurrence", "Face1"),
         &link("BracketOccurrence", "Face1"),
@@ -226,12 +227,12 @@ fn a_cylinder_and_a_plane_put_the_plane_first_and_keep_the_axis_in_it() {
     assert_eq!(
         decoded.joint.connectors.each_ref().map(connector),
         [
+            ("plane", None, Some(instance("BracketOccurrence"))),
             (
-                "plane",
+                "axis",
                 Some("Face1".to_owned()),
-                Some(instance("BracketOccurrence"))
+                Some(instance("PinOccurrence"))
             ),
-            ("axis", None, Some(instance("PinOccurrence"))),
         ]
     );
 }
