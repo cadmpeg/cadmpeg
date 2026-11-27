@@ -8,6 +8,7 @@ use crate::design::configurations::{ConfigurationTargets, Projection};
 use crate::design::decode::record::is_fatal;
 use crate::native::F3dNative;
 use crate::records::configuration::DesignConfiguration;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{
@@ -17,10 +18,13 @@ use cadmpeg_ir::features::{Feature, FeatureId};
 use cadmpeg_ir::topology::Sense;
 use serde::Serialize;
 
-pub(super) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
+pub(super) fn f3d_native(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Option<F3dNative>, CodecError> {
     ir.native
         .namespace("f3d")
-        .map(F3dNative::load)
+        .map(|namespace| F3dNative::load_inner(ctx, namespace))
         .transpose()
         .map_err(Into::into)
 }
@@ -56,8 +60,9 @@ pub(super) fn projection(
 
 /// `projection` with its active configuration reconciled with `features`,
 /// and `features` with the suppression that the active configuration gives
-/// them, as the decoder reconciles both. A reconciliation that fails leaves
-/// both as they are.
+/// them, as the decoder reconciles both. The active row supplies the state
+/// of a feature that states none. A reconciliation that fails leaves both as
+/// they are.
 pub(super) fn reconciled(
     projection: Projection,
     features: &mut [Feature],
@@ -71,9 +76,15 @@ pub(super) fn reconciled(
     }
     let mut configurations = projection.configurations.clone();
     let mut reconciled = features.to_vec();
+    let undecided = features
+        .iter()
+        .filter(|feature| feature.suppressed.is_none())
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
     match crate::design::configurations::reconcile_active_configurations(
         &mut reconciled,
         &mut configurations,
+        &undecided,
     ) {
         Ok(()) => {
             features.clone_from_slice(&reconciled);
@@ -305,6 +316,7 @@ pub(super) fn projects(
 }
 
 pub(crate) fn validate_assembly_projection(
+    ctx: &DecodeContext<'_>,
     target: &CadIr,
     native: Option<&F3dNative>,
 ) -> Result<(), CodecError> {
@@ -321,7 +333,7 @@ pub(crate) fn validate_assembly_projection(
             });
     };
     let expanded = crate::tree::expand(
-        &cadmpeg_core::decode::ResourceLimits::default(),
+        &ctx.policy().limits,
         &target.model.product_definitions,
         &target.model.occurrences,
         &std::collections::BTreeMap::new(),

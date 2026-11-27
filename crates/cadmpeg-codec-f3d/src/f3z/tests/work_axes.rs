@@ -94,8 +94,11 @@ fn work_axis_partial_evidence_and_literal_names_survive_real_f3z_merge() {
             unreachable!()
         };
         assert!(axis.geometry().is_some());
-        let native =
-            crate::native::F3dNative::load(merged.ir().native.namespace("f3d").unwrap()).unwrap();
+        let native = crate::native::F3dNative::load_inner(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            merged.ir().native.namespace("f3d").unwrap(),
+        )
+        .unwrap();
         assert!(native
             .design_parameter_scopes
             .iter()
@@ -200,8 +203,11 @@ fn distinct_work_axis_members_with_equal_local_ids_keep_their_owners_images_and_
         )
         .unwrap(),
     );
-    let native =
-        crate::native::F3dNative::load(merged.ir().native.namespace("f3d").unwrap()).unwrap();
+    let native = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        merged.ir().native.namespace("f3d").unwrap(),
+    )
+    .unwrap();
     let axes = merged
         .ir()
         .model

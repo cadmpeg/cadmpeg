@@ -29,7 +29,7 @@ cadmpeg_core::named_optional_field!(deserialize_targets, DesignRevolveTargets, "
 cadmpeg_core::named_optional_field!(deserialize_side_two, Located<u32>, "side_two");
 cadmpeg_core::named_optional_field!(deserialize_reference_target, u64, "reference_target");
 /// Exact construction carried by a Revolve, Loft, Sweep, or Pipe scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignPathFeatureConstruction {
     /// Fixed-angle revolution result operation.

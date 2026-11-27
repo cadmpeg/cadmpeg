@@ -7,6 +7,7 @@ mod first_feature;
 mod history;
 pub(crate) mod holes_extrude;
 mod ordering;
+mod pocket_direction;
 pub(crate) mod primitives;
 mod profile_operands;
 mod resource_admission;
