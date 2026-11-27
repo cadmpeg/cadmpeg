@@ -280,11 +280,11 @@ mod tests {
 
     #[test]
     fn product_unknown_projection_refuses_extra_fields_and_absent_links() {
-        let mut wire = serde_json::json!({"id": "synthetic:source:unknown#0", "links": []});
+        let mut wire = cadmpeg_core::json!({"id": "synthetic:source:unknown#0", "links": []});
         let record = json::from_value::<NativeUnknownRecord>(wire.clone()).unwrap();
         assert!(record.links.is_empty());
         let error = json::from_value::<NativeUnknownRecord>(
-            serde_json::json!({"id": "synthetic:source:unknown#0"}),
+            cadmpeg_core::json!({"id": "synthetic:source:unknown#0"}),
         )
         .unwrap_err();
         assert!(
@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn an_unretained_record_states_its_extent_and_digest() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "synthetic:model:unknown#0",
             "offset": 7,
             "retention": {
@@ -340,7 +340,7 @@ mod tests {
     /// wire, and an unknown key is refused rather than dropped.
     #[test]
     fn a_retained_record_cannot_restate_its_extent_or_digest() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "synthetic:model:unknown#0",
             "offset": 7,
             "retention": {"kind": "inline", "data": "AQID"},
@@ -354,8 +354,8 @@ mod tests {
         );
 
         for (key, value) in [
-            ("byte_len", serde_json::json!(99)),
-            ("sha256", serde_json::json!("not-the-digest-of-the-bytes")),
+            ("byte_len", cadmpeg_core::json!(99)),
+            ("sha256", cadmpeg_core::json!("not-the-digest-of-the-bytes")),
         ] {
             let mut restated = wire.clone();
             restated["retention"][key] = value;
@@ -370,7 +370,7 @@ mod tests {
         }
 
         let mut bogus = wire;
-        bogus["zz_bogus"] = serde_json::json!(true);
+        bogus["zz_bogus"] = cadmpeg_core::json!(true);
         let error = json::from_value::<UnknownRecord>(bogus)
             .expect_err("an unknown key is refused")
             .to_string();

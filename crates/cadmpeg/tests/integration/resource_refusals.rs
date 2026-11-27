@@ -18,7 +18,7 @@ fn assert_resource_report(value: &Value, command: &str) {
     assert_eq!(value["refusal"]["code"], "resource_limit");
     assert_eq!(
         value["refusal"]["resource"],
-        serde_json::json!({
+        cadmpeg_core::json!({
             "dimension": "input_bytes",
             "reason": "budget_exceeded",
             "limit": 4,
@@ -396,7 +396,7 @@ fn inspect_container_json_retains_resource_evidence() {
     assert_eq!(value["refusal"]["code"], "resource_limit");
     assert_eq!(
         value["refusal"]["resource"],
-        serde_json::json!({
+        cadmpeg_core::json!({
             "dimension": "input_bytes", "reason": "budget_exceeded", "limit": 4,
             "used": 4, "requested": 1, "operation": "complete input",
         })

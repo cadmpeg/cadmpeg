@@ -31,7 +31,7 @@ fn spatial_offset_keeps_its_admitted_unit_reference_direction() {
     let wire = json::to_value(&payload).unwrap();
     assert_eq!(
         wire["reference_direction"],
-        serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
+        cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0})
     );
     assert_eq!(
         json::from_value::<SpatialOffsetCurveConstruction>(wire).unwrap(),
@@ -104,7 +104,7 @@ fn third_ranged_pcurve_requires_a_nonzero_context_interval() {
         json::from_value::<ProceduralCurveDefinition>(wire.clone()).unwrap(),
         valid
     );
-    wire["context"]["parameter_range"] = serde_json::json!([1.0, 1.0]);
+    wire["context"]["parameter_range"] = cadmpeg_core::json!([1.0, 1.0]);
     assert!(json::from_value::<ProceduralCurveDefinition>(wire).is_err());
 }
 
@@ -131,7 +131,7 @@ fn projection_payload_admits_finite_ordered_source_intervals() {
     for range in [[2.0, 1.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(projection(range).is_err());
     }
-    wire["tail"]["parameter_range"] = serde_json::json!([2.0, 1.0]);
+    wire["tail"]["parameter_range"] = cadmpeg_core::json!([2.0, 1.0]);
     assert!(json::from_value::<ProceduralCurveDefinition>(wire).is_err());
 }
 
@@ -161,7 +161,7 @@ fn spring_payload_checks_inline_ranges_and_the_shared_context() {
         assert!(spring(range, [0.0, 1.0]).is_err());
         assert!(spring([0.0, 1.0], range).is_err());
     }
-    wire["layout"]["first_pcurve"]["value"] = serde_json::json!([2.0, 1.0]);
+    wire["layout"]["first_pcurve"]["value"] = cadmpeg_core::json!([2.0, 1.0]);
     assert!(json::from_value::<ProceduralCurveDefinition>(wire).is_err());
 }
 
@@ -195,7 +195,7 @@ fn cache_first_curve_form_admits_the_full_positive_revision_lane() {
     for revision in [0_i64, -1] {
         assert!(crate::scalar::PositiveI64::new(revision).is_none());
         let mut invalid = wire.clone();
-        invalid["revision"] = serde_json::json!(revision);
+        invalid["revision"] = cadmpeg_core::json!(revision);
         assert!(json::from_value::<CacheFirstCurveForm>(invalid).is_err());
     }
 
@@ -205,7 +205,7 @@ fn cache_first_curve_form_admits_the_full_positive_revision_lane() {
     };
     assert_eq!(maximum.revision.get(), i64::MAX);
     let mut maximum_wire = wire;
-    maximum_wire["revision"] = serde_json::json!(i64::MAX);
+    maximum_wire["revision"] = cadmpeg_core::json!(i64::MAX);
     assert_eq!(
         json::from_value::<CacheFirstCurveForm>(maximum_wire)
             .expect("maximum JSON revision is admitted")
@@ -318,20 +318,20 @@ fn the_cache_first_curve_admissions_refuse_every_non_finite_form_scalar() {
         surface_offset(cache_first_form(None), [Some(0.5), None]).unwrap(),
     );
     let wire = json::to_value(&admitted).unwrap();
-    assert_eq!(wire["base_endpoints"], serde_json::json!([0.5, null]));
+    assert_eq!(wire["base_endpoints"], cadmpeg_core::json!([0.5, null]));
     assert_eq!(
         wire["cache"]["form"]["support_bounds"][0],
-        serde_json::json!([0.0, null, null, null])
+        cadmpeg_core::json!([0.0, null, null, null])
     );
     assert_eq!(
         wire["cache"]["form"]["solved_range"],
-        serde_json::json!([1.0, null])
+        cadmpeg_core::json!([1.0, null])
     );
     // `RevisionCacheForm` is internally tagged and its parameterization is a
     // newtype variant, so the interval is one level up from the variant name.
     assert_eq!(
         wire["cache"]["form"]["cache"]["interval"],
-        serde_json::json!([2.0, null])
+        cadmpeg_core::json!([2.0, null])
     );
     assert_eq!(
         json::from_value::<ProceduralCurveDefinition>(wire).unwrap(),

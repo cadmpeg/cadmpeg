@@ -6,6 +6,7 @@ use cadmpeg_core::CodecError;
 use crate::document::CadIr;
 use crate::geometry::SurfaceGeometry;
 use crate::index::identities::BorrowedIdentities;
+use crate::index::{ModelIndex, StandardIndex};
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -637,31 +638,30 @@ fn faces_connected<'ir>(
     components <= 1
 }
 
-pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let loop_faces = BorrowedIdentities::build(|add| {
-        for loop_ in &ir.geometry.loops {
-            add(loop_.id.as_str(), loop_.face.as_str());
-        }
-    });
-    let edges = BorrowedIdentities::build(|add| {
-        for edge in &ir.geometry.edges {
-            add(edge.id.as_str(), edge);
-        }
-    });
+pub(in crate::validate) fn check_shell_connectivity(
+    index: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
+    let ir = index.ir();
+    let loop_faces = |id: &str| {
+        index
+            .loops(id, StandardIndex)
+            .map(|loop_| loop_.face.as_str())
+    };
     let mut incidences = BorrowedIdentities::new();
     for coedge in &ir.geometry.coedges {
-        let Some(face) = loop_faces.get(coedge.owner_loop.as_str()).copied() else {
+        let Some(face) = loop_faces(coedge.owner_loop.as_str()) else {
             continue;
         };
         insert_incidence(&mut incidences, face, Incidence::Edge(coedge.edge.as_str()));
-        if let Some(edge) = edges.get(coedge.edge.as_str()) {
+        if let Some(edge) = index.edges(coedge.edge.as_str(), StandardIndex) {
             for vertex in edge.vertices() {
                 insert_incidence(&mut incidences, face, Incidence::Vertex(vertex.as_str()));
             }
         }
     }
     for loop_ in &ir.geometry.loops {
-        let Some(face) = loop_faces.get(loop_.id.as_str()).copied() else {
+        let Some(face) = loop_faces(loop_.id.as_str()) else {
             continue;
         };
         match &loop_.boundary {
@@ -679,7 +679,7 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
             }
         }
     }
-    let child_lists = ir.geometry.child_lists();
+    let child_lists = index.child_lists();
     for shell in &ir.geometry.shells {
         let Some(shell_faces) = child_lists.complete_shell_faces(&shell.id) else {
             continue;
@@ -715,21 +715,14 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
 /// (Warning; part 10, Topology and model records). A body that holds a
 /// partial face or a marked region or shell, or is marked itself, is not
 /// read.
-pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<Finding>) {
+pub(in crate::validate) fn check_solid_edge_uses(
+    index: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
     use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
     use crate::topology::{BodyKind, EdgeCarrier};
-    let geometry = &ir.geometry;
-    let child_lists = geometry.child_lists();
-    let loop_faces: std::collections::HashMap<&str, &str> = geometry
-        .loops
-        .iter()
-        .map(|loop_| (loop_.id.as_str(), loop_.face.as_str()))
-        .collect();
-    let edges: std::collections::HashMap<&str, &crate::topology::Edge> = geometry
-        .edges
-        .iter()
-        .map(|edge| (edge.id.as_str(), edge))
-        .collect();
+    let geometry = &index.ir().geometry;
+    let child_lists = index.child_lists();
     let degenerate: std::collections::HashSet<&str> = geometry
         .curves
         .iter()
@@ -741,6 +734,9 @@ pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<
         })
         .map(|curve| curve.id.as_str())
         .collect();
+    let mut bodies = Vec::new();
+    let mut face_bodies: std::collections::HashMap<&str, Vec<usize>> =
+        std::collections::HashMap::new();
     for body in geometry
         .bodies
         .iter()
@@ -767,22 +763,34 @@ pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<
         if !complete {
             continue;
         }
-        let mut uses: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
-        for coedge in &geometry.coedges {
-            if loop_faces
-                .get(coedge.owner_loop.as_str())
-                .is_some_and(|face| faces.contains(face))
-            {
-                *uses.entry(coedge.edge.as_str()).or_default() += 1;
-            }
+        for face in faces {
+            face_bodies.entry(face).or_default().push(bodies.len());
         }
+        bodies.push(body);
+    }
+    let mut uses = vec![std::collections::BTreeMap::<&str, usize>::new(); bodies.len()];
+    for coedge in &geometry.coedges {
+        let Some(owners) = index
+            .loops(coedge.owner_loop.as_str(), StandardIndex)
+            .and_then(|loop_| face_bodies.get(loop_.face.as_str()))
+        else {
+            continue;
+        };
+        for &owner in owners {
+            *uses[owner].entry(coedge.edge.as_str()).or_default() += 1;
+        }
+    }
+    for (body, uses) in bodies.into_iter().zip(uses) {
         for (edge, count) in uses {
-            let curved = edges.get(edge).is_some_and(|record| match &record.carrier {
-                EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _) => {
-                    !degenerate.contains(curve.as_str())
-                }
-                EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => false,
-            });
+            let curved =
+                index
+                    .edges(edge, StandardIndex)
+                    .is_some_and(|record| match &record.carrier {
+                        EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _) => {
+                            !degenerate.contains(curve.as_str())
+                        }
+                        EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => false,
+                    });
             if count == 1 && curved {
                 super::super::record_related_finding(
                     findings,
@@ -804,14 +812,12 @@ pub(in crate::validate) fn check_solid_edge_uses(ir: &CadIr, findings: &mut Vec<
 /// and a marked shell does not state how many faces it holds, so only the
 /// surface is checked there. A procedural surface is read through its
 /// construction, which this rule does not evaluate.
-pub(in crate::validate) fn check_loopless_faces(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let geometry = &ir.geometry;
-    let child_lists = geometry.child_lists();
-    let surfaces = BorrowedIdentities::build(|add| {
-        for surface in &geometry.surfaces {
-            add(surface.id.as_str(), surface);
-        }
-    });
+pub(in crate::validate) fn check_loopless_faces(
+    index: &ModelIndex<'_>,
+    findings: &mut Vec<Finding>,
+) {
+    let geometry = &index.ir().geometry;
+    let child_lists = index.child_lists();
     for shell in &geometry.shells {
         let faces = child_lists.stated_shell_faces(&shell.id);
         let complete = child_lists.complete_shell_faces(&shell.id).is_some();
@@ -834,13 +840,12 @@ pub(in crate::validate) fn check_loopless_faces(ir: &CadIr, findings: &mut Vec<F
                     ),
                 );
             }
-            let kind =
-                surfaces
-                    .get(face.surface.as_str())
-                    .and_then(|surface| match &surface.geometry {
-                        SurfaceGeometry::Solved(solved) => solved.plane_cylinder_or_cone(),
-                        SurfaceGeometry::Procedural { .. } => None,
-                    });
+            let kind = index
+                .surfaces(face.surface.as_str(), StandardIndex)
+                .and_then(|surface| match &surface.geometry {
+                    SurfaceGeometry::Solved(solved) => solved.plane_cylinder_or_cone(),
+                    SurfaceGeometry::Procedural { .. } => None,
+                });
             if let Some(kind) = kind {
                 record_finding(
                     findings,

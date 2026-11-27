@@ -93,6 +93,6 @@ fn program_groups_nest_to_the_document_depth_bound_on_a_default_thread() {
 fn a_cycle_expansion_holds_no_cycle() {
     let inner = json::to_value(Motion::Cycle(Box::new(cycles().remove(1)))).unwrap();
     let mut outer = json::to_value(cycles().remove(1)).unwrap();
-    outer["expansion"] = serde_json::json!([inner]);
+    outer["expansion"] = cadmpeg_core::json!([inner]);
     assert!(read_desktop::<Cycle>(&outer.to_string()).is_err());
 }

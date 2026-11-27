@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stored synthetic bundle editing and validation adapters.
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, Write};
 
@@ -93,10 +94,7 @@ pub(crate) fn two_body_step() -> Vec<u8> {
     }
     ir.geometry = json::from_value(geometry).unwrap();
     let plan = cadmpeg_codec_step::StepCodec::default()
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit("step:ap214"),
-        )
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("step:ap214")))
         .unwrap();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();

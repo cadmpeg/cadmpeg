@@ -4,8 +4,8 @@ use super::super::intersection_curves::{
 use super::super::procedural_curves::ProceduralCurveDefinition;
 use super::super::PcurveGeometry;
 use crate::{ids::SurfaceId, math::Point3};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 fn supports() -> [SurfaceId; 2] {
     ["test:model:surface#1", "test:model:surface#2"].map(|id| SurfaceId::mint(id).unwrap())

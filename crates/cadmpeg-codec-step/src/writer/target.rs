@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    EncodeInput, ExportBody, NativeDispositions, WritePath,
 };
 
 use crate::export::write_step_outcome;
@@ -12,12 +13,14 @@ use crate::loss::StepLossCode;
 use crate::options::StepSchema;
 use crate::StepCodec;
 
-/// Resolve the request against the source and synthesize the selected schema.
+/// Resolve the request against the source and synthesize the selected
+/// schema in the encode's session `context`.
 ///
 /// STEP has no retained-image path, so a source schema outside the catalog
 /// is written as the catalog default (§3.4, Refusals, `Inherit`).
 pub(crate) fn plan(
     codec: &StepCodec,
+    context: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
@@ -30,13 +33,15 @@ pub(crate) fn plan(
     );
     let schema = schema.unwrap_or(StepSchema::DEFAULT);
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
+    let recovered =
+        cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir, context)?;
     let outcome = write_step_outcome(
         &recovered.document,
         &mut bytes,
         schema,
         &codec.options,
         recovered.recovered_edges,
+        context,
     )?;
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {
@@ -53,12 +58,15 @@ pub(crate) fn plan(
     }
     Ok(ExportBody {
         bytes,
+        synthesis_cause: None,
         census: outcome.census,
         write_path: WritePath::Synthesized {
             // STEP has no retained image: a provided fidelity is never replayed.
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(coverage(schema)),
+        // STEP holds no native record of any format.
+        native: NativeDispositions::dropped("which the STEP writer does not write"),
         losses,
         notes: outcome.notes,
         written_row: None,

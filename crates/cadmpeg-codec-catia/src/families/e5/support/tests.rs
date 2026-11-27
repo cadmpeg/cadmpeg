@@ -64,7 +64,7 @@ fn affine_maps_retain_negative_scale_and_independent_fields() {
         support
     );
     let mut conflicting = wire;
-    conflicting["kind"]["correspondence"]["fit_tolerance"] = serde_json::json!(0.25);
+    conflicting["kind"]["correspondence"]["fit_tolerance"] = cadmpeg_core::json!(0.25);
     assert!(json::from_value::<E5CurveSupport>(conflicting).is_err());
 }
 

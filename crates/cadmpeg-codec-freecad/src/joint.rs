@@ -955,7 +955,7 @@ pub(crate) mod tests {
         assert_valid_document(result.ir());
         let mut wire =
             json::to_value(&result.ir().model.assembly_joints[0]).expect("assembly joint wire");
-        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = serde_json::json!({
+        wire["operands"]["value"]["connectors"][0]["operand"]["external_document"] = cadmpeg_core::json!({
             "kind": "unresolved",
             "path": "external.FCStd"
         });

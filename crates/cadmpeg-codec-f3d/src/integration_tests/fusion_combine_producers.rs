@@ -87,7 +87,7 @@ fn a_join_target_that_no_later_feature_updates_selects_its_model_body() {
     assert_eq!(operands["target"]["kind"], "resolved", "{operands}");
     assert_eq!(
         operands["target"]["value"]["bodies"],
-        serde_json::json!([bodies[0]["id"]])
+        cadmpeg_core::json!([bodies[0]["id"]])
     );
     assert_eq!(
         generated_features(&operands["tools"]),

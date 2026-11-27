@@ -300,7 +300,7 @@ mod tests {
             let position: SketchReferencePosition = serde_json::from_str(&wire).unwrap();
             assert_eq!(json::to_string(&position).unwrap(), wire);
             let mut invalid = json::to_value(position).unwrap();
-            invalid["terminal"] = serde_json::json!(!terminal);
+            invalid["terminal"] = cadmpeg_core::json!(!terminal);
             assert!(json::from_value::<SketchReferencePosition>(invalid)
                 .unwrap_err()
                 .to_string()

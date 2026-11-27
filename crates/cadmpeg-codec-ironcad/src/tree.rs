@@ -47,23 +47,86 @@ impl Kernel {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct KernelRecord<'a> {
     pub(crate) kernel: Kernel,
-    /// Node nesting depth; a record in the root node has depth 1.
-    pub(crate) depth: usize,
+    /// The item before the record in its node is a node that holds records.
+    pub(crate) follows_node: bool,
     /// Header words at `words` and `reserved` equal `1, 1, 1, 0`.
     pub(crate) canonical_header: bool,
+    /// The assembly that holds the record's pair, as an index into
+    /// [`Tree::assemblies`].
+    pub(crate) assembly: Option<usize>,
     pub(crate) bytes: View<'a>,
 }
 
-/// Reads every kernel record of a `Brep Data` payload in stored order.
-pub(crate) fn read(payload: View<'_>) -> Result<Vec<KernelRecord<'_>>, TreeError> {
-    let mut cursor = payload;
-    let mut ends = vec![payload.end()];
-    let mut records = Vec::new();
-    loop {
-        while ends.last() == Some(&cursor.position()) {
-            ends.pop();
+/// The kernel records of a `Brep Data` payload and the assemblies that hold
+/// their pairs.
+#[derive(Debug)]
+pub(crate) struct Tree<'a> {
+    /// The kernel records in stored order.
+    pub(crate) records: Vec<KernelRecord<'a>>,
+    /// The nodes below the scene root that hold pairs, in the order they end.
+    pub(crate) assemblies: Vec<Assembly>,
+}
+
+/// A node below the scene root that holds pairs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Assembly {
+    /// The assembly that holds this node, as an index into
+    /// [`Tree::assemblies`].
+    pub(crate) parent: Option<usize>,
+}
+
+/// One node below the scene root, in the order the nodes open.
+struct Node {
+    parent: Option<usize>,
+    holds_pair: bool,
+}
+
+/// One open node of the walk.
+struct Level {
+    end: usize,
+    /// The node below the scene root that the level reads, in opening order.
+    node: Option<usize>,
+    /// The node holds a record at any depth.
+    holds_record: bool,
+    /// The last closed item of the node is a node that holds records.
+    after_node: bool,
+}
+
+impl Level {
+    const fn new(end: usize, node: Option<usize>) -> Self {
+        Self {
+            end,
+            node,
+            holds_record: false,
+            after_node: false,
         }
-        let Some(&end) = ends.last() else {
+    }
+}
+
+/// Reads every kernel record of a `Brep Data` payload in stored order, and
+/// the assemblies that hold their pairs. The node that the payload holds is
+/// the scene root.
+pub(crate) fn read(payload: View<'_>) -> Result<Tree<'_>, TreeError> {
+    let mut cursor = payload;
+    let mut levels = vec![Level::new(payload.end(), None)];
+    let mut records = Vec::new();
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut closed_nodes = Vec::new();
+    loop {
+        while levels
+            .last()
+            .is_some_and(|level| level.end == cursor.position())
+        {
+            let Some(closed) = levels.pop() else {
+                break;
+            };
+            closed_nodes.extend(closed.node);
+            if let Some(parent) = levels.last_mut() {
+                parent.holds_record |= closed.holds_record;
+                parent.after_node = closed.holds_record;
+            }
+        }
+        let Some(end) = levels.last().map(|level| level.end) else {
             break;
         };
         let at = cursor.position();
@@ -79,7 +142,19 @@ pub(crate) fn read(payload: View<'_>) -> Result<Vec<KernelRecord<'_>>, TreeError
             let whole = payload
                 .child(at, cursor.position())
                 .ok_or_else(|| malformed("kernel record escapes the payload"))?;
-            records.push(kernel_record(whole, ends.len() - 1)?);
+            let mut record = kernel_record(whole)?;
+            if let Some(level) = levels.last_mut() {
+                record.follows_node = level.after_node;
+                if record.follows_node {
+                    if let Some(node) = level.node {
+                        nodes[node].holds_pair = true;
+                        record.assembly = Some(node);
+                    }
+                }
+                level.holds_record = true;
+                level.after_node = false;
+            }
+            records.push(record);
         } else {
             let length = cursor.req_u64_le()?;
             let node_end = u64_from_index(at)
@@ -90,13 +165,57 @@ pub(crate) fn read(payload: View<'_>) -> Result<Vec<KernelRecord<'_>>, TreeError
                 .ok_or_else(|| malformed(format!("tree node length {length} is out of range")))?;
             let node_end = usize::try_from(node_end)
                 .map_err(|_| malformed("tree node end does not fit memory"))?;
-            ends.push(node_end);
+            let parent = levels.last_mut().and_then(|level| {
+                level.after_node = false;
+                level.node
+            });
+            let node = (levels.len() > 1).then(|| {
+                nodes.push(Node {
+                    parent,
+                    holds_pair: false,
+                });
+                nodes.len() - 1
+            });
+            levels.push(Level::new(node_end, node));
         }
     }
-    Ok(records)
+    Ok(assemble(records, &nodes, &closed_nodes))
 }
 
-fn kernel_record(whole: View<'_>, depth: usize) -> Result<KernelRecord<'_>, TreeError> {
+/// Numbers the nodes that hold pairs in the order they end, and refers each
+/// record and each assembly to its assembly by that number.
+fn assemble<'a>(mut records: Vec<KernelRecord<'a>>, nodes: &[Node], closed: &[usize]) -> Tree<'a> {
+    let mut number = vec![None; nodes.len()];
+    let mut order = Vec::new();
+    for &node in closed.iter().filter(|&&node| nodes[node].holds_pair) {
+        number[node] = Some(order.len());
+        order.push(node);
+    }
+    let holder = |mut node: Option<usize>| {
+        while let Some(at) = node {
+            if number[at].is_some() {
+                return number[at];
+            }
+            node = nodes[at].parent;
+        }
+        None
+    };
+    let assemblies = order
+        .iter()
+        .map(|&node| Assembly {
+            parent: holder(nodes[node].parent),
+        })
+        .collect();
+    for record in &mut records {
+        record.assembly = record.assembly.and_then(|node| number[node]);
+    }
+    Tree {
+        records,
+        assemblies,
+    }
+}
+
+fn kernel_record(whole: View<'_>) -> Result<KernelRecord<'_>, TreeError> {
     let header = whole.window();
     let at = whole.start();
     let field = |offset: usize| {
@@ -115,8 +234,9 @@ fn kernel_record(whole: View<'_>, depth: usize) -> Result<KernelRecord<'_>, Tree
         .ok_or_else(|| malformed(format!("kernel record at {at} is shorter than its header")))?;
     Ok(KernelRecord {
         kernel: Kernel::from_tag(tag),
-        depth,
+        follows_node: false,
         canonical_header: words == [1, 1, 1, 0],
+        assembly: None,
         bytes,
     })
 }

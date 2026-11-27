@@ -88,6 +88,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let state = FeatureInputTopology {
         face_owners: Vec::new(),
         face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: state_id.clone(),
         input_of: feature_id.clone(),
         bodies: crate::features::selections::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -228,7 +229,7 @@ fn schema_constrains_version_and_requires_subd_arena() {
     };
     assert_eq!(
         version_schema.get("const"),
-        Some(&serde_json::json!(crate::IR_VERSION))
+        Some(&cadmpeg_core::json!(crate::IR_VERSION))
     );
     assert!(schema
         .pointer("/properties/geometry/$ref")
@@ -240,7 +241,7 @@ fn schema_constrains_version_and_requires_subd_arena() {
         .pointer("/required")
         .and_then(serde_json::Value::as_array)
         .unwrap()
-        .contains(&serde_json::json!("subds")));
+        .contains(&cadmpeg_core::json!("subds")));
     assert!(schema.pointer("/properties/byte_ledger").is_none());
 
     let mut value =

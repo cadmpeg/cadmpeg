@@ -15,7 +15,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::{dropped_with, DecodeParts, GivenUpPart, GivenUpRecord, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
@@ -355,11 +355,11 @@ fn decode_exchange_mode(
     decode_digest: Sha256Digest,
 ) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
-    let given_up = give_up_statements(input, exchange, ctx)?;
+    let (given_up, dependents) = give_up_statements(input, exchange, ctx)?;
     session
         .body
         .losses
-        .extend(given_up.iter().map(GivenUpPart::loss));
+        .extend(given_up.iter().map(GivenUpPart::loss).chain(dependents));
     if ctx.container_only() {
         return Ok(session.into_result(SourceFidelity::new(decode_digest), BTreeSet::new()));
     }
@@ -568,6 +568,28 @@ fn decode_exchange_mode(
             session.ctx,
         )?;
     }
+    if matches!(mode, DecodeMode::Decode(_)) {
+        let metadata_offsets = diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                diagnostic.kind == crate::parse::ParseDiagnosticKind::PresentationMetadataUnusable
+            })
+            .map(|diagnostic| diagnostic.offset)
+            .collect::<std::collections::BTreeSet<_>>();
+        for (&id, record) in exchange.records() {
+            if metadata_offsets.contains(&record.span.start) {
+                session.typed_records.remove(id);
+            }
+        }
+    }
+    let (instances, instance_losses) = give_up_instances(
+        input,
+        exchange,
+        &session.typed_records,
+        &given_up,
+        session.ctx,
+    )?;
+    session.body.losses.extend(instance_losses);
     let opaque_offsets = match mode {
         DecodeMode::Decode(_) => BTreeSet::new(),
         DecodeMode::Inspect => inspect_opaque_offsets(exchange, &session.typed_records),
@@ -586,18 +608,6 @@ fn decode_exchange_mode(
         source_fidelity.annotations = annotations.build();
     }
     if matches!(mode, DecodeMode::Decode(_)) {
-        let metadata_offsets = diagnostics
-            .iter()
-            .filter(|diagnostic| {
-                diagnostic.kind == crate::parse::ParseDiagnosticKind::PresentationMetadataUnusable
-            })
-            .map(|diagnostic| diagnostic.offset)
-            .collect::<std::collections::BTreeSet<_>>();
-        for (&id, record) in exchange.records() {
-            if metadata_offsets.contains(&record.span.start) {
-                session.typed_records.remove(id);
-            }
-        }
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(id) {
                 continue;
@@ -744,8 +754,8 @@ fn decode_exchange_mode(
             opaque,
             session.ctx,
         )?;
-        for part in given_up {
-            // discarded-value: each part's loss is reported with the parse diagnostics.
+        for part in given_up.into_iter().chain(instances) {
+            // discarded-value: each part's loss is reported when it is given up.
             let _ = part.commit(session.ctx, &mut session.ir, &mut source_fidelity)?;
         }
         for id in untyped_ids {
@@ -791,22 +801,20 @@ fn decode_exchange_mode(
     Ok(session.into_result(source_fidelity, opaque_offsets))
 }
 
-/// Gives up each statement the parser could not read as one part that names
-/// the records dropped because they need it.
+/// Gives up each statement the parser could not read or keep as one part,
+/// with the `record.dropped-with` note of each record dropped because it
+/// needs the part.
 fn give_up_statements(
     input: &[u8],
     exchange: &Exchange,
     ctx: &DecodeContext<'_>,
-) -> Result<Vec<GivenUpPart>, CodecError> {
+) -> Result<(Vec<GivenUpPart>, Vec<LossNote>), CodecError> {
     let mut parts = Vec::new();
+    let mut dependents = Vec::new();
     for statement in exchange.given_up() {
         let bytes = input
             .get(statement.span.clone())
             .ok_or_else(|| CodecError::malformed("given-up STEP statement escapes the exchange"))?;
-        let dropped = statement
-            .dropped
-            .iter()
-            .map(|&offset| Identity::from(ids::omitted_record(offset)));
         let part = Part::at(
             crate::dialect::FORMAT,
             statement.kind,
@@ -814,16 +822,248 @@ fn give_up_statements(
             bytes,
             [ArenaClass::Model],
         )
-        .dropping(dropped)
         .losing_entries(
             statement
                 .lost
                 .iter()
                 .map(|(record, entry)| format!("#{record} entry #{entry}")),
         );
-        parts.push(ctx.give_up_part(part, statement.cause.clone().into_error())?);
+        let part = ctx.give_up_part(part, statement.cause.clone().into_error())?;
+        for record in &statement.dropped {
+            dependents.push(dropped_with(
+                ids::omitted_record(record.offset),
+                part.id().clone(),
+            ));
+        }
+        parts.push(part);
     }
-    Ok(parts)
+    Ok((parts, dependents))
+}
+
+/// Why the reader lost a DATA instance.
+#[derive(Debug, Clone, PartialEq)]
+enum Lost {
+    /// The instance is given up for the error text.
+    GivenUp(String),
+    /// The instance is dropped because it needs instance `needs`, which is
+    /// given up or dropped. `record` is the id the document would hold for
+    /// the instance, and `None` where the instance is a value of no record.
+    Dropped {
+        needs: u64,
+        record: Option<Identity>,
+    },
+}
+
+/// The DATA instances the reader gives up or drops, each with the first
+/// cause the reader meets, and the records the reader would mint from a DATA
+/// instance and drops because they need a lost instance.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Lists {
+    instances: BTreeMap<u64, Lost>,
+    records: Vec<(Identity, u64)>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct LostInstances(std::sync::Mutex<Lists>);
+
+impl Clone for LostInstances {
+    fn clone(&self) -> Self {
+        Self(std::sync::Mutex::new(self.lock().clone()))
+    }
+}
+
+impl PartialEq for LostInstances {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other) || *self.lock() == *other.lock()
+    }
+}
+
+impl LostInstances {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Lists> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Gives up instance `id` for `error`.
+    pub(crate) fn give_up(&self, id: u64, error: impl std::fmt::Display) {
+        self.lock()
+            .instances
+            .entry(id)
+            .or_insert_with(|| Lost::GivenUp(error.to_string()));
+    }
+
+    /// Gives up instance `id` for the codec loss `why`.
+    pub(crate) fn give_up_for(&self, id: u64, why: &LossNote) {
+        self.give_up(id, format_args!("{}: {}", why.code, why.message));
+    }
+
+    /// Drops instance `id`, a value of no record of the document, because it
+    /// needs instance `needs`.
+    pub(crate) fn drop_with(&self, id: u64, needs: u64) {
+        self.lock().instances.entry(id).or_insert(Lost::Dropped {
+            needs,
+            record: None,
+        });
+    }
+
+    /// Drops `record`, which the document would hold for instance `id`,
+    /// because it needs instance `needs`. A second record of `id` drops
+    /// beside the first.
+    pub(crate) fn drop_record_with(&self, id: u64, record: Identity, needs: u64) {
+        let mut lists = self.lock();
+        match lists.instances.entry(id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Lost::Dropped {
+                    needs,
+                    record: Some(record),
+                });
+            }
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                if matches!(entry.get(), Lost::Dropped { record: Some(first), .. } if *first != record)
+                {
+                    lists.records.push((record, needs));
+                }
+            }
+        }
+    }
+
+    /// Drops `record`, which the document would hold for no single DATA
+    /// instance, because it needs instance `needs`.
+    pub(crate) fn drop_record(&self, record: Identity, needs: u64) {
+        self.lock().records.push((record, needs));
+    }
+
+    fn contains(&self, id: u64) -> bool {
+        self.lock().instances.contains_key(&id)
+    }
+
+    fn take(&self) -> Lists {
+        std::mem::take(&mut *self.lock())
+    }
+}
+
+/// Whether the parser or the reader gave up or dropped instance `id`.
+fn instance_is_lost(exchange: &Exchange, id: u64) -> bool {
+    exchange.lost().contains(id)
+        || (!exchange.records().contains_key(&id) && exchange.lost_record(id).is_some())
+}
+
+/// Drops instance `id` with the first of `needs` that the parser or the
+/// reader gave up or dropped. Returns whether one was.
+fn drop_with_lost(exchange: &Exchange, id: u64, needs: impl IntoIterator<Item = u64>) -> bool {
+    let lost = needs
+        .into_iter()
+        .find(|&needs| instance_is_lost(exchange, needs));
+    if let Some(needs) = lost {
+        exchange.lost().drop_with(id, needs);
+    }
+    lost.is_some()
+}
+
+/// The losses of DATA instance `id`, which the reader gives up for the
+/// codec loss `why`: `why`. The instance's part follows the decode.
+fn give_up_instance(exchange: &Exchange, id: u64, why: LossNote) -> [LossNote; 1] {
+    exchange.lost().give_up_for(id, &why);
+    [why]
+}
+
+/// Gives up each DATA instance the reader gave up as one part, and notes
+/// each instance it dropped with the record it needs (§3.3). An instance
+/// that no pass types keeps its exact source as an opaque record, so its
+/// part keeps the digest only. `statements` are the parts of
+/// [`Exchange::given_up`], in its order.
+fn give_up_instances(
+    input: &[u8],
+    exchange: &Exchange,
+    typed: &dyn SourceClaims,
+    statements: &[GivenUpPart],
+    ctx: &DecodeContext<'_>,
+) -> Result<(Vec<GivenUpPart>, Vec<LossNote>), CodecError> {
+    let Lists {
+        instances: lost,
+        records,
+    } = exchange.lost().take();
+    let mut parts = Vec::new();
+    let mut losses = Vec::new();
+    let mut stubs = BTreeMap::new();
+    for (&id, cause) in &lost {
+        let Lost::GivenUp(error) = cause else {
+            continue;
+        };
+        // An instance with no DATA record is a statement the parser gave up
+        // or dropped, which its part names.
+        let Some(instance) = exchange.records().get(&id) else {
+            continue;
+        };
+        let bytes = input
+            .get(instance.span.clone())
+            .ok_or_else(|| CodecError::malformed("given-up STEP instance escapes the exchange"))?;
+        let mut part = Part::at(
+            crate::dialect::FORMAT,
+            "data_record",
+            u64_from_index(instance.span.start),
+            bytes,
+            [ArenaClass::Model],
+        );
+        if !typed.contains(id) {
+            part = part.digest_only();
+        }
+        let part = ctx.give_up_part(part, CodecError::malformed(error))?;
+        stubs.insert(id, Identity::from(part.id().clone()));
+        losses.push(part.loss());
+        parts.push(part);
+    }
+    // The record that a dependent of instance `needs` needs: the stub of a
+    // given-up instance, the record of a dropped one, or the part of the
+    // statement the parser gave up. A value of no record passes the need
+    // on to the instance it needs.
+    let needed = |mut needs: u64| {
+        let mut visited = BTreeSet::new();
+        while visited.insert(needs) {
+            if let Some(stub) = stubs.get(&needs) {
+                return Some(stub.clone());
+            }
+            match lost.get(&needs) {
+                Some(Lost::Dropped {
+                    record: Some(record),
+                    ..
+                }) => return Some(record.clone()),
+                Some(Lost::Dropped {
+                    needs: next,
+                    record: None,
+                }) => needs = *next,
+                Some(Lost::GivenUp(_)) | None => {
+                    return exchange
+                        .lost_record(needs)
+                        .and_then(|statement| statements.get(statement))
+                        .map(|part| Identity::from(part.id().clone()));
+                }
+            }
+        }
+        None
+    };
+    let dropped = lost
+        .values()
+        .filter_map(|cause| match cause {
+            Lost::Dropped {
+                needs,
+                record: Some(record),
+            } => Some((record, *needs)),
+            _ => None,
+        })
+        .chain(records.iter().map(|(record, needs)| (record, *needs)));
+    for (record, needs) in dropped {
+        losses.push(match needed(needs) {
+            Some(needed) => dropped_with(record.clone(), needed),
+            None => GivenUpRecord::new(
+                record.clone(),
+                format_args!("it needs instance #{needs}, which the decode holds as no record"),
+            )
+            .loss(),
+        });
+    }
+    Ok((parts, losses))
 }
 
 /// Copy source bytes that the decoded document keeps as an opaque record.
@@ -1422,6 +1662,16 @@ fn byte_accounting(
         .cloned()
         .collect::<Vec<_>>();
     omitted.sort_unstable_by_key(|left| left.start);
+    // Every byte of a record span is claimed above, and the record lexed
+    // under the parser's admission, which this lexer's admission contains.
+    // Its tokens and trivia would claim nothing, so the walk resumes after it.
+    let mut record_spans = exchange
+        .records()
+        .values()
+        .map(|record| record.span.clone())
+        .collect::<Vec<_>>();
+    record_spans.sort_unstable_by_key(|span| span.start);
+    let mut next_record = 0;
     let mut cursor = 0;
     loop {
         let token = match lexer.next_token() {
@@ -1446,6 +1696,22 @@ fn byte_accounting(
                 break;
             }
         };
+        while record_spans
+            .get(next_record)
+            .is_some_and(|span| span.start < token.span.start)
+        {
+            next_record += 1;
+        }
+        if let Some(span) = record_spans
+            .get(next_record)
+            .filter(|span| span.start == token.span.start)
+        {
+            claim_trivia(input, cursor..span.start, &mut classes, draft)?;
+            lexer.seek(span.end);
+            cursor = span.end;
+            next_record += 1;
+            continue;
+        }
         claim_range(
             &mut classes,
             &token.span,
@@ -1532,7 +1798,10 @@ fn claim_trivia(
                 format_args!("trivia byte at {at}"),
             )?;
             at += 1;
-        } else if let Some(after_print_control) = crate::lex::print_control_end(input, at) {
+        } else if let Some(after_print_control) = (byte == b'\\')
+            .then(|| crate::lex::print_control_end(input, at))
+            .flatten()
+        {
             if after_print_control > end {
                 return Err(CodecError::malformed(format_args!(
                     "STEP print control directive at byte {at} ends at {after_print_control}, but its trivia run ends at {end}"

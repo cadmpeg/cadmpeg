@@ -123,7 +123,7 @@ mod tests {
             );
             let wire: serde_json::Value = serde_json::from_str(&json).unwrap();
             let mut empty = wire.clone();
-            empty["rows"] = serde_json::json!([]);
+            empty["rows"] = cadmpeg_core::json!([]);
             assert!(json::from_value::<OmOperationStateJournalGroup>(empty)
                 .unwrap_err()
                 .to_string()

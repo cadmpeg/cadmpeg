@@ -57,10 +57,10 @@ fn generated_body_checks_each_variable_word_and_its_type() {
             let mut wire = json::to_value(&fixture.properties[index]).expect("variable");
             if field == "type_id" {
                 wire[field] =
-                    serde_json::json!(crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE));
+                    cadmpeg_core::json!(crate::pmdc::type_id_string(crate::feature::BOOLEAN_TYPE));
             } else {
                 let value = wire["kind"][field].as_u64().expect("word");
-                wire["kind"][field] = serde_json::json!(value + 1);
+                wire["kind"][field] = cadmpeg_core::json!(value + 1);
             }
             fixture.properties[index] = json::from_value(wire).expect("changed variable");
             assert!(

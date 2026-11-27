@@ -1229,7 +1229,7 @@ impl SketchPoint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchPointRecordFormSerde {
     Version0,
@@ -2260,7 +2260,7 @@ impl SketchNurbsGeometry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchCurveGeometryWire {
     /// A straight line segment.
@@ -2520,8 +2520,8 @@ impl SketchNurbsPoles {
 #[cfg(test)]
 mod tests {
     use super::{SketchCurveGeometry, SketchPoint, SketchSurface, SketchText};
+    use cadmpeg_core::json;
     use cadmpeg_core::serde_erase::json;
-    use serde_json::json;
 
     #[test]
     fn point_closure_preserves_selector_one_state_one() {

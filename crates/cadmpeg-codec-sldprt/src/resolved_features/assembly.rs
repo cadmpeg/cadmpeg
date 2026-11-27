@@ -305,7 +305,7 @@ fn feature_input_lane(
             });
         crate::annotations::note(
             annotations,
-            entity.id(),
+            crate::annotations::native_key(entity.id())?,
             source.source_stream(),
             entity.offset(),
             signature,
@@ -314,7 +314,7 @@ fn feature_input_lane(
     }
     crate::annotations::note(
         annotations,
-        parent.as_str(),
+        crate::annotations::native_key(&parent)?,
         source.source_stream(),
         0,
         if family == "config-objects" {
@@ -376,8 +376,8 @@ fn legacy_sketch_object_stream(payload: &[u8]) -> Result<bool, cadmpeg_core::Cod
 #[cfg(test)]
 mod assembly_tests;
 
-/// The profile bodies a decode of the source image `image` binds, for each
-/// lane of `lanes` whose bytes the image holds unchanged.
+/// The profile bodies a decode of the source image `image` under `limits`
+/// binds, for each lane of `lanes` whose bytes the image holds unchanged.
 ///
 /// # Errors
 ///
@@ -385,12 +385,13 @@ mod assembly_tests;
 pub(crate) fn source_image_profiles(
     image: &[u8],
     lanes: &[FeatureInputLane],
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<super::profiles::ExactProfiles, cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes(
         image,
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
+        &cadmpeg_core::decode::DecodePolicy { limits },
     )?;
     let scan = crate::container::scan(&ctx, root)?;
     let (source_lanes, mut exact, _, _, _, _) =

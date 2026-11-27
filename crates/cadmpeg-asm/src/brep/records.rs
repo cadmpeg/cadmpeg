@@ -370,7 +370,7 @@ native_record! {
 
 /// Shape of the evaluated tolerance slot of one tolerant ASM vertex record,
 /// with the version-gated LONG that follows the slot when it is present.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "slot", deny_unknown_fields)]
 pub enum EvaluatedToleranceSlot {
@@ -466,7 +466,7 @@ native_record! {
 }
 
 /// Release-selected fixed fields following a tolerant-coedge parameter interval.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "layout", deny_unknown_fields)]
 pub enum TolerantCoedgeExtension {
@@ -653,7 +653,7 @@ mod tests {
     fn tolerant_vertex_tail_json_keeps_sentinel_and_refuses_nonfinite_value() {
         use serde_value::Value;
 
-        let json = serde_json::json!({
+        let json = cadmpeg_core::json!({
             "id": "f3d:asm:tolerant-vertex-tail#1",
             "record_index": 1,
             "vertex": "f3d:brep:entity#1",
@@ -679,7 +679,7 @@ mod tests {
     fn tolerant_coedge_interval_json_refuses_nonfinite_endpoints() {
         use serde_value::Value;
 
-        let json = serde_json::json!({
+        let json = cadmpeg_core::json!({
             "id": "f3d:asm:tolerant-coedge-parameters#1",
             "record_index": 1,
             "coedge": "f3d:brep:entity#1",
@@ -706,7 +706,7 @@ mod tests {
         T: serde::de::DeserializeOwned + serde::Serialize + std::fmt::Debug,
     {
         let mut document = json::to_value(cadmpeg_ir::CadIr::empty()).unwrap();
-        document["native"] = serde_json::json!({"f3d": {arena: [record.clone()]}});
+        document["native"] = cadmpeg_core::json!({"f3d": {arena: [record.clone()]}});
         let admitted: cadmpeg_ir::CadIr = json::from_value(document.clone()).unwrap();
         let typed: Vec<T> = admitted
             .native
@@ -718,12 +718,12 @@ mod tests {
 
         for extra in [
             serde_json::Value::Null,
-            serde_json::json!(false),
-            serde_json::json!(0),
-            serde_json::json!(1.25),
-            serde_json::json!("extra"),
-            serde_json::json!([]),
-            serde_json::json!({}),
+            cadmpeg_core::json!(false),
+            cadmpeg_core::json!(0),
+            cadmpeg_core::json!(1.25),
+            cadmpeg_core::json!("extra"),
+            cadmpeg_core::json!([]),
+            cadmpeg_core::json!({}),
         ] {
             let mut invalid = document.clone();
             invalid["native"]["f3d"][arena][0][field]["zz_bogus"] = extra;
@@ -746,7 +746,7 @@ mod tests {
         assert_empty_slot_refuses_extra_keys::<super::TolerantVertexTail>(
             "tolerant_vertex_tails",
             "evaluated_slot",
-            &serde_json::json!({
+            &cadmpeg_core::json!({
                 "id": "f3d:asm:tolerant-vertex-tail#1",
                 "record_index": 1,
                 "vertex": "f3d:brep:entity#1",
@@ -761,7 +761,7 @@ mod tests {
         assert_empty_slot_refuses_extra_keys::<super::TolerantCoedgeParameters>(
             "tolerant_coedge_parameters",
             "extension",
-            &serde_json::json!({
+            &cadmpeg_core::json!({
                 "id": "f3d:asm:tolerant-coedge-parameters#1",
                 "record_index": 1,
                 "coedge": "f3d:brep:entity#1",

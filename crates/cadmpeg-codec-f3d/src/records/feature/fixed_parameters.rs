@@ -57,7 +57,7 @@ pub(crate) struct DesignFixedExtrudeScalar<T = FiniteReal> {
 }
 
 /// Exact carrier of an Extrude's one-sided distance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "carrier", content = "scalar", rename_all = "snake_case")]
 pub(crate) enum DesignFixedExtrudeDistance {
     /// Signed distance in an owner-local scalar lane.
@@ -77,31 +77,31 @@ mod tests {
 
     #[test]
     fn fixed_extrude_distance_construction_json_refuses_nonpositive_value() {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "carrier": "distance_construction",
             "scalar": { "value": 1.0, "record_index": 1, "value_offset": 2 }
         });
         assert!(json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
-        wire["scalar"]["value"] = serde_json::json!(0.0);
+        wire["scalar"]["value"] = cadmpeg_core::json!(0.0);
         assert!(json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_err());
-        wire["scalar"]["value"] = serde_json::json!(-1.0);
+        wire["scalar"]["value"] = cadmpeg_core::json!(-1.0);
         assert!(json::from_value::<DesignFixedExtrudeDistance>(wire).is_err());
     }
 
     #[test]
     fn fixed_extrude_scalar_json_refuses_zero_distance() {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "carrier": "fixed_scalar",
             "scalar": { "value": -1.0, "record_index": 1, "value_offset": 2 }
         });
         assert!(json::from_value::<DesignFixedExtrudeDistance>(wire.clone()).is_ok());
-        wire["scalar"]["value"] = serde_json::json!(0.0);
+        wire["scalar"]["value"] = cadmpeg_core::json!(0.0);
         assert!(json::from_value::<DesignFixedExtrudeDistance>(wire).is_err());
     }
 
     fn group(variable: bool, tangency: bool) -> DesignFixedFilletGroup {
         let mut wire = if variable {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "radii": [1.0, 2.0, 3.0],
                 "radius_record_indexes": [10, 11, 12],
                 "radius_offsets": [100, 108, 116],
@@ -110,7 +110,7 @@ mod tests {
                 "intermediate_parameter_offsets": [200]
             })
         } else {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "radii": [1.0],
                 "radius_record_indexes": [10],
                 "radius_offsets": [100]
@@ -118,7 +118,7 @@ mod tests {
         };
         if tangency {
             wire["tangency_weight"] =
-                serde_json::json!({"value": 1.0, "record_index": 5, "value_offset": 50});
+                cadmpeg_core::json!({"value": 1.0, "record_index": 5, "value_offset": 50});
         }
         json::from_value(wire).unwrap()
     }
@@ -545,7 +545,7 @@ pub(crate) struct DesignFixedFilletScalar {
 }
 
 /// Exact fixed scalar lanes carried by a Chamfer scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignFixedChamferParameters {
     /// One equal setback distance applies to both incident faces.

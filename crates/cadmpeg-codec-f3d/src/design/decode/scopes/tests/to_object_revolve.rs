@@ -215,7 +215,7 @@ impl Fixture {
         .unwrap()
         .expect("Revolve scope");
         scope.id = format!("{STREAM}:design-parameter-scope#0");
-        let owner: DesignParameterOwner = json::from_value(serde_json::json!({
+        let owner: DesignParameterOwner = json::from_value(cadmpeg_core::json!({
             "id": format!("{STREAM}:design-parameter-owner#{OWNER}"),
             "byte_offset": 2000,
             "frame_length": 104,

@@ -28,7 +28,8 @@ pub(crate) enum SldprtLossCode {
     MetadataPartRootUnsupported,
     /// Configuration-manager class has no proven scalar roles or serializer.
     MetadataConfigurationManagerOpaque,
-    /// Default-property carrier has no complete supported reading.
+    /// Default-property carrier stores its properties in a form the decoder
+    /// does not read.
     MetadataDefaultCarrierUnsupported,
     /// Default properties have multiple physical namespace owners.
     MetadataDefaultOwnerAmbiguous,
@@ -40,7 +41,8 @@ pub(crate) enum SldprtLossCode {
     MetadataMassPropertiesNotCompared,
     /// Configuration-property namespace has multiple physical owners.
     MetadataConfigurationPropertyOwnerAmbiguous,
-    /// Configuration-property XML has no complete unambiguous reading.
+    /// Configuration-property carrier stores its properties in a form the
+    /// decoder does not read.
     MetadataConfigurationPropertyCarrierUnsupported,
     /// Configuration-property record has no supported literal scalar fact.
     MetadataConfigurationPropertyValueUnsupported,
@@ -344,7 +346,8 @@ pub(crate) enum SldprtLossCode {
     TopologyBodyHierarchyDerived,
     /// A canonical face has no explicit body relation.
     TopologyFaceUnclaimed,
-    /// A face has no decoded loop, so the face and its surface are withheld.
+    /// A face names no loop and does not cover a whole closed surface, so
+    /// the face and its surface are withheld.
     TopologyFaceWithheld,
     /// Current typed ownership nodes are absent from the decoded topology.
     TopologyOwnershipWithheld,
@@ -354,17 +357,18 @@ pub(crate) enum SldprtLossCode {
     /// reciprocal partner corroboration of both ring-order endpoints, or a
     /// mutual twin FIN contradicts the ring-order endpoint.
     TopologyFinPartnerUnresolved,
-    /// A FIN forward link names no reciprocal same-loop backward link, so
-    /// its ring is withheld instead of walked on doubt.
+    /// A FIN ring does not close, or a FIN forward link names no reciprocal
+    /// same-loop backward link, so its loop is withheld instead of walked on
+    /// doubt; the face keeps its other loops.
     TopologyFinLinkUnresolved,
     /// Vertexless ring FINs fail reciprocal closed-carrier single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
-    /// A vertex loop names no resolved vertex, so its face and surface are
-    /// withheld.
+    /// A vertex loop names no resolved vertex, so the loop is withheld; the
+    /// face keeps its other loops.
     TopologyVertexLoopWithheld,
-    /// A loop of a face holds an ambiguous FIN, so the face and its surface
-    /// are withheld.
+    /// The ring of a loop holds an ambiguous FIN, so the loop is withheld;
+    /// the face keeps its other loops.
     TopologyAmbiguousFinFaceWithheld,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
@@ -379,6 +383,12 @@ pub(crate) enum SldprtLossCode {
     /// Imported-feature body streams of the active configuration that do not
     /// decode or that the decode does not take.
     GeometryImportedBodiesNotTransferred,
+    /// A body's stored `res_linear` states no linear precision
+    /// (`parasolid.md` §4).
+    BodyResolutionInvalid,
+    /// A body whose BODY node does not read states no `res_linear`, and the
+    /// part tolerance does not count it (`parasolid.md` §4).
+    BodyResolutionUnread,
     /// B-rep topology graph was not built for this file.
     TopologyGraphNotTransferred,
     /// Materials, tessellation, and metadata were not transferred.
@@ -471,6 +481,9 @@ pub(crate) enum SldprtLossCode {
     WriterActiveConfigurationAssumed,
     /// Export writes no history record for the named design records.
     WriterFeaturesOmitted,
+    /// Export writes no history record for the named features, whose result
+    /// body the output does not hold, nor for the records that need them.
+    WriterFeatureResultAbsent,
     /// Export writes the sketches without the named constraints.
     WriterSketchConstraintsOmitted,
     /// Export bounds the named edges by their vertices, without their range.
@@ -556,8 +569,8 @@ pub(crate) enum SldprtLossCode {
     /// Suppressed component instances, and the instances below them, are
     /// omitted from the occurrence tree.
     AssemblySuppressedComponentsOmitted,
-    /// A component instance has no valid placement or names no component
-    /// model; the instance and the instances below it are omitted.
+    /// A component instance has no valid identity, placement, or component
+    /// model; the instance is omitted.
     AssemblyPlacementUnresolved,
     /// Assembly configurations other than the active one are not transferred.
     AssemblyConfigurationsNotTransferred,
@@ -568,6 +581,9 @@ pub(crate) enum SldprtLossCode {
     /// Design features whose operation the decoder typed in its own records
     /// state their family without operands.
     DesignFeatureUnresolved,
+    /// User datums whose decoded definition the design types no
+    /// construction for state their family without geometry.
+    DesignDatumUnresolved,
     /// A feature folder whose members regeneration order does not keep in
     /// one run is not stated.
     DesignFolderDropped,
@@ -639,6 +655,17 @@ pub(crate) enum SldprtLossCode {
     /// direction their record stores, reversed where their record's reverse
     /// byte is `1`.
     DesignRevolveSenseAssumed,
+    /// Typed reference planes whose frame comes from their mid-plane
+    /// constraint: their origin and x axis are a frame the decoder
+    /// constructs on the plane.
+    DesignDatumPlaneAxisConstructed,
+    /// Typed reference planes with an angular `D1` whose x axis is the
+    /// u-axis of their angular frame; offset planes on them can store
+    /// another u-axis for it (open item DI-82).
+    DesignDatumPlaneAxisAngled,
+    /// Typed datums whose geometry decodes differently in a configuration:
+    /// the datum states the active configuration's geometry.
+    DesignDatumConfigurationDropped,
 }
 
 impl SldprtLossCode {
@@ -787,6 +814,8 @@ impl SldprtLossCode {
         Self::GeometryParasolidNotTransferred,
         Self::GeometryMeshBodyNotTransferred,
         Self::GeometryImportedBodiesNotTransferred,
+        Self::BodyResolutionInvalid,
+        Self::BodyResolutionUnread,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
@@ -824,6 +853,7 @@ impl SldprtLossCode {
         Self::WriterSubdOmitted,
         Self::WriterActiveConfigurationAssumed,
         Self::WriterFeaturesOmitted,
+        Self::WriterFeatureResultAbsent,
         Self::WriterSketchConstraintsOmitted,
         Self::WriterEdgeRangesOmitted,
         Self::WriterPmiOmitted,
@@ -856,6 +886,7 @@ impl SldprtLossCode {
         Self::AssemblyEmbeddedDocumentsNotTransferred,
         Self::AssemblyBomExclusionNotTransferred,
         Self::DesignFeatureUnresolved,
+        Self::DesignDatumUnresolved,
         Self::DesignFolderDropped,
         Self::DesignParameterDisplayRounded,
         Self::DesignParameterValueUnread,
@@ -876,6 +907,9 @@ impl SldprtLossCode {
         Self::DesignRevolveProfileDiffers,
         Self::DesignRevolveProfileUnchecked,
         Self::DesignRevolveSenseAssumed,
+        Self::DesignDatumPlaneAxisConstructed,
+        Self::DesignDatumPlaneAxisAngled,
+        Self::DesignDatumConfigurationDropped,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -1028,6 +1062,8 @@ impl SldprtLossCode {
             Self::GeometryImportedBodiesNotTransferred => {
                 "geometry.imported-bodies-not-transferred"
             }
+            Self::BodyResolutionInvalid => "body.resolution-invalid",
+            Self::BodyResolutionUnread => "body.resolution-unread",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
@@ -1069,6 +1105,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => "writer.subd-omitted",
             Self::WriterActiveConfigurationAssumed => "writer.active-configuration-assumed",
             Self::WriterFeaturesOmitted => "writer.features-omitted",
+            Self::WriterFeatureResultAbsent => "writer.feature-result-absent",
             Self::WriterSketchConstraintsOmitted => "writer.sketch-constraints-omitted",
             Self::WriterEdgeRangesOmitted => "writer.edge-ranges-omitted",
             Self::WriterPmiOmitted => "writer.pmi-omitted",
@@ -1125,6 +1162,7 @@ impl SldprtLossCode {
             }
             Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
+            Self::DesignDatumUnresolved => "design.datum-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
             Self::DesignParameterValueUnread => "design.parameter-value-unread",
@@ -1144,6 +1182,9 @@ impl SldprtLossCode {
             Self::DesignRevolveProfileDiffers => "design.revolve-profile-differs",
             Self::DesignRevolveProfileUnchecked => "design.revolve-profile-unchecked",
             Self::DesignRevolveSenseAssumed => "design.revolve-sense-assumed",
+            Self::DesignDatumPlaneAxisConstructed => "design.datum-plane-axis-constructed",
+            Self::DesignDatumPlaneAxisAngled => "design.datum-plane-axis-angled",
+            Self::DesignDatumConfigurationDropped => "design.datum-configuration-dropped",
             Self::DesignSketchDimensionCircle => "design.sketch-dimension-circle",
         }
     }
@@ -1153,6 +1194,7 @@ impl SldprtLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
+            Self::BodyResolutionInvalid | Self::BodyResolutionUnread => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnitsMemberGenerated => Severity::Warning,
             Self::WriterNativeHistorySummary => Severity::Warning,
@@ -1172,6 +1214,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => Severity::Warning,
             Self::WriterActiveConfigurationAssumed => Severity::Warning,
             Self::WriterFeaturesOmitted => Severity::Warning,
+            Self::WriterFeatureResultAbsent => Severity::Warning,
             Self::WriterSketchConstraintsOmitted => Severity::Warning,
             Self::WriterEdgeRangesOmitted => Severity::Warning,
             Self::WriterPmiOmitted => Severity::Warning,
@@ -1368,7 +1411,10 @@ impl SldprtLossCode {
             | Self::DesignSketchDimensionCircle
             | Self::DesignRevolveAxisDerived
             | Self::DesignRevolveProfileDiffers
-            | Self::DesignRevolveSenseAssumed => Severity::Warning,
+            | Self::DesignRevolveSenseAssumed
+            | Self::DesignDatumPlaneAxisConstructed
+            | Self::DesignDatumPlaneAxisAngled
+            | Self::DesignDatumConfigurationDropped => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -1376,6 +1422,7 @@ impl SldprtLossCode {
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
             | Self::DesignFeatureUnresolved
+            | Self::DesignDatumUnresolved
             | Self::SketchSecondReading
             | Self::SketchDimensionRepeated
             | Self::DesignExtrudeProfileUnchecked
@@ -1390,6 +1437,8 @@ impl SldprtLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::BodyResolutionInvalid => LossTaxonomy::SourceTopologyInvalid,
+            Self::BodyResolutionUnread => LossTaxonomy::DecodeDiagnostic,
             Self::WriterNativeEnvelopeAuxiliaryOmitted
             | Self::WriterHistoryNameNotWritten
             | Self::WriterHistoryRegenerationRefused => LossTaxonomy::MetadataNotTransferred,
@@ -1411,6 +1460,7 @@ impl SldprtLossCode {
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
             Self::WriterActiveConfigurationAssumed => LossTaxonomy::MetadataNotTransferred,
             Self::WriterFeaturesOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterFeatureResultAbsent => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSketchConstraintsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterEdgeRangesOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterPmiOmitted => LossTaxonomy::PmiOmitted,
@@ -1470,9 +1520,9 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
-            Self::DesignFeatureUnresolved | Self::DesignEquationUnread => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::DesignFeatureUnresolved
+            | Self::DesignDatumUnresolved
+            | Self::DesignEquationUnread => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
             Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded
@@ -1491,7 +1541,10 @@ impl SldprtLossCode {
             | Self::DesignRevolveBooleanUnstated
             | Self::DesignRevolveProfileDiffers
             | Self::DesignRevolveProfileUnchecked
-            | Self::DesignRevolveSenseAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::DesignRevolveSenseAssumed
+            | Self::DesignDatumPlaneAxisConstructed
+            | Self::DesignDatumPlaneAxisAngled
+            | Self::DesignDatumConfigurationDropped => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1956,6 +2009,8 @@ mod tests {
                 "geometry.parasolid-not-transferred",
                 "geometry.mesh-body-not-transferred",
                 "geometry.imported-bodies-not-transferred",
+                "body.resolution-invalid",
+                "body.resolution-unread",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
@@ -1993,6 +2048,7 @@ mod tests {
                 "writer.subd-omitted",
                 "writer.active-configuration-assumed",
                 "writer.features-omitted",
+                "writer.feature-result-absent",
                 "writer.sketch-constraints-omitted",
                 "writer.edge-ranges-omitted",
                 "writer.pmi-omitted",
@@ -2025,6 +2081,7 @@ mod tests {
                 "assembly.embedded-documents-not-transferred",
                 "assembly.bom-exclusion-not-transferred",
                 "design.feature-unresolved",
+                "design.datum-unresolved",
                 "design.folder-dropped",
                 "design.parameter-display-rounded",
                 "design.parameter-value-unread",
@@ -2045,6 +2102,9 @@ mod tests {
                 "design.revolve-profile-differs",
                 "design.revolve-profile-unchecked",
                 "design.revolve-sense-assumed",
+                "design.datum-plane-axis-constructed",
+                "design.datum-plane-axis-angled",
+                "design.datum-configuration-dropped",
             ]
         );
     }

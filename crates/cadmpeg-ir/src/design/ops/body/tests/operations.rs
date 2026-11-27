@@ -4,7 +4,7 @@
 use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::joints::connectors;
 use super::{

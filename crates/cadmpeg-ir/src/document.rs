@@ -1049,10 +1049,12 @@ macro_rules! declare_model {
             )*
             pub(crate) feature_regeneration_parents: FeatureRegenerationParents,
             pub(crate) omitted: OmittedArenas,
+            pub(crate) restated: crate::design::projection::restated::Restatements,
         }
 
         /// Two models are equal when they hold the same records. Whether the
-        /// arenas the wire omits were read is no part of a model's value.
+        /// arenas the wire omits were read, and which design records restate
+        /// their records, is no part of a model's value.
         impl PartialEq for Model {
             fn eq(&self, other: &Self) -> bool {
                 $(self.$field == other.$field &&)*
@@ -1064,16 +1066,30 @@ macro_rules! declare_model {
         declare_home_rewrite!(Model, $($field: $ty;)*);
 
         impl Model {
-            /// Moves every arena and feature-parent relation from another model.
+            /// The design record that restates each record of an arena the
+            /// CADIR wire omits, where a projection stated it.
+            #[must_use]
+            pub const fn restated(&self) -> &crate::design::projection::restated::Restatements {
+                &self.restated
+            }
+
+            /// The restatements a projection states.
+            pub fn restated_mut(&mut self) -> &mut crate::design::projection::restated::Restatements {
+                &mut self.restated
+            }
+
+            /// Moves every arena, feature-parent relation and restatement
+            /// from another model.
             pub(crate) fn append(&mut self, mut other: Self) {
                 self.omitted = self.omitted.merged(&other.omitted);
                 self.append_arenas(&mut other);
                 self.feature_regeneration_parents.0
                     .append(&mut other.feature_regeneration_parents.0);
+                self.restated.append(&mut other.restated);
             }
 
-            /// The records and feature-parent relations of this model whose
-            /// identities `ids` holds.
+            /// The records, feature-parent relations and restatements of this
+            /// model whose identities `ids` holds.
             pub(crate) fn repro_select(&self, ids: &std::collections::BTreeSet<String>) -> Self {
                 let mut selected = self.repro_select_arenas(ids);
                 if self.omitted == OmittedArenas::NotRead {
@@ -1082,6 +1098,7 @@ macro_rules! declare_model {
                 selected.feature_regeneration_parents.0 = self.feature_regeneration_parents.0.iter()
                     .filter(|(child, parent)| ids.contains(child.as_str()) && ids.contains(parent.as_str()))
                     .map(|(child, parent)| (child.clone(), parent.clone())).collect();
+                selected.restated = self.restated.select(ids);
                 selected
             }
 
@@ -1101,6 +1118,10 @@ macro_rules! declare_model {
                 for (child, parent) in other.feature_regeneration_parents.0 {
                     let edge = rewrite.rewrite(FeatureRegenerationEdge { child, parent }).map_err(ModelRewriteError::Rewrite)?;
                     self.feature_regeneration_parents.0.insert(edge.child, edge.parent);
+                }
+                for edge in other.restated.into_edges() {
+                    let edge = rewrite.rewrite(edge).map_err(ModelRewriteError::Rewrite)?;
+                    self.restated.insert_edge(edge);
                 }
                 Ok(())
             }
@@ -1314,14 +1335,9 @@ macro_rules! declare_document_arenas {
                 0
             }
 
-            /// The references of the document, from one walk of its records
-            /// (§3.3).
-            pub(crate) fn references(&self) -> crate::give_up::References {
-                self.references_from(crate::give_up::References::default())
-            }
-
             /// The references of the document added to `references`, which
-            /// counts the ids it names that the document does not hold.
+            /// counts the ids it names that the document does not hold, by
+            /// the walk its naming states (§3.3).
             pub(crate) fn references_from(
                 &self,
                 mut references: crate::give_up::References,
@@ -1340,7 +1356,9 @@ macro_rules! declare_document_arenas {
                         references.add(&arena, entity.record_identity(), entity);
                     }
                 })*
-                self.native.add_holders(&mut references);
+                if references.native_links == crate::give_up::NativeLinks::Read {
+                    self.native.add_holders(&mut references);
+                }
                 references
             }
 
@@ -1348,18 +1366,22 @@ macro_rules! declare_document_arenas {
             /// an id of `gone`. The arena is in identity order.
             pub(crate) fn holder(
                 &self,
+                native_links: crate::give_up::NativeLinks,
                 arena: &crate::give_up::Arena,
                 id: &str,
                 gone: &std::collections::BTreeSet<String>,
             ) -> Option<crate::give_up::Holder> {
                 let crate::give_up::Arena::Home { home, field } = arena else {
-                    return self.native.holder(arena, id, gone);
+                    return match native_links {
+                        crate::give_up::NativeLinks::Read => self.native.holder(arena, id, gone),
+                        crate::give_up::NativeLinks::Unread => None,
+                    };
                 };
                 $(if *home == stringify!($home) && *field == stringify!($field) {
                     let names: Vec<(String, String)> = crate::give_up::records(&self.$home.$field, id)
                         .iter()
                         .filter_map(|entity| {
-                            crate::give_up::Holder::of(arena, id, entity, |text| {
+                            crate::give_up::Holder::named(native_links, arena, id, entity, |text| {
                                 gone.get(text).map(String::as_str)
                             })
                         })
@@ -1667,6 +1689,15 @@ macro_rules! declare_arena_name {
                     ),
                 );)*
                 ids
+            }
+
+            /// The ids of the records of the arenas the CADIR wire omits.
+            pub(crate) fn wire_omitted_ids(self) -> std::collections::BTreeSet<&'a str> {
+                let mut omitted = std::collections::BTreeSet::new();
+                $(if ArenaName::WIRE_OMITTED.contains(&arena_name!($field, $class, $home)) {
+                    omitted.extend(self.$home.$field.iter().map(crate::schema::ArenaRecord::record_identity));
+                })*
+                omitted
             }
 
             /// The ids of `among` that a record of an arena the CADIR wire
@@ -1982,11 +2013,13 @@ macro_rules! declare_wire_omitted {
 
         impl Model {
             /// Drops what the CADIR wire omits: the records of those arenas,
-            /// their feature-parent relations, and `ProductDefinition.sketches`.
+            /// their feature-parent relations and restatements, and
+            /// `ProductDefinition.sketches`.
             /// The model then holds what its CADIR JSON reads back as.
             pub fn drop_omitted_arenas(&mut self) {
                 $(self.$field.clear();)*
                 self.feature_regeneration_parents = FeatureRegenerationParents::default();
+                self.restated = crate::design::projection::restated::Restatements::default();
                 for definition in &mut self.product_definitions {
                     definition.sketches.clear();
                 }
@@ -1995,7 +2028,8 @@ macro_rules! declare_wire_omitted {
 
             /// Takes what the CADIR wire omits from `decoded`, the decode of
             /// the source this model was saved from: the records of those
-            /// arenas, their feature-parent relations, the sketches of each
+            /// arenas, their feature-parent relations and restatements, the
+            /// sketches of each
             /// product definition both models hold, and the digest the
             /// decode wrapper recorded of them. It undoes
             /// [`Self::drop_omitted_arenas`] for a model whose saved source is
@@ -2004,6 +2038,7 @@ macro_rules! declare_wire_omitted {
                 $(self.$field.clone_from(&decoded.$field);)*
                 self.feature_regeneration_parents
                     .clone_from(&decoded.feature_regeneration_parents);
+                self.restated.clone_from(&decoded.restated);
                 for definition in &mut self.product_definitions {
                     definition.sketches = decoded
                         .product_definitions
@@ -3321,7 +3356,7 @@ impl CadIr {
     /// ```compile_fail
     /// use cadmpeg_ir::CadIr;
     /// let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    /// let raw = serde_json::json!({"id": "test:native:unknown#0", "extra": true});
+    /// let raw = cadmpeg_core::json!({"id": "test:native:unknown#0", "extra": true});
     /// CadIr::empty().set_native_unknowns_from(&ctx, "test", [raw]).unwrap();
     /// ```
     pub fn set_native_unknowns_from<T: Borrow<NativeUnknownRecord>, I: IntoIterator<Item = T>>(
@@ -3481,7 +3516,8 @@ impl CadIr {
 
     /// Serialize a finalized, identity-sorted view as pretty JSON.
     ///
-    /// Clones and [`finalize`](Self::finalize)s so callers need not pre-sort.
+    /// Serializes a [`finalize`](Self::finalize)d copy where an arena is out
+    /// of order, so callers need not pre-sort.
     ///
     /// The text is written through the same finite adapter the digest uses, so
     /// a non-finite float is refused rather than written as `null`.
@@ -3497,8 +3533,18 @@ impl CadIr {
     /// float, and [`CanonicalJsonError::PastBound`] for a document nesting
     /// past a bound of §2.5.
     pub fn to_canonical_json(&self) -> Result<String, CanonicalJsonError> {
-        let mut canonical = self.clone();
-        canonical.finalize();
+        let canonical = if self.geometry.is_finalized()
+            && self.model.is_finalized()
+            && self.design.is_finalized()
+            && self.process.is_finalized()
+            && self.native.is_finalized()
+        {
+            std::borrow::Cow::Borrowed(self)
+        } else {
+            let mut sorted = self.clone();
+            sorted.finalize();
+            std::borrow::Cow::Owned(sorted)
+        };
         let (bytes, measured) = crate::hash::measured_canonical_json(&canonical)?;
         let past = measured
             .records

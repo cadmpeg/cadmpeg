@@ -7,6 +7,8 @@ use crate::loss::CreoLossCode;
 
 use super::coverage::torus_parameter_coverage;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::GivenUpRecord;
+use cadmpeg_ir::SourceProvenance;
 
 pub(super) fn push_report_loss(
     losses: &mut Vec<LossNote>,
@@ -464,11 +466,82 @@ pub(super) fn push_legacy_value_losses(
     }
 }
 
+/// One `record.unreadable` per legacy value row that forms no record. Rows
+/// kept with a partial payload are not charged.
+pub(super) fn push_unread_legacy_rows(
+    losses: &mut Vec<LossNote>,
+    scan: &ContainerScan,
+) -> Result<(), cadmpeg_core::CodecError> {
+    fn charge(
+        losses: &mut Vec<LossNote>,
+        code: CreoLossCode,
+        rows: impl Iterator<Item = crate::legacy::SerializedOffsetId>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let code = code.kind();
+        for row in rows {
+            losses.push(
+                GivenUpRecord::new(
+                    cadmpeg_ir::ids::Identity::new(row.to_string())?,
+                    format_args!("{code}: the value row forms no record"),
+                )
+                .at(SourceProvenance::root(
+                    "creo",
+                    cadmpeg_core::decode::u64_from_index(row.offset),
+                ))
+                .loss(),
+            );
+        }
+        Ok(())
+    }
+    let Some(legacy) = scan.framing.layout.legacy_ascii() else {
+        return Ok(());
+    };
+    let values = &legacy.persistence;
+    charge(
+        losses,
+        CreoLossCode::LegacyRealValueUnresolved,
+        values.real_values.unresolved_ids(),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyIntegerValueUnresolved,
+        values.integer_values.unresolved_ids(),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyContinuationFormUndefined,
+        values
+            .type_3_values
+            .unresolved_ids()
+            .chain(values.type_4_values.unresolved_ids()),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyUnsignedValueUnresolved,
+        values
+            .type_5_values
+            .unresolved_ids()
+            .chain(values.type_7_values.unresolved_ids())
+            .chain(values.type_9_values.unresolved_ids())
+            .chain(values.type_11_values.unresolved_ids()),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyCompactRealUnresolved,
+        values.type_6_values.unresolved_ids(),
+    )?;
+    charge(
+        losses,
+        CreoLossCode::LegacyStringContinuationUndefined,
+        values.unread_string_scalar_ids(),
+    )
+}
+
 pub(super) fn push_brep_transfer_note(
     losses: &mut Vec<LossNote>,
     diagnostics: &BrepTransferDiagnostics,
     geometry_section_count: usize,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for (body_id, reason) in &diagnostics.rejected_extrusion_bodies {
         push_report_loss(
             losses,
@@ -555,6 +628,20 @@ pub(super) fn push_brep_transfer_note(
         diagnostics.emitted_face_count,
         rejected_face_count,
     ));
+    let code = CreoLossCode::BrepTransferIncomplete.kind();
+    losses.extend(
+        diagnostics
+            .rejected_faces()?
+            .into_iter()
+            .map(|(face, reason)| {
+                GivenUpRecord::new(
+                    face,
+                    format_args!("{code}: face admission rejected the face for {reason}"),
+                )
+                .loss()
+            }),
+    );
+    Ok(())
 }
 
 pub(super) fn push_carrier_transfer_notes(
@@ -994,7 +1081,8 @@ mod tests {
         diagnostics.selected_body_count = Some(2);
         let losses = {
             let mut losses = Vec::new();
-            push_brep_transfer_note(&mut losses, &diagnostics, 4);
+            push_brep_transfer_note(&mut losses, &diagnostics, 4)
+                .expect("a rejected face id composes");
             losses
         };
         let message = &losses[0].message;

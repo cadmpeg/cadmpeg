@@ -268,7 +268,7 @@ fn raw_records(operands: &Operands) -> Vec<crate::native::RseRecordRecord> {
         .filter_map(|((token, ordinal), type_id)| {
             let type_id = type_id.as_ref()?;
             Some(
-                json::from_value(serde_json::json!({
+                json::from_value(cadmpeg_core::json!({
                     "id": format!("inventor:rse:record#{token}-{ordinal}"),
                     "token": token, "ordinal": ordinal, "selector": 0, "type_index": 0,
                     "type_id": crate::pmdc::type_id_string(*type_id),
@@ -418,6 +418,7 @@ fn project_fixture_with_spacings(
                 geometry: reference(92),
                 links: vec![reference(93)],
                 span,
+                segments: 1,
             }),
         );
     }
@@ -632,7 +633,7 @@ fn project_fixture_with_spacings(
             .find(|record| record.ordinal == number)
             .expect("raw operand");
         let mut wire = json::to_value(&*record).expect("serialize raw operand");
-        wire["payload_len"] = serde_json::json!(record.payload_len() + 1);
+        wire["payload_len"] = cadmpeg_core::json!(record.payload_len() + 1);
         *record = json::from_value(wire).expect("alter raw operand length");
         let changed = Operands::from_native(&native, &wrong_length);
         assert!(
@@ -1934,4 +1935,5 @@ fn pattern_seeds_require_their_exact_record_family() {
 }
 
 mod body_seeds;
+mod line_chains;
 mod omissions;

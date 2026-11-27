@@ -271,7 +271,7 @@ pub(crate) struct DesignPatternAxisWrapper {
 }
 
 /// Axis construction carried by a fixed circular-pattern scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DesignCircularPatternAxisWire {
     /// Axis coordinates stored directly in the Design record.
@@ -1484,8 +1484,8 @@ mod tests {
     #[test]
     fn historical_pattern_axis_refuses_empty_wrapper_arrays() {
         let mut wire = json::to_value(circular_axis(false)).unwrap();
-        wire["wrapper_record_indices"] = serde_json::json!([]);
-        wire["identity_offsets"] = serde_json::json!([]);
+        wire["wrapper_record_indices"] = cadmpeg_core::json!([]);
+        wire["identity_offsets"] = cadmpeg_core::json!([]);
         let error = json::from_value::<DesignCircularPatternAxis>(wire).unwrap_err();
         assert!(error.to_string().contains("wrappers must be nonempty"));
     }
@@ -1708,13 +1708,13 @@ mod tests {
         let mut span = encoded.clone();
         span["directions"][0]["distance_type"] = 8.into();
         span["directions"][0]["selection_kind"] = 16.into();
-        span["directions"][0]["displacement"] = serde_json::json!([0.0, 0.0, 1.0]);
+        span["directions"][0]["displacement"] = cadmpeg_core::json!([0.0, 0.0, 1.0]);
         assert!(json::from_value::<DesignRectangularPatternConstruction>(span).is_ok());
         let mut zero = encoded.clone();
-        zero["secondary_direction"]["value"] = serde_json::json!([0.0, 0.0, 0.0]);
+        zero["secondary_direction"]["value"] = cadmpeg_core::json!([0.0, 0.0, 0.0]);
         assert!(json::from_value::<DesignRectangularPatternConstruction>(zero).is_err());
         let mut missing = encoded;
-        missing["directions"] = serde_json::json!([]);
+        missing["directions"] = cadmpeg_core::json!([]);
         assert!(json::from_value::<DesignRectangularPatternConstruction>(missing).is_err());
         let mut inactive_one = wire.clone();
         inactive_one.u_extent = 0.0;

@@ -243,7 +243,7 @@ struct DesignAssemblyLegacyOperandWire {
 }
 
 /// Construction carrier family used by a legacy 421-byte `As-built` operand.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 enum DesignAssemblyLegacyConstruction {
     /// Point-only connector construction.
@@ -805,7 +805,7 @@ enum LegacyConstructionOut<'a> {
     Point(&'a DesignWorkPointConstruction),
     Hole(&'a DesignHoleConstruction),
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignAssemblyAxialOperandTarget {
     /// Connector object selected inside a placed `Component Insert` occurrence.
@@ -1825,7 +1825,7 @@ impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
 }
 
 /// One exact native qualifier for an assembly operand construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignAssemblyOperandQualifier {
     /// Ordered occurrence path carried by a locator graph.

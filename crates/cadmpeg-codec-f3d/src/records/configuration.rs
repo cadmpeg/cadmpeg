@@ -163,6 +163,17 @@ impl DesignConfiguration {
         })
     }
 
+    /// This document with `payload` in place of its own: the same entry,
+    /// identity scope and active row.
+    pub(crate) fn with_payload(&self, payload: Map<String, Value>) -> Result<Self, CodecError> {
+        let mut document = Self::try_new(self.entry_name.clone(), self.kind(), payload)?;
+        document.identity_scope = self.identity_scope.clone();
+        if let Some(active_row) = &self.active_row {
+            document.set_active_row(active_row.clone())?;
+        }
+        Ok(document)
+    }
+
     /// Attach the active row of a table document.
     pub(crate) fn set_active_row(
         &mut self,
