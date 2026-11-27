@@ -225,3 +225,254 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     bind_edge_identity_bounded_face_rules(&mut identities, &[inconsistent]);
     assert!(identities[0].resolved_edge_slots.is_empty());
 }
+
+fn face_context(
+    active_face_slot: i64,
+    face_slot: i64,
+    loops: &[&[i64]],
+) -> crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
+    use crate::records::topology::historical_context::{
+        DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
+        DesignHistoricalFaceSupportContext, DesignHistoricalLoopBoundary,
+        DesignHistoricalLoopCoedge,
+    };
+
+    let mut coedge_slot = face_slot * 100;
+    let loops = loops
+        .iter()
+        .zip(0..)
+        .map(|(edges, ordinal)| DesignHistoricalFaceLoopContext {
+            loop_slot: face_slot * 10 + ordinal,
+            boundary: DesignHistoricalLoopBoundary::Coedges(
+                edges
+                    .iter()
+                    .map(|&edge_slot| {
+                        coedge_slot += 1;
+                        DesignHistoricalLoopCoedge {
+                            coedge_slot,
+                            edge_slot,
+                        }
+                    })
+                    .collect(),
+            ),
+        })
+        .collect();
+    DesignHistoricalFaceSupportContext {
+        active_face_slot,
+        surface_slot: face_slot + 1000,
+        preceding_face_slots: vec![face_slot],
+        preceding_face_boundaries: vec![DesignHistoricalFaceBoundaryContext { face_slot, loops }],
+        changed_preceding_face_slots: vec![face_slot],
+        preceding_surface: None,
+    }
+}
+
+/// One bounded-face member at `ordinal` of group 2 whose first recipe
+/// reference names the preceding face of `named` and whose unreferenced
+/// support face is the preceding face of `support`.
+fn named_face_member(
+    ordinal: u32,
+    transition: &[i64],
+    named: crate::records::topology::historical_context::DesignHistoricalFaceSupportContext,
+    support: crate::records::topology::historical_context::DesignHistoricalFaceSupportContext,
+) -> (
+    crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
+    crate::records::topology::face::DesignFaceOperand,
+) {
+    let (identities, face) = bounded_face_rule_fixture();
+    let record_index = 10 + 10 * ordinal;
+    let mut identity = identities.into_iter().next().unwrap().into_draft();
+    identity.id = format!("f3d:Design/BulkStream.dat:edge-identity#{record_index}");
+    identity.group_member_ordinal = ordinal;
+    identity.record_index = record_index;
+    identity.byte_offset = 100 * u64::from(record_index);
+    identity.asset_id_offset = identity.byte_offset + 42;
+    identity.context_id_offset = identity.byte_offset + 118;
+    identity.local_id = u64::from(record_index) + 3;
+    identity.transition_edge_candidates = transition.to_vec();
+    let identity =
+        crate::records::topology::edge_identity::DesignEdgeIdentityOperand::try_new(identity)
+            .unwrap();
+
+    let mut draft = face.into_draft();
+    let byte_offset = 100 * u64::from(record_index);
+    draft.id = format!("f3d:Design/BulkStream.dat:design-face-operand#{record_index}");
+    draft.group = Some(crate::records::topology::body_recipe::DesignOperandGroup {
+        group_record_index: 2,
+        group_member_ordinal: ordinal,
+    });
+    draft.record_index = record_index;
+    draft.byte_offset = byte_offset;
+    draft.paired_byte_offset = byte_offset + 100;
+    draft.recipe_record_index = record_index + 3;
+    draft.recipe_record_byte_offset = byte_offset + 200;
+    draft.recipe_prefix_offset = byte_offset + 211;
+    draft.next_record_index = record_index + 4;
+    draft.next_byte_offset = byte_offset + 300;
+    draft.recipe_references = vec![crate::records::dimensions::DesignRecipeReference {
+        selector: 1,
+        selector_offset: byte_offset + 211,
+        token: "x".into(),
+        token_integer: 0,
+        token_offset: byte_offset + 215,
+        design_reference: i64::from(record_index) + 3,
+        design_reference_offset: byte_offset + 216,
+        candidate_faces: vec![cadmpeg_ir::ids::FaceId::mint(format!(
+            "f3d:brep:entity#{}",
+            named.active_face_slot
+        ))
+        .unwrap()],
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+        operand_offset: None,
+    }];
+    draft.historical_support_contexts = vec![support];
+    let mut face = crate::records::topology::face::DesignFaceOperand::try_new(draft).unwrap();
+    face.first_reference_support_contexts = vec![named];
+    (identity, face)
+}
+
+/// A box whose top face 50 has edges 1-4, whose +X face 51 has edges 2, 5,
+/// 6, 7, whose bottom face 52 has edges 6, 8, 9, 10, and whose -X face 53
+/// has edges 4, 11, 12, 13.
+const TOP: &[i64] = &[1, 2, 3, 4];
+const PLUS_X: &[i64] = &[2, 5, 6, 7];
+const BOTTOM: &[i64] = &[6, 8, 9, 10];
+const MINUS_X: &[i64] = &[4, 11, 12, 13];
+
+#[test]
+fn bounded_face_identities_select_every_edge_of_two_adjacent_named_faces() {
+    let transition = [1, 2, 3, 4, 5, 6, 7];
+    let (top_identity, top_face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    let (side_identity, side_face) = named_face_member(
+        1,
+        &transition,
+        face_context(31, 51, &[PLUS_X]),
+        face_context(33, 53, &[MINUS_X]),
+    );
+    let mut identities = vec![top_identity, side_identity];
+    bind_edge_identity_bounded_face_rules(&mut identities, &[top_face.clone(), side_face.clone()]);
+    assert_eq!(identities[0].resolved_edge_slots, TOP);
+    assert_eq!(identities[1].resolved_edge_slots, [2, 5, 6, 7]);
+    assert_eq!(
+        identities[0].resolution_identity_id.as_deref(),
+        Some(top_face.id.as_str())
+    );
+    let mut union = identities
+        .iter()
+        .flat_map(|identity| identity.resolved_edge_slots.iter().copied())
+        .collect::<Vec<_>>();
+    union.sort_unstable();
+    union.dedup();
+    assert_eq!(union, transition);
+}
+
+#[test]
+fn bounded_face_identity_keeps_an_edge_that_an_edge_group_also_selects() {
+    let transition = [1, 2, 3, 4];
+    let (identity, face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    let mut identities = vec![identity];
+    bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, TOP);
+}
+
+#[test]
+fn bounded_face_identity_selects_the_inner_loop_edges_of_the_named_face() {
+    let inner = [20, 21, 22, 23];
+    let transition = [1, 2, 3, 4, 20, 21, 22, 23];
+    let (identity, face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP, &inner]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    let mut identities = vec![identity];
+    bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, transition);
+}
+
+#[test]
+fn bounded_face_identity_requires_a_complete_named_face_boundary() {
+    let transition = [1, 2, 3, 4, 6];
+    let (identity, mut face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP, &[]]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    let mut identities = vec![identity];
+    bind_edge_identity_bounded_face_rules(&mut identities, &[face.clone()]);
+    assert!(identities[0].resolved_edge_slots.is_empty());
+
+    face.first_reference_support_contexts = vec![
+        face_context(30, 50, &[TOP]),
+        face_context(31, 51, &[PLUS_X]),
+    ];
+    bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, [6]);
+}
+
+#[test]
+fn bounded_face_chamfer_identity_drops_the_tangent_loop_edges_of_the_named_face() {
+    let transition = [1, 2, 3, 4];
+    let (identity, mut face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    face.tangent_boundary_edge_slots = vec![1, 3];
+    let mut identities = vec![identity];
+    let losses = bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, [2, 4]);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn bounded_face_chamfer_identity_keeps_every_sharp_loop_edge_of_the_named_face() {
+    let transition = [1, 2, 3, 4];
+    let (identity, face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    let mut identities = vec![identity];
+    let losses = bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, TOP);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn bounded_face_chamfer_identity_keeps_an_undetermined_loop_edge_with_a_loss() {
+    let transition = [1, 2, 3, 4];
+    let (identity, mut face) = named_face_member(
+        0,
+        &transition,
+        face_context(30, 50, &[TOP]),
+        face_context(32, 52, &[BOTTOM]),
+    );
+    face.tangent_boundary_edge_slots = vec![1];
+    face.undetermined_continuity_edge_slots = vec![3, 9];
+    let mut identities = vec![identity];
+    let losses = bind_edge_identity_bounded_face_rules(&mut identities, &[face]);
+    assert_eq!(identities[0].resolved_edge_slots, [2, 3, 4]);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        [crate::loss::F3dLossCode::HistoricalEdgeContinuityAssumedSharp.kind()]
+    );
+}

@@ -3,6 +3,7 @@
 
 use cadmpeg_asm::acis_header;
 use cadmpeg_asm::asm_header;
+use cadmpeg_asm::brep::given_up::WithheldRecord;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
@@ -577,8 +578,13 @@ fn build_result(
             stats,
             annotation_records,
             unbounded_faces,
+            withheld,
         },
     ) = transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!(FORMAT), brep)?;
+    let withheld = withheld
+        .iter()
+        .map(|record| unprojected.give_up_withheld(ctx, record))
+        .collect::<Result<Vec<_>, _>>()?;
     for face in &unbounded_faces {
         losses.push(SatLossCode::TopologyFaceBoundaryUnstated.note(format!(
             "face record {} states no loop on a {}, which no face covers whole: face {} is stated partial",
@@ -671,6 +677,10 @@ fn build_result(
         body.losses
             .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
+    for part in withheld {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
     Ok(Decoded {
         ir,
         body,
@@ -715,6 +725,20 @@ impl Unprojected {
         }
         let error = CodecError::malformed(format_args!("{}: {}", why.code, why.message));
         Ok((why, ctx.give_up_part(part, error)?))
+    }
+
+    /// Gives up `record`, a topology record the shared decode read and left
+    /// out, as a part over its bytes.
+    fn give_up_withheld(
+        &self,
+        ctx: &DecodeContext<'_>,
+        record: &WithheldRecord,
+    ) -> Result<GivenUpPart, CodecError> {
+        let mut part = record.part(FORMAT);
+        if self.whole_stream {
+            part = part.digest_only();
+        }
+        ctx.give_up_part(part, record.error())
     }
 }
 
