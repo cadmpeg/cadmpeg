@@ -1,156 +1,123 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Open outcomes for the compound streams read by Inventor.
+//! Read outcomes for Inventor compound streams and their independently framed parts.
 
 use std::collections::BTreeMap;
 
 use cadmpeg_container::compound::{CompoundSnapshot, CompoundStreamEntry, CompoundStreamId};
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::outcome::PartOutcome;
+use cadmpeg_ir::unknown::part::{Cause, GivenUpPart, Part};
 
 #[derive(Default)]
 pub(crate) struct Streams<'a> {
-    opened: BTreeMap<CompoundStreamId, View<'a>>,
-    skipped: BTreeMap<CompoundStreamId, Skipped>,
-}
-
-struct Skipped {
-    kind: &'static str,
-    cause: Cause,
-    detail: String,
-    digest_only: bool,
-}
-
-impl Skipped {
-    fn error(&self) -> CodecError {
-        match self.cause {
-            Cause::Unreadable => CodecError::Malformed(self.detail.clone()),
-            Cause::Undecoded => CodecError::NotImplemented(self.detail.clone()),
-        }
-    }
+    outcomes: BTreeMap<CompoundStreamId, PartOutcome<'a>>,
+    children: Vec<PartOutcome<'a>>,
 }
 
 impl<'a> Streams<'a> {
-    pub(crate) fn open(
-        &mut self,
-        ctx: &DecodeContext<'a>,
-        snapshot: &CompoundSnapshot<'a>,
-        stream: &CompoundStreamEntry,
-        kind: Option<&'static str>,
-    ) -> Result<View<'a>, CodecError> {
-        let id = stream.id();
-        if let Some(skipped) = self.skipped.get(&id) {
-            return Err(skipped.error());
-        }
-        if let Some(view) = self.opened.get(&id) {
-            return Ok(*view);
-        }
-        match snapshot.open_part(ctx, stream) {
-            Ok(view) => {
-                self.opened.insert(id, view);
-                Ok(view)
-            }
-            Err(error) => {
-                if let Some(kind) = kind {
-                    let cause = Cause::Unreadable.of(&error);
-                    let detail = match &error {
-                        CodecError::Malformed(detail) | CodecError::NotImplemented(detail) => {
-                            detail.clone()
-                        }
-                        _ => return Err(error),
-                    };
-                    self.skipped.insert(
-                        id,
-                        Skipped {
-                            kind,
-                            cause,
-                            detail,
-                            digest_only: true,
-                        },
-                    );
-                }
-                Err(error)
-            }
-        }
+    pub(crate) fn has_outcome(&self, id: CompoundStreamId) -> bool {
+        self.outcomes.contains_key(&id)
     }
 
     pub(crate) fn read<T>(
         &mut self,
         ctx: &DecodeContext<'a>,
         snapshot: &CompoundSnapshot<'a>,
-        stream: &CompoundStreamEntry,
+        entry: &CompoundStreamEntry,
         kind: &'static str,
         read: impl FnOnce(View<'a>) -> Result<T, CodecError>,
     ) -> Result<T, CodecError> {
-        let view = self.open(ctx, snapshot, stream, Some(kind))?;
-        match ctx.run_part(|| read(view))? {
-            Ok(value) => Ok(value),
+        let view = match ctx.run_part(|| snapshot.open_part(ctx, entry))? {
+            Ok(view) => view,
             Err(error) => {
-                let digest_only = matches!(&error, CodecError::ResourceLimit(_));
-                let detail = match &error {
-                    CodecError::Malformed(detail) | CodecError::NotImplemented(detail) => {
-                        detail.clone()
-                    }
-                    _ => error.to_string(),
+                let part = stream_part(entry, kind, &[])
+                    .digest_chunks(snapshot.stream_chunks(entry)?.map(View::window));
+                let outcome = match Cause::Unreadable.of(&error) {
+                    Cause::Unreadable => PartOutcome::damaged(part, &error),
+                    Cause::Undecoded => PartOutcome::refused(part, Cause::Undecoded, &error),
                 };
-                let skipped = Skipped {
-                    kind,
-                    cause: Cause::Unreadable.of(&error),
-                    detail,
-                    digest_only,
-                };
-                let error = if digest_only { skipped.error() } else { error };
-                self.skipped.insert(stream.id(), skipped);
-                Err(error)
+                self.outcomes.insert(entry.id(), outcome);
+                return Err(decode_error(error));
             }
-        }
+        };
+        let result = ctx.run_part(|| read(view))?;
+        let part = stream_part(entry, kind, view.window());
+        let outcome = match &result {
+            Ok(_) => PartOutcome::admitted(part),
+            Err(error @ CodecError::ResourceLimit(_)) => {
+                PartOutcome::refused(part.digest_only(), Cause::Undecoded, error)
+            }
+            Err(error) => PartOutcome::refused(part, Cause::Unreadable, error),
+        };
+        self.outcomes.insert(entry.id(), outcome);
+        result.map_err(decode_error)
     }
 
-    pub(crate) fn skipped(&self) -> impl Iterator<Item = CompoundStreamId> + '_ {
-        self.skipped.keys().copied()
+    pub(crate) fn inventory(
+        &mut self,
+        snapshot: &CompoundSnapshot<'a>,
+        entry: &CompoundStreamEntry,
+        kind: &'static str,
+        unread: Option<CodecError>,
+    ) -> Result<(), CodecError> {
+        let part = stream_part(entry, kind, &[]);
+        let outcome = match (snapshot.validate_stream(entry), unread) {
+            (Ok(()), None) => PartOutcome::inventory(part),
+            (Ok(()), Some(error)) => PartOutcome::refused(
+                part.digest_chunks(snapshot.stream_chunks(entry)?.map(View::window)),
+                Cause::Unreadable,
+                &error,
+            ),
+            (Err(error), _) => PartOutcome::damaged(
+                part.digest_chunks(snapshot.stream_chunks(entry)?.map(View::window)),
+                &error,
+            ),
+        };
+        self.outcomes.insert(entry.id(), outcome);
+        Ok(())
+    }
+
+    pub(crate) fn add(&mut self, outcomes: impl IntoIterator<Item = PartOutcome<'a>>) {
+        self.children.extend(outcomes);
+    }
+
+    pub(crate) fn failure(&self, id: CompoundStreamId) -> Option<(Cause, &str)> {
+        self.outcomes.get(&id)?.failure()
+    }
+
+    pub(crate) fn damaged(&self) -> impl Iterator<Item = CompoundStreamId> + '_ {
+        self.outcomes
+            .iter()
+            .filter(|(_, outcome)| outcome.framing_failed())
+            .map(|(id, _)| *id)
     }
 
     pub(crate) fn give_ups(
         &self,
         ctx: &DecodeContext<'_>,
-        snapshot: &CompoundSnapshot<'_>,
         inspect: bool,
     ) -> Result<Vec<GivenUpPart>, CodecError> {
-        self.skipped
-            .iter()
-            .map(|(id, issue)| {
-                let entry = snapshot.stream_by_id(*id).ok_or_else(|| {
-                    CodecError::malformed("given-up Inventor stream has no directory entry")
-                })?;
-                let holds = match issue.kind {
-                    "rse-table" | "rse-metadata" | "rse-bulk" => {
-                        &[ArenaClass::Model, ArenaClass::Design][..]
-                    }
-                    _ => &[ArenaClass::Model][..],
-                };
-                let part = Part::at(
-                    "inventor",
-                    issue.kind,
-                    0,
-                    self.opened_bytes(*id),
-                    holds.iter().copied(),
-                )
-                .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()));
-                let part = if inspect || issue.digest_only {
-                    part.digest_only()
-                } else {
-                    part
-                };
-                ctx.give_up_part(part, issue.cause, issue.error())
-            })
-            .collect()
+        let mut parts = Vec::new();
+        for outcome in self.outcomes.values().chain(&self.children) {
+            parts.extend(outcome.give_up(ctx, inspect)?);
+        }
+        Ok(parts)
     }
+}
 
-    pub(crate) fn was_skipped(&self, id: CompoundStreamId) -> bool {
-        self.skipped.contains_key(&id)
-    }
+fn stream_part<'a>(entry: &CompoundStreamEntry, kind: &'static str, bytes: &'a [u8]) -> Part<'a> {
+    let holds = match kind {
+        "rse-table" | "rse-metadata" | "rse-bulk" => &[ArenaClass::Model, ArenaClass::Design][..],
+        _ => &[ArenaClass::Model][..],
+    };
+    Part::at("inventor", kind, 0, bytes, holds.iter().copied())
+        .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()))
+}
 
-    pub(crate) fn opened_bytes(&self, id: CompoundStreamId) -> &'a [u8] {
-        self.opened.get(&id).copied().map_or(&[], View::window)
+fn decode_error(error: CodecError) -> CodecError {
+    match error {
+        error @ CodecError::ResourceLimit(_) => CodecError::NotImplemented(error.to_string()),
+        error => error,
     }
 }

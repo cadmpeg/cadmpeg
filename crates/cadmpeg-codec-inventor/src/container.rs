@@ -9,6 +9,7 @@ use cadmpeg_container::compound::{
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::external_reference::{parse as parse_ufrx, UfrxState};
@@ -46,6 +47,13 @@ impl<'a> InventorContainer<'a> {
         let protein = parse_protein(ctx, &snapshot, &mut streams)?;
         let ufrx = parse_ufrx(ctx, &snapshot, &mut streams, &rse.document_kind())?;
         let property_sets = property_set_inventory(ctx, &snapshot, &mut streams)?;
+        for entry in snapshot.entries() {
+            if let CompoundEntry::Stream(stream) = entry {
+                if !streams.has_outcome(stream.id()) {
+                    streams.inventory(&snapshot, stream, "compound-stream", None)?;
+                }
+            }
+        }
         Ok(Self {
             snapshot,
             rse,
@@ -54,6 +62,24 @@ impl<'a> InventorContainer<'a> {
             ufrx,
             streams,
         })
+    }
+
+    pub(crate) fn give_ups(
+        &self,
+        ctx: &DecodeContext<'_>,
+        inspect: bool,
+    ) -> Result<Vec<GivenUpPart>, CodecError> {
+        let mut parts = self.streams.give_ups(ctx, inspect)?;
+        for segment in &self.rse.segments {
+            if let SegmentMetaState::Parsed(meta) = &segment.meta {
+                parts.extend(meta.tables.block_table.give_up(ctx, inspect)?);
+                parts.extend(meta.tables.type_table.give_up(ctx, inspect)?);
+                for reference in &meta.tables.references {
+                    parts.extend(reference.outcome.give_up(ctx, inspect)?);
+                }
+            }
+        }
+        Ok(parts)
     }
 
     pub(crate) fn summary(&self, ctx: &DecodeContext<'_>) -> Result<ContainerSummary, CodecError> {
@@ -103,14 +129,12 @@ impl<'a> InventorContainer<'a> {
         }
         let recovery = crate::dialect::DialectRecovery::of(self);
         let matched = recovery.classify();
-        let skipped = self.streams.skipped().collect::<Vec<_>>();
+        let skipped = self.streams.damaged().collect::<Vec<_>>();
         let mut losses = deviation_losses(&self.snapshot, &skipped);
-        losses.extend(
-            self.streams
-                .give_ups(ctx, &self.snapshot, true)?
-                .iter()
-                .map(cadmpeg_ir::unknown::part::GivenUpPart::loss),
-        );
+        let mut parts = self.give_ups(ctx, true)?;
+        parts.extend(self.protein.read_instances(ctx)?.give_ups(ctx)?);
+        parts.extend(crate::drawing::inventory(ctx, self, None)?.section_give_ups(ctx, true)?);
+        losses.extend(parts.iter().map(GivenUpPart::loss));
         if let Some(loss) = crate::dialect::dialect_loss(&matched, &recovery) {
             losses.push(loss);
         }

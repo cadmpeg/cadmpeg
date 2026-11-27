@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossKind;
 
 use crate::feature::base::{
-    current_body, entry, history_candidate, reference_counts, unique_link_header, wrappers,
+    current_body, history_candidate, reference_counts, unique_link_header, wrappers,
 };
 use crate::feature::history_views::{ResultStates, StateModel};
 use crate::feature::tests::{reference, test_feature, test_header};
@@ -22,7 +22,7 @@ use crate::layout::{meta_external_reference as external, meta_external_revision 
 use crate::loss::InventorLossCode;
 use crate::pmdc::PmDcReference;
 use crate::record_identity::{Located, RecordTypeId};
-use crate::records::MetaSection;
+use crate::records::{MetaSection, ReferenceTable};
 use crate::rse::RseInventory;
 use crate::test_support::base_envelope::{
     decode, derived_at_version, fixtures, state_model, SyntheticRecords, RESULT_KEY, SOURCE_INDEX,
@@ -138,12 +138,24 @@ fn external_entries_require_exact_count_width_and_bounds() {
         discriminator: 2,
         payload: View::over_retained(&bytes),
     };
-    assert!(entry(&section, 1, 8).is_some());
-    assert!(entry(&section, 2, 8).is_none());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(1)
+        .is_some());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(2)
+        .is_none());
     section.discriminator = 1;
-    assert!(entry(&section, 0, 8).is_none());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(0)
+        .is_none());
     section.discriminator = u32::MAX;
-    assert!(entry(&section, 0, 8).is_none());
+    assert!(ReferenceTable::read(None, &section, 8)
+        .expect("locate the reference table")
+        .entry(0)
+        .is_none());
 }
 
 #[test]
@@ -171,7 +183,14 @@ fn external_reference_counts_reject_dangling_revision_indices() {
         payload: View::over_retained(&reference_bytes),
     };
     assert_eq!(
-        reference_counts(&ctx, &revisions, &references).expect("reference counts"),
+        reference_counts(
+            &ctx,
+            &ReferenceTable::read(None, &revisions, revision::LEN)
+                .expect("locate the reference table"),
+            &ReferenceTable::read(None, &references, external::LEN)
+                .expect("locate the reference table")
+        )
+        .expect("reference counts"),
         Some(vec![2, 1])
     );
     let mut inconsistent_bytes = revision_bytes;
@@ -181,18 +200,29 @@ fn external_reference_counts_reject_dangling_revision_indices() {
         payload: View::over_retained(&inconsistent_bytes),
         ..revisions
     };
-    assert!(reference_counts(&ctx, &inconsistent_revisions, &references)
-        .expect("inconsistent reference count")
-        .is_none());
+    assert!(reference_counts(
+        &ctx,
+        &ReferenceTable::read(None, &inconsistent_revisions, revision::LEN)
+            .expect("locate the reference table"),
+        &ReferenceTable::read(None, &references, external::LEN)
+            .expect("locate the reference table")
+    )
+    .expect("inconsistent reference count")
+    .is_none());
     let mut invalid_bytes = reference_bytes;
     invalid_bytes[external::LEN..external::LEN + 4].copy_from_slice(&2_u32.to_le_bytes());
     let references = MetaSection {
         payload: View::over_retained(&invalid_bytes),
         ..references
     };
-    assert!(reference_counts(&ctx, &revisions, &references)
-        .expect("invalid references")
-        .is_none());
+    assert!(reference_counts(
+        &ctx,
+        &ReferenceTable::read(None, &revisions, revision::LEN).expect("locate the reference table"),
+        &ReferenceTable::read(None, &references, external::LEN)
+            .expect("locate the reference table")
+    )
+    .expect("invalid references")
+    .is_none());
 }
 
 #[test]

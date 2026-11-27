@@ -600,12 +600,70 @@ fn a_public_access_copy_above_available_retention_is_undecoded() {
 }
 
 #[test]
+fn inventory_only_brep_leaves_room_for_a_damaged_sibling() {
+    use cadmpeg_core::decode::{DecodeDepth, InspectOptions};
+    use cadmpeg_test_support::bytes::put_u32;
+
+    let mut bytes = scene_with_public_access(&[]);
+    put_u32(&mut bytes, SECTOR + 128 + 120, 4097);
+    put_u32(&mut bytes, SECTOR + 3 * 128 + 116, 128);
+    let fat = &mut bytes[3 * SECTOR..4 * SECTOR];
+    put_u32(fat, 10 * 4, 12);
+    put_u32(fat, 12 * 4, END_CHAIN);
+
+    let mut options = DecodeOptions {
+        depth: DecodeDepth::Container,
+        ..DecodeOptions::default()
+    };
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &options.policy)
+        .expect("build the exact-budget fixture context");
+    let before = ctx.retained_bytes_available();
+    let snapshot = crate::container::open(&ctx, root).expect("the fixture is an IronCAD CFB");
+    assert_eq!(
+        snapshot
+            .stream(BREP_DATA)
+            .expect("the fragmented Brep stream")
+            .logical_size(),
+        4097
+    );
+    assert!(snapshot
+        .stream(PUBLIC_ACCESS)
+        .expect("the sibling Access stream")
+        .chain_error()
+        .is_some());
+    options.policy.limits.max_retained_bytes = before - ctx.retained_bytes_available() + 4097;
+
+    let decoded = IronCadCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .expect("inventory fits alongside its report");
+    let [loss] = decoded.report().losses.as_slice() else {
+        panic!("one loss: {:?}", decoded.report().losses);
+    };
+    assert_eq!(loss.code, record_unreadable_kind());
+    assert!(loss.message.contains(PUBLIC_ACCESS));
+    let mut inspect = InspectOptions::default();
+    inspect.limits.max_retained_bytes = options.policy.limits.max_retained_bytes;
+    let summary = IronCadCodec
+        .inspect(&mut Cursor::new(&bytes), &inspect)
+        .expect("the inventory report fits the caller budget");
+    assert_eq!(summary.losses, decoded.report().losses);
+}
+
+#[test]
 fn a_broken_access_prefix_leaves_the_budget_for_the_scene_and_its_report() {
     use cadmpeg_core::decode::{u64_from_index, DecodeDepth};
     use cadmpeg_test_support::bytes::put_u32;
 
-    let prefix = vec![0x31; 32 * 1024];
+    let mut prefix = (0..64_u8)
+        .flat_map(|sector| [sector; SECTOR])
+        .collect::<Vec<_>>();
     let mut bytes = scene_with_public_access(&prefix);
+    let fat = &mut bytes[3 * SECTOR..4 * SECTOR];
+    put_u32(fat, PUBLIC_START * 4, 13);
+    put_u32(fat, (PUBLIC_START + 2) * 4, 12);
+    put_u32(fat, (PUBLIC_START + 1) * 4, 14);
+    prefix[SECTOR..3 * SECTOR].rotate_left(SECTOR);
     put_u32(&mut bytes, SECTOR + 3 * 128 + 120, 65 * 512);
     let mut options = DecodeOptions {
         depth: DecodeDepth::Container,

@@ -272,8 +272,6 @@ pub(crate) enum InventorLossCode {
     ParameterScopeUnresolved,
     /// Sketch, entity, or constraint records have a neutral graph that is not closed.
     SketchGraphOpen,
-    /// `RSe` contains unpaired metadata or bulk streams.
-    RseStreamUnpaired,
     /// OLE property-set streams are malformed.
     PropertySetStreamMalformed,
     /// Property values have no neutral metadata mapping.
@@ -465,7 +463,6 @@ impl InventorLossCode {
         Self::ParameterUnitLayoutAssumed,
         Self::ParameterScopeUnresolved,
         Self::SketchGraphOpen,
-        Self::RseStreamUnpaired,
         Self::PropertySetStreamMalformed,
         Self::MetadataPropertyUnmapped,
         Self::ProteinAppearanceAbsent,
@@ -656,7 +653,6 @@ impl InventorLossCode {
             Self::ParameterUnitLayoutAssumed => "parameter.unit-layout-assumed",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
             Self::SketchGraphOpen => "sketch.graph-open",
-            Self::RseStreamUnpaired => "rse.stream-unpaired",
             Self::PropertySetStreamMalformed => "property-set.stream-malformed",
             Self::MetadataPropertyUnmapped => "metadata.property-unmapped",
             Self::ProteinAppearanceAbsent => "protein.appearance-absent",
@@ -714,7 +710,6 @@ impl InventorLossCode {
             Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::DrawingNativeOnly | Self::RseSegmentPairUntyped => LossTaxonomy::RecordNotTyped,
             Self::FeatureRecordMalformed
-            | Self::RseStreamUnpaired
             | Self::PropertySetStreamMalformed
             | Self::KernelHistoryUnclosed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
@@ -1021,7 +1016,6 @@ mod tests {
                 "parameter.unit-layout-assumed",
                 "parameter.scope-unresolved",
                 "sketch.graph-open",
-                "rse.stream-unpaired",
                 "property-set.stream-malformed",
                 "metadata.property-unmapped",
                 "protein.appearance-absent",

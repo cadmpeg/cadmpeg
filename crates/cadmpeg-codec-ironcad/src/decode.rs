@@ -4,9 +4,7 @@
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_asm::dialect::KernelHeaderRef;
-use cadmpeg_container::compound::{
-    CompoundDeviation, CompoundEntry, CompoundSnapshot, CompoundStreamEntry, CompoundStreamId,
-};
+use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::dialect::{DialectLayers, DuplicateDialectLayer, LayerInstance};
 use cadmpeg_core::CodecError;
@@ -38,46 +36,25 @@ use cadmpeg_ir::scalar::PositiveReal;
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let snapshot = container::open(ctx, root)?;
     let mut layers = dialect::layers();
-    let mut stream_parts = Vec::new();
-    let mut failed_opens = Vec::new();
-    let mut open = |name| {
-        let Some(entry) = snapshot.stream(name) else {
-            return Ok(None);
-        };
-        match ctx.run_part(|| snapshot.open_part(ctx, entry))? {
-            Ok(stream) => Ok(Some((entry, stream))),
-            Err(error) => {
-                let located = snapshot.located_chunks(entry)?.map(View::window);
-                stream_parts.push(give_up_stream(ctx, entry, located, error)?);
-                failed_opens.push(entry.id());
-                Ok::<_, CodecError>(None)
-            }
-        }
-    };
-    let brep = open(BREP_DATA)?;
-    let access = open(PUBLIC_ACCESS)?;
-    let document = open(DOCUMENT_DATA)?;
-    let mut losses = deviation_losses(&snapshot, &failed_opens);
+    let mut streams = container::Streams::default();
+    let mut losses = Vec::new();
     let mut bodies = Bodies::default();
     let mut scene = Scene::default();
     if !ctx.container_only() {
+        let brep = streams.read(ctx, &snapshot, BREP_DATA, |stream| {
+            tree::read(frame::payload(ctx, stream)?).map_err(CodecError::from)
+        })?;
+        let access = streams.read(ctx, &snapshot, PUBLIC_ACCESS, |stream| {
+            frame::payload(ctx, stream)
+        })?;
+        let document = streams.read(ctx, &snapshot, DOCUMENT_DATA, Ok)?;
         if snapshot.stream(BREP_DATA).is_none() {
             losses.push(IronCadLossCode::FrameUnreadable.note("`Brep Data` is not a stream"));
         }
-        if let Some((entry, stream)) = brep {
-            match ctx
-                .run_part(|| tree::read(frame::payload(ctx, stream)?).map_err(CodecError::from))?
-            {
-                Ok(tree) => {
-                    bodies = classify(ctx, &tree.records, &mut layers, &mut losses)?;
-                    scene.record_assemblies =
-                        tree.records.iter().map(|record| record.assembly).collect();
-                    scene.assemblies = tree.assemblies;
-                }
-                Err(error) => {
-                    stream_parts.push(give_up_stream(ctx, entry, [stream.window()], error)?);
-                }
-            }
+        if let Some(tree) = brep {
+            bodies = classify(ctx, &tree.records, &mut layers, &mut losses)?;
+            scene.record_assemblies = tree.records.iter().map(|record| record.assembly).collect();
+            scene.assemblies = tree.assemblies;
         }
         if snapshot.stream(PUBLIC_ACCESS).is_none() {
             losses.push(
@@ -85,22 +62,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     .note("`Public Access` is not a stream; bodies stay in their part frames"),
             );
         }
-        if let Some((entry, stream)) = access {
-            match ctx.run_part(|| frame::payload(ctx, stream))? {
-                Ok(payload) => {
-                    let records = placement::records(payload.window());
-                    property_losses(&records, &mut losses);
-                    scene.records = Some(records);
-                }
-                Err(error) => {
-                    stream_parts.push(give_up_stream(ctx, entry, [stream.window()], error)?);
-                }
-            }
+        if let Some(payload) = access {
+            let records = placement::records(payload.window());
+            property_losses(&records, &mut losses);
+            scene.records = Some(records);
         }
         scene.units = document
-            .and_then(|(_, stream)| unit_losses(units::scene_units(stream.window()), &mut losses));
+            .and_then(|stream| unit_losses(units::scene_units(stream.window()), &mut losses));
         scene_streams(&snapshot, &mut losses);
     }
+    streams.inventory(&snapshot)?;
+    let (mut container_losses, stream_parts) = streams.reports(ctx, &snapshot)?;
+    container_losses.append(&mut losses);
+    let mut losses = container_losses;
     bodies.given_up.extend(stream_parts);
     let mut ir = CadIr::empty();
     ir.source = Some(SourceMeta::classified(
@@ -123,19 +97,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         });
     }
     transfer(ctx, ir, bodies, scene, losses, digest)
-}
-
-fn deviation_losses(
-    snapshot: &CompoundSnapshot<'_>,
-    failed_opens: &[CompoundStreamId],
-) -> Vec<LossNote> {
-    snapshot
-        .deviations()
-        .filter(|deviation| {
-            !matches!(deviation, CompoundDeviation::StreamChainBroken(id) if failed_opens.contains(id))
-        })
-        .map(|deviation| IronCadLossCode::ContainerNoncanonical.note(deviation.description()))
-        .collect()
 }
 
 /// The part and assembly records, the scene units, and the assemblies of the
@@ -319,25 +280,6 @@ fn transfer(
         },
         source_fidelity,
     })
-}
-
-fn give_up_stream<'a>(
-    ctx: &DecodeContext<'_>,
-    entry: &CompoundStreamEntry,
-    chunks: impl IntoIterator<Item = &'a [u8]>,
-    error: CodecError,
-) -> Result<GivenUpPart, CodecError> {
-    let path = entry.path();
-    let mut part = Part::at("ironcad", "stream", 0, &[], [ArenaClass::Model])
-        .named(path)
-        .in_stream(cadmpeg_ir::stream_name!("ironcad:").with_suffix(path))
-        .digest_chunks(chunks);
-    if path.eq_ignore_ascii_case(DOCUMENT_DATA) {
-        part = part.costing("the root definition states no units");
-    } else if path.eq_ignore_ascii_case(PUBLIC_ACCESS) {
-        part = part.costing("bodies stay in their part frames");
-    }
-    ctx.give_up_part(part, Cause::Unreadable, error)
 }
 
 /// Adds a dialect layer for every kernel record and decodes the body of each

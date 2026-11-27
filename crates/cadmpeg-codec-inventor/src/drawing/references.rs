@@ -13,7 +13,7 @@ use crate::layout::{
 };
 use crate::pmdc::PmDcReference;
 use crate::reader;
-use crate::records::{reference_section_count, MetaSection, REFERENCE_SECTIONS};
+use crate::records::{reference_section_count, ReferenceTable};
 use crate::rse::SegmentMeta;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,23 +56,19 @@ impl Tables {
         ctx: &DecodeContext<'_>,
         token: &IdentityKey,
         meta: &SegmentMeta<'_>,
-        mut give_up: impl FnMut(&MetaSection<'_>, CodecError) -> Result<(), CodecError>,
     ) -> Result<Self, CodecError> {
-        let [pairs, revisions, external] =
-            REFERENCE_SECTIONS.map(|(index, _)| &meta.tables.sections[index]);
-        let (pair_rows, pair_payload) = read_part(ctx, pairs, read_pairs, &mut give_up)?;
-        let (revision_rows, revision_payload) =
-            read_part(ctx, revisions, read_revisions, &mut give_up)?;
-        let (external_rows, external_payload) =
-            read_part(ctx, external, read_external, &mut give_up)?;
+        let [pairs, revisions, external] = &meta.tables.references;
+        let (pair_rows, pair_payload) = retained(ctx, pairs, read_pairs)?;
+        let (revision_rows, revision_payload) = retained(ctx, revisions, read_revisions)?;
+        let (external_rows, external_payload) = retained(ctx, external, read_external)?;
         Ok(Self {
             id: format!("inventor:drawing:reference-tables#{token}"),
             segment_token: token.clone(),
             segment_id: meta.segment_id.into(),
             counts: [
-                pairs.discriminator,
-                revisions.discriminator,
-                external.discriminator,
+                pairs.declared_count,
+                revisions.declared_count,
+                external.declared_count,
             ],
             payloads: [pair_payload, revision_payload, external_payload],
             pairs: pair_rows,
@@ -86,23 +82,28 @@ impl Tables {
             return Ok(false);
         }
         let [pairs, revisions, external] = self.payloads.each_ref();
-        Ok(
-            table_matches(ctx, self.counts[0], pairs.as_ref(), &self.pairs, read_pairs)?
-                && table_matches(
-                    ctx,
-                    self.counts[1],
-                    revisions.as_ref(),
-                    &self.revisions,
-                    read_revisions,
-                )?
-                && table_matches(
-                    ctx,
-                    self.counts[2],
-                    external.as_ref(),
-                    &self.external,
-                    read_external,
-                )?,
-        )
+        Ok(table_matches(
+            ctx,
+            self.counts[0],
+            pairs.as_ref(),
+            &self.pairs,
+            pair::LEN,
+            read_pairs,
+        )? && table_matches(
+            ctx,
+            self.counts[1],
+            revisions.as_ref(),
+            &self.revisions,
+            revision::LEN,
+            read_revisions,
+        )? && table_matches(
+            ctx,
+            self.counts[2],
+            external.as_ref(),
+            &self.external,
+            external::LEN,
+            read_external,
+        )?)
     }
 
     /// The section needed by this reference, or an invalid stored join.
@@ -148,30 +149,22 @@ enum LinkFailure {
     Invalid,
 }
 
-/// Open, parse, and retain the payload of one independently framed table.
-fn read_part<T>(
+fn retained<T>(
     ctx: &DecodeContext<'_>,
-    section: &MetaSection<'_>,
-    read: impl FnOnce(&DecodeContext<'_>, u32, View<'_>) -> Result<Vec<T>, CodecError>,
-    give_up: &mut impl FnMut(&MetaSection<'_>, CodecError) -> Result<(), CodecError>,
+    table: &ReferenceTable<'_>,
+    read: impl FnOnce(&DecodeContext<'_>, usize, View<'_>) -> Result<Vec<T>, CodecError>,
 ) -> Result<(Vec<T>, Option<NativeBytes>), CodecError> {
-    let decode = || {
-        let rows = read(ctx, section.discriminator, section.payload)?;
-        let mut bytes = ctx.alloc_filled(
-            section.payload.remaining(),
-            0_u8,
-            "retain drawing reference table",
-        )?;
-        bytes.copy_from_slice(section.payload.unread());
-        Ok((rows, Some(bytes.into())))
+    let Some(count) = table.count else {
+        return Ok((Vec::new(), None));
     };
-    match ctx.run_part(decode)? {
-        Ok(table) => Ok(table),
-        Err(error) => {
-            give_up(section, error)?;
-            Ok((Vec::new(), None))
-        }
-    }
+    let rows = read(ctx, count, table.payload)?;
+    let mut bytes = ctx.alloc_filled(
+        table.payload.remaining(),
+        0_u8,
+        "retain drawing reference table",
+    )?;
+    bytes.copy_from_slice(table.payload.unread());
+    Ok((rows, Some(bytes.into())))
 }
 
 fn table_matches<T: PartialEq>(
@@ -179,12 +172,17 @@ fn table_matches<T: PartialEq>(
     count: u32,
     payload: Option<&NativeBytes>,
     rows: &[T],
-    read: impl FnOnce(&DecodeContext<'_>, u32, View<'_>) -> Result<Vec<T>, CodecError>,
+    width: usize,
+    read: impl FnOnce(&DecodeContext<'_>, usize, View<'_>) -> Result<Vec<T>, CodecError>,
 ) -> Result<bool, CodecError> {
     let Some(payload) = payload else {
         return Ok(rows.is_empty());
     };
-    match read(ctx, count, View::over_retained(payload)) {
+    let view = View::over_retained(payload);
+    let Ok(count) = reference_section_count(count, view, width) else {
+        return Ok(false);
+    };
+    match read(ctx, count, view) {
         Ok(parsed) => Ok(parsed == rows),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(_) => Ok(false),
@@ -193,13 +191,11 @@ fn table_matches<T: PartialEq>(
 
 fn read_entries<T: Clone>(
     ctx: &DecodeContext<'_>,
-    count: u32,
+    count: usize,
     mut payload: View<'_>,
-    width: usize,
     initial: T,
     mut read: impl FnMut(&mut View<'_>) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
-    let count = reference_section_count(count, payload, width)?;
     let mut entries = ctx.alloc_filled(count, initial, "retain drawing reference entries")?;
     for target in &mut entries {
         *target = read(&mut payload)?;
@@ -209,10 +205,10 @@ fn read_entries<T: Clone>(
 
 fn read_pairs(
     ctx: &DecodeContext<'_>,
-    count: u32,
+    count: usize,
     payload: View<'_>,
 ) -> Result<Vec<Pair>, CodecError> {
-    read_entries(ctx, count, payload, pair::LEN, Pair::default(), |view| {
+    read_entries(ctx, count, payload, Pair::default(), |view| {
         Ok(Pair {
             segment_id: reader::array(view, "drawing reference segment")?.into(),
             revision_id: reader::array(view, "drawing reference revision")?.into(),
@@ -222,44 +218,30 @@ fn read_pairs(
 
 fn read_revisions(
     ctx: &DecodeContext<'_>,
-    count: u32,
+    count: usize,
     payload: View<'_>,
 ) -> Result<Vec<Revision>, CodecError> {
-    read_entries(
-        ctx,
-        count,
-        payload,
-        revision::LEN,
-        Revision::default(),
-        |view| {
-            Ok(Revision {
-                identifier: reader::array(view, "drawing revision identifier")?.into(),
-                segment_pair_index: reader::u16(view, "drawing revision segment index")?,
-                reference_count: reader::u16(view, "drawing revision reference count")?,
-            })
-        },
-    )
+    read_entries(ctx, count, payload, Revision::default(), |view| {
+        Ok(Revision {
+            identifier: reader::array(view, "drawing revision identifier")?.into(),
+            segment_pair_index: reader::u16(view, "drawing revision segment index")?,
+            reference_count: reader::u16(view, "drawing revision reference count")?,
+        })
+    })
 }
 
 fn read_external(
     ctx: &DecodeContext<'_>,
-    count: u32,
+    count: usize,
     payload: View<'_>,
 ) -> Result<Vec<External>, CodecError> {
-    read_entries(
-        ctx,
-        count,
-        payload,
-        external::LEN,
-        External::default(),
-        |view| {
-            Ok(External {
-                revision_word: reader::u32(view, "drawing external revision index")?,
-                key_extension: reader::u16(view, "drawing external key extension")?,
-                header_id: reader::u16(view, "drawing external header identifier")?,
-            })
-        },
-    )
+    read_entries(ctx, count, payload, External::default(), |view| {
+        Ok(External {
+            revision_word: reader::u32(view, "drawing external revision index")?,
+            key_extension: reader::u16(view, "drawing external key extension")?,
+            header_id: reader::u16(view, "drawing external header identifier")?,
+        })
+    })
 }
 
 /// The id of the given-up record that `record` fails its links for: for a

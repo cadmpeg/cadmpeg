@@ -1725,12 +1725,14 @@ The decoder gives up a part or a record (CADIR §3.3) in these cases:
 
 | Part kind or record | Given up when | Cause |
 |---|---|---|
-| `rse-database` | The RSe database stream does not frame. | `record.unreadable` |
-| `rse-database` | The RSe database stream declares a schema that the schema-31 grammar does not frame. | `record.undecoded` |
+| `rse-database` | The database declaration or the body of a schema-31 stream breaks its framing. | `record.unreadable` |
+| `rse-database` | The stream declares a different schema and its body is outside the schema-31 grammar. | `record.undecoded` |
 | `rse-table` | `RSeStorage/RSeSegInfo` or `RSeStorage/RSeDbRevisionInfo` does not parse. | `record.unreadable` |
 | `rse-metadata` | An RSe metadata stream does not parse under the version-8 grammar (§3). | `record.undecoded` |
 | `rse-metadata`, `rse-bulk` | An RSe metadata or bulk stream has no partner (§1). | `record.unreadable` |
-| `rse-bulk` | An RSe bulk stream has an envelope or zlib framing that is not valid (§4). | `record.unreadable` |
+| `rse-bulk` | The bulk envelope or its compressed member breaks its framing (§4). | `record.unreadable` |
+| `rse-bulk-records` | A stored block in the expanded bulk data breaks the record framing (§4). | `record.unreadable` |
+| `rse-bulk-trailer` | The marker after the last framed record is absent or differs from `0xffffffff`. The preceding records remain readable (§4). | `record.unreadable` |
 | `rse-record` | A typed assembly, presentation, design, sketch, or feature record does not parse. A pattern feature whose suppression operand does not pass its check is kept. | `record.undecoded` |
 | `rse-record` | The record envelope of the active kernel carrier does not parse (§5). | `record.unreadable` |
 | `rse-record` | An annotation record is outside its grammar, or a tolerance feature lists attachment records that disagree with its membership (§13.11). | `record.undecoded` |
@@ -1741,11 +1743,13 @@ The decoder gives up a part or a record (CADIR §3.3) in these cases:
 | `history-chain` | The `delta_state` chain does not close (§13.10). | `record.unreadable` |
 | `history-chain` | The state scan passes its work limit (§13.10). | `record.undecoded` |
 | History body | The carrier header or the state does not read, a carrier has no solved form, the body is not closed, the feature does not project, or the body passes the cap of history bodies of the part (§13.10). The body is given up by its id. | `record.undecoded` |
-| `protein-member` | A Protein ZIP schema or instance member has malformed framing or an invalid payload. The other members remain available. | `record.unreadable` |
-| `protein-member` | A Protein ZIP schema or instance member has an unsupported encoding or reaches its individual expansion limit. | `record.undecoded` |
+| `protein-member` | A Protein ZIP member has damaged framing, an unsafe name, or an invalid payload in a selected schema or instance member. | `record.unreadable` |
+| `protein-member` | A selected Protein ZIP member has an unsupported encoding or exceeds an individual read or expansion limit. | `record.undecoded` |
+| `protein-directory` | The Protein ZIP directory cannot be read and local member frames supply the directory. | `record.unreadable` |
 | `property-set` | An OLE property-set stream breaks its framing or grammar, or a root stream whose name starts with U+0005 does not open (§6). | `record.unreadable` |
-| `property-set` | A named OLE property-set stream is above the 2 MiB property-set read limit. | `record.undecoded` |
-| `property-set` | An OLE property-set stream names a code page that the decoder has no table for, or a property, dictionary entry, or vector element count above 65536, the decoder's bound (§6). | `record.undecoded` |
+| `property-set` | A complete named OLE property-set stream exceeds the 2 MiB read limit. | `record.undecoded` |
+| `property-section` | The section extent or a property value breaks its framing or grammar (§6). | `record.unreadable` |
+| `property-section` | A section uses an unsupported code page or exceeds the 65536-entry decoder limit on a property, dictionary, or vector count (§6). | `record.undecoded` |
 | `protein-stream` | The `Protein` stream does not read as a package (§7). | `record.unreadable` |
 | Protein record | A Protein native record or asset record does not admit. The record is given up by its id. | `record.undecoded` |
 | `ufrx-stream` | A `UFRxDoc` stream of schema 11 through 15 breaks its framing or a value that §8 states. | `record.unreadable` |
@@ -1761,6 +1765,8 @@ The decoder gives up a part or a record (CADIR §3.3) in these cases:
 | `meta-section` | A bounded metadata section reaches the decoder's entry limit, or a drawing section 9 uses the fixed identifier form outside the tagged-entry reader (§15). | `record.undecoded` |
 | `rse-record` | The operand references or links of a drawing record do not select their targets (§15). | `record.undecoded` |
 
-A compound stream that does not open because its chain breaks or supplies too few bytes is given up with an empty digest as `record.unreadable`. A fragmented stream whose joined copy exceeds the remaining retained-byte budget is given up as `record.undecoded` before the copy. An individual frame that exceeds its expansion limit is given up as `record.undecoded`. A session-wide resource refusal stops the decode. The decoder reports a property-set give-up at every depth.
+A stream with a broken chain or a short physical extent is `record.unreadable`. Its digest covers the accessible bytes in chain order. A fragmented stream whose joined copy exceeds the remaining retained-byte budget is `record.undecoded`. An individual frame past its expansion limit is `record.undecoded`. A session-wide resource refusal stops the decode.
 
-`inventor/container.noncanonical` carries strict floor Warning (CADIR §3.2). It reports a compound-file deviation such as a DIFAT chain that ends with FREESECT (§1) or a stream chain without an ENDOFCHAIN terminator. A stream give-up charges its broken chain. A broken chain of a stream that no reader opens keeps the container deviation. No other Inventor code carries a strict floor.
+An OLE section is addressed in its compound stream. Each separately framed section remains available when a peer fails. A Protein member uses offsets from the start of the embedded ZIP and links to its native entry declaration. ZIP member and page framing precede schema-dependent instance interpretation.
+
+`inventor/container.noncanonical` carries strict floor Warning (CADIR §3.2). It reports a compound-file deviation such as a DIFAT chain that ends with FREESECT (§1) or a stream chain without an ENDOFCHAIN terminator. A stream give-up charges its broken chain. Stream inventory includes the physical extent check. Other Inventor diagnostics use their default severity without a strict floor.

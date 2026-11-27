@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact Inventor `RSe` metadata tables and bulk-record framing.
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{ArenaClass, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::unknown::part::outcome::PartOutcome;
+use cadmpeg_ir::unknown::part::{Cause, Part};
 
 use crate::layout::meta_body_prefix as meta_prefix;
 use crate::layout::meta_type_descriptor as type_desc;
@@ -136,6 +139,9 @@ pub(crate) struct MetaTables<'a> {
     pub(crate) types: Vec<TypeDescriptor>,
     pub(crate) sections: [MetaSection<'a>; SECTION_COUNT],
     pub(crate) terminal_id: [u8; 16],
+    pub(crate) block_table: PartOutcome<'a>,
+    pub(crate) type_table: PartOutcome<'a>,
+    pub(crate) references: [ReferenceTable<'a>; 3],
 }
 
 #[derive(Debug)]
@@ -182,6 +188,50 @@ pub(crate) const REFERENCE_SECTIONS: [(usize, usize); 3] = [
     (9, crate::layout::meta_external_reference::LEN),
 ];
 
+#[derive(Debug)]
+pub(crate) struct ReferenceTable<'a> {
+    pub(crate) outcome: PartOutcome<'a>,
+    pub(crate) declared_count: u32,
+    pub(crate) payload: View<'a>,
+    pub(crate) count: Option<usize>,
+    width: usize,
+}
+
+impl<'a> ReferenceTable<'a> {
+    pub(crate) fn read(
+        token: Option<&str>,
+        section: &MetaSection<'a>,
+        width: usize,
+    ) -> Result<Self, CodecError> {
+        let part = meta_section_part(token, section)?;
+        let payload = section.payload;
+        let declared_count = section.discriminator;
+        let (outcome, count) = match reference_section_count(declared_count, payload, width) {
+            Ok(count) => (PartOutcome::admitted(part), Some(count)),
+            Err(error) => (PartOutcome::refused(part, Cause::Unreadable, &error), None),
+        };
+        Ok(Self {
+            outcome,
+            declared_count,
+            payload,
+            count,
+            width,
+        })
+    }
+
+    pub(crate) fn entry(&self, index: u32) -> Option<View<'a>> {
+        let index = usize::try_from(index).ok()?;
+        if index >= self.count? {
+            return None;
+        }
+        let start = self
+            .payload
+            .start()
+            .checked_add(index.checked_mul(self.width)?)?;
+        self.payload.child(start, start.checked_add(self.width)?)
+    }
+}
+
 pub(crate) fn reference_section_count(
     count: u32,
     payload: View<'_>,
@@ -207,7 +257,10 @@ pub(crate) fn reference_section_count(
     Ok(bounded.get())
 }
 
-pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecError> {
+pub(crate) fn parse_meta_tables<'a>(
+    body: View<'a>,
+    token: Option<&str>,
+) -> Result<MetaTables<'a>, CodecError> {
     let mut view = body;
     let prefix =
         crate::reader::u16_array::<{ meta_prefix::LEN / 2 }>(&mut view, "metadata prefix")?;
@@ -226,18 +279,6 @@ pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecE
 
     let (block_count, section_1_payload, section_1_footer) =
         counted_section(&mut view, 4, "block-size table")?;
-    let mut blocks = Vec::new();
-    let mut sizes = section_1_payload;
-    for ordinal in 0..block_count {
-        let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
-        blocks.push(BlockDescriptor {
-            ordinal: u32::try_from(ordinal).map_err(|_| {
-                CodecError::Malformed("Inventor numeric value exceeds target range".into())
-            })?,
-            stored: encoded & 0x8000_0000 != 0,
-            payload_len: encoded & 0x7fff_ffff,
-        });
-    }
     let section_1 = MetaSection {
         number: MetaSectionNumber::One,
         discriminator: u32::try_from(block_count).map_err(|_| {
@@ -264,37 +305,6 @@ pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecE
     };
     let (type_count, section_4_payload, section_4_footer) =
         counted_section(&mut view, type_desc::LEN, "type table")?;
-    // Section 4 is a counted frame like sections 1 through 3, and its count is
-    // not bounded by the selector width: a record selector's low byte reaches
-    // only the first 256 descriptors, and later descriptors are retained
-    // without a record that selects them.
-    let mut types = Vec::new();
-    for index in 0..type_count {
-        let entry = child(
-            section_4_payload,
-            index * type_desc::LEN,
-            (index + 1) * type_desc::LEN,
-            "type descriptor",
-        )?;
-        let mut entry = crate::pmdc::Cursor::new(entry);
-        types.push(TypeDescriptor {
-            index: u32::try_from(index).map_err(|_| {
-                CodecError::Malformed("Inventor numeric value exceeds target range".into())
-            })?,
-            id: entry.take_array("type descriptor id")?,
-            fields: [
-                (
-                    entry.u16("type descriptor field 0 key")?,
-                    entry.u32("type descriptor field 0 value")?,
-                ),
-                (
-                    entry.u16("type descriptor field 1 key")?,
-                    entry.u32("type descriptor field 1 value")?,
-                ),
-            ],
-        });
-    }
-
     let section_4 = MetaSection {
         number: MetaSectionNumber::Four,
         discriminator: u32::try_from(type_count).map_err(|_| {
@@ -328,20 +338,143 @@ pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecE
             "RSe block-size table ends at {section_1_footer}, expected {section_1_end}"
         )));
     }
+    let block_table = forward_table(token, &sections[0])?;
+    let type_table = forward_table(token, &sections[3])?;
+    let mut blocks = Vec::new();
+    let mut sizes = section_1_payload;
+    if block_table.failure().is_none() {
+        for ordinal in 0..block_count {
+            let encoded = crate::reader::u32(&mut sizes, "block-size entry")?;
+            blocks.push(BlockDescriptor {
+                ordinal: u32::try_from(ordinal).map_err(|_| {
+                    CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                })?,
+                stored: encoded & 0x8000_0000 != 0,
+                payload_len: encoded & 0x7fff_ffff,
+            });
+        }
+    }
+
+    // Section 4 is a counted frame like sections 1 through 3, and its count is
+    // not bounded by the selector width: a record selector's low byte reaches
+    // only the first 256 descriptors, and later descriptors are retained
+    // without a record that selects them.
+    let mut types = Vec::new();
+    if type_table.failure().is_none() {
+        for index in 0..type_count {
+            let entry = child(
+                section_4_payload,
+                index * type_desc::LEN,
+                (index + 1) * type_desc::LEN,
+                "type descriptor",
+            )?;
+            let mut entry = crate::pmdc::Cursor::new(entry);
+            types.push(TypeDescriptor {
+                index: u32::try_from(index).map_err(|_| {
+                    CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                })?,
+                id: entry.take_array("type descriptor id")?,
+                fields: [
+                    (
+                        entry.u16("type descriptor field 0 key")?,
+                        entry.u32("type descriptor field 0 value")?,
+                    ),
+                    (
+                        entry.u16("type descriptor field 1 key")?,
+                        entry.u32("type descriptor field 1 value")?,
+                    ),
+                ],
+            });
+        }
+    }
+
+    let [pairs, revisions, external] = REFERENCE_SECTIONS
+        .map(|(index, width)| ReferenceTable::read(token, &sections[index], width));
+    let references = [pairs?, revisions?, external?];
     Ok(MetaTables {
         prefix,
         blocks,
         types,
         sections,
         terminal_id,
+        block_table,
+        type_table,
+        references,
     })
+}
+
+fn forward_table<'a>(
+    token: Option<&str>,
+    section: &MetaSection<'a>,
+) -> Result<PartOutcome<'a>, CodecError> {
+    let part = meta_section_part(token, section)?;
+    if section.discriminator > MAX_METADATA_SECTION_ENTRIES {
+        Ok(PartOutcome::refused(
+            part.digest_only(),
+            Cause::Undecoded,
+            &CodecError::NotImplemented(format!(
+                "RSe metadata section {} count {} exceeds the metadata entry limit",
+                section.number, section.discriminator,
+            )),
+        ))
+    } else {
+        Ok(PartOutcome::admitted(part))
+    }
+}
+
+pub(crate) fn meta_section_part<'a>(
+    token: Option<&str>,
+    section: &MetaSection<'a>,
+) -> Result<Part<'a>, CodecError> {
+    let part = Part::new(
+        "inventor",
+        "meta-section",
+        section.payload,
+        [ArenaClass::Model],
+    );
+    match token {
+        Some(token) => Ok(part
+            .in_stream(
+                cadmpeg_ir::stream_name!("RSeStorage/M")
+                    .with_suffix(format_args!("{token}:expanded")),
+            )
+            .contained_in(Identity::new(format!(
+                "inventor:rse:meta-section#{token}-{}",
+                section.number
+            ))?)),
+        None => Ok(part),
+    }
+}
+
+pub(crate) fn bulk_part<'a>(
+    kind: &'static str,
+    token: Option<&str>,
+    extent: View<'a>,
+) -> Result<Part<'a>, CodecError> {
+    let part = Part::new(
+        "inventor",
+        kind,
+        extent,
+        [ArenaClass::Model, ArenaClass::Design],
+    )
+    .digest_only();
+    match token {
+        Some(token) => Ok(part
+            .in_stream(
+                cadmpeg_ir::stream_name!("RSeStorage/B")
+                    .with_suffix(format_args!("{token}:expanded")),
+            )
+            .contained_in(Identity::new(format!("inventor:rse:segment-bulk#{token}"))?)),
+        None => Ok(part),
+    }
 }
 
 pub(crate) fn frame_bulk_records<'a>(
     bulk: View<'a>,
     tables: &MetaTables<'_>,
     segment_version_major: u8,
-) -> Result<RseRecordTable<'a>, CodecError> {
+    token: Option<&str>,
+) -> Result<(RseRecordTable<'a>, PartOutcome<'a>), CodecError> {
     let mut cursor = Cursor::new(bulk);
     let mut records = Vec::new();
     for block in tables.blocks.iter().filter(|block| block.stored) {
@@ -385,17 +518,23 @@ pub(crate) fn frame_bulk_records<'a>(
         });
     }
     let trailer_start = cursor.position();
-    let trailer_marker = cursor.u32("stream trailer marker")?;
-    if trailer_marker != u32::MAX {
-        return Err(CodecError::malformed(format_args!(
-            "RSe stream trailer marker is {trailer_marker:#010x}"
-        )));
-    }
     let stream_trailer = child(bulk, trailer_start, bulk.window().len(), "stream trailer")?;
-    Ok(RseRecordTable {
-        records,
-        stream_trailer,
-    })
+    let part = bulk_part("rse-bulk-trailer", token, stream_trailer)?;
+    let trailer = match cursor.u32("stream trailer marker") {
+        Ok(u32::MAX) => PartOutcome::admitted(part),
+        Ok(marker) => PartOutcome::damaged(
+            part,
+            &CodecError::malformed(format_args!("RSe stream trailer marker is {marker:#010x}")),
+        ),
+        Err(error) => PartOutcome::damaged(part, &error),
+    };
+    Ok((
+        RseRecordTable {
+            records,
+            stream_trailer,
+        },
+        trailer,
+    ))
 }
 
 fn reverse_section<'a>(
@@ -442,15 +581,9 @@ fn counted_section<'a>(
 ) -> Result<(usize, View<'a>, usize), CodecError> {
     let count = usize::try_from(crate::reader::u32(view, name)?)
         .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
-    if count > 1_000_000 {
-        return Err(CodecError::malformed(format_args!(
-            "RSe metadata {name} count exceeds 1000000"
-        )));
-    }
-    // The test above bounds `count` at 1000000 and the four callers pass an
-    // `item_size` of 4, 10, 28 and 28, so the payload is at most 28000000
-    // bytes, which a 32-bit `usize` holds.
-    let payload_len = count * item_size;
+    let payload_len = count
+        .checked_mul(item_size)
+        .ok_or_else(|| CodecError::truncated(view.location(), name))?;
     // The take states the payload's window: a `payload_len` the section does
     // not hold is the located truncation, and the window it returns is exactly
     // the bytes it advanced over. It advances by `payload_len` on success, so
@@ -459,7 +592,9 @@ fn counted_section<'a>(
     let footer = view.read_len();
     let span = usize::try_from(crate::reader::u32(view, name)?)
         .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?;
-    let expected_span = 4 + payload_len;
+    let expected_span = 4_usize
+        .checked_add(payload_len)
+        .ok_or_else(|| CodecError::malformed("RSe metadata section span overflows"))?;
     if span != expected_span {
         return Err(CodecError::malformed(format_args!(
             "RSe metadata {name} spans {span} bytes, expected {expected_span}"
@@ -735,7 +870,7 @@ mod tests {
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>();
             assert_eq!(&body[..14], planted_prefix.as_slice());
-            let tables = parse_meta_tables(view).expect("synthetic metadata tables parse");
+            let tables = parse_meta_tables(view, None).expect("synthetic metadata tables parse");
             assert_eq!(tables.prefix, [3, 0, 2, 1, 0, 4, 0]);
             assert_eq!(tables.blocks.len(), 2);
             assert_eq!(tables.types.len(), 1);
@@ -750,7 +885,7 @@ mod tests {
     fn type_table_count_is_not_bounded_by_the_selector_byte() {
         let body = super::synthetic_meta_table_body_with_types(300);
         with_view(&body, |view| {
-            let tables = parse_meta_tables(view).expect("300 type descriptors frame");
+            let tables = parse_meta_tables(view, None).expect("300 type descriptors frame");
             assert_eq!(tables.types.len(), 300);
             assert_eq!(tables.types[299].index, 299);
             assert_eq!(tables.types[299].fields, [(1, 2), (3, 4)]);
@@ -761,7 +896,8 @@ mod tests {
     fn bulk_records_require_lengths_types_and_stream_exhaustion() {
         let meta = meta_fixture();
         with_view(&meta, |meta_view| {
-            let tables = parse_meta_tables(meta_view).expect("synthetic metadata tables parse");
+            let tables =
+                parse_meta_tables(meta_view, None).expect("synthetic metadata tables parse");
             let mut bulk = Vec::new();
             push_u32(&mut bulk, 0x100);
             bulk.extend_from_slice(&[0x41; 3]);
@@ -772,10 +908,11 @@ mod tests {
             push_u32(&mut bulk, u32::MAX);
             bulk.extend_from_slice(&[7, 8]);
             with_view(&bulk, |bulk_view| {
-                let records = frame_bulk_records(bulk_view, &tables, 18)
+                let (records, trailer) = frame_bulk_records(bulk_view, &tables, 18, None)
                     .expect("synthetic bulk records parse");
                 assert_eq!(records.records.len(), 2);
                 assert_eq!(records.records[1].payload.window(), &[0x42; 5]);
+                assert!(trailer.failure().is_none());
                 assert_eq!(
                     records.stream_trailer.window(),
                     &[0xff, 0xff, 0xff, 0xff, 7, 8]
@@ -783,7 +920,12 @@ mod tests {
             });
             bulk[24] = 0;
             with_view(&bulk, |bulk_view| {
-                assert!(frame_bulk_records(bulk_view, &tables, 18).is_err());
+                let (records, trailer) = frame_bulk_records(bulk_view, &tables, 18, None)
+                    .expect("independently framed records survive the trailer");
+                assert_eq!(records.records.len(), 2);
+                let (cause, reason) = trailer.failure().expect("damaged trailer");
+                assert_eq!(cause, cadmpeg_ir::unknown::part::Cause::Unreadable);
+                assert!(reason.contains("trailer marker"), "{reason}");
             });
         });
     }
@@ -874,7 +1016,7 @@ mod tests {
             (vec![0; 16], "Truncated block-size table at offset 14"),
         ] {
             with_view(&bytes, |view| {
-                assert_eq!(located_truncation(parse_meta_tables(view)), expected);
+                assert_eq!(located_truncation(parse_meta_tables(view, None)), expected);
             });
         }
     }
@@ -885,7 +1027,7 @@ mod tests {
         with_view(&bytes, |view| {
             let body = view.child(10, 24).expect("a 14-byte child of 30 bytes");
             assert_eq!(
-                located_truncation(parse_meta_tables(body)),
+                located_truncation(parse_meta_tables(body, None)),
                 "Truncated metadata terminal id at offset 8"
             );
         });
@@ -939,7 +1081,7 @@ mod tests {
         }
         body.extend_from_slice(&[0_u8; TERMINAL_ID_LEN]);
         with_view(&body, |view| {
-            let observed = match parse_meta_tables(view) {
+            let observed = match parse_meta_tables(view, None) {
                 Ok(tables) => format!("the body parsed with {} sections", tables.sections.len()),
                 Err(error) => error.to_string(),
             };

@@ -12,12 +12,14 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::native::NativeNamespace;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{dropped_with, Cause, DecodeParts, GivenUpPart, Part};
+use cadmpeg_ir::unknown::part::outcome::PartOutcome;
+use cadmpeg_ir::unknown::part::{dropped_with, Cause, DecodeParts, GivenUpPart};
 use serde::{Deserialize, Serialize};
 
 use crate::container::InventorContainer;
 use crate::loss::InventorLossCode;
 use crate::native::StructuralIssueRecord;
+use crate::records::meta_section_part;
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentKind, SegmentMetaState};
 
 pub(crate) use records::Record;
@@ -91,13 +93,14 @@ impl MetadataReference {
 }
 
 #[derive(Default)]
-pub(crate) struct Inventory {
+pub(crate) struct Inventory<'a> {
     pub(crate) records: Vec<Record>,
     pub(crate) references: Vec<MetadataReference>,
     pub(crate) reference_tables: Vec<references::Tables>,
     pub(crate) issues: Vec<StructuralIssueRecord>,
     /// The parts the inventory gave up, for the decode to commit.
     pub(crate) given_up: Vec<GivenUpPart>,
+    sections: Vec<PartOutcome<'a>>,
     /// The give-ups and dependent notes of the refused records.
     refusals: Vec<LossNote>,
     /// The id that names each refused record, by segment token and ordinal.
@@ -108,7 +111,19 @@ pub(crate) struct Inventory {
     record_count: usize,
 }
 
-impl Inventory {
+impl Inventory<'_> {
+    pub(crate) fn section_give_ups(
+        &self,
+        ctx: &DecodeContext<'_>,
+        inspect: bool,
+    ) -> Result<Vec<GivenUpPart>, CodecError> {
+        let mut parts = Vec::new();
+        for outcome in &self.sections {
+            parts.extend(outcome.give_up(ctx, inspect)?);
+        }
+        Ok(parts)
+    }
+
     pub(crate) fn write(
         &self,
         ctx: &DecodeContext<'_>,
@@ -199,36 +214,11 @@ impl Inventory {
     }
 }
 
-/// The metadata section `section` of the segment whose token is `token`, as
-/// a part of its expanded metadata stream.
-fn meta_section_part<'a>(
-    token: &str,
-    section: &crate::records::MetaSection<'a>,
-) -> Result<Part<'a>, CodecError> {
-    Ok(Part::new(
-        "inventor",
-        "meta-section",
-        section.payload,
-        [ArenaClass::Model],
-    )
-    .in_stream(
-        cadmpeg_ir::StreamName::try_from(format!("RSeStorage/M{token}:expanded"))
-            .map_err(CodecError::malformed)?,
-    )
-    .contained_in(
-        cadmpeg_ir::ids::Identity::try_from(format!(
-            "inventor:rse:meta-section#{token}-{}",
-            section.number
-        ))
-        .map_err(CodecError::malformed)?,
-    ))
-}
-
-pub(crate) fn inventory(
+pub(crate) fn inventory<'a>(
     ctx: &DecodeContext<'_>,
-    container: &InventorContainer<'_>,
-    frames: &[crate::native::RseRecordRecord],
-) -> Result<Inventory, CodecError> {
+    container: &InventorContainer<'a>,
+    frames: Option<&[crate::native::RseRecordRecord]>,
+) -> Result<Inventory<'a>, CodecError> {
     let mut inventory = Inventory::default();
     let mut offsets = BTreeMap::new();
     let drawing_document = container
@@ -240,66 +230,50 @@ pub(crate) fn inventory(
         let token = segment.pair.token.as_str();
         let drawing = drawing_document && matches!(segment.kind, SegmentKind::Drawing(_));
         if let SegmentMetaState::Parsed(meta) = &segment.meta {
+            for index in [1, 2, 4] {
+                let part = meta_section_part(Some(token), &meta.tables.sections[index])?;
+                inventory.sections.push(PartOutcome::inventory(part));
+            }
             for index in [5, 8, 10]
                 .into_iter()
                 .filter(|&index| !drawing || index != 8)
             {
                 let section = &meta.tables.sections[index];
-                if let Err(error) = crate::records::validate_auxiliary_section(section) {
-                    inventory.given_up.push(ctx.give_up_part(
-                        meta_section_part(token, section)?,
-                        Cause::Unreadable,
-                        error,
-                    )?);
-                }
+                let part = meta_section_part(Some(token), section)?;
+                let outcome = match crate::records::validate_auxiliary_section(section) {
+                    Ok(()) => PartOutcome::admitted(part),
+                    Err(error) => PartOutcome::refused(part, Cause::Unreadable, &error),
+                };
+                inventory.sections.push(outcome);
             }
         }
         let family = match segment.kind {
             SegmentKind::Drawing(family) if drawing_document => family,
-            _ => {
-                if let SegmentMetaState::Parsed(meta) = &segment.meta {
-                    for (index, width) in crate::records::REFERENCE_SECTIONS {
-                        let section = &meta.tables.sections[index];
-                        if let Err(error) = crate::records::reference_section_count(
-                            section.discriminator,
-                            section.payload,
-                            width,
-                        ) {
-                            inventory.given_up.push(ctx.give_up_part(
-                                meta_section_part(token, section)?,
-                                Cause::Unreadable,
-                                error,
-                            )?);
-                        }
-                    }
-                }
-                continue;
-            }
+            _ => continue,
         };
         inventory.segment_count += 1;
         if let SegmentMetaState::Parsed(meta) = &segment.meta {
-            let table =
-                references::Tables::read(ctx, segment.pair.token.key(), meta, |section, error| {
-                    ctx.charge_entities(1, "retain Inventor drawing reference-table refusal")?;
-                    let number = u8::from(section.number);
-                    let detail = error.to_string();
-                    let part = ctx.give_up_part(
-                        meta_section_part(token, section)?,
-                        Cause::Unreadable,
-                        error,
-                    )?;
-                    inventory
-                        .failed_sections
-                        .insert((token.to_owned(), number), part.id().to_string());
-                    inventory.given_up.push(part);
-                    let scope = format!("reference-tables-{token}-{number}");
-                    inventory.issues.push(StructuralIssueRecord {
-                        id: format!("inventor:drawing:record-issue#{scope}"),
-                        scope,
-                        detail,
-                    });
-                    Ok(())
-                })?;
+            let table = references::Tables::read(ctx, segment.pair.token.key(), meta)?;
+            for ((index, _), reference) in crate::records::REFERENCE_SECTIONS
+                .into_iter()
+                .zip(&meta.tables.references)
+            {
+                let Some((_, detail)) = reference.outcome.failure() else {
+                    continue;
+                };
+                let number = meta.tables.sections[index].number;
+                ctx.charge_entities(1, "retain Inventor drawing reference-table refusal")?;
+                inventory.failed_sections.insert(
+                    (token.to_owned(), u8::from(number)),
+                    reference.outcome.id()?.to_string(),
+                );
+                let scope = format!("reference-tables-{token}-{number}");
+                inventory.issues.push(StructuralIssueRecord {
+                    id: format!("inventor:drawing:record-issue#{scope}"),
+                    scope,
+                    detail: detail.to_owned(),
+                });
+            }
             ctx.charge_entities(1, "retain Inventor drawing reference tables")?;
             inventory.reference_tables.push(table);
             let section = &meta.tables.sections[8];
@@ -370,12 +344,15 @@ pub(crate) fn inventory(
                     })
                     .collect()
             };
-            match ctx.run_part(read)? {
-                Ok(references) => inventory.references.extend(references),
+            let part = meta_section_part(Some(token), section)?;
+            let outcome = match ctx.run_part(read)? {
+                Ok(references) => {
+                    inventory.references.extend(references);
+                    PartOutcome::admitted(part)
+                }
                 Err(error) => {
                     let detail = error.to_string();
                     ctx.charge_entities(1, "retain Inventor drawing metadata-reference refusal")?;
-                    let part = meta_section_part(token, section)?;
                     let cause = if crate::records::references::is_fixed_entry_form(
                         section.payload,
                         section.discriminator,
@@ -384,17 +361,19 @@ pub(crate) fn inventory(
                     } else {
                         Cause::Unreadable
                     };
-                    inventory
-                        .given_up
-                        .push(ctx.give_up_part(part, cause, error)?);
                     let scope = format!("metadata-references-{token}");
                     inventory.issues.push(StructuralIssueRecord {
                         id: format!("inventor:drawing:record-issue#{scope}"),
                         scope,
                         detail,
                     });
+                    PartOutcome::refused(part, cause, &error)
                 }
-            }
+            };
+            inventory.sections.push(outcome);
+        }
+        if frames.is_none() {
+            continue;
         }
         let (Some(registry), SegmentBulkState::Framed(bulk)) = (segment.registry, &segment.bulk)
         else {
@@ -457,7 +436,7 @@ pub(crate) fn inventory(
             }
         }
     }
-    if inventory.segment_count != 0 {
+    if let Some(frames) = frames.filter(|_| inventory.segment_count != 0) {
         let candidates = std::mem::take(&mut inventory.records);
         let source = cadmpeg_core::decode::unique_index(
             frames

@@ -174,16 +174,16 @@ The decoder gives up a part (CADIR §3.3) in these cases:
 | `stream` | The `Brep Data` or `Public Access` stream, as its digest, when its frame (§2) declares a block above the decoder's limit for one inflate. | `record.undecoded` |
 | `stream` | `Brep Data`, `Public Access`, or `Document Data` when its joined copy exceeds the remaining retained-byte budget. | `record.undecoded` |
 | `stream` | The `Document Data` stream, as its digest, when the stream does not open. The root definition then states no units (§4). | `record.unreadable` |
+| `stream` | An inventoried compound stream has a broken sector chain or a physically short extent. Its digest covers accessible bytes in chain order. | `record.unreadable` |
 | `kernel-record` | The kernel bytes of an ACIS result record whose save stream does not frame. | `record.unreadable` |
 | `kernel-record` | The kernel bytes of an ACIS record whose header does not read, of a result record whose framed ACIS records or Parasolid transmit the decode does not read, or of a result record whose identities do not move into its record namespace. | `record.undecoded` |
 
-For a broken chain, the digest covers the located bytes in chain order up to
-the declared stream length. A chain that reaches no available sector gives the
-empty digest. An allocated chain whose located sectors are short of the
-declared stream length also gives the empty digest. A session-wide resource
-refusal stops the decode.
+Container depth and inspect check stream extents and hash the accessible bytes directly. A joined copy is made for a fragmented stream whose contents the scene reader uses.
 
-`ironcad/container.noncanonical` carries strict floor Warning (CADIR §3.2).
-The give-up of a decoded stream charges its broken chain. A broken chain of a
-stream that no reader opens keeps the container deviation. No other IronCAD
-code carries a strict floor.
+The digest is bounded by the declared stream length. A chain that reaches
+no available sector gives the empty digest. A session-wide resource refusal
+stops the decode.
+
+`ironcad/container.noncanonical` carries strict floor Warning (CADIR §3.2)
+for other compound deviations. The stream give-up charges a broken chain.
+Other IronCAD diagnostics use their default severity without a strict floor.

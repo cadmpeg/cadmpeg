@@ -4,9 +4,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot, CompoundStreamId};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::unknown::part::Cause;
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::unknown::part::outcome::PartOutcome;
+use cadmpeg_ir::unknown::part::{Cause, Part};
 
 use crate::container::streams::Streams;
 
@@ -21,7 +23,7 @@ pub(crate) struct PropertySetStream<'a> {
     pub(crate) version: u16,
     pub(crate) system_identifier: u32,
     pub(crate) clsid: [u8; 16],
-    pub(crate) sections: Vec<PropertySection<'a>>,
+    pub(crate) sections: Vec<Option<PropertySection<'a>>>,
 }
 
 #[derive(Debug)]
@@ -34,12 +36,7 @@ pub(crate) struct PropertySetDescriptor<'a> {
 #[derive(Debug)]
 pub(crate) enum PropertySetState<'a> {
     Parsed(PropertySetStream<'a>),
-    /// The stream does not read: `cause` tells a break of its framing from a
-    /// form that the decoder does not read.
-    Unread {
-        cause: Cause,
-        detail: String,
-    },
+    Unread,
 }
 
 #[derive(Debug)]
@@ -155,37 +152,74 @@ pub(crate) fn inventory<'a>(
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
-        let named = is_property_set_name(stream.path());
-        let oversized =
-            stream.logical_size() > cadmpeg_core::decode::u64_from_index(MAX_STREAM_SIZE);
-        if !named && (stream.logical_size() < 28 || oversized) {
+        if streams.has_outcome(stream.id()) {
             continue;
         }
-        let parsed = if oversized && stream.chain_error().is_none() {
-            Err(property_set_too_large())
-        } else {
-            match streams.open(ctx, snapshot, stream, named.then_some("property-set")) {
-                Ok(view)
-                    if named
-                        || has_property_set_header(view.window())
-                        || View::u16_le_at(view.window(), 0) == Some(BYTE_ORDER_LE) =>
-                {
-                    ctx.run_part(|| parse_property_set_stream(ctx, view))?
-                }
-                Ok(_) => continue,
-                Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => {
-                    return Err(error)
-                }
-                Err(error) if named => Err(error),
-                Err(_) => continue,
+        let named = is_property_set_name(stream.path());
+        let oversized = stream.logical_size() > u64_from_index(MAX_STREAM_SIZE);
+        if !named {
+            if stream.logical_size() < 28 || oversized {
+                continue;
             }
-        };
-        let state = match parsed {
-            Ok(property_set) => PropertySetState::Parsed(property_set),
-            Err(error) => PropertySetState::Unread {
-                cause: Cause::Unreadable.of(&error),
-                detail: error.to_string(),
-            },
+            let head = snapshot.stream_chunks(stream)?.next();
+            if !head.is_some_and(|view| {
+                has_property_set_header(view.window())
+                    || View::u16_le_at(view.window(), 0) == Some(BYTE_ORDER_LE)
+            }) || snapshot.validate_stream(stream).is_err()
+            {
+                continue;
+            }
+        }
+        let state = if oversized {
+            streams.inventory(
+                snapshot,
+                stream,
+                "property-set",
+                Some(property_set_too_large()),
+            )?;
+            PropertySetState::Unread
+        } else {
+            let mut sections = Vec::new();
+            let parsed = streams.read(ctx, snapshot, stream, "property-set", |view| {
+                let owner = cadmpeg_ir::stream_name!("inventor:").with_suffix(stream.path());
+                let id = Identity::new(format!(
+                    "inventor:property:set#{}",
+                    stream.id().directory_id()
+                ))?;
+                walk_property_set(view, |fmtid, offset, slot, frame| {
+                    let bytes = frame.as_ref().map_or(slot, |view| view.window());
+                    let part = Part::at(
+                        "inventor",
+                        "property-section",
+                        u64_from_index(offset),
+                        bytes,
+                        [ArenaClass::Model],
+                    )
+                    .in_stream(owner.clone())
+                    .contained_in(id.clone());
+                    let (outcome, parsed) = match frame {
+                        Ok(section) => match ctx.run_part(|| parse_section(ctx, section, fmtid))? {
+                            Ok(parsed) => (PartOutcome::admitted(part), Some(parsed)),
+                            Err(error) => {
+                                (PartOutcome::refused(part, Cause::Unreadable, &error), None)
+                            }
+                        },
+                        Err(error) => (PartOutcome::damaged(part, &error), None),
+                    };
+                    sections.push(outcome);
+                    Ok(parsed)
+                })
+            });
+            match parsed {
+                Ok(property_set) => {
+                    streams.add(sections);
+                    PropertySetState::Parsed(property_set)
+                }
+                Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => {
+                    return Err(error);
+                }
+                Err(_) => PropertySetState::Unread,
+            }
         };
         property_sets.push(PropertySetDescriptor {
             stream: stream.id(),
@@ -205,6 +239,20 @@ fn property_set_too_large() -> CodecError {
 pub(crate) fn parse_property_set_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
+) -> Result<PropertySetStream<'a>, CodecError> {
+    walk_property_set(source, |fmtid, _, _, frame| {
+        parse_section(ctx, frame?, fmtid).map(Some)
+    })
+}
+
+fn walk_property_set<'a>(
+    source: View<'a>,
+    mut read: impl FnMut(
+        [u8; 16],
+        usize,
+        &'a [u8],
+        Result<View<'a>, CodecError>,
+    ) -> Result<Option<PropertySection<'a>>, CodecError>,
 ) -> Result<PropertySetStream<'a>, CodecError> {
     let bytes = source.window();
     if bytes.len() > MAX_STREAM_SIZE {
@@ -243,43 +291,57 @@ pub(crate) fn parse_property_set_stream<'a>(
     }
     let header_end = cursor.position();
     directories.sort_by_key(|left| left.1);
-    let mut previous_end = header_end;
-    let mut sections = Vec::new();
-    for (fmtid, offset) in directories {
-        if offset < previous_end || offset % 4 != 0 {
-            return Err(CodecError::Malformed(
-                "OLE property-set section ranges overlap or are not aligned".into(),
-            ));
-        }
-        require_zero_range(bytes, previous_end, offset, "section gap")?;
-        let mut section = crate::reader::at(source, source.start() + offset, "section size")?;
-        let size =
-            usize::try_from(crate::reader::u32(&mut section, "section size")?).map_err(|_| {
-                CodecError::Malformed("Inventor numeric value exceeds target range".into())
-            })?;
-        let end = offset.checked_add(size).ok_or_else(|| {
-            CodecError::Malformed("OLE property-set section range overflows".into())
-        })?;
-        if size < 8 || end > bytes.len() {
-            return Err(CodecError::Malformed(
-                "OLE property-set section range is invalid".into(),
-            ));
-        }
-        let section_source = source
-            .child(source.start() + offset, source.start() + end)
-            .ok_or_else(|| {
-                CodecError::Malformed("OLE property-set section view is invalid".into())
-            })?;
-        sections.push(parse_section(ctx, section_source, fmtid)?);
-        previous_end = end;
+    if directories.windows(2).any(|pair| pair[0].1 == pair[1].1) {
+        return Err(CodecError::malformed(
+            "OLE property-set section offsets are duplicated",
+        ));
     }
-    require_zero_range(bytes, previous_end, bytes.len(), "stream suffix")?;
+    if let Some((_, first)) = directories.first() {
+        if (header_end..=bytes.len()).contains(first) {
+            require_zero_range(bytes, header_end, *first, "section gap")?;
+        }
+    }
+    let mut sections = Vec::new();
+    for (ordinal, &(fmtid, offset)) in directories.iter().enumerate() {
+        let upper = directories
+            .get(ordinal + 1)
+            .map_or(bytes.len(), |next| next.1.min(bytes.len()));
+        let slot = bytes.get(offset..upper).unwrap_or_default();
+        let frame = frame_section(source, header_end, offset, upper);
+        sections.push(read(fmtid, offset, slot, frame)?);
+    }
     Ok(PropertySetStream {
         version,
         system_identifier,
         clsid,
         sections,
     })
+}
+
+fn frame_section(
+    source: View<'_>,
+    header_end: usize,
+    offset: usize,
+    upper: usize,
+) -> Result<View<'_>, CodecError> {
+    if offset < header_end || !offset.is_multiple_of(4) || offset > upper {
+        return Err(CodecError::malformed(
+            "OLE property-set section ranges overlap, escape the stream, or are not aligned",
+        ));
+    }
+    let mut slot = source
+        .child(source.start() + offset, source.start() + upper)
+        .ok_or_else(|| CodecError::malformed("OLE property-set section view is invalid"))?;
+    let size = usize::try_from(crate::reader::u32(&mut slot, "section size")?)
+        .map_err(|_| CodecError::malformed("Inventor numeric value exceeds target range"))?;
+    let end = offset
+        .checked_add(size)
+        .filter(|&end| size >= 8 && end <= upper)
+        .ok_or_else(|| CodecError::malformed("OLE property-set section range is invalid"))?;
+    require_zero_range(source.window(), end, upper, "section padding")?;
+    source
+        .child(source.start() + offset, source.start() + end)
+        .ok_or_else(|| CodecError::malformed("OLE property-set section view is invalid"))
 }
 
 fn parse_section<'a>(
@@ -295,7 +357,22 @@ fn parse_section<'a>(
             "OLE property-set section size does not match its range".into(),
         ));
     }
-    let property_count = cursor.bounded("property count", MAX_PROPERTIES)?;
+    let property_count = cursor.offset("property count")?;
+    if property_count > MAX_PROPERTIES {
+        if cursor
+            .view
+            .counted(u64_from_index(property_count), 8)
+            .is_none()
+        {
+            return Err(CodecError::truncated(
+                cursor.view.location(),
+                "property directory",
+            ));
+        }
+        return Err(CodecError::NotImplemented(format!(
+            "OLE property-set section property count {property_count} is above the decoder's bound {MAX_PROPERTIES}"
+        )));
+    }
     let directory_end = 8_usize
         .checked_add(property_count.checked_mul(8).ok_or_else(|| {
             CodecError::Malformed("OLE property directory length overflows".into())
@@ -981,7 +1058,7 @@ mod tests {
             .expect("malformed property set remains an inventory entry");
         assert!(matches!(
             inventory.first().map(|entry| &entry.state),
-            Some(super::PropertySetState::Unread { .. })
+            Some(super::PropertySetState::Unread)
         ));
     }
 
@@ -1090,7 +1167,7 @@ mod tests {
             .expect("synthetic property set fits policy");
         let parsed = parse_property_set_stream(&ctx, root).expect("property set parses");
         assert_eq!(parsed.sections.len(), 1);
-        let section = &parsed.sections[0];
+        let section = parsed.sections[0].as_ref().expect("read section");
         assert_eq!(section.code_page, Some(1200));
         assert!(matches!(
             &section.properties[1].value,
@@ -1132,7 +1209,12 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic property set fits policy");
         let parsed = parse_property_set_stream(&ctx, root).expect("unordered directory parses");
-        assert!(!parsed.sections[0].offsets_ordered);
+        assert!(
+            !parsed.sections[0]
+                .as_ref()
+                .expect("read section")
+                .offsets_ordered
+        );
     }
 
     #[test]

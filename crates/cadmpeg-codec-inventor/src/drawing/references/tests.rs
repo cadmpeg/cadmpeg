@@ -6,6 +6,12 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 
+use crate::layout::{
+    meta_external_reference as external, meta_external_revision as revision,
+    meta_segment_pair as pair,
+};
+use crate::records::reference_section_count;
+
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn payloads() -> [Vec<u8>; 3] {
@@ -27,9 +33,15 @@ fn parse(
     counts: [u32; 3],
     payloads: [View<'_>; 3],
 ) -> Result<Parsed, (usize, CodecError)> {
-    let pairs = read_pairs(ctx, counts[0], payloads[0]).map_err(|error| (0, error))?;
-    let revisions = read_revisions(ctx, counts[1], payloads[1]).map_err(|error| (1, error))?;
-    let external = read_external(ctx, counts[2], payloads[2]).map_err(|error| (2, error))?;
+    let pairs = reference_section_count(counts[0], payloads[0], pair::LEN)
+        .and_then(|count| read_pairs(ctx, count, payloads[0]))
+        .map_err(|error| (0, error))?;
+    let revisions = reference_section_count(counts[1], payloads[1], revision::LEN)
+        .and_then(|count| read_revisions(ctx, count, payloads[1]))
+        .map_err(|error| (1, error))?;
+    let external = reference_section_count(counts[2], payloads[2], external::LEN)
+        .and_then(|count| read_external(ctx, count, payloads[2]))
+        .map_err(|error| (2, error))?;
     Ok((pairs, revisions, external))
 }
 

@@ -202,6 +202,18 @@ pub(crate) fn primary_envelope_fixture_with_broken_database() -> Vec<u8> {
     )
 }
 
+pub(crate) fn primary_envelope_fixture_with_unframed_foreign_database() -> Vec<u8> {
+    primary_envelope_fixture_with_kernel_and_failures(
+        EnvelopeDeclarations {
+            schema: 12,
+            ..EnvelopeDeclarations::default()
+        },
+        &asm_kernel_stream(),
+        true,
+        false,
+    )
+}
+
 pub(crate) fn primary_envelope_fixture_with_broken_metadata() -> Vec<u8> {
     primary_envelope_fixture_with_kernel_and_failures(
         EnvelopeDeclarations::default(),

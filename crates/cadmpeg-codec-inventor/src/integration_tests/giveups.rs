@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Give-ups of whole streams and metadata sections, as a decode reports them.
 
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeDepth, InspectOptions};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{record_unreadable_kind, Cause};
@@ -171,61 +171,154 @@ fn named_property_set_headers_are_read_at_both_depths() {
             assert_eq!(loss.code, Cause::Unreadable.kind());
             assert!(loss.message.contains(expected), "{loss:?}");
         }
+        let losses = inspect_losses(&bytes, &InspectOptions::default());
+        assert_part_loss(&losses, "part property-set ", expected, Cause::Unreadable);
     }
 }
 
-#[test]
-fn a_named_property_set_past_the_probe_limit_is_undecoded() {
-    use cadmpeg_test_support::bytes::put_u32;
+fn rename_root_stream(bytes: &mut [u8], name: &str) {
+    let entry = 512 + 3 * 128;
+    bytes[entry..entry + 64].fill(0);
+    for (index, unit) in name.encode_utf16().enumerate() {
+        put_u16(bytes, entry + index * 2, unit);
+    }
+    put_u16(
+        bytes,
+        entry + 64,
+        u16::try_from((name.encode_utf16().count() + 1) * 2)
+            .expect("fixture name fits a directory entry"),
+    );
+}
+
+fn inspect_losses(bytes: &[u8], options: &InspectOptions) -> Vec<LossNote> {
+    InventorCodec
+        .inspect(&mut std::io::Cursor::new(bytes), options)
+        .expect("container remains inspectable")
+        .losses
+}
+
+fn assert_part_loss<'a>(
+    losses: &'a [LossNote],
+    part: &str,
+    detail: &str,
+    cause: Cause,
+) -> &'a LossNote {
+    let matching = losses
+        .iter()
+        .filter(|loss| loss.message.starts_with(part) && loss.message.contains(detail))
+        .collect::<Vec<_>>();
+    let [loss] = matching.as_slice() else {
+        panic!("one {part} charge for {detail}: {losses:#?}");
+    };
+    assert_eq!(loss.code, cause.kind(), "{loss:?}");
+    loss
+}
+
+fn oversized_property_set(physical_tail: usize) -> Vec<u8> {
     const SECTOR: usize = 512;
     const STREAM_LEN: u32 = 2 * 1024 * 1024 + 8;
     const END_CHAIN: u32 = 0xffff_fffe;
     const FAT_SECTOR: u32 = 0xffff_fffd;
+
     let mut bytes = fixture_with_ufrx(&[]);
     let sectors = usize::try_from(STREAM_LEN)
-        .expect("fixture length")
+        .expect("fixture length fits usize")
         .div_ceil(SECTOR);
     let fat_count = (1 + sectors).div_ceil(127);
-    let first_new_fat = 2 + sectors;
-    let sector_count = first_new_fat + fat_count - 1;
-    bytes.resize((sector_count + 1) * SECTOR, 0);
-    put_u32(&mut bytes, 44, u32::try_from(fat_count).expect("FAT count"));
+    let first_data = fat_count + 1;
+    let last_data = first_data + sectors - 1;
+    bytes.resize((last_data + 1) * SECTOR + physical_tail, 0);
+    put_u32(
+        &mut bytes,
+        44,
+        u32::try_from(fat_count).expect("fixture FAT count fits u32"),
+    );
+    rename_root_stream(&mut bytes, "\u{5}Oversized");
     let entry = SECTOR + 3 * 128;
-    bytes[entry..entry + 64].fill(0);
-    for (index, unit) in "\u{5}Oversized".encode_utf16().enumerate() {
-        put_u16(&mut bytes, entry + index * 2, unit);
-    }
-    put_u16(&mut bytes, entry + 64, 22);
+    put_u32(
+        &mut bytes,
+        entry + 116,
+        u32::try_from(first_data).expect("fixture sector fits u32"),
+    );
     put_u32(&mut bytes, entry + 120, STREAM_LEN);
-    let stream = 3 * SECTOR;
+    let stream = (first_data + 1) * SECTOR;
     put_u16(&mut bytes, stream, 0xfffe);
     put_u32(&mut bytes, stream + 24, 1);
     put_u32(&mut bytes, stream + 44, 48);
     put_u32(&mut bytes, stream + 48, 8);
     for index in 0..fat_count {
-        let sector = if index == 0 {
-            1
-        } else {
-            first_new_fat + index - 1
-        };
+        let sector = index + 1;
         put_u32(
             &mut bytes,
             76 + index * 4,
-            u32::try_from(sector).expect("FAT sector"),
+            u32::try_from(sector).expect("fixture FAT sector fits u32"),
         );
         let at = (sector + 1) * SECTOR;
         bytes[at..at + SECTOR].fill(0xff);
-        for (slot, id) in (index * 128..sector_count).take(128).enumerate() {
-            let link = match id {
-                0 => END_CHAIN,
-                1 => FAT_SECTOR,
-                _ if id == first_new_fat - 1 => END_CHAIN,
-                _ if id >= first_new_fat => FAT_SECTOR,
-                _ => u32::try_from(id + 1).expect("fixture FAT link"),
+        for (slot, id) in (index * 128..=last_data).take(128).enumerate() {
+            let link = if id == 0 || id == last_data {
+                END_CHAIN
+            } else if id < first_data {
+                FAT_SECTOR
+            } else {
+                u32::try_from(id + 1).expect("fixture FAT link fits u32")
             };
             put_u32(&mut bytes, at + slot * 4, link);
         }
     }
+    bytes
+}
+
+#[test]
+fn physical_extent_precedes_the_named_property_set_cap() {
+    for (tail, cause, detail) in [
+        (8, Cause::Undecoded, "exceeds 2097152 bytes"),
+        (4, Cause::Unreadable, "shorter than declared"),
+    ] {
+        let bytes = oversized_property_set(tail);
+        for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+            let options = DecodeOptions {
+                depth,
+                ..DecodeOptions::default()
+            };
+            let decoded = InventorCodec
+                .decode(&mut std::io::Cursor::new(&bytes), &options)
+                .expect("a refused property set leaves the document readable");
+            assert_part_loss(
+                &decoded.report().losses,
+                "part property-set ",
+                detail,
+                cause,
+            );
+        }
+        assert_part_loss(
+            &inspect_losses(&bytes, &InspectOptions::default()),
+            "part property-set ",
+            detail,
+            cause,
+        );
+    }
+}
+
+#[test]
+fn a_damaged_property_section_keeps_its_readable_sibling() {
+    let mut set = vec![0; 112];
+    put_u16(&mut set, 0, 0xfffe);
+    put_u32(&mut set, 24, 2);
+    set[28..44].fill(0x11);
+    put_u32(&mut set, 44, 68);
+    set[48..64].fill(0x22);
+    put_u32(&mut set, 64, 88);
+    for (start, size) in [(68, 20), (88, 24)] {
+        put_u32(&mut set, start, size);
+        put_u32(&mut set, start + 4, 1);
+        put_u32(&mut set, start + 8, 2);
+        put_u32(&mut set, start + 12, 16);
+        put_u32(&mut set, start + 16, 3);
+    }
+    put_u32(&mut set, 108, 37);
+    let mut bytes = fixture_with_ufrx(&set);
+    rename_root_stream(&mut bytes, "\u{5}Sections");
     for depth in [DecodeDepth::Full, DecodeDepth::Container] {
         let options = DecodeOptions {
             depth,
@@ -233,19 +326,31 @@ fn a_named_property_set_past_the_probe_limit_is_undecoded() {
         };
         let decoded = InventorCodec
             .decode(&mut std::io::Cursor::new(&bytes), &options)
-            .expect("a named set over the parser limit leaves the document readable");
-        let losses = decoded
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.message.starts_with("part property-set "))
-            .collect::<Vec<_>>();
-        let [loss] = losses.as_slice() else {
-            panic!("one named property-set charge: {losses:#?}");
+            .expect("local property damage");
+        assert_part_loss(
+            &decoded.report().losses,
+            "part property-section ",
+            "offset=68 length=20",
+            Cause::Unreadable,
+        );
+        let values = decoded
+            .ir()
+            .native
+            .namespace("inventor")
+            .expect("the decoded file keeps its Inventor namespace")
+            .arena_as::<serde_json::Value>("properties")
+            .expect("the surviving property arena");
+        let [value] = values.as_slice() else {
+            panic!("one property survives: {values:?}")
         };
-        assert_eq!(loss.code, Cause::Undecoded.kind());
-        assert!(loss.message.contains("exceeds 2097152 bytes"), "{loss:?}");
+        assert_eq!(value["scalar_value"], "37");
     }
+    assert_part_loss(
+        &inspect_losses(&bytes, &InspectOptions::default()),
+        "part property-section ",
+        "offset=68 length=20",
+        Cause::Unreadable,
+    );
 }
 
 #[test]
@@ -445,6 +550,224 @@ fn individual_schema_and_instance_expansion_limits_keep_other_zip_members_at_bot
     }
 }
 
+fn protein_fixture(mut zip: Vec<u8>, has_directory: bool) -> Vec<u8> {
+    if has_directory {
+        let comment = u16::try_from(4092 - zip.len()).expect("fixture ZIP comment fits u16");
+        let comment_length = zip.len() - 2;
+        put_u16(&mut zip, comment_length, comment);
+        zip.resize(4092, 0);
+    }
+    assert_eq!(zip.len(), 4092);
+    let mut package = 4092_u32.to_le_bytes().to_vec();
+    package.extend_from_slice(&zip);
+    let mut bytes = fixture_with_ufrx(&package);
+    rename_root_stream(&mut bytes, "Protein");
+    bytes
+}
+
+#[test]
+fn a_failed_schema_does_not_hide_independent_instance_damage_or_limits() {
+    use cadmpeg_test_support::zip_fixture::{archive, RawEntry, DEFLATE};
+    use std::io::Write as _;
+
+    let schema = RawEntry::stored("Schemas/BrokenSchema.xml", b"<Schema><");
+    let mut bad = RawEntry::stored("Broken/InstanceProperties.bin", b"bad");
+    bad.crc32 ^= 1;
+    let large = [0; 2048];
+    let mut encoder = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder.write_all(&large).expect("write fixture instance");
+    let compressed = encoder.finish().expect("finish the fixture DEFLATE member");
+    let limited =
+        RawEntry::compressed("Large/InstanceProperties.bin", DEFLATE, &compressed, &large);
+    let bytes = protein_fixture(archive(&[schema, bad, limited]), true);
+
+    let assert_losses = |losses: &[LossNote]| {
+        for (member, cause) in [
+            ("BrokenSchema.xml", Cause::Unreadable),
+            ("Broken/InstanceProperties.bin", Cause::Unreadable),
+            ("Large/InstanceProperties.bin", Cause::Undecoded),
+        ] {
+            assert_part_loss(losses, "part protein-member ", member, cause);
+        }
+    };
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let mut options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        options.policy.limits.max_decompressed_bytes_per_expand = 1024;
+        let decoded = InventorCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &options)
+            .expect("the remaining parts keep the document readable");
+        assert_losses(&decoded.report().losses);
+    }
+    let mut inspect = InspectOptions::default();
+    inspect.limits.max_decompressed_bytes_per_expand = 1024;
+    assert_losses(&inspect_losses(&bytes, &inspect));
+}
+
+fn healthy_protein_members() -> [cadmpeg_test_support::zip_fixture::RawEntry; 2] {
+    use cadmpeg_test_support::zip_fixture::RawEntry;
+    let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+    let mut record = Vec::new();
+    for value in ["SimpleSchema", "asset", "Example", "", &"k".repeat(160)] {
+        push_lp(&mut record, value);
+    }
+    [
+        RawEntry::stored("Schemas/SimpleSchema.xml", schema),
+        RawEntry::stored("Small/InstanceProperties.bin", &paged_instance(&record)),
+    ]
+}
+
+#[test]
+fn an_unsafe_protein_name_leaves_its_readable_siblings() {
+    use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+
+    let [schema, instance] = healthy_protein_members();
+    let bytes = protein_fixture(
+        archive(&[schema, RawEntry::stored("../extra", b"x"), instance]),
+        true,
+    );
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        let decoded = InventorCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &options)
+            .expect("the remaining parts keep the document readable");
+        assert_part_loss(
+            &decoded.report().losses,
+            "part protein-member ",
+            "../extra",
+            Cause::Unreadable,
+        );
+        let assets = decoded
+            .ir()
+            .native
+            .namespace("inventor")
+            .expect("the decoded file keeps its Inventor namespace")
+            .arena_as::<crate::native::protein::ProteinAssetRecord>("protein_assets")
+            .expect("the readable Protein asset arena");
+        assert_eq!(assets.len(), 1, "{depth:?}");
+        assert_eq!(
+            assets[0].entry_name.as_str(),
+            "Small/InstanceProperties.bin"
+        );
+    }
+}
+
+#[test]
+fn a_protein_member_give_up_points_into_the_zip_and_links_its_declaration() {
+    use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+
+    let [schema, _] = healthy_protein_members();
+    let raw = b"bad";
+    let mut bad = RawEntry::stored("Bad/InstanceProperties.bin", raw);
+    bad.crc32 ^= 1;
+    let offset = 30 + schema.name.len() + schema.payload.len() + 30 + bad.name.len();
+    let zip = archive(&[schema, bad]);
+    assert_eq!(&zip[offset..offset + raw.len()], raw);
+    let bytes = protein_fixture(zip, true);
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the Protein package remains inspectable in the decode");
+    let loss = assert_part_loss(
+        &decoded.report().losses,
+        "part protein-member ",
+        "Bad/InstanceProperties.bin",
+        Cause::Unreadable,
+    );
+    assert!(
+        loss.message.contains(&format!(
+            "stream=\"inventor:Protein:zip\" offset={offset} length=3"
+        )),
+        "{loss:?}"
+    );
+    let span = decoded
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .find(|span| span.stream() == "inventor:Protein:zip")
+        .expect("ZIP-relative evidence");
+    assert_eq!(span.offset(), cadmpeg_core::decode::u64_from_index(offset));
+    assert_eq!(span.byte_len(), 3);
+    assert_eq!(span.sha256(), cadmpeg_ir::hash::sha256_hex(raw));
+    let unknowns = decoded
+        .ir()
+        .native_unknowns("inventor")
+        .expect("the member give-up has an Inventor stub");
+    let stub = unknowns
+        .iter()
+        .find(|stub| loss.message.contains(&format!(" record={}: ", stub.id)))
+        .expect("the loss names its stub");
+    assert_eq!(
+        stub.links,
+        [cadmpeg_ir::ids::Identity::new("inventor:protein:entry#1")
+            .expect("native declaration id")]
+    );
+}
+
+#[test]
+fn a_recovered_protein_directory_is_charged_and_its_local_members_read() {
+    use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+    let [schema, instance] = healthy_protein_members();
+    let local_size = 60
+        + schema.name.len()
+        + schema.payload.len()
+        + instance.name.len()
+        + instance.payload.len();
+    let padding = RawEntry::stored("padding", &vec![0; 4092 - local_size - 37]);
+    let mut zip = archive(&[schema, instance, padding]);
+    zip.truncate(4092);
+    let bytes = protein_fixture(zip, false);
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the Protein package remains inspectable in the decode");
+    assert_part_loss(
+        &decoded.report().losses,
+        "part protein-directory ",
+        "",
+        Cause::Unreadable,
+    );
+    let assets = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("the decoded file keeps its Inventor namespace")
+        .arena_as::<crate::native::protein::ProteinAssetRecord>("protein_assets")
+        .expect("the recovered Protein assets");
+    assert_eq!(assets.len(), 1);
+}
+
+#[test]
+fn a_foreign_database_grammar_refusal_is_visible_at_each_depth_and_inspect() {
+    let bytes =
+        crate::test_support::test_fixtures::primary_envelope_fixture_with_unframed_foreign_database(
+        );
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        let decoded = InventorCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &options)
+            .expect("the remaining parts keep the document readable");
+        assert_part_loss(
+            &decoded.report().losses,
+            "part rse-database ",
+            "schema 12",
+            Cause::Undecoded,
+        );
+    }
+    assert_part_loss(
+        &inspect_losses(&bytes, &InspectOptions::default()),
+        "part rse-database ",
+        "schema 12",
+        Cause::Undecoded,
+    );
+}
+
 #[test]
 fn a_ufrx_stream_with_an_unallocated_start_is_given_up_once() {
     let mut bytes = fixture_with_ufrx(&[]);
@@ -491,7 +814,7 @@ fn an_unpaired_segment_stream_is_given_up_whole() {
         .collect::<Vec<_>>();
     assert_eq!(unpaired.len(), 2, "{losses:#?}");
     for message in &unpaired {
-        assert!(message.contains("rse.stream-unpaired"), "{message}");
+        assert!(message.contains("has no "), "{message}");
         assert!(message.ends_with("; dropped=[]"), "{message}");
         assert!(
             !message.contains("inventor:rse:unpaired-"),

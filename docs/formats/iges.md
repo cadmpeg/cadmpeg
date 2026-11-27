@@ -964,10 +964,11 @@ gives up, the projection records the face against that entity, as for a
 dependent above. When the pass drops a legacy single-parent face that it
 built, it gives up the face record
 `iges:model:face#legacy-single-parent-D<n>`, where `<n>` is the sequence of the
-Type 402. When the pass cannot build the holes of a Type 402 Form 9 parent, it
-builds the Type 108 face of the parent without them, gives up that face record
-of the Type 402, and names the parent face as the record that states its
-unstated children (CADIR §5.6). A Type 108 Form -1 bounded plane projects no face of its own. A
+Type 402. The Type 402 Form 9 parent face keeps its readable holes and
+states partial membership when a child slot fails. The give-up of that
+slot names the parent face as the record that states its unstated children
+(CADIR §5.6). A required child pointer to an absent directory entry is
+unreadable. A child beyond the plane projection's reading is undecoded. A Type 108 Form -1 bounded plane projects no face of its own. A
 finding on it is an `iges/entity.not-projected` note.
 
 A container inspection has no loss channel, because a container summary carries

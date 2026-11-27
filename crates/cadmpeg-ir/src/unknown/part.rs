@@ -10,6 +10,8 @@
 //! `record.undecoded` where they conform and the decoder does not decode
 //! them. Nothing else in the document describes the failure.
 
+pub mod outcome;
+
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, View};

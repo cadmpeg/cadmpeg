@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_container::compound::CompoundStreamEntry;
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
@@ -96,17 +95,24 @@ fn decode_container<'a>(
     let mut property_sections = Vec::new();
     let mut properties = Vec::new();
     let mut property_set_issues = Vec::new();
-    let mut unread_property_sets = Vec::new();
+    let mut malformed_property_set_count = 0;
     for descriptor in &container.property_sets {
         match &descriptor.state {
-            PropertySetState::Unread { cause, detail } => {
+            PropertySetState::Unread => {
+                let (_, detail) =
+                    container
+                        .streams
+                        .failure(descriptor.stream)
+                        .ok_or_else(|| {
+                            CodecError::malformed("unread OLE property set has no stream outcome")
+                        })?;
                 admit_native_items(ctx, 1)?;
                 let issue = project_property_set_issue(
                     descriptor.stream.directory_id(),
                     &descriptor.path,
                     detail,
                 );
-                unread_property_sets.push((descriptor.stream, *cause, detail.clone()));
+                malformed_property_set_count += 1;
                 property_set_issues.push(issue);
             }
             PropertySetState::Parsed(property_set) => {
@@ -120,10 +126,11 @@ fn decode_container<'a>(
                     system_identifier: property_set.system_identifier,
                     clsid: hex(&property_set.clsid),
                     section_count: cadmpeg_core::decode::u64_from_index(
-                        property_set.sections.len(),
+                        property_set.sections.iter().flatten().count(),
                     ),
                 });
                 for (section_ordinal, section) in property_set.sections.iter().enumerate() {
+                    let Some(section) = section else { continue };
                     let set_name = property_set_name(section);
                     let identity_matches = set_name
                         .as_deref()
@@ -223,17 +230,11 @@ fn decode_container<'a>(
             }
         }
     }
-    let protein = project_protein_state(ctx, &container.protein)?;
-    let crate::protein::ProteinInstances {
-        members: protein_instances,
-        given_up: protein_parts,
-    } = match &container.protein {
-        ProteinState::Package(package) => crate::protein::decode_instances(ctx, package)?,
-        ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {
-            crate::protein::ProteinInstances::default()
-        }
-    };
+    let protein_state = project_protein_state(ctx, &container.protein)?;
+    let protein = container.protein.read_instances(ctx)?;
+    let protein_parts = protein.give_ups(ctx)?;
     let protein_members_unread = !protein_parts.is_empty();
+    let protein_instances = protein.members;
     let material_catalog =
         crate::materials::project_catalog(ctx, &protein_instances, &mut admitted_entities)?;
     let ProteinNativeRecords {
@@ -371,44 +372,9 @@ fn decode_container<'a>(
             .collect::<Result<Vec<_>, _>>()?,
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
-    let mut given_up = container
-        .streams
-        .give_ups(ctx, &container.snapshot, false)?;
+    let mut given_up = container.give_ups(ctx, false)?;
     given_up.extend(protein_parts);
-    for (stream, cause, detail) in &unread_property_sets {
-        give_up_stream(
-            ctx,
-            container,
-            container.snapshot.stream_by_id(*stream),
-            ("property-set", &[ArenaClass::Model]),
-            (*cause, detail),
-            &mut given_up,
-        )?;
-    }
     let mut issue_records = std::collections::BTreeSet::new();
-    if !ctx.container_only() {
-        for descriptor in &container.rse.databases {
-            let Some(detail) = descriptor.issue_detail() else {
-                continue;
-            };
-            // A schema the decoder reads with another schema's grammar is a
-            // form it does not decode.
-            let cause = match descriptor.state {
-                crate::rse::DatabaseState::Unframed { .. } => Cause::Undecoded,
-                crate::rse::DatabaseState::Parsed(_) | crate::rse::DatabaseState::Unreadable(_) => {
-                    Cause::Unreadable
-                }
-            };
-            give_up_stream(
-                ctx,
-                container,
-                container.snapshot.stream_by_id(descriptor.stream),
-                ("rse-database", &[ArenaClass::Model]),
-                (cause, &detail),
-                &mut given_up,
-            )?;
-        }
-    }
     let registry_failure = match &container.rse.registry {
         ParsedState::Unavailable(detail) => Some(detail),
         ParsedState::Absent | ParsedState::Parsed(_) => None,
@@ -433,7 +399,8 @@ fn decode_container<'a>(
     let meta_types = projection.meta_types;
     let segment_meta_issues = projection.segment_meta_issues;
     let rse_records = projection.rse_records;
-    let mut drawing_inventory = crate::drawing::inventory(ctx, container, &rse_records)?;
+    let mut drawing_inventory = crate::drawing::inventory(ctx, container, Some(&rse_records))?;
+    given_up.extend(drawing_inventory.section_give_ups(ctx, false)?);
     given_up.append(&mut drawing_inventory.given_up);
     let segment_bulk = projection.segment_bulk;
     let segment_bulk_issues = projection.segment_bulk_issues;
@@ -532,7 +499,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "property_sections", &property_sections)?;
     namespace.set_arena(ctx, "properties", &properties)?;
     namespace.set_arena(ctx, "property_set_issues", &property_set_issues)?;
-    protein.install(ctx, namespace)?;
+    protein_state.install(ctx, namespace)?;
     namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
     namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
     ufrx.install(ctx, namespace)?;
@@ -669,7 +636,7 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
     drawing_inventory.write(ctx, namespace)?;
-    let unread_streams: Vec<_> = container.streams.skipped().collect();
+    let unread_streams: Vec<_> = container.streams.damaged().collect();
     let mut losses = crate::container::deviation_losses(&container.snapshot, &unread_streams);
     losses.extend(drawing_inventory.losses());
     let mut geometry_failure = None;
@@ -1380,35 +1347,9 @@ fn decode_container<'a>(
         losses.extend(crate::sketch::spline::point_relation_loss(
             &sketch_inventory.constraints,
         ));
-        if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
-            losses.push(InventorLossCode::RseStreamUnpaired.note(format!(
-                "RSe contains {} unpaired metadata stream(s) and {} unpaired bulk stream(s).",
-                container.rse.unpaired_metadata.len(),
-                container.rse.unpaired_bulk.len()
-            )));
-            let code = InventorLossCode::RseStreamUnpaired.kind();
-            for (unpaired, kind, missing) in [
-                (&container.rse.unpaired_metadata, "rse-metadata", "bulk"),
-                (&container.rse.unpaired_bulk, "rse-bulk", "metadata"),
-            ] {
-                for (token, stream) in unpaired {
-                    give_up_stream(
-                        ctx,
-                        container,
-                        container.snapshot.stream_by_id(*stream),
-                        (kind, &[ArenaClass::Model, ArenaClass::Design]),
-                        (
-                            Cause::Unreadable,
-                            &format!("{code}: segment {} has no {missing} stream", token.as_str()),
-                        ),
-                        &mut given_up,
-                    )?;
-                }
-            }
-        }
         // A property set whose stream does not read is given up; an issue
         // of a set that reads keeps the set.
-        let kept = property_set_issues.len() - unread_property_sets.len();
+        let kept = property_set_issues.len() - malformed_property_set_count;
         if kept != 0 {
             losses.push(
                 InventorLossCode::PropertySetStreamMalformed
@@ -1638,7 +1579,10 @@ fn decode_container<'a>(
         (crate::coverage::PROPERTY_SETS, property_sets.len()),
         (crate::coverage::PROPERTIES, properties.len()),
         (crate::coverage::PREVIEW_ASSETS, preview_asset_count),
-        (crate::coverage::PROTEIN_ENTRIES, protein.entries().len()),
+        (
+            crate::coverage::PROTEIN_ENTRIES,
+            protein_state.entries().len(),
+        ),
         (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
         (
             crate::coverage::PROTEIN_REJECTIONS,
@@ -2179,27 +2123,6 @@ fn rse_record_frame<'s, 'a>(
     Some((segment.pair.token.key(), frame))
 }
 
-fn give_up_stream(
-    ctx: &DecodeContext<'_>,
-    container: &InventorContainer<'_>,
-    entry: Option<&CompoundStreamEntry>,
-    (kind, holds): (&'static str, &[ArenaClass]),
-    (cause, error): (Cause, &str),
-    parts: &mut Vec<GivenUpPart>,
-) -> Result<(), CodecError> {
-    let Some(entry) = entry else {
-        return Ok(());
-    };
-    if container.streams.was_skipped(entry.id()) {
-        return Ok(());
-    }
-    let bytes = container.streams.opened_bytes(entry.id());
-    let part = Part::at("inventor", kind, 0, bytes, holds.iter().copied())
-        .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()));
-    parts.push(ctx.give_up_part(part, cause, CodecError::Malformed(error.to_owned()))?);
-    Ok(())
-}
-
 /// The active kernel carrier as a `kernel-carrier` part of its `RSe` record, and
 /// the segment token and ordinal of that record.
 fn carrier_part<'a>(carrier: &crate::kernel::ActiveCarrier<'a>) -> (Part<'a>, (String, u32)) {
@@ -2363,7 +2286,7 @@ fn project_protein_state(
                 .map(|(ordinal, entry)| -> Result<_, CodecError> {
                     admit_native_items(ctx, 1)?;
                     Ok(ProteinEntryRecord {
-                        id: format!("inventor:protein:entry#{ordinal}"),
+                        id: crate::protein::entry_id(ordinal),
                         ordinal: record_ordinal(ordinal, "Inventor Protein entry ordinal")?,
                         name: entry.name.clone(),
                         compression: entry.compression,

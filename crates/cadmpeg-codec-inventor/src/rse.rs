@@ -8,7 +8,8 @@ use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zstd_exact};
 use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{Identity, IdentityKey};
-use cadmpeg_ir::unknown::part::Part;
+use cadmpeg_ir::unknown::part::outcome::PartOutcome;
+use cadmpeg_ir::unknown::part::{Cause, Part};
 
 use crate::container::streams::Streams;
 use crate::database::{
@@ -417,15 +418,33 @@ impl<'a> RseInventory<'a> {
         let mut database_descriptors = Vec::new();
         for (band, stream_id) in databases {
             let state = match snapshot.stream_by_id(stream_id) {
-                Some(stream) => match streams.read(ctx, snapshot, stream, "rse-database", |view| {
-                    parse_database(ctx, view.window())
-                }) {
-                    Ok(DatabaseHeader::Supported(database)) => DatabaseState::Parsed(database),
-                    Ok(DatabaseHeader::Unframed { schema, detail }) => {
-                        DatabaseState::Unframed { schema, detail }
+                Some(stream) => {
+                    let mut unread_schema = None;
+                    let parsed = streams.read(ctx, snapshot, stream, "rse-database", |view| {
+                        match parse_database(ctx, view.window())? {
+                            DatabaseHeader::Supported(database) => Ok(database),
+                            DatabaseHeader::Unframed {
+                                schema,
+                                cause,
+                                detail,
+                            } => {
+                                let reason = DatabaseHeader::unframed_detail(schema, &detail);
+                                unread_schema = Some((schema, detail));
+                                Err(match cause {
+                                    Cause::Unreadable => CodecError::Malformed(reason),
+                                    Cause::Undecoded => CodecError::NotImplemented(reason),
+                                })
+                            }
+                        }
+                    });
+                    match parsed {
+                        Ok(database) => DatabaseState::Parsed(database),
+                        Err(error) => match unread_schema {
+                            Some((schema, detail)) => DatabaseState::Unframed { schema, detail },
+                            None => DatabaseState::Unreadable(crate::issue_detail(error)?),
+                        },
                     }
-                    Err(error) => DatabaseState::Unreadable(crate::issue_detail(error)?),
-                },
+                }
                 None => DatabaseState::Unreadable("RSe database stream handle is absent".into()),
             };
             database_descriptors.push(DatabaseDescriptor {
@@ -479,7 +498,7 @@ impl<'a> RseInventory<'a> {
                         })
                         .and_then(|entry| {
                             streams.read(ctx, snapshot, entry, "rse-metadata", |view| {
-                                read_meta_stream(ctx, view, &mut declared).map_err(|error| {
+                                read_meta_stream(ctx, view, &mut declared, Some(pair.token.as_str())).map_err(|error| {
                                     if declared.as_ref().is_some_and(|header| !header.is_verified())
                                         && matches!(error, CodecError::Malformed(_) | CodecError::Truncated { .. })
                                     {
@@ -538,7 +557,7 @@ impl<'a> RseInventory<'a> {
                     .push("segment registry is unavailable".to_owned());
             }
         }
-        let segments = frame_segment_records(segments)?;
+        let segments = frame_segment_records(segments, streams)?;
         let unpaired_metadata: Vec<_> = metadata
             .iter()
             .filter(|(token, _)| !bulk.contains_key(*token))
@@ -549,19 +568,19 @@ impl<'a> RseInventory<'a> {
             .filter(|(token, _)| !metadata.contains_key(*token))
             .map(|(token, stream)| (token.clone(), *stream))
             .collect();
-        if !ctx.container_only() {
-            for (unpaired, kind) in [
-                (&unpaired_metadata, "rse-metadata"),
-                (&unpaired_bulk, "rse-bulk"),
-            ] {
-                for (_, id) in unpaired {
-                    if let Some(entry) = snapshot.stream_by_id(*id) {
-                        if let Err(error @ CodecError::ResourceLimit(_)) =
-                            streams.open(ctx, snapshot, entry, Some(kind))
-                        {
-                            return Err(error);
-                        }
-                    }
+        for (unpaired, kind, missing) in [
+            (&unpaired_metadata, "rse-metadata", "bulk"),
+            (&unpaired_bulk, "rse-bulk", "metadata"),
+        ] {
+            for (token, id) in unpaired {
+                if let Some(entry) = snapshot.stream_by_id(*id) {
+                    let unread = (!ctx.container_only()).then(|| {
+                        CodecError::malformed(format_args!(
+                            "RSe segment {} has no {missing} stream",
+                            token.as_str()
+                        ))
+                    });
+                    streams.inventory(snapshot, entry, kind, unread)?;
                 }
             }
         }
@@ -681,6 +700,7 @@ fn parse_bulk_stream<'a>(
 
 fn frame_segment_records<'a>(
     segments: Vec<SegmentDescriptor<'a, BulkEnvelope<'a>>>,
+    streams: &mut Streams<'a>,
 ) -> Result<Vec<SegmentDescriptor<'a>>, CodecError> {
     segments
         .into_iter()
@@ -688,20 +708,36 @@ fn frame_segment_records<'a>(
             let bulk = match segment.bulk {
                 SegmentBulkState::Malformed(detail) => SegmentBulkState::Malformed(detail),
                 SegmentBulkState::Framed(bulk) => {
-                    let result = match (&segment.meta, segment.registry) {
+                    let token = Some(segment.pair.token.as_str());
+                    let records = match (&segment.meta, segment.registry) {
                         (SegmentMetaState::Parsed(meta), Some(registry)) => {
-                            frame_bulk_records(bulk.expanded, &meta.tables, registry.version_major)
+                            let tables = &meta.tables;
+                            if tables.block_table.failure().is_some() || tables.type_table.failure().is_some() {
+                                RecordFrameState::Unavailable(
+                                    "malformed container: RSe record framing requires the admitted metadata block and type tables".into(),
+                                )
+                            } else {
+                                match frame_bulk_records(bulk.expanded, tables, registry.version_major, token) {
+                                    Ok((records, trailer)) => {
+                                        streams.add([trailer]);
+                                        RecordFrameState::Framed(records)
+                                    },
+                                    Err(error) => {
+                                        let part = crate::records::bulk_part(
+                                            "rse-bulk-records", token, bulk.expanded,
+                                        )?;
+                                        streams.add([PartOutcome::damaged(part, &error)]);
+                                        RecordFrameState::Unavailable(crate::issue_detail(error)?)
+                                    }
+                                }
+                            }
                         }
-                        (SegmentMetaState::Parsed(_), None) => Err(CodecError::Malformed(
-                            "RSe record framing requires the segment registry version".into(),
-                        )),
-                        _ => Err(CodecError::Malformed(
-                            "RSe record framing requires parsed segment metadata".into(),
-                        )),
-                    };
-                    let records = match result {
-                        Ok(records) => RecordFrameState::Framed(records),
-                        Err(error) => RecordFrameState::Unavailable(crate::issue_detail(error)?),
+                        (SegmentMetaState::Parsed(_), None) => RecordFrameState::Unavailable(
+                            "malformed container: RSe record framing requires the segment registry version".into()
+                        ),
+                        _ => RecordFrameState::Unavailable(
+                            "malformed container: RSe record framing requires parsed segment metadata".into()
+                        ),
                     };
                     SegmentBulkState::Framed(SegmentBulk {
                         prefix: bulk.prefix,
@@ -738,7 +774,7 @@ fn parse_meta_stream<'a>(
     source: View<'a>,
 ) -> Result<SegmentMetaState<'a>, CodecError> {
     let mut declared = None;
-    match read_meta_stream(ctx, source, &mut declared) {
+    match read_meta_stream(ctx, source, &mut declared, None) {
         Ok(meta) => Ok(SegmentMetaState::Parsed(Box::new(meta))),
         Err(error) if declared.is_some() => Ok(SegmentMetaState::Malformed {
             declared,
@@ -752,11 +788,12 @@ fn read_meta_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
     declared: &mut Option<MetaStreamDeclaration>,
+    token: Option<&str>,
 ) -> Result<SegmentMeta<'a>, CodecError> {
     let mut cursor = MetaCursor::new(source);
     let header = read_meta_declaration(&mut cursor)?;
     *declared = Some(header.clone());
-    parse_meta_stream_v8(ctx, source, cursor, header)
+    parse_meta_stream_v8(ctx, source, cursor, header, token)
 }
 
 fn read_meta_declaration(cursor: &mut MetaCursor<'_>) -> Result<MetaStreamDeclaration, CodecError> {
@@ -770,6 +807,7 @@ fn parse_meta_stream_v8<'a>(
     source: View<'a>,
     mut cursor: MetaCursor<'a>,
     declared: MetaStreamDeclaration,
+    token: Option<&str>,
 ) -> Result<SegmentMeta<'a>, CodecError> {
     let header_values = cursor.u16_array("header values")?;
     let display_name = cursor.length_prefixed_utf16(ctx, "display name")?;
@@ -788,7 +826,7 @@ fn parse_meta_stream_v8<'a>(
         .child(cursor.position(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe metadata body range is invalid".into()))?;
     let body = expand_rse_body(ctx, compressed, body_form)?;
-    let tables = parse_meta_tables(body)?;
+    let tables = parse_meta_tables(body, token)?;
     Ok(SegmentMeta {
         declared,
         header_values,
@@ -818,7 +856,7 @@ fn expand_rse_body<'a>(
 }
 
 pub(crate) fn fuzz_meta_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
-    let _probe = read_meta_stream(ctx, source, &mut None);
+    let _probe = read_meta_stream(ctx, source, &mut None, None);
 }
 
 pub(crate) fn fuzz_bulk_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
@@ -1089,6 +1127,39 @@ mod tests {
     }
 
     #[test]
+    fn a_complete_type_section_beyond_the_entry_cap_leaves_the_other_sections() {
+        use crate::records::{MetaSectionNumber, MAX_METADATA_SECTION_ENTRIES};
+        use cadmpeg_ir::unknown::part::Cause;
+        let count = MAX_METADATA_SECTION_ENTRIES + 1;
+        let body = crate::records::synthetic_meta_table_body_with_types(count);
+        let bytes = meta_fixture_with_body(false, &body);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("metadata fits the session");
+        let mut declaration = None;
+        let meta = super::read_meta_stream(&ctx, root, &mut declaration, Some("seg"))
+            .expect("the verified frame and its sibling sections read");
+        assert!(meta.declared.is_verified());
+        assert_eq!(meta.tables.blocks.len(), 2);
+        assert_eq!(meta.tables.sections[3].discriminator, count);
+        assert_eq!(meta.tables.sections[10].number, MetaSectionNumber::Eleven);
+        assert!(meta.tables.types.is_empty());
+        let loss = meta
+            .tables
+            .type_table
+            .give_up(&ctx, true)
+            .expect("reserve the section report")
+            .expect("the type section has a give-up")
+            .loss();
+        assert_eq!(loss.code, Cause::Undecoded.kind());
+        assert!(loss.message.contains("section 4 count"), "{loss:?}");
+        assert!(
+            loss.message.contains("RSeStorage/Mseg:expanded"),
+            "{loss:?}"
+        );
+    }
+
+    #[test]
     fn meta_stream_v8_rejects_a_zlib_suffix() {
         let bytes = meta_fixture(true);
         let arena = DecodeArena::new();
@@ -1171,6 +1242,10 @@ mod tests {
     }
 
     fn meta_fixture(suffix: bool) -> Vec<u8> {
+        meta_fixture_with_body(suffix, &crate::records::synthetic_meta_table_body())
+    }
+
+    fn meta_fixture_with_body(suffix: bool, body: &[u8]) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_bytes(&mut bytes, b"RSe Meta Stream Version 8");
         bytes.extend_from_slice(&8_u16.to_le_bytes());
@@ -1186,9 +1261,7 @@ mod tests {
         push_bytes(&mut bytes, b"modified");
         bytes.push(1);
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        encoder
-            .write_all(&crate::records::synthetic_meta_table_body())
-            .expect("write synthetic zlib body");
+        encoder.write_all(body).expect("write synthetic zlib body");
         bytes.extend_from_slice(&encoder.finish().expect("finish synthetic zlib body"));
         if suffix {
             bytes.push(0);
