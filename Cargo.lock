@@ -321,6 +321,7 @@ dependencies = [
 name = "cadmpeg-codec-freecad"
 version = "0.6.12"
 dependencies = [
+ "base64",
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",

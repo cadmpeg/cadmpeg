@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A formula as `FreeCAD`'s `ExpressionParser` reads it, and the kind of its
-//! result as `FreeCAD` computes it: the unit rules of its operators and
-//! functions over the kinds of the properties it references.
+//! A formula as `FreeCAD`'s `ExpressionParser` reads it, and its value as
+//! `FreeCAD`'s evaluator computes it: the classes of value the result can
+//! have, by the rules of its operators and functions over the classes of the
+//! properties it references.
 
 use cadmpeg_ir::design::units::Quantity;
 
@@ -13,9 +14,17 @@ const MAX_TOKENS: usize = 1024;
 /// The deepest nesting of parentheses, calls, and signs the reader parses.
 const MAX_NESTING: usize = 64;
 
-/// The distance from an integer within which `FreeCAD` takes an exponent
-/// of a unit as that integer.
+/// The amount by which the exponent of `pow` with a unit may exceed its
+/// rounded value (`FunctionExpression::evaluate`, `POW`).
 const INTEGRAL: f64 = 1e-9;
+
+/// The distance from an integer within which `Unit::pow` takes the product
+/// of a unit's exponent and a power as that integer.
+const UNIT_POWER: f64 = f64::EPSILON;
+
+/// The least exponent of a unit that `Unit::checkRange` refuses
+/// (`unitExponentLimit`).
+const UNIT_EXPONENT_LIMIT: i8 = 8;
 
 /// The magnitude below which an integral number is a Python `int`
 /// (`essentiallyInteger`, the range of a C `long`).
@@ -30,15 +39,137 @@ pub(in crate::design) enum Unparsed {
     Limit,
 }
 
-/// The kind of a formula's result.
+/// The kind of a formula's result (§5.12, Kind).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::design) enum Kind {
     Quantity(Quantity),
-    /// A Python `bool`: a comparison, `True`, `False`, or a `Bool` property.
+    /// A Python `bool`.
     Boolean,
     Text,
     /// A kind that the file does not determine.
     Unknown,
+}
+
+/// A class of value that `FreeCAD`'s evaluator tells apart. `calc` admits
+/// every class but `Refused`; `pyToQuantity` takes only `Quantity`, `Int`,
+/// `Float`, and `Boolean`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::design) enum Class {
+    /// A `QuantityPy`, with its quantity where the model knows its unit.
+    Quantity(Option<Quantity>),
+    /// A Python `int`.
+    Int,
+    /// A Python `float`.
+    Float,
+    /// A Python `bool`.
+    Boolean,
+    /// A `str`.
+    Text,
+    /// A `VectorPy`.
+    Vector,
+    /// Another object that `calc` admits: a `PyObjectBase` that is no
+    /// quantity and no vector, a `list`, or a `dict`.
+    Object,
+    /// A value that `calc` refuses: `None`, a `tuple`, a `set`, or an
+    /// instance of a Python class.
+    Refused,
+    /// An evaluation that raises.
+    Raises,
+}
+
+use Class::{Boolean, Float, Int, Object, Raises, Refused, Text, Vector};
+
+/// Every class: the value of a reference the model does not resolve.
+const ANY: [Class; 9] = [
+    Class::Quantity(None),
+    Int,
+    Float,
+    Boolean,
+    Text,
+    Vector,
+    Object,
+    Refused,
+    Raises,
+];
+
+/// The result of an operator on a vector or another object: its Python type
+/// decides, and the model folds those types into two classes.
+const OBJECT_RESULT: [Class; 6] = [Class::Quantity(None), Int, Float, Vector, Object, Raises];
+
+/// The classes a value can have.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(in crate::design) struct Value(Vec<Class>);
+
+impl Value {
+    pub(in crate::design) fn of(classes: &[Class]) -> Self {
+        let mut value = Self::default();
+        for class in classes {
+            value.insert(*class);
+        }
+        value
+    }
+
+    pub(in crate::design) fn any() -> Self {
+        Self::of(&ANY)
+    }
+
+    /// The plain number `value`: an `int` where it is whole (`pyFromQuantity`,
+    /// `essentiallyInteger`).
+    pub(in crate::design) fn number(value: f64) -> Class {
+        if value.fract() == 0.0 && value.abs() < WHOLE {
+            Int
+        } else {
+            Float
+        }
+    }
+
+    /// The value holds every class.
+    pub(in crate::design) fn is_any(&self) -> bool {
+        ANY.iter().all(|class| self.contains(*class))
+    }
+
+    pub(in crate::design) fn classes(&self) -> &[Class] {
+        &self.0
+    }
+
+    pub(in crate::design) fn insert(&mut self, class: Class) {
+        if !self.0.contains(&class) {
+            self.0.push(class);
+        }
+    }
+
+    fn join(&mut self, other: Self) {
+        for class in other.0 {
+            self.insert(class);
+        }
+    }
+
+    fn contains(&self, class: Class) -> bool {
+        self.0.contains(&class)
+    }
+
+    /// The kind of the value: the quantity that every class shares, where
+    /// each is a number of a known unit, and a bool or a text where that is
+    /// the one class.
+    pub(in crate::design) fn kind(&self) -> Kind {
+        let mut found = None;
+        for class in &self.0 {
+            let quantity = match class {
+                Class::Quantity(Some(quantity)) => *quantity,
+                Int | Float => Quantity::REAL,
+                Boolean if self.0.len() == 1 => return Kind::Boolean,
+                Text if self.0.len() == 1 => return Kind::Text,
+                Class::Quantity(None) | Boolean | Text | Vector | Object | Refused | Raises => {
+                    return Kind::Unknown
+                }
+            };
+            if found.is_some_and(|found| found != quantity) {
+                return Kind::Unknown;
+            }
+            found = Some(quantity);
+        }
+        found.map_or(Kind::Unknown, Kind::Quantity)
+    }
 }
 
 /// A node of a parsed formula.
@@ -51,7 +182,7 @@ pub(in crate::design) enum Node<'a> {
     },
     /// A unit with no number: a whole formula, or the divisor of `x / unit`.
     Unit(Unit),
-    /// `pi`, `e`, `True`, `False`, or `None`.
+    /// `pi`, `e`, `True`, `False`, `true`, `false`, or `None`.
     Constant {
         name: &'a str,
         value: f64,
@@ -92,60 +223,6 @@ pub(in crate::design) enum Operator {
     /// `<`, `<=`, `>`, or `>=`.
     Order,
 }
-
-/// The Python type of a value as `FreeCAD` hands it to an operator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::design) enum Python {
-    /// An `int` or a `bool`.
-    Int,
-    Float,
-    /// A plain number whose value the file does not store: an `int` where
-    /// the value is whole, and a `float` otherwise.
-    Unsettled,
-    /// A `QuantityPy`, a `str`, or another object.
-    Object,
-    /// `None`, a `tuple`, or a `set`: a value that is no number, which
-    /// `FreeCAD`'s operators refuse and an aggregate passes over.
-    Refused,
-    /// A value whose evaluation raises.
-    Raises,
-    /// A value of a type the file does not state, which `FreeCAD`'s
-    /// operators can refuse: a Python object property, or a conditional
-    /// with one branch refused or raising.
-    Opaque,
-}
-
-impl Python {
-    /// The value is one that `FreeCAD`'s operators can refuse.
-    const fn refused(self) -> bool {
-        matches!(self, Self::Refused | Self::Raises | Self::Opaque)
-    }
-
-    /// The type of the plain number `value`: an `int` where it is whole
-    /// (`pyFromQuantity`, `essentiallyInteger`).
-    pub(in crate::design) fn of(value: f64) -> Self {
-        if value.fract() == 0.0 && value.abs() < WHOLE {
-            Self::Int
-        } else {
-            Self::Float
-        }
-    }
-}
-
-/// The kind of a value, and its Python type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::design) struct Value {
-    pub(in crate::design) kind: Kind,
-    pub(in crate::design) python: Python,
-}
-
-impl Value {
-    pub(in crate::design) const fn new(kind: Kind, python: Python) -> Self {
-        Self { kind, python }
-    }
-}
-
-const REAL: Kind = Kind::Quantity(Quantity::REAL);
 
 /// An argument of a call: a value, or a range of cells `from:to`.
 #[derive(Debug)]
@@ -226,85 +303,81 @@ pub(in crate::design) fn parse(text: &str) -> Result<Node<'_>, Unparsed> {
 impl<'a> Node<'a> {
     /// The kind of the node's result.
     pub(in crate::design) fn kind(&self, scope: &mut dyn Scope) -> Kind {
-        self.value(scope).kind
+        self.value(scope).kind()
     }
 
-    /// The kind of the node's result, and the Python type `FreeCAD` hands to
-    /// an operator: a plain number goes through `pyFromQuantity`, which
-    /// makes a whole dimensionless value an `int`, and every function other
-    /// than an aggregate returns a `QuantityPy`.
+    /// The classes of the node's result.
     pub(in crate::design) fn value(&self, scope: &mut dyn Scope) -> Value {
         match self {
-            Node::Number { text, unit: None } => Value::new(
-                REAL,
-                text.replace(',', ".")
-                    .parse::<f64>()
-                    .map_or(Python::Object, Python::of),
-            ),
+            Node::Number { text, unit: None } => match text.replace(',', ".").parse::<f64>() {
+                Ok(value) => Value::of(&[Value::number(value)]),
+                Err(_) => Value::of(&[Int, Float]),
+            },
             Node::Number {
                 unit: Some(unit), ..
             }
-            | Node::Unit(unit) => Value::new(unit_kind(unit), Python::Object),
-            Node::Constant { name, .. } => match *name {
-                "None" => Value::new(Kind::Unknown, Python::Refused),
-                "True" | "False" => Value::new(Kind::Boolean, Python::Int),
-                _ => Value::new(REAL, Python::Float),
-            },
-            Node::Text => Value::new(Kind::Text, Python::Object),
+            | Node::Unit(unit) => literal(unit),
+            Node::Constant { name, .. } => Value::of(&[match *name {
+                "None" => Refused,
+                "True" | "False" => Boolean,
+                "true" | "false" => Int,
+                _ => Float,
+            }]),
+            Node::Text => Value::of(&[Text]),
             Node::Path(path) => scope.path(path),
             Node::Negate(operand) | Node::Plus(operand) => {
-                let operand = operand.value(scope);
-                match numeric(operand.kind) {
-                    Some(quantity) => Value::new(Kind::Quantity(quantity), operand.python),
-                    None if operand.kind == Kind::Unknown
-                        && !matches!(operand.python, Python::Refused | Python::Raises) =>
-                    {
-                        operand
-                    }
-                    None => Value::new(Kind::Unknown, Python::Raises),
+                let mut value = Value::default();
+                for class in operand.value(scope).0 {
+                    value.join(signed(class));
                 }
+                value
             }
             Node::Group(inner) => inner.value(scope),
             Node::Binary { op, left, right } => {
                 let exponent = right.constant();
-                binary(*op, left.value(scope), right.value(scope), exponent, scope)
+                let (left, right) = (left.value(scope), right.value(scope));
+                binary(*op, left, right, exponent, scope)
             }
             Node::Conditional {
-                then, otherwise, ..
+                condition,
+                then,
+                otherwise,
             } => {
-                let (then, otherwise) = (then.value(scope), otherwise.value(scope));
-                let kind = if then.kind == otherwise.kind {
-                    then.kind
-                } else {
-                    Kind::Unknown
-                };
-                let python = match (then.python, otherwise.python) {
-                    (then, otherwise) if then == otherwise => then,
-                    (then, otherwise) if then.refused() || otherwise.refused() => Python::Opaque,
-                    (Python::Object, _) | (_, Python::Object) => Python::Object,
-                    _ => Python::Unsettled,
-                };
-                Value::new(kind, python)
+                let raises = condition.value(scope).contains(Raises);
+                let mut value = then.value(scope);
+                value.join(otherwise.value(scope));
+                if raises {
+                    value.insert(Raises);
+                }
+                value
             }
             Node::Call { name, args } => call(name, args, scope),
         }
     }
 
-    /// The Python type of a cell whose formula is the node and whose result
-    /// is `value` (`Sheet::updateProperty`): a bool, and a dimensionless
-    /// number where it is whole, are `int` values.
-    pub(in crate::design) fn stored(&self, value: Value) -> Python {
-        match value.kind {
-            Kind::Boolean => Python::Int,
-            Kind::Quantity(Quantity::REAL) => match (self.constant(), value.python) {
-                (Some(constant), _) => Python::of(constant),
-                (None, Python::Int) => Python::Int,
-                _ => Python::Unsettled,
-            },
-            Kind::Unknown if value.python.refused() => value.python,
-            Kind::Unknown => Python::Unsettled,
-            Kind::Quantity(_) | Kind::Text => Python::Object,
+    /// The classes a reference to a cell reads, where the cell's formula is
+    /// the node and its result is `value` (`Sheet::updateProperty`,
+    /// `expressionFromPy`): a dimensionless number is an `int` where it is
+    /// whole, and a cell that raises holds the text of its error
+    /// (`Sheet::recomputeCell`).
+    pub(in crate::design) fn stored(&self, value: &Value) -> Value {
+        let mut stored = Value::default();
+        for class in &value.0 {
+            match class {
+                Class::Quantity(Some(Quantity::REAL)) | Float => match self.constant() {
+                    Some(constant) => stored.insert(Value::number(constant)),
+                    None => stored.join(Value::of(&[Int, Float])),
+                },
+                Class::Quantity(None) => {
+                    stored.join(Value::of(&[Class::Quantity(None), Int, Float]));
+                }
+                Raises => stored.insert(Text),
+                Class::Quantity(Some(_)) | Int | Boolean | Text | Vector | Object | Refused => {
+                    stored.insert(*class);
+                }
+            }
         }
+        stored
     }
 
     /// Each reference of the node, in source order.
@@ -367,156 +440,243 @@ impl<'a> Node<'a> {
     }
 }
 
-fn unit_kind(unit: &Unit) -> Kind {
+/// A number with a unit, or a unit alone: a `QuantityPy`, and a plain
+/// number where the unit is dimensionless (`pyFromQuantity`).
+fn literal(unit: &Unit) -> Value {
     if unit.native {
-        Kind::Unknown
+        Value::of(&[Class::Quantity(None)])
+    } else if unit.quantity() == Quantity::REAL {
+        Value::of(&[Int, Float])
     } else {
-        Kind::Quantity(unit.quantity())
+        Value::of(&[Class::Quantity(Some(unit.quantity()))])
     }
 }
 
-/// `left op right` (`OperatorExpression`, `calc`, Python's number
-/// protocol). `calc` refuses a `None`, `tuple`, or `set` operand, except the
-/// right operand of a string's `%`. A bool is an `int`. `==` and `!=` give a
-/// bool for any two other values; an ordering gives a bool for two texts,
-/// two numbers of one quantity, a bool and a number, and a quantity and a
-/// plain number. A string times an `int` repeats the string. A quantity's
-/// `%` keeps its unit, and a plain number's `%` of a quantity raises. An
-/// operator of two values of known kinds whose result has no kind raises.
+/// The unit of a number class, where the model knows it: a plain number is
+/// dimensionless.
+fn unit(class: Class) -> Option<Quantity> {
+    match class {
+        Class::Quantity(quantity) => quantity,
+        Int | Float | Boolean => Some(Quantity::REAL),
+        Text | Vector | Object | Refused | Raises => None,
+    }
+}
+
+/// The class is a number that `pyToQuantity` takes.
+const fn is_number(class: Class) -> bool {
+    matches!(class, Class::Quantity(_) | Int | Float | Boolean)
+}
+
+/// `-x` and `+x` (`calc`, `PyNumber_Negative`): a bool is an `int`.
+fn signed(class: Class) -> Value {
+    match class {
+        Class::Quantity(quantity) => Value::of(&[Class::Quantity(quantity)]),
+        Int | Boolean => Value::of(&[Int]),
+        Float => Value::of(&[Float]),
+        Text | Refused | Raises => Value::of(&[Raises]),
+        Vector | Object => Value::of(&OBJECT_RESULT),
+    }
+}
+
+/// `left op right`: the join of `pair` over each class of each operand. A
+/// text times a number of unstated value takes that number as an `int`, the
+/// one value with which the formula evaluates.
 fn binary(
     op: Operator,
-    left: Value,
-    right: Value,
+    mut left: Value,
+    mut right: Value,
     exponent: Option<f64>,
     scope: &mut dyn Scope,
 ) -> Value {
-    let quantity = |quantity: Option<Quantity>| quantity.map_or(Kind::Unknown, Kind::Quantity);
-    let plain = |python: Python| matches!(python, Python::Int | Python::Float | Python::Unsettled);
-    if let (Operator::Remainder, Kind::Text) = (op, left.kind) {
-        return Value::new(Kind::Text, Python::Object);
+    if op == Operator::Multiply {
+        settle(&mut left, &right, scope);
+        settle(&mut right, &left, scope);
     }
-    let raising = |python: Python| matches!(python, Python::Refused | Python::Raises);
-    if raising(left.python) || raising(right.python) {
-        return Value::new(Kind::Unknown, Python::Raises);
-    }
-    if op == Operator::Equal && (left.python.refused() || right.python.refused()) {
-        return Value::new(Kind::Unknown, Python::Opaque);
-    }
-    let kind = match (op, left.kind, right.kind) {
-        (Operator::Add, Kind::Text, Kind::Text) => Kind::Text,
-        (Operator::Multiply, Kind::Text, REAL | Kind::Boolean) => repeated(right.python, scope),
-        (Operator::Multiply, REAL | Kind::Boolean, Kind::Text) => repeated(left.python, scope),
-        (Operator::Equal, _, _)
-        | (Operator::Order, Kind::Text, Kind::Text)
-        | (Operator::Order, Kind::Boolean, Kind::Boolean | Kind::Quantity(_))
-        | (Operator::Order, Kind::Quantity(_), Kind::Boolean) => Kind::Boolean,
-        (Operator::Order, Kind::Quantity(left_quantity), Kind::Quantity(right_quantity))
-            if left_quantity == right_quantity
-                || (left_quantity == Quantity::REAL && plain(left.python))
-                || (right_quantity == Quantity::REAL && plain(right.python)) =>
-        {
-            Kind::Boolean
+    let mut value = Value::default();
+    for left in &left.0 {
+        for right in &right.0 {
+            value.join(pair(op, *left, *right, exponent));
         }
-        (Operator::Order, _, _) => Kind::Unknown,
-        _ => match (numeric(left.kind), numeric(right.kind)) {
-            (Some(left_quantity), Some(right_quantity)) => match op {
-                Operator::Add | Operator::Subtract => {
-                    quantity((left_quantity == right_quantity).then_some(left_quantity))
-                }
-                Operator::Multiply => quantity(combine(left_quantity, right_quantity, 1)),
-                Operator::Divide => quantity(combine(left_quantity, right_quantity, -1)),
-                Operator::Remainder => quantity(
-                    (left.python == Python::Object || right.python != Python::Object)
-                        .then_some(left_quantity),
-                ),
-                Operator::Power => power(left_quantity, right_quantity, exponent),
-                Operator::Equal | Operator::Order => Kind::Unknown,
-            },
-            _ => Kind::Unknown,
-        },
-    };
-    // A power of a quantity by a dimensionless value the file does not store
-    // takes its unit at run time.
-    let deferred = op == Operator::Power && exponent.is_none() && right.kind == REAL;
-    let python = match kind {
-        Kind::Text => Python::Object,
-        Kind::Boolean => Python::Int,
-        Kind::Unknown if left.kind != Kind::Unknown && right.kind != Kind::Unknown && !deferred => {
-            Python::Raises
-        }
-        Kind::Quantity(_) | Kind::Unknown => arithmetic(op, left.python, right.python, exponent),
-    };
-    Value::new(kind, python)
-}
-
-/// The kind of a string times a plain number of Python type `python`: a
-/// string where the number is an `int`. A number of unstated value is taken
-/// as an `int`, the one value with which the formula evaluates.
-fn repeated(python: Python, scope: &mut dyn Scope) -> Kind {
-    match python {
-        Python::Int => Kind::Text,
-        Python::Unsettled => {
-            scope.assume_integer();
-            Kind::Text
-        }
-        Python::Float | Python::Object | Python::Refused | Python::Raises | Python::Opaque => {
-            Kind::Unknown
-        }
-    }
-}
-
-/// The Python type of `left op right` for numbers (Python's number protocol):
-/// `/` gives a `float`, and `**` of `int` values a `float` for a negative
-/// exponent.
-fn arithmetic(op: Operator, left: Python, right: Python, exponent: Option<f64>) -> Python {
-    let both = match (left, right) {
-        (Python::Refused | Python::Raises, _) | (_, Python::Refused | Python::Raises) => {
-            Python::Raises
-        }
-        (Python::Opaque, _) | (_, Python::Opaque) => Python::Opaque,
-        (Python::Object, _) | (_, Python::Object) => Python::Object,
-        (Python::Float, _) | (_, Python::Float) => Python::Float,
-        (Python::Int, Python::Int) => Python::Int,
-        _ => Python::Unsettled,
-    };
-    match (op, both) {
-        (_, Python::Raises | Python::Opaque | Python::Object) => both,
-        (Operator::Divide, _) => Python::Float,
-        (Operator::Power, Python::Int) => match exponent {
-            Some(exponent) if exponent < 0.0 => Python::Float,
-            Some(_) => Python::Int,
-            None => Python::Unsettled,
-        },
-        (Operator::Equal | Operator::Order, _) => Python::Int,
-        _ => both,
-    }
-}
-
-/// The quantity of a number: a bool is a dimensionless `int`.
-fn numeric(kind: Kind) -> Option<Quantity> {
-    match kind {
-        Kind::Quantity(quantity) => Some(quantity),
-        Kind::Boolean => Some(Quantity::REAL),
-        Kind::Text | Kind::Unknown => None,
-    }
-}
-
-/// `base ^ exponent`: the exponent is dimensionless, and with a unit it is
-/// a constant whose product with each exponent of the unit is an integer.
-fn power(base: Quantity, exponent: Quantity, value: Option<f64>) -> Kind {
-    if exponent != Quantity::REAL {
-        return Kind::Unknown;
-    }
-    if base == Quantity::REAL {
-        return Kind::Quantity(Quantity::REAL);
     }
     value
-        .and_then(|value| scaled(base, value))
-        .map_or(Kind::Unknown, Kind::Quantity)
 }
 
+/// A plain number of unstated value that repeats a text: an `int`.
+fn settle(number: &mut Value, other: &Value, scope: &mut dyn Scope) {
+    if other.contains(Text) && number.contains(Int) && number.contains(Float) {
+        number.0.retain(|class| *class != Float);
+        scope.assume_integer();
+    }
+}
+
+/// `left op right` for one class of each operand (`calc`): `calc` refuses a
+/// `Refused` operand, except the right operand of a string's `%`, and an
+/// operand that raises raises.
+fn pair(op: Operator, left: Class, right: Class, exponent: Option<f64>) -> Value {
+    match op {
+        Operator::Equal => equal(left, right),
+        Operator::Order => order(left, right),
+        Operator::Add | Operator::Subtract | Operator::Multiply | Operator::Divide => {
+            arithmetic(op, left, right)
+        }
+        Operator::Remainder => remainder(left, right),
+        Operator::Power => power(left, right, exponent),
+    }
+}
+
+/// `==` and `!=` (`RICH_COMPARE`): a bool for any two values `calc` admits.
+fn equal(left: Class, right: Class) -> Value {
+    match (left, right) {
+        (Refused | Raises, _) | (_, Refused | Raises) => Value::of(&[Raises]),
+        (
+            Class::Quantity(_) | Int | Float | Boolean | Text | Vector | Object,
+            Class::Quantity(_) | Int | Float | Boolean | Text | Vector | Object,
+        ) => Value::of(&[Boolean]),
+    }
+}
+
+/// `<`, `<=`, `>`, and `>=`: two quantity objects need one unit
+/// (`Quantity::operator<`), a quantity object and a plain number compare
+/// their values (`QuantityPy::richCompare`), and Python orders two numbers
+/// or two strings.
+fn order(left: Class, right: Class) -> Value {
+    match (left, right) {
+        (Refused | Raises, _) | (_, Refused | Raises) => Value::of(&[Raises]),
+        (Vector | Object, _) | (_, Vector | Object) => Value::of(&[Boolean, Raises]),
+        (Class::Quantity(Some(left)), Class::Quantity(Some(right))) => {
+            Value::of(&[if left == right { Boolean } else { Raises }])
+        }
+        (Class::Quantity(_), Class::Quantity(_)) => Value::of(&[Boolean, Raises]),
+        (
+            Class::Quantity(_) | Int | Float | Boolean,
+            Class::Quantity(_) | Int | Float | Boolean,
+        )
+        | (Text, Text) => Value::of(&[Boolean]),
+        (Text, Class::Quantity(_) | Int | Float | Boolean)
+        | (Class::Quantity(_) | Int | Float | Boolean, Text) => Value::of(&[Raises]),
+    }
+}
+
+/// `+`, `-`, `*`, and `/`: strings concatenate and repeat by an `int`; a
+/// quantity object takes a plain number as dimensionless, and `+` and `-`
+/// need one unit (`QuantityPy` number handlers, `Quantity::operator+`).
+fn arithmetic(op: Operator, left: Class, right: Class) -> Value {
+    match (left, right) {
+        (Refused | Raises, _) | (_, Refused | Raises) => Value::of(&[Raises]),
+        (Vector | Object, _) | (_, Vector | Object) => Value::of(&OBJECT_RESULT),
+        (Text, Text) => Value::of(&[if op == Operator::Add { Text } else { Raises }]),
+        (Text, Int | Boolean) | (Int | Boolean, Text) => {
+            Value::of(&[if op == Operator::Multiply {
+                Text
+            } else {
+                Raises
+            }])
+        }
+        (Text, Class::Quantity(_) | Float) | (Class::Quantity(_) | Float, Text) => {
+            Value::of(&[Raises])
+        }
+        (Int | Boolean, Int | Boolean) if op != Operator::Divide => Value::of(&[Int]),
+        (Int | Float | Boolean, Int | Float | Boolean) => Value::of(&[Float]),
+        (Class::Quantity(_), Class::Quantity(_) | Int | Float | Boolean)
+        | (Int | Float | Boolean, Class::Quantity(_)) => match op {
+            Operator::Multiply => product(unit(left), unit(right), 1),
+            Operator::Divide => product(unit(left), unit(right), -1),
+            _ => match (unit(left), unit(right)) {
+                (Some(left), Some(right)) if left == right => {
+                    Value::of(&[Class::Quantity(Some(left))])
+                }
+                (Some(_), Some(_)) => Value::of(&[Raises]),
+                (Some(known), None) | (None, Some(known)) => {
+                    Value::of(&[Class::Quantity(Some(known)), Raises])
+                }
+                (None, None) => Value::of(&[Class::Quantity(None), Raises]),
+            },
+        },
+    }
+}
+
+/// A quantity object of the product of `left` and `right` to the power
+/// `sign`, 1 or -1.
+fn product(left: Option<Quantity>, right: Option<Quantity>, sign: i8) -> Value {
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            Value::of(&[combine(left, right, sign)
+                .map_or(Raises, |quantity| Class::Quantity(Some(quantity)))])
+        }
+        _ => Value::of(&[Class::Quantity(None)]),
+    }
+}
+
+/// `%`: a string formats its right operand, a quantity object keeps its unit
+/// and takes a quantity or a plain number, and a plain number's remainder by
+/// a quantity object raises (`QuantityPy::number_remainder_handler`).
+fn remainder(left: Class, right: Class) -> Value {
+    match (left, right) {
+        (_, Raises) | (Raises, _) => Value::of(&[Raises]),
+        (Text, _) => Value::of(&[Text]),
+        (Refused, _) | (_, Refused) => Value::of(&[Raises]),
+        (Vector | Object, _) | (_, Vector | Object) => Value::of(&OBJECT_RESULT),
+        (Class::Quantity(quantity), Class::Quantity(_) | Int | Float | Boolean) => {
+            Value::of(&[Class::Quantity(quantity)])
+        }
+        (Int | Float | Boolean, Class::Quantity(_))
+        | (Class::Quantity(_) | Int | Float | Boolean, Text) => Value::of(&[Raises]),
+        (Int | Boolean, Int | Boolean) => Value::of(&[Int]),
+        (Int | Float | Boolean, Int | Float | Boolean) => Value::of(&[Float]),
+    }
+}
+
+/// `^` with the right operand's value `exponent` where the file stores it: a
+/// quantity object's power by a plain number takes `Unit::pow`, by a
+/// quantity object the power truncated to an integer
+/// (`Quantity::pow`), and a plain number's power by a quantity object raises
+/// (`QuantityPy::number_power_handler`).
+fn power(left: Class, right: Class, exponent: Option<f64>) -> Value {
+    match (left, right) {
+        (Refused | Raises, _) | (_, Refused | Raises) => Value::of(&[Raises]),
+        (Vector | Object, _) | (_, Vector | Object) => Value::of(&OBJECT_RESULT),
+        (Text, _) | (_, Text) | (Int | Float | Boolean, Class::Quantity(_)) => Value::of(&[Raises]),
+        (Int | Boolean, Int | Boolean) => match exponent {
+            Some(exponent) if exponent < 0.0 => Value::of(&[Float]),
+            Some(_) => Value::of(&[Int]),
+            None => Value::of(&[Int, Float]),
+        },
+        (Int | Float | Boolean, Int | Float | Boolean) => Value::of(&[Float]),
+        (Class::Quantity(base), Int | Boolean) => unit_power(base, exponent, true),
+        (Class::Quantity(base), Float) => unit_power(base, exponent, false),
+        (Class::Quantity(base), Class::Quantity(unit)) => {
+            let mut value = match unit {
+                Some(Quantity::REAL) | None => unit_power(base, exponent.map(f64::trunc), true),
+                Some(_) => Value::default(),
+            };
+            if unit != Some(Quantity::REAL) {
+                value.insert(Raises);
+            }
+            value
+        }
+    }
+}
+
+/// A quantity object of unit `base` to the power `exponent` (`Unit::pow`):
+/// each exponent of the unit times the power is an integer, or it raises.
+/// An exponent the file does not store gives a unit the model does not know,
+/// and raises unless it is `integral`.
+fn unit_power(base: Option<Quantity>, exponent: Option<f64>, integral: bool) -> Value {
+    match (base, exponent) {
+        (Some(Quantity::REAL), _) => Value::of(&[Class::Quantity(Some(Quantity::REAL))]),
+        (Some(base), Some(exponent)) => Value::of(&[
+            pow_unit(base, exponent).map_or(Raises, |quantity| Class::Quantity(Some(quantity)))
+        ]),
+        (None, Some(exponent)) if exponent.fract() == 0.0 => Value::of(&[Class::Quantity(None)]),
+        (Some(_) | None, None) if integral => Value::of(&[Class::Quantity(None)]),
+        (Some(_) | None, _) => Value::of(&[Class::Quantity(None), Raises]),
+    }
+}
+
+/// The product of `left` and `right` to the power `sign`, 1 or -1
+/// (`Unit::operator*`, `Unit::operator/`).
 fn combine(left: Quantity, right: Quantity, sign: i8) -> Option<Quantity> {
-    let one = |left: i8, right: i8| left.checked_add(right.checked_mul(sign)?);
+    let one = |left: i8, right: i8| exponent(i32::from(left) + i32::from(right) * i32::from(sign));
     Some(Quantity::of(
         one(left.length, right.length)?,
         one(left.mass, right.mass)?,
@@ -525,12 +685,28 @@ fn combine(left: Quantity, right: Quantity, sign: i8) -> Option<Quantity> {
     ))
 }
 
-/// Each exponent of `quantity` times `factor`, where each product is an
-/// integer.
-fn scaled(quantity: Quantity, factor: f64) -> Option<Quantity> {
-    let one = |exponent: i8| {
-        let product = f64::from(exponent) * factor;
-        (i8::MIN..=i8::MAX).find(|integer| (f64::from(*integer) - product).abs() < INTEGRAL)
+/// An exponent of a unit that `Unit::checkRange` takes.
+fn exponent(value: i32) -> Option<i8> {
+    i8::try_from(value)
+        .ok()
+        .filter(|value| *value < UNIT_EXPONENT_LIMIT)
+}
+
+/// `quantity` to the power `power` (`Unit::pow`): each product of an
+/// exponent of the unit and the power is within `UNIT_POWER` of an integer,
+/// and the unit takes the product truncated.
+fn pow_unit(quantity: Quantity, power: f64) -> Option<Quantity> {
+    let one = |value: i8| {
+        let product = f64::from(value) * power;
+        if (product.round() - product).abs() >= UNIT_POWER {
+            return None;
+        }
+        let truncated = product.trunc();
+        (f64::from(i8::MIN)..=f64::from(i8::MAX))
+            .contains(&truncated)
+            .then(|| (i8::MIN..=i8::MAX).find(|integer| f64::from(*integer) == truncated))
+            .flatten()
+            .and_then(|integer| exponent(i32::from(integer)))
     };
     Some(Quantity::of(
         one(quantity.length)?,
@@ -540,191 +716,575 @@ fn scaled(quantity: Quantity, factor: f64) -> Option<Quantity> {
     ))
 }
 
-/// The functions that take each of their first three arguments as a number
-/// (`pyToQuantity`) and check its unit (`FunctionExpression::evaluate`).
-const NUMERIC: [&str; 25] = [
-    "cos", "sin", "tan", "acos", "asin", "atan", "exp", "log", "log10", "sinh", "tanh", "cosh",
-    "round", "trunc", "ceil", "floor", "abs", "sqrt", "cbrt", "atan2", "mod", "pow", "hypot",
-    "cath", "not",
-];
+/// The `n`th root of `quantity` (`Unit::root`): each exponent is divisible
+/// by `n`.
+fn root(quantity: Quantity, n: i8) -> Option<Quantity> {
+    let one = |value: i8| (value % n == 0).then_some(value / n);
+    Some(Quantity::of(
+        one(quantity.length)?,
+        one(quantity.mass)?,
+        one(quantity.angle)?,
+        one(quantity.time)?,
+    ))
+}
 
-/// The value of a call, by `FunctionExpression`'s unit rules: an aggregate
-/// and `count`, `and`, and `or` go through `pyFromQuantity`, `tuple` gives
-/// a tuple, and every other function returns a `QuantityPy`. A numeric
-/// function raises on an argument that is no number and on a unit it does
-/// not take.
+/// A function that takes each of its first three arguments as a number
+/// (`pyToQuantity`) and checks its unit (`FunctionExpression::evaluate`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Numeric {
+    /// `cos`, `sin`, `tan`: dimensionless or an angle.
+    Trigonometric,
+    /// `acos`, `asin`, `atan`: dimensionless, an angle.
+    Inverse,
+    /// `exp`, `log`, `log10`, `sinh`, `tanh`, `cosh`: dimensionless.
+    Dimensionless,
+    /// `round`, `trunc`, `ceil`, `floor`, `abs`: the argument's unit.
+    Same,
+    /// `sqrt` and `cbrt`.
+    Root(i8),
+    Atan2,
+    Mod,
+    Pow,
+    /// `hypot` and `cath`: arguments of one unit.
+    Hypot,
+    Not,
+    /// `rotationx`, `rotationy`, `rotationz`: a rotation object.
+    Rotation,
+    /// `translationm` of three lengths: a matrix object.
+    Translation,
+}
+
+impl Numeric {
+    /// The fewest arguments the function evaluates with.
+    const fn arity(self) -> usize {
+        match self {
+            Self::Atan2 | Self::Mod | Self::Pow | Self::Hypot => 2,
+            Self::Translation => 3,
+            Self::Trigonometric
+            | Self::Inverse
+            | Self::Dimensionless
+            | Self::Same
+            | Self::Root(_)
+            | Self::Not
+            | Self::Rotation => 1,
+        }
+    }
+}
+
+/// A function that collects the numbers of its arguments
+/// (`FunctionExpression::evalAggregate`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Collector {
+    Sum,
+    Average,
+    StdDev,
+    Min,
+    Max,
+    /// `count`, `and`, `or`: an `int`, with no unit check.
+    Count,
+}
+
+/// What a function does with its arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Function {
+    Numeric(Numeric),
+    /// `list`: a `list` of its arguments.
+    List,
+    /// `tuple`: a `tuple`, which `calc` refuses.
+    Tuple,
+    /// `href` and `hiddenref`: the argument.
+    Reference,
+    /// `str`: the argument's text.
+    Text,
+    /// `parsequant`: the quantity its text states, which may raise.
+    Parse,
+    /// `address`: a text of an `int` row and column.
+    Address,
+    /// `vector`, `matrix`, `placement`, `rotation`: an object made of the
+    /// arguments.
+    Make(Class),
+    /// `create`: an object of the type the first argument names.
+    Create,
+    /// `minvert`, `mrotate`, `mrotatex`, `mrotatey`, `mrotatez`, `mscale`,
+    /// `mtranslate`: a transform of a matrix, placement, or rotation.
+    Transform,
+    /// A function of vectors (`extractVectorArgument`): how many of its
+    /// arguments are vectors, how many after them are lengths, and its
+    /// result.
+    Vectors {
+        vectors: usize,
+        lengths: usize,
+        result: Class,
+    },
+    /// A name `FreeCAD` does not register.
+    Unknown,
+}
+
+/// The collector of an aggregate function (`FunctionExpression::evalAggregate`).
+fn collector(name: &str) -> Option<Collector> {
+    match name {
+        "sum" => Some(Collector::Sum),
+        "average" => Some(Collector::Average),
+        "stddev" => Some(Collector::StdDev),
+        "min" => Some(Collector::Min),
+        "max" => Some(Collector::Max),
+        "count" | "and" | "or" => Some(Collector::Count),
+        _ => None,
+    }
+}
+
+fn function(name: &str) -> Function {
+    use Numeric as N;
+    const fn vectors(vectors: usize, lengths: usize, result: Class) -> Function {
+        Function::Vectors {
+            vectors,
+            lengths,
+            result,
+        }
+    }
+    match name {
+        "cos" | "sin" | "tan" => Function::Numeric(N::Trigonometric),
+        "acos" | "asin" | "atan" => Function::Numeric(N::Inverse),
+        "exp" | "log" | "log10" | "sinh" | "tanh" | "cosh" => Function::Numeric(N::Dimensionless),
+        "round" | "trunc" | "ceil" | "floor" | "abs" => Function::Numeric(N::Same),
+        "sqrt" => Function::Numeric(N::Root(2)),
+        "cbrt" => Function::Numeric(N::Root(3)),
+        "atan2" => Function::Numeric(N::Atan2),
+        "mod" => Function::Numeric(N::Mod),
+        "pow" => Function::Numeric(N::Pow),
+        "hypot" | "cath" => Function::Numeric(N::Hypot),
+        "not" => Function::Numeric(N::Not),
+        "rotationx" | "rotationy" | "rotationz" => Function::Numeric(N::Rotation),
+        "translationm" => Function::Numeric(N::Translation),
+        "list" => Function::List,
+        "tuple" => Function::Tuple,
+        "href" | "hiddenref" => Function::Reference,
+        "str" => Function::Text,
+        "parsequant" => Function::Parse,
+        "address" => Function::Address,
+        "vector" => Function::Make(Vector),
+        "matrix" | "placement" | "rotation" => Function::Make(Object),
+        "create" => Function::Create,
+        "minvert" | "mrotate" | "mrotatex" | "mrotatey" | "mrotatez" | "mscale" | "mtranslate" => {
+            Function::Transform
+        }
+        "vangle" => vectors(2, 0, Class::Quantity(Some(Quantity::ANGLE))),
+        "vdot" => vectors(2, 0, Float),
+        "vcross" => vectors(2, 0, Vector),
+        "vnormalize" => vectors(1, 0, Vector),
+        "vscale" => vectors(1, 3, Vector),
+        "vscalex" | "vscaley" | "vscalez" => vectors(1, 1, Vector),
+        "vlinedist" | "vplanedist" => vectors(3, 0, Class::Quantity(Some(Quantity::LENGTH))),
+        "vlinesegdist" | "vlineproj" | "vplaneproj" => vectors(3, 0, Vector),
+        _ => Function::Unknown,
+    }
+}
+
+/// The value of an argument outside an aggregate: a range is a `list`
+/// (`RangeExpression::_getPyValue`).
+fn argument(arg: &Argument<'_>, scope: &mut dyn Scope) -> Value {
+    match arg {
+        Argument::Value(node) => node.value(scope),
+        Argument::Range(..) => Value::of(&[Object]),
+    }
+}
+
+/// The value of a call (`FunctionExpression::evaluate`).
 fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
-    const ANGLE: Kind = Kind::Quantity(Quantity::ANGLE);
-    const LENGTH: Kind = Kind::Quantity(Quantity::LENGTH);
-    if matches!(name, "sum" | "min" | "max" | "average" | "stddev") {
-        return aggregate(name, args, scope);
+    if let Some(collector) = collector(name) {
+        return aggregate(collector, name, args, scope);
     }
     let values = args
         .iter()
-        .map(|arg| match arg {
-            Argument::Value(node) => node.value(scope),
-            Argument::Range(..) => Value::new(Kind::Unknown, Python::Object),
-        })
+        .map(|arg| argument(arg, scope))
         .collect::<Vec<_>>();
-    let value = |index: usize| {
-        values
-            .get(index)
-            .copied()
-            .unwrap_or(Value::new(Kind::Unknown, Python::Object))
-    };
-    let first = value(0);
-    if matches!(name, "href" | "hiddenref") {
-        return first;
-    }
-    if name == "tuple" {
-        return Value::new(Kind::Unknown, Python::Refused);
-    }
-    let first_quantity = numeric(first.kind);
-    let kind = match name {
-        "cos" | "sin" | "tan" => {
-            if matches!(first_quantity, Some(Quantity::REAL | Quantity::ANGLE)) {
-                REAL
-            } else {
-                Kind::Unknown
+    let raises = values.iter().any(|value| value.contains(Raises));
+    let mut value = match function(name) {
+        Function::Numeric(numeric) => return numeric_call(numeric, args, &values),
+        Function::Unknown => return Value::any(),
+        Function::Reference => return values.first().cloned().unwrap_or(Value::of(&[Raises])),
+        Function::List => Value::of(&[Object]),
+        Function::Tuple => Value::of(&[Refused]),
+        Function::Text => Value::of(&[Text]),
+        Function::Parse => Value::of(&[Class::Quantity(None), Raises]),
+        Function::Address => {
+            let mut value = Value::of(&[Text]);
+            let integer = |index: usize| {
+                values
+                    .get(index)
+                    .is_some_and(|value| value.0.iter().all(|class| matches!(class, Int | Boolean)))
+            };
+            if !(integer(0) && integer(1)) {
+                value.insert(Raises);
             }
+            value
         }
-        "acos" | "asin" | "atan" => {
-            if first_quantity == Some(Quantity::REAL) {
-                ANGLE
-            } else {
-                Kind::Unknown
-            }
-        }
-        "exp" | "log" | "log10" | "sinh" | "tanh" | "cosh" => {
-            if first_quantity == Some(Quantity::REAL) {
-                REAL
-            } else {
-                Kind::Unknown
-            }
-        }
-        "round" | "trunc" | "ceil" | "floor" | "abs" => {
-            first_quantity.map_or(Kind::Unknown, Kind::Quantity)
-        }
-        "sqrt" => first_quantity
-            .and_then(|quantity| scaled(quantity, 0.5))
-            .map_or(Kind::Unknown, Kind::Quantity),
-        "cbrt" => first_quantity
-            .and_then(|quantity| scaled(quantity, 1.0 / 3.0))
-            .map_or(Kind::Unknown, Kind::Quantity),
-        "atan2" => {
-            if first_quantity.is_some() && numeric(value(1).kind) == first_quantity {
-                ANGLE
-            } else {
-                Kind::Unknown
-            }
-        }
-        "mod" => match (first_quantity, numeric(value(1).kind)) {
-            (Some(left), Some(right))
-                if left == right || left == Quantity::REAL || right == Quantity::REAL =>
-            {
-                Kind::Quantity(left)
-            }
-            _ => Kind::Unknown,
+        Function::Make(class) => Value::of(&[class]),
+        Function::Create => match values.first() {
+            Some(first) if first.contains(Text) => Value::of(&[Vector, Object, Raises]),
+            _ => Value::of(&[Raises]),
         },
-        "pow" => match (first_quantity, numeric(value(1).kind), args.get(1)) {
-            (Some(base), Some(exponent), Some(Argument::Value(node))) => {
-                power(base, exponent, node.constant())
-            }
-            _ => Kind::Unknown,
+        Function::Transform => match values.first() {
+            Some(first) if first.contains(Object) => Value::of(&[Object, Raises]),
+            _ => Value::of(&[Raises]),
         },
-        "hypot" | "cath" => {
-            let rest =
-                (1..args.len().max(2)).all(|index| numeric(value(index).kind) == first_quantity);
-            if let (Some(quantity), true) = (first_quantity, rest) {
-                Kind::Quantity(quantity)
-            } else {
-                Kind::Unknown
-            }
-        }
-        "not" | "and" | "or" | "count" | "vdot" => REAL,
-        "str" | "address" => Kind::Text,
-        "vangle" => ANGLE,
-        "vlinedist" | "vplanedist" => LENGTH,
-        _ => Kind::Unknown,
+        Function::Vectors {
+            vectors,
+            lengths,
+            result,
+        } => vector_call(&values, vectors, lengths, result),
     };
-    if NUMERIC.contains(&name) {
-        let checked = &values[..values.len().min(3)];
-        // A power of a quantity by a dimensionless value the file does not
-        // store takes its unit at run time.
-        let deferred = name == "pow"
-            && value(1).kind == REAL
-            && matches!(args.get(1), Some(Argument::Value(node)) if node.constant().is_none());
-        let raises = checked.iter().any(|value| {
-            value.kind == Kind::Text || matches!(value.python, Python::Refused | Python::Raises)
-        }) || (kind == Kind::Unknown
-            && !deferred
-            && checked.iter().all(|value| value.kind != Kind::Unknown));
-        if raises {
-            return Value::new(Kind::Unknown, Python::Raises);
-        }
+    if raises {
+        value.insert(Raises);
     }
-    let python = match name {
-        "count" | "and" | "or" => Python::Int,
-        _ => Python::Object,
-    };
-    Value::new(kind, python)
+    value
 }
 
-/// The value of an aggregate: the quantity its values share. It passes over
-/// a value that is no number (`pyToQuantity`) and counts a bool as a
-/// dimensionless `int`; a text, bool, or `None` cell of a range has no
-/// quantity, and `FreeCAD` raises on it, on an argument that raises, and on
-/// values of different quantities. A dimensionless `sum`, `min`, or `max` of
-/// `int` values is an `int`, and an aggregate of constants is its value.
-fn aggregate(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
-    let raises = Value::new(Kind::Unknown, Python::Raises);
-    let unknown = Value::new(Kind::Unknown, Python::Object);
-    let mut found: Option<Quantity> = None;
-    let mut whole = true;
-    for arg in args {
-        let values = match arg {
-            Argument::Value(node) => {
-                let value = node.value(scope);
-                match (value.kind, value.python) {
-                    (_, Python::Raises) => return raises,
-                    (Kind::Text, _) | (_, Python::Refused) => continue,
-                    (Kind::Boolean, _) => vec![Value::new(REAL, Python::Int)],
-                    _ => vec![value],
-                }
-            }
-            Argument::Range(from, to) => {
-                let Some(values) = scope.range(from, to) else {
-                    return unknown;
-                };
-                values
-            }
-        };
-        for value in values {
-            let quantity = match value.kind {
-                Kind::Quantity(quantity) => quantity,
-                Kind::Unknown if !matches!(value.python, Python::Refused | Python::Raises) => {
-                    return unknown;
-                }
-                Kind::Unknown | Kind::Text | Kind::Boolean => return raises,
+/// The value of a numeric function: the join over each combination of the
+/// classes of its first three arguments, where a class that is no number
+/// raises (`pyToQuantity`).
+fn numeric_call(function: Numeric, args: &[Argument<'_>], values: &[Value]) -> Value {
+    if function == Numeric::Translation && values.len() == 1 {
+        return Value::of(if values[0].contains(Object) {
+            &[Object, Raises]
+        } else {
+            &[Raises]
+        });
+    }
+    if values.len() < function.arity() {
+        return Value::of(&[Raises]);
+    }
+    let exponent = match args.get(1) {
+        Some(Argument::Value(node)) => node.constant(),
+        Some(Argument::Range(..)) | None => None,
+    };
+    let checked = &values[..values.len().min(3)];
+    let mut value = Value::default();
+    if checked.iter().any(|value| value.0.is_empty()) {
+        return value;
+    }
+    let mut indices = vec![0_usize; checked.len()];
+    loop {
+        let classes = indices
+            .iter()
+            .zip(checked)
+            .map(|(index, value)| value.0[*index])
+            .collect::<Vec<_>>();
+        if classes.iter().all(|class| is_number(*class)) {
+            value.join(unit_rule(function, &classes, exponent));
+        } else {
+            value.insert(Raises);
+        }
+        let mut position = 0;
+        loop {
+            let Some(index) = indices.get_mut(position) else {
+                return value;
             };
-            if found.is_some_and(|found| found != quantity) {
-                return raises;
+            *index += 1;
+            if *index < checked[position].0.len() {
+                break;
             }
-            found = Some(quantity);
-            whole &= value.python == Python::Int;
+            *index = 0;
+            position += 1;
         }
     }
-    let quantity = found.unwrap_or(Quantity::REAL);
-    let python = if quantity != Quantity::REAL {
-        Python::Object
-    } else if let Some(value) = fold(name, args) {
-        Python::of(value)
-    } else if whole && matches!(name, "sum" | "min" | "max") {
-        Python::Int
+}
+
+/// The result of a numeric function of the numbers `classes`, by its unit
+/// rule (`FunctionExpression::evaluate`), where the second argument's value
+/// is `exponent` where the file stores it.
+fn unit_rule(function: Numeric, classes: &[Class], exponent: Option<f64>) -> Value {
+    let units = classes.iter().map(|class| unit(*class)).collect::<Vec<_>>();
+    let first = units[0];
+    let real = Class::Quantity(Some(Quantity::REAL));
+    match function {
+        Numeric::Trigonometric => accepts(first, &[Quantity::REAL, Quantity::ANGLE], real),
+        Numeric::Inverse => accepts(
+            first,
+            &[Quantity::REAL],
+            Class::Quantity(Some(Quantity::ANGLE)),
+        ),
+        Numeric::Dimensionless => accepts(first, &[Quantity::REAL], real),
+        Numeric::Same => Value::of(&[Class::Quantity(first)]),
+        Numeric::Root(n) => match first {
+            Some(quantity) => Value::of(&[
+                root(quantity, n).map_or(Raises, |quantity| Class::Quantity(Some(quantity)))
+            ]),
+            None => Value::of(&[Class::Quantity(None), Raises]),
+        },
+        Numeric::Atan2 => equal_units(&units, Class::Quantity(Some(Quantity::ANGLE))),
+        Numeric::Hypot => equal_units(&units, Class::Quantity(units.iter().find_map(|unit| *unit))),
+        Numeric::Mod => match (first, units[1]) {
+            (Some(Quantity::REAL), _) | (_, Some(Quantity::REAL)) => {
+                Value::of(&[Class::Quantity(first)])
+            }
+            (Some(left), Some(right)) if left == right => Value::of(&[Class::Quantity(first)]),
+            (Some(_), Some(_)) => Value::of(&[Raises]),
+            (Some(_) | None, None) | (None, Some(_)) => {
+                Value::of(&[Class::Quantity(first), Raises])
+            }
+        },
+        Numeric::Pow => pow_call(first, units[1], classes[1], exponent),
+        Numeric::Not => Value::of(&[real]),
+        Numeric::Rotation => accepts(first, &[Quantity::REAL, Quantity::ANGLE], Object),
+        Numeric::Translation => {
+            let allowed = [Quantity::REAL, Quantity::LENGTH];
+            if units
+                .iter()
+                .any(|unit| unit.is_some_and(|unit| !allowed.contains(&unit)))
+            {
+                Value::of(&[Raises])
+            } else if units.iter().all(Option::is_some) {
+                Value::of(&[Object])
+            } else {
+                Value::of(&[Object, Raises])
+            }
+        }
+    }
+}
+
+/// `result` where `unit` is one of `allowed`, and a raise otherwise.
+fn accepts(unit: Option<Quantity>, allowed: &[Quantity], result: Class) -> Value {
+    match unit {
+        Some(unit) if allowed.contains(&unit) => Value::of(&[result]),
+        Some(_) => Value::of(&[Raises]),
+        None => Value::of(&[result, Raises]),
+    }
+}
+
+/// `result` where each of `units` is one unit, and a raise otherwise.
+fn equal_units(units: &[Option<Quantity>], result: Class) -> Value {
+    let known = units.iter().flatten().collect::<Vec<_>>();
+    if known.windows(2).any(|pair| pair[0] != pair[1]) {
+        Value::of(&[Raises])
+    } else if known.len() == units.len() {
+        Value::of(&[result])
     } else {
-        Python::Unsettled
+        Value::of(&[result, Raises])
+    }
+}
+
+/// `pow(base; exponent)`: the exponent is dimensionless, and a base with a
+/// unit needs an exponent at most `INTEGRAL` above its rounded value, then
+/// takes `Unit::pow`.
+fn pow_call(
+    base: Option<Quantity>,
+    unit: Option<Quantity>,
+    class: Class,
+    exponent: Option<f64>,
+) -> Value {
+    let mut value = match unit {
+        Some(Quantity::REAL) | None => match (base, exponent) {
+            (Some(Quantity::REAL), _) => Value::of(&[Class::Quantity(Some(Quantity::REAL))]),
+            (_, Some(exponent)) if exponent - exponent.round() >= INTEGRAL => Value::of(&[Raises]),
+            (Some(base), Some(exponent)) => {
+                Value::of(&[pow_unit(base, exponent)
+                    .map_or(Raises, |quantity| Class::Quantity(Some(quantity)))])
+            }
+            (None, Some(exponent)) if exponent.fract() == 0.0 => {
+                Value::of(&[Class::Quantity(None)])
+            }
+            (Some(_) | None, None) if matches!(class, Int | Boolean) => {
+                Value::of(&[Class::Quantity(None)])
+            }
+            (Some(_) | None, _) => Value::of(&[Class::Quantity(None), Raises]),
+        },
+        Some(_) => Value::default(),
     };
-    Value::new(Kind::Quantity(quantity), python)
+    if unit != Some(Quantity::REAL) {
+        value.insert(Raises);
+    }
+    value
+}
+
+/// The value of a function of vectors: each of the first `vectors`
+/// arguments is a `VectorPy` (`extractVectorArgument`), and each of the
+/// `lengths` after them is a length or dimensionless
+/// (`extractLengthValueArgument`).
+fn vector_call(values: &[Value], vectors: usize, lengths: usize, result: Class) -> Value {
+    if values.len() < vectors + lengths {
+        return Value::of(&[Raises]);
+    }
+    let mut value = Value::default();
+    let mut succeeds = true;
+    for (index, argument) in values.iter().take(vectors + lengths).enumerate() {
+        let mut accepted = false;
+        for class in &argument.0 {
+            let (accepts, raises) = if index < vectors {
+                (*class == Vector, *class != Vector)
+            } else if is_number(*class) {
+                match unit(*class) {
+                    Some(Quantity::REAL | Quantity::LENGTH) => (true, false),
+                    Some(_) => (false, true),
+                    None => (true, true),
+                }
+            } else {
+                (false, true)
+            };
+            accepted |= accepts;
+            if raises {
+                value.insert(Raises);
+            }
+        }
+        succeeds &= accepted;
+    }
+    if succeeds {
+        value.insert(result);
+    }
+    value
+}
+
+/// The unit a collector takes from its first value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum First {
+    Empty,
+    Of(Option<Quantity>),
+}
+
+/// The state of a collector after some values: the unit of the first value,
+/// up to two values counted, and whether each value is an `int`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Collected {
+    unit: First,
+    count: u8,
+    whole: bool,
+}
+
+/// The value of an aggregate (`FunctionExpression::evalAggregate`): a value
+/// argument that is a number is collected and any other is passed over, a
+/// cell of a range is collected where it holds a number and raises
+/// otherwise, and the collector raises on values of different units.
+fn aggregate(
+    collector: Collector,
+    name: &str,
+    args: &[Argument<'_>],
+    scope: &mut dyn Scope,
+) -> Value {
+    let mut states = vec![Collected {
+        unit: First::Empty,
+        count: 0,
+        whole: true,
+    }];
+    let mut value = Value::default();
+    for arg in args {
+        match arg {
+            Argument::Value(node) => {
+                let mut next = Vec::new();
+                for class in node.value(scope).0 {
+                    match class {
+                        Raises => value.insert(Raises),
+                        Text | Vector | Object | Refused => {
+                            for state in &states {
+                                push(&mut next, *state);
+                            }
+                        }
+                        Class::Quantity(_) | Int | Float | Boolean => {
+                            for state in &states {
+                                collect(collector, *state, class, &mut next, &mut value);
+                            }
+                        }
+                    }
+                }
+                states = next;
+            }
+            Argument::Range(from, to) => {
+                let Some(cells) = scope.range(from, to) else {
+                    value.join(if collector == Collector::Count {
+                        Value::of(&[Int, Raises])
+                    } else {
+                        Value::of(&[Class::Quantity(None), Int, Float, Raises])
+                    });
+                    return value;
+                };
+                for cell in cells {
+                    let mut next = Vec::new();
+                    for class in cell.0 {
+                        match class {
+                            Class::Quantity(_) | Int | Float => {
+                                for state in &states {
+                                    collect(collector, *state, class, &mut next, &mut value);
+                                }
+                            }
+                            Boolean | Text | Vector | Object | Refused | Raises => {
+                                value.insert(Raises);
+                            }
+                        }
+                    }
+                    states = next;
+                }
+            }
+        }
+    }
+    let folded = fold(name, args);
+    for state in states {
+        value.join(collected(collector, state, folded));
+    }
+    value
+}
+
+fn push(states: &mut Vec<Collected>, state: Collected) {
+    if !states.contains(&state) {
+        states.push(state);
+    }
+}
+
+/// The states after `state` collects a number of class `class`.
+fn collect(
+    collector: Collector,
+    state: Collected,
+    class: Class,
+    next: &mut Vec<Collected>,
+    value: &mut Value,
+) {
+    let counted = Collected {
+        count: (state.count + 1).min(2),
+        whole: state.whole && matches!(class, Int | Boolean),
+        ..state
+    };
+    let unit = unit(class);
+    match (collector, state.unit) {
+        (Collector::Count, _) | (_, First::Empty) => push(
+            next,
+            Collected {
+                unit: First::Of(unit),
+                ..counted
+            },
+        ),
+        (_, First::Of(Some(first))) if unit == Some(first) => push(next, counted),
+        (_, First::Of(Some(_))) if unit.is_some() => value.insert(Raises),
+        (_, First::Of(first)) => {
+            value.insert(Raises);
+            push(
+                next,
+                Collected {
+                    unit: First::Of(first.or(unit)),
+                    ..counted
+                },
+            );
+        }
+    }
+}
+
+/// The result of a collector in `state` (`pyFromQuantity`), where `folded`
+/// is the value of an aggregate of constants.
+fn collected(collector: Collector, state: Collected, folded: Option<f64>) -> Value {
+    match (collector, state.unit) {
+        (Collector::Count, _) => Value::of(&[Int]),
+        (Collector::StdDev, _) if state.count < 2 => Value::of(&[Raises]),
+        (Collector::Average, First::Empty) => Value::of(&[Float]),
+        (_, First::Empty) => Value::of(&[Int]),
+        (_, First::Of(Some(Quantity::REAL))) => match folded {
+            Some(folded) => Value::of(&[Value::number(folded)]),
+            None if state.whole
+                && matches!(collector, Collector::Sum | Collector::Min | Collector::Max) =>
+            {
+                Value::of(&[Int])
+            }
+            None => Value::of(&[Int, Float]),
+        },
+        (_, First::Of(Some(quantity))) => Value::of(&[Class::Quantity(Some(quantity))]),
+        (_, First::Of(None)) => Value::of(&[Class::Quantity(None), Int, Float]),
+    }
 }
 
 /// The value of `sum`, `min`, `max`, or `average` of constants

@@ -125,7 +125,13 @@ pub(crate) fn transfer(
                     | "Activated"
             )
         }) {
-            if let Some(value) = scalar_parameter(property)? {
+            let value = match scalar_parameter(property) {
+                Ok(value) => value,
+                // The design projection charges a flag it does not read.
+                Err(_) if property.name == "Activated" => None,
+                Err(error) => return Err(error),
+            };
+            if let Some(value) = value {
                 parameters.insert(property.name.clone(), value);
             }
         }

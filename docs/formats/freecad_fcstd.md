@@ -655,18 +655,30 @@ rules, with the cells it references read first in dependency order:
   text and emits no `parameter.integer-assumed` of its own. A `sum`, `min`, `max`, or `average` of
   constants is its value.
 - `True`, `False`, a comparison, and a reference to an `App::PropertyBool` property or to a
-  Boolean cell are Boolean. `==` and `!=` compare any two values that `FreeCAD` evaluates and
-  admits as operands. Refused operands are `None` (a link that stores no target), a tuple (an
-  `App::PropertyLinkSub` value, a link that stores a sub-name, a color, `tuple()`), a set (an
-  `App::PropertyIntegerSet` value), an `App::PropertyPythonObject` value, a conditional with a
-  refused branch, and an operand that raises. An operand raises where it is an operator with a
-  refused operand, or where it is `cos`, `sin`, `tan`, `acos`, `asin`, `atan`, `exp`, `log`,
-  `log10`, `sinh`, `tanh`, `cosh`, `round`, `trunc`, `ceil`, `floor`, `abs`, `sqrt`, `cbrt`,
-  `atan2`, `mod`, `pow`, `hypot`, `cath`, or `not` with an argument that is text or refused or whose
-  unit the function does not take. `<`, `<=`, `>`, and `>=` compare
-  two strings, two values of one quantity, a Boolean and a number, and a quantity and a
-  dimensionless `int` or `float`. In arithmetic and in a function argument, a Boolean is a
-  dimensionless number.
+  Boolean cell are Boolean. A value is a number (a quantity, an `int`, a `float`, or a Boolean),
+  text, an object that is no number, or a refused value. Objects that are no numbers are a
+  vector, a placement, a rotation, a matrix, a link that stores a target and no sub-name, a link
+  list, a string list, a map, a material, a shape, a geometry list, a constraint list, another
+  list property, and the result of `vector`, `matrix`, `placement`, `rotation`, `list`, `create`,
+  `rotationx`, `rotationy`, `rotationz`, and `translationm`. Refused values are `None` (a link that
+  stores no target), a tuple (an `App::PropertyLinkSub` value, a link that stores a sub-name, a
+  color, `tuple()`), a set (an `App::PropertyIntegerSet` value), a conditional with a refused
+  branch, and an operand that raises.
+- An `App::PropertyPythonObject` value is the value of its stored JSON text: `true` and `false`
+  are Boolean, a number is an `int` where its text contains no `.`, `e`, or `E` and a `float`
+  otherwise, `NaN`, `Infinity`, and `-Infinity` are `float` values, a string is text, and an array
+  or an object is an object that is no number. `null`, a stored class instance (a `module` and a
+  `class` attribute), and a value that stores no JSON text are refused.
+- A cell whose formula raises holds the text of its error, and a reference to that cell is text.
+- `==` and `!=` compare any two values that are not refused. An operand raises where it is an
+  operator with a refused operand, or where it is `cos`, `sin`, `tan`, `acos`, `asin`, `atan`,
+  `exp`, `log`, `log10`, `sinh`, `tanh`, `cosh`, `round`, `trunc`, `ceil`, `floor`, `abs`, `sqrt`,
+  `cbrt`, `atan2`, `mod`, `pow`, `hypot`, `cath`, or `not` with too few arguments or with an
+  argument that is text, refused, an object that is no number, or a quantity whose unit the
+  function does not take. `<`, `<=`, `>`, and `>=` compare two strings, two values of one
+  quantity, a Boolean and a number, and a quantity and a dimensionless `int` or `float`; they
+  raise on text and a number. In arithmetic and in a function argument, a Boolean is a
+  dimensionless number. A unit exponent of 8 or more raises.
 - A reference to a cell, by alias, address, or `.address`, takes that cell's kind. A reference to a
   typed property of an object, or a placement or vector component, takes the property's quantity;
   a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
@@ -675,17 +687,23 @@ rules, with the cells it references read first in dependency order:
   product and a quotient add and subtract the exponents of the units; the remainder of a quantity
   keeps its quantity, and the remainder of a plain number by a quantity raises;
   `x ^ n` and `pow(x, n)` multiply each exponent by the constant `n` where each product is an
-  integer.
+  integer. `pow(x, n)` raises where `n` differs from an integer by `1e-9` or more and `x` is not
+  dimensionless, so `pow(16 mm^4; 0.25)` raises.
 - `abs`, `round`, `trunc`, `ceil`, `floor`, `mod`, `hypot`, `cath`, `href`, `sum`, `min`, `max`,
-  `average`, and `stddev` keep the quantity of their values, and an aggregate passes over an
-  argument that is no number (text, `None`, a tuple, a set) and stops at a text, Boolean, or `None`
-  cell of a range and at an argument that raises; `sqrt` and `cbrt` divide its
+  `average`, and `stddev` keep the quantity of their values. An aggregate (`sum`, `min`, `max`,
+  `average`, `stddev`, `count`, `and`, `or`) passes over an argument that is no number (text, a
+  refused value, an object that is no number), raises at a cell of a range that holds no number,
+  and raises at an argument that raises; `sum`, `min`, `max`, `average`, and `stddev` raise on
+  values of two different quantities, and `stddev` of fewer than two values raises; `sqrt` and
+  `cbrt` divide its
   exponents; `cos`, `sin`, `tan`, `exp`, `log`, `log10`, `sinh`, `cosh`, `tanh`, `not`, `and`, `or`,
   `count`, and `vdot` give a real; `acos`, `asin`, `atan`, `atan2`, and `vangle` give an angle; and
   `vlinedist` and `vplanedist` give a length.
 
 Where the file does not determine the result's kind, as for a reference to another document, to a
-property with no stated quantity, or to a cell of a reference cycle, the product of a string and
+property with no stated quantity, to a property or object that the document does not store, to an
+`App::PropertyPythonObject` value stored in a separate file, or to a cell of a reference cycle,
+the product of a string and
 a `float` or a quantity, `Label` of a link that stores a sub-name, an ordering of a string and a
 number, of two different quantities, or of a quantity and a function result, and a comparison with
 a refused operand, the cell's kind is a real number, it emits `parameter.quantity-assumed`, and an expression that references it takes it as a
@@ -892,7 +910,9 @@ is the form that precedes the `Angle` property, which `FreeCAD` migrates by the 
 `EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, `Suppressed`, and
 `Activated` are `App::PropertyBool` properties with one `Bool` value. `Activated` is the form that
 precedes `Suppressed`, and `FreeCAD`'s migration sets `Suppressed` to its negation. Wrong runtime
-types, root value tags, missing values, and duplicate values are malformed.
+types, root value tags, missing values, and duplicate values are malformed, except for
+`Activated`: an `Activated` property of another form stays in its native property, the joint's
+suppression comes from `Suppressed`, and the joint emits `feature.joint-flag-unread`.
 Each connector-frame and connector-offset carrier is an `App::PropertyPlacement` property with at
 most one `PropertyPlacement` value and the same representation discriminator, null-axis fallback,
 and finite position and rotation-component rules as product placements.

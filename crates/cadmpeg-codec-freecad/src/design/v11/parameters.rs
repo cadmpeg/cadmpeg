@@ -28,7 +28,7 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::spreadsheets::CellAddress;
 
 use crate::design::cell_content::formula::{
-    self, Kind, Origin, Path, Python, Reference, Scope, Unparsed, Value,
+    self, Class, Kind, Origin, Path, Reference, Scope, Unparsed, Value,
 };
 use crate::design::cell_content::{self, CellContent, CellKind};
 use crate::loss::FreecadLossCode;
@@ -203,6 +203,8 @@ struct Catalog<'a> {
     /// and name: an `XLink` that stores a sub-name, and a link that stores no
     /// target.
     refused: HashSet<(&'a str, &'a str)>,
+    /// The value of each Python object property, by owner's id and name.
+    python: HashMap<(&'a str, &'a str), Value>,
     /// Each parameter by its owner and a name a path gives it: a
     /// property's name, `Constraints.<name>`, and a cell's alias and
     /// address. A name that two parameters share names neither.
@@ -213,9 +215,9 @@ struct Catalog<'a> {
 
 /// What a path names.
 enum Target<'a> {
-    /// A parameter, with the Python type of its property where the property
-    /// has a stated type.
-    Parameter(&'a ParameterId, Option<Python>),
+    /// A parameter, with the value of its property where the property has a
+    /// stated type.
+    Parameter(&'a ParameterId, Option<Value>),
     /// A property that is no parameter, with its value.
     Property(Value),
     /// A property of another document or of a sub-object.
@@ -237,6 +239,7 @@ impl<'a> Catalog<'a> {
             features: HashMap::new(),
             types: HashMap::new(),
             refused: HashSet::new(),
+            python: HashMap::new(),
             named: HashMap::new(),
             cells: HashMap::new(),
         };
@@ -282,6 +285,12 @@ impl<'a> Catalog<'a> {
                 catalog
                     .refused
                     .insert((property.owner.as_str(), property.name.as_str()));
+            }
+            if property.type_name == "App::PropertyPythonObject" {
+                catalog.python.insert(
+                    (property.owner.as_str(), property.name.as_str()),
+                    python_object(property),
+                );
             }
             let label = (property.name == "Label" && property.type_name == "App::PropertyString")
                 .then(|| property.values().iter().find(|value| value.tag == "String"))
@@ -377,26 +386,18 @@ impl<'a> Catalog<'a> {
             .chain(rest[1..].iter().cloned())
             .collect::<Vec<_>>()
             .join(".");
-        let typed = self.types.get(&(object.id().as_str(), property.as_str()));
+        let held = (object.id().as_str(), property.as_str());
+        let typed = self.types.get(&held).map(|type_name| {
+            if self.refused.contains(&held) {
+                Value::of(&[Class::Refused])
+            } else {
+                property_value(type_name, &rest[1..], self.python.get(&held))
+            }
+        });
         if let Some(Some(id)) = self.named.get(&(feature.clone(), key)) {
-            return Target::Parameter(
-                id,
-                typed.map(|type_name| property_python(type_name, &rest[1..])),
-            );
+            return Target::Parameter(id, typed);
         }
-        if self
-            .refused
-            .contains(&(object.id().as_str(), property.as_str()))
-        {
-            return Target::Property(Value::new(Kind::Unknown, Python::Refused));
-        }
-        match typed {
-            Some(type_name) => Target::Property(Value::new(
-                property_kind(type_name, &rest[1..]),
-                property_python(type_name, &rest[1..]),
-            )),
-            None => Target::Unresolved,
-        }
+        typed.map_or(Target::Unresolved, Target::Property)
     }
 
     /// The cells of the sheet `owner` from `from` to `to`, each an address or
@@ -433,57 +434,103 @@ impl<'a> Catalog<'a> {
     }
 }
 
-/// The kind of the value of a property of type `type_name`, or of its
-/// component `sub` (§5.12, Kind). A link property's `Label` and `Label2`
-/// are those of the object it names.
-fn property_kind(type_name: &str, sub: &[String]) -> Kind {
+/// The value of a property of type `type_name`, or of its component `sub`
+/// (`getPyObject`, `getPyPathValue`), where `python` is the stored value of a
+/// Python object property. A link property's `Label` and `Label2` are those
+/// of the object it names; a link with sub-names and a color are tuples, and
+/// an integer set is a `set`.
+fn property_value(type_name: &str, sub: &[String], python: Option<&Value>) -> Value {
     let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
-    let quantity = match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
-        (Some("Placement"), ["Base", "x" | "y" | "z"])
-        | (Some("VectorDistance" | "Position"), ["x" | "y" | "z"]) => Quantity::LENGTH,
-        (Some("Placement"), ["Rotation", "Angle"]) => Quantity::ANGLE,
-        (
-            Some("Placement"),
-            ["Rotation", "Axis", "x" | "y" | "z"] | ["Rotation", "Yaw" | "Pitch" | "Roll"],
-        ) => Quantity::REAL,
-        (Some("Bool"), []) => return Kind::Boolean,
-        (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font"), [])
-        | (
-            Some("Link" | "LinkChild" | "LinkGlobal" | "LinkHidden" | "XLink"),
-            ["Label" | "Label2"],
-        ) => return Kind::Text,
-        (Some(name), []) => match property_quantity(name) {
-            Some(quantity) => quantity,
-            None => return Kind::Unknown,
-        },
-        _ => return Kind::Unknown,
-    };
-    Kind::Quantity(quantity)
-}
-
-/// The Python type of the value of a property of type `type_name`, or of its
-/// component `sub` (`getPyObject`, `getPyPathValue`): a link with sub-names
-/// and a color are tuples, an integer set is a `set`, and a Python object
-/// property holds an object of any type.
-fn property_python(type_name: &str, sub: &[String]) -> Python {
-    let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
+    let quantity = |quantity| Value::of(&[Class::Quantity(Some(quantity))]);
     match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
-        (Some("Integer" | "IntegerConstraint" | "Percent" | "Bool"), []) => Python::Int,
+        (Some("Integer" | "IntegerConstraint" | "Percent"), []) => Value::of(&[Class::Int]),
         (Some("Float" | "FloatConstraint" | "Precision"), [])
         | (
             Some("Placement"),
             ["Rotation", "Axis", "x" | "y" | "z"] | ["Rotation", "Yaw" | "Pitch" | "Roll"],
-        ) => Python::Float,
+        ) => Value::of(&[Class::Float]),
+        (Some("Bool"), []) => Value::of(&[Class::Boolean]),
+        (Some("Placement"), ["Base", "x" | "y" | "z"])
+        | (Some("VectorDistance" | "Position"), ["x" | "y" | "z"]) => quantity(Quantity::LENGTH),
+        (Some("Placement"), ["Rotation", "Angle"]) => quantity(Quantity::ANGLE),
+        (Some("Quantity" | "QuantityConstraint"), []) => Value::of(&[Class::Quantity(None)]),
+        (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font"), [])
+        | (
+            Some("Link" | "LinkChild" | "LinkGlobal" | "LinkHidden" | "XLink"),
+            ["Label" | "Label2"],
+        ) => Value::of(&[Class::Text]),
+        (Some("Vector" | "VectorDistance" | "Position" | "Direction"), []) => {
+            Value::of(&[Class::Vector])
+        }
         (
             Some(
                 "LinkSub" | "LinkSubChild" | "LinkSubGlobal" | "LinkSubHidden" | "XLinkSub"
                 | "XLinkSubHidden" | "Color" | "IntegerSet",
             ),
             [],
-        ) => Python::Refused,
-        (Some("PythonObject"), []) => Python::Opaque,
-        _ => Python::Object,
+        ) => Value::of(&[Class::Refused]),
+        (
+            Some(
+                "Placement" | "Rotation" | "Matrix" | "Link" | "LinkChild" | "LinkGlobal"
+                | "LinkHidden" | "XLink" | "XLinkHidden" | "LinkList" | "LinkListChild"
+                | "LinkListGlobal" | "LinkListHidden" | "XLinkList" | "StringList" | "Map"
+                | "Material",
+            ),
+            [],
+        ) => Value::of(&[Class::Object]),
+        (Some(name), []) if name.ends_with("List") => Value::of(&[Class::Object]),
+        (Some("PythonObject"), []) => python.cloned().unwrap_or_else(Value::any),
+        (Some(name), []) => property_quantity(name).map_or_else(Value::any, quantity),
+        (None, [])
+            if matches!(
+                type_name,
+                "Part::PropertyPartShape"
+                    | "Part::PropertyGeometryList"
+                    | "Sketcher::PropertyConstraintList"
+            ) =>
+        {
+            Value::of(&[Class::Object])
+        }
+        _ => Value::any(),
     }
+}
+
+/// The value of a Python object property as `PropertyPythonObject::Restore`
+/// reads it: an instance of the class its `module` and `class` name, the
+/// value of its JSON text, or `None`.
+fn python_object(property: &PropertyRecord) -> Value {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let Some(python) = property.values().iter().find(|value| value.tag == "Python") else {
+        return Value::any();
+    };
+    let attribute = |key: &str| python.attributes.get(key).map(String::as_str);
+    if attribute("file").is_some() {
+        return Value::any();
+    }
+    if attribute("module").is_some() && attribute("class").is_some() || attribute("json").is_none()
+    {
+        return Value::of(&[Class::Refused]);
+    }
+    let text = attribute("value").unwrap_or_default();
+    let text = if attribute("encoded") == Some("yes") {
+        match STANDARD.decode(text).map(String::from_utf8) {
+            Ok(Ok(text)) => text,
+            Ok(Err(_)) | Err(_) => return Value::any(),
+        }
+    } else {
+        text.to_owned()
+    };
+    Value::of(&[match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(serde_json::Value::Null) => Class::Refused,
+        Ok(serde_json::Value::Bool(_)) => Class::Boolean,
+        Ok(serde_json::Value::Number(_)) if text.trim().contains(['.', 'e', 'E']) => Class::Float,
+        Ok(serde_json::Value::Number(_)) => Class::Int,
+        Ok(serde_json::Value::String(_)) => Class::Text,
+        Ok(serde_json::Value::Array(_) | serde_json::Value::Object(_)) => Class::Object,
+        Err(_) if matches!(text.trim(), "NaN" | "Infinity" | "-Infinity") => Class::Float,
+        Err(_) if text.contains("NaN") || text.contains("Infinity") => return Value::any(),
+        Err(_) => Class::Refused,
+    }])
 }
 
 /// The quantity of a quantity property `App::Property<name>`.
@@ -524,6 +571,23 @@ fn property_quantity(name: &str) -> Option<Quantity> {
     })
 }
 
+/// The kind of a cell's result, and the value that a reference to the cell
+/// reads.
+#[derive(Debug, Clone)]
+struct CellValue {
+    kind: Kind,
+    value: Value,
+}
+
+impl CellValue {
+    fn of(value: Value) -> Self {
+        Self {
+            kind: value.kind(),
+            value,
+        }
+    }
+}
+
 /// The values of the cells of each sheet, each formula after the cells it
 /// references, and the formula cells whose kind takes a plain number of
 /// unstated value as an `int`. A value cell's number is an `int` where it is
@@ -533,28 +597,27 @@ fn cell_values<'a>(
     formulas: &BTreeMap<&'a ParameterId, Result<formula::Node<'a>, Unparsed>>,
     catalog: &Catalog<'a>,
     is_cell: &dyn Fn(&LegacyParameter) -> bool,
-) -> (HashMap<&'a ParameterId, Value>, BTreeSet<&'a ParameterId>) {
-    let text = Value::new(Kind::Text, Python::Object);
+) -> (
+    HashMap<&'a ParameterId, CellValue>,
+    BTreeSet<&'a ParameterId>,
+) {
+    let text = || Value::of(&[Class::Text]);
     let mut values = HashMap::new();
     let mut assumed = BTreeSet::new();
     for parameter in parameters.values().filter(|parameter| is_cell(parameter)) {
         let value = match cell_content::read(&parameter.expression) {
-            CellContent::Text(_) => text,
-            CellContent::Value(value) => match value.kind {
-                CellKind::Quantity(Quantity::REAL) => {
-                    Value::new(Kind::Quantity(Quantity::REAL), Python::of(value.number))
-                }
-                CellKind::Quantity(quantity) => {
-                    Value::new(Kind::Quantity(quantity), Python::Object)
-                }
-                CellKind::Native(_) => Value::new(Kind::Unknown, Python::Object),
-            },
+            CellContent::Text(_) => text(),
+            CellContent::Value(value) => Value::of(&[match value.kind {
+                CellKind::Quantity(Quantity::REAL) => Value::number(value.number),
+                CellKind::Quantity(quantity) => Class::Quantity(Some(quantity)),
+                CellKind::Native(_) => Class::Quantity(None),
+            }]),
             CellContent::Formula(_) => match formulas.get(&parameter.id) {
-                Some(Err(Unparsed::Syntax)) => text,
+                Some(Err(Unparsed::Syntax)) => text(),
                 Some(Ok(_) | Err(Unparsed::Limit)) | None => continue,
             },
         };
-        values.insert(&parameter.id, value);
+        values.insert(&parameter.id, CellValue::of(value));
     }
     let pending = formulas
         .iter()
@@ -605,7 +668,13 @@ fn cell_values<'a>(
         if lookup.assumed {
             assumed.insert(id);
         }
-        values.insert(id, Value::new(value.kind, pending[id].stored(value)));
+        values.insert(
+            id,
+            CellValue {
+                kind: value.kind(),
+                value: pending[id].stored(&value),
+            },
+        );
         for dependent in dependents.get(id).into_iter().flatten() {
             if let Some(count) = waiting.get_mut(dependent) {
                 *count -= 1;
@@ -616,9 +685,10 @@ fn cell_values<'a>(
         }
     }
     for id in formulas.keys() {
-        values
-            .entry(*id)
-            .or_insert(Value::new(Kind::Unknown, Python::Unsettled));
+        values.entry(*id).or_insert(CellValue {
+            kind: Kind::Unknown,
+            value: Value::any(),
+        });
     }
     (values, assumed)
 }
@@ -627,7 +697,7 @@ fn cell_values<'a>(
 /// or its stored value, and a property's from its type.
 struct Lookup<'c, 'a> {
     catalog: &'c Catalog<'a>,
-    values: &'c HashMap<&'a ParameterId, Value>,
+    values: &'c HashMap<&'a ParameterId, CellValue>,
     owner: Option<&'c FeatureId>,
     /// A cell of no kind the file determines is the real it is projected
     /// as.
@@ -638,30 +708,44 @@ struct Lookup<'c, 'a> {
 }
 
 impl Lookup<'_, '_> {
-    /// The value of parameter `id`, whose property has Python type `typed`
-    /// where the property has a stated type.
-    fn parameter(&self, id: &ParameterId, typed: Option<Python>) -> Value {
-        if let Some(value) = self.values.get(id) {
-            return match value.kind {
-                Kind::Unknown if self.projected => {
-                    Value::new(Kind::Quantity(Quantity::REAL), value.python)
-                }
-                _ => *value,
+    /// The value of parameter `id`, whose property has the value `typed`
+    /// where the property has a stated type: a cell's from its result, and
+    /// another parameter's from its property's type and its stored value.
+    fn parameter(&self, id: &ParameterId, typed: Option<Value>) -> Value {
+        if let Some(cell) = self.values.get(id) {
+            return if self.projected && cell.kind == Kind::Unknown {
+                Value::of(&[Class::Quantity(Some(Quantity::REAL))])
+            } else {
+                cell.value.clone()
             };
         }
         let Some(parameter) = self.catalog.parameters.get(id) else {
-            return Value::new(Kind::Unknown, Python::Object);
+            return typed.unwrap_or_else(Value::any);
         };
-        let (kind, python) = match &parameter.value {
-            Some(LegacyValue::Length(_)) => (Kind::Quantity(Quantity::LENGTH), Python::Object),
-            Some(LegacyValue::Angle(_)) => (Kind::Quantity(Quantity::ANGLE), Python::Object),
-            Some(LegacyValue::Real(_)) => (Kind::Quantity(Quantity::REAL), Python::Unsettled),
-            Some(LegacyValue::Integer(_)) => (Kind::Quantity(Quantity::REAL), Python::Int),
-            Some(LegacyValue::Boolean(_)) => (Kind::Boolean, Python::Int),
-            Some(LegacyValue::String(_)) => (Kind::Text, Python::Object),
-            None => (Kind::Unknown, Python::Object),
+        let stored = match &parameter.value {
+            Some(LegacyValue::Length(_)) => Value::of(&[Class::Quantity(Some(Quantity::LENGTH))]),
+            Some(LegacyValue::Angle(_)) => Value::of(&[Class::Quantity(Some(Quantity::ANGLE))]),
+            Some(LegacyValue::Real(_)) => Value::of(&[Class::Int, Class::Float]),
+            Some(LegacyValue::Integer(_)) => Value::of(&[Class::Int]),
+            Some(LegacyValue::Boolean(_)) => Value::of(&[Class::Boolean]),
+            Some(LegacyValue::String(_)) => Value::of(&[Class::Text]),
+            None => Value::any(),
         };
-        Value::new(kind, typed.unwrap_or(python))
+        match (typed, stored.kind()) {
+            (Some(typed), _) if typed.is_any() => stored,
+            (Some(typed), Kind::Quantity(quantity)) => Value::of(
+                &typed
+                    .classes()
+                    .iter()
+                    .map(|class| match class {
+                        Class::Quantity(None) => Class::Quantity(Some(quantity)),
+                        _ => *class,
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            (Some(typed), Kind::Boolean | Kind::Text | Kind::Unknown) => typed,
+            (None, _) => stored,
+        }
     }
 }
 
@@ -670,7 +754,7 @@ impl Scope for Lookup<'_, '_> {
         match self.catalog.resolve(self.owner, path) {
             Target::Parameter(id, typed) => self.parameter(id, typed),
             Target::Property(value) => value,
-            Target::Outside | Target::Unresolved => Value::new(Kind::Unknown, Python::Object),
+            Target::Outside | Target::Unresolved => Value::any(),
         }
     }
 
@@ -687,7 +771,7 @@ impl Scope for Lookup<'_, '_> {
 /// What the projection of a parameter's expression reads.
 struct Context<'c, 'a> {
     catalog: &'c Catalog<'a>,
-    values: &'c HashMap<&'a ParameterId, Value>,
+    values: &'c HashMap<&'a ParameterId, CellValue>,
     /// The formula cells whose kind takes a plain number of unstated value
     /// as an `int`.
     assumed: &'c BTreeSet<&'a ParameterId>,

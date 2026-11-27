@@ -668,7 +668,7 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
 
     // A comparison, a truth constant, and a Bool property are bools. `==`
     // compares any two values `FreeCAD` evaluates.
-    for address in ["B6", "B7", "E1", "E2", "E3", "E7"] {
+    for address in ["B6", "B7", "E1", "E2", "E3"] {
         assert_eq!(cell(address).kind, ValueKind::Boolean, "{address}");
         assert!(!assumed(address), "{address}: {losses:?}");
     }
@@ -687,8 +687,10 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
     // float, the label of a link with sub-names, text ordered against a
     // number, a length ordered against a dimensionless function result, and
     // a comparison with a tuple or `None`. It reads another property of a
-    // linked object at run time.
-    for address in ["B9", "D1", "D2", "E4", "E5", "E6", "E8", "G4", "G5", "G6"] {
+    // linked object at run time, which may hold `None`.
+    for address in [
+        "B9", "D1", "D2", "E4", "E5", "E6", "E7", "E8", "G4", "G5", "G6",
+    ] {
         assert_eq!(
             cell(address).kind,
             ValueKind::Quantity(Quantity::REAL),
@@ -703,13 +705,20 @@ fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind(
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/></Objects>
 <ObjectData Count="2">
-<Object name="Vars"><Properties Count="4">
+<Object name="Vars"><Properties Count="11">
 <Property name="Empty" type="App::PropertyLink" status="1"><Link value=""/></Property>
 <Property name="Gone" type="App::PropertyXLink" status="1"><XLink file="" stamp="" name=""/></Property>
 <Property name="Proxy" type="App::PropertyPythonObject" status="1"><Python value="bnVsbA==" encoded="yes"/></Property>
 <Property name="Ids" type="App::PropertyIntegerSet" status="1"><IntegerSet count="2"><I v="1"/><I v="2"/></IntegerSet></Property>
+<Property name="Flag" type="App::PropertyPythonObject" status="1"><Python value="dHJ1ZQ==" encoded="yes" json="yes"/></Property>
+<Property name="Three" type="App::PropertyPythonObject" status="1"><Python value="Mw==" encoded="yes" json="yes"/></Property>
+<Property name="Half" type="App::PropertyPythonObject" status="1"><Python value="Mi41" encoded="yes" json="yes"/></Property>
+<Property name="Name" type="App::PropertyPythonObject" status="1"><Python value="Ingi" encoded="yes" json="yes"/></Property>
+<Property name="Pair" type="App::PropertyPythonObject" status="1"><Python value="WzEsIDJd" encoded="yes" json="yes"/></Property>
+<Property name="Instance" type="App::PropertyPythonObject" status="1"><Python value="e30=" encoded="yes" module="Lib" class="Proxy"/></Property>
+<Property name="Placement" type="App::PropertyPlacement" status="1"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
 </Properties></Object>
-<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="12">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="24">
 <Cell address="A1" content="5 mm"/>
 <Cell address="H1" content="=tuple(1; 2) == 1"/>
 <Cell address="H2" content="=cos(5 mm) == 1"/>
@@ -722,6 +731,18 @@ fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind(
 <Cell address="J2" content="=sum(Vars.Proxy; 2 mm)"/>
 <Cell address="J3" content="=sum(1 mm + 2 °; 2 mm)"/>
 <Cell address="K1" content="=cos(0) % 2 mm"/>
+<Cell address="L1" content="=Vars.Flag == 1"/>
+<Cell address="L2" content="=Vars.Flag"/>
+<Cell address="L3" content="=str(A1) * Vars.Three"/>
+<Cell address="L4" content="=str(A1) * Vars.Half"/>
+<Cell address="L5" content="=Vars.Name + &lt;&lt;y&gt;&gt;"/>
+<Cell address="L6" content="=Vars.Pair == 1"/>
+<Cell address="L7" content="=Vars.Instance == 1"/>
+<Cell address="M1" content="=cos(Vars.Placement) == 1"/>
+<Cell address="M2" content="=sum(Vars.Placement; 2 mm)"/>
+<Cell address="M3" content="=round(Vars.Placement) == 1"/>
+<Cell address="M4" content="=Vars.Placement == 1"/>
+<Cell address="M5" content="=sum(Vars.Pair; Vars.Half; 2)"/>
 </Cells></Property></Properties></Object>
 </ObjectData></Document>"#;
     let (ir, losses) = decode_with_losses(document);
@@ -735,10 +756,14 @@ fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind(
         )
     };
 
-    // `FreeCAD` refuses `None`, a tuple, a set, and a Python object as an
-    // operand of `==`, and a function with a unit error raises: the cell is
-    // in error and holds no value.
-    for address in ["H1", "H2", "H3", "H4", "H5", "H6", "H7", "J2", "J3"] {
+    // `FreeCAD` refuses `None`, a tuple, a set, and an instance of a Python
+    // class as an operand of `==`, a function with a unit error raises, and
+    // a numeric function raises on an object that is no number: the cell is
+    // in error and holds no value. A Python object property that stores no
+    // JSON and no class holds `None`. Python refuses text times a `float`.
+    for address in [
+        "H1", "H2", "H3", "H4", "H5", "H6", "H7", "J3", "L4", "L7", "M1", "M3",
+    ] {
         assert_eq!(
             cell(address).kind,
             ValueKind::Quantity(Quantity::REAL),
@@ -749,12 +774,32 @@ fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind(
 
     // An aggregate passes over a value that is no number; a quantity object
     // keeps its unit under `%`.
-    for (address, quantity) in [("J1", Quantity::LENGTH), ("K1", Quantity::REAL)] {
+    for (address, quantity) in [
+        ("J1", Quantity::LENGTH),
+        ("J2", Quantity::LENGTH),
+        ("K1", Quantity::REAL),
+        ("M2", Quantity::LENGTH),
+        ("M5", Quantity::REAL),
+    ] {
         assert_eq!(
             cell(address).kind,
             ValueKind::Quantity(quantity),
             "{address}"
         );
+        assert!(!assumed(address), "{address}: {losses:?}");
+    }
+
+    // A Python object property stored as JSON holds the value its JSON
+    // states: a bool, an `int`, a string, or a list.
+    for (address, kind) in [
+        ("L1", ValueKind::Boolean),
+        ("L2", ValueKind::Boolean),
+        ("L3", ValueKind::Text),
+        ("L5", ValueKind::Text),
+        ("L6", ValueKind::Boolean),
+        ("M4", ValueKind::Boolean),
+    ] {
+        assert_eq!(cell(address).kind, kind, "{address}");
         assert!(!assumed(address), "{address}: {losses:?}");
     }
 }

@@ -927,3 +927,47 @@ fn a_joint_stored_deactivated_is_a_suppressed_joint_feature() {
         assert_eq!(legacy.suppressed, expected, "{activated}");
     }
 }
+
+/// A joint that stores `Activated` other than as one Bool value takes its
+/// suppression from `Suppressed`, with a loss.
+#[test]
+fn a_joint_flag_of_another_type_is_charged() {
+    use cadmpeg_ir::design::dimension::Dimension;
+
+    let suppressed =
+        r#"<Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>"#;
+    let count = r#"<Object name="Hinge"><Properties Count="14">"#;
+    assert!(ASSEMBLY.contains(suppressed) && ASSEMBLY.contains(count));
+    let document = ASSEMBLY
+        .replace(
+            count,
+            r#"<Object name="Hinge"><Properties Count="15">"#,
+        )
+        .replace(
+            suppressed,
+            &format!(
+                r#"{suppressed}<Property name="Activated" type="App::PropertyString"><String value="true"/></Property>"#
+            ),
+        );
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(&document)),
+            &DecodeOptions {
+                depth: DecodeDepth::Design,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    let (feature, _) = joint_feature(decoded.ir(), "Hinge");
+    assert_eq!(feature.suppressed, Some(Dimension::Literal(true)));
+    let unread = crate::loss::FreecadLossCode::FeatureJointFlagUnread.note("");
+    let charged = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == unread.code)
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(charged.len(), 1, "{:?}", decoded.report().losses);
+    assert!(charged[0].contains("Hinge"), "{charged:?}");
+}

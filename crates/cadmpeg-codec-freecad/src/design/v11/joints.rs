@@ -85,6 +85,16 @@ pub(super) fn project(
         .collect::<HashMap<_, _>>();
     let mut grouped = BTreeMap::<&str, BTreeSet<Member>>::new();
     for record in assembly.joints {
+        let flag = properties
+            .iter()
+            .any(|property| property.owner == record.object() && property.name == "Activated");
+        if flag && record.parameters().bool_value("Activated").is_none() {
+            losses.push(FreecadLossCode::FeatureJointFlagUnread.note(format!(
+                "joint {} stores Activated other than as one Bool property; its suppression \
+                 comes from Suppressed",
+                record.object()
+            )));
+        }
         let definition = products.definition(record.object()).unwrap_or(root);
         match &record.body {
             JointBody::Grounded { reference, .. } => {
