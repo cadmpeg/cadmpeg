@@ -1,4 +1,4 @@
-use super::{axistail, is_turn_block, turn_block_after_zeros, M12345};
+use super::{axistail, is_turn_block, scaled_bodies, turn_block_after_zeros, M12345};
 use crate::carchive::reader::Reader;
 use crate::carchive::reader::V;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -128,4 +128,40 @@ fn a_full_handle_block_tail_after_a_version_and_zeros_is_read_whole() {
         Ok(V::List(tail.map(V::from).to_vec()))
     );
     assert_eq!(reader.p, end);
+}
+
+/// The scale tail read from the start of `bytes`, and the position after it.
+fn read_scale_tail(bytes: &[u8]) -> (Result<(), crate::carchive::reader::Stop>, usize) {
+    let arena = DecodeArena::new();
+    let (ctx, _root) =
+        DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::desktop()).expect("context");
+    let mut reader = Reader::new(&ctx, bytes, 0, HashMap::new(), 0, None);
+    let result = scaled_bodies(&mut reader);
+    (result, reader.p)
+}
+
+#[test]
+fn a_scale_with_no_body_and_no_identifiers_ends_with_the_stream() {
+    let mut bytes = 0u16.to_le_bytes().to_vec();
+    bytes.extend(0u32.to_le_bytes());
+    assert_eq!(read_scale_tail(&bytes), (Ok(()), bytes.len()));
+}
+
+#[test]
+fn a_scale_with_no_body_before_another_object_ends_after_its_closing_bytes() {
+    let mut bytes = 0u16.to_le_bytes().to_vec();
+    bytes.extend(1u32.to_le_bytes());
+    bytes.extend(100_001u32.to_le_bytes());
+    bytes.extend([0xff; 4]);
+    bytes.extend([0; 12]);
+    let end = bytes.len();
+    bytes.extend([0xaa; 2]);
+    assert_eq!(read_scale_tail(&bytes), (Ok(()), end));
+}
+
+#[test]
+fn a_scale_with_two_bodies_stops_the_walk() {
+    let mut bytes = 2u16.to_le_bytes().to_vec();
+    bytes.extend([0; 16]);
+    assert!(read_scale_tail(&bytes).0.is_err());
 }
