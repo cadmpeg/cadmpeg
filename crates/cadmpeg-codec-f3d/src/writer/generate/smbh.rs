@@ -30,8 +30,8 @@ use super::{
     index::NativeGenerationIndex,
     native_bytes::{
         native_curve_base, native_f64, native_history_tail, native_i64, native_ident,
-        native_intcurve_base, native_point, native_record_index, native_ref, native_string,
-        native_surface_base, native_transform, native_vector,
+        native_intcurve_base, native_length_prefixed_string, native_point, native_record_index,
+        native_ref, native_string, native_surface_base, native_transform, native_vector,
     },
     native_geometry::{
         native_cacheless_procedural_curve, native_cacheless_procedural_surface, native_nurbs_curve,
@@ -1190,11 +1190,8 @@ fn encode_face_topology_smbh(
             native_record_index(surface_start, surface_position)?,
         );
         records.push(native_bool(
-            native_face_sense(
-                topology,
-                face,
-                &geometry.surfaces[surface_position].geometry,
-            ) == Sense::Reversed,
+            native_face_sense(face, &geometry.surfaces[surface_position].geometry)
+                == Sense::Reversed,
         ));
         native_face_sidedness(&mut records, topology, face);
         records.push(0x11);
@@ -1829,9 +1826,9 @@ fn encode_source_less_edges_vertices_points(
         native_f64(records, range[1]);
         native_ref(records, edge_owners.get(&edge.id).copied().unwrap_or(-1));
         native_ref(records, curve_ref);
-        let (sense, continuity) = edge_record_metadata(topology, edge, &reversed_curves)?;
+        let (sense, continuity) = edge_record_metadata(topology, edge, &reversed_curves);
         records.push(native_bool(sense == Sense::Reversed));
-        native_string(records, &continuity)?;
+        native_length_prefixed_string(records, continuity)?;
         native_tolerant_edge_tail(records, topology, edge);
         records.push(0x11);
     }
@@ -1958,20 +1955,13 @@ fn native_face_sidedness(
     }
 }
 
-fn native_face_sense(
-    topology: &NativeGenerationIndex<'_>,
-    face: &cadmpeg_ir::topology::Face,
-    surface: &SurfaceGeometry,
-) -> Sense {
-    let carrier_flipped = topology.face_sidedness.get(face.id.as_str()).map_or_else(
-        || {
-            matches!(
-                surface.solved(),
-                Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Torus(torus))
-                    if torus.minor_radius().get() < 0.0
-            )
-        },
-        |metadata| metadata.carrier_flipped,
+/// The native sense of `face` on the carrier the writer writes. The writer
+/// writes every carrier with its outward normal except a negative-minor torus.
+fn native_face_sense(face: &cadmpeg_ir::topology::Face, surface: &SurfaceGeometry) -> Sense {
+    let carrier_flipped = matches!(
+        surface.solved(),
+        Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Torus(torus))
+            if torus.minor_radius().get() < 0.0
     );
     normalized_face_sense_to_native(face.sense, carrier_flipped)
 }
@@ -2077,13 +2067,13 @@ fn native_tolerant_edge_tail(
     }
 }
 
-/// The native sense and continuity of `edge`. An edge on a curve that a
+/// The native sense and continuity token of `edge`. An edge on a curve that a
 /// forward edge also uses runs forward on that curve.
-fn edge_record_metadata(
-    topology: &NativeGenerationIndex<'_>,
+fn edge_record_metadata<'a>(
+    topology: &NativeGenerationIndex<'a>,
     edge: &cadmpeg_ir::topology::Edge,
     reversed_curves: &HashSet<&CurveId>,
-) -> Result<(Sense, String), CodecError> {
+) -> (Sense, &'a str) {
     let metadata = topology.edge_continuities.get(edge.id.as_str()).copied();
     let sense = match retained_sense(topology, edge) {
         Sense::Reversed
@@ -2095,17 +2085,8 @@ fn edge_record_metadata(
         }
         Sense::Reversed | Sense::Forward => Sense::Forward,
     };
-    let continuity = metadata.map_or_else(
-        || "unknown".to_owned(),
-        |metadata| metadata.continuity.clone(),
-    );
-    if continuity != "tangent" && continuity != "unknown" {
-        return Err(CodecError::malformed(format_args!(
-            "F3D edge {} has unsupported continuity token {continuity}",
-            edge.id
-        )));
-    }
-    Ok((sense, continuity))
+    let continuity = metadata.map_or("unknown", |metadata| metadata.continuity.as_str());
+    (sense, continuity)
 }
 
 fn apply_native_edge_owners(
@@ -2175,14 +2156,12 @@ mod tests {
     /// the neutral sense, so only the negative-minor carrier writes its reverse.
     #[test]
     fn source_less_face_on_a_negative_minor_torus_writes_the_native_sense() {
-        use super::{native_face_sense, NativeGenerationIndex};
+        use super::native_face_sense;
         use cadmpeg_ir::geometry::analytic::TorusSurface;
         use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
         use cadmpeg_ir::math::{Point3, Vector3};
         use cadmpeg_ir::topology::Sense;
 
-        let native = crate::native::F3dNative::default();
-        let index = NativeGenerationIndex::new(&native);
         let mut geometry = cadmpeg_ir::examples::unit_cube()
             .expect("unit cube fixture is admitted")
             .geometry;
@@ -2211,8 +2190,54 @@ mod tests {
                 .find(|candidate| candidate.id == surface)
                 .expect("face surface")
                 .geometry;
-            assert_eq!(native_face_sense(&index, &face, carrier), expected);
+            assert_eq!(native_face_sense(&face, carrier), expected);
         }
+    }
+
+    /// The writer writes each carrier with its outward normal, so a face whose
+    /// source carrier was reversed reads back with the sense of the neutral face.
+    #[test]
+    fn a_face_from_a_reversed_source_carrier_reads_back_with_its_sense() {
+        use crate::test_support::native_test::f3d_native_mut;
+        use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+        use cadmpeg_ir::topology::Sense;
+
+        let decoded = crate::F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_smbh())),
+                &DecodeOptions::default(),
+            )
+            .expect("source geometry is admitted");
+        let (mut target, _, _) = decoded.into_parts();
+        target.source = None;
+        let face = target.geometry.faces[0].id.clone();
+        let sense = target.geometry.faces[0].sense;
+        {
+            let mut native = f3d_native_mut(&mut target);
+            let sidedness = native
+                .face_sidedness
+                .iter_mut()
+                .find(|metadata| metadata.face == face)
+                .expect("the face has its sidedness record");
+            sidedness.carrier_flipped = true;
+            sidedness.native_sense = match sense {
+                Sense::Forward => Sense::Reversed,
+                Sense::Reversed => Sense::Forward,
+            };
+        }
+        let mut output = Vec::new();
+        write_new(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &target,
+            MissingStateForm::GeometryTrue,
+            &mut output,
+        )
+        .expect("the face writes");
+        let written = crate::F3dCodec
+            .decode(&mut Cursor::new(&output), &DecodeOptions::default())
+            .expect("the written file decodes");
+        assert_eq!(written.ir().geometry.faces.len(), 1);
+        assert_eq!(written.ir().geometry.faces[0].sense, sense);
     }
 
     fn decoded_wire(bytes: &[u8]) -> cadmpeg_ir::CadIr {

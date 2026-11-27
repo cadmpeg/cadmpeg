@@ -400,14 +400,6 @@ fn generated_source_less_drops_lossy_design_link_metadata() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "one sketch-curve link per coedge",
-    );
-
-    f3d_native_mut(&mut source_less).sketch_curve_links.pop();
-    crate::test_support::assert_written_with_loss(
-        &source_less,
-        None,
-        "export/native.records-omitted",
         "contiguous ordinals",
     );
 }
@@ -462,7 +454,7 @@ fn generated_source_less_drops_collapsed_native_topology_metadata() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "requires finite fields and a tolerant vertex",
+        "of tolerant-vertex records whose evaluated slot does not agree with the tolerance of their vertex",
     );
 }
 

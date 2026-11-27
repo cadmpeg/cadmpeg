@@ -967,6 +967,9 @@ pub(crate) enum F3dLossCode {
     /// the state that last updates the slot before the Combine has no unique
     /// earlier scope.
     FeatureCombineOperandWriterAssumed,
+    /// A Combine tool in an inserted design binds to that design's final
+    /// body in the inserting occurrence's frame.
+    FeatureCombineToolExternalFinalStateAssumed,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -2016,6 +2019,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkOrderAssumed,
         Self::FeatureCombineBodyProducerUnresolved,
         Self::FeatureCombineOperandWriterAssumed,
+        Self::FeatureCombineToolExternalFinalStateAssumed,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -3150,6 +3154,9 @@ impl F3dLossCode {
                 "feature.combine-body-producer-unresolved"
             }
             Self::FeatureCombineOperandWriterAssumed => "feature.combine-operand-writer-assumed",
+            Self::FeatureCombineToolExternalFinalStateAssumed => {
+                "feature.combine-tool-external-final-state-assumed"
+            }
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
             }
@@ -4152,6 +4159,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureCombineOperandWriterAssumed
+            | Self::FeatureCombineToolExternalFinalStateAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4929,6 +4937,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureCombineOperandWriterAssumed
+            | Self::FeatureCombineToolExternalFinalStateAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -5913,6 +5922,7 @@ mod tests {
                 "feature.reverse-normal-link-order-assumed",
                 "feature.combine-body-producer-unresolved",
                 "feature.combine-operand-writer-assumed",
+                "feature.combine-tool-external-final-state-assumed",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",

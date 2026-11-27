@@ -85,6 +85,7 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
                 asm_body_key_offset: 40,
                 asm_body_key: 0,
                 entity_suffix: 1,
+                browser_node_entity: 2,
                 visible: true,
             },
         )

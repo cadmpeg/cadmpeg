@@ -323,9 +323,7 @@ fn dropped_items_after_a_held_state_write_every_current_body() {
     let (ir, second) = with_a_second_extrude(Boolean::NewBody);
     let error = || CodecError::NotImplemented("a test failure of the design".into());
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let alone = |target: &CadIr, native: &crate::native::F3dNative, stage| {
-        writes_alone(&ctx, target, native, stage)
-    };
+    let alone = |target: &CadIr, stage| writes_alone(&ctx, target, stage);
     let mut reduction = Reduction::new(&ctx, &ir, MissingStateForm::HistoryTrue);
     reduction.prepare().expect("the document prepares");
     reduction

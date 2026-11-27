@@ -343,3 +343,67 @@ fn writer_checks_the_insertion_selected_by_a_shared_occurrence_path() {
     )
     .is_err());
 }
+
+/// The source-less Design stream writes no joint record, so a neutral joint
+/// that no native record projects is charged alone and the Design stream is
+/// written (cadir-v11.md §3.4, W2).
+#[test]
+fn writer_writes_the_design_stream_beside_a_joint_it_does_not_write() {
+    let native = crate::native::F3dNative {
+        design_parameter_scopes: vec![insert_scope(), assemble_scope()],
+        design_types: vec![assemble_type()],
+        ..Default::default()
+    };
+    let occurrence = insert_occurrence();
+    let mut target = CadIr::empty();
+    target.model.occurrences = vec![occurrence.clone()];
+    target
+        .model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition::new(
+            occurrence.prototype.clone(),
+            cadmpeg_ir::products::Storage::External(
+                cadmpeg_ir::products::ExternalDocument::default(),
+            ),
+        ));
+    crate::tree::place_top_level(&mut target.model, occurrence.id.clone());
+    target.model.assembly_joints = crate::design::assembly::project_assembly_joints_with_paths(
+        &native.design_parameter_scopes,
+        &[],
+        &crate::design::components::ComponentInserts::decide(
+            &native.design_parameter_scopes,
+            &[],
+            &[],
+        ),
+        &[],
+        &crate::design::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &[],
+            &target.model.product_definitions,
+            &target.model.occurrences,
+            &native.design_parameter_scopes,
+        ),
+    )
+    .joints;
+    assert_eq!(target.model.assembly_joints.len(), 1);
+    crate::test_support::native_test::f3d_native_mut(&mut target).design_types =
+        vec![assemble_type()];
+
+    let joint = target.model.assembly_joints[0].id.to_string();
+    let report = crate::test_support::assert_written_with_loss(
+        &target,
+        None,
+        &crate::loss::F3dLossCode::WriterJointOmitted
+            .kind()
+            .to_string(),
+        &joint,
+    );
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("of the Design stream")),
+        "{:#?}",
+        report.losses
+    );
+}
