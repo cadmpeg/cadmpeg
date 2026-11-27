@@ -1743,7 +1743,7 @@ fn a_producer_of_equal_records_joins_the_nest_of_the_consumer() {
     assert_eq!(bodies[0].state.identifier, 1);
     assert_eq!(
         allowance - ctx.retained_bytes_available(),
-        2 * cadmpeg_core::decode::u64_from_index(name_bytes)
+        3 * cadmpeg_core::decode::u64_from_index(name_bytes)
     );
 }
 

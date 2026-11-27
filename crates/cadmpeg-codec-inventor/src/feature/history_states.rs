@@ -884,8 +884,8 @@ pub(crate) fn losses(projection: &Projection) -> Vec<LossNote> {
         )));
     }
     notes.extend(body_losses(&projection.bodies.outcome));
-    for (nest, why) in &projection.bodies.unbuilt {
-        notes.push(body_given_up(nest, *why));
+    for (nest, why, feature) in &projection.bodies.unbuilt {
+        notes.push(body_given_up(nest, *why, feature));
     }
     notes
 }
@@ -894,6 +894,7 @@ pub(crate) fn losses(projection: &Projection) -> Vec<LossNote> {
 fn body_given_up(
     nest: &cadmpeg_ir::ids::HistoryBodyId,
     why: super::history_bodies::Unbuilt,
+    feature: &str,
 ) -> LossNote {
     use super::history_bodies::{Open, Unbuilt};
     use crate::loss::InventorLossCode;
@@ -922,6 +923,19 @@ fn body_given_up(
             InventorLossCode::FeatureHistoryBodyUnlinked,
             "the feature of the body is not projected",
         ),
+        Unbuilt::ResourceBounded(limit) => {
+            let code = InventorLossCode::FeatureHistoryBodyBounded;
+            return cadmpeg_ir::unknown::part::GivenUpRecord::new(
+                nest,
+                format_args!(
+                    "{}: {feature} history body: {} during {}",
+                    code.kind(),
+                    CodecError::ResourceLimit(limit),
+                    limit.operation
+                ),
+            )
+            .loss();
+        }
         Unbuilt::Bounded => (
             InventorLossCode::FeatureHistoryBodyBounded,
             "the body reached a history body resource limit",

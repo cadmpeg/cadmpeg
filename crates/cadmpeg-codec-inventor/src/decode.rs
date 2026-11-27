@@ -921,7 +921,15 @@ fn decode_container<'a>(
                         .and_then(|(start, code, why)| {
                             let chain = carrier.bytes.window().get(start..)?;
                             let offset = carrier.stream_offset(start).ok()?;
-                            Some((history_chain_part(carrier, offset, chain), code, why))
+                            let part = crate::rse::bulk_record_part(
+                                "history-chain",
+                                (&carrier.segment_token, carrier.record_ordinal),
+                                offset,
+                                chain,
+                                ArenaClass::Design,
+                            )
+                            .costing("the features have no history states");
+                            Some((part, code, why))
                         });
                 if let Some((part, code, why)) = part {
                     history_chain = Some((
@@ -1349,6 +1357,7 @@ fn decode_container<'a>(
                 "Transferred {partial_shells} Inventor shell operation(s) with wall thickness and removed-face selections; construction controls remain native."
             )));
         }
+        losses.extend(unresolved.profile_losses);
         if unresolved.profile_bodies != 0 {
             losses.push(InventorLossCode::FeatureProfileBodyUndecoded.note(format!(
                 "{} PmDc profile body record(s) did not decode; extrusions whose profiles select them keep their native profile selection.",
@@ -2006,6 +2015,7 @@ struct UnresolvedDesign {
     features: usize,
     feature_states: usize,
     profile_bodies: usize,
+    profile_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     sketch_construction: usize,
     sketch_axis_distances: usize,
     sketch_carrier_conflicts: usize,
@@ -2096,6 +2106,7 @@ fn project_design(
         features: features.unresolved_features,
         feature_states: features.unresolved_states,
         profile_bodies: profile_bodies.undecoded,
+        profile_losses: profile_bodies.bounded,
         sketch_construction: sketches.unresolved_construction,
         sketch_axis_distances: sketches.native_axis_distances,
         sketch_carrier_conflicts: sketches.native_carrier_conflicts,
@@ -2334,23 +2345,6 @@ fn carrier_part<'a>(carrier: &crate::kernel::ActiveCarrier<'a>) -> (Part<'a>, (S
             carrier.record_ordinal,
         ),
     )
-}
-
-/// The active carrier's suffix that holds the history chain as a part of the
-/// expanded bulk stream.
-fn history_chain_part<'a>(
-    carrier: &crate::kernel::ActiveCarrier<'_>,
-    offset: u64,
-    chain: &'a [u8],
-) -> Part<'a> {
-    crate::rse::bulk_record_part(
-        "history-chain",
-        (&carrier.segment_token, carrier.record_ordinal),
-        offset,
-        chain,
-        ArenaClass::Design,
-    )
-    .costing("the features have no history states")
 }
 
 /// The topology record `record` that the kernel decode of `carrier` read and

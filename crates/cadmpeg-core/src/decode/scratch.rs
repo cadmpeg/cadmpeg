@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Scratch decodes: work whose output the caller reads and drops.
+//! Independent resource accounting for optional decode evidence.
 
 use std::ops::Deref;
 
 use crate::CodecError;
 
-use super::transaction::{BudgetState, Event};
-use super::{DecodeArena, DecodeContext, ResourceLimit};
+use super::budget::DecodeBudget;
+use super::{u64_from_index, DecodeArena, DecodeContext, ResourceLimit};
 
 /// The context of work opened with [`DecodeContext::scratch`].
 ///
-/// It starts from the counters of the context that opened it and owns its
-/// arena. The bytes it retains are released when the work returns; its other
-/// charges reach the opening context.
+/// Its counters and arena belong to the evidence operation.
 #[derive(Debug)]
 pub struct ScratchContext<'a> {
     ctx: DecodeContext<'a>,
@@ -27,25 +25,23 @@ impl<'a> Deref for ScratchContext<'a> {
 }
 
 impl DecodeContext<'_> {
-    /// Runs `work`, whose output the caller reads and drops, on a
-    /// [`ScratchContext`].
+    /// Runs optional evidence work with an independent budget and arena.
     ///
-    /// The retained bytes that `work` charges are bounded by this context's
-    /// remaining retained allowance and released when it returns, so the
-    /// caller charges the bytes it keeps of the output itself. The input,
-    /// decompressed and entity charges of `work` and its address spaces
-    /// stay charged here. Trace replay checks the same temporary charges at
-    /// the new position. A bounded result requires execution at that position.
+    /// `input_bytes` is the measured length of the admitted carrier, including
+    /// expanded input. It sets the input-proportional allowances. The policy
+    /// caps further input reads. Local charges and refusals end with the work.
+    /// The caller admits any kept output separately. Owned results must refer
+    /// only to source spaces that were registered outside this operation.
     ///
     /// Returns `Ok(Err(limit))` when a resource refuses inside `work`.
-    /// The caller gives up its output and this context continues.
     ///
     /// # Errors
     ///
-    /// A resource refusal in force at entry or a non-resource error returned
-    /// by `work`.
+    /// A refusal on the parent, a parent budget or space change inside
+    /// `work`, or a non-resource error returned by `work`.
     pub fn scratch<T>(
         &self,
+        input_bytes: usize,
         work: impl for<'s> FnOnce(&ScratchContext<'s>) -> Result<T, CodecError>,
     ) -> Result<Result<T, ResourceLimit>, CodecError> {
         if let Some(limit) = self.resource_refusal() {
@@ -55,43 +51,23 @@ impl DecodeContext<'_> {
         let entry_spaces = self.derived_spaces.get();
         let arena = DecodeArena::new();
         let mut local = DecodeContext::new(&arena, &entry.policy, self.depth());
-        local.budget.restore(&entry);
-        local.derived_spaces.set(entry_spaces);
-        local.companions = self.companions;
-        if self.budget.trace.borrow().is_some() {
-            *local.budget.trace.borrow_mut() = Some(Vec::new());
-        }
+        local.budget = DecodeBudget::new(
+            entry.policy,
+            u64_from_index(input_bytes).min(entry.policy.limits.max_input_bytes),
+        );
         let scratch = ScratchContext { ctx: local };
         let result = work(&scratch);
-        let ScratchContext { ctx: local } = scratch;
-        let reached = local.budget.state();
-        let spaces = local.derived_spaces.get();
-        let limit = reached.fuse.or(match &result {
-            Err(CodecError::ResourceLimit(limit)) => Some(*limit),
-            _ => None,
-        });
-        self.budget.restore(&BudgetState {
-            retained: entry.retained,
-            depth: entry.depth,
-            fuse: None,
-            ..reached
-        });
-        self.derived_spaces.set(spaces);
-
-        if let Some(trace) = self.budget.trace.borrow_mut().as_mut() {
-            match (limit, local.budget.trace.borrow_mut().take()) {
-                (None, Some(events)) => {
-                    trace.push(Event::ScratchStart);
-                    trace.extend(events);
-                    trace.push(Event::ScratchEnd);
-                }
-                _ => trace.push(Event::ExecuteHere),
-            }
+        if let Some(limit) = self.resource_refusal() {
+            return Err(limit.into());
         }
-
-        match limit {
-            Some(limit) => Ok(Err(limit)),
-            None => result.map(Ok),
+        if self.budget.state() != entry || self.derived_spaces.get() != entry_spaces {
+            return Err(CodecError::malformed(
+                "parent resources changed during evidence work",
+            ));
+        }
+        match (scratch.resource_refusal(), result) {
+            (Some(limit), _) | (None, Err(CodecError::ResourceLimit(limit))) => Ok(Err(limit)),
+            (None, result) => result.map(Ok),
         }
     }
 }

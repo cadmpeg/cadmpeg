@@ -6,7 +6,7 @@ use super::{
     ResourceLimit, SpaceId,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct BudgetState {
     pub(super) policy: DecodePolicy,
     pub(super) input: u64,
@@ -27,9 +27,12 @@ pub(super) enum Event {
     Expand(ExpandSpec),
     Space(usize),
     Batch(Charges),
-    ScratchStart,
-    ScratchEnd,
-    ExecuteHere,
+    OptionalOutput {
+        bytes: u64,
+        entities: u64,
+        operation: &'static str,
+        refusal: Option<ResourceLimit>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -265,7 +268,6 @@ impl DecodeContext<'_> {
         *candidate.budget.trace.borrow_mut() = None;
         let mut allowance_delta = 0_i128;
         let mut exact_observation = false;
-        let mut scratch_scopes = Vec::new();
         let mut spaces = DecodeSpaceRebinding {
             old_start: 0,
             new_start: 0,
@@ -297,35 +299,12 @@ impl DecodeContext<'_> {
                     let adjusted = i128::from(remaining) + allowance_delta;
                     (adjusted >= i128::from(requested)) == (remaining >= requested)
                 }
-                Event::ScratchStart => {
-                    let state = candidate.budget.state();
-                    scratch_scopes.push((
-                        state.retained,
-                        state.depth,
-                        allowance_delta,
-                        exact_observation,
-                    ));
-                    allowance_delta = 0;
-                    exact_observation = false;
-                    true
-                }
-                Event::ScratchEnd => {
-                    let Some((retained, depth, delta, pending)) = scratch_scopes.pop() else {
-                        return false;
-                    };
-                    if exact_observation {
-                        return false;
-                    }
-                    candidate.budget.restore(&BudgetState {
-                        retained,
-                        depth,
-                        ..candidate.budget.state()
-                    });
-                    allowance_delta = delta;
-                    exact_observation = pending;
-                    true
-                }
-                Event::ExecuteHere => false,
+                Event::OptionalOutput {
+                    bytes,
+                    entities,
+                    operation,
+                    refusal,
+                } => candidate.admit_optional(bytes, entities, operation).err() == refusal,
                 Event::Expand(spec) => candidate.admit_expand(spec).is_ok(),
                 Event::Space(expected) => {
                     let Some(old_next) = expected.checked_add(1) else {
@@ -350,7 +329,7 @@ impl DecodeContext<'_> {
                 return false;
             }
         }
-        if exact_observation || !scratch_scopes.is_empty() || !rebind(&spaces) {
+        if exact_observation || !rebind(&spaces) {
             return false;
         }
         if let Some(events) = self.budget.trace.borrow_mut().as_mut() {

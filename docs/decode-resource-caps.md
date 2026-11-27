@@ -191,28 +191,27 @@ history records without historical topology, and the decode reports
 
 ## Scratch decodes
 
-`DecodeContext::scratch` runs work whose output the caller reads and drops,
-for example the decode of one ASM history state into a model from which the
-caller extracts one body. The work runs on a `ScratchContext` that starts
-from the counters of the caller and owns its arena. The retained bytes of
-the work are bounded by the remaining retained allowance of the caller and
-are released when the work returns. Its input, decompressed and entity
-charges and its address spaces stay charged. The caller charges the bytes
-that it keeps of the output: an F3D or Inventor history body charges the
-names of its body and faces as `keep history body names`.
+`DecodeContext::scratch` runs optional evidence work in a separate arena
+and resource account. The measured carrier length scales its allowances.
+The codec's work and population caps bound repeated requests. The decoder
+admits the bytes and entities of each kept result together. A refusal
+at that admission leaves the session usable.
 
-A resource refusal inside scratch gives up its output. The caller reports a
-loss: `feature.history-body-bounded` for a history body,
-`feature.base-source-bounded` for the source check of an Inventor Base
-feature, and `feature.profile-body-undecoded` for an Inventor profile body.
-`cadmpeg_asm::brep::inspect_with_header` and `inspect_with_table` take a
-`ScratchContext` for the temporary graph. The inspection reads framed records
-and uses the shell membership marks. The Model path copies the withheld and
-passthrough spans and emits the provenance records.
+An F3D or Inventor history nest admits its records and body and face names.
+An Inventor state view admits the topology, naming attributes and body keys
+that its proofs read. A profile body admits its wires and copied spline
+coefficients. An identity lookup, source key check or Loft body kind probe
+keeps a scalar result and discards the temporary graph.
 
-Trace replay checks the scratch charges and allowance observations in order.
-It releases the temporary retained bytes when the scratch ends. A trace of a
-bounded scratch requires executing the work at its composition position.
+A resource refusal gives up the affected evidence. The codec reports the
+limit on a bounded history body, Base source body, Loft result or unread
+profile body. `cadmpeg_asm::brep::inspect_with_header` and
+`inspect_with_table` read framed records and preserve the shell membership
+marks. The Model path copies withheld and passthrough spans and emits
+provenance records.
+
+Scratch work uses the same evidence allowance at every F3Z composition
+position. The whole-session trace composes the charges of the kept output.
 
 ## Scan limits
 

@@ -752,6 +752,9 @@ fn a_face_whose_surface_names_no_record_is_given_up_in_the_sab_data_stream() {
         whole.ir().geometry.bodies.len()
     );
     let edited = &result.ir().geometry;
+    assert_eq!(edited.faces.len() + 1, geometry.faces.len());
+    assert_eq!(edited.edges.len(), geometry.edges.len());
+    assert_eq!(edited.vertices.len(), geometry.vertices.len());
     assert_eq!(
         edited
             .faces

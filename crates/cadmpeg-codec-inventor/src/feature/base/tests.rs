@@ -11,9 +11,9 @@ use cadmpeg_ir::report::loss::LossKind;
 
 use crate::feature::base::{
     current_body, entry, history_candidate, inspect_source_body, reference_counts,
-    unique_link_header, wrappers,
+    unique_link_header, wrappers, SourceBody,
 };
-use crate::feature::history_views::{ResultStates, StateModel};
+use crate::feature::history_views::{ResultStates, StateLimit, StateModel};
 use crate::feature::tests::{reference, test_feature, test_header};
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeaturePropertyPayload, PmDcKernelEntityLink,
@@ -217,11 +217,10 @@ fn base_slots_require_two_distinct_surface_wrappers_and_null_tail() {
 }
 
 #[test]
-fn a_bounded_base_source_inspection_reports_the_loss() {
+fn a_base_source_inspection_contains_its_entity_limit() {
     use cadmpeg_asm::kernel_header::RefWidth;
 
     use crate::kernel::parse_carrier;
-    use crate::loss::InventorLossCode;
     use crate::test_support::history_carrier::{carrier_bytes, framed_carrier, CURRENT_BODY_KEY};
 
     let bytes = framed_carrier(&carrier_bytes(RefWidth::Eight, false));
@@ -231,19 +230,22 @@ fn a_bounded_base_source_inspection_reports_the_loss() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("input");
     let carrier =
         parse_carrier(view, &cadmpeg_ir::identity_key!("seg"), 0, 0, 18).expect("carrier");
-    let mut losses = Vec::new();
-    assert!(inspect_source_body(&ordinary, &carrier, entity, &mut losses).expect("source check"));
-    assert!(losses.is_empty());
-
+    assert!(matches!(
+        inspect_source_body(&ordinary, &carrier, entity).expect("source check"),
+        SourceBody::Present
+    ));
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 0;
     let (bounded, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input");
-    assert!(!inspect_source_body(&bounded, &carrier, entity, &mut losses).expect("source check"));
-    let [loss] = losses.as_slice() else {
-        panic!("one bounded-source loss");
+    let SourceBody::Bounded(limit) =
+        inspect_source_body(&bounded, &carrier, entity).expect("source check")
+    else {
+        panic!("source entity cap");
     };
-    assert_eq!(loss.code, InventorLossCode::FeatureBaseSourceBounded.kind());
-    assert!(loss.message.contains("Entities"), "{}", loss.message);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
     assert!(bounded.resource_refusal().is_none());
 }
 
@@ -321,7 +323,7 @@ impl ResultStates for Fixed {
 }
 
 fn holding(model: &CadIr) -> StateModel {
-    StateModel::Model(Box::new(model.clone()))
+    StateModel::Model(crate::test_support::history_carrier::state_evidence(model))
 }
 
 /// Projects the two Base features of the fixture with a final model that
@@ -438,7 +440,7 @@ fn a_state_without_a_body_of_the_result_key_stays_native_with_its_loss() {
 fn a_state_that_does_not_decode_or_passed_its_cap_stays_native_with_its_loss() {
     for outcome in [
         |_: &CadIr| StateModel::Failed,
-        |_: &CadIr| StateModel::Bounded,
+        |_: &CadIr| StateModel::Bounded(StateLimit::Work),
     ] {
         let states = Fixed {
             introduces: true,
@@ -472,7 +474,7 @@ fn a_derived_result_whose_state_does_not_decode_or_passed_its_cap_stays_native_w
         .code;
     for outcome in [
         |_: &CadIr| StateModel::Failed,
-        |_: &CadIr| StateModel::Bounded,
+        |_: &CadIr| StateModel::Bounded(StateLimit::Work),
         |_: &CadIr| StateModel::Unavailable,
     ] {
         let states = Fixed {

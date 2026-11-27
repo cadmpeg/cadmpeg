@@ -69,7 +69,7 @@ fn inspect(source: &str) -> AsmBrep {
     crate::test_support::with_service_context(bytes, |ctx| {
         let parsed = crate::sat::parse(ctx, bytes).expect("synthetic SAT stream");
         let header = parsed.header.as_kernel_header();
-        ctx.scratch(|scratch| {
+        ctx.scratch(bytes.len(), |scratch| {
             inspect_with_header(scratch, &parsed.records, Some(&header), "stream", FORMAT)
         })
         .expect("synthetic cone decodes")

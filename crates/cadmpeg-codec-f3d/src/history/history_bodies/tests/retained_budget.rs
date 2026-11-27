@@ -2,22 +2,17 @@
 
 use super::*;
 
-/// The records that the decode of a history state transfers and drops pass
-/// the retained-byte budget: the decode gives up the body, and the document
-/// keeps decoding.
 #[test]
-fn a_history_decode_past_the_retained_budget_gives_up_only_its_body() {
-    use cadmpeg_core::decode::{test_support::at_charge, ResourceDimension};
+fn a_history_body_does_not_serialize_discarded_native_records() {
+    use cadmpeg_core::decode::{test_support::charged_at, ResourceDimension};
 
     let bytes = carrier_bytes(RefWidth::Eight, true);
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = u64::MAX;
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let (bodies, losses) = at_charge(
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let (decoded, serialized) = charged_at(
         ResourceDimension::RetainedBytes,
         "serialize native record",
-        0,
         || {
             fill_roles(
                 &ctx,
@@ -28,16 +23,9 @@ fn a_history_decode_past_the_retained_budget_gives_up_only_its_body() {
                 1,
             )
         },
-    )
-    .expect("the document keeps decoding");
-    assert!(bodies.is_empty());
-    let [loss] = losses.as_slice() else {
-        panic!("one loss: {losses:?}")
-    };
-    assert_eq!(
-        loss.code,
-        F3dLossCode::FeatureHistoryBodyBounded.note("bounded").code
     );
-    assert!(loss.message.contains("RetainedBytes"), "{}", loss.message);
+    let (bodies, losses) = decoded.expect("history decode");
+    assert_eq!(bodies.len(), 1, "{losses:?}");
+    assert_eq!(serialized, 0, "the history evidence uses neutral geometry");
     assert!(ctx.resource_refusal().is_none());
 }
