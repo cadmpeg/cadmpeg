@@ -12,7 +12,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Region, RegionUnstated, Sense, Shell, Unstated};
 use cadmpeg_ir::{Exactness, StreamName};
 
-use super::{topology, BodyRecord, Brep, DroppedRecord};
+use super::{topology, BodyRecord, Brep, DroppedRecord, RegionRecord, ShellRecord};
 
 /// The ids of the faces the decode states.
 pub(super) fn stated_face_ids(out: &Brep) -> HashSet<String> {
@@ -122,7 +122,7 @@ pub(super) fn state_unbuilt_records(
         if body_new {
             super::admit_brep_entity(ctx)?;
             annotate(AnnotationKey::from(&body_id), record.offset, "00_51_body");
-            super::note_body_precision(out, &body_id, Some(record.linear_resolution));
+            note_body_precision(out, &body_id, Some(record.linear_resolution));
             out.bodies.push(Body {
                 id: body_id,
                 kind: record.kind,
@@ -145,6 +145,102 @@ pub(super) fn state_unbuilt_records(
     out.bodies.sort_by(|a, b| a.id.cmp(&b.id));
     out.annotations = annotations.build();
     Ok(())
+}
+
+/// The body records of the typed `hierarchies`, sorted by attribute.
+pub(super) fn body_records_of(hierarchies: &[crate::brep::typed::Hierarchy]) -> Vec<BodyRecord> {
+    let mut records = Vec::new();
+    for hierarchy in hierarchies {
+        let mut body_refs = Vec::new();
+        for attr in hierarchy
+            .regions
+            .iter()
+            .map(|region| region.attr)
+            .chain(hierarchy.shells.iter().map(|shell| shell.attr))
+            .chain(hierarchy.faces.iter().map(|(face, _)| *face))
+        {
+            body_refs.push(attr);
+        }
+        body_refs.sort_unstable();
+        body_refs.dedup();
+        let mut regions = Vec::new();
+        for region in &hierarchy.regions {
+            let mut shells = Vec::new();
+            for shell in hierarchy
+                .shells
+                .iter()
+                .filter(|shell| shell.refs[6] == region.attr)
+            {
+                let mut refs = Vec::new();
+                for face_attr in hierarchy
+                    .faces
+                    .iter()
+                    .filter(|(_, shell_attr)| *shell_attr == shell.attr)
+                    .map(|(face_attr, _)| *face_attr)
+                {
+                    refs.push(face_attr);
+                }
+                refs.sort_unstable();
+                refs.dedup();
+                shells.push(ShellRecord {
+                    attr: shell.attr,
+                    offset: shell.offset,
+                    refs,
+                });
+            }
+            shells.sort_by_key(|record| record.attr);
+            regions.push((
+                region.kind,
+                RegionRecord {
+                    attr: region.attr,
+                    offset: region.offset,
+                    shells,
+                },
+            ));
+        }
+        let owns_faces =
+            |record: &RegionRecord| record.shells.iter().any(|shell| !shell.refs.is_empty());
+        let body_has_material = regions
+            .iter()
+            .any(|(kind, record)| *kind == super::RegionKind::Solid || owns_faces(record));
+        // The faces of the neighbouring region's shell bound a void region that
+        // owns no faces, so that region has no neutral boundary of its own.
+        regions.retain(|(kind, record)| {
+            !body_has_material || *kind == super::RegionKind::Solid || owns_faces(record)
+        });
+        let mut regions: Vec<_> = regions.into_iter().map(|(_, record)| record).collect();
+        regions.sort_by_key(|record| record.attr);
+        records.push(BodyRecord {
+            attr: hierarchy.body.attr,
+            kind: hierarchy.body.kind,
+            linear_resolution: hierarchy.body.linear_resolution,
+            refs: body_refs,
+            offset: hierarchy.body.offset,
+            regions,
+        });
+    }
+    records.sort_by_key(|record| record.attr);
+    records
+}
+
+/// Records the linear precision of `body`, or charges its unusable resolution.
+pub(super) fn note_body_precision(out: &mut Brep, body: &BodyId, res_linear: Option<f64>) {
+    match res_linear.and_then(cadmpeg_parasolid::precision::linear_precision) {
+        Some(linear) => out.body_linear_precisions.push(linear),
+        None => {
+            let code = if res_linear.is_some() {
+                crate::loss::SldprtLossCode::BodyResolutionInvalid
+            } else {
+                crate::loss::SldprtLossCode::BodyResolutionUnread
+            };
+            out.losses.push(
+                code.note(cadmpeg_parasolid::precision::unusable_resolution_message(
+                    body.as_str(),
+                    res_linear,
+                )),
+            );
+        }
+    }
 }
 
 /// The bodies and shells of the typed `hierarchies` that the decode neither

@@ -62,8 +62,9 @@ mod grouping;
 mod prune;
 
 use grouping::{
-    chain_cut_note, first_lost_face, mark_derived_shells, shell_face_components,
-    state_unbuilt_records, stated_face_ids, unclassified_body_kind, withheld_counts,
+    body_records_of, chain_cut_note, first_lost_face, mark_derived_shells, note_body_precision,
+    shell_face_components, state_unbuilt_records, stated_face_ids, unclassified_body_kind,
+    withheld_counts,
 };
 use prune::{prune_rejected_topology, RingLoss};
 
@@ -3474,82 +3475,6 @@ fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option
     (!records.is_empty()).then_some(records)
 }
 
-/// The body records of the typed `hierarchies`, sorted by attribute.
-fn body_records_of(hierarchies: &[typed::Hierarchy]) -> Vec<BodyRecord> {
-    let mut records = Vec::new();
-    for hierarchy in hierarchies {
-        let mut body_refs = Vec::new();
-        for attr in hierarchy
-            .regions
-            .iter()
-            .map(|region| region.attr)
-            .chain(hierarchy.shells.iter().map(|shell| shell.attr))
-            .chain(hierarchy.faces.iter().map(|(face, _)| *face))
-        {
-            body_refs.push(attr);
-        }
-        body_refs.sort_unstable();
-        body_refs.dedup();
-        let mut regions = Vec::new();
-        for region in &hierarchy.regions {
-            let mut shells = Vec::new();
-            for shell in hierarchy
-                .shells
-                .iter()
-                .filter(|shell| shell.refs[6] == region.attr)
-            {
-                let mut refs = Vec::new();
-                for face_attr in hierarchy
-                    .faces
-                    .iter()
-                    .filter(|(_, shell_attr)| *shell_attr == shell.attr)
-                    .map(|(face_attr, _)| *face_attr)
-                {
-                    refs.push(face_attr);
-                }
-                refs.sort_unstable();
-                refs.dedup();
-                shells.push(ShellRecord {
-                    attr: shell.attr,
-                    offset: shell.offset,
-                    refs,
-                });
-            }
-            shells.sort_by_key(|record| record.attr);
-            regions.push((
-                region.kind,
-                RegionRecord {
-                    attr: region.attr,
-                    offset: region.offset,
-                    shells,
-                },
-            ));
-        }
-        let owns_faces =
-            |record: &RegionRecord| record.shells.iter().any(|shell| !shell.refs.is_empty());
-        let body_has_material = regions
-            .iter()
-            .any(|(kind, record)| *kind == RegionKind::Solid || owns_faces(record));
-        // The faces of the neighbouring region's shell bound a void region that
-        // owns no faces, so that region has no neutral boundary of its own.
-        regions.retain(|(kind, record)| {
-            !body_has_material || *kind == RegionKind::Solid || owns_faces(record)
-        });
-        let mut regions: Vec<_> = regions.into_iter().map(|(_, record)| record).collect();
-        regions.sort_by_key(|record| record.attr);
-        records.push(BodyRecord {
-            attr: hierarchy.body.attr,
-            kind: hierarchy.body.kind,
-            linear_resolution: hierarchy.body.linear_resolution,
-            refs: body_refs,
-            offset: hierarchy.body.offset,
-            regions,
-        });
-    }
-    records.sort_by_key(|record| record.attr);
-    records
-}
-
 fn sorted_topology_sequences(pairs: impl IntoIterator<Item = (u32, u32)>) -> Vec<(u32, u32)> {
     let mut sequences = Vec::new();
     sequences.extend(pairs);
@@ -3637,26 +3562,6 @@ fn report_withheld_ownership(
         )));
     }
     Ok(typed_face_unstated)
-}
-
-/// Records the linear precision of `body`, or charges its unusable resolution.
-fn note_body_precision(out: &mut Brep, body: &BodyId, res_linear: Option<f64>) {
-    match res_linear.and_then(cadmpeg_parasolid::precision::linear_precision) {
-        Some(linear) => out.body_linear_precisions.push(linear),
-        None => {
-            let code = if res_linear.is_some() {
-                crate::loss::SldprtLossCode::BodyResolutionInvalid
-            } else {
-                crate::loss::SldprtLossCode::BodyResolutionUnread
-            };
-            out.losses.push(
-                code.note(cadmpeg_parasolid::precision::unusable_resolution_message(
-                    body.as_str(),
-                    res_linear,
-                )),
-            );
-        }
-    }
 }
 
 fn decode_graph(
