@@ -2365,6 +2365,20 @@ fn placement_matrix_and_tail(
     placement_matrix_and_tail_with(body, at, serializer_magic, decode_rigid_matrix)
 }
 
+/// The closing of a component-path record. A stream with the current
+/// serializer magic stores either the tagged form or the plain two-reference
+/// form, so the plain form is the fallback.
+fn component_path_closing(
+    body: &[u8],
+    at: usize,
+    serializer_magic: Option<u32>,
+    decode_matrix: MatrixDecoder,
+) -> Option<ClosedPlacement> {
+    [serializer_magic, None]
+        .into_iter()
+        .find_map(|magic| placement_matrix_and_tail_with(body, at, magic, decode_matrix))
+}
+
 /// Reads a 4x4 matrix at an offset and admits or refuses its linear block.
 type MatrixDecoder = fn(&[u8], usize) -> Option<[[f64; 4]; 4]>;
 
@@ -2504,7 +2518,7 @@ pub(crate) fn component_path_pose(
             return None;
         }
         let ClosedPlacement { transform, .. } =
-            placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+            component_path_closing(body, at + 1, serializer_magic, decode_rigid_matrix)?;
         return Some(ComponentPathPose {
             carrier_record_index: View::u64_le_at(body, 7)?,
             placement_record_index,
@@ -2530,7 +2544,7 @@ pub(crate) fn component_path_pose(
         return None;
     }
     let ClosedPlacement { transform, .. } =
-        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+        component_path_closing(body, at + 1, serializer_magic, decode_rigid_matrix)?;
     Some(ComponentPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         placement_record_index,
@@ -2649,7 +2663,7 @@ pub(crate) fn contained_component_path_pose(
         return None;
     }
     let ClosedPlacement { transform, .. } =
-        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+        component_path_closing(body, at + 1, serializer_magic, decode_rigid_matrix)?;
     Some(ContainedPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         role: elements.role.to_owned(),
@@ -2820,7 +2834,7 @@ pub(crate) fn owned_component_path_pose(
         .map(|(owner, _)| typed_local_placement(owner))
         .collect::<Option<Vec<_>>>()?;
     let ClosedPlacement { transform, .. } =
-        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+        component_path_closing(body, at + 1, serializer_magic, decode_rigid_matrix)?;
     Some(OwnedPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         role: role.to_owned(),
@@ -2920,7 +2934,7 @@ pub(crate) fn local_component_path_pose(
         return None;
     }
     let ClosedPlacement { transform, .. } =
-        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+        component_path_closing(body, at + 1, serializer_magic, decode_rigid_matrix)?;
     Some(LocalComponentPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         component_record_index,
@@ -2983,9 +2997,7 @@ pub(crate) fn component_path_carrier(
         return None;
     }
     let ClosedPlacement { transform, .. } =
-        [serializer_magic, None].into_iter().find_map(|magic| {
-            placement_matrix_and_tail_with(body, at + 1, magic, decode_orthonormal_matrix)
-        })?;
+        component_path_closing(body, at + 1, serializer_magic, decode_orthonormal_matrix)?;
     Some(ComponentPathCarrier {
         carrier_record_index: View::u64_le_at(body, 7)?,
         elements,
