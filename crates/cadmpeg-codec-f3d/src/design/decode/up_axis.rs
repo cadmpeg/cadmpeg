@@ -88,12 +88,25 @@ fn pairs(bytes: &[u8], at: usize) -> Option<(Pair, Pair)> {
     ))
 }
 
-/// What one stream states: `None` where it holds no record 0, and
-/// `RecordUnreadable` where it holds one that `pairs` cannot read.
+/// Whether the record whose header starts at `at` holds the `AssetSettings`
+/// key, whole or not.
+fn holds_settings_key(bytes: &[u8], at: usize) -> bool {
+    let Some(key_at) = at.checked_add(settings::KEY) else {
+        return false;
+    };
+    let Some(key_end) = key_at.checked_add(settings::KEY_VALUE.len()) else {
+        return false;
+    };
+    bytes.get(key_at..key_end) == Some(settings::KEY_VALUE)
+}
+
+/// What one stream states: `None` where no record 0 holds the
+/// `AssetSettings` key, and `RecordUnreadable` where one holds the key but
+/// `pairs` cannot read it.
 fn read_stream(bytes: &[u8]) -> Option<UpAxisRead> {
     let offsets = IndexedRecordOffsets::build(bytes);
     let record_zero = offsets.offsets(RECORD_INDEX);
-    if record_zero.is_empty() {
+    if !record_zero.iter().any(|at| holds_settings_key(bytes, *at)) {
         return None;
     }
     Some(record_zero.iter().find_map(|at| pairs(bytes, *at)).map_or(
@@ -155,8 +168,8 @@ pub(crate) fn apply(read: UpAxisRead, up_axis: &mut Option<UpAxis>, losses: &mut
         UpAxisRead::Stated(axis) => *up_axis = Some(axis),
         UpAxisRead::RecordUnreadable => {
             losses.push(F3dLossCode::SettingsUpAxisRecordUnreadable.note(
-                "record 0 is not a whole AssetSettings record of the 494-byte form with the \
-             AssetSettings key, so the document states no up axis",
+                "record 0 holds the AssetSettings key but is not a whole record of the \
+                 494-byte form, so the document states no up axis",
             ));
         }
         UpAxisRead::Unrecognized {
