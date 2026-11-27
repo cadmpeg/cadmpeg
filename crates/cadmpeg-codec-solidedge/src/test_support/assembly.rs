@@ -95,12 +95,52 @@ fn occurrence_body(spec: &OccurrenceSpec) -> Vec<u8> {
     body
 }
 
+/// Bytes before the count of the visibility table (§9.4).
+const VISIBILITY_HEADER_LEN: usize = 104;
+/// The first word of a hidden-occurrence record (§9.4).
+const HIDDEN_RECORD_WORD: u32 = 0x4000_0002;
+
+/// The `IOT/Default` stream that states `hidden` as the hidden occurrences.
+pub(crate) fn visibility_stream(hidden: &[u32]) -> Vec<u8> {
+    let mut bytes = vec![0_u8; VISIBILITY_HEADER_LEN];
+    bytes.extend_from_slice(&u32::try_from(hidden.len()).unwrap().to_le_bytes());
+    for id in hidden {
+        bytes.extend_from_slice(&HIDDEN_RECORD_WORD.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&id.to_le_bytes());
+    }
+    bytes
+}
+
 /// A document whose references collection lists `listed` and that holds the
-/// occurrence objects `occurrences` and the sites `sites`.
+/// occurrence objects `occurrences` and the sites `sites`. It has no
+/// visibility table.
 pub(crate) fn assembly_document(
     listed: &[u32],
     occurrences: &[OccurrenceSpec],
     sites: &[SiteSpec<'_>],
+) -> Vec<u8> {
+    assembly_document_with_table(listed, occurrences, sites, None)
+}
+
+/// As [`assembly_document`], with a visibility table that hides the objects
+/// `hidden`.
+pub(crate) fn assembly_document_with_visibility(
+    listed: &[u32],
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    hidden: &[u32],
+) -> Vec<u8> {
+    assembly_document_with_table(listed, occurrences, sites, Some(visibility_stream(hidden)))
+}
+
+/// As [`assembly_document`], with the bytes `table` as the `IOT/Default`
+/// stream, or no such stream for `None`.
+pub(crate) fn assembly_document_with_table(
+    listed: &[u32],
+    occurrences: &[OccurrenceSpec],
+    sites: &[SiteSpec<'_>],
+    table: Option<Vec<u8>>,
 ) -> Vec<u8> {
     let mut collection = vec![0_u8; 12];
     put_words(&mut collection, 16, &[u32::try_from(listed.len()).unwrap()]);
@@ -145,6 +185,9 @@ pub(crate) fn assembly_document(
         ),
     ];
     files.extend(streams);
+    if let Some(table) = table {
+        files.push(("IOT/Default".to_owned(), table));
+    }
     let borrowed: Vec<(&str, Vec<u8>)> = files
         .iter()
         .map(|(name, bytes)| (name.as_str(), bytes.clone()))

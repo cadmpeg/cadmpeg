@@ -255,6 +255,13 @@ little-endian `u32` values.
 | entries | `M` pairs of `0` and an object identifier |
 | final word | |
 
+The final word does not depend on the kind of any feature. In a document
+where no feature is suppressed, it equals the number
+of feature-tree items that are not feature-tree folders, plus one. A mirror
+copy and a pattern each count once, as do a swept, lofted, revolved or
+sheet-metal feature. A feature-tree folder adds an entry and does not change
+the word. Suppression of a feature can raise the word above this value. The word is not a feature count.
+
 One more `u32` can follow the final word. The object then ends. The first
 three entries are the three base reference planes, of class
 `ReferencePlaneObject`. The other `M` − 3 entries are the feature-tree
@@ -363,6 +370,7 @@ as `u32` object identifiers after the end of its function name (§4.2):
 | 72 | the profile (§5.3) |
 | 100 | the extent kind |
 | 128 | the side |
+| 156 | the second side word (§6.2) |
 | 184 | the depth of an extruded feature, or the axis of a revolved feature |
 | 212 | the sweep angle of a revolved feature |
 
@@ -380,6 +388,10 @@ profile normal `A` (§5.1), value `1` extends it against the normal, and
 value `3` extends it to both sides of the profile plane. For a revolved
 feature, value `2` sweeps towards the profile normal and value `1` away
 from it.
+
+The second side word is a `Double Value Object`. The first feature of a
+document stores no object in this slot. A later extruded feature stores the
+object.
 
 ### 6.3 Depth
 
@@ -454,7 +466,17 @@ Its object identifiers after the end of its function name are:
 
 `k` runs from `0` to `n` − 1. Set kind `1` is a constant radius. The count
 `n` is the number of consecutive `CLSID_JMTopologyProxy` identifiers from
-72 bytes after the name.
+72 bytes after the name. A round of the three edges that meet at one corner
+holds three sets of kind `1`, one for each edge, each with its own radius.
+
+Set kind `2` is a variable radius. In a round of one set of kind `2`, the
+radius slot of the set holds `0`. The vertex proxies follow: `m` consecutive
+`CLSID_JMTopologyProxy` identifiers, 20 bytes apart, start 168 bytes after the
+name. The `m` radii follow: `m` `CLSID_JDim` identifiers, 20 bytes apart, start
+12 bytes after the last vertex proxy. Vertex `j` and radius `j` form one
+station. A vertex proxy (§7.6) holds an end point of the edge of the set. The
+station is at the start of the edge when the vertex is the start point of the
+edge, and at its end when the vertex is the end point.
 
 ### 7.4 Chamfers
 
@@ -487,12 +509,28 @@ these object identifiers after the end of its function name:
 Type `4` hollows the body inward by the thickness, with the open faces
 removed.
 
-### 7.6 Edge selections
+### 7.6 Topology proxies
 
-A `CLSID_JMTopologyProxy` object of 559 bytes selects one straight edge. Its
-`f64` values at object offsets 121, 129 and 137 are the edge start point,
-the `f64` values at offsets 145, 153 and 161 are the unit edge direction,
-and the `f64` at offset 177 is the edge length. Lengths are metres.
+A `CLSID_JMTopologyProxy` object holds the geometry of the entity it selects,
+in the part frame and in metres. The geometry class identifier is the first
+16-byte sequence in the object whose last ten bytes are `CE 11 9A 5E 08 00 36
+9B 41 02`. The geometry record starts at the byte after it. The first six
+bytes of the identifier give the geometry class:
+
+| First six bytes | Selected entity | Geometry record |
+| --- | --- | --- |
+| `74 0C 54 25 15 3A` | straight edge | `u8` `3`, `f64` start point (3), `f64` unit direction (3), `f64` `0`, `f64` length |
+| `76 E3 FE 7C 16 3A` | planar face | `u8` `14`, `f64` point (3), `f64` unit normal (3), `f64` unit vector (3) |
+| `72 C7 D4 1D 15 3A` | vertex | `f64` point (3) |
+| `92 DA 66 66 16 3A` | circular edge | `u8` `15`, `f64` center (3), `f64` unit axis (3) |
+
+The end point of a straight edge is the start point plus the length times the
+direction. The unit normal of a planar face points out of the material.
+
+A proxy of 559 bytes that selects a straight edge holds the geometry class
+identifier at object offset 104, so that its geometry record starts at offset
+120 and the edge start point, the unit direction and the length are at object
+offsets 121, 145 and 177.
 
 ## 8. Patterns and mirrors
 
@@ -597,6 +635,30 @@ header, then a file moniker at offset 12:
 A second file moniker of the same layout follows in the stream. Its up-level
 count is `1` and its path is relative to the folder of the assembly
 document.
+
+### 9.4 Occurrence visibility
+
+The stream `IOT/Default` of an assembly states which occurrences are hidden.
+It has `108 + 12 m` bytes, where `m` is the number of hidden occurrences. The
+first 104 bytes are a header that states no visibility. The `u32` `m` is at
+offset 104. `m` records of 12 bytes follow, from offset 108:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` `0x40000002` |
+| 4 | `u32` `0` |
+| 8 | `u32` identifier of a hidden `CLSID_JAsmReference` object (§9.2) |
+
+An occurrence is hidden if and only if a record names its object. The records
+are in the order of the occurrence list (§9.1). An assembly with no hidden
+occurrence has `m` `0`. The stream `Preview/Structure/IOT` has the header of
+16 bytes, a `u32` occurrence count at offset 16, and from offset 20 one record of
+20 bytes per occurrence: a `u32` flag word, a `u32`, the `u32` identifier of
+the `CLSID_JAsmReference` object at offset 8, `u32` `0x80000027`, and a `u32`
+sequence number. Bit `0x02` of the flag word is set for a hidden occurrence and
+clear for a shown one. Hiding an occurrence does not change its
+`CLSID_JAsmReference` object, `JAsmRefAttr`, `JSitesList` or `PSMroots`. The
+stream `JVisibleData` does not state visibility.
 
 ## 10. Sheet metal
 
