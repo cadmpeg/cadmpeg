@@ -40,13 +40,13 @@
 
 **Need.** A part with a known edge length saved under each option, with the displayed value of that length.
 
-### DR-1016. Feature navigator final word
+### DR-1016. Feature navigator final word after unsuppression
 
-**Question.** What does the final word of the feature navigator object count?
+**Question.** How much does an unsuppression add to the final word?
 
-**Known.** For `n` listed features the word is `n` + 1 in most documents, `n` + 2 with a swept protrusion, and `n` with a lofted protrusion or a base tab followed by a flange.
+**Known.** Suppress, unsuppress and suppress again on one feature store a word that rises at each step. The first suppression adds the number of later non-folder items (§4.1).
 
-**Need.** Documents that differ in one feature of each kind.
+**Need.** The same three steps on features with other counts of later items, to separate the added amount from the later-item count and from `n`.
 
 ### DR-1017. Group feature kind and feature operands
 

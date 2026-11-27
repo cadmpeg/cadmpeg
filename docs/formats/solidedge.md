@@ -255,6 +255,20 @@ little-endian `u32` values.
 | entries | `M` pairs of `0` and an object identifier |
 | final word | |
 
+The final word does not depend on the kind of any feature. Let `n` be the
+number of feature-tree items that are not feature-tree folders. A mirror copy
+and a pattern each count once, as do a swept, lofted, revolved or sheet-metal
+feature. A feature-tree folder adds an entry and does not change `n`. In a
+document with no suppressed feature, no failed feature and no earlier
+unsuppression, the word is `n` + 1. Each suppressed feature adds the number of
+non-folder items that follow it in the feature-tree order, including a mirror
+copy that failed because its source is suppressed. Each feature whose recompute
+failed subtracts one. Unsuppressing a feature does not restore the word: the
+word of a document with no suppressed feature stays above `n` + 1 after an
+unsuppression, and suppressing the same feature again adds to it. A SaveAs
+sequence and a save in place after the same actions store the same word.
+The word is not a feature count, and the reader does not use it.
+
 One more `u32` can follow the final word. The object then ends. The first
 three entries are the three base reference planes, of class
 `ReferencePlaneObject`. The other `M` − 3 entries are the feature-tree
