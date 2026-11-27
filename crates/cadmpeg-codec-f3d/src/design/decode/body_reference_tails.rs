@@ -23,6 +23,21 @@ const BASE_GUID: &str = "6144EA59-3ACA-4172-9F14-A6531E94D69B";
 pub(crate) struct DecodedTails {
     pub(crate) records: Vec<DesignBodyReferenceTail>,
     pub(crate) unparsed: usize,
+    /// The body browser nodes that the second reference run of each tail
+    /// names, for tails whose every second reference names one.
+    pub(crate) nodes: Vec<TailBodyNodes>,
+}
+
+/// The body browser nodes that the second reference run of one body-reference
+/// tail names, in run order. Node `n` is the record that the `n`th second
+/// reference of the tail targets.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TailBodyNodes {
+    /// Identity of the tail record.
+    pub(crate) tail_id: String,
+    /// Record index of the tail.
+    pub(crate) tail_record_index: u64,
+    pub(crate) nodes: Vec<DesignCombineBodyNode>,
 }
 
 fn reference(view: &mut View<'_>) -> Option<()> {
@@ -166,6 +181,7 @@ pub(crate) fn decode(
     let mut result = DecodedTails {
         records: Vec::new(),
         unparsed: 0,
+        nodes: Vec::new(),
     };
     for entry in &scan.entries {
         let Some(prefix_name) = entry.name.strip_suffix("MetaStream.dat") else {
@@ -246,11 +262,17 @@ pub(crate) fn decode(
                     first_references: references(ctx, root, fields.first)?,
                     second_count_offset: fields.second.count.offset,
                     second_references: references(ctx, root, fields.second)?,
-                    second_body_nodes,
                     extra_zero: fields.extra_zero,
                     trailing_form: fields.trailing,
                 })
                 .map_err(CodecError::Malformed)?;
+                if !second_body_nodes.is_empty() {
+                    result.nodes.push(TailBodyNodes {
+                        tail_id: record.id.clone(),
+                        tail_record_index: record.record_index,
+                        nodes: second_body_nodes,
+                    });
+                }
                 result.records.push(record);
             }
         }

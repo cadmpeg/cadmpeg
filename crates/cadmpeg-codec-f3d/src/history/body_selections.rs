@@ -36,9 +36,8 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) shells: &'a [cadmpeg_ir::topology::Shell],
     /// Neutral shell faces.
     pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
-    /// Whole-body reference tails that body groups name as members.
-    pub(crate) body_reference_tails:
-        &'a [crate::records::body_reference_tail::DesignBodyReferenceTail],
+    /// The body browser nodes that the whole-body reference tails of body groups name.
+    pub(crate) body_tail_nodes: &'a [crate::design::decode::body_reference_tails::TailBodyNodes],
     /// Design body-map pairs that resolve body entity suffixes.
     pub(crate) body_bindings: &'a [crate::records::bodies::DesignBodyBinding],
 }

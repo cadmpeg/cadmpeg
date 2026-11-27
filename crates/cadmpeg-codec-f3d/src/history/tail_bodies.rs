@@ -2,7 +2,9 @@
 //! Body selections whose group members are whole-body reference tails.
 
 use super::body_selections::FeatureBodySelectionInputs;
-use super::history_states::unique_history_state_pair;
+use super::face_resolution::historical_brep_source;
+use super::history_states::{history_state_pair, transition_or_header_previous_state_id};
+use crate::history_records::AsmHistory;
 use crate::records::feature::combine::DesignCombineBodyNode;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::extrude_selection::DesignOperandRole;
@@ -33,27 +35,97 @@ fn group_nodes(
     }
     let mut nodes = Vec::new();
     for member in group.members() {
-        let mut tails = inputs.body_reference_tails.iter().filter(|tail| {
-            tail.record_index == u64::from(member.value)
-                && crate::ids::native_stream(&tail.id) == Some(stream)
+        let mut tails = inputs.body_tail_nodes.iter().filter(|tail| {
+            tail.tail_record_index == u64::from(member.value)
+                && crate::ids::native_stream(&tail.tail_id) == Some(stream)
         });
         let tail = tails.next()?;
-        if tails.next().is_some() || tail.second_body_nodes.is_empty() {
+        if tails.next().is_some() || tail.nodes.is_empty() {
             return None;
         }
-        nodes.extend(tail.second_body_nodes.iter().copied());
+        nodes.extend(tail.nodes.iter().copied());
     }
     Some((group.id.clone(), nodes))
+}
+
+/// The history that `scope` is bound to.
+fn bound_history<'a>(
+    scope: &DesignParameterScope,
+    inputs: &FeatureBodySelectionInputs<'a>,
+) -> Option<&'a AsmHistory> {
+    let bound = inputs.scope_histories.get(&scope.id)?;
+    let mut histories = inputs
+        .histories
+        .iter()
+        .filter(|history| history.id == *bound);
+    let history = histories.next()?;
+    histories.next().is_none().then_some(history)
+}
+
+/// Whether `ancestor` is `state_id` or a state that the predecessor links of
+/// `history` reach from it.
+fn state_reaches(history: &AsmHistory, state_id: i64, ancestor: i64) -> bool {
+    let mut current = state_id;
+    for _ in 0..=history.states().len() {
+        if current == ancestor {
+            return true;
+        }
+        let mut states = history
+            .states()
+            .iter()
+            .filter(|state| state.state_id == current);
+        let (Some(state), None) = (states.next(), states.next()) else {
+            return false;
+        };
+        match transition_or_header_previous_state_id(history, state) {
+            Some(previous) => current = previous,
+            None => return false,
+        }
+    }
+    false
+}
+
+/// The ordinal of the solved body that the body-map pair of `node` names, as
+/// the number of its `brep:entity#` identity. `Ok(None)` when the node's body
+/// has no solved body. `Err` when the pair names another BREP blob than
+/// `history` or its identity carries no number.
+fn node_body_ordinal(
+    node: DesignCombineBodyNode,
+    stream: &str,
+    history: &AsmHistory,
+    inputs: &FeatureBodySelectionInputs<'_>,
+) -> Result<Option<i64>, ()> {
+    let mut pairs = inputs.body_bindings.iter().filter(|pair| {
+        pair.entity_suffix == u64::from(node.body_entity_suffix)
+            && crate::ids::native_stream(pair.id()) == Some(stream)
+    });
+    let (Some(pair), None) = (pairs.next(), pairs.next()) else {
+        return Ok(None);
+    };
+    let Some(body) = pair.body.as_ref() else {
+        return Ok(None);
+    };
+    if historical_brep_source(&history.id) != pair.blob_name().strip_prefix("BREP.") {
+        return Err(());
+    }
+    body.as_str()
+        .rsplit_once("brep:entity#")
+        .and_then(|(_, number)| number.parse().ok())
+        .map(Some)
+        .ok_or(())
 }
 
 /// Bind a native body group to the history bodies that its tail nodes name in
 /// the preceding history state.
 ///
 /// A node names the body that the transition into the history state of its
-/// creating scope inserts. The slot is the body of the preceding state when
-/// the creating scope reads the history of `scope`, its state is unique, and
-/// that state inserts exactly one body that the preceding state holds. The
-/// selection binds when every node names a distinct slot.
+/// creating scope inserts. The consuming scope and the creating scope are
+/// bound to one history, and the creating state is the preceding state of the
+/// consuming scope or one of its ancestors. A transition that inserts one body
+/// supplies it. A transition that inserts several bodies supplies the body
+/// whose slot is the ordinal of the node's solved body. The slot must be one
+/// that the preceding state holds, and a solved body of the node must agree
+/// with the slot. The selection binds when every node names a distinct slot.
 pub(super) fn bind_tail_history_bodies(
     selection: &mut BodySelection,
     feature_id: &FeatureId,
@@ -73,8 +145,10 @@ pub(super) fn bind_tail_history_bodies(
     let Some(state_id) = scope.history_state_id() else {
         return;
     };
-    let Some((history, _, previous)) =
-        unique_history_state_pair(inputs.histories, state_id, previous_state_id)
+    let Some(history) = bound_history(scope, inputs) else {
+        return;
+    };
+    let Some((_, _, previous)) = history_state_pair(history, state_id, previous_state_id, false)
     else {
         return;
     };
@@ -90,16 +164,15 @@ pub(super) fn bind_tail_history_bodies(
         let (Some(creator), None) = (creators.next(), creators.next()) else {
             return;
         };
-        if inputs
-            .scope_histories
-            .get(&creator.id)
-            .is_some_and(|bound| *bound != history.id)
-        {
+        if inputs.scope_histories.get(&creator.id) != Some(&history.id) {
             return;
         }
         let Some(creator_state) = creator.history_state_id() else {
             return;
         };
+        if !state_reaches(history, previous_state_id, creator_state) {
+            return;
+        }
         let mut states = history
             .states()
             .iter()
@@ -110,18 +183,19 @@ pub(super) fn bind_tail_history_bodies(
         let inserted = state.transition.as_ref().map_or(&[][..], |transition| {
             &transition.topology.bodies.inserted[..]
         });
-        let slot = match inserted {
-            [slot] => slot,
-            [_, _, ..] => {
-                let Some(ordinal) = node_body_ordinal(node, stream, &history.id, inputs) else {
-                    return;
-                };
+        let Ok(ordinal) = node_body_ordinal(node, stream, history, inputs) else {
+            return;
+        };
+        let slot = match (inserted, ordinal) {
+            ([slot], None) => slot,
+            ([slot], Some(ordinal)) if *slot == ordinal => slot,
+            ([_, _, ..], Some(ordinal)) => {
                 let Some(slot) = inserted.iter().find(|slot| **slot == ordinal) else {
                     return;
                 };
                 slot
             }
-            [] => return,
+            _ => return,
         };
         if !input.bodies.contains(slot) || slots.contains(slot) {
             return;
@@ -140,39 +214,9 @@ pub(super) fn bind_tail_history_bodies(
     }
 }
 
-/// The body slot that a browser node names when its creating transition
-/// inserts several bodies: the ordinal of the node's solved body in the BREP
-/// blob of the history. The ordinal is the number of the solved body's
-/// `brep:entity#` identity. The node's body-map pair must name the blob of
-/// the history.
-fn node_body_ordinal(
-    node: DesignCombineBodyNode,
-    stream: &str,
-    history_id: &str,
-    inputs: &FeatureBodySelectionInputs<'_>,
-) -> Option<i64> {
-    let mut pairs = inputs.body_bindings.iter().filter(|pair| {
-        pair.entity_suffix == u64::from(node.body_entity_suffix)
-            && crate::ids::native_stream(pair.id()) == Some(stream)
-    });
-    let (Some(pair), None) = (pairs.next(), pairs.next()) else {
-        return None;
-    };
-    if !history_id.contains(pair.blob_name()) {
-        return None;
-    }
-    pair.body
-        .as_ref()?
-        .as_str()
-        .rsplit_once("brep:entity#")?
-        .1
-        .parse()
-        .ok()
-}
-
 /// Bind a native body group to the solved bodies of the Design body-map pairs
 /// that its tail nodes name. Every node names one pair of its stream whose
-/// body is solved and hidden in the model, and no two nodes name one body.
+/// body is solved, and no two nodes name one body.
 pub(super) fn bind_tail_model_bodies(
     selection: &mut BodySelection,
     scope: &DesignParameterScope,
@@ -199,15 +243,6 @@ pub(super) fn bind_tail_model_bodies(
         let Some(body) = pair.body.clone() else {
             return;
         };
-        // A removed body stays in its BREP blob with its model body hidden.
-        // A visible body is not shown to be the removed body.
-        if !inputs
-            .bodies
-            .iter()
-            .any(|candidate| candidate.id == body && candidate.visible == Some(false))
-        {
-            return;
-        }
         bodies.push(body);
     }
     if let Ok(bodies) = DistinctMembers::try_from(bodies) {

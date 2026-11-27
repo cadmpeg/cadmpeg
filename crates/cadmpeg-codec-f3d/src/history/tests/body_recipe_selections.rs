@@ -185,7 +185,7 @@ fn bind_direct(native_set: bool) -> BodySelection {
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
-        body_reference_tails: &[],
+        body_tail_nodes: &[],
         body_bindings: &[],
     };
     super::super::body_selections::bind_direct_body_recipe_body_selection(
@@ -332,7 +332,7 @@ fn bind_single_native_design_record(
         regions,
         shells,
         faces,
-        body_reference_tails: &[],
+        body_tail_nodes: &[],
         body_bindings: &[],
     };
     super::super::body_selections::bind_direct_body_recipe_body_selection(

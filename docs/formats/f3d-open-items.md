@@ -4242,3 +4242,11 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 **Need.** A mesh import saved by Fusion 2706.1.17, and a `MeshTessellate` feature saved by an earlier Fusion version.
 
 **Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
+
+### DR-1074. Visible bodies named by Remove Body scopes
+
+**Question.** Why does a solved body that a `RemoveBody` scope names stay visible in the BREP blob of the design?
+
+**Known.** A `RemoveBody` scope stores no history state. The second reference run of the reference tail of its body group names body browser nodes, and the body-map pair of each node entity suffix has a solved body. In one design with 41 such nodes, 24 solved bodies have a body-visibility record that hides them and 17 have no visibility record.
+
+**Need.** A saved design in which a `RemoveBody` removes a body that no later feature restores, with the final BREP and its body-visibility records, and a design in which the removed body is absent from the final BREP.

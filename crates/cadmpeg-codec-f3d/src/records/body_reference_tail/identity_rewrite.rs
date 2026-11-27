@@ -3,4 +3,4 @@
 
 use super::{BodyTailReference, DesignBodyReferenceTail};
 rewrite_native_record!(BodyTailReference, []; {offset, encoding});
-rewrite_native_record!(DesignBodyReferenceTail, []; {id, record_index, byte_offset, serialization_form, first_count_offset, first_references, second_count_offset, second_references, second_body_nodes, extra_zero, trailing_form});
+rewrite_native_record!(DesignBodyReferenceTail, []; {id, record_index, byte_offset, serialization_form, first_count_offset, first_references, second_count_offset, second_references, extra_zero, trailing_form});

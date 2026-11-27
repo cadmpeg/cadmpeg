@@ -218,7 +218,7 @@ fn combine_case(
         regions: &[],
         shells: &[],
         faces: &[],
-        body_reference_tails: &[],
+        body_tail_nodes: &[],
         body_bindings: &[],
     };
     let mut losses = Vec::new();

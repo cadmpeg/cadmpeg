@@ -94,9 +94,6 @@ pub(crate) struct DesignBodyReferenceTail {
     pub(crate) first_references: Vec<BodyTailReference>,
     pub(crate) second_count_offset: u64,
     pub(crate) second_references: Vec<BodyTailReference>,
-    /// The body browser node that each second reference names. Empty unless
-    /// every second reference names such a node.
-    pub(crate) second_body_nodes: Vec<crate::records::feature::combine::DesignCombineBodyNode>,
     pub(crate) extra_zero: Option<Located<u32>>,
     pub(crate) trailing_form: Located<u32>,
 }
@@ -112,8 +109,6 @@ pub(crate) struct DesignBodyReferenceTailWire {
     pub(crate) first_references: Vec<BodyTailReference>,
     pub(crate) second_count_offset: u64,
     pub(crate) second_references: Vec<BodyTailReference>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) second_body_nodes: Vec<crate::records::feature::combine::DesignCombineBodyNode>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -165,11 +160,6 @@ impl TryFrom<DesignBodyReferenceTailWire> for DesignBodyReferenceTail {
         {
             return Err("body-tail trailing form disagrees with its frame".into());
         }
-        if !wire.second_body_nodes.is_empty()
-            && wire.second_body_nodes.len() != wire.second_references.len()
-        {
-            return Err("body-tail body nodes disagree with the second reference run".into());
-        }
         Ok(Self {
             id: wire.id,
             record_index: wire.record_index,
@@ -179,7 +169,6 @@ impl TryFrom<DesignBodyReferenceTailWire> for DesignBodyReferenceTail {
             first_references: wire.first_references,
             second_count_offset: wire.second_count_offset,
             second_references: wire.second_references,
-            second_body_nodes: wire.second_body_nodes,
             extra_zero: wire.extra_zero,
             trailing_form: wire.trailing_form,
         })
@@ -197,7 +186,6 @@ impl From<DesignBodyReferenceTail> for DesignBodyReferenceTailWire {
             first_references: value.first_references,
             second_count_offset: value.second_count_offset,
             second_references: value.second_references,
-            second_body_nodes: value.second_body_nodes,
             extra_zero: value.extra_zero,
             trailing_form: value.trailing_form,
         }

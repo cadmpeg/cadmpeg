@@ -158,7 +158,7 @@ fn move_body_selection_uses_unique_owning_history() {
         regions: &[],
         shells: &[],
         faces: &[],
-        body_reference_tails: &[],
+        body_tail_nodes: &[],
         body_bindings: &[],
     };
     let losses = bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
@@ -258,7 +258,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
         regions: &[],
         shells: &[],
         faces: &[],
-        body_reference_tails: &[],
+        body_tail_nodes: &[],
         body_bindings: &[],
     };
     crate::history::pattern_bodies::bind_pattern_body_selections(
@@ -496,7 +496,7 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
         regions: &[],
         shells: &[],
         faces: &[],
-        body_reference_tails: &[],
+        body_tail_nodes: &[],
         body_bindings: &[],
     };
     crate::history::pattern_bodies::bind_pattern_body_selections(
@@ -649,7 +649,10 @@ fn generated_case_in(
 }
 
 /// One state of a test history: `state_id` holds the body slots `bodies`.
-fn history_state(state_id: i64, bodies: Vec<i64>) -> crate::test_support::history::State {
+pub(super) fn history_state(
+    state_id: i64,
+    bodies: Vec<i64>,
+) -> crate::test_support::history::State {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
 
     let versions = bodies
@@ -846,7 +849,7 @@ fn generated_selection_in_state(
         regions: &[],
         shells: &[],
         faces: &[],
-        body_reference_tails: &[],
+        body_tail_nodes: &[],
         body_bindings: &[],
     };
     let mut losses = Vec::new();
@@ -1548,7 +1551,7 @@ fn assert_seed_with_updated_entity_stays_historical(
         regions: &[],
         shells: &[],
         faces: &[],
-        body_reference_tails: &[],
+        body_tail_nodes: &[],
         body_bindings: &[],
     };
     crate::history::bind_generated_body_selections(
