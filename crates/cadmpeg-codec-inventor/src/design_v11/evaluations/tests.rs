@@ -210,7 +210,10 @@ fn a_current_state_that_differs_from_the_current_geometry_is_charged() {
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}");
     };
-    assert_eq!(loss.code.local_code(), "feature.history-state-unplaced");
+    assert_eq!(
+        loss.code.local_code(),
+        InventorLossCode::FeatureHistoryStateUnplaced.code()
+    );
     assert!(
         loss.message
             .ends_with("the state differs from the current geometry."),
