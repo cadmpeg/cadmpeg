@@ -89,3 +89,42 @@ fn an_unreadable_design_metastream_keeps_the_table_and_names_its_own_entry() {
         )]
     );
 }
+
+/// The occurrence binding and the Design decode admit an occurrence header by
+/// its class tag and u32 record index. A nonzero byte after that index gives
+/// up no entry.
+#[test]
+fn an_occurrence_header_admitted_by_the_design_decode_gives_up_no_entry() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let mut placement = super::occurrence_record_with_serializer_magic(
+        role,
+        10,
+        &[1],
+        None,
+        Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
+    );
+    placement[4..7].copy_from_slice(b"256");
+    placement[11] = 1;
+    let meta = super::design_metastream_with_records(
+        &[(
+            super::super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+            "",
+            2,
+            "Component",
+            &[10],
+        )],
+        &[(10, 0)],
+    );
+    let document = super::document_with_streams(role, &meta, &placement);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&document, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut unread = Vec::new();
+    let table = super::super::decode(&ctx, &scan, &mut unread)
+        .expect("the table decodes")
+        .expect("the document stores a table");
+    assert_eq!(table.references.len(), 1);
+    assert!(unread.is_empty());
+}

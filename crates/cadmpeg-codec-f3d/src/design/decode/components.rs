@@ -479,17 +479,11 @@ fn occurrence_frames(
         let Some(&ordinal) = placement_entities.get(&frame.entity_id) else {
             continue;
         };
-        let header = &bytes[frame.start..frame.member_end];
-        let parsed_header = lp_ascii_filtered_view(header, 0, 3..=3, u8::is_ascii_digit);
-        let class_matches = parsed_header
-            .and_then(|(tag, _)| tag.parse::<usize>().ok())
-            .and_then(|tag| tag.checked_sub(256))
-            == Some(ordinal);
-        let entity_matches = parsed_header
-            .and_then(|(_, after_tag)| View::u32_le_at(header, after_tag))
-            .map(u64::from)
-            == Some(frame.entity_id);
-        if !class_matches || !entity_matches {
+        if !crate::metastream::indexed_header_selects(
+            &bytes[frame.start..frame.member_end],
+            ordinal,
+            frame.entity_id,
+        ) {
             return Err(CodecError::malformed(
                 "F3D local occurrence header disagrees with its registered primary index",
             ));

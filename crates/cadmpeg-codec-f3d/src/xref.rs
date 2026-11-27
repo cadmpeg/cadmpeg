@@ -1408,11 +1408,7 @@ fn typed_records(
                 "F3D {module} record index is outside its BulkStream"
             ))
         })?;
-        let class_matches = lp_ascii_strict(header, 0, 3..=3)
-            .and_then(|(tag, _)| tag.parse::<usize>().ok())
-            .and_then(|tag| tag.checked_sub(256))
-            == Some(ordinal);
-        if !class_matches || View::u64_le_at(header, 7) != Some(frame.entity_id) {
+        if !crate::metastream::indexed_header_selects(header, ordinal, frame.entity_id) {
             return Err(CodecError::malformed(format_args!(
                 "F3D {module} record header disagrees with its registered primary index"
             )));
