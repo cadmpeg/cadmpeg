@@ -14,8 +14,7 @@ fn tested_component_insert_construction(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<crate::records::feature::assembly_features::DesignComponentInsertConstruction> {
-    exact_component_insert_construction(bytes, records, scope, &std::collections::HashSet::new())
-        .unwrap()
+    exact_component_insert_construction(bytes, records, scope).unwrap()
 }
 
 #[test]

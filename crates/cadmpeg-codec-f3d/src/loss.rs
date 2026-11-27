@@ -1212,7 +1212,7 @@ pub(crate) enum F3dLossCode {
 
     /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
-    /// A compact legacy carrier has an unresolved current pose.
+    /// A compact legacy carrier states only the insertion frame, which is taken as its pose.
     XrefPlacementPoseUnstated,
     /// An external reference has no admitted occurrence placement.
     XrefOccurrenceUnplaced,

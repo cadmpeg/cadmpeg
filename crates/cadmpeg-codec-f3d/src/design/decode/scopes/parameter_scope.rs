@@ -151,8 +151,6 @@ pub(crate) fn decode_parameter_scopes(
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
-        let posed =
-            super::component_constructions::operation_table_targets(bytes, &records, &stream_types);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
         let axis_classes = class_types
@@ -895,8 +893,7 @@ pub(crate) fn decode_parameter_scopes(
                 alignment.form = Some(form);
             }
             {
-                let construction =
-                    exact_component_insert_construction(bytes, &records, &scope, &posed)?;
+                let construction = exact_component_insert_construction(bytes, &records, &scope)?;
                 let unresolved_placement = construction
                     .is_none()
                     .then(|| {

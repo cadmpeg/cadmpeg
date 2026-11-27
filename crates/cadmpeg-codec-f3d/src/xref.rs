@@ -904,7 +904,7 @@ fn bind_occurrences(
             table.placement_metadata_missing = true;
             (None, Vec::new(), Vec::new(), HashSet::new())
         };
-        let (placements, failures) = occurrence_placements_with_failures(
+        let (placements, mut failures) = occurrence_placements_with_failures(
             bytes,
             &headers,
             serializer_magic,
@@ -916,6 +916,7 @@ fn bind_occurrences(
             .filter_map(|record| bytes.get(record.offset..record.end))
             .filter_map(|body| component_path_pose(body, serializer_magic))
             .collect::<Vec<_>>();
+        retain_unstated_poses(&mut failures, &poses);
         let contained = carriers
             .iter()
             .filter_map(|record| bytes.get(record.offset..record.end))
@@ -1085,6 +1086,20 @@ fn bind_occurrences(
     table.placement_overrides = placement_overrides;
     table.ambiguous_current_poses = ambiguous_current_poses;
     Ok(())
+}
+
+/// Drop the `pose_unstated` entries whose placement a component-path carrier
+/// names: that carrier states the current pose of the placement.
+fn retain_unstated_poses(
+    failures: &mut Vec<OccurrencePlacementFailure>,
+    poses: &[ComponentPathPose],
+) {
+    failures.retain(|failure| {
+        !failure.pose_unstated
+            || !poses
+                .iter()
+                .any(|pose| Some(pose.placement_record_index) == failure.carrier_record_index)
+    });
 }
 
 /// The component-path carriers that name one placement.
@@ -1384,7 +1399,8 @@ pub(crate) struct OccurrencePlacementFailure {
     /// Link names recovered from the valid target-path prefix.
     pub(crate) link_names: Vec<String>,
     /// The record closes as a compact legacy placement, which stores only the
-    /// insertion frame, and no direct operation table names it.
+    /// insertion frame, and no direct operation table names it. The placement
+    /// is admitted at the insertion frame.
     pub(crate) pose_unstated: bool,
 }
 
@@ -1416,8 +1432,9 @@ fn occurrence_placements_filtered(
 /// Parse admitted placement records and retain role names from records whose
 /// target path is valid but whose remaining generation-specific payload is not.
 ///
-/// With `posed`, a compact legacy placement closes only when a direct
-/// operation table names its record: its matrix is the insertion frame.
+/// With `posed`, a compact legacy placement that no direct operation table
+/// names also yields a `pose_unstated` entry in the failures: its matrix is
+/// the insertion frame, and the placement stays admitted at that frame.
 fn occurrence_placements_with_failures(
     bytes: &[u8],
     records: &[IndexedRecord],
@@ -1444,10 +1461,8 @@ fn occurrence_placements_with_failures(
             compact_legacy_placement(body)
                 && View::u64_le_at(body, 7).is_none_or(|record| !posed.contains(&record))
         });
-        if let Some(placement) = occurrence_placement(body, serializer_magic)?.filter(|_| !unposed)
-        {
-            placements.push(placement);
-        } else {
+        let placement = occurrence_placement(body, serializer_magic)?;
+        if placement.is_none() || unposed {
             let link_names = occurrence_path(body)
                 .map(|(names, _)| names)
                 .or_else(|| legacy_occurrence_role(body).map(|role| vec![role.to_string()]))
@@ -1455,9 +1470,10 @@ fn occurrence_placements_with_failures(
             failures.push(OccurrencePlacementFailure {
                 carrier_record_index: View::u64_le_at(body, 7),
                 link_names,
-                pose_unstated: unposed,
+                pose_unstated: placement.is_some(),
             });
         }
+        placements.extend(placement);
     }
     Ok((placements, failures))
 }

@@ -200,14 +200,14 @@ fn a_repeated_target_insert_carrier_reports_its_own_placement() {
 }
 
 #[test]
-fn compact_legacy_placements_need_a_direct_operation_table() {
+fn compact_legacy_placements_without_an_operation_table_stay_at_the_insertion_frame() {
     let mut bytes = compact_record(10, 1, Some(MATRIX));
     bytes.extend(super::legacy_occurrence_record(ROLE, 12, Some(MATRIX)));
     let records = super::super::indexed_records(&bytes);
-    for (posed, closed) in [
-        (std::collections::HashSet::new(), vec![12]),
-        (std::collections::HashSet::from([12]), vec![12]),
-        (std::collections::HashSet::from([10]), vec![10, 12]),
+    for (posed, unstated) in [
+        (std::collections::HashSet::new(), true),
+        (std::collections::HashSet::from([12]), true),
+        (std::collections::HashSet::from([10]), false),
     ] {
         let (placements, failures) = super::super::occurrence_placements_with_failures(
             &bytes,
@@ -217,14 +217,16 @@ fn compact_legacy_placements_need_a_direct_operation_table() {
             Some(&posed),
         )
         .unwrap();
+        // The placement is admitted at its stored matrix either way; a missing
+        // operation table only reports that the pose is the insertion frame.
         assert_eq!(
             placements
                 .iter()
-                .map(|placement| placement.carrier_record_index)
+                .map(|placement| (placement.carrier_record_index, placement.transform))
                 .collect::<Vec<_>>(),
-            closed
+            [(10, Some(MATRIX)), (12, Some(MATRIX))]
         );
-        assert_eq!(failures.len(), 2 - closed.len());
+        assert_eq!(failures.len(), usize::from(unstated));
         if let Some(failure) = failures.first() {
             assert_eq!(failure.carrier_record_index, Some(10));
             assert_eq!(failure.link_names, [ROLE]);
@@ -233,4 +235,45 @@ fn compact_legacy_placements_need_a_direct_operation_table() {
     }
     assert!(super::super::compact_legacy_placement(&bytes[..399 + 128]));
     assert!(!super::super::compact_legacy_placement(&bytes[399 + 128..]));
+}
+
+#[test]
+fn a_component_path_carrier_states_the_pose_of_a_compact_placement() {
+    const ROOT_COMPONENT: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
+    let magic = Some(crate::metastream::MODERN_SERIALIZER_MAGIC);
+    let current = [
+        [1.0, 0.0, 0.0, 0.5],
+        [0.0, 1.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 0.4],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let bytes = compact_record(10, 1, Some(MATRIX));
+    let records = super::super::indexed_records(&bytes);
+    let posed = std::collections::HashSet::new();
+    let (placements, failures) = super::super::occurrence_placements_with_failures(
+        &bytes,
+        &records,
+        None,
+        None,
+        Some(&posed),
+    )
+    .unwrap();
+    assert_eq!(placements.len(), 1);
+    assert_eq!(failures.len(), 1);
+
+    // A component path that names placement record 10 states its pose.
+    let carrier = super::legacy_path_pose::legacy_root_component_path_carrier(
+        ROOT_COMPONENT,
+        0x0102_0304_0506_0708,
+        current,
+    );
+    let pose = super::super::component_path_pose(&carrier, magic).expect("component path pose");
+    assert_eq!(pose.placement_record_index, 10);
+    let mut stated = failures.clone();
+    super::super::retain_unstated_poses(&mut stated, &[pose]);
+    assert!(stated.is_empty());
+    // Without one, the report stays.
+    let mut unstated = failures;
+    super::super::retain_unstated_poses(&mut unstated, &[]);
+    assert_eq!(unstated.len(), 1);
 }

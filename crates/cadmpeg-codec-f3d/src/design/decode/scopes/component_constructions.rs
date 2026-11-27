@@ -35,13 +35,10 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-/// `posed` holds the occurrence-placement records that an admitted direct
-/// operation table names; a compact legacy carrier needs one.
 pub(super) fn exact_component_insert_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-    posed: &std::collections::HashSet<u64>,
 ) -> Result<Option<DesignComponentInsertConstruction>, CodecError> {
     let parsed = (|| {
         let start = usize::try_from(scope.byte_offset()).ok()?;
@@ -386,13 +383,6 @@ pub(super) fn exact_component_insert_construction(
                     [(role, role_offset, None)].into_iter().collect::<Vec<_>>(),
                 )
             } else if carrier_form == InsertCarrierForm::LegacyTypedPlacement {
-                // The compact envelope stores the insertion frame; only a
-                // direct operation table states the occurrence's pose.
-                if crate::xref::compact_legacy_placement(bytes.get(carrier_at..relation_at)?)
-                    && !posed.contains(&u64::from(carrier_record_index))
-                {
-                    return None;
-                }
                 let (role, role_offset, carrier_transform_offset) =
                     crate::xref::legacy_typed_component_insert_carrier(
                         bytes,
@@ -1458,27 +1448,6 @@ fn unique_indexed_record_before(
         return None;
     };
     Some(*at)
-}
-
-/// The occurrence-placement records that the admitted direct operation tables
-/// of one Design stream name.
-pub(super) fn operation_table_targets(
-    bytes: &[u8],
-    records: &IndexedRecordOffsets,
-    stream_types: &super::assembly_operand_paths::StreamTypes<'_>,
-) -> std::collections::HashSet<u64> {
-    crate::xref::operation_pose::direct_table_targets(stream_types.iter().filter_map(
-        |(&entity, &(type_guid, version))| {
-            if !type_guid.eq_ignore_ascii_case(crate::xref::operation_pose::TYPE_GUID) {
-                return None;
-            }
-            let [at] = records.offsets(u32::try_from(entity).ok()?) else {
-                return None;
-            };
-            let end = next_indexed_record_offset(bytes, at + 1).unwrap_or(bytes.len());
-            Some((version, bytes.get(*at..end)?))
-        },
-    ))
 }
 
 #[cfg(test)]

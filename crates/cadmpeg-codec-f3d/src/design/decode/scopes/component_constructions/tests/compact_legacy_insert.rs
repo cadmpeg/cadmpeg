@@ -144,7 +144,6 @@ fn fixture(
     (bytes, scope, scope_at)
 }
 
-/// The construction when a direct operation table names the carrier.
 fn construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -153,7 +152,6 @@ fn construction(
         bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(bytes),
         scope,
-        &std::collections::HashSet::from([10]),
     )
     .unwrap()
 }
@@ -203,15 +201,6 @@ fn compact_legacy_insert_frames_refuse_other_carriers_and_prefixes() {
         bytes[527 + 47] = 31;
         assert!(construction(&bytes, &scope).is_none());
     }
-    // Without a direct operation table the compact carrier states only the
-    // insertion frame.
-    let (bytes, scope, _) = fixture(399, &compact_carrier(1, TRANSFORM), TRANSFORM);
-    assert!(super::tested_component_insert_construction(
-        &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-        &scope,
-    )
-    .is_none());
     // The 393-byte frame has the shifted prefix and the 399-byte frame the
     // fourteen-zero prefix; the other prefix does not close either frame.
     let carrier = compact_carrier(1, TRANSFORM);
