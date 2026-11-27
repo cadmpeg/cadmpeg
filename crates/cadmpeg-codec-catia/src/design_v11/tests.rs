@@ -872,6 +872,58 @@ fn a_native_sketch_constraint_is_a_native_relation_of_its_sketch() {
     assert_design_survives_cadir(&ir);
 }
 
+/// A constraint of a decoded sketch whose kind the projection does not
+/// restate is charged, and no design constraint stands for it.
+#[test]
+fn a_sketch_constraint_of_another_kind_is_charged() {
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchConstraintId,
+    };
+
+    let mut ir = decode(placed_sketch_catpart(), &DecodeOptions::default())
+        .ir()
+        .clone();
+    let id =
+        SketchConstraintId::mint("catia:outer:sketch-constraint#0000000000-0000000009".to_owned())
+            .unwrap();
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: id.clone(),
+        sketch: ir.model.sketches[0].id.clone(),
+        definition: SketchConstraintDefinition::try_from(
+            SketchConstraintDefinitionInput::Disabled {},
+        )
+        .unwrap(),
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    ir.design = cadmpeg_ir::document::Design::default();
+    let mut losses = Vec::new();
+    crate::test_support::with_service_context(|ctx| {
+        crate::design_v11::project(
+            ctx,
+            &mut ir,
+            &crate::native::CatiaNative::default(),
+            &crate::decode::ModelingGraphScope::Unscoped,
+            &mut losses,
+        )
+    })
+    .unwrap();
+    assert!(ir.design.sketch_constraints.is_empty());
+    let code = CatiaLossCode::DesignSketchConstraintsUnstated.note("").code;
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == code && loss.message.contains(id.as_str())));
+}
+
 #[test]
 fn a_part_with_no_history_states_no_design_record() {
     let result = decode(
