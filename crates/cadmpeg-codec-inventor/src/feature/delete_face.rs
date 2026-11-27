@@ -38,10 +38,10 @@ impl NativeReason {
         match self {
             Self::Marker => "property vector marker differs from type 2",
             Self::Slots => "property vector differs from the four-slot form",
-            Self::Faces => "slot 0 is not a nonempty face collection without repeated members",
+            Self::Faces => "slot 0 is not a face collection without repeated members",
             Self::Slot1 => "slot 1 is not a Boolean",
             Self::Slot2 => "slot 2 is not a Boolean",
-            Self::Selection => "slot 3 is not a body selection with one surface-body wrapper",
+            Self::Selection => "slot 3 is not a body selection of distinct surface-body wrappers",
             Self::Controls => "the slot 1 and 2 Boolean pair has no resolved heal mode",
         }
     }
@@ -83,11 +83,10 @@ pub(crate) fn refusal<'a>(
         Some(PmDcFeaturePropertyKind::References {
             family: PmDcFeatureReferenceFamily::FaceCollection,
             items,
-        }) if !items.references().is_empty()
-            && items
-                .references()
-                .iter()
-                .all(|member| member.index() != 0 && distinct.insert(member.index()))
+        }) if items
+            .references()
+            .iter()
+            .all(|member| member.index() != 0 && distinct.insert(member.index()))
     );
     if !faces_valid {
         return NativeReason::Faces;
@@ -104,13 +103,17 @@ pub(crate) fn refusal<'a>(
     if !boolean(slot_2) {
         return NativeReason::Slot2;
     }
+    // A null member selects no body; each non-null member names a distinct
+    // surface-body wrapper (section 13.4, ordered body selection).
+    let mut wrappers = HashSet::new();
     let selection_valid = matches!(
         property(*selection).map(|property| &property.kind),
         Some(PmDcFeaturePropertyKind::References {
             family: PmDcFeatureReferenceFamily::BodySelection,
             items,
-        }) if matches!(items.references(), [wrapper]
-            if wrapper.record_ordinal().and_then(&record_type) == Some(WRAPPER_TYPE_ID))
+        }) if items.references().iter().all(|member| member.index() == 0
+            || (member.record_ordinal().and_then(&record_type) == Some(WRAPPER_TYPE_ID)
+                && wrappers.insert(member.index())))
     );
     if selection_valid {
         NativeReason::Controls
