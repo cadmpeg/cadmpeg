@@ -303,6 +303,20 @@ pub(crate) struct ContainerScan<'a> {
     metastream_cache: std::sync::Mutex<
         std::collections::HashMap<String, std::sync::Arc<crate::metastream::MetaStream>>,
     >,
+    /// Indexed `BulkStream` record offsets, memoized per entry for the scan's duration.
+    record_offsets_cache: std::sync::Mutex<
+        std::collections::HashMap<
+            String,
+            std::sync::Arc<crate::design::decode::sketch::IndexedRecordOffsets>,
+        >,
+    >,
+    /// Resolved primary frames per `BulkStream`, memoized for the scan's duration.
+    primary_frames_cache: std::sync::Mutex<
+        std::collections::HashMap<
+            String,
+            Option<std::sync::Arc<[crate::design::decode::meta::CachedDesignPrimaryFrame]>>,
+        >,
+    >,
 }
 
 /// The framing outcome of one text B-rep member.
@@ -336,6 +350,8 @@ impl<'a> ContainerScan<'a> {
             deferred_members: self.deferred_members.clone(),
             scope_entry_indices: self.scope_entry_indices.clone(),
             metastream_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+            record_offsets_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+            primary_frames_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -470,6 +486,70 @@ impl<'a> ContainerScan<'a> {
         let parsed = std::sync::Arc::new(parsed);
         cache.insert(key, std::sync::Arc::clone(&parsed));
         Ok(parsed)
+    }
+
+    /// The indexed-record offsets of one `BulkStream` entry, computed at most once per scan.
+    pub(crate) fn design_record_offsets(
+        &self,
+        name: &str,
+    ) -> Result<std::sync::Arc<crate::design::decode::sketch::IndexedRecordOffsets>, CodecError>
+    {
+        if let Some(cached) = self
+            .record_offsets_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+        {
+            return Ok(std::sync::Arc::clone(cached));
+        }
+        let built = std::sync::Arc::new(
+            crate::design::decode::sketch::IndexedRecordOffsets::build(self.entry_bytes(name)?),
+        );
+        let mut cache = self
+            .record_offsets_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        cache.insert(name.to_owned(), std::sync::Arc::clone(&built));
+        Ok(built)
+    }
+
+    /// Cached primary frames for one Design `BulkStream` entry, computed at most once per scan.
+    pub(crate) fn design_primary_frames(
+        &self,
+        bulk_entry_name: &str,
+    ) -> Result<
+        Option<std::sync::Arc<[crate::design::decode::meta::CachedDesignPrimaryFrame]>>,
+        CodecError,
+    > {
+        if let Some(cached) = self
+            .primary_frames_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(bulk_entry_name)
+        {
+            return Ok(cached.as_ref().map(std::sync::Arc::clone));
+        }
+        let Some(meta) =
+            crate::design::decode::meta::metadata_for_bulk_stream(self, bulk_entry_name)?
+        else {
+            self.primary_frames_cache
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(bulk_entry_name.to_owned(), None);
+            return Ok(None);
+        };
+        let bytes = self.entry_bytes(bulk_entry_name)?;
+        let frames: std::sync::Arc<[crate::design::decode::meta::CachedDesignPrimaryFrame]> =
+            crate::design::decode::meta::collect_cached_design_primary_frames(bytes, &meta)?.into();
+        let mut cache = self
+            .primary_frames_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        cache.insert(
+            bulk_entry_name.to_owned(),
+            Some(std::sync::Arc::clone(&frames)),
+        );
+        Ok(Some(frames))
     }
 
     /// Exact archive folder of the manifest-selected Design asset. An outer
@@ -871,6 +951,8 @@ fn scan_in<'a>(
         deferred_members,
         scope_entry_indices,
         metastream_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+        record_offsets_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+        primary_frames_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
     };
     bound_design_bulk_streams(&mut scan);
     for index in 0..scan.entries.len() {

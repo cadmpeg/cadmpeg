@@ -25,7 +25,7 @@ use crate::decode::sweep::nurbs::extrusion_brep_side_surface;
 use crate::decode::sweep::profiles::ProfileEntity;
 use crate::decode::sweep::profiles::{
     arcs_intersect, extrusion_cap_pcurve, extrusion_side_uvs, line_arc_intersect,
-    ordered_extrusion_profiles, profile_segments_intersect, profile_strictly_contains,
+    ordered_extrusion_profiles, profile_segments_intersect, profile_strictly_contains_each,
     resolved_sketch_profiles, ExtrusionProfile,
 };
 use crate::decode::uniqueness::unique_feature_profile_definition;
@@ -162,10 +162,11 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         profiles
     );
     assert!(area > 0.0);
-    assert!(profile_strictly_contains(&ctx, &profiles[0], [0.2, 0.2])
-        .expect("check that the profile strictly contains the point"));
-    assert!(!profile_strictly_contains(&ctx, &profiles[0], [2.0, 2.0])
-        .expect("check that the profile strictly contains the point"));
+    let [inside, outside] =
+        profile_strictly_contains_each(&ctx, &profiles[0], [[0.2, 0.2], [2.0, 2.0]])
+            .expect("check that the profile strictly contains the point");
+    assert!(inside);
+    assert!(!outside);
     let diagonal = ProfileEntity::new(
         &ctx,
         SketchGeometry::nurbs(

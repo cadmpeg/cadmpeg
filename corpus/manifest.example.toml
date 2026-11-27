@@ -15,7 +15,7 @@
 # File name as committed in corpus/ (or the sharing location noted in the PR).
 filename = "bracket_single_body.f3d"
 
-# Codec format key: f3d | fcstd | inventor | sldprt | catia | nx | creo | rhino | iges | step | sat.
+# Codec format key: f3d | fcstd | inventor | sldprt | catia | nx | creo | rhino | iges | step | sat | alibre.
 format = "f3d"
 
 # Derived, not donor-supplied. Leave it out of a donation: the maintainer runs

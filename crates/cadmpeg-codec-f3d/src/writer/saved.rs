@@ -5,13 +5,11 @@
 //! retained archive projects; the writer writes the configurations of the
 //! `design` records into them.
 
-use std::io::Cursor;
-
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
@@ -19,8 +17,8 @@ use cadmpeg_ir::features::parameters::{DesignConfiguration, DesignParameter};
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::primitives::{configuration_targets, decoded_configurations, f3d_native};
+use crate::ids;
 use crate::loss::F3dLossCode;
-use crate::{ids, F3dCodec};
 
 /// `input`'s document with the arenas the CADIR wire omits restored from
 /// its retained archive, where it was read from CADIR JSON and `target` does
@@ -39,14 +37,7 @@ pub(crate) fn restore(
     let Some(image) = saved_source(ctx, input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
         return Ok(None);
     };
-    let restored = F3dCodec
-        .decode(
-            &mut Cursor::new(image),
-            &DecodeOptions {
-                policy: *ctx.policy(),
-                ..DecodeOptions::default()
-            },
-        )
+    let restored = super::decode_retained_source(image, *ctx.policy())
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format!(

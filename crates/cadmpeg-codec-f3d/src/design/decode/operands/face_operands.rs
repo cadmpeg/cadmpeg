@@ -4,8 +4,8 @@
 use super::edge_operands::is_surface_untrim_face_group;
 use super::face_operand_frames::parse_face_operand;
 use crate::container::ContainerScan;
-use crate::design::decode::meta::{unambiguous_design_primary_frames, DesignPrimaryFrame};
-use crate::design::decode::sketch::{cached_borrowed_record_offsets, IndexedRecordOffsets};
+use crate::design::decode::meta::{scan_unambiguous_design_primary_frames, DesignPrimaryFrame};
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::design_record_id;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
@@ -142,13 +142,12 @@ pub(crate) fn decode_face_operands(
         else {
             continue;
         };
-        let bytes = scan.entry_bytes(&entry.name)?;
         let Ok(Some(meta)) =
             crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)
         else {
             continue;
         };
-        let Ok(frames) = unambiguous_design_primary_frames(bytes, &meta) else {
+        let Ok(frames) = scan_unambiguous_design_primary_frames(scan, &entry.name, &meta) else {
             continue;
         };
         for ordinal in 0..frames.len() {
@@ -169,7 +168,8 @@ pub(crate) fn decode_face_operands(
                 .map(move |member| (stream, group.scope_record_index, member.value))
         })
         .collect::<HashSet<_>>();
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
+    let mut record_offset_index: HashMap<&str, std::sync::Arc<IndexedRecordOffsets>> =
+        HashMap::new();
     for scope in scope_index.values().filter(|scope| {
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
     }) {
@@ -329,7 +329,14 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let records = match record_offset_index.get(stream) {
+            Some(cached) => std::sync::Arc::clone(cached),
+            None => {
+                let built = scan.design_record_offsets(&entry.name)?;
+                record_offset_index.insert(stream, std::sync::Arc::clone(&built));
+                built
+            }
+        };
         let stream_types = is_sweep_profile
             .then(|| crate::design::decode::meta::stream_types_by_entity(types, &entry.name));
         for (group_member_index, record_index) in group
@@ -394,7 +401,7 @@ pub(crate) fn decode_face_operands(
             if let Some(operand) = parse_face_operand(
                 ctx,
                 bytes,
-                records,
+                &records,
                 crate::design::decode::operands::face_operand_frames::FaceOperandFrame {
                     scope,
                     scope_reference_ordinal: group.scope_reference_ordinal,
@@ -447,7 +454,14 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let records = match record_offset_index.get(stream) {
+            Some(cached) => std::sync::Arc::clone(cached),
+            None => {
+                let built = scan.design_record_offsets(&entry.name)?;
+                record_offset_index.insert(stream, std::sync::Arc::clone(&built));
+                built
+            }
+        };
         let legacy_as_built = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
@@ -510,7 +524,7 @@ pub(crate) fn decode_face_operands(
             if let Some(operand) = parse_face_operand(
                 ctx,
                 bytes,
-                records,
+                &records,
                 crate::design::decode::operands::face_operand_frames::FaceOperandFrame {
                     scope,
                     scope_reference_ordinal,

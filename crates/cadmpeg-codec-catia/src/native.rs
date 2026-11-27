@@ -8690,6 +8690,7 @@ impl CatiaNative {
                     &incidences,
                     entity.entity_id,
                 )?;
+                entity.cache_value_views(value_fields, value_packets);
             }
         }
         let entity_classes_by_graph_identity =
