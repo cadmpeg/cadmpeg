@@ -908,6 +908,7 @@ pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
         &ir,
         StepSchema::Ap242Edition3,
         std::collections::HashSet::new(),
+        crate::test_support::write_context(),
     )
     .unwrap();
     builder.build();

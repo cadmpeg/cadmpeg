@@ -187,12 +187,17 @@ pub(crate) fn decode_without_digests(
     decode_inner(ctx, root, false)
 }
 
-/// Decodes a written SLDPRT byte slice for read-back comparison, skipping
-/// local-digest and canonical-JSON digest calculation that read-back ignores.
+/// Decodes a written SLDPRT byte slice under `limits` for read-back
+/// comparison, skipping local-digest and canonical-JSON digest calculation
+/// that read-back ignores.
 pub(crate) fn decode_for_read_back(
     bytes: &[u8],
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
-    let options = cadmpeg_ir::codec::DecodeOptions::default();
+    let options = cadmpeg_ir::codec::DecodeOptions {
+        policy: cadmpeg_core::decode::DecodePolicy { limits },
+        ..cadmpeg_ir::codec::DecodeOptions::default()
+    };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut cursor = std::io::Cursor::new(bytes);
     let (ctx, root) = cadmpeg_core::decode::DecodeContext::read_root(
@@ -5166,7 +5171,25 @@ fn build_geometry_report(
     classification: &crate::dialect::LayerClassification,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
-    let mut brep_losses = decoded.take_losses()?;
+    let mut losses = brep_losses(decoded)?;
+    append_parasolid_container_losses(scan, &mut losses);
+    append_swift_pmi_losses(ctx, scan, &mut losses)?;
+    classification.append_losses(&mut losses);
+    Ok(DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: crate::archive::coverage(scan, ctx)?,
+        losses,
+        notes,
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+    })
+}
+
+/// The losses of a decoded Parasolid B-rep: its withheld and untyped content,
+/// then the losses the builder charged.
+pub(crate) fn brep_losses(
+    decoded: &mut Brep,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let mut taken = decoded.take_losses()?;
     let s = &decoded.stats;
     let mut losses = Vec::new();
 
@@ -5190,7 +5213,7 @@ fn build_geometry_report(
         }
         losses.push(SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(message.join(" ")));
     }
-    losses.append(&mut brep_losses);
+    losses.append(&mut taken);
     if s.unknown_curve_edges > 0 {
         losses.push(
             SldprtLossCode::GeometryEdgeSupportCurveUntyped.note(format!(
@@ -5261,16 +5284,7 @@ fn build_geometry_report(
             ),
         );
     }
-    append_parasolid_container_losses(scan, &mut losses);
-    append_swift_pmi_losses(ctx, scan, &mut losses)?;
-    classification.append_losses(&mut losses);
-    Ok(DecodeBody {
-        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
-        coverage: crate::archive::coverage(scan, ctx)?,
-        losses,
-        notes,
-        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
-    })
+    Ok(losses)
 }
 
 /// The source metadata of a decode that projects no Parasolid geometry: the
@@ -6773,7 +6787,7 @@ pub(crate) fn stamp_local_digests(
 /// whether the retained Parasolid partition may be replayed verbatim while the
 /// rest of the document is written. It carries every limitation
 /// [`cadmpeg_ir::hash::document_local_sha256`] states.
-pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
+pub(crate) fn brep_local_sha256(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<String, CodecError> {
     // Admit only B-rep arenas so a new design, presentation, or product arena
     // cannot silently change retained-partition eligibility.
     let mut geometry = cadmpeg_ir::document::Topology::default();
@@ -6800,13 +6814,7 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     model
         .appearance_bindings
         .clone_from(&ir.model.appearance_bindings);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
-    )?;
-    brep_partition_sha256(&ctx, ir.tolerances, geometry, model).0
+    brep_partition_sha256(ctx, ir.tolerances, geometry, model).0
 }
 
 /// [`brep_local_sha256`] without the deep clone, for the decode stamp path.
@@ -7005,7 +7013,7 @@ mod digest_tests {
         ));
         let appearances = ir.model.appearances.clone();
         let bindings = ir.model.appearance_bindings.clone();
-        let expected_hash = super::brep_local_sha256(&ir).unwrap();
+        let expected_hash = super::brep_local_sha256(&ctx, &ir).unwrap();
         let actual_hash = brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
         assert_eq!(actual_hash, expected_hash);
         assert_eq!(ir.model.appearances, appearances);

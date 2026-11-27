@@ -66,8 +66,9 @@ enum FrameDepth<'a> {
 }
 
 impl<'a> ModelEvaluationDepthGuard<'a> {
-    /// A session admission nests in the decode context; an independent work
-    /// slice and the standard admission have a 256-frame ceiling.
+    /// An admission that nests in its session nests in the decode context;
+    /// a work slice nests in its budget's recursion guard, and the standard
+    /// admission has a 256-frame ceiling.
     pub(super) fn enter(admission: EvaluationAdmission<'a, '_>) -> Result<Self, ResourceLimit> {
         let result = MODEL_EVALUATION_IDENTITIES.with(|path| {
             let mut path = path.borrow_mut();
@@ -76,7 +77,7 @@ impl<'a> ModelEvaluationDepthGuard<'a> {
                 MODEL_EVALUATION_CYCLE.with(|cycle| cycle.set(false));
                 MODEL_EVALUATION_REFUSAL.with(|refusal| refusal.set(None));
             }
-            let depth = match (admission.context(), admission.work_slice()) {
+            let depth = match (admission.nesting_context(), admission.work_slice()) {
                 (Some(context), _) => FrameDepth::Session {
                     _guard: context.enter_nested_limit("model evaluation recursion")?,
                 },

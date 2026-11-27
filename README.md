@@ -55,7 +55,7 @@ cadmpeg convert part.f3d -o part.step
 decode report (f3d): depth=geometry, geometry_transferred=true
 ...
 check: OK (0 error(s), 0 warning(s))
-wrote part.step (... entities)
+wrote part.step (... entities, sha256 ...)
 ```
 
 Measure one face, or every cylindrical face of a part:
