@@ -985,7 +985,7 @@ fn an_output_holds_no_carrier_that_only_a_dropped_record_reached() {
                 crate::ids::Identity::new("test:part@1:unknowns#reach").unwrap(),
                 [(
                     "links".to_owned(),
-                    serde_json::json!([surface, "test:model:occurrence#part"]),
+                    cadmpeg_core::json!([surface, "test:model:occurrence#part"]),
                 )]
                 .into_iter()
                 .collect(),
