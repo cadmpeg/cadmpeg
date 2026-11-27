@@ -132,7 +132,13 @@ fn definition() -> ProductDefinition {
 /// One body history tail, and the body it retains, as `collect` finds it.
 pub(crate) fn one_tail() -> (BodyHistoryTails, BodyId) {
     let scope = scope(59);
-    let found = collect(&[feature(&scope, 1)], &[scope], &[history()], None);
+    let found = collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[history()],
+        &Default::default(),
+        None,
+    );
     assert_eq!(found.tails.len(), 1);
     (found, body(1))
 }
@@ -147,7 +153,7 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     foreign.product_definition = Some("test:model:component#guide".try_into().unwrap());
     foreign.evaluation.set_outputs(Default::default());
     let features = vec![before, foreign];
-    let found = collect(&features, &[scope], &[history()], None);
+    let found = collect(&features, &[scope], &[history()], &Default::default(), None);
     assert_eq!(found.tails.len(), 1);
     let definition = definition();
     let mut guide = definition.clone();
@@ -189,17 +195,29 @@ fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
 #[test]
 fn a_change_to_another_body_preserves_the_linked_history() {
     let scope = scope(59);
-    assert!(collect(&[feature(&scope, 2)], &[scope], &[history()], None)
-        .tails
-        .is_empty());
+    assert!(collect(
+        &[feature(&scope, 2)],
+        &[scope],
+        &[history()],
+        &Default::default(),
+        None
+    )
+    .tails
+    .is_empty());
 }
 
 #[test]
 fn a_feature_that_reaches_the_head_has_no_tail() {
     let scope = scope(64);
-    assert!(collect(&[feature(&scope, 1)], &[scope], &[history()], None)
-        .tails
-        .is_empty());
+    assert!(collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[history()],
+        &Default::default(),
+        None
+    )
+    .tails
+    .is_empty());
 }
 
 #[test]
@@ -211,9 +229,15 @@ fn a_geometry_unchanged_tail_preserves_the_linked_history() {
         .as_mut()
         .unwrap()
         .geometry_unchanged = true;
-    assert!(collect(&[feature(&scope, 1)], &[scope], &[history], None)
-        .tails
-        .is_empty());
+    assert!(collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[history],
+        &Default::default(),
+        None
+    )
+    .tails
+    .is_empty());
 }
 
 #[test]
@@ -226,9 +250,15 @@ fn a_suppressed_feature_does_not_claim_the_tail() {
     suppressed.ordinal = 2;
     suppressed.suppressed = Some(true);
     assert_eq!(
-        collect(&[before, suppressed], &[old, new], &[history()], None)
-            .tails
-            .len(),
+        collect(
+            &[before, suppressed],
+            &[old, new],
+            &[history()],
+            &Default::default(),
+            None
+        )
+        .tails
+        .len(),
         1
     );
 }
@@ -260,9 +290,15 @@ fn matching_state_numbers_in_another_brep_do_not_claim_the_target() {
     let scope = scope(59);
     let mut other = history();
     other.id = "f3d:BREP.other.smbh:asm-history#0".into();
-    assert!(collect(&[feature(&scope, 1)], &[scope], &[other], None)
-        .tails
-        .is_empty());
+    assert!(collect(
+        &[feature(&scope, 1)],
+        &[scope],
+        &[other],
+        &Default::default(),
+        None
+    )
+    .tails
+    .is_empty());
 }
 
 #[test]
@@ -271,7 +307,13 @@ fn a_body_no_decoded_history_holds_gets_no_interval_and_the_unread_loss() {
     let before = feature(&scope, 1);
     let mut other = history();
     other.id = "f3d:BREP.other.smbh:asm-history#0".into();
-    let found = collect(std::slice::from_ref(&before), &[scope], &[other], None);
+    let found = collect(
+        std::slice::from_ref(&before),
+        &[scope],
+        &[other],
+        &Default::default(),
+        None,
+    );
     assert!(found.tails.is_empty());
     assert_eq!(found.unread, vec![(body(1), before.id.clone())]);
     let mut model = Model::default();
@@ -300,7 +342,13 @@ fn a_body_in_two_product_definitions_retains_an_unowned_native_operation() {
 fn assert_unresolved_owner(definitions: Vec<ProductDefinition>, gap: &str) {
     let scope = scope(59);
     let before = feature(&scope, 1);
-    let found = collect(std::slice::from_ref(&before), &[scope], &[history()], None);
+    let found = collect(
+        std::slice::from_ref(&before),
+        &[scope],
+        &[history()],
+        &Default::default(),
+        None,
+    );
     assert_eq!(found.tails.len(), 1);
     let mut model = Model::default();
     model.features.push(before.clone());
@@ -345,7 +393,7 @@ fn assert_unproved(
     histories: &[AsmHistory],
     native: &str,
 ) {
-    let found = collect(features, scopes, histories, None);
+    let found = collect(features, scopes, histories, &Default::default(), None);
     assert_eq!(found.tails.len(), 1);
     let mut model = Model::default();
     model.features.extend_from_slice(features);

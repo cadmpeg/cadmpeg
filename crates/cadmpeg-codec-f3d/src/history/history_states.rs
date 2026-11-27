@@ -41,6 +41,60 @@ pub(crate) fn effective_scope_previous_history_state_id(
     })
 }
 
+/// The history state that a scope's state follows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScopePrevious {
+    /// The scope states no history state.
+    Stateless,
+    /// No history the scope reads holds its state.
+    Unheld,
+    /// The stored previous state, else the one state to which every history
+    /// the scope reads links its state.
+    Known(i64),
+    /// The histories the scope reads hold its state and link it to no single
+    /// previous state.
+    Unlinked(i64),
+}
+
+/// Read the scope's previous state: the stored one, else the link of its
+/// state in the scope's bound history, else the predecessor on which every
+/// history that holds its state agrees.
+pub(crate) fn scope_previous_history_state(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    scope_histories: &HashMap<String, String>,
+    histories: &[AsmHistory],
+) -> ScopePrevious {
+    let Some(state_id) = scope.history_state_id() else {
+        return ScopePrevious::Stateless;
+    };
+    if let Some(previous_state_id) = scope.previous_history_state_id() {
+        return ScopePrevious::Known(previous_state_id);
+    }
+    let read = bound_scope_history(&scope.id, scope_histories, histories)
+        .map_or(histories, std::slice::from_ref);
+    let mut links = read.iter().filter_map(|history| {
+        let mut states = history
+            .states()
+            .iter()
+            .filter(|state| state.state_id == state_id);
+        let state = states.next()?;
+        Some(
+            states
+                .next()
+                .is_none()
+                .then(|| transition_or_header_previous_state_id(history, state))
+                .flatten(),
+        )
+    });
+    match links.next() {
+        None => ScopePrevious::Unheld,
+        Some(Some(previous_state_id)) if links.all(|link| link == Some(previous_state_id)) => {
+            ScopePrevious::Known(previous_state_id)
+        }
+        Some(_) => ScopePrevious::Unlinked(state_id),
+    }
+}
+
 /// Read the scope's predecessor, else its history header predecessor.
 /// History reads use only `state_id`, `node_index`, and `next_ref`, so the
 /// result does not depend on history binding.
