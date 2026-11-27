@@ -78,7 +78,7 @@ fn definition(
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: u32::try_from(rows.len()).expect("variable count"),
             entity_ref: None,
             rows,

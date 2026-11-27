@@ -982,7 +982,7 @@ mod tests {
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::test_support::with_points(
                 FeatureVariableTable {
-                    rows_end: None,
+                    rows_end: 0,
                     declared_count: 0,
                     entity_ref: None,
                     rows: Vec::new(),
@@ -1336,7 +1336,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 13,
                 entity_ref: None,
                 rows: vec![
@@ -1424,7 +1424,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 21,
                 entity_ref: None,
                 rows: vec![
@@ -1519,7 +1519,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 23,
                 entity_ref: None,
                 rows: vec![
@@ -1613,7 +1613,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 7,
                 entity_ref: None,
                 rows: vec![
@@ -1691,7 +1691,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 14,
                 entity_ref: None,
                 rows: vec![
@@ -1764,7 +1764,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 6,
                 entity_ref: None,
                 rows: vec![

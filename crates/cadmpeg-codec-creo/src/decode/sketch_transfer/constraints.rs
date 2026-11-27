@@ -2633,7 +2633,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 4,
                 entity_ref: None,
                 rows: vec![
@@ -2709,7 +2709,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 3,
                 entity_ref: None,
                 rows: vec![

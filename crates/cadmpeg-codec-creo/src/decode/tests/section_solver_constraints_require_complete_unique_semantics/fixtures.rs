@@ -340,7 +340,7 @@ pub(super) fn base_definition() -> crate::feature::definitions::FeatureDefinitio
         outlines: Vec::new(),
         variables: Some(with_points(
             crate::feature::definitions::FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),

@@ -141,7 +141,7 @@ fn saved_line_joins_through_order_table() {
     let mut coordinate_definition = definition.clone();
     coordinate_definition.variables = Some(crate::feature::definitions::test_support::with_points(
         crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
@@ -1290,7 +1290,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
             crate::feature::definitions::FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),

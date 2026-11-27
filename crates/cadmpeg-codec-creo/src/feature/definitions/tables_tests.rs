@@ -550,7 +550,7 @@ fn variable_table_withholds_duplicate_coordinate_identities() {
         offset,
     };
     let table = FeatureVariableTable {
-        rows_end: None,
+        rows_end: 0,
         declared_count: 3,
         entity_ref: Some(119),
         rows: vec![row(1, 2.0, 10), row(1, 2.0, 20), row(2, 3.0, 30)],
@@ -579,7 +579,7 @@ fn radius_variables_do_not_create_section_points() {
         offset,
     };
     let table = FeatureVariableTable {
-        rows_end: None,
+        rows_end: 0,
         declared_count: 3,
         entity_ref: Some(119),
         rows: vec![row(1, 7, 2.0, 10), row(2, 7, 3.0, 20), row(3, 99, 4.0, 30)],
@@ -598,7 +598,7 @@ fn radius_variables_do_not_create_section_points() {
 fn reconciled_points_keep_a_section_point() {
     let table = with_points(
         FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),

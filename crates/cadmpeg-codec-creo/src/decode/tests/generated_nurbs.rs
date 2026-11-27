@@ -210,7 +210,7 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 2,
             entity_ref: None,
             rows: vec![
@@ -288,7 +288,7 @@ fn equation_function_two_propagates_non_coordinate_scalar_components() {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 3,
                 entity_ref: None,
                 rows: vec![
@@ -369,7 +369,7 @@ fn equation_function_five_propagates_direct_type_six_equality() {
                 parameter_frames: Vec::new(),
                 outlines: Vec::new(),
                 variables: Some(crate::feature::definitions::FeatureVariableTable {
-                    rows_end: None,
+                    rows_end: 0,
                     declared_count: 3,
                     entity_ref: None,
                     rows: vec![
@@ -466,7 +466,7 @@ fn equation_function_two_propagates_radius_components() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 2,
             entity_ref: None,
             rows: vec![row(42, first_value), row(43, second_value)],
@@ -523,7 +523,7 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 2,
             entity_ref: None,
             rows: vec![
@@ -637,7 +637,7 @@ fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 3,
             entity_ref: None,
             rows: vec![row(1, 10, first), row(1, 11, second), row(6, 20, midpoint)],
@@ -711,7 +711,7 @@ fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 4,
             entity_ref: None,
             rows: vec![
@@ -797,7 +797,7 @@ fn equation_function_sixteen_derives_direct_angle_difference() {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 4,
                 entity_ref: None,
                 rows: vec![
@@ -899,7 +899,7 @@ fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: 6,
                 entity_ref: None,
                 rows: vec![
@@ -1009,7 +1009,7 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 3,
             entity_ref: None,
             rows: vec![row(2, 1, Some(4.5)), row(2, 2, None), row(7, 3, Some(0.0))],
@@ -1150,7 +1150,7 @@ fn equation_function_thirty_five_solves_point_on_reference_line() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 9,
             entity_ref: None,
             rows: vec![
@@ -1371,7 +1371,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             outlines: Vec::new(),
             variables: Some(crate::feature::definitions::test_support::with_points(
                 crate::feature::definitions::FeatureVariableTable {
-                    rows_end: None,
+                    rows_end: 0,
                     declared_count: 0,
                     entity_ref: None,
                     rows: Vec::new(),

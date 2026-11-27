@@ -265,7 +265,7 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     };
     let variables = with_points(
         FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
@@ -367,7 +367,7 @@ fn trim_intersection_resolves_the_shared_point() {
     };
     let variables = with_points(
         FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
@@ -429,7 +429,7 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
     let variables = |points: Vec<FeatureSectionPoint>, rows: Vec<FeatureVariableRow>| {
         with_points(
             FeatureVariableTable {
-                rows_end: None,
+                rows_end: 0,
                 declared_count: u32::try_from(rows.len()).expect("fixture value fits u32"),
                 entity_ref: None,
                 rows,
@@ -575,7 +575,7 @@ fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
     };
     let variables = with_points(
         FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),

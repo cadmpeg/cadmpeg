@@ -148,7 +148,7 @@ fn unread_tables(
             tables.push(UnreadRows {
                 code: CreoLossCode::SectionSegmentMissing,
                 offset: table.offset,
-                rows_end: table.rows.rows_end(),
+                rows_end: Some(table.rows.rows_end()),
                 expected: expected_segment_rows(definition.identity.id(), table)?,
                 decoded: table.rows.len(),
             });
@@ -183,7 +183,7 @@ fn unread_tables(
         tables.push(UnreadRows {
             code: CreoLossCode::SectionSolverVariableMissing,
             offset: variables.offset,
-            rows_end: variables.rows_end,
+            rows_end: Some(variables.rows_end),
             expected: cadmpeg_core::decode::index_from_u32(variables.declared_count),
             decoded: variables.rows.len(),
         });
@@ -726,7 +726,7 @@ mod tests {
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
             variables: Some(FeatureVariableTable {
-                rows_end: Some(320),
+                rows_end: 320,
                 declared_count: 3,
                 entity_ref: None,
                 rows: Vec::new(),

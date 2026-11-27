@@ -784,6 +784,7 @@ fn faces_withheld_by_the_component_gate_are_given_up() {
     assert!(named.iter().all(|id| {
         !kept.curves.iter().any(|record| record.id.as_str() == id)
             && !kept.surfaces.iter().any(|record| record.id.as_str() == id)
+            && !kept.pcurves.iter().any(|record| record.id.as_str() == id)
             && !kept.points.iter().any(|record| record.id.as_str() == id)
     }));
 

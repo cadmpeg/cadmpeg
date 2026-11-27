@@ -245,7 +245,7 @@ pub(crate) struct FeatureVariableTable {
     /// Positional variable rows in stored order.
     pub(crate) rows: Vec<FeatureVariableRow>,
     /// Byte offset in the original stream where the row reader stopped.
-    pub(crate) rows_end: Option<usize>,
+    pub(crate) rows_end: usize,
     /// Byte offset of the `var_arr` label in the original stream.
     pub(crate) offset: usize,
 }
@@ -1955,7 +1955,7 @@ fn variable_table(
         rows_end = cursor;
     }
     Some(FeatureVariableTable {
-        rows_end: Some(rows_end),
+        rows_end,
         declared_count,
         entity_ref,
         rows,
@@ -2072,7 +2072,7 @@ fn positional_variable_table(
         rows_end = cursor;
     }
     Some(FeatureVariableTable {
-        rows_end: Some(rows_end),
+        rows_end,
         declared_count,
         entity_ref: Some(table_class),
         rows,
@@ -7880,7 +7880,7 @@ mod tests {
             offset: 0,
         };
         let table = |rows: Vec<FeatureVariableRow>| FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: u32::try_from(rows.len()).expect("row count fits"),
             entity_ref: None,
             rows,

@@ -38,7 +38,7 @@ fn section_solver_point_coordinates_merge_compatible_and_reject_conflicting_inci
     synchronize_segment_count(&mut coincident_definition);
     coincident_definition.variables = Some(with_points(
         crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),

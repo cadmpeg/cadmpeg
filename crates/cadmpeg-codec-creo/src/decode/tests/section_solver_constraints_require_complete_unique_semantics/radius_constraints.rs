@@ -25,7 +25,7 @@ fn section_solver_equal_radius_requires_active_agreeing_sources() {
         });
     equal_radius_definition.variables = Some(with_points(
         crate::feature::definitions::FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),

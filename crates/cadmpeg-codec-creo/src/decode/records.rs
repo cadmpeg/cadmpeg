@@ -3829,7 +3829,7 @@ mod sketch_projection_tests {
         let mut scan = scan();
         scan.features.definitions[0].section_3d = None;
         scan.features.definitions[0].variables = Some(FeatureVariableTable {
-            rows_end: None,
+            rows_end: 0,
             declared_count: 1,
             entity_ref: None,
             rows: vec![FeatureVariableRow {

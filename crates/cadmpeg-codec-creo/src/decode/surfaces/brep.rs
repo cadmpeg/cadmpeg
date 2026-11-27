@@ -2093,36 +2093,19 @@ struct GatedComponents<'a, 'b> {
     face_curves: &'a BTreeSet<u32>,
     neutral_edge_curves: &'a BTreeSet<u32>,
     edge_vertices: &'a BTreeMap<u32, [u32; 2]>,
+    native_pcurves: &'a NativePcurveCandidates,
 }
 
 impl GatedComponents<'_, '_> {
     /// Each face the gate withholds, in id order, with the records of the
     /// withheld transfer that the face is the first in id order to reach: its
-    /// surface, loops and coedges, and the curve, edge and vertices of each
-    /// of its coedges. A component's shells, region, body and wire edges go
-    /// with its first face. A record that no face of its component reaches
-    /// goes with the first face. An id that a record of `ir` holds is not
-    /// listed.
-    fn face_records(
-        &self,
-        ir: &CadIr,
-    ) -> Result<BTreeMap<FaceId, Vec<Identity>>, cadmpeg_core::CodecError> {
+    /// surface, loops and coedges, the native pcurve candidate of each coedge,
+    /// and the curve, edge and vertices of each of its coedges. A component's
+    /// shells, region, body and wire edges go with its first face. A record
+    /// that no face of its component reaches goes with the first face. The
+    /// report lists only the records that the finished document does not hold.
+    fn face_records(&self) -> Result<BTreeMap<FaceId, Vec<Identity>>, cadmpeg_core::CodecError> {
         use crate::identity::compose_checked;
-        let geometry = &ir.geometry;
-        let kept: BTreeSet<&str> = geometry
-            .surfaces
-            .iter()
-            .map(|record| record.id.as_str())
-            .chain(geometry.curves.iter().map(|record| record.id.as_str()))
-            .chain(geometry.vertices.iter().map(|record| record.id.as_str()))
-            .chain(geometry.edges.iter().map(|record| record.id.as_str()))
-            .chain(geometry.coedges.iter().map(|record| record.id.as_str()))
-            .chain(geometry.loops.iter().map(|record| record.id.as_str()))
-            .chain(geometry.faces.iter().map(|record| record.id.as_str()))
-            .chain(geometry.shells.iter().map(|record| record.id.as_str()))
-            .chain(geometry.regions.iter().map(|record| record.id.as_str()))
-            .chain(geometry.bodies.iter().map(|record| record.id.as_str()))
-            .collect();
         let edge_records = |curve_id: u32| -> Result<Vec<Identity>, cadmpeg_core::CodecError> {
             if !self.neutral_edge_curves.contains(&curve_id) {
                 return Ok(Vec::new());
@@ -2162,6 +2145,15 @@ impl GatedComponents<'_, '_> {
                             &crate::identity::VISIBGEOM_COEDGE,
                             format_args!("{}:{}", half_edge.curve_id, half_edge.side.index()),
                         )?);
+                        if self
+                            .native_pcurves
+                            .contains_key(&(half_edge.curve_id, face_key.source))
+                        {
+                            records.push(compose_checked(
+                                &crate::identity::VISIBGEOM_PCURVE,
+                                format_args!("{}:{}", half_edge.curve_id, face_key.source),
+                            )?);
+                        }
                         records.extend(edge_records(half_edge.curve_id)?);
                     }
                 }
@@ -2230,7 +2222,7 @@ impl GatedComponents<'_, '_> {
         );
         for (face, records) in reached.chain(std::iter::once((first_face.clone(), rest))) {
             for record in records {
-                if !kept.contains(record.as_str()) && named.insert(record.clone()) {
+                if named.insert(record.clone()) {
                     gated.entry(face.clone()).or_default().push(record);
                 }
             }
@@ -3231,8 +3223,9 @@ pub(in super::super) fn transfer_native_brep(
             face_curves: &face_curves,
             neutral_edge_curves: &neutral_edge_curves,
             edge_vertices: &edge_vertices,
+            native_pcurves: &native_pcurves,
         }
-        .face_records(ir)?;
+        .face_records()?;
         return Ok(NativeBrepTransferSummary {
             topological_point_count: solved_point_count,
             diagnostics,

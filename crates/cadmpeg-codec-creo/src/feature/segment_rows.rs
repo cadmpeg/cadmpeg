@@ -70,7 +70,7 @@ pub(crate) struct SegmentRows {
     identities: BTreeMap<u32, Option<usize>>,
     /// Byte offset in the original stream of the first row the reader did
     /// not read, or of the end of the rows it read.
-    rows_end: Option<usize>,
+    rows_end: usize,
 }
 
 #[cfg(test)]
@@ -101,13 +101,13 @@ impl SegmentRows {
         Self {
             rows,
             identities,
-            rows_end: Some(rows_end),
+            rows_end,
         }
     }
 
     /// Byte offset in the original stream of the first row the reader did
     /// not read, or of the end of the rows it read.
-    pub(crate) fn rows_end(&self) -> Option<usize> {
+    pub(crate) fn rows_end(&self) -> usize {
         self.rows_end
     }
 
@@ -175,9 +175,7 @@ impl SegmentRows {
         for row in &mut self.rows {
             row.add_offset(base);
         }
-        if let Some(end) = &mut self.rows_end {
-            *end += base;
-        }
+        self.rows_end += base;
     }
 
     pub(crate) fn ordinary(&self) -> impl Iterator<Item = &FeatureSegment> {
