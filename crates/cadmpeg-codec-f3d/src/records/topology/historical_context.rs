@@ -39,7 +39,7 @@ cadmpeg_core::named_optional_field!(
 
 /// Plane or right-circular cylinder geometry of one surface carrier in one
 /// historical state, in the state's B-rep length units.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignHistoricalSurfaceGeometry {
     /// A plane through `origin` with unit `normal`.
