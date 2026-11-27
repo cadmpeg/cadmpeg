@@ -2934,6 +2934,13 @@ fn try_decode_standard_population(
     if let Err(error) = planar_domains::repair(ctx, &mut ir, refusal) {
         return Some(Err(error));
     }
+    if let Err(error) = edge_geometry::cylindrical_arcs::repair_ir_revolution_winding(
+        ctx,
+        &mut ir,
+        &mut annotations,
+    ) {
+        return Some(Err(error));
+    }
     consolidated_curve_bindings.standard_edges += weighted.edges;
     consolidated_curve_bindings.standard_face_pcurves += weighted.pcurves;
     let source_jet_pcurves = match crate::families::freeform::owner_pcurves::attach_in_sources(
@@ -6925,6 +6932,317 @@ struct EmitStandardTopologyInputs<
     admission: &'input16 mut FamilyEntityAdmission<'input14, 'input15>,
 }
 
+/// Refine `f32`-quantized standard vertices that sit at the exact `f64`
+/// intersection (or tangency) of two coplanar circular edges on a shared plane.
+/// Eliminates micro-nanometer arc crossings caused by `f32` vertex roundoff.
+fn refine_planar_circle_intersection_vertices(
+    ir: &mut CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    edge_vertices: &[[usize; 2]],
+    point_assignment: &[usize],
+) {
+    const MAX_F32_SNAP_MM: f64 = 2.0e-4;
+    const MAX_TANGENCY_CUSP_SNAP_MM: f64 = 2.5e-2;
+    const SHALLOW_TANGENCY_OVERLAP_MM: f64 = 1.0e-4;
+    const PLANE_COPLANAR_TOL_MM: f64 = 1.0e-4;
+    const TANGENCY_SLOP_MM: f64 = 5.0e-4;
+    const MAX_CIRCLE_RESIDUAL_MM: f64 = 1.0e-5;
+    const MAX_OTHER_DEGRADATION_MM: f64 = 5.0e-5;
+    const MIN_CIRCLE_CENTER_SEPARATION_MM: f64 = 1.0e-6;
+    const MIN_VERTEX_SNAP_MM: f64 = 1.0e-12;
+    const EXACT_CIRCLE_INTERSECTION_MM: f64 = 1.0e-10;
+
+    struct IncidentCircle {
+        center: Point3,
+        radius: f64,
+        faces: [usize; 2],
+        other_end: Option<Point3>,
+    }
+
+    let mut point_edges: Vec<Vec<usize>> = vec![Vec::new(); ir.geometry.points.len()];
+    for (edge_index, logical) in edge_vertices.iter().enumerate() {
+        for &lv in logical {
+            if let Some(&pt_idx) = point_assignment.get(lv) {
+                if let Some(slot) = point_edges.get_mut(pt_idx) {
+                    if !slot.contains(&edge_index) {
+                        slot.push(edge_index);
+                    }
+                }
+            }
+        }
+    }
+
+    for (pt_idx, incident) in point_edges.iter().enumerate() {
+        if incident.len() < 2 {
+            continue;
+        }
+        let p_old = ir.geometry.points[pt_idx].position().get();
+        let mut circles: Vec<IncidentCircle> = Vec::new();
+        for &edge_idx in incident {
+            let support = &supports[edge_idx];
+            if let crate::families::standard::records::StandardCurveGeometry::Circle {
+                center,
+                radius,
+            } = support.geometry
+            {
+                let other_end = edge_vertices[edge_idx]
+                    .into_iter()
+                    .filter_map(|lv| point_assignment.get(lv).copied())
+                    .find(|&p| p != pt_idx)
+                    .map(|p| ir.geometry.points[p].position().get());
+                circles.push(IncidentCircle {
+                    center: center.get(),
+                    radius: radius.get(),
+                    faces: support.faces,
+                    other_end,
+                });
+            }
+        }
+        if circles.len() < 2 {
+            continue;
+        }
+
+        let mut best_snap: Option<(f64, Point3)> = None;
+        'pair_loop: for i in 0..circles.len() {
+            for j in (i + 1)..circles.len() {
+                let IncidentCircle {
+                    center: c1,
+                    radius: r1,
+                    faces: f1,
+                    other_end: other1,
+                } = circles[i];
+                let IncidentCircle {
+                    center: c2,
+                    radius: r2,
+                    faces: f2,
+                    other_end: other2,
+                } = circles[j];
+                if c1.distance(c2) <= 1.0e-4 {
+                    continue;
+                }
+                // Find a shared planar face containing both circle centers.
+                let shared_plane = f1
+                    .into_iter()
+                    .find(|face| f2.contains(face))
+                    .and_then(|face| face_surface(ir, bindings, surface_indices, face))
+                    .and_then(|surface| match &surface.geometry {
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => Some(plane),
+                        _ => None,
+                    });
+                let Some(plane) = shared_plane else {
+                    continue;
+                };
+                let origin = plane.origin().get();
+                let normal = *plane.frame().axis().as_raw();
+                let u_axis = *plane.frame().reference().as_raw();
+                let v_axis = normal.cross(u_axis);
+                if c1.vector_from(origin).dot(normal).abs() > PLANE_COPLANAR_TOL_MM
+                    || c2.vector_from(origin).dot(normal).abs() > PLANE_COPLANAR_TOL_MM
+                {
+                    continue;
+                }
+                let to_2d = |p: Point3| -> [f64; 2] {
+                    let diff = p.vector_from(origin);
+                    [diff.dot(u_axis), diff.dot(v_axis)]
+                };
+                let c1_2d = to_2d(c1);
+                let c2_2d = to_2d(c2);
+                let q_old = to_2d(p_old);
+                let dx = c2_2d[0] - c1_2d[0];
+                let dy = c2_2d[1] - c1_2d[1];
+                let dist = dx.hypot(dy);
+                if !dist.is_finite() || dist <= MIN_CIRCLE_CENTER_SEPARATION_MM {
+                    continue;
+                }
+                let ex = [dx / dist, dy / dist];
+                let ey = [-ex[1], ex[0]];
+                let proj = (r1 * r1 - r2 * r2 + dist * dist) / (2.0 * dist);
+                let h_sq = r1 * r1 - proj * proj;
+                let shallow_ext_overlap =
+                    r1 + r2 > dist && (r1 + r2 - dist) <= SHALLOW_TANGENCY_OVERLAP_MM;
+                let shallow_int_overlap = dist > (r1 - r2).abs()
+                    && (dist - (r1 - r2).abs()) <= SHALLOW_TANGENCY_OVERLAP_MM;
+                let is_shallow_tangency =
+                    h_sq > 0.0 && (shallow_ext_overlap || shallow_int_overlap);
+                let candidates_2d: Vec<[f64; 2]> = if h_sq >= 0.0 {
+                    let h = h_sq.sqrt();
+                    vec![
+                        [
+                            c1_2d[0] + proj * ex[0] + h * ey[0],
+                            c1_2d[1] + proj * ex[1] + h * ey[1],
+                        ],
+                        [
+                            c1_2d[0] + proj * ex[0] - h * ey[0],
+                            c1_2d[1] + proj * ex[1] - h * ey[1],
+                        ],
+                    ]
+                } else if (dist - (r1 + r2)).abs() <= TANGENCY_SLOP_MM
+                    || (dist - (r1 - r2).abs()).abs() <= TANGENCY_SLOP_MM
+                {
+                    vec![[c1_2d[0] + proj * ex[0], c1_2d[1] + proj * ex[1]]]
+                } else {
+                    continue;
+                };
+                let (cand_2d, max_snap) = if is_shallow_tangency && candidates_2d.len() == 2 {
+                    // For a shallow tangent circle overlap lens, pick the exact
+                    // intersection point that lies on the approach side of BOTH
+                    // arcs (shortening both arcs so they meet cleanly without
+                    // crossing inside the micro-lens).
+                    let mut cusp_pick = None;
+                    if let (Some(o1), Some(o2)) = (other1, other2) {
+                        let q1 = to_2d(o1);
+                        let q2 = to_2d(o2);
+                        let d1 = [q1[0] - q_old[0], q1[1] - q_old[1]];
+                        let d2 = [q2[0] - q_old[0], q2[1] - q_old[1]];
+                        let matches: Vec<[f64; 2]> = candidates_2d
+                            .iter()
+                            .copied()
+                            .filter(|c| {
+                                let step = [c[0] - q_old[0], c[1] - q_old[1]];
+                                step[0] * d1[0] + step[1] * d1[1] > 0.0
+                                    && step[0] * d2[0] + step[1] * d2[1] > 0.0
+                            })
+                            .collect();
+                        if matches.len() == 1 {
+                            cusp_pick = Some((matches[0], MAX_TANGENCY_CUSP_SNAP_MM));
+                        }
+                    }
+                    if let Some(pick) = cusp_pick {
+                        pick
+                    } else if let Some(nearest) = candidates_2d.into_iter().min_by(|u, v| {
+                        let du = (u[0] - q_old[0]).hypot(u[1] - q_old[1]);
+                        let dv = (v[0] - q_old[0]).hypot(v[1] - q_old[1]);
+                        du.total_cmp(&dv)
+                    }) {
+                        (nearest, MAX_F32_SNAP_MM)
+                    } else {
+                        continue;
+                    }
+                } else if let Some(nearest) = candidates_2d.into_iter().min_by(|u, v| {
+                    let du = (u[0] - q_old[0]).hypot(u[1] - q_old[1]);
+                    let dv = (v[0] - q_old[0]).hypot(v[1] - q_old[1]);
+                    du.total_cmp(&dv)
+                }) {
+                    (nearest, MAX_F32_SNAP_MM)
+                } else {
+                    continue;
+                };
+                let p_new = Point3::new(
+                    origin.x + cand_2d[0] * u_axis.x + cand_2d[1] * v_axis.x,
+                    origin.y + cand_2d[0] * u_axis.y + cand_2d[1] * v_axis.y,
+                    origin.z + cand_2d[0] * u_axis.z + cand_2d[1] * v_axis.z,
+                );
+                let snap_dist = p_new.distance(p_old);
+                if !snap_dist.is_finite() || snap_dist <= MIN_VERTEX_SNAP_MM || snap_dist > max_snap
+                {
+                    continue;
+                }
+                let res_new = (p_new.distance(c1) - r1)
+                    .abs()
+                    .max((p_new.distance(c2) - r2).abs());
+                let res_old = (p_old.distance(c1) - r1)
+                    .abs()
+                    .max((p_old.distance(c2) - r2).abs());
+                if res_new > MAX_CIRCLE_RESIDUAL_MM || (!is_shallow_tangency && res_new >= res_old)
+                {
+                    continue;
+                }
+                // Guard: do not collapse any incident edge or degrade distance to
+                // any other incident analytic circle, plane, or revolution surface.
+                let mut ok = true;
+                for &edge_idx in incident {
+                    if let Some(other_pt) = edge_vertices[edge_idx]
+                        .into_iter()
+                        .filter_map(|lv| point_assignment.get(lv).copied())
+                        .find(|&p| p != pt_idx)
+                        .map(|p| ir.geometry.points[p].position().get())
+                    {
+                        let old_len = p_old.distance(other_pt);
+                        let new_len = p_new.distance(other_pt);
+                        if old_len > MIN_VERTEX_SNAP_MM
+                            && (snap_dist >= 0.25 * old_len || new_len <= 0.5 * old_len)
+                        {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    let support = &supports[edge_idx];
+                    if let crate::families::standard::records::StandardCurveGeometry::Circle {
+                        center,
+                        radius,
+                    } = support.geometry
+                    {
+                        let old_err = (p_old.distance(center.get()) - radius.get()).abs();
+                        let new_err = (p_new.distance(center.get()) - radius.get()).abs();
+                        if new_err > old_err + MAX_OTHER_DEGRADATION_MM {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    for face in support.faces {
+                        if let Some(surface) = face_surface(ir, bindings, surface_indices, face) {
+                            match &surface.geometry {
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(pl)) => {
+                                    let plane_normal = *pl.frame().axis().as_raw();
+                                    let plane_origin = pl.origin().get();
+                                    let old_err =
+                                        p_old.vector_from(plane_origin).dot(plane_normal).abs();
+                                    let new_err =
+                                        p_new.vector_from(plane_origin).dot(plane_normal).abs();
+                                    if new_err > old_err + MAX_OTHER_DEGRADATION_MM {
+                                        ok = false;
+                                        break;
+                                    }
+                                }
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cyl))
+                                    if snap_dist > MAX_F32_SNAP_MM =>
+                                {
+                                    let cyl_axis = *cyl.frame().axis().as_raw();
+                                    let cyl_origin = cyl.origin().get();
+                                    let cyl_radius = cyl.radius().get();
+                                    let radial_err = |pt: Point3| {
+                                        let offset = pt.vector_from(cyl_origin);
+                                        let rad = offset - cyl_axis.scale(offset.dot(cyl_axis));
+                                        (rad.norm() - cyl_radius).abs()
+                                    };
+                                    if radial_err(p_new)
+                                        > radial_err(p_old) + MAX_OTHER_DEGRADATION_MM
+                                    {
+                                        ok = false;
+                                        break;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    if !ok {
+                        break;
+                    }
+                }
+                if ok {
+                    if best_snap.is_none_or(|(best_res, _)| res_new < best_res) {
+                        best_snap = Some((res_new, p_new));
+                    }
+                    if res_new <= EXACT_CIRCLE_INTERSECTION_MM {
+                        break 'pair_loop;
+                    }
+                }
+            }
+        }
+
+        if let Some((_, p_new)) = best_snap {
+            if let Some(finite) = FinitePoint3::new(p_new) {
+                let existing = &ir.geometry.points[pt_idx];
+                ir.geometry.points[pt_idx] =
+                    Point::new(existing.id.clone(), finite, existing.source_object.clone());
+            }
+        }
+    }
+}
+
 fn emit_standard_topology(
     ctx: &DecodeContext<'_>,
     inputs: EmitStandardTopologyInputs<
@@ -6973,6 +7291,15 @@ fn emit_standard_topology(
             "admitted topology does not match its emission tables",
         ));
     }
+
+    refine_planar_circle_intersection_vertices(
+        ir,
+        bindings,
+        surface_indices,
+        supports,
+        edge_vertices,
+        point_assignment,
+    );
 
     let mut edge_reversed = Vec::new();
     let mut deferred_conics = Vec::<(usize, edge_geometry::DeferredConicFallback)>::new();
@@ -7073,6 +7400,11 @@ fn emit_standard_topology(
                 .get()
         })
     };
+    let vertex_position = |vertex: usize| {
+        ir.geometry.points[point_assignment[vertex]]
+            .position()
+            .get()
+    };
     let cylindrical_arc_ranges = edge_geometry::cylindrical_arcs::ranges(
         ctx,
         &edge_geometry::cylindrical_arcs::CylindricalArcInputs {
@@ -7085,6 +7417,7 @@ fn emit_standard_topology(
             topology,
         },
         edge_endpoints,
+        vertex_position,
     )?;
     for (&row, &range) in &cylindrical_arc_ranges {
         let Some([start, end]) = range else {
