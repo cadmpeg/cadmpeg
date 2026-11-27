@@ -1508,6 +1508,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.features,
         &design.design_parameter_scopes,
         &design.asm_histories,
+        &scope_histories,
         geometry.primary_brep,
     );
     if matches!(geometry.path, DesignPath::Geometry) {
