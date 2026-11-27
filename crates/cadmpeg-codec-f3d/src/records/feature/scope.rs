@@ -3638,6 +3638,12 @@ impl DesignParameterScope {
     pub(crate) fn history_state_id(&self) -> Option<i64> {
         self.history_state_id
     }
+    /// The suppression that the scope tail or the Thread companion stores.
+    pub(crate) fn stored_suppression(&self) -> Option<bool> {
+        self.tail_flags
+            .map(|flags| flags.suppressed())
+            .or(self.companion_suppressed.as_ref().map(|flag| flag.value))
+    }
     pub(crate) fn previous_history_state_id(&self) -> Option<i64> {
         self.previous_history_state_id
     }
