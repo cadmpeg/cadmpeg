@@ -40,7 +40,7 @@ fn semantic_writer_keeps_stored_linear_pattern_instances_and_names_omissions() {
             omitted_instances.push([1, 0]);
             *pattern = PatternKind::new(transform).unwrap();
         });
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
         unwritten

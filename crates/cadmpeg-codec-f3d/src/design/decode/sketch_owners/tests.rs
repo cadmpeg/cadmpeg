@@ -3,6 +3,7 @@
 use super::{assign, parse_collection};
 use crate::loss::F3dLossCode;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::sketches::SketchId;
 
@@ -68,7 +69,7 @@ fn collection_ownership_assigns_a_component_and_reports_an_unresolved_link() {
     let owned = SketchId::mint("test:model:sketch#owned").unwrap();
     let unresolved = SketchId::mint("test:model:sketch#unresolved").unwrap();
     let root = SketchId::mint("test:model:sketch#root").unwrap();
-    let mut definitions = [serde_json::from_value(serde_json::json!({
+    let mut definitions = [json::from_value(cadmpeg_core::json!({
         "id": product, "kind": "part", "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [], "bodies": []
     }))
     .unwrap()];

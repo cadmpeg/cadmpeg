@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::geometry::variable_blends::VariableBlendValue;
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn a_variable_blend_value_states_no_native_name_on_its_wire() {
@@ -9,9 +10,9 @@ fn a_variable_blend_value_states_no_native_name_on_its_wire() {
         "modern_flag": true, "calibrated": 3,
         "payload": {"kind": "two_ends", "discriminator": 7, "parameters": [0.25, 0.75], "radii": [15.0, 25.0]}
     });
-    let value: VariableBlendValue = serde_json::from_value(wire.clone()).unwrap();
+    let value: VariableBlendValue = json::from_value(wire.clone()).unwrap();
     assert_eq!(value.payload.native_name(), "two_ends");
-    assert_eq!(serde_json::to_value(value).unwrap(), wire);
+    assert_eq!(json::to_value(value).unwrap(), wire);
 
     for name in ["two_ends", "const", "unknown"] {
         let mut restated = wire.clone();
@@ -19,7 +20,7 @@ fn a_variable_blend_value_states_no_native_name_on_its_wire() {
             .as_object_mut()
             .unwrap()
             .insert("name".to_string(), json!(name));
-        let error = serde_json::from_value::<VariableBlendValue>(restated).unwrap_err();
+        let error = json::from_value::<VariableBlendValue>(restated).unwrap_err();
         assert!(error.to_string().contains("name"), "{error}");
     }
 }
@@ -62,9 +63,9 @@ fn variable_blend_value_keeps_every_payload_wire_and_its_outer_discriminator() {
         let mut payload = payload;
         payload["discriminator"] = json!(discriminator);
         let wire = json!({"modern_flag": true, "calibrated": 5, "payload": payload});
-        let value: VariableBlendValue = serde_json::from_value(wire.clone()).unwrap();
+        let value: VariableBlendValue = json::from_value(wire.clone()).unwrap();
         assert_eq!(value.payload.discriminator(), discriminator);
-        assert_eq!(serde_json::to_value(value).unwrap(), wire);
+        assert_eq!(json::to_value(value).unwrap(), wire);
     }
 }
 
@@ -74,7 +75,7 @@ fn variable_blend_edge_offset_rejects_wrong_arity_and_discriminators() {
     for code in [-1, 2, 7] {
         let mut invalid = wire.clone();
         invalid["payload"]["discriminator"] = json!(code);
-        let error = serde_json::from_value::<VariableBlendValue>(invalid).unwrap_err();
+        let error = json::from_value::<VariableBlendValue>(invalid).unwrap_err();
         assert!(error.to_string().contains("discriminator"), "{error}");
     }
     for (field, values) in [
@@ -85,7 +86,7 @@ fn variable_blend_edge_offset_rejects_wrong_arity_and_discriminators() {
     ] {
         let mut invalid = wire.clone();
         invalid["payload"][field] = values;
-        assert!(serde_json::from_value::<VariableBlendValue>(invalid).is_err());
+        assert!(json::from_value::<VariableBlendValue>(invalid).is_err());
     }
 }
 
@@ -97,6 +98,6 @@ fn variable_blend_functional_terminal_rejects_unrelated_token_classes() {
         json!({"kind": "enum", "value": 3}),
     ] {
         let wire = json!({"modern_flag": true, "calibrated": 0, "payload": {"kind": "functional", "discriminator": 1, "parameter": 0.0, "radius": 1.0, "function": {"kind": "line", "origin": {"u": 0.0, "v": 1.0}, "direction": {"u": 2.0, "v": 3.0}}, "terminal": terminal}});
-        assert!(serde_json::from_value::<VariableBlendValue>(wire).is_err());
+        assert!(json::from_value::<VariableBlendValue>(wire).is_err());
     }
 }

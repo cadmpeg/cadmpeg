@@ -3,7 +3,6 @@
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
-use crate::loss::IgesLossCode;
 use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
@@ -69,7 +68,13 @@ fn encode_reports_a_version_mismatch_as_dialect_displacement() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .find(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::write::target::target_loss_kind(
+                    cadmpeg_ir::loss_namespace!("iges"),
+                    cadmpeg_ir::codec::write::target::SOURCE_DIALECT_DISPLACED,
+                )
+        })
         .expect("version displacement is charged");
     assert!(displacement
         .message
@@ -88,7 +93,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     let source = unclassified.source.take().expect("decoded source exists");
     let format = source.format().to_owned();
     unclassified.source = Some(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))

@@ -194,6 +194,7 @@ mod tests {
     use super::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis};
     use crate::ids::{BodyId, DeclaredMeasureId};
     use crate::scalar::{FiniteReal, NonNegativeReal};
+    use cadmpeg_core::serde_erase::json;
 
     fn measure() -> DeclaredMeasure {
         DeclaredMeasure::new(
@@ -211,52 +212,46 @@ mod tests {
     #[test]
     fn precision_round_trips_and_omits_when_absent() {
         let measure = measure();
-        let json = serde_json::to_value(&measure).expect("serialize measure");
+        let json = json::to_value(&measure).expect("serialize measure");
         assert_eq!(json["precision"], 0.5);
-        assert_eq!(
-            serde_json::from_value::<DeclaredMeasure>(json).unwrap(),
-            measure
-        );
+        assert_eq!(json::from_value::<DeclaredMeasure>(json).unwrap(), measure);
 
         let exact = DeclaredMeasure::new(
             measure.id.clone(),
             measure.target.clone(),
             measure.quantity.clone(),
         );
-        let json = serde_json::to_value(&exact).expect("serialize exact measure");
+        let json = json::to_value(&exact).expect("serialize exact measure");
         assert!(json.get("precision").is_none());
-        assert_eq!(
-            serde_json::from_value::<DeclaredMeasure>(json).unwrap(),
-            exact
-        );
+        assert_eq!(json::from_value::<DeclaredMeasure>(json).unwrap(), exact);
     }
 
     #[test]
     fn a_target_is_a_state_or_a_bare_unresolved_tag() {
-        let state = serde_json::json!({
+        let state = cadmpeg_core::json!({
             "kind": "state",
             "of": {"kind": "tool", "value": "test:design:feature#3"}
         });
-        let target = serde_json::from_value::<DeclaredTarget>(state.clone()).unwrap();
+        let target = json::from_value::<DeclaredTarget>(state.clone()).unwrap();
         assert!(matches!(target, DeclaredTarget::State(_)));
-        assert_eq!(serde_json::to_value(&target).unwrap(), state);
-        let unresolved = serde_json::json!({"kind": "unresolved"});
+        assert_eq!(json::to_value(&target).unwrap(), state);
+        let unresolved = cadmpeg_core::json!({"kind": "unresolved"});
         assert_eq!(
-            serde_json::from_value::<DeclaredTarget>(unresolved.clone()).unwrap(),
+            json::from_value::<DeclaredTarget>(unresolved.clone()).unwrap(),
             DeclaredTarget::Unresolved
         );
         assert_eq!(
-            serde_json::to_value(DeclaredTarget::Unresolved).unwrap(),
+            json::to_value(DeclaredTarget::Unresolved).unwrap(),
             unresolved
         );
         for wire in [
-            serde_json::json!({"kind": "unresolved", "value": null}),
-            serde_json::json!({"kind": "unresolved", "bodies": []}),
-            serde_json::json!({"kind": "state", "value": {"of": {"kind": "tool", "value": "test:design:feature#3"}}}),
-            serde_json::json!({"kind": "state", "configuration": null, "of": {"kind": "tool", "value": "test:design:feature#3"}}),
+            cadmpeg_core::json!({"kind": "unresolved", "value": null}),
+            cadmpeg_core::json!({"kind": "unresolved", "bodies": []}),
+            cadmpeg_core::json!({"kind": "state", "value": {"of": {"kind": "tool", "value": "test:design:feature#3"}}}),
+            cadmpeg_core::json!({"kind": "state", "configuration": null, "of": {"kind": "tool", "value": "test:design:feature#3"}}),
         ] {
             assert!(
-                serde_json::from_value::<DeclaredTarget>(wire.clone()).is_err(),
+                json::from_value::<DeclaredTarget>(wire.clone()).is_err(),
                 "{wire}"
             );
         }
@@ -264,30 +259,27 @@ mod tests {
 
     #[test]
     fn precision_rejects_negative_values() {
-        let json = serde_json::to_value(measure()).expect("serialize measure");
+        let json = json::to_value(measure()).expect("serialize measure");
         let mut invalid = json;
-        invalid["precision"] = serde_json::json!(-0.5);
-        assert!(serde_json::from_value::<DeclaredMeasure>(invalid).is_err());
+        invalid["precision"] = cadmpeg_core::json!(-0.5);
+        assert!(json::from_value::<DeclaredMeasure>(invalid).is_err());
     }
 
     #[test]
     fn basis_round_trips_in_snake_case_and_omits_when_absent() {
-        let unstated = serde_json::to_value(measure()).expect("serialize measure");
+        let unstated = json::to_value(measure()).expect("serialize measure");
         assert!(unstated.get("basis").is_none());
         for (basis, wire) in [
             (MeasureBasis::Validation, "validation"),
             (MeasureBasis::Cache, "cache"),
         ] {
             let stated = measure().with_basis(basis);
-            let json = serde_json::to_value(&stated).expect("serialize measure");
+            let json = json::to_value(&stated).expect("serialize measure");
             assert_eq!(json["basis"], wire);
-            assert_eq!(
-                serde_json::from_value::<DeclaredMeasure>(json).unwrap(),
-                stated
-            );
+            assert_eq!(json::from_value::<DeclaredMeasure>(json).unwrap(), stated);
         }
         let mut unknown = unstated;
-        unknown["basis"] = serde_json::json!("saved_cache");
-        assert!(serde_json::from_value::<DeclaredMeasure>(unknown).is_err());
+        unknown["basis"] = cadmpeg_core::json!("saved_cache");
+        assert!(json::from_value::<DeclaredMeasure>(unknown).is_err());
     }
 }

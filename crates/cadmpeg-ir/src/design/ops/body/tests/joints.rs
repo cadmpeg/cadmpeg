@@ -2,7 +2,8 @@
 //! The joint connectors, kinds, and alignment that body mates and joints
 //! share, and the pair element.
 
-use serde_json::json;
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 
 use super::{
     angle, axis_construction, direction_construction, frame_construction, length, literal, ordered,
@@ -414,7 +415,7 @@ fn bounds_and_radii_state_only_what_the_source_states() {
         min: None,
         max: None,
     };
-    assert_eq!(serde_json::to_string(&empty).unwrap(), "{}");
+    assert_eq!(json::to_string(&empty).unwrap(), "{}");
     let message = refuses::<Bounds<Length>>(r#"{"min": null}"#);
     assert!(message.contains("min"), "{message}");
     let gear = Coupling::Gear {

@@ -17,6 +17,7 @@ use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
 
 mod archive;
+mod member_keys;
 pub(crate) mod merge;
 pub(crate) mod observer;
 mod session;
@@ -106,7 +107,17 @@ fn compose(
     if !archive_untyped.is_empty() {
         fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, archive_untyped)?;
     }
-    crate::decode::commit_given_up_parts(ctx, scan, &mut ir, &mut fidelity)?;
+    // `outer_losses` already holds the loss of each part the scan or the
+    // member classification gave up.
+    crate::decode::commit_parts(
+        ctx,
+        scan.given_up
+            .iter()
+            .chain(&session.archive.given_up)
+            .cloned(),
+        &mut ir,
+        &mut fidelity,
+    )?;
     if let Some(drawing_root) = &session.omitted_drawing_root {
         push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
@@ -215,14 +226,18 @@ fn finalize_result(
     mut ir: cadmpeg_ir::CadIr,
     source: cadmpeg_ir::SourceMeta,
     mut body: DecodeBody,
-    source_fidelity: cadmpeg_ir::SourceFidelity,
+    mut source_fidelity: cadmpeg_ir::SourceFidelity,
     instance_scopes: &merge::InstanceScopes,
 ) -> Result<Decoded, CodecError> {
+    let members = member_keys::MemberKeys::new(&ir.model, instance_scopes);
     body.losses
         .extend(crate::tree::own_once(ctx, &mut ir, instance_scopes)?);
+    body.losses
+        .extend(merge::charge_placement_bound_joints(&ir.model));
     crate::design::owners::release_unbound(&mut ir.model);
     body.losses
         .extend(crate::tree::state_root_definition(ctx, &mut ir)?);
+    members.apply(ctx, &mut ir, &mut source_fidelity, &mut body.losses)?;
     let depth = body.transfer.depth();
     cadmpeg_ir::design::projection::project_layer(
         ctx,

@@ -55,7 +55,7 @@ fn structural_projection_spells_floats_as_serde_json_and_refuses_at_the_depth_li
     let projected = project(&ctx, &shape, "project structural fixture").unwrap();
     assert_eq!(
         projected,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "text": "source text",
             "values": [null, null, null, 0.0],
             "optional": [true, 17],

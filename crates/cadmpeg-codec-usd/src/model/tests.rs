@@ -201,3 +201,31 @@ fn an_unparsable_mass_unit_or_up_axis_is_reported() {
     );
     assert!(!has_loss(&clean, UsdLossCode::AttributeValueMalformed));
 }
+
+#[test]
+fn a_partial_brep_face_is_a_loss_that_names_it() {
+    let reason = "/B: face#0: no loop on a plane, which no face covers whole";
+    let tallies = super::Tallies {
+        unstated_boundaries: vec![reason.to_owned()],
+        ..super::Tallies::default()
+    };
+    let metrics = super::Metrics {
+        scale: 1.0,
+        meters_per_unit: 0.001,
+        kilograms_per_unit: 1.0,
+        up_axis: "Z".to_owned(),
+        default_prim: None,
+        malformed_units: false,
+        malformed_mass_units: false,
+        malformed_up_axis: false,
+    };
+    let losses = super::tally_losses(&tallies, &crate::schema::Issues::default(), &metrics);
+    let unstated: Vec<_> = losses
+        .iter()
+        .filter(|loss| loss.code == UsdLossCode::TopologyFaceBoundaryUnstated.kind())
+        .collect();
+    let [loss] = unstated.as_slice() else {
+        panic!("one loss: {losses:#?}");
+    };
+    assert!(loss.message.ends_with(reason), "{}", loss.message);
+}

@@ -9,7 +9,7 @@ use syn::spanned::Spanned;
 
 use super::roots::{crate_of, RootShadows};
 use super::{
-    collect_rust_sources, deserialize_impl_target, is_test_module, is_test_path, read_source,
+    collect_rust_sources, deserialize_impl_target, is_test_module, is_test_path, parse_source,
     skip_meta_value,
 };
 use resolve::Lookups;
@@ -193,6 +193,7 @@ struct HandImplSource {
 struct SourceIndex {
     sources: Vec<HandImplSource>,
     denied: BTreeSet<WireKey>,
+    erased_readers: BTreeSet<WireKey>,
     imports: Vec<ImportBinding>,
     symbols: Vec<SymbolKey>,
     /// Where a crate root can name another item than its real crate.
@@ -603,6 +604,140 @@ fn macro_route_at(nodes: &[Node], start: usize) -> Option<(String, Vec<Node>, BT
     Some((name, body.clone(), deserializer_bindings))
 }
 
+/// Record an inherent `impl Name { fn deserialize_erased(p: ...) { Self::deserialize(p) } }`
+/// inside a macro token stream so `serde_erase::deserialize_with` can be traced back
+/// to the closed wire declaration it delegates to.
+fn collect_macro_erased_readers(
+    nodes: &[Node],
+    path: &str,
+    scope: &[String],
+    erased_readers: &mut BTreeSet<WireKey>,
+) {
+    let mut index = 0;
+    while index < nodes.len() {
+        if is_atom(nodes, index, "impl") {
+            if let Some(body_index) = (index + 1..nodes.len())
+                .find(|pos| matches!(nodes.get(*pos), Some(Node::Group(Delimiter::Brace, _))))
+            {
+                let header = &nodes[index + 1..body_index];
+                let has_for = header.iter().any(|node| atom(node) == Some("for"));
+                if !has_for {
+                    if let Some((name, _)) = macro_item_name(header, 0) {
+                        if let Some(Node::Group(Delimiter::Brace, implementation)) =
+                            nodes.get(body_index)
+                        {
+                            if macro_impl_has_forwarding_deserialize_erased(implementation, &name) {
+                                insert_wire(erased_readers, path, scope, name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(Node::Group(_, children)) = nodes.get(index) {
+            collect_macro_erased_readers(children, path, scope, erased_readers);
+        }
+        index += 1;
+    }
+}
+
+fn macro_impl_has_forwarding_deserialize_erased(implementation: &[Node], type_name: &str) -> bool {
+    let Some(method_index) = (0..implementation.len()).find(|index| {
+        is_atom(implementation, *index, "fn")
+            && is_atom(implementation, index + 1, "deserialize_erased")
+    }) else {
+        return false;
+    };
+    let Some(parameters) = (method_index + 2..implementation.len()).find(|index| {
+        matches!(
+            implementation.get(*index),
+            Some(Node::Group(Delimiter::Parenthesis, _))
+        )
+    }) else {
+        return false;
+    };
+    let Some(body_index) = (parameters + 1..implementation.len()).find(|index| {
+        matches!(
+            implementation.get(*index),
+            Some(Node::Group(Delimiter::Brace, _))
+        )
+    }) else {
+        return false;
+    };
+    let Some(Node::Group(Delimiter::Parenthesis, parameter_nodes)) = implementation.get(parameters)
+    else {
+        return false;
+    };
+    let bindings = macro_parameter_bindings(parameter_nodes);
+    if bindings.len() != 1 {
+        return false;
+    }
+    let Some(Node::Group(Delimiter::Brace, body)) = implementation.get(body_index) else {
+        return false;
+    };
+    body.len() == 5
+        && (is_atom(body, 0, "Self") || is_atom(body, 0, type_name))
+        && is_atom(body, 1, ":")
+        && is_atom(body, 2, ":")
+        && is_atom(body, 3, "deserialize")
+        && matches!(
+            body.get(4),
+            Some(Node::Group(Delimiter::Parenthesis, arguments))
+                if call_uses_deserializer(arguments, &bindings)
+        )
+}
+
+fn inherent_impl_erased_reader_name(implementation: &syn::ItemImpl) -> Option<String> {
+    if implementation.trait_.is_some() {
+        return None;
+    }
+    let syn::Type::Path(type_path) = implementation.self_ty.as_ref() else {
+        return None;
+    };
+    if type_path.qself.is_some() || type_path.path.segments.len() != 1 {
+        return None;
+    }
+    let segment = type_path.path.segments.first()?;
+    if !matches!(segment.arguments, syn::PathArguments::None) {
+        return None;
+    }
+    let name = segment.ident.to_string();
+    let method = implementation.items.iter().find_map(|item| match item {
+        syn::ImplItem::Fn(method) if method.sig.ident == "deserialize_erased" => Some(method),
+        _ => None,
+    })?;
+    if method.sig.inputs.len() != 1 {
+        return None;
+    }
+    let bindings = signature_deserializer_bindings(&method.sig);
+    if bindings.len() != 1 {
+        return None;
+    }
+    if method.block.stmts.len() != 1 {
+        return None;
+    }
+    let syn::Stmt::Expr(syn::Expr::Call(call), None) = &method.block.stmts[0] else {
+        return None;
+    };
+    if call.args.len() != 1 || !expr_is_direct_binding(&call.args[0], &bindings) {
+        return None;
+    }
+    let syn::Expr::Path(func_path) = call.func.as_ref() else {
+        return None;
+    };
+    let receiver = receiver_from_expr_path(func_path)?;
+    match receiver {
+        Receiver::Path(path)
+            if !path.absolute
+                && path.segments.len() == 1
+                && (path.segments[0] == "Self" || path.segments[0] == name) =>
+        {
+            Some(name)
+        }
+        _ => None,
+    }
+}
+
 fn collect_macro_routes(
     nodes: &[Node],
     path: &str,
@@ -771,6 +906,9 @@ fn collect_source_items(
                 );
             }
             syn::Item::Impl(implementation) => {
+                if let Some(erased_name) = inherent_impl_erased_reader_name(implementation) {
+                    insert_wire(&mut index.erased_readers, path, scope, erased_name);
+                }
                 let Some(name) = deserialize_impl_target(implementation) else {
                     continue;
                 };
@@ -813,6 +951,7 @@ fn collect_source_items(
             syn::Item::Macro(macro_item) => {
                 let tokens = nodes_from_stream(&macro_item.mac.tokens);
                 collect_macro_denied(&tokens, path, scope, &mut index.denied);
+                collect_macro_erased_readers(&tokens, path, scope, &mut index.erased_readers);
                 // Macro declarations are collected in the same source pass as
                 // their routes. The argument is read only to keep the ownership
                 // explicit at this call site; route resolution uses the index
@@ -862,12 +1001,10 @@ fn source_index(root: &Path) -> SourceIndex {
             if is_test_path(&relative) {
                 continue;
             }
-            let source = read_source(&file);
-            let parsed = syn::parse_file(&source)
-                .map_err(|error| format!("{relative} does not parse: {error}"))
-                .expect("every source file in the wire crates parses");
+            let parsed_file = parse_source(&file, &relative);
+            let (source, parsed) = (&parsed_file.0, &parsed_file.1);
             let scope = source_module_scope(&root.join(source_root), &file);
-            index.read_file(&parsed.items, &relative, &source, &scope);
+            index.read_file(&parsed.items, &relative, source, &scope);
         }
     }
     index.record_foreign_globs();
@@ -1153,7 +1290,15 @@ fn path_shape_from_syn_segments(
 }
 
 fn receiver_from_expr_path(path: &syn::ExprPath) -> Option<Receiver> {
-    if path.path.segments.last()?.ident != "deserialize"
+    receiver_from_method_expr_path(path, "deserialize")
+}
+
+fn receiver_from_erased_expr_path(path: &syn::ExprPath) -> Option<Receiver> {
+    receiver_from_method_expr_path(path, "deserialize_erased")
+}
+
+fn receiver_from_method_expr_path(path: &syn::ExprPath, method: &str) -> Option<Receiver> {
+    if path.path.segments.last()?.ident != method
         || !matches!(
             path.path.segments.last()?.arguments,
             syn::PathArguments::None

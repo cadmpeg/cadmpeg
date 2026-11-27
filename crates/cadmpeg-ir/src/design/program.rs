@@ -103,9 +103,6 @@ pub enum ProgramBody {
 }
 
 /// One neutral statement of a program.
-///
-/// Statement nesting has no ceiling of its own; the JSON depth limit bounds
-/// it.
 #[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
