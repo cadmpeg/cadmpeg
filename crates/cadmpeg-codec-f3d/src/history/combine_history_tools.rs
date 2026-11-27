@@ -128,14 +128,16 @@ fn live_tool_body(
         });
         let owner = match (owners.next(), owners.next()) {
             (Some(owner), None) => owner,
-            _ => return Err("a later transition of its history changes the body"),
+            _ => return Err(
+                "no single feature of its history owns a later transition that changes the body",
+            ),
         };
         let precedes = inputs
             .by_native
             .get(owner.id.as_str())
             .is_some_and(|feature| feature.ordinal < combine_ordinal);
         if !precedes {
-            return Err("a later transition of its history changes the body");
+            return Err("a feature that follows the Combine changes the body in its history");
         }
     }
     pair.body

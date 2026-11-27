@@ -607,7 +607,10 @@ fn a_live_tool_changed_only_by_features_before_the_combine_selects_its_model_bod
 fn a_live_tool_changed_by_a_feature_after_the_combine_stays_native() {
     let (features, losses) = bind_modified_tool(5);
     assert_eq!(losses.len(), 1, "{losses:?}");
-    assert!(losses[0].message.contains("later transition"), "{losses:?}");
+    assert!(
+        losses[0].message.contains("follows the Combine"),
+        "{losses:?}"
+    );
     assert!(matches!(
         tools_of(&features[2]),
         BodySelection::NativeSet(_)
