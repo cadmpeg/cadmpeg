@@ -910,6 +910,15 @@ fn decode_container<'a>(
                     ));
                 }
                 ir.model.history_bodies = history.bodies.bodies;
+                losses.extend(crate::feature::stitch::losses(
+                    ir.model
+                        .features
+                        .iter()
+                        .filter(|feature| {
+                            feature.source_tag.as_deref() == Some(crate::feature::stitch::TAG)
+                        })
+                        .count(),
+                ));
             }
             losses.extend(crate::feature::body_selection::native_losses(
                 &ir.model, &joined,
