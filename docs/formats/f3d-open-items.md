@@ -2308,6 +2308,16 @@ The same two-edge ambiguity can remain after the candidate-boundary, deletion, a
 
 **Conflict.** None.
 
+### DR-1081. Assemble scopes with associated references, and the motion of version-6 joints
+
+**Question.** What selects the `Assemble` scope tail that stores two associated references (the scope and its second connector's construction) and a closing self-reference, and where does a version-6 joint record store its motion type and limits?
+
+**Known.** `f3d.md` §3.1 gives the tail grammar with associated-reference count `A` and closing flag `C`. In three designs saved on 25 and 27 November 2026, one `Assemble` scope per design stores `A = 2` and `C = 1`: a user-made rigid joint that moves an inserted plate, a joint of an inserted part, and a revolute joint between two components. The three Screw-made joints of one of those designs store `A = 0` and `C = 0`. The revolute joint's version-6 joint record stores its angle limits, −30° and 60°, as two f64 radian values at record offset 76, and no motion record holds the freedom entries the decoder reads; the decoder projects such a joint with the fixed motion fallback.
+
+**Need.** Saves that differ only in the joint's motion type (rigid, revolute, slider, cylindrical, pin-slot, planar, ball), with and without limits, and saves that make the same joint from the joint tool and from the as-built joint tool.
+
+**Conflict.** None.
+
 ### DR-646. Entry order of a multi-body suffix result-body frame
 
 **Question.** How does a `Base Feature` suffix result-body frame with more than one body order its body, repeated, and result entries?

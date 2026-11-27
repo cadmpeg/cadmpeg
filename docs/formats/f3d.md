@@ -2459,14 +2459,18 @@ reference selects a version-3, version-4, or version-5 record of type GUID
 scopes. A length-prefixed UTF-16 GUID with 36 code units and three zero bytes
 precede the counted scope-reference table. The table contains `R` nonnull
 references. The four alignment-owner targets occur in this table. The current history word, the length-prefixed UTF-16 stored feature-family name, and
-feature ordinal follow the table. The tail contains fifteen zero bytes, a
+feature ordinal follow the table. The tail contains eight zero bytes, a u32
+associated-reference count `A`, `A` nonnull references, three zero bytes, a
 nonnull reference, an optional zero separator of length `S` (`0` or `1`), the
 previous history word, a u32 word, a finite f64, an independent u32 word, a
-nonnull reference, two boolean bytes, a nonnull reference, and two zero
-bytes. The paired indexed header closes the scope with the same record
-identity. The span from primary to paired header is
-`190 + (R + 12) * W + 128 * M + 4 * E + S`, where `M` is the number of
-explicit connector matrices. Owner references select alignment lanes
+nonnull reference, two boolean bytes, a nonnull reference, and either two zero
+bytes or a closing reference to the scope itself and one zero byte (`C = 1`).
+Most scopes store `A = 0` and `C = 0`. Others store `A = 2`, naming the
+scope itself and the second connector's construction record, together with
+`C = 1`; what selects this form is open (DR-1081). The paired indexed header closes the scope with the
+same record identity. The span from primary to paired header is
+`190 + (R + 12 + A) * W + 128 * M + 4 * E + S + (W - 1) * C`, where `M` is the
+number of explicit connector matrices. Owner references select alignment lanes
 independently of owner ordinals and owner count. Locator type GUID
 `2E3AC990-483D-4A55-8662-C064B976A957` and its registered version select the
 locator envelope. Its counted wrapper joins consecutive version-4 occurrence
