@@ -255,6 +255,13 @@ little-endian `u32` values.
 | entries | `M` pairs of `0` and an object identifier |
 | final word | |
 
+The final word does not depend on the kind of any feature. In a document
+where no feature is suppressed, it equals the number
+of feature-tree items that are not feature-tree folders, plus one. A mirror
+copy and a pattern each count once, as do a swept, lofted, revolved or
+sheet-metal feature. A feature-tree folder adds an entry and does not change
+the word. Suppression of a feature can raise the word above this value. The word is not a feature count.
+
 One more `u32` can follow the final word. The object then ends. The first
 three entries are the three base reference planes, of class
 `ReferencePlaneObject`. The other `M` − 3 entries are the feature-tree
@@ -359,6 +366,7 @@ as `u32` object identifiers after the end of its function name (§4.2):
 | 72 | the profile (§5.3) |
 | 100 | the extent kind |
 | 128 | the side |
+| 156 | the second side word (§6.2) |
 | 184 | the depth of an extruded feature, or the axis of a revolved feature |
 | 212 | the sweep angle of a revolved feature |
 
@@ -376,6 +384,10 @@ profile normal `A` (§5.1), value `1` extends it against the normal, and
 value `3` extends it to both sides of the profile plane. For a revolved
 feature, value `2` sweeps towards the profile normal and value `1` away
 from it.
+
+The second side word is a `Double Value Object`. The first feature of a
+document stores no object in this slot. A later extruded feature stores the
+object.
 
 ### 6.3 Depth
 

@@ -48,13 +48,13 @@
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 
-### DR-1016. Feature navigator final word
+### DR-1016. Feature navigator final word after suppression
 
-**Question.** What does the final word of the feature navigator object count?
+**Question.** Which state raises the final word of the feature navigator object above the number of feature-tree items that are not folders, plus one, and by how much?
 
-**Known.** For `n` listed features the word is `n` + 1 in most documents, `n` + 2 with a swept protrusion, and `n` with a lofted protrusion or a base tab followed by a flange.
+**Known.** The word is that number plus one in every document without a suppressed feature. Suppressing an extruded cutout raises it by 2, and suppressing a mirror copy raises it by 1. Suppressing a pattern does not raise it.
 
-**Need.** Documents that differ in one feature of each kind.
+**Need.** Documents that differ in one suppression, with the final word read before and after each change.
 
 ### DR-1017. Group feature kind and feature operands
 
@@ -69,9 +69,11 @@
 
 **Question.** What does the `Double Value Object` 156 bytes after the function name of an extruded or revolved feature state?
 
-**Known.** The slot holds no object in the first feature of a document. In the later features of controlled saves it holds `2` for protrusions, including one extended against its profile normal, and `1` for cutouts, including one extended along its profile normal. Four protrusions in other documents hold `1`.
+**Known.** The slot holds no object in the first feature of a document. In every later extruded protrusion and cutout of the controlled saves it holds `1`, for each side value `1`, `2` and `3` and for both boolean operations.
 
-**Need.** The protrusions that hold `1` rebuilt in controlled saves, and a protrusion and a cutout that differ only in the boolean operation.
+**Conflict.** Other documents hold `2` in later protrusions, `1` in cutouts, and `1` in four further protrusions. The boolean operation and the side value do not separate them.
+
+**Need.** A document whose later extruded feature holds `2`, and a pair of saves that differ only in the setting that changes it.
 
 ### DR-1021. Topology proxy selections
 
