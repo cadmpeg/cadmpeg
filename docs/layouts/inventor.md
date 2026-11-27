@@ -1642,6 +1642,22 @@ Parsed by:
 | 94 | 1 | `line_state` | `u8` | little | spec | store cached line selections · value `1` |
 | 95 | 4 | `source_references` | `u32[1]` | little | spec | store cached line selections |
 
+## `pm_dc_pattern_cached_line_chain_entry`
+
+Spec §13.6 · layout: byte offsets · size: 54 B
+
+Entry of a cached line chain with selection form 2 or more. The first entry shares its zero and curve form with the single-line prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `zero` | `u16` | little | spec | store cached line selections · value `0` |
+| 2 | 4 | `curve_form` | `u32` | little | spec | store cached line selections · value `23` |
+| 6 | 24 | `origin` | `f64[3]` | little | spec | store cached line selections |
+| 30 | 24 | `span` | `f64[3]` | little | spec | store cached line selections |
+
 ## `pm_dc_pattern_suppression_prefix`
 
 Spec §13.6 · layout: byte offsets · size: 8 B
