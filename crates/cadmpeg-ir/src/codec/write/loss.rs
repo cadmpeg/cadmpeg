@@ -93,6 +93,10 @@ pub(crate) enum ExportLossCode {
     /// The output of a definition of an encode set is not written, while
     /// another output is (§3.4, Encode sets).
     OutputUnwritten,
+    /// No output of an encode set holds a record of the document, or the
+    /// output that holds it holds it without a record of another output it
+    /// names (§3.4, Encode sets).
+    RecordUnheld,
 }
 
 impl ExportLossCode {
@@ -126,6 +130,7 @@ impl ExportLossCode {
             Self::FeatureLowered => "feature.lowered",
             Self::DependencyCycleBroken => "dependency.cycle-broken",
             Self::OutputUnwritten => "output.unwritten",
+            Self::RecordUnheld => "record.unheld",
         }
     }
 
@@ -147,7 +152,8 @@ impl ExportLossCode {
             | Self::DefinitionPlaced
             | Self::FitDropped
             | Self::GeneralToleranceDropped
-            | Self::DependencyCycleBroken => Severity::Warning,
+            | Self::DependencyCycleBroken
+            | Self::RecordUnheld => Severity::Warning,
             Self::ParameterRenamed
             | Self::SourceCarried
             | Self::ValueQuantized
@@ -170,7 +176,7 @@ impl ExportLossCode {
             Self::SourceCarried | Self::SourceUnchecked | Self::SourceDropped => {
                 return LossTaxonomy::RecordNotTyped;
             }
-            Self::LinkUnwritten | Self::OutputUnwritten => {
+            Self::LinkUnwritten | Self::OutputUnwritten | Self::RecordUnheld => {
                 return LossTaxonomy::AssemblyComponentsExternal;
             }
             Self::DefinitionPlaced => return LossTaxonomy::AssemblyPlacementsNotTransferred,
@@ -436,6 +442,19 @@ pub(super) fn output_unwritten(format: &str, definition: &str, cause: &str) -> L
     ExportLossCode::OutputUnwritten.note(format!(
         "the {format} write holds no output of definition {definition}: {cause}"
     ))
+}
+
+/// `export:record.unheld`: no output of the encode set holds these records,
+/// or the output that holds each holds it without the records of other
+/// outputs it names. Each entry names the record and each record of another
+/// output that it needs, with that output's name (§3.4, Encode sets).
+#[must_use]
+pub(super) fn record_unheld<I, S>(format: &str, reason: &str, entries: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::RecordUnheld, format, reason, entries)
 }
 
 /// `export:definition.placed`: the target cannot hold a definition that no

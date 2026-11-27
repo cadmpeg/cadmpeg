@@ -391,8 +391,11 @@ type PlannedOutputBody = (
 ///
 /// An output whose plan fails is not written, and the report charges
 /// `export:output.unwritten` naming its definition, while another output is
-/// written. The encode refuses where no output can be written, with the
-/// first output's refusal, and where the session runs out (§3.4, Refusals).
+/// written. The report charges `export:record.unheld` for each record that
+/// no output holds, or that an output holds without a record of another
+/// output it names ([`encode_set::Holdings`]). The encode refuses where no
+/// output can be written, with the first output's refusal, and where the
+/// session runs out (§3.4, Refusals).
 /// Returns the outputs written with the payload and census of each, and the
 /// root output's annotations.
 fn plan_encode_set<E: EncoderBackend>(
@@ -406,17 +409,27 @@ fn plan_encode_set<E: EncoderBackend>(
         .filter_map(|output| Some((output.definition.clone()?, output.name.clone()?)))
         .collect();
     let root = outputs.first().and_then(|output| output.definition.clone());
+    let output_names: Vec<String> = outputs
+        .iter()
+        .map(|output| match (&output.name, &output.definition) {
+            (Some(name), _) => name.as_str().to_owned(),
+            (None, Some(definition)) => definition.as_str().to_owned(),
+            (None, None) => String::new(),
+        })
+        .collect();
+    let mut holdings = encode_set::Holdings::default();
     let mut planned: Option<(ExportReport, ArenaCoverage)> = None;
     let mut written = Vec::with_capacity(outputs.len());
     let mut payloads = Vec::with_capacity(outputs.len());
     let mut unwritten = Vec::new();
     let mut root_annotations = None;
-    for output in outputs {
+    for (position, output) in outputs.into_iter().enumerate() {
         let definition = output.definition.as_ref();
         let planned_output =
             encode_set::output_document(ctx, input.ir, definition, root.as_ref(), &names)
                 .map_err(EncodeError::from_backend)
-                .and_then(|document| {
+                .and_then(|(document, released)| {
+                    holdings.add(position, &document, released);
                     let fidelity = if definition == root.as_ref() {
                         input.fidelity
                     } else {
@@ -476,6 +489,9 @@ fn plan_encode_set<E: EncoderBackend>(
             &error.to_string(),
         ));
     }
+    report
+        .losses
+        .extend(holdings.losses(E::FORMAT.as_str(), input.ir, &output_names));
     Ok((report, coverage, written, payloads, root_annotations))
 }
 

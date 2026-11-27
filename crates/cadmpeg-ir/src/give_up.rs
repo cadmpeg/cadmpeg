@@ -101,7 +101,7 @@ pub(crate) struct Seed {
 }
 
 /// What removing one seed did to the document.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct Released {
     /// The record's path in the document.
     pub(crate) path: String,
@@ -118,6 +118,10 @@ pub(crate) struct Released {
     /// member entry names a removed definition: no delta states that an
     /// occurrence leaves a state (§5.4, §6.7).
     pub(crate) unstatable: BTreeMap<String, BTreeSet<String>>,
+    /// Each record that named a removed record, with the removed ids it
+    /// named: a record that names one by a reference, and a record that the
+    /// removed one owns.
+    pub(crate) needs: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// The part a given-up seed leaves.
@@ -133,10 +137,19 @@ impl Released {
     fn new(path: String) -> Self {
         Self {
             path,
-            dropped: BTreeSet::new(),
-            marked: BTreeSet::new(),
-            states: BTreeMap::new(),
-            unstatable: BTreeMap::new(),
+            ..Self::default()
+        }
+    }
+
+    /// Adds what `other` released to what this one did.
+    fn absorb(&mut self, other: Self) {
+        self.dropped.extend(other.dropped);
+        self.marked.extend(other.marked);
+        self.marked.retain(|record| !self.dropped.contains(record));
+        self.states.extend(other.states);
+        self.unstatable.extend(other.unstatable);
+        for (record, named) in other.needs {
+            self.needs.entry(record).or_default().extend(named);
         }
     }
 
@@ -519,12 +532,13 @@ pub(crate) fn drop_records(
     Ok(removed)
 }
 
-/// Removes from `ir` each record that needs an id of `gone`, which `ir` no
-/// longer holds, and each record that needs one of those, transitively, as
-/// [`drop_records`] removes the records that need a seed; then removes each
-/// seed as [`drop_records`] does, and each record of `unnamed` that no
-/// record outside `seeds` and `unnamed` names, directly or through records
-/// of `unnamed` it keeps.
+/// Removes from `ir` each seed as [`drop_records`] does, and each record of
+/// `unnamed` that no record outside `seeds` and `unnamed` names, directly or
+/// through records of `unnamed` it keeps; then each record that needs an id
+/// of `gone`, which `ir` no longer holds, and each record that needs one of
+/// those, transitively, as [`drop_records`] removes the records that need a
+/// seed. Returns what the removals released together. The seeds go first,
+/// so that a record that needs a seed names the seed among its needs.
 ///
 /// # Errors
 ///
@@ -536,10 +550,15 @@ pub(crate) fn drop_records_needing(
     gone: BTreeSet<String>,
     seeds: Vec<Seed>,
     unnamed: Vec<Seed>,
-) -> Result<(), CodecError> {
+) -> Result<Released, CodecError> {
     let mut cascade = Cascade::new(ctx, ir, NativeLinks::Read, &gone)?;
     let unnamed = cascade.references.unnamed(unnamed, &seeds);
-    let mut released = Released::new(String::new());
+    let mut released = Released::default();
+    for seed in seeds.into_iter().chain(unnamed) {
+        if let Some(removed) = remove(ctx, ir, &mut cascade, &seed)? {
+            released.absorb(removed);
+        }
+    }
     release(
         ctx,
         ir,
@@ -549,10 +568,7 @@ pub(crate) fn drop_records_needing(
         Vec::new(),
         &mut released,
     )?;
-    for seed in seeds.into_iter().chain(unnamed) {
-        remove(ctx, ir, &mut cascade, &seed)?;
-    }
-    Ok(())
+    Ok(released)
 }
 
 /// States `Source` each expression of the records of each seed whose tree
@@ -620,26 +636,6 @@ impl Cascade {
             unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
         })
     }
-
-    /// The state of a batch of releases of `lost`, ids that no record of
-    /// `ir` may hold, so that the walk of the references finds the records
-    /// that name them.
-    fn naming(
-        ctx: &DecodeContext<'_>,
-        ir: &mut CadIr,
-        lost: &[String],
-    ) -> Result<Self, CodecError> {
-        ir.finalize();
-        let mut named = References::default();
-        for id in lost {
-            named.name(id);
-        }
-        Ok(Self {
-            references: ir.references_from(named),
-            lazy: Lazy::default(),
-            unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
-        })
-    }
 }
 
 /// Removes every copy of `seed` and releases it, then drops each carrier
@@ -663,6 +659,13 @@ fn remove(
         return Ok(None);
     }
     let mut released = Released::new(format!("{}/{}", seed.arena, seed.id));
+    for (_, record) in &owned {
+        released
+            .needs
+            .entry(record.clone())
+            .or_default()
+            .insert(seed.id.clone());
+    }
     mark_parents(ir, &parents, &mut released.marked);
     let gone = references.release(&seed.id, copies);
     release(
@@ -706,7 +709,8 @@ pub(crate) fn release_lost(
     ids: &[String],
     released: &mut Vec<(String, Released)>,
 ) -> Result<(), CodecError> {
-    let mut cascade = Cascade::naming(ctx, ir, ids)?;
+    let lost: BTreeSet<String> = ids.iter().cloned().collect();
+    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Unread, &lost)?;
     let Cascade {
         references,
         lazy,
@@ -1080,6 +1084,11 @@ fn release(
             let Some(mut holder) = ir.holder(references.native_links, arena, id, here) else {
                 continue;
             };
+            released
+                .needs
+                .entry(holder.id.clone())
+                .or_default()
+                .extend(holder.names.iter().map(|(_, target)| target.clone()));
             if holder
                 .names
                 .iter()
@@ -1123,7 +1132,16 @@ fn release(
         let mut next = BTreeSet::new();
         for (arena, ids) in drops {
             let parents: Vec<String> = ids.iter().flat_map(|id| parents(ir, &arena, id)).collect();
-            carried.extend(ids.iter().flat_map(|id| owned(ir, &arena, id)));
+            for id in &ids {
+                for (owned_arena, record) in owned(ir, &arena, id) {
+                    released
+                        .needs
+                        .entry(record.clone())
+                        .or_default()
+                        .insert(id.clone());
+                    carried.push((owned_arena, record));
+                }
+            }
             for (id, copies) in ir.remove_ids(&arena, &ids) {
                 if references.release(&id, copies) {
                     next.insert(id.clone());

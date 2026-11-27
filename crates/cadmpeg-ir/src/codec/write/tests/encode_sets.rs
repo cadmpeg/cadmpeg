@@ -641,3 +641,155 @@ fn a_record_no_definition_owns_is_held_by_the_root_output_and_where_it_is_named(
             .into()
     );
 }
+
+/// The ids of the records of `arena` in `document`.
+fn ids_of(document: &CadIr, arena: &str) -> Vec<String> {
+    document
+        .arenas()
+        .record_ids()
+        .into_iter()
+        .find(|(name, _)| name.as_str() == arena)
+        .map(|(_, (_, ids))| ids.into_iter().map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// The messages of the `export:record.unheld` losses of `report`.
+fn unheld(report: &crate::report::export::ExportReport) -> Vec<&str> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| code_name(&loss.code) == "export:record.unheld")
+        .map(|loss| loss.message.as_str())
+        .collect()
+}
+
+#[test]
+fn a_record_that_needs_a_record_of_another_output_is_charged_where_no_output_holds_it() {
+    let mut ir = two_file_document_with_records();
+    let part = crate::features::FeatureId::try_from("test:model:feature#part".to_owned()).unwrap();
+    let mut asm = ir.model.features[0].clone();
+    asm.product_definition = None;
+    asm.id = "test:model:feature#asm".try_into().unwrap();
+    asm.dependencies = std::iter::once(part.clone()).collect();
+    let mut rootdep = ir.model.features[0].clone();
+    rootdep.id = "test:model:feature#rootdep".try_into().unwrap();
+    rootdep.dependencies = std::iter::once(part).collect();
+    ir.model.features.extend([asm, rootdep]);
+    let names = OutputNames::from([
+        (definition_id("root"), output_name("assembly.out")),
+        (definition_id("part"), output_name("part.out")),
+    ]);
+    let planned = PlannedDocuments::default();
+    let plan = planned
+        .plan(EncodeInput::new(&ir, None).with_outputs(Outputs::Named(&names)))
+        .unwrap();
+    let documents = planned.0.into_inner().unwrap();
+    assert_eq!(
+        ids_of(&documents[0], "features"),
+        ["test:model:feature#root"]
+    );
+    assert_eq!(
+        ids_of(&documents[1], "features"),
+        ["test:model:feature#part"]
+    );
+    let [message] = unheld(plan.report())[..] else {
+        panic!("one record.unheld loss: {:?}", plan.report().losses)
+    };
+    for entry in [
+        "test:model:feature#asm needs test:model:feature#part of part.out",
+        "test:model:feature#rootdep needs test:model:feature#part of part.out",
+    ] {
+        assert!(message.contains(entry), "{entry} in {message}");
+    }
+}
+
+/// [`two_file_document_with_records`] where the part places an embedded
+/// pin, with a joint grounded on the root, a joint grounded on the pin, and
+/// a joint between the part's occurrence and the pin.
+fn document_with_joints() -> CadIr {
+    use crate::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, PairedJointKind,
+        ProductDefinition, Storage,
+    };
+    use crate::transform::Transform;
+    let mut ir = two_file_document_with_records();
+    let pin = crate::ids::OccurrenceId::try_from("test:model:occurrence#pin".to_owned()).unwrap();
+    let placed =
+        crate::ids::OccurrenceId::try_from("test:model:occurrence#part".to_owned()).unwrap();
+    ir.model.product_definitions.push(ProductDefinition::new(
+        definition_id("pin"),
+        Storage::Embedded,
+    ));
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| definition.id == definition_id("part"))
+        .unwrap()
+        .occurrences
+        .push(pin.clone());
+    ir.model
+        .occurrences
+        .push(Occurrence::new(pin.clone(), definition_id("pin"), None));
+    let connector = |operand| JointConnector {
+        operand,
+        frame: Transform::identity(),
+        detached: false,
+    };
+    let id = |key: &str| JointId::mint(format!("test:model:joint#{key}")).unwrap();
+    ir.model.assembly_joints = vec![
+        AssemblyJoint::grounded(
+            id("root"),
+            connector(JointOperand::root("origin", Vec::new())),
+            None,
+        ),
+        AssemblyJoint::grounded(
+            id("pin"),
+            connector(JointOperand::occurrence(pin.clone(), "pin", Vec::new())),
+            None,
+        ),
+        AssemblyJoint::paired(
+            id("mixed"),
+            PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [
+                connector(JointOperand::occurrence(placed, "part", Vec::new())),
+                connector(JointOperand::occurrence(pin, "pin", Vec::new())),
+            ],
+            None,
+        ),
+    ];
+    ir
+}
+
+#[test]
+fn a_joint_belongs_to_the_output_of_the_definition_that_lists_its_occurrences() {
+    let ir = document_with_joints();
+    let names = OutputNames::from([
+        (definition_id("root"), output_name("assembly.out")),
+        (definition_id("part"), output_name("part.out")),
+    ]);
+    let planned = PlannedDocuments::default();
+    let plan = planned
+        .plan(EncodeInput::new(&ir, None).with_outputs(Outputs::Named(&names)))
+        .unwrap();
+    let documents = planned.0.into_inner().unwrap();
+    assert_eq!(
+        ids_of(&documents[0], "assembly_joints"),
+        ["test:model:joint#root"]
+    );
+    assert_eq!(
+        ids_of(&documents[1], "assembly_joints"),
+        ["test:model:joint#pin"]
+    );
+    let [message] = unheld(plan.report())[..] else {
+        panic!("one record.unheld loss: {:?}", plan.report().losses)
+    };
+    assert!(
+        message.contains("test:model:joint#mixed needs test:model:occurrence#pin of part.out"),
+        "{message}"
+    );
+}
