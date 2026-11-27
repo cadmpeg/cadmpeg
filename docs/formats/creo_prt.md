@@ -3379,6 +3379,12 @@ body and is the auxiliary field. The equation table ends before the following
 `scale`, `scales`, or `guesses` named record. The declared count and decoded row
 count are independent native values.
 
+When a feature table declares more rows than the reader decodes, the reader
+gives up the rows from the first row it does not decode as a
+`feature-table-rows` part. The part runs to the next table label or decoded
+row of the feature definition, or to the end of the definition, and retains
+its bytes.
+
 Within each `var_arr` row, `value` and `guess` are independent scalar lanes.
 The unresolved forms `00 <tail2>` and `34 <tail2>` occupy three bytes;
 `01 <tail3>` occupies four. Each lane retains its complete body and has no
@@ -6970,7 +6976,11 @@ constraints.
 A row whose frame is not a proper rigid placement is given up by the id of
 the occurrence that it places. When a row does not match the row grammar, the
 reader gives up the bytes from that row to the end of the section as a
-`component-rows` part.
+`component-rows` part. When a `NeuAsmSld` section holds a `members` field
+whose table the reader does not transfer, the reader gives up the bytes from
+that field to the end of the section as a `component-table` part. This covers
+a field that opens no table array, a section with more than one `members`
+field, and a table in each of two or more `NeuAsmSld` sections.
 
 ### 9.1 Frame slots
 

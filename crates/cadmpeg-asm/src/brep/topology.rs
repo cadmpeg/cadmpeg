@@ -1056,7 +1056,7 @@ pub(super) fn shell_wire_roots(
 /// Whether `index` names a record with one of `heads` whose owner slot refers
 /// back to `parent`. Emission writes exactly these records, so a parent lists
 /// only children that exist in the output.
-fn owned_child<'a>(
+pub(super) fn owned_child<'a>(
     by_index: &HashMap<i64, &'a Record>,
     index: i64,
     heads: &[&str],

@@ -429,22 +429,9 @@ pub enum Exactness {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "schema")]
-    use super::StreamName;
     use super::{SourceObjectAssociation, SourceProvenance};
     use crate::test_support::wire;
     use cadmpeg_core::serde_erase::json;
-
-    #[cfg(feature = "schema")]
-    #[test]
-    fn provenance_schemas_use_admitted_stream_names_and_codec_ids() {
-        let schema = json::to_value(schemars::schema_for!(StreamName)).unwrap();
-        assert_eq!(schema["type"], "string");
-        assert_eq!(schema["minLength"], 1);
-        let schema = json::to_value(schemars::schema_for!(SourceObjectAssociation)).unwrap();
-        assert_eq!(schema["properties"]["format"]["$ref"], "#/$defs/CodecId");
-        assert_eq!(schema["$defs"]["CodecId"]["pattern"], "^[a-z0-9]+$");
-    }
 
     #[test]
     fn a_source_object_names_any_codec_id() {

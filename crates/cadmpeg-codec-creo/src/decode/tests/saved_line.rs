@@ -141,6 +141,7 @@ fn saved_line_joins_through_order_table() {
     let mut coordinate_definition = definition.clone();
     coordinate_definition.variables = Some(crate::feature::definitions::test_support::with_points(
         crate::feature::definitions::FeatureVariableTable {
+            rows_end: 0,
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
@@ -310,6 +311,7 @@ fn saved_line_joins_through_order_table() {
         offset: 26,
     });
     constrained.relations = Some(crate::feature::definitions::FeatureRelationTable {
+        rows_end: None,
         declared_count: 3,
         entity_ref: None,
         rows: vec![crate::feature::definitions::FeatureRelation {
@@ -328,6 +330,7 @@ fn saved_line_joins_through_order_table() {
             offset: 28,
         }],
         skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 1,
@@ -352,6 +355,7 @@ fn saved_line_joins_through_order_table() {
             }],
         }),
         triples: Some(crate::feature::definitions::SolverSubtable::Declared {
+            rows_end: None,
             header: crate::feature::definitions::FeatureSolverTableHeader {
                 declared_count: 1,
                 entity_ref: 2,
@@ -1286,6 +1290,7 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         outlines: Vec::new(),
         variables: Some(crate::feature::definitions::test_support::with_points(
             crate::feature::definitions::FeatureVariableTable {
+                rows_end: 0,
                 declared_count: 0,
                 entity_ref: None,
                 rows: Vec::new(),
