@@ -25,6 +25,7 @@ mod operations;
 mod parameters;
 pub(crate) mod sheet_metal;
 mod sketches;
+mod topologies;
 
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
@@ -67,6 +68,7 @@ pub(crate) fn project(
     sheet_metal::attachments::project(ir, features)?;
     losses.extend(sheet_metal::feature_reliefs(ir, features, parameters));
     place_current_bodies(ir)?;
+    topologies::restate(ctx, ir)?;
     Ok(())
 }
 
