@@ -75,6 +75,7 @@ pub(crate) fn scan_history_boundary(
                 let terminal_name = matches!(lexed, Lexed::Ident(_));
                 match lexed {
                     Lexed::SubIdent(part) | Lexed::Ident(part) if !name_done => {
+                        let part = part.text().ok()?;
                         preamble_matches &= preamble
                             .and_then(|parts| parts.get(name_index))
                             .is_some_and(|expected| *expected == part);
@@ -266,7 +267,7 @@ pub fn payload_subtype_range(
                     else {
                         return None;
                     };
-                    if name != expected {
+                    if name.text().ok()? != expected {
                         return None;
                     }
                     pos = start;
@@ -362,8 +363,14 @@ pub(crate) fn lex_payload(
         };
         tokens.push(match lexed {
             Lexed::Value(token) => token,
-            Lexed::Ident(name) => Token::Ident(name.to_owned()),
-            Lexed::SubIdent(name) => Token::SubIdent(name.to_owned()),
+            Lexed::Ident(name) => match name.text() {
+                Ok(name) => Token::Ident(name.to_owned()),
+                Err(_) => break,
+            },
+            Lexed::SubIdent(name) => match name.text() {
+                Ok(name) => Token::SubIdent(name.to_owned()),
+                Err(_) => break,
+            },
             Lexed::Str(value) => Token::Str(value.into_owned()),
             Lexed::Terminator => break,
         });
@@ -380,14 +387,59 @@ pub(crate) enum Lexed<'a> {
     /// A payload token.
     Value(Token),
     /// `0x0d` identifier (name terminator).
-    Ident(&'a str),
+    Ident(RawIdent<'a>),
     /// `0x0e` sub-identifier (name component).
-    SubIdent(&'a str),
+    SubIdent(RawIdent<'a>),
     /// A `0x07`/`0x08`/`0x09`/`0x12` payload string: borrowed when it is UTF-8, else decoded as Windows-1252
     /// (German Inventor stores appearance names such as "Grün - poliert" in the system code page).
     Str(Cow<'a, str>),
     /// `0x11` record terminator.
     Terminator,
+}
+
+/// The bytes of a `0x0d` or `0x0e` identifier, not yet decoded.
+///
+/// A stream that interns identifiers ends a name with `%` and a raw
+/// little-endian `u32` table index, and an index can hold any byte value, so
+/// the whole identifier is not always UTF-8. Decoding is the consumer's step:
+/// [`RawIdent::text`] reads the whole identifier as text, and the intern table
+/// reads the name before the suffix.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RawIdent<'a> {
+    bytes: &'a [u8],
+    /// Stream offset of the first identifier byte.
+    offset: usize,
+    tag: u8,
+}
+
+impl<'a> RawIdent<'a> {
+    fn utf8(&self, bytes: &'a [u8]) -> Result<&'a str, StreamError> {
+        std::str::from_utf8(bytes).map_err(|error| StreamError {
+            format: StreamFormat::Binary,
+            offset: self.offset + error.valid_up_to(),
+            reason: format!("payload for tag {:#04x} is not valid UTF-8", self.tag),
+        })
+    }
+
+    /// The whole identifier as UTF-8 text.
+    pub(crate) fn text(&self) -> Result<&'a str, StreamError> {
+        self.utf8(self.bytes)
+    }
+
+    /// The identifier split before a trailing `%` and four index bytes, when it
+    /// ends in one. The name part must be UTF-8; the index bytes are raw.
+    fn interned(&self) -> Result<Option<(&'a str, u32)>, StreamError> {
+        let Some(split) = self.bytes.len().checked_sub(5) else {
+            return Ok(None);
+        };
+        if self.bytes[split] != b'%' {
+            return Ok(None);
+        }
+        let Some(index) = View::u32_le_at(self.bytes, split + 1) else {
+            return Ok(None);
+        };
+        Ok(Some((self.utf8(&self.bytes[..split])?, index)))
+    }
 }
 
 /// One byte of Windows-1252 as a char (0x80-0x9F the code page's own letters, the rest Latin-1).
@@ -422,13 +474,13 @@ pub(crate) fn lex(
         offset: pos,
         reason: format!("truncated payload for tag {tag:#04x}"),
     };
-    let string = |start: usize, len: usize| {
+    let identifier = |start: usize, len: usize| {
         let end = start.checked_add(len).ok_or_else(truncated)?;
         let slice = bytes.get(start..end).ok_or_else(truncated)?;
-        std::str::from_utf8(slice).map_err(|error| StreamError {
-            format: StreamFormat::Binary,
-            offset: start + error.valid_up_to(),
-            reason: format!("payload for tag {tag:#04x} is not valid UTF-8"),
+        Ok::<_, StreamError>(RawIdent {
+            bytes: slice,
+            offset: start,
+            tag,
         })
     };
     // payload strings: UTF-8, else Windows-1252 - one appearance name ("Grün - poliert", "Türkis") written in the
@@ -492,11 +544,11 @@ pub(crate) fn lex(
         }
         0x0d => {
             let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
-            (Lexed::Ident(string(p + 1, len)?), p + 1 + len)
+            (Lexed::Ident(identifier(p + 1, len)?), p + 1 + len)
         }
         0x0e => {
             let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
-            (Lexed::SubIdent(string(p + 1, len)?), p + 1 + len)
+            (Lexed::SubIdent(identifier(p + 1, len)?), p + 1 + len)
         }
         0x0f => (Lexed::Value(Token::SubtypeOpen), p),
         0x10 => (Lexed::Value(Token::SubtypeClose), p),
@@ -533,6 +585,110 @@ pub(crate) fn lex(
     Ok(out)
 }
 
+/// The integers [`normalize_extended_base`] removed. Neither integer has a
+/// neutral projection, and the source states neither one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExtendedBaseRemoval {
+    /// Records that lost the integer between the entity id and the pattern
+    /// reference.
+    pub base_integers: usize,
+    /// `body` records that also lost the integer before the first-lump
+    /// reference.
+    pub body_integers: usize,
+}
+
+impl ExtendedBaseRemoval {
+    /// Whether the normalization removed nothing.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.base_integers == 0 && self.body_integers == 0
+    }
+}
+
+/// Rewrite records of a save format with the extended entity base to the base
+/// the shared decoders read: entity id, then pattern reference. Returns what
+/// it removed, for the caller to report.
+///
+/// A record qualifies when it is not an attribute record (its name does not end
+/// in `attrib`; attribute records keep their stored form) and its third value
+/// is an integer followed by a reference. That integer is removed. A `body`
+/// record then also stores one integer before its first-lump reference, which
+/// is removed too.
+pub fn normalize_extended_base(
+    records: &mut [Record],
+    save_format: Option<u32>,
+) -> ExtendedBaseRemoval {
+    let mut removed = ExtendedBaseRemoval::default();
+    if !save_format
+        .is_some_and(|version| crate::kernel_header::EXTENDED_ACIS_SAVE_FORMATS.contains(&version))
+    {
+        return removed;
+    }
+    for record in records {
+        if record.name.ends_with("attrib") {
+            continue;
+        }
+        let value_positions: Vec<usize> = record
+            .tokens
+            .iter()
+            .enumerate()
+            .filter(|(_, token)| !token.is_payload_ident())
+            .map(|(position, _)| position)
+            .take(5)
+            .collect();
+        let value = |nth: usize| value_positions.get(nth).map(|&at| &record.tokens[at]);
+        if !matches!(value(2), Some(Token::Long(_))) || !matches!(value(3), Some(Token::Ref(_))) {
+            continue;
+        }
+        removed.base_integers += 1;
+        let mut drop = vec![value_positions[2]];
+        if record.head() == "body"
+            && matches!(value(3), Some(Token::Ref(_)))
+            && matches!(value(4), Some(Token::Long(_)))
+        {
+            drop.push(value_positions[4]);
+            removed.body_integers += 1;
+        }
+        let kept: Vec<Token> = record
+            .tokens
+            .iter()
+            .enumerate()
+            .filter(|(position, _)| !drop.contains(position))
+            .map(|(_, token)| token.clone())
+            .collect();
+        record.tokens = kept.into();
+    }
+    removed
+}
+
+/// Identifier intern table of a stream that writes `name%<u32 LE>` for the
+/// first use of an identifier and `%<u32 LE>` for each later use.
+struct NameTable {
+    enabled: bool,
+    entries: std::collections::BTreeMap<u32, String>,
+}
+
+impl NameTable {
+    /// The identifier text with its table suffix resolved.
+    fn resolve(&mut self, raw: RawIdent<'_>, offset: usize) -> Result<String, StreamError> {
+        if !self.enabled {
+            return raw.text().map(str::to_owned);
+        }
+        let Some((name, id)) = raw.interned()? else {
+            return raw.text().map(str::to_owned);
+        };
+        if name.is_empty() {
+            return self.entries.get(&id).cloned().ok_or_else(|| StreamError {
+                format: StreamFormat::Binary,
+                offset,
+                reason: format!("identifier refers to undefined name-table entry {id}"),
+            });
+        }
+        self.entries.insert(id, name.to_owned());
+        Ok(name.to_owned())
+    }
+}
+
 /// Frame `bytes[start..limit]` into an indexed record table.
 ///
 /// `ref_width` is the stream's reference width (8 for `BinaryFile8`). Framing
@@ -555,7 +711,37 @@ pub fn frame(
         limit,
         ref_width,
         declared_entities,
-        false,
+        FrameMode::default(),
+    )
+}
+
+/// Frame like [`frame`], or like [`frame_history`] when
+/// `eof_terminates_final_record` is set, for the save format the header
+/// declares. A save format of [`EXTENDED_ACIS_SAVE_FORMATS`] stores identifiers
+/// through the intern table, which framing resolves.
+pub fn frame_for_header(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    limit: usize,
+    ref_width: RefWidth,
+    header: &crate::kernel_header::KernelHeader,
+    eof_terminates_final_record: bool,
+) -> Result<Vec<Record>, StreamFailure> {
+    let intern_names = header
+        .save_format_version
+        .is_some_and(|version| crate::kernel_header::EXTENDED_ACIS_SAVE_FORMATS.contains(&version));
+    frame_impl(
+        ctx,
+        bytes,
+        start,
+        limit,
+        ref_width,
+        header.entity_count,
+        FrameMode {
+            eof_terminates_final_record,
+            intern_names,
+        },
     )
 }
 
@@ -569,7 +755,27 @@ pub fn frame_history(
     ref_width: RefWidth,
     declared_entities: Option<u64>,
 ) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(ctx, bytes, start, limit, ref_width, declared_entities, true)
+    frame_impl(
+        ctx,
+        bytes,
+        start,
+        limit,
+        ref_width,
+        declared_entities,
+        FrameMode {
+            eof_terminates_final_record: true,
+            intern_names: false,
+        },
+    )
+}
+
+/// How one framing pass treats the stream end and identifiers.
+#[derive(Clone, Copy, Default)]
+struct FrameMode {
+    /// The final record ends at the stream boundary without a `0x11` terminator.
+    eof_terminates_final_record: bool,
+    /// Identifiers are resolved through the save format's intern table.
+    intern_names: bool,
 }
 
 fn frame_impl(
@@ -579,8 +785,12 @@ fn frame_impl(
     limit: usize,
     ref_width: RefWidth,
     declared_entities: Option<u64>,
-    eof_terminates_final_record: bool,
+    mode: FrameMode,
 ) -> Result<Vec<Record>, StreamFailure> {
+    let FrameMode {
+        eof_terminates_final_record,
+        intern_names,
+    } = mode;
     let Some(bytes) = bytes.get(..limit) else {
         return Err(StreamError {
             format: StreamFormat::Binary,
@@ -608,6 +818,10 @@ fn frame_impl(
     let mut records = Vec::new();
     let mut pos = start;
     let mut index = 0usize;
+    let mut names = NameTable {
+        enabled: intern_names,
+        entries: std::collections::BTreeMap::new(),
+    };
 
     while pos < limit {
         let rec_start = pos;
@@ -642,11 +856,11 @@ fn frame_impl(
                     .into());
                 }
                 Lexed::SubIdent(s) if !name_done => {
-                    let part = s.to_owned();
+                    let part = names.resolve(s, token_offset)?;
                     name_parts.push(part);
                 }
                 Lexed::Ident(s) if !name_done => {
-                    let part = s.to_owned();
+                    let part = names.resolve(s, token_offset)?;
                     name_parts.push(part);
                     name_done = true;
                     // The history partition opens with the delta_state record.
@@ -657,6 +871,8 @@ fn frame_impl(
                     }
                 }
                 Lexed::Ident(identifier) => {
+                    let identifier = names.resolve(identifier, token_offset)?;
+                    let identifier = identifier.as_str();
                     if payload_start
                         && name_parts
                             .iter()
@@ -671,6 +887,8 @@ fn frame_impl(
                     tokens.push(Token::Ident(owned));
                 }
                 Lexed::SubIdent(identifier) => {
+                    let identifier = names.resolve(identifier, token_offset)?;
+                    let identifier = identifier.as_str();
                     if payload_start
                         && name_parts
                             .iter()
@@ -751,7 +969,7 @@ fn frame_impl(
 mod tests {
     use super::{
         exact_identifier_at, frame as frame_stream, frame_history as frame_history_stream,
-        payload_token, Record,
+        payload_token, Record, Token,
     };
     use crate::kernel_header::RefWidth;
     use crate::stream_error::{StreamError, StreamFailure};
@@ -818,6 +1036,44 @@ mod tests {
             frame(bytes, 0, bytes.len(), RefWidth::Eight).unwrap().len(),
             1
         );
+    }
+
+    fn framed_for(save_format: u32, bytes: &[u8]) -> Vec<Record> {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+            .expect("test stream fits the service input limit");
+        let header = crate::kernel_header::KernelHeader {
+            save_format_version: Some(save_format),
+            entity_count: None,
+            flags: None,
+            product_family: None,
+            product_version: None,
+            save_date: None,
+            scale: None,
+            linear: None,
+            angular: None,
+        };
+        super::frame_for_header(&ctx, bytes, 0, bytes.len(), RefWidth::Four, &header, false)
+            .unwrap_or_else(|_| panic!("test stream frames"))
+    }
+
+    #[test]
+    fn identifier_table_applies_only_to_the_extended_save_formats() {
+        let mut bytes = vec![0x0d, 9];
+        bytes.extend_from_slice(b"body%\x01\x00\x00\x00");
+        bytes.push(0x11);
+        bytes.extend_from_slice(&[0x0d, 5, b'%', 1, 0, 0, 0, 0x11]);
+        let extended = framed_for(3300, &bytes);
+        assert_eq!(
+            extended
+                .iter()
+                .map(|record| record.name.as_str())
+                .collect::<Vec<_>>(),
+            ["body", "body"]
+        );
+        let older = framed_for(21800, &bytes);
+        assert_eq!(older[0].name, "body%\x01\x00\x00\x00");
+        assert_eq!(older[1].name, "%\x01\x00\x00\x00");
     }
 
     fn framed(
@@ -1984,6 +2240,143 @@ mod tests {
                     .expect("timestamp semantic field");
                 assert_eq!(timestamp[offset], tag);
             }
+        }
+    }
+    /// One `0x0d` identifier of `name` followed by the intern suffix `%` and the
+    /// raw bytes of `index`, then the record terminator.
+    fn interned_record(name: &str, index: [u8; 4]) -> Vec<u8> {
+        let mut bytes = vec![0x0d, u8::try_from(name.len() + 5).expect("short name")];
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.push(b'%');
+        bytes.extend_from_slice(&index);
+        bytes.push(0x11);
+        bytes
+    }
+
+    fn frame_interned(bytes: &[u8], intern_names: bool) -> Result<Vec<Record>, StreamFailure> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).expect("input fits");
+        super::frame_impl(
+            &ctx,
+            bytes,
+            0,
+            bytes.len(),
+            RefWidth::Four,
+            None,
+            super::FrameMode {
+                eof_terminates_final_record: false,
+                intern_names,
+            },
+        )
+    }
+
+    #[test]
+    fn name_table_indexes_that_are_not_utf8_resolve() {
+        // 0x80 is a continuation byte, and 0xa1 0xc3 0x28 0xa0 is not UTF-8 in any position.
+        for index in [[0x80, 0, 0, 0], [0xa1, 0xc3, 0x28, 0xa0], [0xff; 4]] {
+            let mut bytes = interned_record("shell", index);
+            bytes.extend(interned_record("", index));
+            let records = frame_interned(&bytes, true).expect("index of any value");
+            let names: Vec<&str> = records.iter().map(|record| record.name.as_str()).collect();
+            assert_eq!(names, ["shell", "shell"], "index {index:?}");
+        }
+    }
+
+    #[test]
+    fn name_table_refuses_an_undefined_or_non_utf8_name() {
+        let undefined = interned_record("", [0x80, 0, 0, 0]);
+        let error = frame_interned(&undefined, true).expect_err("undefined entry");
+        assert!(format!("{error:?}").contains("undefined name-table entry 128"));
+        // The name part before the suffix stays strict UTF-8.
+        let bad_name = vec![0x0d, 7, 0xff, 0xfe, b'%', 0x80, 0, 0, 0, 0x11];
+        let error = frame_interned(&bad_name, true).expect_err("name is not UTF-8");
+        assert!(format!("{error:?}").contains("not valid UTF-8"));
+        // A stream without the table reads the whole identifier as text.
+        let plain = interned_record("shell", [0x80, 0, 0, 0]);
+        let error = frame_interned(&plain, false).expect_err("no table, raw suffix");
+        assert!(format!("{error:?}").contains("not valid UTF-8"));
+    }
+
+    fn base_record(name: &str, tokens: Vec<Token>) -> Record {
+        Record {
+            index: 0,
+            name: name.to_owned(),
+            tokens: tokens.into(),
+            offset: 0,
+            len: 0,
+        }
+    }
+
+    #[test]
+    fn extended_base_normalization_reports_what_it_removes() {
+        let reference = |at| Token::Ref(at);
+        let extended = |name: &str, extra: Vec<Token>| {
+            let mut tokens = vec![
+                reference(-1),
+                Token::Long(5),
+                Token::Long(77),
+                reference(-1),
+            ];
+            tokens.extend(extra);
+            base_record(name, tokens)
+        };
+        let attribute = base_record(
+            "name_attrib-gen-attrib",
+            vec![
+                reference(-1),
+                Token::Long(6),
+                Token::Long(77),
+                reference(-1),
+            ],
+        );
+        let mut records = vec![
+            extended("body", vec![Token::Long(88), reference(2)]),
+            extended("face", vec![reference(3)]),
+            attribute.clone(),
+            // The third value is a reference: the record has no extended base.
+            base_record("point", vec![reference(-1), Token::Long(7), reference(-1)]),
+        ];
+        let removed = super::normalize_extended_base(&mut records, Some(3300));
+        assert_eq!(
+            removed,
+            super::ExtendedBaseRemoval {
+                base_integers: 2,
+                body_integers: 1
+            }
+        );
+        assert!(!removed.is_empty());
+        assert_eq!(
+            *records[0].tokens,
+            [reference(-1), Token::Long(5), reference(-1), reference(2)]
+        );
+        assert_eq!(
+            *records[1].tokens,
+            [reference(-1), Token::Long(5), reference(-1), reference(3)]
+        );
+        assert_eq!(
+            records[2].tokens, attribute.tokens,
+            "attribute records keep their form"
+        );
+        assert_eq!(records[3].tokens.len(), 3);
+    }
+
+    #[test]
+    fn extended_base_normalization_leaves_other_save_formats_alone() {
+        let record = base_record(
+            "body",
+            vec![
+                Token::Ref(-1),
+                Token::Long(5),
+                Token::Long(77),
+                Token::Ref(-1),
+            ],
+        );
+        for save_format in [None, Some(700), Some(10_000)] {
+            let mut records = vec![record.clone()];
+            let removed = super::normalize_extended_base(&mut records, save_format);
+            assert!(removed.is_empty(), "{save_format:?}");
+            assert_eq!(records[0].tokens, record.tokens);
         }
     }
 }

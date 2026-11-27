@@ -149,33 +149,29 @@ fn decode_acis_binary(
             "ACIS binary header has no record stream",
         ));
     };
+    let mut extensions = false;
     let (payload, face_children) = if ctx.container_only() {
         (None, BTreeMap::new())
     } else {
         let start = stream.offset();
-        let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
-            Some(limit) => sab::frame(
-                ctx,
-                bytes,
-                start,
-                limit,
-                cadmpeg_asm::kernel_header::RefWidth::Four,
-                header.metadata.entity_count,
-            ),
-            None => sab::frame_history(
-                ctx,
-                bytes,
-                start,
-                bytes.len(),
-                cadmpeg_asm::kernel_header::RefWidth::Four,
-                header.metadata.entity_count,
-            ),
-        };
-        let records = framed.map_err(|failure| {
+        let limit = acis_header::solved_record_limit_with_header(bytes, header);
+        let framed = sab::frame_for_header(
+            ctx,
+            bytes,
+            start,
+            limit.unwrap_or(bytes.len()),
+            cadmpeg_asm::kernel_header::RefWidth::Four,
+            &header.metadata,
+            limit.is_none(),
+        );
+        let mut records = framed.map_err(|failure| {
             failure.into_codec_error(ctx, |error| {
                 CodecError::malformed(format_args!("ACIS SAB framing failed: {error}"))
             })
         })?;
+        extensions =
+            !sab::normalize_extended_base(&mut records, header.metadata.save_format_version)
+                .is_empty();
         let brep = decode_with_header(
             ctx,
             &records,
@@ -215,12 +211,23 @@ fn decode_acis_binary(
         None,
         layers(&evidence),
     )?;
-    if header.metadata.unreadable_product_fields().next().is_some() {
+    if extensions {
+        result.body.losses.push(SatLossCode::SourceRecordExtensionsUnprojected.note(
+            "ACIS base extension integers have no neutral projection; shared entity fields decoded; complete stream retained"));
+    }
+    let header_span = header
+        .metadata
+        .unreadable_product_fields()
+        .next()
+        .is_some()
+        .then_some(("sat:source:header#0", 0..stream.offset()));
+    let extension_span = extensions.then_some(("sat:source:record-extensions#0", 0..bytes.len()));
+    if header_span.is_some() || extension_span.is_some() {
         retain_source(
             ctx,
             &mut result,
             bytes,
-            [("sat:source:header#0", 0..stream.offset())],
+            header_span.into_iter().chain(extension_span),
         )?;
     }
     Ok(result)
@@ -320,8 +327,9 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
         )?),
         None => None,
     };
-    let extensions =
-        !ctx.container_only() && (1100..10_000).contains(&text_header.save_format_version);
+    let extensions = !ctx.container_only()
+        && cadmpeg_asm::kernel_header::EXTENDED_ACIS_SAVE_FORMATS
+            .contains(&text_header.save_format_version);
     // A record that holds the whole stream already keeps each part's bytes.
     let whole_stream =
         extensions || concatenated_streams || legacy_context || body_wire || standalone_faces;

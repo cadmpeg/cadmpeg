@@ -5107,10 +5107,19 @@ fn find_class_close(
     prefix: u8,
     class: &[u8],
 ) -> Option<usize> {
-    payload.get(start..end)?;
     let length = class.len().checked_add(2)?;
-    let last = end.checked_sub(length)?;
-    (start..=last).find(|&offset| class_close_at(payload, offset, prefix, class))
+    if length <= 64 {
+        let mut stack = [0u8; 64];
+        stack[0] = prefix;
+        stack[1..=class.len()].copy_from_slice(class);
+        stack[1 + class.len()] = 0xe2;
+        return cadmpeg_core::bytes::find_in(payload, &stack[..length], start, end);
+    }
+    let mut needle = Vec::new();
+    needle.push(prefix);
+    needle.extend_from_slice(class);
+    needle.push(0xe2);
+    cadmpeg_core::bytes::find_in(payload, &needle, start, end)
 }
 
 fn consume_positional_separator(
@@ -6904,6 +6913,14 @@ fn definitions_in_ranges(
     let mut replay_trim_entity_classes: Option<TrimTableClasses> = None;
     let mut replay_trim_vertex_classes: Option<TrimTableClasses> = None;
     let mut replay_order_class = None;
+    let mut next_schema_start = vec![payload.len(); starts.len()];
+    let mut next_non_positional = payload.len();
+    for i in (0..starts.len()).rev() {
+        next_schema_start[i] = next_non_positional;
+        if !starts[i].positional {
+            next_non_positional = starts[i].offset;
+        }
+    }
     for (
         index,
         &DefinitionStart {
@@ -6917,30 +6934,28 @@ fn definitions_in_ranges(
         let end = starts
             .get(index + 1)
             .map_or(payload.len(), |entry| entry.offset);
-        let schema_end = starts[index + 1..]
-            .iter()
-            .find(|entry| !entry.positional)
-            .map_or(payload.len(), |entry| entry.offset);
+        let schema_end = next_schema_start[index];
         let mut parameter_frames = Vec::new();
-        for &(label, kind) in &[
+        for &(needle, kind) in &[
             (
-                b"local_sys".as_slice(),
+                b"local_sys\0\xf9\x04\x03".as_slice(),
                 FeatureParameterFrameKind::LocalSystem,
             ),
-            (b"transf".as_slice(), FeatureParameterFrameKind::Transform),
+            (
+                b"transf\0\xf9\x04\x03".as_slice(),
+                FeatureParameterFrameKind::Transform,
+            ),
         ] {
-            let needle_len = label.len() + 4;
             let mut from = start;
-            while let Some(relative) = payload[from..end].windows(needle_len).position(|window| {
-                window.get(..label.len()) == Some(label)
-                    && window.get(label.len()..) == Some(b"\0\xf9\x04\x03")
-            }) {
-                let field_offset = from + relative;
-                let body_start = field_offset + needle_len;
-                let body_end = payload[body_start..end]
-                    .windows(1)
-                    .position(|window| window[0] == psb::token::NAMED_RECORD)
-                    .map_or(end, |relative| body_start + relative);
+            while let Some(field_offset) = find_bytes(payload, needle, from, end) {
+                let body_start = field_offset + needle.len();
+                let body_end = cadmpeg_core::bytes::find_byte_in(
+                    payload,
+                    psb::token::NAMED_RECORD,
+                    body_start,
+                    end,
+                )
+                .unwrap_or(end);
                 let body = payload[body_start..body_end].to_vec();
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
@@ -7210,27 +7225,25 @@ fn contextual_references<'a>(
     following_record: &'a [u8],
 ) -> impl Iterator<Item = (usize, u32)> + 'a {
     let needle_len = 2 + field.len() + 1;
-    payload[start..end]
-        .windows(needle_len)
-        .enumerate()
-        .filter_map(move |(relative, window)| {
-            if window.get(..2) != Some(&[psb::token::NAMED_RECORD, 1])
-                || window.get(2..2 + field.len()) != Some(field)
-                || window.last() != Some(&0)
-            {
-                return None;
-            }
-            let record_start = start + relative;
-            let value_start = record_start + needle_len;
-            let (value, after_value) = psb::reference_id(payload, value_start).ok()?;
-            let following_end = after_value.checked_add(3 + following_record.len())?;
-            (following_end <= end
-                && payload.get(after_value..after_value + 2)
-                    == Some(&[psb::token::NAMED_RECORD, 0])
-                && payload.get(after_value + 2..following_end - 1) == Some(following_record)
-                && payload.get(following_end - 1) == Some(&0))
-            .then_some((record_start, value))
-        })
+    let mut needle = Vec::new();
+    needle.push(psb::token::NAMED_RECORD);
+    needle.push(1);
+    needle.extend_from_slice(field);
+    needle.push(0);
+    let region = payload.get(start..end).unwrap_or(&[]);
+    let offsets: Vec<usize> = cadmpeg_core::bytes::find_iter(region, &needle)
+        .map(|relative| start + relative)
+        .collect();
+    offsets.into_iter().filter_map(move |record_start| {
+        let value_start = record_start + needle_len;
+        let (value, after_value) = psb::reference_id(payload, value_start).ok()?;
+        let following_end = after_value.checked_add(3 + following_record.len())?;
+        (following_end <= end
+            && payload.get(after_value..after_value + 2) == Some(&[psb::token::NAMED_RECORD, 0])
+            && payload.get(after_value + 2..following_end - 1) == Some(following_record)
+            && payload.get(following_end - 1) == Some(&0))
+        .then_some((record_start, value))
+    })
 }
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
@@ -7246,12 +7259,9 @@ struct DefinitionStart {
 fn definition_starts(payload: &[u8]) -> Vec<DefinitionStart> {
     const PREFIX: &[u8] = b"feat_defs_";
     let mut starts = Vec::new();
-    for offset in 0..payload.len() {
-        if payload.get(offset..offset + PREFIX.len()) != Some(PREFIX) {
-            continue;
-        }
+    for offset in cadmpeg_core::bytes::find_iter(payload, PREFIX) {
         let digits_start = offset + PREFIX.len();
-        let Some(nul_relative) = payload[digits_start..].iter().position(|&byte| byte == 0) else {
+        let Some(nul_relative) = cadmpeg_core::bytes::find_byte(&payload[digits_start..], 0) else {
             continue;
         };
         let digits = &payload[digits_start..digits_start + nul_relative];
@@ -7300,31 +7310,24 @@ fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<DefinitionStart> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
-    let candidates = payload
-        .windows(GSEC.len())
-        .enumerate()
-        .filter_map(|(start, window)| {
-            (window == GSEC).then_some(())?;
-            let search_end = start
-                .checked_add(NAME_WINDOW)
-                .map_or(payload.len(), |window_end| window_end.min(payload.len()));
-            let digits_start = find_bytes(payload, NAME, start, search_end)? + NAME.len();
-            let digits_end = payload[digits_start..search_end]
-                .iter()
-                .position(|byte| *byte == 0)?
-                + digits_start;
-            let digits = payload.get(digits_start..digits_end)?;
-            if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-                return None;
-            }
-            let id = std::str::from_utf8(digits).ok()?.parse::<u32>().ok()?;
-            Some(DefinitionStart {
-                offset: start,
-                id: NonZeroU32::new(id),
-                owner_override: None,
-                positional: false,
-            })
-        });
+    let candidates = cadmpeg_core::bytes::find_iter(payload, GSEC).filter_map(|start| {
+        let search_end = start
+            .checked_add(NAME_WINDOW)
+            .map_or(payload.len(), |window_end| window_end.min(payload.len()));
+        let digits_start = find_bytes(payload, NAME, start, search_end)? + NAME.len();
+        let digits_end = cadmpeg_core::bytes::find_byte_in(payload, 0, digits_start, search_end)?;
+        let digits = payload.get(digits_start..digits_end)?;
+        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        let id = std::str::from_utf8(digits).ok()?.parse::<u32>().ok()?;
+        Some(DefinitionStart {
+            offset: start,
+            id: NonZeroU32::new(id),
+            owner_override: None,
+            positional: false,
+        })
+    });
     let mut starts = Vec::new();
     for start in candidates {
         starts.push(start);
@@ -7334,7 +7337,16 @@ fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<DefinitionStart> {
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
+#[cfg(test)]
 pub(crate) fn definitions(payload: &[u8]) -> Result<Vec<FeatureDefinition>, CodecError> {
+    Ok(definitions_and_positional_replays(payload)?.0)
+}
+
+/// Decode both labelled `FeatDefs` definitions and unlabeled positional `S2D`
+/// replay instances in a single `definitions_in_ranges` pass.
+pub(crate) fn definitions_and_positional_replays(
+    payload: &[u8],
+) -> Result<(Vec<FeatureDefinition>, Vec<FeatureDefinition>), CodecError> {
     let mut starts = definition_starts(payload);
     let mut retained_offsets = BTreeSet::new();
     for DefinitionStart { offset, .. } in &starts {
@@ -7342,8 +7354,10 @@ pub(crate) fn definitions(payload: &[u8]) -> Result<Vec<FeatureDefinition>, Code
     }
     let replay_markers = s2d_replay_starts(payload);
     let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
+    let mut pending_offsets = BTreeSet::new();
     for offset in replay_markers {
         if !claimed_markers.contains(&offset) {
+            pending_offsets.insert(offset);
             let id = inherited_definition_id(&starts, offset);
             starts.push(DefinitionStart {
                 offset,
@@ -7355,9 +7369,23 @@ pub(crate) fn definitions(payload: &[u8]) -> Result<Vec<FeatureDefinition>, Code
     }
     starts.sort_unstable_by_key(|left| left.offset);
     starts.dedup_by_key(|entry| entry.offset);
-    let mut definitions = definitions_in_ranges(payload, &starts)?;
-    definitions.retain(|definition| retained_offsets.contains(&definition.offset));
-    Ok(definitions)
+    let all = definitions_in_ranges(payload, &starts)?;
+    let mut retained = Vec::new();
+    let mut pending = Vec::new();
+    for definition in all {
+        let keep_retained = retained_offsets.contains(&definition.offset);
+        let keep_pending = pending_offsets.contains(&definition.offset);
+        match (keep_retained, keep_pending) {
+            (true, true) => {
+                retained.push(definition.clone());
+                pending.push(definition);
+            }
+            (true, false) => retained.push(definition),
+            (false, true) => pending.push(definition),
+            (false, false) => {}
+        }
+    }
+    Ok((retained, pending))
 }
 
 /// Decode labelled and positional feature definitions embedded directly in a
@@ -7387,17 +7415,15 @@ pub(crate) fn depdb_definitions(payload: &[u8]) -> Result<Vec<FeatureDefinition>
 
 fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
     const PREFIX: &[u8] = b"\xe3S2D";
-    let candidates = payload
-        .windows(PREFIX.len())
-        .enumerate()
-        .filter_map(|(offset, window)| {
-            if window != PREFIX {
-                return None;
-            }
-            let suffix = payload.get(offset + PREFIX.len()..)?;
-            let nul = suffix.iter().take(12).position(|byte| *byte == 0)?;
-            (nul > 0 && suffix[..nul].iter().all(u8::is_ascii_digit)).then_some(offset)
-        });
+    let candidates = cadmpeg_core::bytes::find_iter(payload, PREFIX).filter(|&offset| {
+        let Some(suffix) = payload.get(offset + PREFIX.len()..) else {
+            return false;
+        };
+        let Some(nul) = suffix.iter().take(12).position(|byte| *byte == 0) else {
+            return false;
+        };
+        nul > 0 && suffix[..nul].iter().all(u8::is_ascii_digit)
+    });
     let mut starts = Vec::new();
     for offset in candidates {
         starts.push(offset);
@@ -7440,30 +7466,11 @@ fn claimed_s2d_replay_markers(
 
 /// Decode unlabeled positional `S2D` replay instances without assigning an
 /// owner. Ownership remains absent unless an independent entity join proves it.
+#[cfg(test)]
 pub(crate) fn positional_replay_definitions(
     payload: &[u8],
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
-    let mut starts = definition_starts(payload);
-    let replay_markers = s2d_replay_starts(payload);
-    let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
-    let mut pending_offsets = BTreeSet::new();
-    for offset in replay_markers {
-        if !claimed_markers.contains(&offset) {
-            pending_offsets.insert(offset);
-            let id = inherited_definition_id(&starts, offset);
-            starts.push(DefinitionStart {
-                offset,
-                id,
-                owner_override: None,
-                positional: true,
-            });
-        }
-    }
-    starts.sort_unstable_by_key(|left| left.offset);
-    starts.dedup_by_key(|entry| entry.offset);
-    let mut definitions = definitions_in_ranges(payload, &starts)?;
-    definitions.retain(|definition| pending_offsets.contains(&definition.offset));
-    Ok(definitions)
+    Ok(definitions_and_positional_replays(payload)?.1)
 }
 
 /// Decode one standalone DEPDB `gsec2d_ptr` section with an optional proven owner.
@@ -7476,10 +7483,7 @@ pub(crate) fn depdb_section_definition(
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
     const PREFIX: &[u8] = b"feat_defs_";
-    let mut starts = payload
-        .windows(GSEC.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == GSEC).then_some(offset));
+    let mut starts = cadmpeg_core::bytes::find_iter(payload, GSEC);
     let Some((start, section_id, end)) = (|| {
         let (Some(start), None) = (starts.next(), starts.next()) else {
             return None;

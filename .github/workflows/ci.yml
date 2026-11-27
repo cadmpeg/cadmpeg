@@ -402,18 +402,15 @@ jobs:
 
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
-        # No other build compiles the JsonSchema derives. The core and
-        # assembly crates have no target but their library, so the unit test
-        # build covers each of their targets under the feature; the assembly
-        # library also lints outside `cfg(test)`. `committed_schema` compares
-        # the committed crates/cadmpeg-ir/schema files with the derives, as
-        # text in declared property order. `schema-order` changes serde_json's
-        # map for the whole build, so that build is separate; as an integration
-        # test it compiles no unit test of the crate.
+        # No other build compiles the JsonSchema derives. All schema tests live
+        # in `tests/schema_derives` and `tests/committed_schema` integration
+        # tests, so running them compiles `cadmpeg-core`, `cadmpeg-ir`, and
+        # `cadmpeg-asm` libraries without `cfg(test)` (skipping the ~7.75 GiB
+        # `cadmpeg-ir --lib --test` binary) in a single build under
+        # `schema-order`.
         run: |
           set -euo pipefail
-          cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
-          cargo check -q -p cadmpeg-asm --lib --features cadmpeg-asm/schema
+          cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema-order,cadmpeg-asm/schema --test schema_derives
           cargo test -q -p cadmpeg-ir --features schema-order --test committed_schema
 
       - name: Annex A
