@@ -1484,7 +1484,7 @@ fn cube_with_model_records() -> CadIr {
     });
     let face = ir.geometry.faces[0].id.as_str().to_owned();
     ir.model.presentation_layers.push(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "id": "test:model:layer#1",
             "name": "Layer",
             "items": [{"entity": {"kind": "face", "face": face}}],
@@ -1497,7 +1497,7 @@ fn cube_with_model_records() -> CadIr {
     }
     let definition = ir.model.product_definitions[0].id.as_str().to_owned();
     ir.model.point_clouds.push(
-        serde_json::from_value(serde_json::json!({
+        cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
             "id": "test:model:point-cloud#1",
             "definition": definition,
             "positions": [[0.0, 0.0, 0.0]],
@@ -1510,26 +1510,28 @@ fn cube_with_model_records() -> CadIr {
     );
     let drawing = |id: &str, kind: &str, views: &[&str], source: Option<&str>| {
         let relationships = source.map_or_else(
-            || serde_json::json!({}),
+            || cadmpeg_core::json!({}),
             |source| {
-                serde_json::json!({"Source": [
+                cadmpeg_core::json!({"Source": [
                     {"target": {"kind": "drawing", "value": {"drawing": source}}}
                 ]})
             },
         );
-        serde_json::from_value::<crate::drawings::Drawing>(serde_json::json!({
-            "assets": [],
-            "curves": [],
-            "id": id,
-            "kind": kind,
-            "object": "test:native:body#1",
-            "order": 0,
-            "parameters": {},
-            "relationships": relationships,
-            "runtime_type": kind,
-            "views": views,
-            "native_ref": "test:native:body#1",
-        }))
+        cadmpeg_core::serde_erase::json::from_value::<crate::drawings::Drawing>(
+            cadmpeg_core::json!({
+                "assets": [],
+                "curves": [],
+                "id": id,
+                "kind": kind,
+                "object": "test:native:body#1",
+                "order": 0,
+                "parameters": {},
+                "relationships": relationships,
+                "runtime_type": kind,
+                "views": views,
+                "native_ref": "test:native:body#1",
+            }),
+        )
         .unwrap()
     };
     ir.model.drawings.extend([
