@@ -1488,7 +1488,7 @@ fn parse_mesh_collection_owner_record(
             collection_record_index,
         }));
     }
-    if matches!(frame.design_type.version, 16 | 19 | 20) {
+    if matches!(frame.design_type.version, 19 | 20) {
         return Ok(None);
     }
     let Some((backlink_at, name_count)) = (match frame.design_type.version {
