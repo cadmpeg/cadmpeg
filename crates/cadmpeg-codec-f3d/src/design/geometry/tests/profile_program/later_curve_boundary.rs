@@ -179,10 +179,11 @@ fn a_face_with_an_island_defines_no_selection() {
     assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[4], &[]).is_none());
 }
 
-/// A later chord cuts a corner off the named square: the face beyond the
-/// chord holds named curves, so the chord split the named region.
+/// A later chord cuts a corner off the named square. The ring names the
+/// whole square, so the face beyond the chord is part of the selected region
+/// and both faces are selected.
 #[test]
-fn a_later_curve_that_split_the_named_region_defines_no_selection() {
+fn a_later_curve_that_split_the_named_region_selects_both_faces() {
     let (sketch, _) = divided_circle(false);
     let entities = lines(
         &sketch,
@@ -192,6 +193,26 @@ fn a_later_curve_that_split_the_named_region_defines_no_selection() {
             ("top", (2.0, 2.0), (0.0, 2.0)),
             ("left", (0.0, 2.0), (0.0, 0.0)),
             ("chord", (0.0, 1.5), (1.0, 2.0)),
+        ],
+    );
+    let regions = selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[4], &[]).expect("two faces");
+    assert_eq!(regions.len(), 2);
+}
+
+/// The face beyond the later chord is bounded by a curve that is neither of
+/// the ring, later nor ignored, so it is not part of the named region.
+#[test]
+fn a_neighbour_bounded_by_an_unlisted_curve_defines_no_selection() {
+    let (sketch, _) = divided_circle(false);
+    let entities = lines(
+        &sketch,
+        &[
+            ("bottom", (0.0, 0.0), (2.0, 0.0)),
+            ("right", (2.0, 0.0), (2.0, 2.0)),
+            ("top", (2.0, 2.0), (0.0, 2.0)),
+            ("left", (0.0, 2.0), (0.0, 0.0)),
+            ("chord", (0.0, 1.5), (1.0, 2.0)),
+            ("unlisted", (0.5, 1.75), (0.5, 2.0)),
         ],
     );
     assert!(selected(&sketch, &entities, &[&[0, 1, 2, 3]], &[4], &[]).is_none());

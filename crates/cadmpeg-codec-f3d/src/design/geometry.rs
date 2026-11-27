@@ -2197,9 +2197,11 @@ pub(super) struct UnnamedBoundaryCurves {
 /// ring because curves that the member lists do not name also bound the
 /// face. Each ring selects the one atomic face whose boundary holds every
 /// curve of the ring, where every other boundary curve is in `later` or
-/// `ignored` and at least one is in `later`. A face does not qualify when a
-/// neighbouring face across a later boundary curve holds a curve of its ring:
-/// the later curve then split the region that the ring names.
+/// `ignored` and at least one is in `later`. A neighbouring face across a
+/// later boundary curve that holds a curve of the ring is part of the region
+/// that the later curve split: it joins the ring's selection as a further
+/// region when only curves of the ring, later curves and ignored curves bound
+/// it, and any other such neighbour leaves the selection native.
 /// `None` when a ring is empty, a ring has no such face or several, a face
 /// has an island or can hold an unlisted curve, two rings select one face,
 /// or the work budget runs out. The arrangement is built here and not
@@ -2251,20 +2253,46 @@ pub(super) fn arrangement_regions_holding_named_curves(
         {
             return Ok(None);
         }
-        let split = boundaries[index]
-            .iter()
-            .filter(|entity| later.contains(**entity))
-            .any(|entity| {
-                boundaries.iter().enumerate().any(|(other, boundary)| {
-                    other != index
-                        && boundary.contains(*entity)
-                        && rings.iter().flatten().any(|named| boundary.contains(named))
-                })
-            });
-        if split {
+        // A neighbouring face across a later curve that holds a named curve
+        // of this ring is a part of the region that the later curve divided:
+        // it joins the selection when only named, later and ignored curves
+        // bound it. Any other neighbour that holds a named curve leaves the
+        // selection native.
+        let mut group = vec![index];
+        let mut at = 0;
+        while at < group.len() {
+            let member = group[at];
+            at += 1;
+            for entity in boundaries[member]
+                .iter()
+                .filter(|entity| later.contains(**entity))
+            {
+                for (other, boundary) in boundaries.iter().enumerate() {
+                    if group.contains(&other)
+                        || !boundary.contains(*entity)
+                        || !rings.iter().flatten().any(|named| boundary.contains(named))
+                    {
+                        continue;
+                    }
+                    let joins = boundary.iter().any(|curve| named.contains(*curve))
+                        && boundary.iter().all(|curve| {
+                            named.contains(*curve)
+                                || later.contains(*curve)
+                                || ignored.contains(*curve)
+                        })
+                        && !faces[other].encloses_island
+                        && !faces[other].island_absence_assumed;
+                    if !joins {
+                        return Ok(None);
+                    }
+                    group.push(other);
+                }
+            }
+        }
+        if group.iter().any(|face| selected.contains(face)) {
             return Ok(None);
         }
-        selected.push(index);
+        selected.extend(group);
     }
     let mut regions = Vec::with_capacity(selected.len());
     for index in selected {
