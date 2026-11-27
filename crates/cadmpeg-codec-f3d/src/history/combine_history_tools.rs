@@ -248,11 +248,10 @@ fn live_tool_body(
                 && crate::ids::native_stream(&candidate.id) == stream
                 && inputs.scope_histories.get(&candidate.id) == Some(&history.id)
         });
-        let owner = match (owners.next(), owners.next()) {
-            (Some(owner), None) => owner,
-            _ => return Err(
+        let (Some(owner), None) = (owners.next(), owners.next()) else {
+            return Err(
                 "no single feature of its history owns a later transition that changes the body",
-            ),
+            );
         };
         let Some(owner) = inputs.by_native.get(owner.id.as_str()) else {
             return Err("a transition that changes the body belongs to no projected feature");

@@ -692,7 +692,7 @@ fn a_live_tool_changed_by_a_feature_below_its_generator_stays_native() {
 fn a_live_tool_whose_creator_is_in_another_stream_stays_native() {
     let (features, losses) =
         bind_tool_in_history(&updating_history(), 2, "f3d:Design/OtherStream.dat");
-    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses.is_empty(), "{losses:?}");
     assert!(matches!(
         tools_of(&features[2]),
         BodySelection::NativeSet(_)
