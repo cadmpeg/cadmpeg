@@ -48,13 +48,13 @@
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 
-### DR-1016. Feature navigator final word after suppression
+### DR-1016. Feature navigator final word after unsuppression
 
-**Question.** Which state raises the final word of the feature navigator object above the number of feature-tree items that are not folders, plus one, and by how much?
+**Question.** How much does an unsuppression add to the final word?
 
-**Known.** The word is that number plus one in every document without a suppressed feature. Suppressing an extruded cutout raises it by 2, and suppressing a mirror copy raises it by 1. Suppressing a pattern does not raise it.
+**Known.** Suppress, unsuppress and suppress again on one feature store a word that rises at each step. The first suppression adds the number of later non-folder items (§4.1).
 
-**Need.** Documents that differ in one suppression, with the final word read before and after each change.
+**Need.** The same three steps on features with other counts of later items, to separate the added amount from the later-item count and from `n`.
 
 ### DR-1021. Topology proxy selections
 
