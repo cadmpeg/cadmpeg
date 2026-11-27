@@ -25,10 +25,10 @@ pub(super) fn check_semantic_annotations(
         let native = |target: &str| {
             super::annotations_native::native_link_resolves(ir, |id| all_ids.contains(id), target)
         };
-        let mut refs_valid = native(&annotation.object) && native(&annotation.native_ref);
+        let mut refs_valid = native(annotation.object.as_str()) && native(&annotation.native_ref);
         if refs_valid {
             for id in &annotation.assets {
-                if !native(id) {
+                if !native(id.as_str()) {
                     refs_valid = false;
                     break;
                 }

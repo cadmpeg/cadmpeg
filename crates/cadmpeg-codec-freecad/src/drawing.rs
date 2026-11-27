@@ -329,7 +329,10 @@ pub(crate) fn transfer_neutral(
         }
         let mut assets = Vec::new();
         for name in &record.side_entries {
-            assets.push(crate::native::native_id("entry", name));
+            assets.push(
+                cadmpeg_ir::ids::Identity::try_from(crate::native::native_id("entry", name))
+                    .map_err(CodecError::malformed)?,
+            );
         }
         model.drawings.push(Drawing {
             visible: None,
@@ -349,7 +352,8 @@ pub(crate) fn transfer_neutral(
             assets,
             ..Drawing::new(
                 neutral_drawing_id(&record.object)?,
-                record.object.clone(),
+                cadmpeg_ir::ids::Identity::try_from(record.object.as_str())
+                    .map_err(CodecError::malformed)?,
                 kind,
                 record.kind.as_str().to_owned(),
                 u32::try_from(order).map_err(|_| {

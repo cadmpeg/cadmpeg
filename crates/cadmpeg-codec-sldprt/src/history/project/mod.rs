@@ -389,7 +389,8 @@ pub(crate) fn project_semantic_notes(
                 assets: Vec::new(),
                 ..cadmpeg_ir::semantic_annotations::SemanticAnnotation::new(
                     id,
-                    feature.id.clone(),
+                    cadmpeg_ir::ids::Identity::try_from(feature.id.as_str())
+                        .map_err(|_| CodecError::malformed("invalid SLDPRT feature ID"))?,
                     cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
                     feature.kind.clone(),
                     feature.ordinal,

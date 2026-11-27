@@ -1086,7 +1086,7 @@ impl<'a> Builder<'a> {
                     (self.vertex_refs.get(id.as_str()).copied(), StyleKind::Point)
                 }
                 AppearanceTarget::Tessellation(id) => (
-                    self.tessellation_step_refs.get(id).copied(),
+                    self.tessellation_step_refs.get(id.as_str()).copied(),
                     StyleKind::Surface,
                 ),
                 AppearanceTarget::Body(_)
@@ -1104,7 +1104,7 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Edge(id) => id.as_str().to_owned(),
                     AppearanceTarget::Point(id) => id.as_str().to_owned(),
                     AppearanceTarget::Vertex(id) => id.as_str().to_owned(),
-                    AppearanceTarget::Tessellation(id) => id.clone(),
+                    AppearanceTarget::Tessellation(id) => id.as_str().to_owned(),
                     AppearanceTarget::Body(_)
                     | AppearanceTarget::TriangleGroup { .. }
                     | AppearanceTarget::Occurrence(_)
@@ -1427,7 +1427,7 @@ impl<'a> Builder<'a> {
                     }
                     PresentationItem::Tessellation { tessellation } => self
                         .tessellation_step_refs
-                        .get(tessellation)
+                        .get(tessellation.as_str())
                         .copied()
                         .into_iter()
                         .collect(),

@@ -19,8 +19,8 @@ pub(super) fn table(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Table, Co
     let root = document.root_element();
     if root.tag_name().name() != "Properties" || root.tag_name().namespace() != Some(ROOT_NAMESPACE)
     {
-        return Err(CodecError::malformed(
-            "default-property XML root namespace is unsupported",
+        return Err(CodecError::NotImplemented(
+            "default-property XML root namespace is unsupported".into(),
         ));
     }
     let mut selected = None;
@@ -33,8 +33,8 @@ pub(super) fn table(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Table, Co
             .namespace()
             .is_some_and(|namespace| !namespace.is_empty())
         {
-            return Err(CodecError::malformed(
-                "default-property section namespace is unsupported",
+            return Err(CodecError::NotImplemented(
+                "default-property section namespace is unsupported".into(),
             ));
         }
         if !node.attribute("fmtid").is_some_and(user_defined_fmtid) {
@@ -47,7 +47,7 @@ pub(super) fn table(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Table, Co
         }
     }
     let section = selected.ok_or_else(|| {
-        CodecError::malformed("default-property XML has no UserDefinedProperties set")
+        CodecError::NotImplemented("default-property XML has no UserDefinedProperties set".into())
     })?;
     let nodes = || section.children().filter(roxmltree::Node::is_element);
     let values = nodes()
@@ -83,8 +83,8 @@ pub(super) fn table(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Table, Co
             .namespace()
             .is_some_and(|namespace| !namespace.is_empty())
         {
-            return Err(CodecError::malformed(
-                "default-property record namespace is unsupported",
+            return Err(CodecError::NotImplemented(
+                "default-property record namespace is unsupported".into(),
             ));
         }
         match node.tag_name().name() {
@@ -130,8 +130,8 @@ pub(super) fn table(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Table, Co
                 }
             }
             _ => {
-                return Err(CodecError::malformed(
-                    "default-property section has an unsupported record",
+                return Err(CodecError::NotImplemented(
+                    "default-property section has an unsupported record".into(),
                 ));
             }
         }

@@ -494,13 +494,19 @@ fn topology_that_needs_a_quarantined_edge_list_is_dropped_with_its_part() {
     assert!(result.ir().geometry.bodies.is_empty());
     let native = result.ir().native.namespace("iges").unwrap();
     let mut dependents = Vec::new();
+    let mut bodies = Vec::new();
     for record in &native.arenas()["entities"] {
         let fields = record.fields().unwrap();
+        let sequence = fields["directory_sequence"].as_u64().unwrap();
         if matches!(fields["entity_type"].as_i64(), Some(508 | 510 | 514 | 186)) {
-            dependents.push(fields["directory_sequence"].as_u64().unwrap());
+            dependents.push(sequence);
+        }
+        if fields["entity_type"].as_i64() == Some(186) {
+            bodies.push(format!("iges:model:body#D{sequence}"));
         }
     }
     assert_eq!(dependents.len(), 10);
+    assert_eq!(bodies.len(), 1);
     let given_up = result
         .report()
         .losses
@@ -527,9 +533,11 @@ fn topology_that_needs_a_quarantined_edge_list_is_dropped_with_its_part() {
         .unwrap()
         .split(", ")
         .collect::<Vec<_>>();
-    for sequence in &dependents {
-        let id = format!("iges:entity:directory#{sequence}");
-        assert!(dropped.contains(&id.as_str()), "{id}: {}", edges.message);
+    // The loop, face and shell entities mint no single id; the body names
+    // the solid.
+    assert_eq!(dropped, bodies, "{}", edges.message);
+    for record in &native.arenas()["entities"] {
+        assert!(!dropped.contains(&record.id()), "{}", edges.message);
     }
     assert!(!result
         .report()
