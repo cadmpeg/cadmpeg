@@ -5459,13 +5459,14 @@ pub(crate) struct DesignCarriers {
     pub(crate) declared_bodies: usize,
     pub(crate) sketch_entities: usize,
     pub(crate) reference_images: usize,
-    /// Design records that declare content: parameters, parameter scopes,
-    /// feature timelines, sketch placements and relations, component
-    /// occurrences, mesh features and the other Design carriers that name
-    /// construction or intent.
+    /// Design carriers that state geometry: feature timeline items, indexed
+    /// record headers outside the parameter machinery, sketch placements and
+    /// relations, component occurrences, mesh features and the other carriers
+    /// that name construction or selection. Parameters, parameter scopes,
+    /// owners and companions do not count.
     pub(crate) design_records: usize,
-    /// A Design stream was read and design intent decoded, so
-    /// `design_records` is a complete count.
+    /// A Design metastream entry exists and its design intent decoded and
+    /// projected, so `design_records` is a complete count.
     pub(crate) design_decoded: bool,
     /// The XREF table failed to parse, so the document may hold components.
     pub(crate) xref_unparsed: bool,
@@ -5520,7 +5521,7 @@ pub(crate) fn apply_carrier_classification(
                     &mut report.losses,
                     F3dLossCode::DesignRecordsUntransferred,
                     format_args!(
-                        "the Design stream holds {} record(s) of features, sketches, components, or construction that transferred no geometry",
+                        "the Design stream holds {} carrier(s) that state geometry (features, sketches, components, or construction) and no geometry transferred",
                         carriers.design_records
                     ),
                 );

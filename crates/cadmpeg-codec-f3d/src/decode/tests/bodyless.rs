@@ -617,7 +617,7 @@ fn design_records_without_a_geometry_carrier_name_the_unread_records() {
         .iter()
         .find(|loss| loss.code == F3dLossCode::DesignRecordsUntransferred.kind())
         .unwrap();
-    assert!(loss.message.contains("3 record(s)"));
+    assert!(loss.message.contains("3 carrier(s)"));
     assert_eq!(loss.severity, Severity::Error);
 }
 
