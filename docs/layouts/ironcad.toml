@@ -227,3 +227,128 @@ offset = 41
 type = "f64[16]"
 source = "spec"
 anchor = "| 41 | 128 | `matrix` |"
+
+# --- §6 Scene objects -------------------------------------------------------
+
+[[record]]
+name = "shape_object_header"
+kind = "byte"
+section = "6"
+anchor = "A **scene object entry** is a 20-byte"
+size = 20
+parsed_by = "crates/cadmpeg-codec-ironcad/src/shape_contents.rs"
+
+[[record.field]]
+name = "version"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `version` | `0x250`, `0x253`, or `0x26d`. |"
+
+[[record.field]]
+name = "end"
+offset = 4
+type = "u64"
+source = "spec"
+anchor = "| 4 | 8 | `end` |"
+
+[[record.field]]
+name = "reserved"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "| 12 | 4 | `reserved` | `0`. |"
+
+[[record.field]]
+name = "id"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | 4 | `id` |"
+
+[[record]]
+name = "shape_object_item"
+kind = "byte"
+section = "6"
+anchor = "An item has this form:"
+size = 56
+parsed_by = "crates/cadmpeg-codec-ironcad/src/shape_contents.rs"
+
+[[record.field]]
+name = "tag"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `tag` | `4`. |"
+value = 4
+
+[[record.field]]
+name = "handle"
+offset = 4
+type = "u64"
+source = "spec"
+anchor = "| 4 | 8 | `handle` |"
+
+[[record.field]]
+name = "kind"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "| 12 | 2 | `kind` |"
+
+[[record.field]]
+name = "count"
+offset = 14
+type = "u16"
+source = "spec"
+anchor = "| 14 | 2 | `count` | `1`. |"
+value = 1
+
+[[record.field]]
+name = "reserved"
+offset = 16
+type = "u64"
+source = "spec"
+anchor = "| 16 | 8 | `reserved` | `0`. |"
+
+[[record.field]]
+name = "data_offset"
+offset = 24
+type = "u64"
+source = "spec"
+anchor = "| 24 | 8 | `data_offset` |"
+
+[[record.field]]
+name = "size_tag"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "| 32 | 4 | `size_tag` | `16`. |"
+
+[[record.field]]
+name = "data_size"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "| 36 | 4 | `data_size` |"
+
+[[record.field]]
+name = "object_version"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "| 40 | 4 | `object_version` |"
+
+[[record.field]]
+name = "object_end"
+offset = 44
+type = "u64"
+source = "spec"
+anchor = "| 44 | 8 | `object_end` |"
+
+[[record.field]]
+name = "trailer"
+offset = 52
+type = "u32"
+source = "spec"
+anchor = "| 52 | 4 | `trailer` | `0`. |"

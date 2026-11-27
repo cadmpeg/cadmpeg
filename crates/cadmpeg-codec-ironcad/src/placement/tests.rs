@@ -2,8 +2,9 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{
-    records, PropertyValue, BODY_SET_CLASS, CLASS_TAIL, EMPTY_PROPERTY, FEATURE, INTEGER_PROPERTY,
-    NAME_MARKER, PART_CLASS, PART_COPY_CLASS, PROPERTY_MARKER, STRING_PROPERTY,
+    records, PropertyValue, BODY_SET_CLASS, CLASS_TAIL, COPY_VERSION, EMPTY_PROPERTY, FEATURE,
+    INTEGER_PROPERTY, NAME_MARKER, OBJECT_MARKER, PART_CLASS, PART_COPY_CLASS, PROPERTY_MARKER,
+    STRING_PROPERTY,
 };
 use crate::layout::{scene_record_matrix, scene_record_matrix_short};
 
@@ -225,7 +226,7 @@ fn a_matrix_at_no_fixed_offset_is_found_by_a_search() {
 }
 
 #[test]
-fn a_version_2_part_copy_record_is_a_part_and_a_version_1_copy_is_skipped() {
+fn a_version_2_part_copy_record_is_a_part_and_a_version_1_copy_is_a_copy() {
     let mut copy = object("Copy", 2, PART_COPY_CLASS);
     copy.extend(property("ModelGUID", "{1}"));
     copy.extend(vec![0; scene_record_matrix::FLAG]);
@@ -246,11 +247,16 @@ fn a_version_2_part_copy_record_is_a_part_and_a_version_1_copy_is_skipped() {
     let scene = records(&payload);
     let summary: Vec<_> = scene
         .iter()
-        .map(|record| (record.name.as_str(), record.is_part()))
+        .map(|record| (record.name.as_str(), record.is_part(), record.copy))
         .collect();
     assert_eq!(
         summary,
-        [("Part", true), ("Copy", true), ("Assembly", false)]
+        [
+            ("Part", true, false),
+            ("Copy", true, false),
+            ("Link", true, true),
+            ("Assembly", false, false)
+        ]
     );
     assert_eq!(
         scene[1].property("PartName"),
@@ -341,4 +347,62 @@ fn a_part_record_of_another_version_is_read_and_marked() {
     assert!(scene[0].is_part());
     assert!(scene[0].version_unrecognized);
     assert!(scene[0].transform.is_some());
+}
+
+/// An object marker with identifier `id`.
+fn marker(id: u32) -> Vec<u8> {
+    let mut out = OBJECT_MARKER.to_vec();
+    out.extend_from_slice(&id.to_le_bytes());
+    out
+}
+
+#[test]
+fn a_record_takes_the_first_object_marker_after_the_previous_record() {
+    let payload = [
+        scene_record("Part1", IDENTITY, [0.0; 3]),
+        marker(0x32),
+        marker(0x2),
+        feature("Block"),
+        scene_record("Part2", IDENTITY, [0.0; 3]),
+        scene_record("Assembly", IDENTITY, [0.0; 3]),
+    ]
+    .concat();
+    let ids: Vec<_> = records(&payload).iter().map(|record| record.id).collect();
+    assert_eq!(ids, [None, Some(0x32), None]);
+}
+
+#[test]
+fn an_unnamed_copy_record_is_read_with_its_copy_path() {
+    let mut path = vec![0; 12];
+    for word in [1_u32, 0x40, 0x57, 0] {
+        path.extend_from_slice(&word.to_le_bytes());
+    }
+    let mut unnamed = NAME_MARKER.to_vec();
+    unnamed.push(0);
+    let mut header = object("", COPY_VERSION, PART_COPY_CLASS);
+    header.drain(..=NAME_MARKER.len());
+    unnamed.extend(header);
+    unnamed.extend(property("ModelGUID", "{1}"));
+    unnamed.extend(long_gap());
+    unnamed.extend(matrix(IDENTITY, [0.0; 3]));
+    let mut nested = NAME_MARKER.to_vec();
+    nested.push(0);
+    let mut inner = object("", 0, PART_COPY_CLASS);
+    inner.drain(..=NAME_MARKER.len());
+    nested.extend(inner);
+    let payload = [
+        scene_record("Part", IDENTITY, [0.0; 3]),
+        marker(0x56),
+        path,
+        unnamed,
+        nested,
+    ]
+    .concat();
+    let scene = records(&payload);
+    assert_eq!(scene.len(), 2);
+    assert_eq!(scene[1].name, "");
+    assert!(scene[1].copy);
+    assert_eq!(scene[1].id, Some(0x56));
+    assert_eq!(scene[1].paths, [vec![0x40, 0x57]]);
+    assert!(scene[1].transform.is_some());
 }

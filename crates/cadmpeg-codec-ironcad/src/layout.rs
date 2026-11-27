@@ -79,3 +79,37 @@ pub(crate) mod scene_record_matrix {
     /// Offset of `matrix` (`f64[16]`, little-endian). Spec §5.
     pub(crate) const MATRIX: usize = 41;
 }
+
+/// Byte offsets for the `shape_object_header` record.
+///
+/// Spec §6. Record length 20 B.
+pub(crate) mod shape_object_header {
+    /// Record length in bytes. Spec §6.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `end` (`u64`, little-endian). Spec §6.
+    pub(crate) const END: usize = 4;
+    /// Offset of `reserved` (`u32`, little-endian). Spec §6.
+    pub(crate) const RESERVED: usize = 12;
+    /// Offset of `id` (`u32`, little-endian). Spec §6.
+    pub(crate) const ID: usize = 16;
+}
+
+/// Byte offsets for the `shape_object_item` record.
+///
+/// Spec §6. Record length 56 B.
+pub(crate) mod shape_object_item {
+    /// Record length in bytes. Spec §6.
+    pub(crate) const LEN: usize = 56;
+    /// Offset of `tag` (`u32`, little-endian). Spec §6.
+    pub(crate) const TAG: usize = 0;
+    /// Stated value of `tag` (`u32`). Spec §6.
+    pub(crate) const TAG_VALUE: u32 = 0x0000_0004;
+    /// Offset of `handle` (`u64`, little-endian). Spec §6.
+    pub(crate) const HANDLE: usize = 4;
+    /// Offset of `kind` (`u16`, little-endian). Spec §6.
+    pub(crate) const KIND: usize = 12;
+    /// Offset of `count` (`u16`, little-endian). Spec §6.
+    pub(crate) const COUNT: usize = 14;
+    /// Stated value of `count` (`u16`). Spec §6.
+    pub(crate) const COUNT_VALUE: u16 = 0x0001;
+}

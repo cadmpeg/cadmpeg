@@ -98,6 +98,41 @@ Parsed by:
 | 40 | 1 | `flag` | `u8` | little | spec | \| 40 \| 1 \| `flag` \| `1`. \| · value `1` |
 | 41 | 128 | `matrix` | `f64[16]` | little | spec | \| 41 \| 128 \| `matrix` \| |
 
+## `shape_object_header`
+
+Spec §6 · layout: byte offsets · size: 20 B
+
+Parsed by:
+- `crates/cadmpeg-codec-ironcad/src/shape_contents.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `version` | `u32` | little | spec | \| 0 \| 4 \| `version` \| `0x250`, `0x253`, or `0x26d`. \| |
+| 4 | 8 | `end` | `u64` | little | spec | \| 4 \| 8 \| `end` \| |
+| 12 | 4 | `reserved` | `u32` | little | spec | \| 12 \| 4 \| `reserved` \| `0`. \| |
+| 16 | 4 | `id` | `u32` | little | spec | \| 16 \| 4 \| `id` \| |
+
+## `shape_object_item`
+
+Spec §6 · layout: byte offsets · size: 56 B
+
+Parsed by:
+- `crates/cadmpeg-codec-ironcad/src/shape_contents.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `tag` | `u32` | little | spec | \| 0 \| 4 \| `tag` \| `4`. \| · value `4` |
+| 4 | 8 | `handle` | `u64` | little | spec | \| 4 \| 8 \| `handle` \| |
+| 12 | 2 | `kind` | `u16` | little | spec | \| 12 \| 2 \| `kind` \| |
+| 14 | 2 | `count` | `u16` | little | spec | \| 14 \| 2 \| `count` \| `1`. \| · value `1` |
+| 16 | 8 | `reserved` | `u64` | little | spec | \| 16 \| 8 \| `reserved` \| `0`. \| |
+| 24 | 8 | `data_offset` | `u64` | little | spec | \| 24 \| 8 \| `data_offset` \| |
+| 32 | 4 | `size_tag` | `u32` | little | spec | \| 32 \| 4 \| `size_tag` \| `16`. \| |
+| 36 | 4 | `data_size` | `u32` | little | spec | \| 36 \| 4 \| `data_size` \| |
+| 40 | 4 | `object_version` | `u32` | little | spec | \| 40 \| 4 \| `object_version` \| |
+| 44 | 8 | `object_end` | `u64` | little | spec | \| 44 \| 8 \| `object_end` \| |
+| 52 | 4 | `trailer` | `u32` | little | spec | \| 52 \| 4 \| `trailer` \| `0`. \| |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

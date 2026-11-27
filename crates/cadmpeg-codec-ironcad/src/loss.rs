@@ -23,6 +23,7 @@ pub(crate) enum IronCadLossCode {
     FaceBoundaryUnstated,
     SurfaceUntyped,
     PlacementBoundByOrder,
+    PlacementBoundByIdentity,
     PlacementUnbound,
     PlacementMatrixSearched,
     PlacementRecordVersionUnrecognized,
@@ -84,6 +85,10 @@ impl IronCadLossCode {
             Self::PlacementBoundByOrder => {
                 ("placement.bound-by-order", LossTaxonomy::DecodeDiagnostic)
             }
+            Self::PlacementBoundByIdentity => (
+                "placement.bound-by-identity",
+                LossTaxonomy::DecodeDiagnostic,
+            ),
             Self::PlacementUnbound => (
                 "placement.unbound",
                 LossTaxonomy::AssemblyPlacementsNotTransferred,

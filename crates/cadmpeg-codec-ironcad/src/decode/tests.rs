@@ -30,6 +30,21 @@ fn count(losses: &[LossNote], code: IronCadLossCode) -> usize {
     losses.iter().filter(|loss| loss.code == code).count()
 }
 
+/// Binds `scene` by rank and places it.
+fn ranked(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    results: &[(Option<usize>, Vec<cadmpeg_ir::ids::BodyId>)],
+    scene: &[crate::placement::SceneRecord],
+    tree: &[crate::tree::Assembly],
+    losses: &mut Vec<LossNote>,
+) -> Vec<cadmpeg_ir::ids::OccurrenceId> {
+    let Some(places) = super::rank_binding(scene, results.len(), tree, losses) else {
+        return Vec::new();
+    };
+    super::place(ctx, ir, results, scene, &places, tree, losses).unwrap()
+}
+
 /// A part pair: a feature record inside a node, then the result record.
 fn part(feature: &[u8], result: &[u8]) -> Vec<u8> {
     node(&[
@@ -168,15 +183,7 @@ fn part_records_that_do_not_match_the_part_results_are_unbound() {
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
-    let placed = super::place(
-        &ctx,
-        &mut ir,
-        vec![(None, Vec::new())],
-        &[],
-        &[],
-        &mut losses,
-    )
-    .unwrap();
+    let placed = ranked(&ctx, &mut ir, &[(None, Vec::new())], &[], &[], &mut losses);
     assert!(placed.is_empty());
     assert_eq!(count(&losses, IronCadLossCode::PlacementUnbound), 1);
     assert!(ir.model.product_definitions.is_empty());
@@ -272,6 +279,9 @@ fn scene_record(name: &str, has_features: bool, z: f64) -> crate::placement::Sce
         } else {
             Role::Assembly
         },
+        id: None,
+        copy: false,
+        paths: Vec::new(),
         matrix_searched: false,
         version_unrecognized: false,
         embedded: None,
@@ -304,14 +314,23 @@ fn placed_scene(
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     let results = vec![(None, Vec::new()), (b_assembly, Vec::new())];
-    let placed =
-        super::place(&ctx, &mut ir, results, &scene, tree_assemblies, &mut losses).unwrap();
+    let placed = ranked(
+        &ctx,
+        &mut ir,
+        &results,
+        &scene,
+        tree_assemblies,
+        &mut losses,
+    );
     (ir, placed, losses)
 }
 
 #[test]
 fn an_assembly_of_the_tree_holds_its_parts_and_is_placed_by_its_record() {
-    let tree = [crate::tree::Assembly { parent: None }];
+    let tree = [crate::tree::Assembly {
+        parent: None,
+        end: 0,
+    }];
     let (ir, placed, losses) = placed_scene(&tree, Some(0));
     assert_eq!(count(&losses, IronCadLossCode::AssemblyBoundByOrder), 1);
     assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 0);
@@ -357,8 +376,14 @@ fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
         scene_record("outer", false, 100.0),
     ];
     let tree = [
-        crate::tree::Assembly { parent: Some(1) },
-        crate::tree::Assembly { parent: None },
+        crate::tree::Assembly {
+            parent: Some(1),
+            end: 0,
+        },
+        crate::tree::Assembly {
+            parent: None,
+            end: 0,
+        },
     ];
     let payload = plane_face_body();
     let arena = DecodeArena::new();
@@ -367,7 +392,7 @@ fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     let results = vec![(Some(1), Vec::new()), (Some(0), Vec::new())];
-    let placed = super::place(&ctx, &mut ir, results, &scene, &tree, &mut losses).unwrap();
+    let placed = ranked(&ctx, &mut ir, &results, &scene, &tree, &mut losses);
     assert_eq!(count(&losses, IronCadLossCode::AssemblyFlattened), 0);
     let name = |id: &cadmpeg_ir::ids::OccurrenceId| {
         let occurrence = ir.model.occurrences.iter().find(|o| &o.id == id).unwrap();

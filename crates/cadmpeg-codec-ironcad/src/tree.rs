@@ -58,6 +58,11 @@ pub(crate) struct KernelRecord<'a> {
     /// The assembly that holds the record's pair, as an index into
     /// [`Tree::assemblies`].
     pub(crate) assembly: Option<usize>,
+    /// The offset in the payload where the record ends.
+    pub(crate) end: usize,
+    /// The offset in the payload where the node before the record starts,
+    /// when [`Self::follows_node`] holds.
+    pub(crate) child_start: Option<usize>,
     pub(crate) bytes: View<'a>,
 }
 
@@ -77,11 +82,14 @@ pub(crate) struct Assembly {
     /// The assembly that holds this node, as an index into
     /// [`Tree::assemblies`].
     pub(crate) parent: Option<usize>,
+    /// The offset in the payload where the node ends.
+    pub(crate) end: usize,
 }
 
 /// One node below the scene root, in the order the nodes open.
 struct Node {
     start: usize,
+    end: usize,
     parent: Option<usize>,
     holds_pair: bool,
 }
@@ -152,9 +160,11 @@ pub(crate) fn read(payload: View<'_>) -> Result<Tree<'_>, TreeError> {
                 .child(at, cursor.position())
                 .ok_or_else(|| malformed("kernel record escapes the payload"))?;
             let mut record = kernel_record(whole)?;
+            record.end = whole.end() - payload.start();
             if let Some(level) = levels.last_mut() {
                 if let Some(child) = level.after_node {
                     record.follows_node = true;
+                    record.child_start = Some(child - payload.start());
                     child_nodes.push(child..at);
                     if let Some(node) = level.node {
                         nodes[node].holds_pair = true;
@@ -182,6 +192,7 @@ pub(crate) fn read(payload: View<'_>) -> Result<Tree<'_>, TreeError> {
             let node = (levels.len() > 1).then(|| {
                 nodes.push(Node {
                     start: at,
+                    end: node_end - payload.start(),
                     parent,
                     holds_pair: false,
                 });
@@ -191,7 +202,7 @@ pub(crate) fn read(payload: View<'_>) -> Result<Tree<'_>, TreeError> {
         }
     }
     within_parts(&mut records, &mut nodes, child_nodes);
-    Ok(assemble(records, &nodes, &closed_nodes))
+    Ok(assemble(records, &mut nodes, &closed_nodes))
 }
 
 /// Reads each pair and each node that the child node of a pair holds as part
@@ -218,6 +229,7 @@ fn within_parts(
     {
         record.follows_node = false;
         record.assembly = None;
+        record.child_start = None;
     }
     for node in nodes.iter_mut().filter(|node| inside(node.start)) {
         node.holds_pair = false;
@@ -226,7 +238,23 @@ fn within_parts(
 
 /// Numbers the nodes that hold pairs in the order they end, and refers each
 /// record and each assembly to its assembly by that number.
-fn assemble<'a>(mut records: Vec<KernelRecord<'a>>, nodes: &[Node], closed: &[usize]) -> Tree<'a> {
+fn assemble<'a>(
+    mut records: Vec<KernelRecord<'a>>,
+    nodes: &mut [Node],
+    closed: &[usize],
+) -> Tree<'a> {
+    for index in 0..nodes.len() {
+        if nodes[index].holds_pair {
+            let mut at = nodes[index].parent;
+            while let Some(parent) = at {
+                if nodes[parent].holds_pair {
+                    break;
+                }
+                nodes[parent].holds_pair = true;
+                at = nodes[parent].parent;
+            }
+        }
+    }
     let mut number = vec![None; nodes.len()];
     let mut order = Vec::new();
     for &node in closed.iter().filter(|&&node| nodes[node].holds_pair) {
@@ -246,6 +274,7 @@ fn assemble<'a>(mut records: Vec<KernelRecord<'a>>, nodes: &[Node], closed: &[us
         .iter()
         .map(|&node| Assembly {
             parent: holder(nodes[node].parent),
+            end: nodes[node].end,
         })
         .collect();
     for record in &mut records {
@@ -283,6 +312,8 @@ fn kernel_record(whole: View<'_>) -> Result<KernelRecord<'_>, TreeError> {
         follows_node: false,
         canonical_header: marker.to_le_bytes()[0] == MARKER_LOW_BYTE && words == [1, 1, 1, 0],
         assembly: None,
+        end: 0,
+        child_start: None,
         bytes,
     })
 }

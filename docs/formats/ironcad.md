@@ -22,7 +22,7 @@ three streams is an IronCAD scene.
 |---|---|---|
 | `Brep Data` | frame (§2) | Kernel record tree (§3). |
 | `Shape Data` | frame | Scene object graph. |
-| `Shape Contents` | frame | Scene browser names as UTF-16LE strings. |
+| `Shape Contents` | frame | Scene objects (§6). |
 | `Shared Objects` | frame | Style, layer, and line-type names as UTF-16LE strings. |
 | `Public Access` | frame | Part property names and values. |
 | `Public Access Data` | frame | |
@@ -82,7 +82,8 @@ The payload node is the scene root. A **pair** is a child node that holds a
 kernel record at any depth, directly followed by a kernel record. The child
 node of a pair belongs to the feature tree of its part: a pair that it holds at
 any depth is a feature shape of that part, and a node that it holds is not an
-assembly. A node below the scene root that holds pairs is an **assembly**: each pair that it holds is a part of the assembly, and
+A node below the scene root that holds
+pairs at any depth is an **assembly**: each pair that it holds is a part of the assembly, and
 each assembly node that it holds is a member assembly. The pairs that the scene
 root holds are the parts of the scene.
 
@@ -119,7 +120,11 @@ entry. Parasolid kernel lengths are in metres.
 The `Public Access` stream is framed (§2). Its payload holds a sequence of
 named records. A record name is the bytes `ff ff fe`, a `u8` count of UTF-16
 code units, and that many little-endian UTF-16 code units. A marker with count
-`0` opens no record.
+`0` opens a record with an empty name when a scene object header follows it,
+and no record otherwise.
+
+The bytes `ff ff ff ff e1 ff` and a `u32` scene object identifier (§6) come
+before the records of a scene object.
 
 A **feature record** continues after the name with `00 00 00 00 01 00`.
 
@@ -140,10 +145,20 @@ no such feature record is an **assembly record**. An assembly record comes
 after the part records of its parts.
 
 A class `0x3de1004b` record is a **part copy record**. A version `2` part copy
-record is a part record: it holds the `ModelGUID` property, then a property
-set of class `0x3de1004a`, then the part matrix. A version `1` part copy record
-holds the `ModelGUID` property. Scene object records of other classes come
-between feature records.
+record holds the `ModelGUID` property, then a property set of class
+`0x3de1004a`, then the matrix. A version `1` part copy record holds the
+`ModelGUID` property and the matrix, and places one more occurrence of a part
+or an assembly. Scene object records of other classes come between feature
+records.
+
+The kind of the scene object of a record (§6) selects whether the record
+places a part or an assembly. A record places the body of the part result
+record (§3) that ends at the `end` of its scene object. A part copy record
+whose scene object ends at an empty node holds a **copy path** in its bytes
+before its name: twelve zero bytes, the `u32` `1`, and the identifiers of the
+scene object whose body the copy places and of its ancestors, from the root
+down, each greater than `1`, then a `u32` `0` or `1`. The copy lies in the
+assembly that holds that scene object.
 
 The property set holds named properties. A property is the bytes `f4 ff`, a
 `u32` name length in bytes, the NUL-terminated little-endian UTF-16 name, a
@@ -194,3 +209,48 @@ in the first two rows of `R`.
 
 `Shape Data` holds one matrix of the same form for each feature. It maps a
 point of the feature body to the part frame as `p · R + t`.
+
+## 6. Scene objects
+
+The `Shape Contents` stream is framed (§2). Its payload holds the scene
+objects in scene browser order: features, parts, assemblies, patterns, lights,
+and views. The features of a part come before the part, and the members of an
+assembly come before the assembly. A **scene object entry** is a 20-byte
+header, the object name in the record name form of §5, a `u32` `0`, and a
+sequence of 56-byte items that ends with a terminating item.
+
+| Offset | Size | Field | Meaning |
+|---|---|---|---|
+| 0 | 4 | `version` | `0x250`, `0x253`, or `0x26d`. |
+| 4 | 8 | `end` | Offset in the `Brep Data` payload where the kernel data of the object ends. |
+| 12 | 4 | `reserved` | `0`. |
+| 16 | 4 | `id` | Object identifier. |
+
+An item has this form:
+
+| Offset | Size | Field | Meaning |
+|---|---|---|---|
+| 0 | 4 | `tag` | `4`. |
+| 4 | 8 | `handle` | All bytes `ff` in the terminating item. |
+| 12 | 2 | `kind` | Item kind. |
+| 14 | 2 | `count` | `1`. |
+| 16 | 8 | `reserved` | `0`. |
+| 24 | 8 | `data_offset` | Offset of the item data in the `Shape Data` payload. |
+| 32 | 4 | `size_tag` | `16`. |
+| 36 | 4 | `data_size` | Byte count of the item data. |
+| 40 | 4 | `object_version` | The header `version`. |
+| 44 | 8 | `object_end` | The header `end`. |
+| 52 | 4 | `trailer` | `0`. |
+
+An object that holds an item of kind `20` has a body: it is a part or a
+feature. An object that holds an item of kind `25` and no item of kind `20` is
+an assembly. The identifiers of the children of one parent differ from each
+other.
+
+The `end` of a part is the end of its part result record. A copy that places
+the body of a part stored before it has the `end` of that part. A copy stored
+before the part whose body it places, a pattern, and another object without
+kernel data each add an empty node, and their `end` is the end of that node.
+The `end` of an assembly is the end of its assembly node, which is also the
+end of its last member. The `end` of a feature lies inside the child node of
+the pair of its part, or is the end of that child node.

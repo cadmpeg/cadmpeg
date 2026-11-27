@@ -23,6 +23,24 @@ pub(crate) const PART_COPY_CLASS: u32 = 0x3de1_004b;
 /// Version of a part copy record that stores a part.
 pub(crate) const PART_COPY_VERSION: u32 = 2;
 
+/// Version of a part copy record that places one more occurrence.
+pub(crate) const COPY_VERSION: u32 = 1;
+
+/// Bytes before the identifier of a scene object.
+pub(crate) const OBJECT_MARKER: [u8; 6] = [0xff, 0xff, 0xff, 0xff, 0xe1, 0xff];
+
+/// Zero bytes before a copy path.
+const PATH_LEAD: usize = 12;
+
+/// The word that opens a copy path.
+const PATH_OPEN: u32 = 1;
+
+/// Most copy paths kept for one record.
+const MAX_PATHS: usize = 4;
+
+/// Most identifiers in one copy path.
+const MAX_PATH_DEPTH: usize = 32;
+
 /// Versions of a part or assembly record.
 pub(crate) const PART_VERSIONS: [u32; 2] = [2, 3];
 
@@ -68,6 +86,14 @@ const M_TO_MM: f64 = 1000.0;
 pub(crate) struct SceneRecord {
     pub(crate) name: String,
     pub(crate) role: Role,
+    /// The identifier after the first object marker after the previous
+    /// record.
+    pub(crate) id: Option<u32>,
+    /// A version 1 part copy record.
+    pub(crate) copy: bool,
+    /// The copy paths of a copy record in stored order: each lists the
+    /// identifiers of a scene object and its ancestors from the root down.
+    pub(crate) paths: Vec<Vec<u32>>,
     /// The stored matrix as an IR transform in millimetres.
     pub(crate) transform: Option<Transform>,
     /// The matrix lies at no fixed offset and was found by a search.
@@ -119,12 +145,14 @@ impl SceneRecord {
 /// Reads the part and assembly records of a `Public Access` payload in
 /// stored order.
 pub(crate) fn records(payload: &[u8]) -> Vec<SceneRecord> {
+    let markers = object_markers(payload);
     let mut out = Vec::new();
     let mut features = false;
     let mut at = 0;
+    let mut previous = 0;
     while let Some(found) = find(payload, &NAME_MARKER, at) {
         at = found + NAME_MARKER.len();
-        let Some(name) = name_at(payload, found) else {
+        let Some(name) = record_name(payload, found) else {
             continue;
         };
         let after = found + NAME_MARKER.len() + 1 + 2 * name.encode_utf16().count();
@@ -135,21 +163,91 @@ pub(crate) fn records(payload: &[u8]) -> Vec<SceneRecord> {
         let Some((version, class)) = object_header(payload, after) else {
             continue;
         };
+        let copy = class == PART_COPY_CLASS && version == COPY_VERSION;
         let role = match class {
             PART_CLASS if features => Role::Part,
             PART_CLASS => Role::Assembly,
-            PART_COPY_CLASS if version == PART_COPY_VERSION => Role::Part,
+            PART_COPY_CLASS if version == PART_COPY_VERSION || copy => Role::Part,
             _ => continue,
         };
         if class == PART_CLASS {
             features = false;
         }
+        let opened = first_marker(&markers, previous, found);
         let next = next_name(payload, after).unwrap_or(payload.len());
         let record = payload.get(after..next).unwrap_or_default();
         let mut scene = scene_record(name, role, class, record);
         scene.version_unrecognized = class == PART_CLASS && !PART_VERSIONS.contains(&version);
+        scene.id = opened.map(|(_, id)| id);
+        scene.copy = copy;
+        if copy {
+            let from = opened.map_or(previous, |(position, _)| position);
+            scene.paths = payload.get(from..found).map(copy_paths).unwrap_or_default();
+        }
         out.push(scene);
+        previous = after;
         at = after;
+    }
+    out
+}
+
+/// The name of the record whose name marker is at `at`: an empty name when
+/// the count is `0` and the header of a version 1 or 2 part copy record
+/// follows.
+fn record_name(payload: &[u8], at: usize) -> Option<String> {
+    if payload.get(at + NAME_MARKER.len()) == Some(&0) {
+        return object_header(payload, at + NAME_MARKER.len() + 1)
+            .filter(|(version, class)| {
+                *class == PART_COPY_CLASS
+                    && (*version == COPY_VERSION || *version == PART_COPY_VERSION)
+            })
+            .map(|_| String::new());
+    }
+    name_at(payload, at)
+}
+
+/// The position and identifier of every object marker, in stored order.
+fn object_markers(payload: &[u8]) -> Vec<(usize, u32)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(found) = find(payload, &OBJECT_MARKER, at) {
+        at = found + 1;
+        if let Some(id) = View::u32_le_at(payload, found + OBJECT_MARKER.len()) {
+            out.push((found, id));
+        }
+    }
+    out
+}
+
+/// The first object marker at or after `from` and before `to`.
+fn first_marker(markers: &[(usize, u32)], from: usize, to: usize) -> Option<(usize, u32)> {
+    let start = markers.partition_point(|(position, _)| *position < from);
+    markers
+        .get(start)
+        .copied()
+        .filter(|(position, _)| *position < to)
+}
+
+/// The copy paths of `bytes`: twelve zero bytes, the word `1`, and the
+/// identifiers, each greater than `1`, up to a word of `0` or `1`.
+fn copy_paths(bytes: &[u8]) -> Vec<Vec<u32>> {
+    let mut out = Vec::new();
+    let mut at = PATH_LEAD;
+    while at < bytes.len() && out.len() < MAX_PATHS {
+        let open = bytes[at - PATH_LEAD..at].iter().all(|byte| *byte == 0)
+            && View::u32_le_at(bytes, at) == Some(PATH_OPEN);
+        if !open {
+            at += 1;
+            continue;
+        }
+        let path: Vec<u32> = (1..=MAX_PATH_DEPTH)
+            .map_while(|index| View::u32_le_at(bytes, at + 4 * index))
+            .take_while(|id| *id > PATH_OPEN)
+            .collect();
+        at += 4 * (path.len() + 1);
+        if !path.is_empty() {
+            out.push(path);
+        }
     }
     out
 }
@@ -194,6 +292,9 @@ fn scene_record(name: String, role: Role, class: u32, record: &[u8]) -> SceneRec
     SceneRecord {
         name,
         role,
+        id: None,
+        copy: false,
+        paths: Vec::new(),
         transform: located.map(|(_, transform, _)| transform),
         matrix_searched: located.is_some_and(|(_, _, searched)| searched),
         version_unrecognized: false,
@@ -272,12 +373,11 @@ fn rigid(bytes: &[u8], at: usize) -> bool {
     })
 }
 
-/// The offset of the next marker at or after `from` that opens a non-empty
-/// name.
+/// The offset of the next marker at or after `from` that opens a record.
 fn next_name(payload: &[u8], mut from: usize) -> Option<usize> {
     loop {
         let found = find(payload, &NAME_MARKER, from)?;
-        if name_at(payload, found).is_some() {
+        if record_name(payload, found).is_some() {
             return Some(found);
         }
         from = found + NAME_MARKER.len();
