@@ -32,7 +32,7 @@ use cadmpeg_ir::design::configuration::{
     PartNumber,
 };
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
-use cadmpeg_ir::design::edit::{evaluate, Value};
+use cadmpeg_ir::design::edit::{cache_value, evaluate, kind_value};
 use cadmpeg_ir::design::expr::{
     Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
 };
@@ -48,13 +48,15 @@ use cadmpeg_ir::features::{ConfigurationId, Feature as LegacyFeature, ParameterI
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::products::ProductDefinition;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::units::Tolerances;
 
 use super::parameters::{cache, expression};
 use super::timeline::document_prefix;
 use crate::loss::F3dLossCode;
+
+pub(crate) mod rebase;
 
 /// The configurations of the scopes keyed by document prefix in `scopes`,
 /// and each scope's active configuration.
@@ -279,6 +281,9 @@ fn overrides(
 pub(crate) struct Restated {
     rows: Vec<LegacyConfiguration>,
     charges: Charges,
+    /// The parameter cells written into the row of each scope's active
+    /// configuration from what the configuration resolves.
+    pub(crate) active_cells: BTreeSet<(ConfigurationId, ParameterId)>,
 }
 
 /// What restated rows cannot state.
@@ -431,6 +436,7 @@ pub(crate) fn restate(
     let mut out = Restated {
         rows: Vec::new(),
         charges: Charges::default(),
+        active_cells: BTreeSet::new(),
     };
     let mut held = BTreeSet::new();
     for row in rows {
@@ -452,6 +458,7 @@ pub(crate) fn restate(
                 record,
                 &input(&record.scope),
                 &mut out.charges,
+                &mut out.active_cells,
             );
         } else {
             out.charges.unstated.push(format!(
@@ -493,7 +500,13 @@ pub(crate) fn restate(
             bodies: None,
             native_ref: record.native_ref.clone(),
         };
-        overlay(&mut row, record, &input(&record.scope), &mut out.charges);
+        overlay(
+            &mut row,
+            record,
+            &input(&record.scope),
+            &mut out.charges,
+            &mut out.active_cells,
+        );
         added.push(row);
     }
     out.rows
@@ -590,26 +603,28 @@ fn resolved(chain: &[&DesignConfiguration]) -> Overrides {
 }
 
 /// Write into `row` what `record` resolves otherwise than the overrides the
-/// decoder projects from the stored row of its id (else from `row`), under
-/// that row's activity or the record's: the active row projects none, and
-/// the active configuration states none, so a removal applies to another
-/// row only. A value `record` resolves as the stored row states
-/// it keeps `row`'s. A row has no parent, so it states the values `record`
-/// inherits. Each parameter cell caches its expression's value in the
-/// configuration (§5.11, Resolution). Charges to `charges` each field no row
-/// states, and each cache the cell does not take from its expression.
+/// decoder projects from the stored row of its id (else from `row`), read
+/// under the record's activity: the active row projects none, and the active
+/// configuration states none, so a removal applies to another row only. A
+/// value `record` resolves as the stored row states it keeps `row`'s. A row
+/// has no parent, so it states the values `record` inherits. Each parameter
+/// cell caches its expression's value in the configuration (§5.11,
+/// Resolution). Charges to `charges` each field no row states, and each
+/// cache the cell does not take from its expression. Adds to `active_cells`
+/// each parameter cell written into the row of an active configuration.
 fn overlay(
     row: &mut LegacyConfiguration,
     record: &DesignConfiguration,
     input: &Scoped<'_>,
     charges: &mut Charges,
+    active_cells: &mut BTreeSet<(ConfigurationId, ParameterId)>,
 ) {
     let mut stored = input
         .stored
         .get(&row.id)
         .map_or_else(|| row.clone(), |stored| (*stored).clone());
-    let stored_active = stored.active || input.active.contains(&record.id);
-    stored.active = stored_active;
+    let active = input.active.contains(&record.id);
+    stored.active = active;
     let projected = projected(
         &stored,
         input.scope,
@@ -735,6 +750,9 @@ fn overlay(
             },
         };
         row.parameter_overrides.insert(id.clone(), text);
+        if active {
+            active_cells.insert((record.id.clone(), id.clone()));
+        }
         match value {
             Some(value) => {
                 row.parameter_values.insert(id.clone(), value);
@@ -744,7 +762,7 @@ fn overlay(
             }
         }
     }
-    if !stored_active {
+    if !active {
         for id in projected
             .parameters
             .keys()
@@ -794,7 +812,7 @@ fn overlay(
             },
         );
     }
-    if !stored_active {
+    if !active {
         for id in projected
             .features
             .keys()
@@ -809,7 +827,7 @@ fn overlay(
         &resolved,
         &projected,
         input,
-        stored_active,
+        active,
         &mut charges.unstated,
     );
     for (stated, field, why) in [
@@ -910,10 +928,12 @@ impl<'a> Values<'a> {
                         return None;
                     };
                     let kind = &scoped.get(target)?.kind;
-                    edit_value(&self.value(target)?, kind)
+                    cache_value(kind, &self.value(target)?)
                 });
                 self.open.pop();
-                value.ok().and_then(|value| typed(value, &parameter.kind))
+                value
+                    .ok()
+                    .and_then(|value| kind_value(&parameter.kind, value).ok())
             }
             _ => None,
         };
@@ -930,22 +950,10 @@ impl<'a> Values<'a> {
     }
 }
 
-/// The value of a parameter of `kind` that the evaluator's `value` states.
-fn typed(value: Value, kind: &ValueKind) -> Option<ParameterValue> {
-    Some(match (value, kind) {
-        (Value::Number { value, quantity }, ValueKind::Quantity(kind)) if quantity == *kind => {
-            ParameterValue::Number(FiniteReal::new(value)?)
-        }
-        (Value::Boolean(flag), ValueKind::Boolean) => ParameterValue::Boolean(flag),
-        (Value::Text(text), ValueKind::Text) => ParameterValue::Text(text),
-        _ => return None,
-    })
-}
-
 /// Whether the cache `left` agrees with `right`: a length within the linear
 /// tolerance, an angle within the angular tolerance, a real within
 /// [`CACHE_RELATIVE_TOLERANCE`], another value exactly.
-fn agree(left: &LegacyValue, right: &LegacyValue, tolerances: &Tolerances) -> bool {
+pub(crate) fn agree(left: &LegacyValue, right: &LegacyValue, tolerances: &Tolerances) -> bool {
     match (left, right) {
         (LegacyValue::Length(left), LegacyValue::Length(right)) => {
             (left.get() - right.get()).abs() <= tolerances.linear.get()
@@ -961,20 +969,6 @@ fn agree(left: &LegacyValue, right: &LegacyValue, tolerances: &Tolerances) -> bo
     }
 }
 
-/// The value the evaluator takes for `value`, a value of a parameter of
-/// `kind`.
-fn edit_value(value: &ParameterValue, kind: &ValueKind) -> Option<Value> {
-    Some(match (value, kind) {
-        (ParameterValue::Number(number), ValueKind::Quantity(quantity)) => Value::Number {
-            value: number.get(),
-            quantity: *quantity,
-        },
-        (ParameterValue::Boolean(flag), _) => Value::Boolean(*flag),
-        (ParameterValue::Text(text), _) => Value::Text(text.clone()),
-        _ => return None,
-    })
-}
-
 /// Write into `row` the part number and description that `chain[0]`, whose
 /// chain of parents is the rest of `chain`, resolves (`resolved`) for the
 /// scope otherwise than `projected`, as the row's `Part Number` and
@@ -985,7 +979,7 @@ fn identities(
     resolved: &Overrides,
     projected: &Overrides,
     input: &Scoped<'_>,
-    stored_active: bool,
+    active: bool,
     unstated: &mut Vec<String>,
 ) {
     let record = chain[0];
@@ -1006,7 +1000,7 @@ fn identities(
         .unwrap_or_default();
     let stated = match resolved.definitions.get(scope) {
         Some(stated) => stated.clone(),
-        None if stored_active => base.clone(),
+        None if active => base.clone(),
         None => DefinitionOverride::default(),
     };
     let field = path(&format!("overrides.definitions[{scope}]"));

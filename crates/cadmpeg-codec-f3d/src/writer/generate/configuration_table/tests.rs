@@ -63,7 +63,7 @@ fn write_scoped<'a>(
         &written,
         configurations,
     );
-    losses.extend(written.read_back(plan.active(), &targets).unwrap());
+    losses.extend(written.read_back(plan.active(), &targets, &[]).unwrap());
     (written, losses)
 }
 

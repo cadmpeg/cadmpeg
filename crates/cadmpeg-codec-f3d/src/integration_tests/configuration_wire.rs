@@ -735,7 +735,11 @@ fn an_expression_that_names_a_parameter_caches_its_override_in_the_same_row() {
 }
 
 /// A held decode whose design scope names row `b` active, with no other
-/// edit: the root record and the `testRowData` entries name row `b`.
+/// edit: the root record and the `testRowData` entries name row `b`. The
+/// patch writes no Design stream parameter, so the parameter cells of row
+/// `b` hold the Design stream's expression and value (f3d.md §1.2), and the
+/// override of `B` is charged. Row `a`, no longer active, states what `A`
+/// resolves: the base.
 #[test]
 fn an_active_row_moved_in_the_design_of_a_held_decode_writes_its_test_row() {
     let (decoded, fixture) = fixture(true);
@@ -748,14 +752,19 @@ fn an_active_row_moved_in_the_design_of_a_held_decode_writes_its_test_row() {
         .find(|scope| scope.active_configuration.is_some())
         .unwrap()
         .active_configuration = Some(b.clone());
+    let (expression, millimetres) = own(&ir, &fixture.width);
     let (round_trip, losses) = written_with_losses(&ir, decoded.source_fidelity());
     assert_eq!(active(round_trip.ir()), Some(&b), "{losses:#?}");
     let width = test_row(round_trip.ir(), &fixture.entry, "W");
-    assert_eq!(width["Expression"], "7 mm", "{width}");
+    assert_eq!(width["Expression"], expression.as_str(), "{width}");
     assert!(
-        (width["Value"].as_f64().unwrap() - 0.7).abs() < 1e-9,
+        (width["Value"].as_f64().unwrap() - millimetres / 10.0).abs() < 1e-9,
         "{width}"
     );
+    assert_eq!(pinned(&losses, &b, &fixture.width).len(), 1, "{losses:#?}");
+    let (text, value) = parameter_cell(round_trip.ir(), &fixture.entry, "a", &fixture.width);
+    assert_eq!(text, expression, "row a states what A resolves, the base");
+    assert!((value - millimetres / 10.0).abs() < 1e-9, "{value}");
     assert_eq!(
         test_row(round_trip.ir(), &fixture.entry, "S")["Value"],
         false
@@ -955,4 +964,196 @@ fn a_document_name_part_number_is_written_as_its_text() {
     b.overrides.definitions.insert(scope, definition);
     let round_trip = written(&read, decoded.source_fidelity());
     assert_eq!(part_number(round_trip.ir(), "B"), Some("Bracket"));
+}
+
+/// The resolved value of `parameter` in the configuration `name` of `ir`
+/// (cadir-v11.md §5.11), in millimetres: its override's value, else the
+/// parameter's own.
+fn resolved_millimetres(ir: &CadIr, name: &str, parameter: &ParameterId) -> f64 {
+    match named(ir, name)
+        .overrides
+        .parameters
+        .get(parameter)
+        .and_then(|stated| stated.value.as_ref())
+    {
+        Some(ParameterValue::Number(value)) => value.get(),
+        Some(other) => panic!("a length: {other:?}"),
+        None => own(ir, parameter).1,
+    }
+}
+
+/// The losses of `losses` that charge the parameter `parameter` of the
+/// active configuration `configuration`, written at the Design stream's
+/// expression and value.
+fn pinned<'a>(
+    losses: &'a [LossNote],
+    configuration: &cadmpeg_ir::features::ConfigurationId,
+    parameter: &ParameterId,
+) -> Vec<&'a LossNote> {
+    losses
+        .iter()
+        .filter(|loss| {
+            loss.code.to_string() == "export/value.unwritable"
+                && loss.message.contains("active configuration")
+                && loss.message.contains(configuration.as_str())
+                && loss.message.contains(parameter.as_str())
+        })
+        .collect()
+}
+
+/// An override that the active configuration states, written by the patch,
+/// which writes no Design stream parameter: the Design stream stores the
+/// state of the active row (f3d.md §1.2), so the active row's cell holds the
+/// Design stream's expression and value, and the override is charged once.
+/// Each configuration reads back at the value the written archive resolves.
+#[test]
+fn an_override_of_the_active_configuration_the_patch_cannot_write_is_charged() {
+    let (decoded, fixture) = fixture(true);
+    let (expression, millimetres) = own(decoded.ir(), &fixture.width);
+    let a = named(decoded.ir(), "A").id.clone();
+    for (path, mut ir) in [
+        ("decode", decoded.ir().clone()),
+        ("CADIR read", saved(decoded.ir())),
+    ] {
+        named_mut(&mut ir, "A")
+            .overrides
+            .parameters
+            .insert(fixture.width.clone(), length_override(9.0));
+        let (round_trip, losses) = written_with_losses(&ir, decoded.source_fidelity());
+        let back = round_trip.ir();
+        assert_eq!(own(back, &fixture.width), (expression.clone(), millimetres));
+        let (text, value) = parameter_cell(back, &fixture.entry, "a", &fixture.width);
+        assert_eq!(text, expression, "{path}");
+        assert!((value - millimetres / 10.0).abs() < 1e-9, "{path}: {value}");
+        for (name, stated) in [("A", millimetres), ("B", 7.0), ("C", 12.0)] {
+            let read = resolved_millimetres(back, name, &fixture.width);
+            assert!((read - stated).abs() < 1e-9, "{path}: {name} reads {read}");
+        }
+        assert_eq!(
+            pinned(&losses, &a, &fixture.width).len(),
+            1,
+            "{path}: {losses:#?}"
+        );
+    }
+}
+
+/// The roles of the other configurations when the Design stream takes the
+/// active configuration's value: one that states nothing states the
+/// previous value; one that inherits from the active configuration, or from
+/// a configuration that states an expression, states nothing; one whose
+/// override states only a value keeps the previous expression.
+#[test]
+fn every_other_configuration_keeps_its_value_when_the_base_takes_the_active_one() {
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
+    use cadmpeg_ir::features::ConfigurationId;
+    let (decoded, fixture) = fixture(true);
+    let mut ir = decoded.ir().clone();
+    let (_, millimetres) = own(&ir, &fixture.width);
+    let previous = ir
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == fixture.width)
+        .map(|parameter| parameter.definition.clone())
+        .expect("the parameter");
+    let ParameterDefinition::Expression(previous) = previous else {
+        panic!("an expression: {previous:?}");
+    };
+    let a = named(&ir, "A").id.clone();
+    let b = named(&ir, "B").id.clone();
+    named_mut(&mut ir, "A")
+        .overrides
+        .parameters
+        .insert(fixture.width.clone(), length_override(9.0));
+    named_mut(&mut ir, "C")
+        .overrides
+        .parameters
+        .remove(&fixture.width);
+    let mut cached = length_override(3.0);
+    cached.expression = None;
+    for (name, parent, stated) in [
+        ("D", Some(&a), None),
+        ("E", Some(&b), None),
+        ("F", None, Some(cached)),
+    ] {
+        let mut added = named(&ir, "C").clone();
+        added.id = ConfigurationId::mint(format!("test:configuration:role#{name}")).unwrap();
+        added.name = name.into();
+        added.native_ref = None;
+        added.parent = parent.cloned();
+        added
+            .overrides
+            .parameters
+            .extend(stated.map(|stated| (fixture.width.clone(), stated)));
+        ir.design.configurations.push(added);
+    }
+    let rebased = crate::design_v11::configurations::rebase::rebased(&ir).expect("rebased");
+    let out = &rebased.ir;
+    assert!(rebased.losses.is_empty(), "{:#?}", rebased.losses);
+    let (expression, own_millimetres) = own(out, &fixture.width);
+    assert_eq!(expression, "9 mm");
+    assert!((own_millimetres - 9.0).abs() < 1e-9, "{own_millimetres}");
+    let stated = |name: &str| named(out, name).overrides.parameters.get(&fixture.width);
+    assert_eq!(stated("A"), None);
+    assert_eq!(
+        stated("B"),
+        named(&ir, "B").overrides.parameters.get(&fixture.width)
+    );
+    let c = stated("C").expect("C states the previous value");
+    assert_eq!(c.expression.as_ref(), Some(&previous));
+    assert_eq!(
+        c.value,
+        Some(ParameterValue::Number(
+            FiniteReal::new(millimetres).unwrap()
+        ))
+    );
+    assert_eq!(stated("D"), None);
+    assert_eq!(stated("E"), None);
+    let f = stated("F").expect("F keeps its override");
+    assert_eq!(f.expression.as_ref(), Some(&previous));
+    assert_eq!(
+        f.value,
+        Some(ParameterValue::Number(FiniteReal::new(3.0).unwrap()))
+    );
+}
+
+/// A cell that the v10 rows and the design configurations of a held decode
+/// both edit: the design configuration wins (cadir-v11.md §3.4, W2), and the
+/// v10 edit is charged once.
+#[test]
+fn a_v10_cell_edit_the_design_configuration_states_otherwise_is_charged() {
+    use cadmpeg_ir::scalar::Length;
+    let (decoded, fixture) = fixture(true);
+    let mut ir = decoded.ir().clone();
+    let b = named(&ir, "B").id.clone();
+    let row = ir
+        .model
+        .configurations
+        .iter_mut()
+        .find(|row| row.id == b)
+        .expect("row b");
+    row.parameter_overrides
+        .insert(fixture.width.clone(), "3 mm".into());
+    row.parameter_values.insert(
+        fixture.width.clone(),
+        LegacyValue::Length(Length::new(3.0).unwrap()),
+    );
+    named_mut(&mut ir, "B")
+        .overrides
+        .parameters
+        .insert(fixture.width.clone(), length_override(9.0));
+    let (round_trip, losses) = written_with_losses(&ir, decoded.source_fidelity());
+    assert_eq!(
+        parameter_cell(round_trip.ir(), &fixture.entry, "b", &fixture.width).0,
+        "9 mm"
+    );
+    let charged = losses
+        .iter()
+        .filter(|loss| {
+            loss.code.to_string() == "export/edit.dropped"
+                && loss.message.contains("v10 configuration rows")
+                && loss.message.contains(b.as_str())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charged.len(), 1, "{losses:#?}");
 }

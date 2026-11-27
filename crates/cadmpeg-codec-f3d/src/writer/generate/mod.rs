@@ -13,6 +13,7 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
+use crate::design_v11::configurations::rebase::{rebased, Rebased};
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{configuration_targets, decoded_configurations, f3d_native};
 mod attributes;
@@ -73,6 +74,9 @@ pub(super) fn write_new(
         Some((staged, loss)) => (staged, loss.clone()),
         None => (target, None),
     };
+    // The Design stream stores the state of the active row (f3d.md §1.2).
+    let rebased = rebased(target);
+    let target = rebased.as_ref().map_or(target, |rebased| &rebased.ir);
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let SubsetLowering {
@@ -90,6 +94,7 @@ pub(super) fn write_new(
             missing_states,
             fallback: reduction.fallback(),
             dropped: reduction.dropped(),
+            rebased: rebased.as_ref(),
         };
         match attempt(ctx, reduction.ir(), &form, &mut staged) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -115,6 +120,7 @@ pub(super) fn write_new(
         .is_some_and(|design| design.rolls_back());
     let (mut losses, native) = reduction.finish();
     losses.extend(staged_loss);
+    losses.extend(rebased.iter().flat_map(|rebased| rebased.losses.clone()));
     losses.extend(design_losses);
     Ok(Generated {
         coverage,
@@ -149,6 +155,7 @@ fn writes_alone(
                 missing_states: MissingStateForm::GeometryTrue,
                 fallback: &design::Fallback::default(),
                 dropped: &DroppedRecords::default(),
+                rebased: None,
             },
             &mut std::io::Cursor::new(Vec::new()),
         )
@@ -180,6 +187,9 @@ struct AttemptForm<'a> {
     fallback: &'a design::Fallback,
     /// The keys of the dropped records, which no written record names.
     dropped: &'a DroppedRecords,
+    /// The parameters whose own expression and value the document takes
+    /// from the active configuration of their scope.
+    rebased: Option<&'a Rebased>,
 }
 
 /// Write `target` once in `form`. A failure names the stage that failed.
@@ -196,6 +206,7 @@ fn attempt<W: Write + Seek>(
         missing_states,
         fallback,
         dropped,
+        rebased,
     } = form;
     #[cfg(test)]
     if let Some(error) = write_neutral.then(design::requested_test_failure).flatten() {
@@ -406,16 +417,27 @@ fn attempt<W: Write + Seek>(
         // records.
         let held = target.model.omitted_arenas_held();
         let mut targets = configuration_targets(target, &native);
+        let mut own = Vec::new();
         if let (false, Some(projected)) = (held, &projected) {
-            targets.neutral_parameters = &projected.parameters;
+            own.clone_from(&projected.parameters);
+            if let Some(rebased) = rebased {
+                rebased.apply(&mut own);
+            }
+            targets.neutral_parameters = &own;
             targets.neutral_features = &projected.features;
         }
         let decoded = decoded_configurations(&native.design_configurations, &targets)
             .map_err(Failure::design)?;
-        let neutral = configuration_table::stated_rows(
+        let configuration_table::Stated {
+            rows: neutral,
+            pinned,
+        } = configuration_table::stated_rows(
             target,
             &decoded.configurations,
             &targets,
+            &rebased
+                .map(|rebased| rebased.parameters.keys().cloned().collect())
+                .unwrap_or_default(),
             &mut table_losses,
         );
         let (mut written, losses) = configuration_table::regenerate(
@@ -446,7 +468,7 @@ fn attempt<W: Write + Seek>(
         }
         table_losses.extend(
             written
-                .read_back(plan.active(), &targets)
+                .read_back(plan.active(), &targets, &pinned)
                 .map_err(Failure::design)?,
         );
         let names = configuration_entry_names(&written.documents);

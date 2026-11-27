@@ -2097,6 +2097,17 @@ impl Model {
         cadmpeg_core::serde_erase::serialize_to_json_value(&|adapter| sorted.serialize(adapter))
     }
 
+    /// Take the baseline of the arenas the wire omits that `decoded` holds,
+    /// where both models hold them: a model rebuilt from a decode that
+    /// records no digest then compares its edits as `decoded` does.
+    pub fn adopt_omitted_arenas_baseline(&mut self, decoded: &Model) {
+        if let (OmittedArenas::Held { baseline }, OmittedArenas::Held { baseline: stated }) =
+            (&mut self.omitted, &decoded.omitted)
+        {
+            baseline.clone_from(stated);
+        }
+    }
+
     /// Record `digest` as the baseline of the arenas the wire omits.
     pub(crate) fn record_omitted_arenas_baseline(&mut self, digest: String) {
         if let OmittedArenas::Held { baseline } = &mut self.omitted {

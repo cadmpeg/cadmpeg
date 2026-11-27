@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, record_residual_unavailable, value_unwritable};
 use cadmpeg_ir::features::parameters::{DesignConfiguration as Configuration, ParameterValue};
-use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::features::{ConfigurationId, ParameterId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::schema::EntityKind;
@@ -171,10 +171,16 @@ impl Written<'_> {
     /// the row contradicts, unless the write keeps both the state its scope
     /// stores and the cell of the source's active row: the source holds the
     /// same contradiction.
+    ///
+    /// A configuration of a `pinned` cell reads back at the Design stream's
+    /// expression and value where its row is the one the root record names,
+    /// else at its cell; each that reads back otherwise than it resolves is
+    /// charged.
     pub(super) fn read_back(
         &self,
         active: Option<&str>,
         targets: &ConfigurationTargets<'_>,
+        pinned: &[Pinned],
     ) -> Result<Vec<LossNote>, CodecError> {
         let mut read = self.projection.clone();
         for configuration in &mut read.configurations {
@@ -185,11 +191,49 @@ impl Written<'_> {
         }
         let mut features = targets.neutral_features.to_vec();
         let read = reconciled(read, &mut features)?;
-        let mut losses = compare(
-            &self.expected,
-            &read.configurations,
-            &bases(targets.neutral_features, targets.neutral_parameters),
-        );
+        let bases = bases(targets.neutral_features, targets.neutral_parameters);
+        let mut losses = compare(&self.expected, &read.configurations, &bases);
+        losses.extend(value_unwritable(
+            "F3D",
+            "writes these parameters of an active configuration at the expression and value of the Design stream, which stores the state of the active row (f3d.md §1.2) and which the writer cannot set to what the configuration resolves",
+            pinned.iter().filter_map(|pinned| {
+                let back = self
+                    .expected
+                    .iter()
+                    .find(|(_, configuration)| configuration.id.as_str() == pinned.configuration)
+                    .and_then(|(written, _)| {
+                        read.configurations
+                            .iter()
+                            .find(|configuration| configuration.id.as_str() == written)
+                    });
+                let (expression, value) = match back.filter(|back| !back.active) {
+                    Some(back) => (
+                        bases.expression(back, &pinned.parameter),
+                        bases.value(back, &pinned.parameter),
+                    ),
+                    None => {
+                        let own = bases.parameters.get(&pinned.parameter);
+                        (
+                            own.map(|own| &own.expression),
+                            own.and_then(|own| own.value.as_ref()),
+                        )
+                    }
+                };
+                (expression != Some(&pinned.expression) || value != pinned.value.as_ref()).then(
+                    || {
+                        format!(
+                            "{}: {}",
+                            pinned.configuration,
+                            Difference::of(
+                                pinned.parameter.to_string(),
+                                Some(&(Some(pinned.expression.as_str()), pinned.value.as_ref())),
+                                Some(&(expression.map(String::as_str), value)),
+                            )
+                        )
+                    },
+                )
+            }),
+        ));
         losses.extend(value_unwritable(
             "F3D",
             "writes these features in the current state that the active row of the written configuration table gives them: the Design stream stores the state of its active row",
@@ -277,6 +321,22 @@ fn host(
     (tables.next().is_none() && first.1.rows.is_empty()).then_some(first)
 }
 
+/// A parameter cell of the row of an active configuration that the write
+/// states at the Design stream's expression and value, in place of the cell
+/// the configuration resolves.
+pub(in crate::writer) struct Pinned {
+    configuration: String,
+    parameter: ParameterId,
+    expression: String,
+    value: Option<ParameterValue>,
+}
+
+/// The rows [`stated_rows`] writes, and the cells it pins.
+pub(in crate::writer) struct Stated {
+    pub(in crate::writer) rows: Vec<Configuration>,
+    pub(in crate::writer) pinned: Vec<Pinned>,
+}
+
 /// The v10 rows that state the configurations of `target`: its rows where
 /// it holds them, else `decoded`, the rows its configuration tables project,
 /// with what the configurations of its `design` state otherwise than
@@ -284,19 +344,27 @@ fn host(
 /// parameters of `targets` are the history the rows set. Adds to `losses`
 /// what no row states, and each value of a held row that the
 /// configurations state otherwise.
+///
+/// The Design stream stores the state of the active row (f3d.md §1.2), so a
+/// cell of the row of a scope's active configuration states the parameter's
+/// expression and value in `targets` where the configuration resolves the
+/// cell otherwise, or where the parameter is in `rebased`, the parameters
+/// whose own expression or value the write takes from that configuration.
+/// A cell of an unedited active row is kept as stored.
 pub(in crate::writer) fn stated_rows(
     target: &CadIr,
     decoded: &[Configuration],
     targets: &ConfigurationTargets<'_>,
+    rebased: &BTreeSet<ParameterId>,
     losses: &mut Vec<LossNote>,
-) -> Vec<Configuration> {
+) -> Stated {
     let held = target.model.omitted_arenas_held();
     let rows = if held {
         target.model.configurations.as_slice()
     } else {
         decoded
     };
-    let restated = crate::design_v11::configurations::restate(
+    let mut restated = crate::design_v11::configurations::restate(
         rows,
         decoded,
         &target.design,
@@ -304,8 +372,10 @@ pub(in crate::writer) fn stated_rows(
         targets.neutral_features,
         targets.neutral_parameters,
         &target.tolerances,
-    )
-    .into_rows(losses);
+    );
+    let written = std::mem::take(&mut restated.active_cells);
+    let mut restated = restated.into_rows(losses);
+    let pinned = pin(target, &mut restated, targets, rebased, &written);
     if held {
         let bases = bases(targets.neutral_features, targets.neutral_parameters);
         let by_id = |rows: &[Configuration]| {
@@ -344,7 +414,75 @@ pub(in crate::writer) fn stated_rows(
             overridden,
         ));
     }
-    restated
+    Stated {
+        rows: restated,
+        pinned,
+    }
+}
+
+/// Set each cell of `rows` that [`stated_rows`] pins to the Design stream's
+/// expression and value, and return the cells it held. `written` holds the
+/// cells the configurations' resolution wrote into active rows.
+fn pin(
+    target: &CadIr,
+    rows: &mut [Configuration],
+    targets: &ConfigurationTargets<'_>,
+    rebased: &BTreeSet<ParameterId>,
+    written: &BTreeSet<(ConfigurationId, ParameterId)>,
+) -> Vec<Pinned> {
+    let active = target
+        .design
+        .scopes
+        .iter()
+        .filter_map(|scope| scope.active_configuration.as_ref())
+        .collect::<BTreeSet<_>>();
+    let own = targets
+        .neutral_parameters
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<BTreeMap<_, _>>();
+    let mut pinned = Vec::new();
+    for row in rows.iter_mut().filter(|row| active.contains(&row.id)) {
+        let cells = row.parameter_overrides.keys().cloned().collect::<Vec<_>>();
+        for parameter in cells {
+            if !rebased.contains(&parameter)
+                && !written.contains(&(row.id.clone(), parameter.clone()))
+            {
+                continue;
+            }
+            let Some(own) = own.get(&parameter) else {
+                continue;
+            };
+            let value = row.parameter_values.get(&parameter);
+            let agrees = row.parameter_overrides[&parameter] == own.expression
+                && match (value, &own.value) {
+                    (Some(cell), Some(own)) => {
+                        crate::design_v11::configurations::agree(cell, own, &target.tolerances)
+                    }
+                    (cell, own) => cell == own.as_ref(),
+                };
+            if agrees {
+                continue;
+            }
+            pinned.push(Pinned {
+                configuration: row.id.to_string(),
+                parameter: parameter.clone(),
+                expression: row.parameter_overrides[&parameter].clone(),
+                value: value.cloned(),
+            });
+            row.parameter_overrides
+                .insert(parameter.clone(), own.expression.clone());
+            match &own.value {
+                Some(value) => {
+                    row.parameter_values.insert(parameter, value.clone());
+                }
+                None => {
+                    row.parameter_values.remove(&parameter);
+                }
+            }
+        }
+    }
+    pinned
 }
 
 /// The configuration documents a patch of the retained archive carries, and
@@ -372,8 +510,17 @@ pub(in crate::writer) fn patched(
     let documents = &native.design_configurations;
     let decoded = decoded_configurations(documents, &targets)?;
     let mut losses = Vec::new();
-    let configurations = stated_rows(target, &decoded.configurations, &targets, &mut losses);
-    if projects(&configurations, documents, &targets)? {
+    let Stated {
+        rows: configurations,
+        pinned,
+    } = stated_rows(
+        target,
+        &decoded.configurations,
+        &targets,
+        &BTreeSet::new(),
+        &mut losses,
+    );
+    if pinned.is_empty() && projects(&configurations, documents, &targets)? {
         return Ok(Patched {
             documents: None,
             losses,
@@ -398,7 +545,7 @@ pub(in crate::writer) fn patched(
     ) {
         patched[index] = patched[index].with_payload(payload)?;
     }
-    losses.extend(written.read_back(active.as_deref(), &targets)?);
+    losses.extend(written.read_back(active.as_deref(), &targets, &pinned)?);
     losses.extend(plan.into_losses());
     Ok(Patched {
         documents: Some(patched),

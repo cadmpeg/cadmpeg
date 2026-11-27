@@ -498,6 +498,9 @@ pub(crate) fn write_semantic(
                 .namespace_mut(cadmpeg_ir::codec_id!("f3d")),
         )?;
     }
+    supported_target
+        .model
+        .adopt_omitted_arenas_baseline(&target.model);
     if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
         return Err(CodecError::NotImplemented(
             "modified F3D IR contains edits beyond supported point, line, and plane carriers"

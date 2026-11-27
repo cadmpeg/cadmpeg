@@ -47,7 +47,8 @@ pub(crate) fn written_on(
     let path = report.write_path().to_string();
     assert!(
         paths.contains(&path.as_str()),
-        "{path}: {:#?}",
+        "{path} ({:?}): {:#?}",
+        report.synthesis_cause().map(ToString::to_string),
         report.losses
     );
     (report, bytes)

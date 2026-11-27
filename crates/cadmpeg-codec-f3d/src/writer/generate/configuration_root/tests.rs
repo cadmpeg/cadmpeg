@@ -107,7 +107,7 @@ fn planning(
         &written,
         &ir.model.configurations,
     );
-    losses.extend(written.read_back(plan.active(), &TARGETS).unwrap());
+    losses.extend(written.read_back(plan.active(), &TARGETS, &[]).unwrap());
     losses.append(&mut plan.losses);
     plan.losses = losses;
     (plan, written.documents.into_owned())
