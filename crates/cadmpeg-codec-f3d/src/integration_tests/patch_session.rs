@@ -75,7 +75,7 @@ fn declared_member_total(archive: &[u8]) -> u64 {
 
 #[test]
 fn a_patch_refuses_when_its_source_decode_and_member_expansions_pass_the_ceiling_together() {
-    let source = f3d_with_act_component_links(&[(4, 0)]);
+    let source = deflated_source();
     let ceiling = least_decompressed_total(&source).max(declared_member_total(&source));
     let limits = with_decompressed_total(ceiling);
     let (ir, fidelity) = renamed_link(decode_within(&source, limits).unwrap());
@@ -97,7 +97,7 @@ fn a_patch_refuses_when_its_source_decode_and_member_expansions_pass_the_ceiling
 
 #[test]
 fn a_patch_writes_when_the_ceiling_holds_its_source_decode_and_member_expansions() {
-    let source = f3d_with_act_component_links(&[(4, 0)]);
+    let source = deflated_source();
     let ceiling = 2 * (least_decompressed_total(&source) + declared_member_total(&source));
     let limits = with_decompressed_total(ceiling);
     let (ir, fidelity) = renamed_link(decode_within(&source, limits).unwrap());
@@ -115,19 +115,37 @@ fn a_patch_writes_when_the_ceiling_holds_its_source_decode_and_member_expansions
     ));
 }
 
-/// `archive` with a Deflate member that the decoder does not read, whose
-/// stored CRC-32 its data does not match.
-fn with_corrupt_unread_member(archive: &[u8]) -> Vec<u8> {
+/// A writer that holds the members of `archive`, each stored with `method`.
+fn repacked(archive: &[u8], method: CompressionMethod) -> zip::ZipWriter<Cursor<Vec<u8>>> {
     let mut source = zip::ZipArchive::new(Cursor::new(archive)).unwrap();
     let mut out = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let options = crate::zip_write::file_options(method);
     for index in 0..source.len() {
         let mut entry = source.by_index(index).unwrap();
         let mut payload = Vec::new();
         entry.read_to_end(&mut payload).unwrap();
-        out.start_file(entry.name().unwrap(), stored).unwrap();
+        out.start_file(entry.name().unwrap(), options).unwrap();
         out.write_all(&payload).unwrap();
     }
+    out
+}
+
+/// The component-link source with every member compressed, so that its
+/// decode and the patch each expand members.
+fn deflated_source() -> Vec<u8> {
+    repacked(
+        &f3d_with_act_component_links(&[(4, 0)]),
+        CompressionMethod::Deflated,
+    )
+    .finish()
+    .unwrap()
+    .into_inner()
+}
+
+/// `archive` with a Deflate member that the decoder does not read, whose
+/// stored CRC-32 its data does not match.
+fn with_corrupt_unread_member(archive: &[u8]) -> Vec<u8> {
+    let mut out = repacked(archive, CompressionMethod::Stored);
     let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
     out.start_file(UNREAD_MEMBER, deflated).unwrap();
     out.write_all(&[0x5a; 4096]).unwrap();
