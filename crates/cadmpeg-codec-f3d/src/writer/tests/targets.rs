@@ -10,7 +10,6 @@ use cadmpeg_ir::codec::write::{
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::{report::export::FidelityResolution, RetainedSourceRecord, SourceFidelity};
 
-use crate::loss::F3dLossCode;
 use crate::F3dCodec;
 
 fn sourced_ir(dialect: &'static str) -> CadIr {
@@ -37,8 +36,8 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
         .expect("distinct retained source image");
     let plan = Encoder::plan(
         &F3dCodec,
-        EncodeInput::new(&ir, Some(&fidelity)),
-        TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+        EncodeInput::new(&ir, Some(&fidelity))
+            .with_target(TargetRequest::Explicit("f3d:manifest-3-2-0-0")),
     )
     .expect("explicit transcode plans");
 
@@ -60,11 +59,6 @@ fn explicit_transcode_declines_present_image_without_claiming_it_is_unavailable(
         .expect("the source dialect displacement is charged");
     assert!(displacement.message.contains("f3d:f3z-multi-document"));
     assert!(displacement.message.contains("f3d:manifest-3-2-0-0"));
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code.local_code() != "source.preserved-image-unavailable"));
 }
 
 #[test]
@@ -73,8 +67,8 @@ fn cross_format_write_has_no_dialect_displacement() {
     let fidelity = SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b""));
     let plan = Encoder::plan(
         &F3dCodec,
-        EncodeInput::new(&ir, Some(&fidelity)),
-        TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+        EncodeInput::new(&ir, Some(&fidelity))
+            .with_target(TargetRequest::Explicit("f3d:manifest-3-2-0-0")),
     )
     .expect("cross-format synthesis plans");
     assert_eq!(
@@ -85,22 +79,15 @@ fn cross_format_write_has_no_dialect_displacement() {
         &FidelityResolution::NotConsumed {}
     );
     assert!(plan.report().losses.iter().all(|loss| loss.code
-        != target_loss_kind(cadmpeg_ir::loss_namespace!("f3d"), SOURCE_DIALECT_DISPLACED)
-        && loss.code != F3dLossCode::SourcePreservedImageUnavailable.kind()));
+        != target_loss_kind(cadmpeg_ir::loss_namespace!("f3d"), SOURCE_DIALECT_DISPLACED)));
 }
 
 #[test]
-fn inherit_with_missing_image_charges_preserved_image_unavailable() {
+fn inherit_without_fidelity_states_the_cause_once() {
     let ir = sourced_ir("f3d:manifest-3-2-0-0");
-    let plan = Encoder::plan(
-        &F3dCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Inherit,
-    )
-    .expect("inherit synthesizes the catalog source dialect");
+    let plan = Encoder::plan(&F3dCodec, EncodeInput::new(&ir, None))
+        .expect("inherit synthesizes the catalog source dialect");
 
-    // No fidelity was offered, so the sealed wrapper owns this state and
-    // stamps `NotProvided`; the missing-image fact survives as the typed loss.
     assert_eq!(
         &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             plan.report().write_path(),
@@ -108,9 +95,10 @@ fn inherit_with_missing_image_charges_preserved_image_unavailable() {
         ),
         &FidelityResolution::NotProvided {}
     );
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code.local_code() == "source.preserved-image-unavailable"));
+    assert_eq!(
+        plan.report().synthesis_cause(),
+        Some(&cadmpeg_ir::report::export::SynthesisCause::PatchDeclined {
+            reason: "the encode holds no source fidelity".to_owned(),
+        })
+    );
 }
