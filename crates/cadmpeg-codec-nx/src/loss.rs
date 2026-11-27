@@ -167,10 +167,11 @@ loss_codes! {
     /// A face states no loop on a plane, cylinder, or cone, which no face
     /// covers whole: its boundary is unstated, and the face is stated partial.
     TopologyFaceBoundaryUnstated => ("topology.face-boundary-unstated", Warning, TopologyNotTransferred),
-    /// A shell with no admitted face, or a body with no emitted shell, is withheld.
+    /// A shell with no admitted face or whose region another body owns, or a
+    /// body with no emitted shell, is withheld.
     TopologyShellWithheld => ("topology.shell-withheld", Warning, TopologyNotTransferred),
-    /// A topology record names a record that does not resolve, or a region
-    /// that another body owns: it is withheld with the records that need it.
+    /// A topology record names a record that does not resolve: it is withheld
+    /// with the records that need it.
     TopologyRecordUnresolved => ("topology.record-unresolved", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),

@@ -93,7 +93,7 @@ pub(super) struct TopologyBudgets<'inputs> {
 pub(super) struct TopologyLosses<'losses> {
     pub(super) losses: &'losses mut Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(super) partial_faces: &'losses mut Vec<(FaceId, cadmpeg_ir::report::loss::LossNote)>,
-    pub(super) given_up: &'losses mut Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
+    pub(super) parts: &'losses mut super::build::PendingParts,
 }
 
 pub(super) fn emit_topology(
@@ -108,7 +108,7 @@ pub(super) fn emit_topology(
     let TopologyLosses {
         losses: topology_losses,
         partial_faces: partial_face_losses,
-        given_up,
+        parts,
     } = topology_losses;
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
@@ -137,7 +137,7 @@ pub(super) fn emit_topology(
     } = topology_stream;
 
     let scope = IdScope::stream_from_index(stream_index)?;
-    let mut left_out = LeftOut::new(ctx, (stream_index, source_stream.name()));
+    let mut left_out = LeftOut::new(parts, (stream_index, source_stream.name()), graph);
     let unresolved = |what: String| {
         crate::loss::NxLossCode::TopologyRecordUnresolved
             .note(format!("parasolid#{stream_index} {what}"))
@@ -187,22 +187,33 @@ pub(super) fn emit_topology(
                 format!("parasolid#{stream_index} LOOP {loop_xmt} of FACE {face_xmt} is omitted, and the face is stated partial: vertex-loop FIN {fin_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
             )));
             partial_face_xmts.insert(*face_xmt);
-            omitted_vertex_loops.push((*loop_xmt, vertex_xmt));
+            omitted_vertex_loops.push((*face_xmt, *loop_xmt, vertex_xmt));
             false
         });
     }
-    for (loop_xmt, vertex_xmt) in omitted_vertex_loops {
+    for (face_xmt, loop_xmt, vertex_xmt) in omitted_vertex_loops {
         let needs = match vertex_xmt.and_then(|xmt| graph.get(NodeKind::Vertex, xmt)) {
-            Some(vertex) => Some(left_out.give_up(
-                NodeKind::Vertex,
-                vertex,
-                unresolved(format!("VERTEX {} has no resolved POINT", vertex.xmt())),
-            )?),
-            None => None,
+            Some(vertex) => {
+                left_out.drop_with_or_give_up(
+                    (NodeKind::Vertex, vertex),
+                    scope.id_from_display::<Identity>(
+                        &cadmpeg_ir::identity_component!("vertex"),
+                        vertex.xmt(),
+                    )?,
+                    vertex_point_key(vertex),
+                    || unresolved(format!("VERTEX {} has no resolved POINT", vertex.xmt())),
+                )?;
+                left_out.get(NodeKind::Vertex, vertex.xmt()).cloned()
+            }
+            None => vertex_xmt
+                .and_then(|xmt| left_out.get(NodeKind::Vertex, xmt))
+                .cloned(),
         };
         let Some(node) = graph.get(NodeKind::Loop, loop_xmt) else {
             continue;
         };
+        let face =
+            scope.id_from_display::<FaceId>(&cadmpeg_ir::identity_component!("face"), face_xmt)?;
         match needs {
             Some(needs) => left_out.drop_with(
                 (NodeKind::Loop, loop_xmt),
@@ -222,6 +233,7 @@ pub(super) fn emit_topology(
                 )?;
             }
         }
+        left_out.mark((NodeKind::Loop, loop_xmt), face);
     }
     let mut valid_loop_rings: BTreeMap<u32, &[u32]> = BTreeMap::new();
     let mut vertex_loop_vertices = BTreeSet::new();
@@ -316,19 +328,10 @@ pub(super) fn emit_topology(
                  admitted",
                 shell.xmt()
             ));
-            let part = super::build::give_up_record(
-                ctx,
-                (stream_index, source_stream.name()),
-                shell,
-                &withheld,
-            )?;
-            let id = Identity::from(part.id().clone());
-            left_out.insert(NodeKind::Shell, shell.xmt(), id.clone());
+            let id = left_out.give_up(NodeKind::Shell, shell, withheld)?;
             if let Some(body) = body {
                 given_up_shells.entry(body).or_insert(id);
             }
-            given_up.push(part);
-            topology_losses.push(withheld);
         }
     }
     let mut first_body_shells = BTreeMap::new();
@@ -491,15 +494,12 @@ pub(super) fn emit_topology(
                 if let Some(body) = body {
                     topology_losses.push(cadmpeg_ir::unknown::part::dropped_with(body, shell));
                 }
+                topology_losses.push(withheld);
             } else if let Some(node) = graph.get(NodeKind::Body, body_xmt) {
-                given_up.push(super::build::give_up_record(
-                    ctx,
-                    (stream_index, source_stream.name()),
-                    node,
-                    &withheld,
-                )?);
+                left_out.give_up(NodeKind::Body, node, withheld)?;
+            } else {
+                topology_losses.push(withheld);
             }
-            topology_losses.push(withheld);
             withheld_bodies.extend(body.cloned());
         }
     }
@@ -513,10 +513,14 @@ pub(super) fn emit_topology(
         .filter(|node| valid_vertex_xmts.contains(&node.xmt()))
     {
         let Some((fields, point_ref, point_position)) = vertex_point(node.xmt()) else {
-            left_out.give_up(
-                NodeKind::Vertex,
-                node,
-                unresolved(format!("VERTEX {} has no resolved POINT", node.xmt())),
+            left_out.drop_with_or_give_up(
+                (NodeKind::Vertex, node),
+                scope.id_from_display::<Identity>(
+                    &cadmpeg_ir::identity_component!("vertex"),
+                    node.xmt(),
+                )?,
+                vertex_point_key(node),
+                || unresolved(format!("VERTEX {} has no resolved POINT", node.xmt())),
             )?;
             continue;
         };
@@ -579,11 +583,14 @@ pub(super) fn emit_topology(
             )?;
             continue;
         };
+        let edge_id = scope
+            .id_from_display::<Identity>(&cadmpeg_ir::identity_component!("edge"), node.xmt())?;
         let Some(fin) = graph.get_target(NodeKind::Fin, fields.fin) else {
-            left_out.give_up(
-                NodeKind::Edge,
-                node,
-                unresolved(format!("EDGE {} names no FIN record", node.xmt())),
+            left_out.drop_with_or_give_up(
+                (NodeKind::Edge, node),
+                edge_id,
+                fields.fin.map(|target| (NodeKind::Fin, u32::from(target))),
+                || unresolved(format!("EDGE {} names no FIN record", node.xmt())),
             )?;
             continue;
         };
@@ -599,8 +606,6 @@ pub(super) fn emit_topology(
             )?;
             continue;
         };
-        let edge_id = scope
-            .id_from_display::<Identity>(&cadmpeg_ir::identity_component!("edge"), node.xmt())?;
         // A tolerant edge carries one curve per FIN, each on its own surface. A FIN whose surface
         // has no parameter conversion loses its pcurve, so the partner FIN supplies the carrier.
         let partner_curve = fin_fields
@@ -770,10 +775,11 @@ pub(super) fn emit_topology(
             .get_target(NodeKind::Fin, end_fin)
             .and_then(Node::fin_fields)
         else {
-            left_out.give_up(
-                NodeKind::Edge,
-                node,
-                unresolved(format!("EDGE {} names no resolved end FIN", node.xmt())),
+            left_out.drop_with_or_give_up(
+                (NodeKind::Edge, node),
+                edge_id,
+                end_fin.map(|target| (NodeKind::Fin, u32::from(target))),
+                || unresolved(format!("EDGE {} names no resolved end FIN", node.xmt())),
             )?;
             continue;
         };
@@ -1013,7 +1019,7 @@ pub(super) fn emit_topology(
         // names and emission left out.
         let unresolved_fin = valid_loop_rings[&loop_xmt].iter().find_map(|fin_xmt| {
             let Some(fin) = graph.get(NodeKind::Fin, *fin_xmt) else {
-                return Some(None);
+                return Some(Some((NodeKind::Fin, *fin_xmt)));
             };
             if let Some(vertex_fin) = fin.vertex_loop_fin_fields() {
                 let vertex = vertex_fin.vertex.map(u32::from);
@@ -1036,6 +1042,7 @@ pub(super) fn emit_topology(
                     "LOOP {loop_xmt} has a FIN that names no emitted EDGE"
                 ))
             })?;
+            left_out.mark((NodeKind::Loop, loop_xmt), face_ref.clone());
             continue;
         }
         annotate_node(annotations, &id, source_stream, node, "LOOP");
@@ -1487,6 +1494,7 @@ pub(super) fn emit_topology(
                         },
                     )?;
                     left_out.release_with_entry((NodeKind::Loop, *loop_xmt), id.clone());
+                    left_out.mark((NodeKind::Loop, *loop_xmt), face.clone());
                 }
                 continue;
             };
@@ -1697,7 +1705,7 @@ pub(super) fn emit_topology(
     ir.geometry.vertices.retain(|vertex| {
         !vertex.id.as_str().starts_with(&scope_prefix) || retained_vertices.contains(&vertex.id)
     });
-    left_out.finish(topology_losses, given_up);
+    left_out.finish(topology_losses);
     Ok(endpoint_witnesses)
 }
 
@@ -1708,7 +1716,7 @@ pub(super) fn emit_topology(
 /// names, or an EDGE that names such a FIN, is dropped with the FIN when
 /// emission has no candidate for it.
 fn leave_out_unresolved_boundaries(
-    left_out: &mut LeftOut<'_, '_, '_>,
+    left_out: &mut LeftOut<'_, '_>,
     (graph, scope): (&Graph, &IdScope),
     failures: &BTreeMap<u32, FaceLoopFailure>,
     (edge_candidates, vertex_candidates): (&BTreeSet<u32>, &BTreeSet<u32>),
@@ -1751,13 +1759,18 @@ fn leave_out_unresolved_boundaries(
         let Some(failure) = failures.get(&face_xmt) else {
             continue;
         };
+        let needs = if left_out.get(NodeKind::Face, face_xmt).is_some() {
+            Some((NodeKind::Face, face_xmt))
+        } else {
+            given_up_cause(graph, left_out, failure, node.xmt())
+        };
         left_out.drop_with_or_give_up(
             (NodeKind::Loop, node),
             scope.id_from_display::<Identity>(
                 &cadmpeg_ir::identity_component!("loop"),
                 node.xmt(),
             )?,
-            Some((NodeKind::Face, face_xmt)),
+            needs,
             || {
                 unresolved(format!(
                     "LOOP {} of FACE {face_xmt} is withheld: the face's loop chain does not \
@@ -1766,6 +1779,10 @@ fn leave_out_unresolved_boundaries(
                 ))
             },
         )?;
+        left_out.mark(
+            (NodeKind::Loop, node.xmt()),
+            scope.id_from_display::<FaceId>(&cadmpeg_ir::identity_component!("face"), face_xmt)?,
+        );
         let Some(loop_entry) = left_out.get(NodeKind::Loop, node.xmt()).cloned() else {
             continue;
         };
@@ -1826,6 +1843,54 @@ fn leave_out_unresolved_boundaries(
         }
     }
     Ok(())
+}
+
+/// The POINT that the VERTEX `vertex` names, by kind and XMT index.
+fn vertex_point_key(vertex: &Node) -> Option<(NodeKind, u32)> {
+    vertex
+        .vertex_fields()
+        .and_then(|fields| fields.point)
+        .map(|target| (NodeKind::Point, u32::from(target)))
+}
+
+/// The record whose give-up breaks the loop chain of a face at LOOP
+/// `loop_xmt`, as `failure` states it: a FIN of the ring, a record that FIN
+/// names, or the EDGE of a FIN, which the graph does not hold and another
+/// site gave up.
+fn given_up_cause(
+    graph: &Graph,
+    left_out: &LeftOut<'_, '_>,
+    failure: &FaceLoopFailure,
+    loop_xmt: u32,
+) -> Option<(NodeKind, u32)> {
+    let candidates = match *failure {
+        FaceLoopFailure::InvalidFinRing {
+            loop_xmt: failed,
+            fin_xmt,
+        } if failed == loop_xmt => {
+            let fields = graph.get(NodeKind::Fin, fin_xmt).and_then(Node::fin_fields);
+            let mut candidates = vec![(NodeKind::Fin, fin_xmt)];
+            if let Some(fields) = fields {
+                candidates.extend(fields.vertex.map(|v| (NodeKind::Vertex, u32::from(v))));
+                candidates.extend(
+                    [fields.forward, fields.backward, fields.other]
+                        .into_iter()
+                        .flatten()
+                        .map(|fin| (NodeKind::Fin, u32::from(fin))),
+                );
+            }
+            candidates
+        }
+        FaceLoopFailure::UnresolvedFinEdge {
+            loop_xmt: failed,
+            edge_xmt: Some(edge),
+            ..
+        } if failed == loop_xmt => vec![(NodeKind::Edge, edge)],
+        _ => Vec::new(),
+    };
+    candidates
+        .into_iter()
+        .find(|&(kind, xmt)| graph.get(kind, xmt).is_none() && left_out.get(kind, xmt).is_some())
 }
 
 /// The fields, POINT, and position of a VERTEX whose point resolves.

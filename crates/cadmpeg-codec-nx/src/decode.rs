@@ -483,7 +483,9 @@ fn build_metadata_ir(
         )?;
     } else {
         let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
-        build::give_up_unread(ctx, scan, &parsed, &mut losses, &mut given_up)?;
+        let mut stream_parts = build::PendingParts::default();
+        build::give_up_unread(scan, &parsed, &mut losses, &mut stream_parts)?;
+        stream_parts.give_up(ctx, scan, |_| false, &mut given_up)?;
         let model = crate::native::model::NativeModel::extract(
             ctx,
             &scan.container,

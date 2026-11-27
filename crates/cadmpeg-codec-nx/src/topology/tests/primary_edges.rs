@@ -315,7 +315,7 @@ fn primary_edge_complete_duplicate_records_report_a_scoped_refusal() {
             parse(&bytes)
                 .primary_edge_refusals()
                 .iter()
-                .map(|range| range.start)
+                .map(|(_, range)| range.start)
                 .collect::<Vec<_>>(),
             [first, second]
         );
@@ -451,7 +451,7 @@ fn terminated_edge_with_an_inserted_base_field_is_refused() {
             graph
                 .primary_edge_refusals()
                 .iter()
-                .map(|range| range.start)
+                .map(|(_, range)| range.start)
                 .collect::<Vec<_>>(),
             [start]
         );
@@ -507,7 +507,7 @@ fn terminated_vertex_with_an_edited_base_field_reports_its_unresolved_projection
                 graph
                     .primary_node_refusals()
                     .iter()
-                    .map(|(kind, range)| (*kind, range.start))
+                    .map(|(kind, _, range)| (*kind, range.start))
                     .collect::<Vec<_>>(),
                 [(NodeKind::Vertex, start)]
             );
@@ -548,7 +548,7 @@ fn terminated_vertices_that_share_an_identity_are_both_refused() {
             graph
                 .primary_node_refusals()
                 .iter()
-                .map(|(kind, range)| (*kind, range.start))
+                .map(|(kind, _, range)| (*kind, range.start))
                 .collect::<Vec<_>>(),
             [(NodeKind::Vertex, first), (NodeKind::Vertex, second)]
         );
@@ -604,7 +604,7 @@ fn terminated_query_sense_fin_of_another_form_reports_its_unresolved_projection(
                 graph
                     .primary_node_refusals()
                     .iter()
-                    .map(|(kind, range)| (*kind, range.start))
+                    .map(|(kind, _, range)| (*kind, range.start))
                     .collect::<Vec<_>>(),
                 [(NodeKind::Fin, start)]
             );

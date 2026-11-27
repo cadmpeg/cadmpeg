@@ -3,48 +3,52 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::unknown::part::{dropped_with, GivenUpPart};
+use cadmpeg_ir::unknown::part::dropped_with;
 
+use crate::decode::build::PendingParts;
 use crate::framing::node_kind::NodeKind;
-use crate::topology::Node;
+use crate::topology::{Graph, Node};
 
 /// Each record of one stream that emission leaves out, by its kind and XMT
 /// index. A record given up as a part of the stream maps to the part's stub
 /// id. A record dropped because it needs another maps to its own id. A later
 /// charge names either id as the record it needs.
-pub(super) struct LeftOut<'ctx, 'data, 'stream> {
-    ctx: &'ctx DecodeContext<'data>,
+pub(super) struct LeftOut<'parts, 'stream> {
+    parts: &'parts mut PendingParts,
     stream: (usize, &'stream cadmpeg_ir::StreamName),
     ids: BTreeMap<(NodeKind, u32), Identity>,
+    /// The record that each dropped record needs.
+    needs: BTreeMap<Identity, Identity>,
     losses: Vec<LossNote>,
-    given_up: Vec<GivenUpPart>,
 }
 
-impl<'ctx, 'data, 'stream> LeftOut<'ctx, 'data, 'stream> {
+impl<'parts, 'stream> LeftOut<'parts, 'stream> {
+    /// The ledger of `stream`, which starts with each record of the stream
+    /// that `parts` gives up and `graph` does not hold.
     pub(super) fn new(
-        ctx: &'ctx DecodeContext<'data>,
+        parts: &'parts mut PendingParts,
         stream: (usize, &'stream cadmpeg_ir::StreamName),
+        graph: &Graph,
     ) -> Self {
+        let ids = parts
+            .records_of(stream.0)
+            .filter(|((kind, xmt), _)| graph.get(*kind, *xmt).is_none())
+            .map(|(key, id)| (key, id.clone()))
+            .collect();
         Self {
-            ctx,
+            parts,
             stream,
-            ids: BTreeMap::new(),
+            ids,
+            needs: BTreeMap::new(),
             losses: Vec::new(),
-            given_up: Vec::new(),
         }
     }
 
     pub(super) fn get(&self, kind: NodeKind, xmt: u32) -> Option<&Identity> {
         self.ids.get(&(kind, xmt))
-    }
-
-    /// Enters a record that another site gave up as the part `id`.
-    pub(super) fn insert(&mut self, kind: NodeKind, xmt: u32, id: Identity) {
-        self.ids.entry((kind, xmt)).or_insert(id);
     }
 
     /// Gives up `node` for `why`, unless an earlier site left it out, and
@@ -58,9 +62,7 @@ impl<'ctx, 'data, 'stream> LeftOut<'ctx, 'data, 'stream> {
         if let Some(id) = self.ids.get(&(kind, node.xmt())) {
             return Ok(id.clone());
         }
-        let part = crate::decode::build::give_up_record(self.ctx, self.stream, node, &why)?;
-        let id = Identity::from(part.id().clone());
-        self.given_up.push(part);
+        let id = self.parts.push_record(self.stream, node, &why)?;
         self.losses.push(why);
         self.ids.insert((kind, node.xmt()), id.clone());
         Ok(id)
@@ -79,7 +81,24 @@ impl<'ctx, 'data, 'stream> LeftOut<'ctx, 'data, 'stream> {
         }
         let record = record.into();
         self.losses.push(dropped_with(record.clone(), needs));
+        self.needs.insert(record.clone(), needs.clone());
         self.ids.insert((kind, xmt), record);
+    }
+
+    /// Names `record`, which emission states partial because it loses the
+    /// left-out record `key`, among the records that the charge of `key`
+    /// marks.
+    pub(super) fn mark(&mut self, key: (NodeKind, u32), record: impl Into<Identity>) {
+        let Some(mut root) = self.ids.get(&key).cloned() else {
+            return;
+        };
+        for _ in 0..=self.needs.len() {
+            match self.needs.get(&root) {
+                Some(needs) => root = needs.clone(),
+                None => break,
+            }
+        }
+        self.parts.mark(root, record.into());
     }
 
     /// Drops `record` with the left-out record that `needs` names, or else
@@ -123,9 +142,8 @@ impl<'ctx, 'data, 'stream> LeftOut<'ctx, 'data, 'stream> {
         }
     }
 
-    /// Moves the charges into the decode's losses and given-up parts.
-    pub(super) fn finish(self, losses: &mut Vec<LossNote>, given_up: &mut Vec<GivenUpPart>) {
+    /// Moves the notes into the decode's losses.
+    pub(super) fn finish(self, losses: &mut Vec<LossNote>) {
         losses.extend(self.losses);
-        given_up.extend(self.given_up);
     }
 }

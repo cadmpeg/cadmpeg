@@ -13,6 +13,7 @@ use super::{Graph, Node, NodeKind};
 use crate::test_support::test_bytes::{put_f64, put_ref, record};
 use crate::test_support::test_prt::prt_with_partition;
 use crate::test_support::test_streams::{
+    primary_stopped_topology_stream, primary_terminated_topology_stream,
     shared_region_shells_partition_stream, topology_partition_stream,
 };
 use crate::NxCodec;
@@ -72,6 +73,15 @@ fn dropped(loss: &LossNote) -> Vec<&str> {
         .unwrap_or_default()
 }
 
+/// The ids a charge marks.
+fn marked(loss: &LossNote) -> Vec<&str> {
+    loss.message
+        .split_once("marked=[")
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .map(|(ids, _)| ids.split(", ").filter(|id| !id.is_empty()).collect())
+        .unwrap_or_default()
+}
+
 fn has_id<T: AsRef<str>>(ids: impl IntoIterator<Item = T>, id: &str) -> bool {
     ids.into_iter().any(|candidate| candidate.as_ref() == id)
 }
@@ -103,6 +113,7 @@ fn a_vertex_whose_point_does_not_resolve_is_given_up_with_the_records_that_need_
         ["nx:s0:edge#8", "nx:s0:fin#7", "nx:s0:loop#5"],
         "{charge:#?}"
     );
+    assert_eq!(marked(charge), ["nx:s0:face#4"], "{charge:#?}");
 
     match decode_with(&stream, true) {
         Err(DecodeFailure::StrictRejected { rejection }) => {
@@ -297,11 +308,140 @@ fn the_loops_of_a_face_whose_loop_chain_does_not_resolve_are_given_up_with_their
         ["nx:s0:edge#8", "nx:s0:fin#7", "nx:s0:vertex#10"],
         "{charge:#?}"
     );
+    assert_eq!(marked(charge), ["nx:s0:face#4"], "{charge:#?}");
 
     match decode_with(&stream, true) {
         Err(DecodeFailure::StrictRejected { rejection }) => {
             assert!(is_part_charge(rejection.loss(), loop_), "{rejection:#?}");
         }
         other => panic!("a pinned decode refuses the give-up: {other:?}"),
+    }
+}
+
+#[test]
+fn a_vertex_whose_point_the_primary_framing_refuses_is_dropped_with_the_point() {
+    let framed = primary_terminated_topology_stream([0.01, 0.02, 0.03]);
+    let primary = cadmpeg_parasolid::records::PrimaryRecords::read(&framed)
+        .expect("printable schema")
+        .expect("base-13006 transmit header");
+    assert_eq!(primary.stop_offset(), None);
+    let graph = Graph::parse_source(&framed).expect("terminated primary sequence");
+    assert!(graph.primary_node_refusals().is_empty());
+    assert!(graph.get(NodeKind::Point, 11).is_some());
+
+    let stream = primary_terminated_topology_stream([1.0e308, 0.0, 0.0]);
+    let graph = Graph::parse_source(&stream).expect("terminated primary sequence");
+    let [(NodeKind::Point, 11, point)] = graph.primary_node_refusals() else {
+        panic!(
+            "the framing refuses POINT 11 only: {:?}",
+            graph.primary_node_refusals()
+        );
+    };
+    let point = (point.start, point.len());
+    let vertex = graph.get(NodeKind::Vertex, 10).expect("framed VERTEX");
+    let vertex = (vertex.pos(), vertex.end() - vertex.pos());
+
+    let result = decode(&stream);
+    let losses = &result.report().losses;
+    let charge = part_charge(losses, point);
+    assert_eq!(
+        dropped(charge),
+        [
+            "nx:s0:edge#8",
+            "nx:s0:fin#7",
+            "nx:s0:loop#5",
+            "nx:s0:vertex#10"
+        ],
+        "{charge:#?}"
+    );
+    assert_eq!(marked(charge), ["nx:s0:face#4"], "{charge:#?}");
+    assert!(
+        !losses.iter().any(|loss| is_part_charge(loss, vertex)),
+        "{losses:#?}"
+    );
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == record_unreadable_kind())
+            .filter(|loss| loss.message.contains("nx:s0:vertex#10"))
+            .count(),
+        1,
+        "{losses:#?}"
+    );
+    assert!(has_id(
+        result.ir().geometry.faces.iter().map(|f| f.id.as_str()),
+        "nx:s0:face#4"
+    ));
+}
+
+/// The `(offset, length)` of each part of stream 0 of `kind` that `losses`
+/// gives up.
+fn part_spans(losses: &[LossNote], kind: &str) -> Vec<(usize, usize)> {
+    losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter(|loss| {
+            loss.message
+                .starts_with(&format!("part {kind} stream=\"nx:parasolid#0:"))
+        })
+        .filter_map(|loss| {
+            let field = |name: &str| -> Option<usize> {
+                let (_, rest) = loss.message.split_once(&format!(" {name}="))?;
+                rest.split(|c: char| !c.is_ascii_digit())
+                    .next()?
+                    .parse()
+                    .ok()
+            };
+            Some((field("offset")?, field("length")?))
+        })
+        .collect()
+}
+
+#[test]
+fn the_unframed_parts_past_a_primary_stop_hold_no_record_the_decode_reads() {
+    let stream = primary_stopped_topology_stream(1.0e-6);
+    let graph = Graph::parse_source(&stream).expect("stopped primary sequence");
+    let stop = graph
+        .primary_unread_from()
+        .expect("the primary framing stops");
+    let edge = node_at(&stream, NodeKind::Edge, 8);
+    assert!(graph.get(NodeKind::Edge, 8).is_none());
+    assert!(graph.of_kind(NodeKind::Face).any(|face| face.pos() > stop));
+
+    let result = decode(&stream);
+    assert!(has_id(
+        result.ir().geometry.faces.iter().map(|f| f.id.as_str()),
+        "nx:s0:face#4"
+    ));
+    let losses = &result.report().losses;
+    let unframed = part_spans(losses, "parasolid-unframed");
+    let covers = |at: usize| {
+        unframed
+            .iter()
+            .any(|&(offset, length)| (offset..offset + length).contains(&at))
+    };
+    assert!(covers(edge.0), "{unframed:?}");
+    for kind in [
+        NodeKind::Body,
+        NodeKind::Shell,
+        NodeKind::Face,
+        NodeKind::Loop,
+        NodeKind::Fin,
+        NodeKind::Plane,
+        NodeKind::Line,
+        NodeKind::Vertex,
+        NodeKind::Region,
+        NodeKind::Point,
+    ] {
+        for node in graph.of_kind(kind) {
+            assert!(
+                !covers(node.pos()),
+                "{kind:?} at {}: {unframed:?}",
+                node.pos()
+            );
+        }
+    }
+    for (offset, _) in part_spans(losses, "parasolid-record") {
+        assert!(!covers(offset), "{offset}: {unframed:?}");
     }
 }
