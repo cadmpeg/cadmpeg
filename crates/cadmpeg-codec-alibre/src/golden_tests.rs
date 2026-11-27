@@ -6,6 +6,8 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::serde_erase::json;
+
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeResult};
 use cadmpeg_test_support::golden::{snapshot_text, Branch, Harness};
@@ -37,8 +39,8 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
 
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match AlibreCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()) {
-        Ok(summary) => serde_json::to_value(summary).expect("serialize inspect summary"),
-        Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+        Ok(summary) => json::to_value(summary).expect("serialize inspect summary"),
+        Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
     };
     snapshot_text(&value)
 }
@@ -64,13 +66,13 @@ fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match decode_beside_corpus(bytes) {
         Ok(result) => {
             let result = EditableDecodeResult::from(result);
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "ir": result.ir(),
                 "report": result.report(),
                 "source_fidelity": result.source_fidelity(),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error.to_string() }),
     };
     snapshot_text(&value)
 }

@@ -41,7 +41,7 @@
 
 use cadmpeg_ir::codec::write::EncodeError;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::export::{ExportReport, WritePath};
@@ -76,7 +76,6 @@ where
     let plan = Encoder::plan(
         codec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Unnamed,
     )
     .unwrap_or_else(|error| panic!("{label}: plan failed: {error}"));
     let path = plan.report().write_path().clone();
@@ -158,20 +157,23 @@ pub fn semantic_roundtrip<C>(
     )
     .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
     let (ir, _decode_report, mut source_fidelity) = decoded.into_parts();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
     assert!(
         !source_fidelity
-            .edited(&ir)
+            .edited(&ctx, &ir)
             .unwrap_or_else(|error| panic!("{label}: content digest: {error}")),
         "{label}: the decode's content digest does not match its document, so replacing it cannot \
          force the semantic path; this helper would report whatever the encoder happened to do"
     );
     source_fidelity.content_digest = None;
     // Plan borrows the document until write completes.
-    let written = match Encoder::plan(
-        codec,
-        EncodeInput::new(&ir, Some(&source_fidelity)),
-        TargetRequest::Unnamed,
-    ) {
+    let written = match Encoder::plan(codec, EncodeInput::new(&ir, Some(&source_fidelity))) {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
             let mut bytes = Vec::new();
@@ -291,11 +293,7 @@ where
          would still be free to replay its retained bytes and this test would describe nothing"
     );
     // Plan borrows the document until write completes.
-    let written = match Encoder::plan(
-        codec,
-        EncodeInput::new(&edited, Some(&source_fidelity)),
-        TargetRequest::Unnamed,
-    ) {
+    let written = match Encoder::plan(codec, EncodeInput::new(&edited, Some(&source_fidelity))) {
         Ok(plan) => {
             let mut bytes = Vec::new();
             let report = plan

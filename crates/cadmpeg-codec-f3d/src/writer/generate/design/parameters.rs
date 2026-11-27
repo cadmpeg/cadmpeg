@@ -524,10 +524,11 @@ pub(in crate::writer::generate) fn plan(
 /// otherwise the root scope's parameters, and a loss naming each neutral
 /// parameter that no scope parameter restates. It never refuses.
 pub(in crate::writer::generate) fn native_or_neutral(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<ParameterSource, CodecError> {
-    if target.model.parameters == native_projection(native)? {
+    if target.model.parameters == native_projection(ctx, native)? {
         return Ok(ParameterSource::Native);
     }
     let mut plan = super::root_scope(target).map_or_else(
@@ -557,17 +558,12 @@ pub(in crate::writer::generate) fn native_or_neutral(
 
 /// The native records' parameters as the decoder projects them.
 fn native_projection(
+    decode_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &F3dNative,
 ) -> Result<Vec<cadmpeg_ir::features::parameters::DesignParameter>, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
     Ok(
         crate::design::feature_project::project_parameter_design_with_edge_identities(
-            &decode_ctx,
+            decode_ctx,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 source_parameters: &native.design_parameters,

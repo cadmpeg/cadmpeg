@@ -68,10 +68,10 @@ fn write_without_source_image(decoded: &mut EditableDecodeResult) -> (ExportRepo
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap()
         .write_to(&mut output)
         .unwrap();
@@ -489,7 +489,7 @@ fn an_unedited_write_without_a_sidecar_reports_no_stale_solid() {
     let decoded = decode_without_envelope(&source);
     assert!(has_synthesized_snapshot(&decoded));
     let report = SldprtCodec
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(decoded.ir(), None))
         .unwrap()
         .write_to(&mut Vec::new())
         .unwrap();

@@ -343,7 +343,7 @@ fn an_assembly_is_detected_and_inspected_as_its_own_dialect() {
             .unwrap();
         let dialects = summary.dialects().unwrap();
         assert_eq!(dialects.primary().dialect().as_str(), "alibre:cfb-assembly");
-        let wire = serde_json::to_value(dialects).unwrap();
+        let wire = cadmpeg_core::serde_erase::json::to_value(dialects).unwrap();
         assert!(
             wire["extra"].as_array().is_none_or(Vec::is_empty),
             "{name}: {wire}"
