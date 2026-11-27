@@ -282,9 +282,7 @@ fn a_body_on_an_opaque_carrier_without_a_retained_partition_is_omitted() {
         .id
         .as_str()
         .to_owned();
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
-        .unwrap();
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None)).unwrap();
     assert!(plan.report().losses.iter().any(|loss| {
         loss.code.local_code() == "writer.bodies-omitted"
             && loss.message.contains(&format!("edge {edge}"))
@@ -502,7 +500,7 @@ fn a_parameter_without_a_feature_record_is_dropped_with_a_loss() {
 
     let mut output = Vec::new();
     let report = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap()
         .write_to(&mut output)
         .unwrap();

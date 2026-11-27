@@ -113,6 +113,29 @@ pub fn assert_geometry_agrees_with_full<N: AsRef<str>>(
     summary
 }
 
+/// [`assert_geometry_agrees_with_full`] for one input whose full decode the
+/// caller holds. Returns the geometry decode.
+///
+/// # Panics
+///
+/// Panics when the geometry decode refuses, or when it violates one of the
+/// checks in the module documentation.
+pub fn assert_geometry_agrees_with_decoded(
+    codec: &dyn Codec,
+    bytes: &[u8],
+    full: &DecodeResult,
+) -> DecodeResult {
+    let geometry = decode(codec, bytes, DecodeDepth::Geometry)
+        .unwrap_or_else(|error| panic!("only the geometry decode refused: {error}"));
+    let failures = compare(codec, bytes, full, &geometry);
+    assert!(
+        failures.is_empty(),
+        "the full and geometry decodes diverge:\n{}",
+        failures.join("\n")
+    );
+    geometry
+}
+
 /// Decodes `bytes` at each depth and asserts that the document records the
 /// scope that depth requests and holds no process record.
 ///
@@ -253,17 +276,20 @@ fn unmarked_cut_classes(bytes: &[u8], full: &DecodeResult, geometry: &DecodeResu
         .collect()
 }
 
-/// The document as JSON without its scope, design and process arenas, and
-/// native namespaces.
+/// The document's members outside its scope, design and process arenas, and
+/// native namespaces, as JSON.
 fn outside_design(ir: &CadIr) -> Value {
-    let mut value =
-        cadmpeg_ir::hash::finite_json::to_json_value(ir).expect("serialize decoded document");
-    let Value::Object(document) = &mut value else {
-        panic!("a document serializes as a JSON object");
-    };
-    for key in ["scope", "design", "process", "native"] {
-        document.remove(key);
+    fn member<T: serde::Serialize>(value: &T) -> Value {
+        cadmpeg_ir::hash::finite_json::to_json_value(value).expect("serialize decoded document")
     }
+    let mut document = serde_json::Map::from_iter([
+        ("fragment".to_owned(), member(&ir.fragment)),
+        ("repro".to_owned(), member(&ir.repro)),
+        ("source".to_owned(), member(&ir.source)),
+        ("tolerances".to_owned(), member(&ir.tolerances)),
+        ("geometry".to_owned(), member(&ir.geometry)),
+        ("model".to_owned(), member(&ir.model)),
+    ]);
     for arena in ArenaName::ALL {
         if arena.class() != ArenaClass::Model {
             if let Some(Value::Object(home)) = document.get_mut(arena.home().as_str()) {
@@ -271,7 +297,7 @@ fn outside_design(ir: &CadIr) -> Value {
             }
         }
     }
-    value
+    Value::Object(document)
 }
 
 /// Every neutral and codec-native finding over `ir`, as `check: message`.

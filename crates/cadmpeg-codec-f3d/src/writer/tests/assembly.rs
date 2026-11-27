@@ -202,13 +202,20 @@ fn writer_accepts_a_standalone_joint_nested_below_a_component_insert_key() {
     }
 
     target.model.assembly_joints = nested;
-    crate::writer::primitives::validate_assembly_projection(&target, Some(&native))
-        .expect("the writer re-projects the nested occurrence path");
+    crate::writer::primitives::validate_assembly_projection(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &target,
+        Some(&native),
+    )
+    .expect("the writer re-projects the nested occurrence path");
 
     target.model.assembly_joints = projected.joints;
-    assert!(
-        crate::writer::primitives::validate_assembly_projection(&target, Some(&native)).is_err()
-    );
+    assert!(crate::writer::primitives::validate_assembly_projection(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &target,
+        Some(&native)
+    )
+    .is_err());
 
     let joint = target.model.assembly_joints[0].id.to_string();
     crate::test_support::assert_written_with_loss(
@@ -317,16 +324,24 @@ fn writer_checks_the_insertion_selected_by_a_shared_occurrence_path() {
         };
     }
     target.model.assembly_joints = projected.joints;
-    crate::writer::primitives::validate_assembly_projection(&target, Some(&native)).unwrap();
+    crate::writer::primitives::validate_assembly_projection(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &target,
+        Some(&native),
+    )
+    .unwrap();
     for connector in target.model.assembly_joints[0].connectors_mut() {
         connector.operand.container = OperandContainer::Occurrence {
             occurrence: second.id.clone(),
             occurrence_path: vec![NESTED_KEY.to_owned()],
         };
     }
-    assert!(
-        crate::writer::primitives::validate_assembly_projection(&target, Some(&native)).is_err()
-    );
+    assert!(crate::writer::primitives::validate_assembly_projection(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &target,
+        Some(&native)
+    )
+    .is_err());
 }
 
 /// The source-less Design stream writes no joint record, so a neutral joint

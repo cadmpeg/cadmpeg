@@ -5,7 +5,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::construction::{InputReference, Relation, Subject};
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
@@ -200,9 +200,7 @@ fn origin_plane(operation: &FeatureOperation) -> (PrincipalEntity, Anchor) {
 /// Write the document as CADIR and read it back: the read document and the
 /// write's losses that name a design record.
 fn cadir_round_trip(ir: &CadIr) -> (CadIr, Vec<String>) {
-    let plan = CadirEncoder
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
-        .unwrap();
+    let plan = CadirEncoder.plan(EncodeInput::new(ir, None)).unwrap();
     let design_ids = ir
         .design
         .features
