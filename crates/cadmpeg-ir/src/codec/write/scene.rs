@@ -8,7 +8,8 @@ use crate::up_axis::UpAxis;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SceneOptions {
     /// The up axis of the scene. The encoder turns the model so that its
-    /// up direction is this axis. `None` keeps the up axis of the source.
+    /// up direction is this axis. `None` keeps the up axis of the source, and writes Z where the
+    /// source states none.
     pub up_axis: Option<UpAxis>,
     /// Metres per scene unit, finite and positive. `None` selects the
     /// default of the format.
