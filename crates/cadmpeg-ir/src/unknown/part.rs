@@ -394,14 +394,20 @@ pub struct Part<'a> {
     name: Option<String>,
     stream: Option<StreamName>,
     offset: u64,
-    bytes: &'a [u8],
+    bytes: PartBytes<'a>,
     holds: BTreeSet<ArenaClass>,
     containing: Option<Identity>,
     dropped: Vec<Identity>,
     marked: Vec<Identity>,
     lost: Vec<String>,
     consequence: Option<String>,
-    digest_only: bool,
+}
+
+#[derive(Debug, Clone)]
+enum PartBytes<'a> {
+    Inline(&'a [u8]),
+    DigestOnly(&'a [u8]),
+    Digest { byte_len: u64, sha256: Sha256Digest },
 }
 
 impl<'a> Part<'a> {
@@ -442,14 +448,13 @@ impl<'a> Part<'a> {
             name: None,
             stream: None,
             offset,
-            bytes,
+            bytes: PartBytes::Inline(bytes),
             holds: holds.into_iter().collect(),
             containing: None,
             dropped: Vec::new(),
             marked: Vec::new(),
             lost: Vec::new(),
             consequence: None,
-            digest_only: false,
         }
     }
 
@@ -512,7 +517,17 @@ impl<'a> Part<'a> {
     /// that already retains them in a record holding the whole stream.
     #[must_use]
     pub fn digest_only(mut self) -> Self {
-        self.digest_only = true;
+        if let PartBytes::Inline(bytes) = self.bytes {
+            self.bytes = PartBytes::DigestOnly(bytes);
+        }
+        self
+    }
+
+    /// Describes a part whose stored bytes occupy multiple borrowed extents.
+    #[must_use]
+    pub fn digest_chunks(mut self, chunks: impl IntoIterator<Item = &'a [u8]>) -> Self {
+        let (byte_len, sha256) = Sha256Digest::digest_chunks(chunks);
+        self.bytes = PartBytes::Digest { byte_len, sha256 };
         self
     }
 
@@ -1072,24 +1087,27 @@ impl DecodeParts for DecodeContext<'_> {
         }
         let cause = cause.of(&error);
         let id = part.id()?;
-        let bytes = part.bytes;
-        let length = u64_from_index(bytes.len());
-        let retained_bytes = if part.digest_only {
-            RetainedBytes::Digest {
-                byte_len: length,
+        let offset = part.offset();
+        let retained_bytes = match part.bytes {
+            PartBytes::Digest { byte_len, sha256 } => RetainedBytes::Digest { byte_len, sha256 },
+            PartBytes::DigestOnly(bytes) => RetainedBytes::Digest {
+                byte_len: u64_from_index(bytes.len()),
                 sha256: Sha256Digest::digest(bytes),
+            },
+            PartBytes::Inline(bytes) => {
+                self.retain_bytes(u64_from_index(bytes.len()), "given-up part source bytes")?;
+                let mut data =
+                    self.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
+                data.copy_from_slice(bytes);
+                RetainedBytes::Inline { data }
             }
-        } else {
-            self.retain_bytes(length, "given-up part source bytes")?;
-            let mut data = self.alloc_filled(bytes.len(), 0_u8, "given-up part source bytes")?;
-            data.copy_from_slice(bytes);
-            RetainedBytes::Inline { data }
         };
+        let length = retained_bytes.byte_len();
         let owner = part
             .stream
             .clone()
             .map_or(SourceOwner::Root, SourceOwner::from);
-        let retained = RetainedSourceRecord::from_bytes(owner, part.offset(), retained_bytes)?
+        let retained = RetainedSourceRecord::from_bytes(owner, offset, retained_bytes)?
             .with_untyped(part.holds.iter().copied());
         let mut dropped: Vec<&str> = part.dropped.iter().map(Identity::as_str).collect();
         dropped.sort_unstable();
@@ -1108,7 +1126,7 @@ impl DecodeParts for DecodeContext<'_> {
         let head = format!(
             "part {}{name} stream={stream:?} offset={} length={length} record={id}: {error}{consequence}",
             part.kind,
-            part.offset(),
+            offset,
         );
         let mut marked: Vec<String> = part
             .marked
@@ -1126,8 +1144,8 @@ impl DecodeParts for DecodeContext<'_> {
         let loss = charge(cause, &head, Identity::from(id.clone()), tail.clone());
         self.retain_bytes(u64_from_index(loss.message.len()), "given-up part loss")?;
         let provenance = match part.stream.clone() {
-            Some(stream) => SourceProvenance::in_stream(part.codec, stream, part.offset()),
-            None => SourceProvenance::root(part.codec, part.offset()),
+            Some(stream) => SourceProvenance::in_stream(part.codec, stream, offset),
+            None => SourceProvenance::root(part.codec, offset),
         }
         .with_tag(part.kind);
         let loss = loss.with_provenance(provenance);

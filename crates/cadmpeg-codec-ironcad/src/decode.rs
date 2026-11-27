@@ -47,7 +47,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         match ctx.run_part(|| snapshot.open_part(ctx, entry))? {
             Ok(stream) => Ok(Some((entry, stream))),
             Err(error) => {
-                let located = snapshot.open_located_part(ctx, entry)?;
+                let located = snapshot.located_chunks(entry)?.map(View::window);
                 stream_parts.push(give_up_stream(ctx, entry, located, error)?);
                 failed_opens.push(entry.id());
                 Ok::<_, CodecError>(None)
@@ -74,7 +74,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                         tree.records.iter().map(|record| record.assembly).collect();
                     scene.assemblies = tree.assemblies;
                 }
-                Err(error) => stream_parts.push(give_up_stream(ctx, entry, Some(stream), error)?),
+                Err(error) => {
+                    stream_parts.push(give_up_stream(ctx, entry, [stream.window()], error)?);
+                }
             }
         }
         if snapshot.stream(PUBLIC_ACCESS).is_none() {
@@ -90,7 +92,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     property_losses(&records, &mut losses);
                     scene.records = Some(records);
                 }
-                Err(error) => stream_parts.push(give_up_stream(ctx, entry, Some(stream), error)?),
+                Err(error) => {
+                    stream_parts.push(give_up_stream(ctx, entry, [stream.window()], error)?);
+                }
             }
         }
         scene.units = document
@@ -317,18 +321,17 @@ fn transfer(
     })
 }
 
-fn give_up_stream(
+fn give_up_stream<'a>(
     ctx: &DecodeContext<'_>,
     entry: &CompoundStreamEntry,
-    source: Option<View<'_>>,
+    chunks: impl IntoIterator<Item = &'a [u8]>,
     error: CodecError,
 ) -> Result<GivenUpPart, CodecError> {
     let path = entry.path();
-    let bytes = source.as_ref().map_or(&[][..], |view| view.window());
-    let mut part = Part::at("ironcad", "stream", 0, bytes, [ArenaClass::Model])
+    let mut part = Part::at("ironcad", "stream", 0, &[], [ArenaClass::Model])
         .named(path)
         .in_stream(cadmpeg_ir::stream_name!("ironcad:").with_suffix(path))
-        .digest_only();
+        .digest_chunks(chunks);
     if path.eq_ignore_ascii_case(DOCUMENT_DATA) {
         part = part.costing("the root definition states no units");
     } else if path.eq_ignore_ascii_case(PUBLIC_ACCESS) {

@@ -600,6 +600,50 @@ fn a_public_access_copy_above_available_retention_is_undecoded() {
 }
 
 #[test]
+fn a_broken_access_prefix_leaves_the_budget_for_the_scene_and_its_report() {
+    use cadmpeg_core::decode::{u64_from_index, DecodeDepth};
+    use cadmpeg_test_support::bytes::put_u32;
+
+    let prefix = vec![0x31; 32 * 1024];
+    let mut bytes = scene_with_public_access(&prefix);
+    put_u32(&mut bytes, SECTOR + 3 * 128 + 120, 65 * 512);
+    let mut options = DecodeOptions {
+        depth: DecodeDepth::Container,
+        ..DecodeOptions::default()
+    };
+    options.policy.limits.max_retained_bytes = 64 * 1024;
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &options.policy).unwrap();
+    let before = ctx.retained_bytes_available();
+    let snapshot = crate::container::open(&ctx, root).unwrap();
+    assert!(snapshot
+        .stream(PUBLIC_ACCESS)
+        .unwrap()
+        .chain_error()
+        .is_some());
+    options.policy.limits.max_retained_bytes =
+        before - ctx.retained_bytes_available() + u64_from_index(prefix.len());
+
+    let result = IronCadCodec
+        .decode(&mut Cursor::new(&bytes), &options)
+        .unwrap();
+    let [loss] = result.report().losses.as_slice() else {
+        panic!("one broken stream charge: {:?}", result.report().losses);
+    };
+    assert_eq!(loss.code, record_unreadable_kind());
+    assert!(loss.message.contains(PUBLIC_ACCESS));
+    let record = result
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .find(|record| record.stream().ends_with(PUBLIC_ACCESS))
+        .expect("located prefix digest");
+    assert_eq!(record.byte_len(), u64_from_index(prefix.len()));
+    assert_eq!(record.sha256(), cadmpeg_ir::hash::sha256_hex(&prefix));
+    assert!(record.data().is_none());
+}
+
+#[test]
 fn parasolid_records_rewrite_into_framed_neutral_transmits() {
     for name in [BOX, CYLINDER, SCENE, "Block_Parasolid_100x50x20.ics"] {
         let bytes = corpus(name);

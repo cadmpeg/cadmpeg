@@ -190,37 +190,31 @@ pub(crate) fn parse<'a>(
     let Some(stream) = snapshot.stream("UFRxDoc") else {
         return Ok(UfrxState::Absent);
     };
-    let source = match streams.open(ctx, snapshot, stream, Some("ufrx-stream")) {
-        Ok(source) => source,
-        Err(error) => {
-            return Ok(UfrxState::Malformed {
-                stream: stream.id(),
-                detail: crate::issue_detail(error)?,
-            });
+    let mut unsupported = None;
+    let read = streams.read(ctx, snapshot, stream, "ufrx-stream", |source| {
+        let document = parse_stream(ctx, source, stream.id(), document_kind);
+        if matches!(&document, Err(CodecError::NotImplemented(_))) {
+            let (schema, section_versions) = parse_schema_table(source)?;
+            unsupported = Some((source, schema, section_versions));
         }
-    };
-    Ok(
-        match parse_stream(ctx, source, stream.id(), document_kind) {
-            Ok(document) => UfrxState::Parsed(Box::new(document)),
-            Err(CodecError::NotImplemented(detail)) => match parse_schema_table(source) {
-                Ok((schema, section_versions)) => UfrxState::Unsupported {
-                    stream: stream.id(),
-                    schema,
-                    section_versions,
-                    source,
-                    detail,
-                },
-                Err(error) => UfrxState::Malformed {
-                    stream: stream.id(),
-                    detail: crate::issue_detail(error)?,
-                },
-            },
-            Err(error) => UfrxState::Malformed {
+        document
+    });
+    Ok(match (read, unsupported) {
+        (Ok(document), _) => UfrxState::Parsed(Box::new(document)),
+        (Err(CodecError::NotImplemented(detail)), Some((source, schema, section_versions))) => {
+            UfrxState::Unsupported {
                 stream: stream.id(),
-                detail: crate::issue_detail(error)?,
-            },
+                schema,
+                section_versions,
+                source,
+                detail,
+            }
+        }
+        (Err(error), _) => UfrxState::Malformed {
+            stream: stream.id(),
+            detail: crate::issue_detail(error)?,
         },
-    )
+    })
 }
 
 fn parse_stream<'a>(

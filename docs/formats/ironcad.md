@@ -177,8 +177,8 @@ The decoder gives up a part (CADIR §3.3) in these cases:
 | `kernel-record` | The kernel bytes of an ACIS result record whose save stream does not frame. | `record.unreadable` |
 | `kernel-record` | The kernel bytes of an ACIS record whose header does not read, of a result record whose framed ACIS records or Parasolid transmit the decode does not read, or of a result record whose identities do not move into its record namespace. | `record.undecoded` |
 
-For a broken chain, the digest covers the located bytes that fit the
-retained-byte budget. A chain that reaches no available sector gives the
+For a broken chain, the digest covers the located bytes in chain order up to
+the declared stream length. A chain that reaches no available sector gives the
 empty digest. An allocated chain whose located sectors are short of the
 declared stream length also gives the empty digest. A session-wide resource
 refusal stops the decode.

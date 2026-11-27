@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{parse, Tables};
+use super::{read_external, read_pairs, read_revisions, Tables};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::serde_erase::json;
+use cadmpeg_core::CodecError;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -16,6 +18,19 @@ fn payloads() -> [Vec<u8>; 3] {
     external.extend_from_slice(&0_u16.to_le_bytes());
     external.extend_from_slice(&17_u16.to_le_bytes());
     [pairs, revisions, external]
+}
+
+type Parsed = (Vec<super::Pair>, Vec<super::Revision>, Vec<super::External>);
+
+fn parse(
+    ctx: &DecodeContext<'_>,
+    counts: [u32; 3],
+    payloads: [View<'_>; 3],
+) -> Result<Parsed, (usize, CodecError)> {
+    let pairs = read_pairs(ctx, counts[0], payloads[0]).map_err(|error| (0, error))?;
+    let revisions = read_revisions(ctx, counts[1], payloads[1]).map_err(|error| (1, error))?;
+    let external = read_external(ctx, counts[2], payloads[2]).map_err(|error| (2, error))?;
+    Ok((pairs, revisions, external))
 }
 
 fn table() -> Result<Tables, cadmpeg_core::CodecError> {
@@ -32,7 +47,7 @@ fn table() -> Result<Tables, cadmpeg_core::CodecError> {
         segment_token: cadmpeg_ir::identity_key!("generated"),
         segment_id: [0xaa; 16].into(),
         counts: [1; 3],
-        payloads: bytes.map(Into::into),
+        payloads: bytes.map(|bytes| Some(bytes.into())),
         pairs,
         revisions,
         external,
@@ -51,14 +66,14 @@ fn fixed_reference_forms_share_decode_and_native_validation() -> TestResult {
     assert_eq!(restored, table);
     assert!(restored.valid(&ctx)?);
     let target = table
-        .target(crate::pmdc::PmDcReference::from_packed(1))
-        .ok_or("external target")?;
+        .resolve(crate::pmdc::PmDcReference::from_packed(1))
+        .expect("external target");
     assert_eq!(target.0.segment_id.as_ref(), &[0x11; 16]);
     assert_eq!(target.1.header_id, 17);
     for reference in [0, 2, 0x8000_0001] {
         assert!(table
-            .target(crate::pmdc::PmDcReference::from_packed(reference))
-            .is_none());
+            .resolve(crate::pmdc::PmDcReference::from_packed(reference))
+            .is_err());
     }
     Ok(())
 }
@@ -74,10 +89,9 @@ fn every_reference_width_distinguishes_damage_from_an_extra_width_form() -> Test
             let (at, error) = parse(
                 &ctx,
                 invalid.counts,
-                invalid
-                    .payloads
-                    .each_ref()
-                    .map(|bytes| View::over_retained(bytes)),
+                invalid.payloads.each_ref().map(|bytes| {
+                    View::over_retained(bytes.as_ref().expect("present test payload"))
+                }),
             )
             .expect_err("a reference table width mismatch is refused");
             assert_eq!(at, index);
@@ -87,10 +101,16 @@ fn every_reference_width_distinguishes_damage_from_an_extra_width_form() -> Test
         };
 
         let mut short = valid.clone();
-        short.payloads[index].pop();
+        short.payloads[index]
+            .as_mut()
+            .expect("present payload")
+            .pop();
         assert_refusal(&short, Cause::Unreadable)?;
         let mut long = valid.clone();
-        long.payloads[index].push(0);
+        long.payloads[index]
+            .as_mut()
+            .expect("present payload")
+            .push(0);
         assert_refusal(&long, Cause::Undecoded)?;
 
         for (count, cause) in [
@@ -119,15 +139,15 @@ fn unresolved_reference_words_and_counts_remain_exact_native_fields() -> TestRes
         )
         .map_err(|(_, error)| error)?;
         let mut table = table()?;
-        table.payloads = bytes.map(Into::into);
+        table.payloads = bytes.map(|bytes| Some(bytes.into()));
         table.pairs = pairs;
         table.revisions = revisions;
         table.external = external;
         assert_eq!(table.external[0].revision_word, word);
         assert!(table.valid(&ctx)?);
         assert!(table
-            .target(crate::pmdc::PmDcReference::from_packed(1))
-            .is_none());
+            .resolve(crate::pmdc::PmDcReference::from_packed(1))
+            .is_err());
     }
     let mut invalid = table()?;
     invalid.external[0].key_extension = 1;

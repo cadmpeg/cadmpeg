@@ -4,9 +4,10 @@
 use std::num::NonZeroU32;
 
 use cadmpeg_container::compound::{CompoundSnapshot, CompoundStreamId};
-use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_container::{ArchiveSnapshot, EntryRecord};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::{Cause, DecodeParts, GivenUpPart, Part};
 
 use crate::container::streams::Streams;
 use crate::layout::protein_header;
@@ -125,47 +126,80 @@ pub(crate) fn fuzz_parse_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
     let _probe = parse_stream(ctx, source);
 }
 
+#[derive(Default)]
+pub(crate) struct ProteinInstances {
+    pub(crate) members: Vec<ProteinInstanceRecords>,
+    pub(crate) given_up: Vec<GivenUpPart>,
+}
+
 pub(crate) fn decode_instances(
     ctx: &DecodeContext<'_>,
     package: &ProteinEnvelope<'_>,
-) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
+) -> Result<ProteinInstances, CodecError> {
     decode_instances_from(ctx, &package.archive, package.payload)
-}
-
-pub(crate) fn decode_instances_with_issue(
-    ctx: &DecodeContext<'_>,
-    package: &ProteinEnvelope<'_>,
-) -> Result<(Vec<ProteinInstanceRecords>, Option<String>), CodecError> {
-    match decode_instances(ctx, package) {
-        Ok(instances) => Ok((instances, None)),
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => Ok((Vec::new(), Some(crate::issue_detail(error)?))),
-    }
 }
 
 fn decode_instances_from(
     ctx: &DecodeContext<'_>,
     archive: &ArchiveSnapshot<'_>,
     payload: View<'_>,
-) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
-    let Some(mut catalog) = cadmpeg_protein::SchemaCatalog::load(ctx, payload)? else {
-        return Ok(Vec::new());
+) -> Result<ProteinInstances, CodecError> {
+    let mut outcome = ProteinInstances::default();
+    let mut reject = |entry: &EntryRecord, error| {
+        // A malformed local header can still have a bounded stored frame.
+        // Use the declaration when no such span can be established.
+        let (offset, source) = entry
+            .stored_range()
+            .ok()
+            .and_then(|span| member_bytes(payload, span))
+            .or_else(|| member_bytes(payload, entry.declaration_range()))
+            .unwrap_or((entry.header_start, &[]));
+        let part = Part::at(
+            "inventor",
+            "protein-member",
+            offset,
+            source,
+            [ArenaClass::Model],
+        )
+        .named(&entry.name)
+        .in_stream(cadmpeg_ir::stream_name!("inventor:Protein/").with_suffix(&entry.name))
+        .digest_only();
+        outcome
+            .given_up
+            .push(ctx.give_up_part(part, Cause::Unreadable, error)?);
+        Ok(())
     };
-    archive
+    let Some(mut catalog) =
+        cadmpeg_protein::SchemaCatalog::load_members(ctx, archive, &mut reject)?
+    else {
+        return Ok(outcome);
+    };
+    for entry in archive
         .entries()
         .iter()
         .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
-        .map(|entry| {
+    {
+        let read = || {
             let instance = archive.open(ctx, &entry.name)?;
             let frames = cadmpeg_protein::framing::record_frames(instance.window())?;
-            let outcome = cadmpeg_protein::decode_frames(ctx, &mut catalog, &frames)?;
-            Ok(ProteinInstanceRecords {
+            cadmpeg_protein::decode_frames(ctx, &mut catalog, &frames)
+        };
+        match ctx.run_part(read)? {
+            Ok(decoded) => outcome.members.push(ProteinInstanceRecords {
                 entry_name: entry.name.clone(),
-                records: outcome.records,
-                rejected: outcome.rejected,
-            })
-        })
-        .collect()
+                records: decoded.records,
+                rejected: decoded.rejected,
+            }),
+            Err(error) => reject(entry, error)?,
+        }
+    }
+    Ok(outcome)
+}
+
+fn member_bytes(payload: View<'_>, span: cadmpeg_core::decode::ByteRange) -> Option<(u64, &[u8])> {
+    let start = usize::try_from(span.start).ok()?;
+    let end = usize::try_from(span.end).ok()?;
+    Some((span.start, payload.window().get(start..end)?))
 }
 
 fn validate_entry_name(name: &str) -> Result<(), CodecError> {
@@ -186,17 +220,12 @@ fn validate_entry_name(name: &str) -> Result<(), CodecError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::test_support::test_fixtures::{paged_instance, push_lp};
     use cadmpeg_container::compound::CompoundSnapshot;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
-    use cadmpeg_protein::{
-        CONTINUATION_MARKER, PAGE_SIZE, RECORD_MARKER, STREAM_HEADER_LEN, TERMINAL_MARKER,
-    };
     use cadmpeg_test_support::zip_fixture;
 
-    use super::{
-        decode_instances_from, decode_instances_with_issue, parse_stream, validate_entry_name,
-        ParsedProtein, ProteinEnvelope,
-    };
+    use super::{decode_instances_from, parse_stream, validate_entry_name, ParsedProtein};
     use cadmpeg_core::decode::DecodeContext;
 
     #[test]
@@ -316,8 +345,9 @@ mod tests {
                 cadmpeg_core::decode::index_from_u32(declared_len.get()),
                 payload.window().len()
             );
-            let instances =
-                decode_instances_from(ctx, &archive, payload).expect("instances decode");
+            let instances = decode_instances_from(ctx, &archive, payload)
+                .expect("instances decode")
+                .members;
             assert_eq!(instances.len(), 1);
             assert_eq!(instances[0].records.len(), 1);
             assert_eq!(instances[0].records[0].schema, "SimpleSchema");
@@ -353,6 +383,7 @@ mod tests {
             assert_eq!(
                 decode_instances_from(ctx, &archive, payload)
                     .expect("decode the instances")
+                    .members
                     .len(),
                 1
             );
@@ -375,31 +406,21 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("package context");
         let ParsedProtein::Package {
-            declared_len,
-            archive,
-            payload,
+            archive, payload, ..
         } = parse_stream(&setup, root).expect("ZIP package parses")
         else {
             panic!("package state");
         };
-        let cfb = crate::test_support::test_fixtures::fixture(true);
-        let (cfb_ctx, cfb_root) =
-            DecodeContext::from_root_bytes(&cfb, &arena, &DecodePolicy::service())
-                .expect("compound context");
-        let snapshot = CompoundSnapshot::new(&cfb_ctx, cfb_root).expect("compound fixture");
-        let stream = snapshot
-            .stream("RSeStorage/RSeSegInfo")
-            .expect("fixture stream")
-            .id();
-        let package = ProteinEnvelope {
-            stream,
-            declared_len,
-            archive,
-            payload,
+        let result = decode_instances_from(&setup, &archive, payload)
+            .expect("a failed ZIP member leaves the package readable");
+        assert!(result.members.is_empty());
+        let [issue] = result.given_up.as_slice() else {
+            panic!("one unreadable ZIP member");
         };
-        let (_, issue) =
-            decode_instances_with_issue(&setup, &package).expect("decode the Protein instances");
-        assert!(issue.is_some());
+        assert_eq!(
+            issue.loss().code,
+            cadmpeg_ir::unknown::part::Cause::Unreadable.kind()
+        );
     }
 
     #[test]
@@ -426,33 +447,26 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("package context");
         let ParsedProtein::Package {
-            declared_len,
-            archive,
-            payload,
+            archive, payload, ..
         } = parse_stream(&setup, root).expect("ZIP package parses")
         else {
             panic!("package state");
         };
-        let cfb = crate::test_support::test_fixtures::fixture(true);
-        let (cfb_ctx, cfb_root) =
-            DecodeContext::from_root_bytes(&cfb, &arena, &DecodePolicy::service())
-                .expect("compound context");
-        let snapshot = CompoundSnapshot::new(&cfb_ctx, cfb_root).expect("compound fixture");
-        let stream = snapshot
-            .stream("RSeStorage/RSeSegInfo")
-            .expect("fixture stream")
-            .id();
-        let package = ProteinEnvelope {
-            stream,
-            declared_len,
-            archive,
-            payload,
+        let result = decode_instances_from(&setup, &archive, payload)
+            .expect("a failed ZIP member leaves the package readable");
+        assert!(result.members.is_empty());
+        let [issue] = result.given_up.as_slice() else {
+            panic!("one undecoded ZIP member");
         };
-        let (instances, issue) = decode_instances_with_issue(&setup, &package)
-            .expect("an unreadable instance stream does not refuse the decode");
-        assert!(instances.is_empty());
-        let issue = issue.expect("the skipped stream is an issue");
-        assert!(issue.contains("per-expansion allowance"), "{issue}");
+        let issue = issue.loss();
+        assert_eq!(
+            issue.code,
+            cadmpeg_ir::unknown::part::Cause::Undecoded.kind()
+        );
+        assert!(
+            issue.message.contains("per-expansion allowance"),
+            "{issue:?}"
+        );
         assert_eq!(setup.resource_refusal(), None);
         assert!(setup.finish_session().is_ok());
     }
@@ -485,7 +499,8 @@ mod tests {
             panic!("package state")
         };
         let instances = decode_instances_from(&ctx, &archive, payload)
-            .expect("one schema catalog decodes both streams");
+            .expect("one schema catalog decodes both streams")
+            .members;
         assert_eq!(instances.len(), 2);
         assert!(instances.iter().all(|instance| instance.records.len() == 1));
     }
@@ -516,8 +531,9 @@ mod tests {
             else {
                 panic!("package state")
             };
-            let instances =
-                decode_instances_from(ctx, &archive, payload).expect("instances decode");
+            let instances = decode_instances_from(ctx, &archive, payload)
+                .expect("instances decode")
+                .members;
             assert_eq!(instances[0].records.len(), 1);
             assert_eq!(instances[0].rejected.len(), 1);
             assert_eq!(instances[0].rejected[0].ordinal, 1);
@@ -541,43 +557,5 @@ mod tests {
                 .map(|(name, bytes)| zip_fixture::RawEntry::stored(name, bytes))
                 .collect::<Vec<_>>(),
         )
-    }
-
-    fn push_lp(bytes: &mut Vec<u8>, value: &str) {
-        bytes.extend_from_slice(
-            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
-        );
-        bytes.extend_from_slice(value.as_bytes());
-    }
-
-    fn paged_instance(record: &[u8]) -> Vec<u8> {
-        const BODY_SIZE: usize = PAGE_SIZE - 8;
-        let mut bytes = (u32::try_from(PAGE_SIZE).expect("fixture value fits u32"))
-            .to_le_bytes()
-            .to_vec();
-        bytes.resize(STREAM_HEADER_LEN, 0);
-        let mut chunks = record.chunks(BODY_SIZE).peekable();
-        let first = chunks.next().expect("record is nonempty");
-        bytes.extend_from_slice(&[0, 0, 0, 0]);
-        bytes.extend_from_slice(RECORD_MARKER);
-        bytes.extend_from_slice(first);
-        bytes.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
-        while let Some(chunk) = chunks.next() {
-            if chunks.peek().is_some() {
-                bytes.extend_from_slice(&[0, 0, 0, 0]);
-                bytes.extend_from_slice(CONTINUATION_MARKER);
-            } else {
-                bytes.extend_from_slice(TERMINAL_MARKER);
-                bytes.extend_from_slice(
-                    &(u16::try_from(chunk.len()).expect("fixture value fits u16")).to_le_bytes(),
-                );
-                bytes.extend_from_slice(&[0, 0]);
-            }
-            bytes.extend_from_slice(chunk);
-            let page_bytes = bytes.len() - STREAM_HEADER_LEN;
-            let next_page = STREAM_HEADER_LEN + page_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE;
-            bytes.resize(next_page, 0);
-        }
-        bytes
     }
 }

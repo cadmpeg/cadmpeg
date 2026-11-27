@@ -18,6 +18,7 @@ struct Skipped {
     kind: &'static str,
     cause: Cause,
     detail: String,
+    digest_only: bool,
 }
 
 impl Skipped {
@@ -64,6 +65,7 @@ impl<'a> Streams<'a> {
                             kind,
                             cause,
                             detail,
+                            digest_only: true,
                         },
                     );
                 }
@@ -82,19 +84,25 @@ impl<'a> Streams<'a> {
     ) -> Result<T, CodecError> {
         let view = self.open(ctx, snapshot, stream, Some(kind))?;
         match ctx.run_part(|| read(view))? {
-            Err(CodecError::ResourceLimit(limit)) => {
-                let cause = Cause::Undecoded;
-                let detail = CodecError::ResourceLimit(limit).to_string();
+            Ok(value) => Ok(value),
+            Err(error) => {
+                let digest_only = matches!(&error, CodecError::ResourceLimit(_));
+                let detail = match &error {
+                    CodecError::Malformed(detail) | CodecError::NotImplemented(detail) => {
+                        detail.clone()
+                    }
+                    _ => error.to_string(),
+                };
                 let skipped = Skipped {
                     kind,
-                    cause,
+                    cause: Cause::Unreadable.of(&error),
                     detail,
+                    digest_only,
                 };
-                let error = skipped.error();
+                let error = if digest_only { skipped.error() } else { error };
                 self.skipped.insert(stream.id(), skipped);
                 Err(error)
             }
-            result => result,
         }
     }
 
@@ -106,6 +114,7 @@ impl<'a> Streams<'a> {
         &self,
         ctx: &DecodeContext<'_>,
         snapshot: &CompoundSnapshot<'_>,
+        inspect: bool,
     ) -> Result<Vec<GivenUpPart>, CodecError> {
         self.skipped
             .iter()
@@ -126,8 +135,12 @@ impl<'a> Streams<'a> {
                     self.opened_bytes(*id),
                     holds.iter().copied(),
                 )
-                .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()))
-                .digest_only();
+                .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()));
+                let part = if inspect || issue.digest_only {
+                    part.digest_only()
+                } else {
+                    part
+                };
                 ctx.give_up_part(part, issue.cause, issue.error())
             })
             .collect()

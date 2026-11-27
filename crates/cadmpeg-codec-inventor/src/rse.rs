@@ -87,7 +87,7 @@ pub(crate) struct SegmentPair {
 /// The marker and version an `RSe` metadata stream declares in its first two
 /// fields, as read.
 ///
-/// [`parse_meta_stream`] attempts the version-8 body grammar for every marker
+/// [`read_meta_stream`] attempts the version-8 body grammar for every marker
 /// and version pair. The declaration is kept whether the body parses or not,
 /// because the dialect classifier reports what the file said.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -471,6 +471,7 @@ impl<'a> RseInventory<'a> {
             .into_iter()
             .map(
                 |pair| -> Result<SegmentDescriptor<'a, BulkEnvelope<'a>>, CodecError> {
+                    let mut declared = None;
                     let meta = snapshot
                         .stream_by_id(pair.metadata)
                         .ok_or_else(|| {
@@ -478,13 +479,23 @@ impl<'a> RseInventory<'a> {
                         })
                         .and_then(|entry| {
                             streams.read(ctx, snapshot, entry, "rse-metadata", |view| {
-                                parse_meta_stream(ctx, view)
+                                read_meta_stream(ctx, view, &mut declared).map_err(|error| {
+                                    if declared.as_ref().is_some_and(|header| !header.is_verified())
+                                        && matches!(error, CodecError::Malformed(_) | CodecError::Truncated { .. })
+                                    {
+                                        CodecError::NotImplemented(format!(
+                                            "RSe metadata does not read under the version-8 grammar: {error}"
+                                        ))
+                                    } else {
+                                        error
+                                    }
+                                })
                             })
                         });
                     let meta = match meta {
-                        Ok(meta) => meta,
+                        Ok(meta) => SegmentMetaState::Parsed(Box::new(meta)),
                         Err(error) => SegmentMetaState::Malformed {
-                            declared: None,
+                            declared,
                             detail: crate::issue_detail(error)?,
                         },
                     };
@@ -525,34 +536,6 @@ impl<'a> RseInventory<'a> {
                 segment
                     .identity_issues
                     .push("segment registry is unavailable".to_owned());
-            }
-        }
-        let drawing_document = segments
-            .iter()
-            .any(|segment| segment.kind == SegmentKind::Drawing(crate::drawing::Family::Document));
-        for segment in &mut segments {
-            if drawing_document && matches!(segment.kind, SegmentKind::Drawing(_)) {
-                continue;
-            }
-            let SegmentMetaState::Parsed(meta) = &segment.meta else {
-                continue;
-            };
-            if let Err(error) = meta.tables.validate_reference_widths() {
-                segment.meta = SegmentMetaState::Malformed {
-                    declared: Some(meta.declared.clone()),
-                    detail: crate::issue_detail(error)?,
-                };
-                segment.registry = None;
-                segment.kind = SegmentKind::Unresolved;
-                segment.identity_issues.clear();
-                segment.identity_issues.push(
-                    if matches!(registry, ParsedState::Parsed(_)) {
-                        "segment metadata is unavailable"
-                    } else {
-                        "segment registry is unavailable"
-                    }
-                    .to_owned(),
-                );
             }
         }
         let segments = frame_segment_records(segments)?;
@@ -749,24 +732,37 @@ fn frame_segment_records<'a>(
 /// with no declaration to report. Charging the dialect from the declaration a
 /// failed parse actually read is what keeps the loss and the report from
 /// disagreeing about the same bytes.
+#[cfg(test)]
 fn parse_meta_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
 ) -> Result<SegmentMetaState<'a>, CodecError> {
-    let mut cursor = MetaCursor::new(source);
-    let marker = cursor.length_prefixed_utf8("marker")?;
-    let version = cursor.u16("version")?;
-    let declared = MetaStreamDeclaration { marker, version };
-    // The marker and version are a declaration, never a gate: the version-8
-    // grammar is attempted on every stream, and a body that does not obey it is
-    // `Malformed` with the declaration intact.
-    match parse_meta_stream_v8(ctx, source, cursor, declared.clone()) {
+    let mut declared = None;
+    match read_meta_stream(ctx, source, &mut declared) {
         Ok(meta) => Ok(SegmentMetaState::Parsed(Box::new(meta))),
-        Err(error) => Ok(SegmentMetaState::Malformed {
-            declared: Some(declared),
+        Err(error) if declared.is_some() => Ok(SegmentMetaState::Malformed {
+            declared,
             detail: crate::issue_detail(error)?,
         }),
+        Err(error) => Err(error),
     }
+}
+
+fn read_meta_stream<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    declared: &mut Option<MetaStreamDeclaration>,
+) -> Result<SegmentMeta<'a>, CodecError> {
+    let mut cursor = MetaCursor::new(source);
+    let header = read_meta_declaration(&mut cursor)?;
+    *declared = Some(header.clone());
+    parse_meta_stream_v8(ctx, source, cursor, header)
+}
+
+fn read_meta_declaration(cursor: &mut MetaCursor<'_>) -> Result<MetaStreamDeclaration, CodecError> {
+    let marker = cursor.length_prefixed_utf8("marker")?;
+    let version = cursor.u16("version")?;
+    Ok(MetaStreamDeclaration { marker, version })
 }
 
 fn parse_meta_stream_v8<'a>(
@@ -822,7 +818,7 @@ fn expand_rse_body<'a>(
 }
 
 pub(crate) fn fuzz_meta_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
-    let _probe = parse_meta_stream(ctx, source);
+    let _probe = read_meta_stream(ctx, source, &mut None);
 }
 
 pub(crate) fn fuzz_bulk_stream(ctx: &DecodeContext<'_>, source: View<'_>) {

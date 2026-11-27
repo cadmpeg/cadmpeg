@@ -224,14 +224,16 @@ fn decode_container<'a>(
         }
     }
     let protein = project_protein_state(ctx, &container.protein)?;
-    let (protein_instances, protein_semantic_issue) = match &container.protein {
-        ProteinState::Package(package) => {
-            crate::protein::decode_instances_with_issue(ctx, package)?
-        }
+    let crate::protein::ProteinInstances {
+        members: protein_instances,
+        given_up: protein_parts,
+    } = match &container.protein {
+        ProteinState::Package(package) => crate::protein::decode_instances(ctx, package)?,
         ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {
-            (Vec::new(), None)
+            crate::protein::ProteinInstances::default()
         }
     };
+    let protein_members_unread = !protein_parts.is_empty();
     let material_catalog =
         crate::materials::project_catalog(ctx, &protein_instances, &mut admitted_entities)?;
     let ProteinNativeRecords {
@@ -369,7 +371,10 @@ fn decode_container<'a>(
             .collect::<Result<Vec<_>, _>>()?,
         ParsedState::Absent | ParsedState::Unavailable(_) => Vec::new(),
     };
-    let mut given_up = container.streams.give_ups(ctx, &container.snapshot)?;
+    let mut given_up = container
+        .streams
+        .give_ups(ctx, &container.snapshot, false)?;
+    given_up.extend(protein_parts);
     for (stream, cause, detail) in &unread_property_sets {
         give_up_stream(
             ctx,
@@ -412,33 +417,13 @@ fn decode_container<'a>(
         ParsedState::Unavailable(detail) => Some(detail),
         ParsedState::Absent | ParsedState::Parsed(_) => None,
     };
-    for (scope, path, detail) in [
-        (
-            "segment_registry",
-            "RSeStorage/RSeSegInfo",
-            registry_failure,
-        ),
-        (
-            "revision_table",
-            "RSeStorage/RSeDbRevisionInfo",
-            revisions_failure,
-        ),
+    for (scope, detail) in [
+        ("segment_registry", registry_failure),
+        ("revision_table", revisions_failure),
     ] {
-        let Some(detail) = detail else {
-            continue;
-        };
-        let issue = structural_issue(ctx, scope, detail)?;
-        if !ctx.container_only() {
-            give_up_stream(
-                ctx,
-                container,
-                container.snapshot.stream(path),
-                ("rse-table", &[ArenaClass::Model, ArenaClass::Design]),
-                (Cause::Unreadable, detail),
-                &mut given_up,
-            )?;
+        if let Some(detail) = detail {
+            structural_issues.push(structural_issue(ctx, scope, detail)?);
         }
-        structural_issues.push(issue);
     }
     let projection = rse_native_projection::project(ctx, container)?;
     structural_issues.extend(projection.identity_issues);
@@ -1125,26 +1110,6 @@ fn decode_container<'a>(
                 segment_pairs.len()
             )));
         }
-        for issue in &segment_meta_issues {
-            give_up_stream(
-                ctx,
-                container,
-                segment_stream(container, &issue.token, |pair| pair.metadata),
-                ("rse-metadata", &[ArenaClass::Model, ArenaClass::Design]),
-                (Cause::Undecoded, &issue.detail),
-                &mut given_up,
-            )?;
-        }
-        for issue in &segment_bulk_issues {
-            give_up_stream(
-                ctx,
-                container,
-                segment_stream(container, &issue.token, |pair| pair.bulk),
-                ("rse-bulk", &[ArenaClass::Model, ArenaClass::Design]),
-                (Cause::Unreadable, &issue.detail),
-                &mut given_up,
-            )?;
-        }
         give_up_issue_records(
             ctx,
             container,
@@ -1457,46 +1422,32 @@ fn decode_container<'a>(
             )));
         }
         match &container.protein {
-            ProteinState::Package(package) => {
-                if let Some(detail) = &protein_semantic_issue {
-                    give_up_stream(
-                        ctx,
-                        container,
-                        container.snapshot.stream_by_id(package.stream),
-                        ("protein-stream", &[ArenaClass::Model]),
-                        (
+            ProteinState::Package(_) => {
+                for rejection in &protein_rejections {
+                    losses.push(
+                        GivenUpRecord::new(
+                            cadmpeg_ir::ids::Identity::new(rejection.asset_id())?,
                             Cause::Undecoded,
-                            &format!("the Protein asset catalog does not decode: {detail}"),
-                        ),
-                        &mut given_up,
-                    )?;
-                } else {
-                    for rejection in &protein_rejections {
-                        losses.push(
-                            GivenUpRecord::new(
-                                cadmpeg_ir::ids::Identity::new(rejection.asset_id())?,
-                                Cause::Undecoded,
-                                format_args!(
-                                    "a Protein asset record does not decode: {}",
-                                    rejection.detail()
-                                ),
-                            )
-                            .loss(),
-                        );
-                    }
-                    if ir.model.appearances.is_empty() {
-                        losses.push(
-                            InventorLossCode::ProteinAppearanceAbsent.note(
-                                "The Protein package contains no decoded appearance assets."
-                                    .to_string(),
+                            format_args!(
+                                "a Protein asset record does not decode: {}",
+                                rejection.detail()
                             ),
-                        );
-                    } else if presentation_projection.unresolved_defaults != 0 {
-                        losses.push(InventorLossCode::AppearanceDefaultUnresolved.note(format!(
-                            "Could not resolve {} PmApp document-default appearance assignment(s).",
-                            presentation_projection.unresolved_defaults
-                        )));
+                        )
+                        .loss(),
+                    );
+                }
+                if ir.model.appearances.is_empty() {
+                    if !protein_members_unread {
+                        losses
+                            .push(InventorLossCode::ProteinAppearanceAbsent.note(
+                                "The Protein package contains no decoded appearance assets.",
+                            ));
                     }
+                } else if presentation_projection.unresolved_defaults != 0 {
+                    losses.push(InventorLossCode::AppearanceDefaultUnresolved.note(format!(
+                        "Could not resolve {} PmApp document-default appearance assignment(s).",
+                        presentation_projection.unresolved_defaults
+                    )));
                 }
                 if !material_catalog.duplicate_guids.is_empty() {
                     losses.push(InventorLossCode::ProteinGuidAmbiguous.note(format!(
@@ -1511,17 +1462,7 @@ fn decode_container<'a>(
                     )));
                 }
             }
-            ProteinState::Malformed { stream, detail } => {
-                give_up_stream(
-                    ctx,
-                    container,
-                    container.snapshot.stream_by_id(*stream),
-                    ("protein-stream", &[ArenaClass::Model]),
-                    (Cause::Unreadable, detail),
-                    &mut given_up,
-                )?;
-            }
-            ProteinState::Absent | ProteinState::Empty { .. } => {}
+            ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {}
         }
         for (cause, count) in &presentation_projection.unresolved_face_overrides {
             losses.push(
@@ -1551,37 +1492,6 @@ fn decode_container<'a>(
             );
         }
         match &container.ufrx {
-            UfrxState::Malformed { stream, detail } => {
-                give_up_stream(
-                    ctx,
-                    container,
-                    container.snapshot.stream_by_id(*stream),
-                    ("ufrx-stream", &[ArenaClass::Model]),
-                    (Cause::Unreadable, detail),
-                    &mut given_up,
-                )?;
-            }
-            UfrxState::Unsupported {
-                stream,
-                schema,
-                detail,
-                ..
-            } => {
-                give_up_stream(
-                    ctx,
-                    container,
-                    container.snapshot.stream_by_id(*stream),
-                    ("ufrx-stream", &[ArenaClass::Model]),
-                    (
-                        Cause::Undecoded,
-                        &format!(
-                            "UFRxDoc schema {schema} holds a form that the decoder does not read: \
-                             {detail}"
-                        ),
-                    ),
-                    &mut given_up,
-                )?;
-            }
             UfrxState::Parsed(_) if matches!(document_kind, DocumentKind::Assembly) => {
                 if !external_references.is_empty() {
                     losses.push(InventorLossCode::AssemblyComponentExternal.note(format!(
@@ -1632,7 +1542,10 @@ fn decode_container<'a>(
                     &rejected,
                 )?);
             }
-            UfrxState::Absent | UfrxState::Parsed(_) => {}
+            UfrxState::Absent
+            | UfrxState::Malformed { .. }
+            | UfrxState::Unsupported { .. }
+            | UfrxState::Parsed(_) => {}
         }
     }
     let preview_asset_count = ir.model.assets.len();
@@ -2285,21 +2198,6 @@ fn give_up_stream(
         .in_stream(cadmpeg_ir::stream_name!("inventor:").with_suffix(entry.path()));
     parts.push(ctx.give_up_part(part, cause, CodecError::Malformed(error.to_owned()))?);
     Ok(())
-}
-
-/// The metadata or bulk stream, as `select` picks it, of the `RSe` segment
-/// whose token is `token`.
-fn segment_stream<'s>(
-    container: &'s InventorContainer<'_>,
-    token: &str,
-    select: impl Fn(&crate::rse::SegmentPair) -> cadmpeg_container::compound::CompoundStreamId,
-) -> Option<&'s CompoundStreamEntry> {
-    let segment = container
-        .rse
-        .segments
-        .iter()
-        .find(|segment| segment.pair.token.as_str() == token)?;
-    container.snapshot.stream_by_id(select(&segment.pair))
 }
 
 /// The active kernel carrier as a `kernel-carrier` part of its `RSe` record, and

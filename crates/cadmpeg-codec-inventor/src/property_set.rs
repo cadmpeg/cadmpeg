@@ -155,37 +155,37 @@ pub(crate) fn inventory<'a>(
         let CompoundEntry::Stream(stream) = entry else {
             continue;
         };
-        if stream.logical_size() < 28
-            || stream.logical_size() > cadmpeg_core::decode::u64_from_index(MAX_STREAM_SIZE)
-        {
-            continue;
-        }
         let named = is_property_set_name(stream.path());
-        let view = match streams.open(ctx, snapshot, stream, named.then_some("property-set")) {
-            Ok(view) => view,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) if named => {
-                let (cause, detail) = crate::issue(error)?;
-                property_sets.push(PropertySetDescriptor {
-                    stream: stream.id(),
-                    path: stream.path().into(),
-                    state: PropertySetState::Unread { cause, detail },
-                });
-                continue;
-            }
-            Err(_) => continue,
-        };
-        if !has_property_set_header(view.window())
-            && View::u16_le_at(view.window(), 0) != Some(BYTE_ORDER_LE)
-        {
+        let oversized =
+            stream.logical_size() > cadmpeg_core::decode::u64_from_index(MAX_STREAM_SIZE);
+        if !named && (stream.logical_size() < 28 || oversized) {
             continue;
         }
-        let state = match parse_property_set_stream(ctx, view) {
-            Ok(property_set) => PropertySetState::Parsed(property_set),
-            Err(error) => {
-                let (cause, detail) = crate::issue(error)?;
-                PropertySetState::Unread { cause, detail }
+        let parsed = if oversized && stream.chain_error().is_none() {
+            Err(property_set_too_large())
+        } else {
+            match streams.open(ctx, snapshot, stream, named.then_some("property-set")) {
+                Ok(view)
+                    if named
+                        || has_property_set_header(view.window())
+                        || View::u16_le_at(view.window(), 0) == Some(BYTE_ORDER_LE) =>
+                {
+                    ctx.run_part(|| parse_property_set_stream(ctx, view))?
+                }
+                Ok(_) => continue,
+                Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => {
+                    return Err(error)
+                }
+                Err(error) if named => Err(error),
+                Err(_) => continue,
             }
+        };
+        let state = match parsed {
+            Ok(property_set) => PropertySetState::Parsed(property_set),
+            Err(error) => PropertySetState::Unread {
+                cause: Cause::Unreadable.of(&error),
+                detail: error.to_string(),
+            },
         };
         property_sets.push(PropertySetDescriptor {
             stream: stream.id(),
@@ -196,15 +196,19 @@ pub(crate) fn inventory<'a>(
     Ok(property_sets)
 }
 
+fn property_set_too_large() -> CodecError {
+    CodecError::NotImplemented(format!(
+        "OLE property-set stream exceeds {MAX_STREAM_SIZE} bytes"
+    ))
+}
+
 pub(crate) fn parse_property_set_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
 ) -> Result<PropertySetStream<'a>, CodecError> {
     let bytes = source.window();
     if bytes.len() > MAX_STREAM_SIZE {
-        return Err(CodecError::malformed(format_args!(
-            "OLE property-set stream exceeds {MAX_STREAM_SIZE} bytes"
-        )));
+        return Err(property_set_too_large());
     }
     let mut cursor = Cursor::new(source, "OLE property-set stream");
     if cursor.u16("byte order")? != BYTE_ORDER_LE {

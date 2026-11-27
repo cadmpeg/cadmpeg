@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{Cursor, Read};
 
-use cadmpeg_container::ArchiveSnapshot;
+use cadmpeg_container::{ArchiveSnapshot, EntryRecord};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -147,16 +147,35 @@ impl SchemaCatalog {
         protein: View<'a>,
     ) -> Result<Option<Self>, CodecError> {
         let archive = ArchiveSnapshot::new(ctx, protein)?;
+        Self::load_members(ctx, &archive, |_, error| Err(error))
+    }
+
+    /// Load an inventoried package one schema member at a time.
+    ///
+    /// `reject` receives a member's damage, unsupported form or recovered
+    /// Part-scoped limit. Returning success continues to the next schema.
+    /// Session and I/O errors escape.
+    pub fn load_members<'a>(
+        ctx: &DecodeContext<'a>,
+        archive: &ArchiveSnapshot<'a>,
+        mut reject: impl FnMut(&EntryRecord, CodecError) -> Result<(), CodecError>,
+    ) -> Result<Option<Self>, CodecError> {
         let mut schemas = HashMap::new();
-        for entry in archive.entries() {
-            if !is_schema_entry(&entry.name) {
-                continue;
+        for entry in archive
+            .entries()
+            .iter()
+            .filter(|entry| is_schema_entry(&entry.name))
+        {
+            let read = || {
+                if entry.uncompressed_size > MAX_SCHEMA_BYTES {
+                    return Err(schema_too_large(entry.uncompressed_size));
+                }
+                let xml = archive.open(ctx, &entry.name)?;
+                parse_schema_document(ctx, &entry.name, xml.window(), &mut schemas)
+            };
+            if let Err(error) = ctx.run_part(read)? {
+                reject(entry, error)?;
             }
-            if entry.uncompressed_size > MAX_SCHEMA_BYTES {
-                return Err(schema_too_large(entry.uncompressed_size));
-            }
-            let xml = archive.open(ctx, &entry.name)?;
-            parse_schema_document(ctx, &entry.name, xml.window(), &mut schemas)?;
         }
         if schemas.is_empty() {
             return Ok(None);

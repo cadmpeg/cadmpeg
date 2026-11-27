@@ -7,9 +7,9 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{record_unreadable_kind, Cause};
 
 use crate::test_support::test_fixtures::{
-    acis_sphere_kernel_stream, fixture_with_ufrx, primary_envelope_fixture,
+    acis_sphere_kernel_stream, fixture_with_ufrx, paged_instance, primary_envelope_fixture,
     primary_envelope_fixture_with_design, primary_envelope_fixture_with_drawing_tables,
-    primary_envelope_fixture_with_kernel, BaseEnvelopeRecords, EnvelopeDeclarations,
+    primary_envelope_fixture_with_kernel, push_lp, BaseEnvelopeRecords, EnvelopeDeclarations,
 };
 use crate::InventorCodec;
 use cadmpeg_test_support::bytes::{put_u16, put_u32};
@@ -121,6 +121,134 @@ fn a_property_set_stream_that_does_not_open_is_one_unreadable_give_up() {
 }
 
 #[test]
+fn named_property_set_headers_are_read_at_both_depths() {
+    for (size, order, expected) in [
+        (27_u32, 0xfffe, "section count"),
+        (64, 0x0000, "byte order"),
+    ] {
+        const DIRECTORY: usize = 512;
+        const ENTRY: usize = DIRECTORY + 3 * 128;
+        const FAT: usize = 1024;
+        const MINI_FAT: usize = 1536;
+        const MINI_STREAM: usize = 2048;
+        const END_CHAIN: u32 = 0xffff_fffe;
+        let mut bytes = fixture_with_ufrx(&[]);
+        bytes.truncate(2560);
+        put_u32(&mut bytes, 60, 2);
+        put_u32(&mut bytes, 64, 1);
+        put_u32(&mut bytes, DIRECTORY + 116, 3);
+        put_u32(&mut bytes, DIRECTORY + 120, 64);
+        bytes[FAT + 8..MINI_FAT].fill(0xff);
+        put_u32(&mut bytes, FAT + 8, END_CHAIN);
+        put_u32(&mut bytes, FAT + 12, END_CHAIN);
+        bytes[MINI_FAT..MINI_STREAM].fill(0xff);
+        put_u32(&mut bytes, MINI_FAT, END_CHAIN);
+        bytes[ENTRY..ENTRY + 64].fill(0);
+        for (index, unit) in "\u{5}Header".encode_utf16().enumerate() {
+            put_u16(&mut bytes, ENTRY + index * 2, unit);
+        }
+        put_u16(&mut bytes, ENTRY + 64, 16);
+        put_u32(&mut bytes, ENTRY + 116, 0);
+        put_u32(&mut bytes, ENTRY + 120, size);
+        put_u16(&mut bytes, MINI_STREAM, order);
+        for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+            let options = DecodeOptions {
+                depth,
+                ..DecodeOptions::default()
+            };
+            let result = InventorCodec
+                .decode(&mut std::io::Cursor::new(&bytes), &options)
+                .expect("a damaged property set leaves the file readable");
+            let losses = result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.message.starts_with("part property-set "))
+                .collect::<Vec<_>>();
+            let [loss] = losses.as_slice() else {
+                panic!("one named property-set loss at {depth:?}: {losses:#?}");
+            };
+            assert_eq!(loss.code, Cause::Unreadable.kind());
+            assert!(loss.message.contains(expected), "{loss:?}");
+        }
+    }
+}
+
+#[test]
+fn a_named_property_set_past_the_probe_limit_is_undecoded() {
+    use cadmpeg_test_support::bytes::put_u32;
+    const SECTOR: usize = 512;
+    const STREAM_LEN: u32 = 2 * 1024 * 1024 + 8;
+    const END_CHAIN: u32 = 0xffff_fffe;
+    const FAT_SECTOR: u32 = 0xffff_fffd;
+    let mut bytes = fixture_with_ufrx(&[]);
+    let sectors = usize::try_from(STREAM_LEN)
+        .expect("fixture length")
+        .div_ceil(SECTOR);
+    let fat_count = (1 + sectors).div_ceil(127);
+    let first_new_fat = 2 + sectors;
+    let sector_count = first_new_fat + fat_count - 1;
+    bytes.resize((sector_count + 1) * SECTOR, 0);
+    put_u32(&mut bytes, 44, u32::try_from(fat_count).expect("FAT count"));
+    let entry = SECTOR + 3 * 128;
+    bytes[entry..entry + 64].fill(0);
+    for (index, unit) in "\u{5}Oversized".encode_utf16().enumerate() {
+        put_u16(&mut bytes, entry + index * 2, unit);
+    }
+    put_u16(&mut bytes, entry + 64, 22);
+    put_u32(&mut bytes, entry + 120, STREAM_LEN);
+    let stream = 3 * SECTOR;
+    put_u16(&mut bytes, stream, 0xfffe);
+    put_u32(&mut bytes, stream + 24, 1);
+    put_u32(&mut bytes, stream + 44, 48);
+    put_u32(&mut bytes, stream + 48, 8);
+    for index in 0..fat_count {
+        let sector = if index == 0 {
+            1
+        } else {
+            first_new_fat + index - 1
+        };
+        put_u32(
+            &mut bytes,
+            76 + index * 4,
+            u32::try_from(sector).expect("FAT sector"),
+        );
+        let at = (sector + 1) * SECTOR;
+        bytes[at..at + SECTOR].fill(0xff);
+        for (slot, id) in (index * 128..sector_count).take(128).enumerate() {
+            let link = match id {
+                0 => END_CHAIN,
+                1 => FAT_SECTOR,
+                _ if id == first_new_fat - 1 => END_CHAIN,
+                _ if id >= first_new_fat => FAT_SECTOR,
+                _ => u32::try_from(id + 1).expect("fixture FAT link"),
+            };
+            put_u32(&mut bytes, at + slot * 4, link);
+        }
+    }
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        let decoded = InventorCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &options)
+            .expect("a named set over the parser limit leaves the document readable");
+        let losses = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.message.starts_with("part property-set "))
+            .collect::<Vec<_>>();
+        let [loss] = losses.as_slice() else {
+            panic!("one named property-set charge: {losses:#?}");
+        };
+        assert_eq!(loss.code, Cause::Undecoded.kind());
+        assert!(loss.message.contains("exceeds 2097152 bytes"), "{loss:?}");
+    }
+}
+
+#[test]
 fn a_fragmented_property_set_above_available_retention_is_undecoded() {
     const DIRECTORY: usize = 512;
     const FAT: usize = 1024;
@@ -194,6 +322,126 @@ fn a_fragmented_property_set_above_available_retention_is_undecoded() {
         assert_eq!(loss.code, Cause::Undecoded.kind());
         assert!(loss.message.contains("joining CFB stream"));
         assert!(loss.message.contains("Budget"));
+    }
+    let mut options = cadmpeg_core::decode::InspectOptions::default();
+    options.limits.max_retained_bytes = 16 * 1024;
+    let summary = InventorCodec
+        .inspect(&mut std::io::Cursor::new(&bytes), &options)
+        .expect("inspect leaves the session open after a denied copy");
+    let charges = summary
+        .losses
+        .iter()
+        .filter(|loss| loss.message.starts_with("part property-set "))
+        .collect::<Vec<_>>();
+    let [loss] = charges.as_slice() else {
+        panic!("one inspect property-set charge: {charges:?}");
+    };
+    assert_eq!(loss.code, Cause::Undecoded.kind());
+    assert!(loss.message.contains("Budget"));
+}
+
+#[test]
+fn individual_schema_and_instance_expansion_limits_keep_other_zip_members_at_both_depths() {
+    use cadmpeg_test_support::zip_fixture;
+    use std::io::Write;
+
+    let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
+    let oversized_schema = format!(
+        "<Schema><UID val=\"Large\"/><!--{}--></Schema>",
+        "x".repeat(2048)
+    );
+    let mut small_record = Vec::new();
+    for value in ["SimpleSchema", "small", "Example", "", &"k".repeat(160)] {
+        push_lp(&mut small_record, value);
+    }
+    let small_instance = paged_instance(&small_record);
+    let mut large_record = Vec::new();
+    for value in ["SimpleSchema", "large", "Example", "", &"z".repeat(2048)] {
+        push_lp(&mut large_record, value);
+    }
+    let large_instance = paged_instance(&large_record);
+    let compress = |bytes: &[u8]| {
+        let mut encoder =
+            flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(bytes).expect("fixture deflate");
+        encoder.finish().expect("complete fixture deflate")
+    };
+    let schema_deflate = compress(oversized_schema.as_bytes());
+    let instance_deflate = compress(&large_instance);
+    let mut zip = zip_fixture::archive(&[
+        zip_fixture::RawEntry::compressed(
+            "Schemas/LargeSchema.xml",
+            zip_fixture::DEFLATE,
+            &schema_deflate,
+            oversized_schema.as_bytes(),
+        ),
+        zip_fixture::RawEntry::stored("Schemas/SimpleSchema.xml", schema),
+        zip_fixture::RawEntry::compressed(
+            "Large/InstanceProperties.bin",
+            zip_fixture::DEFLATE,
+            &instance_deflate,
+            &large_instance,
+        ),
+        zip_fixture::RawEntry::stored("Small/InstanceProperties.bin", &small_instance),
+    ]);
+    let comment = 4092 - zip.len();
+    let comment_length = zip.len() - 2;
+    zip[comment_length..].copy_from_slice(
+        &u16::try_from(comment)
+            .expect("fixture comment")
+            .to_le_bytes(),
+    );
+    zip.resize(4092, 0);
+    let mut package = 4092_u32.to_le_bytes().to_vec();
+    package.extend_from_slice(&zip);
+    let mut bytes = fixture_with_ufrx(&package);
+    let entry = 512 + 3 * 128;
+    bytes[entry..entry + 64].fill(0);
+    for (index, unit) in "Protein".encode_utf16().enumerate() {
+        bytes[entry + index * 2..entry + index * 2 + 2].copy_from_slice(&unit.to_le_bytes());
+    }
+    bytes[entry + 64..entry + 66].copy_from_slice(&16_u16.to_le_bytes());
+
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let mut options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        options.policy.limits.max_decompressed_bytes_per_expand = 1024;
+        let decoded = InventorCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &options)
+            .expect("each limited member leaves the package readable");
+        let charges = decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.message.starts_with("part protein-member "))
+            .collect::<Vec<_>>();
+        assert_eq!(charges.len(), 2, "{charges:#?}");
+        assert!(charges
+            .iter()
+            .all(|loss| loss.code == Cause::Undecoded.kind()));
+        for name in ["Schemas/LargeSchema.xml", "Large/InstanceProperties.bin"] {
+            assert_eq!(
+                charges
+                    .iter()
+                    .filter(|loss| loss.message.contains(name))
+                    .count(),
+                1
+            );
+        }
+        let assets = decoded
+            .ir()
+            .native
+            .namespace("inventor")
+            .expect("native namespace")
+            .arena_as::<crate::native::protein::ProteinAssetRecord>("protein_assets")
+            .expect("assets");
+        assert_eq!(assets.len(), 1, "{depth:?}");
+        assert_eq!(
+            assets[0].entry_name.as_str(),
+            "Small/InstanceProperties.bin"
+        );
     }
 }
 
@@ -279,6 +527,37 @@ fn an_unpaired_segment_stream_is_given_up_whole() {
 }
 
 #[test]
+fn a_metadata_stream_keeps_its_readable_declaration_past_the_body_expand_limit() {
+    let bytes = primary_envelope_fixture();
+    let mut options = cadmpeg_core::decode::InspectOptions::default();
+    options.limits.max_decompressed_bytes_per_expand = 1;
+    let summary = InventorCodec
+        .inspect(&mut std::io::Cursor::new(&bytes), &options)
+        .expect("inspect gives up each limited stream");
+    let entry = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name.starts_with("RSeStorage/M"))
+        .expect("metadata stream");
+    assert_eq!(
+        entry.attributes.get("meta_marker").map(String::as_str),
+        Some("RSe Meta Stream Version 8")
+    );
+    assert_eq!(
+        entry
+            .attributes
+            .get("meta_stream_version")
+            .map(String::as_str),
+        Some("8")
+    );
+    assert!(summary
+        .losses
+        .iter()
+        .any(|loss| loss.code == Cause::Undecoded.kind()
+            && loss.message.starts_with("part rse-metadata ")));
+}
+
+#[test]
 fn an_unknown_reference_table_width_is_undecoded() {
     assert_reference_table_give_up(76, Cause::Undecoded);
 }
@@ -294,6 +573,7 @@ fn assert_reference_table_give_up(length: usize, cause: Cause) {
         brep: Vec::new(),
         pairs: vec![0x41; length],
         pair_count: Some(1),
+        revision_count: None,
         revisions: Vec::new(),
         references: Vec::new(),
     };
@@ -309,27 +589,17 @@ fn assert_reference_table_give_up(length: usize, cause: Cause) {
     let charges = losses
         .iter()
         .filter(|loss| loss.code == cause.kind())
+        .filter(|loss| {
+            loss.message
+                .starts_with("part meta-section stream=\"RSeStorage/Mdc:expanded\"")
+        })
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
-    let [charge] = charges
-        .iter()
-        .filter(|message| message.contains("inventor:drawing:reference-tables#dc"))
-        .collect::<Vec<_>>()[..]
-    else {
-        panic!("one charge reaches the reference tables: {losses:#?}");
+    let [charge] = charges.as_slice() else {
+        panic!("one charge reaches the reference section: {losses:#?}");
     };
-    assert!(
-        charge.starts_with("part meta-section stream=\"RSeStorage/Mdc:expanded\" offset="),
-        "{charge}"
-    );
-    assert!(
-        charge.contains("drawing reference tables do not read"),
-        "{charge}"
-    );
-    assert!(
-        charge.ends_with("; dropped=[inventor:drawing:reference-tables#dc]"),
-        "{charge}"
-    );
+    assert!(charge.contains("reference table of 1 entries"), "{charge}");
+    assert!(charge.ends_with("; dropped=[]"), "{charge}");
     let unknowns = decoded
         .ir()
         .native_unknowns("inventor")
@@ -342,6 +612,114 @@ fn assert_reference_table_give_up(length: usize, cause: Cause) {
         stub.links,
         [cadmpeg_ir::ids::Identity::new("inventor:rse:meta-section#dc-7").expect("section id")]
     );
+}
+
+#[test]
+fn drawing_reference_sections_keep_their_readable_siblings() {
+    for (revision_bytes, expected_issues) in [(20, &[7][..]), (19, &[7, 8][..])] {
+        let tables = BaseEnvelopeRecords {
+            design_version: 18,
+            brep: Vec::new(),
+            pairs: vec![0x41; 31],
+            pair_count: Some(1),
+            revision_count: Some(1),
+            revisions: vec![0x42; revision_bytes],
+            references: vec![0x43; 8],
+        };
+        let bytes = primary_envelope_fixture_with_drawing_tables(
+            &acis_sphere_kernel_stream(21_800),
+            &[([0x71; 16], vec![0_u8; 8])],
+            &tables,
+        );
+        let decoded = InventorCodec
+            .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+            .expect("damaged reference tables leave their sibling readable");
+        let losses = charges(&decoded.report().losses);
+        let sections = decoded
+            .ir()
+            .native_unknowns("inventor")
+            .expect("section stubs");
+        let section_losses = sections
+            .iter()
+            .filter(|stub| {
+                losses
+                    .iter()
+                    .any(|loss| loss.contains(&format!(" record={}: ", stub.id)))
+            })
+            .flat_map(|stub| stub.links.iter())
+            .filter_map(|link| link.as_str().strip_prefix("inventor:rse:meta-section#dc-"))
+            .map(|number| number.parse::<u8>().expect("section number"))
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(section_losses, expected_issues.iter().copied().collect());
+        let namespace = decoded
+            .ir()
+            .native
+            .namespace("inventor")
+            .expect("native arena");
+        let tables = namespace
+            .arena_as::<crate::drawing::references::Tables>("drawing_reference_tables")
+            .expect("native drawing tables");
+        let drawing = tables
+            .iter()
+            .find(|table| table.segment_token.as_str() == "dc")
+            .expect("table");
+        assert_eq!(drawing.counts, [1, 1, 1]);
+        assert!(drawing.payloads[0].is_none());
+        assert_eq!(
+            drawing.payloads[1].as_ref().map(|bytes| bytes.as_slice()),
+            (revision_bytes == 20).then_some(&[0x42; 20][..])
+        );
+        assert_eq!(
+            drawing.payloads[2].as_ref().map(|bytes| bytes.as_slice()),
+            Some(&[0x43; 8][..])
+        );
+        assert_eq!(drawing.revisions.len(), usize::from(revision_bytes == 20));
+        assert_eq!(drawing.external.len(), 1);
+    }
+}
+
+#[test]
+fn a_short_non_drawing_reference_section_keeps_the_segment_records() {
+    let tables = BaseEnvelopeRecords {
+        design_version: 18,
+        brep: Vec::new(),
+        pairs: vec![0x41; 31],
+        pair_count: Some(1),
+        revision_count: None,
+        revisions: Vec::new(),
+        references: Vec::new(),
+    };
+    let bytes = crate::test_support::test_fixtures::base_envelope_fixture(
+        &acis_sphere_kernel_stream(21_800),
+        &[([0x71; 16], vec![0_u8; 8])],
+        &tables,
+    );
+    let decoded = InventorCodec
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the metadata segment remains framed");
+    let charges = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.message
+                .starts_with("part meta-section stream=\"RSeStorage/Mdc:expanded\"")
+        })
+        .collect::<Vec<_>>();
+    let [loss] = charges.as_slice() else {
+        panic!("one reference section charge: {charges:#?}");
+    };
+    assert_eq!(loss.code, Cause::Unreadable.kind());
+    let records = decoded
+        .ir()
+        .native
+        .namespace("inventor")
+        .expect("native namespace")
+        .arena_as::<crate::native::RseRecordRecord>("rse_records")
+        .expect("RSe record arena");
+    assert!(records
+        .iter()
+        .any(|record| record.token == "dc" && record.ordinal == 0));
 }
 
 /// The sphere kernel stream with a second face, record 6, after the sphere

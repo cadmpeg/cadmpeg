@@ -56,7 +56,7 @@ impl<'a> InventorContainer<'a> {
         })
     }
 
-    pub(crate) fn summary(&self) -> Result<ContainerSummary, CodecError> {
+    pub(crate) fn summary(&self, ctx: &DecodeContext<'_>) -> Result<ContainerSummary, CodecError> {
         let mut entries = self.snapshot.container_entries(classify);
         for segment in &self.rse.segments {
             let Some(entry) =
@@ -103,7 +103,14 @@ impl<'a> InventorContainer<'a> {
         }
         let recovery = crate::dialect::DialectRecovery::of(self);
         let matched = recovery.classify();
-        let mut losses = deviation_losses(&self.snapshot, &[]);
+        let skipped = self.streams.skipped().collect::<Vec<_>>();
+        let mut losses = deviation_losses(&self.snapshot, &skipped);
+        losses.extend(
+            self.streams
+                .give_ups(ctx, &self.snapshot, true)?
+                .iter()
+                .map(cadmpeg_ir::unknown::part::GivenUpPart::loss),
+        );
         if let Some(loss) = crate::dialect::dialect_loss(&matched, &recovery) {
             losses.push(loss);
         }

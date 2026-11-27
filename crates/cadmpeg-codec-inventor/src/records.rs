@@ -175,18 +175,36 @@ pub(crate) struct RseRecordTable<'a> {
 
 pub(crate) const MAX_METADATA_SECTION_ENTRIES: u32 = 1_000_000;
 
-impl MetaTables<'_> {
-    pub(crate) fn validate_reference_widths(&self) -> Result<(), CodecError> {
-        for (index, number) in [
-            (6, ReverseSectionNumber::Seven),
-            (7, ReverseSectionNumber::Eight),
-            (9, ReverseSectionNumber::Ten),
-        ] {
-            let section = &self.sections[index];
-            validate_reverse_section(number, section.discriminator, section.payload)?;
-        }
-        Ok(())
+/// Section index and row width for the fixed-width reference join.
+pub(crate) const REFERENCE_SECTIONS: [(usize, usize); 3] = [
+    (6, crate::layout::meta_segment_pair::LEN),
+    (7, crate::layout::meta_external_revision::LEN),
+    (9, crate::layout::meta_external_reference::LEN),
+];
+
+pub(crate) fn reference_section_count(
+    count: u32,
+    payload: View<'_>,
+    width: usize,
+) -> Result<usize, CodecError> {
+    let bounded = payload.counted(u64::from(count), width).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "reference table of {count} entries has only {} bytes for {width}-byte entries",
+            payload.remaining(),
+        ))
+    })?;
+    if bounded.get().checked_mul(width) != Some(payload.remaining()) {
+        return Err(CodecError::NotImplemented(format!(
+            "reference table of {count} entries stores {} bytes outside the {width}-byte entry form",
+            payload.remaining()
+        )));
     }
+    if count > MAX_METADATA_SECTION_ENTRIES {
+        return Err(CodecError::NotImplemented(format!(
+            "reference table count {count} exceeds the metadata entry limit"
+        )));
+    }
+    Ok(bounded.get())
 }
 
 pub(crate) fn parse_meta_tables(body: View<'_>) -> Result<MetaTables<'_>, CodecError> {
@@ -406,12 +424,6 @@ fn reverse_section<'a>(
         )));
     }
     let payload = child(body, header + 8, *end, "metadata section payload")?;
-    if !matches!(
-        number,
-        ReverseSectionNumber::Seven | ReverseSectionNumber::Eight | ReverseSectionNumber::Ten
-    ) {
-        validate_reverse_section(number, discriminator, payload)?;
-    }
     *end = header;
     *payload_len = previous_span - 4;
     Ok(MetaSection {
@@ -456,53 +468,29 @@ fn counted_section<'a>(
     Ok((count, payload, footer))
 }
 
-fn validate_reverse_section(
-    number: ReverseSectionNumber,
-    discriminator: u32,
-    payload: View<'_>,
-) -> Result<(), CodecError> {
-    let payload_len = payload.window().len();
-    if number != ReverseSectionNumber::Five && discriminator > MAX_METADATA_SECTION_ENTRIES {
-        return Err(CodecError::malformed(format_args!(
-            "RSe metadata section {number} count exceeds 1000000"
+/// Content checks for bounded reverse sections whose facts the `RSe` inventory
+/// retains in its native section directory.
+pub(crate) fn validate_auxiliary_section(section: &MetaSection<'_>) -> Result<(), CodecError> {
+    let count = section.discriminator;
+    if count > MAX_METADATA_SECTION_ENTRIES {
+        return Err(CodecError::NotImplemented(format!(
+            "RSe metadata section {} count exceeds {MAX_METADATA_SECTION_ENTRIES}",
+            section.number,
         )));
     }
-    let item_size = match number {
-        ReverseSectionNumber::Seven => {
-            if discriminator == 0 {
-                0
-            } else if payload_len
-                / usize::try_from(discriminator).map_err(|_| {
-                    CodecError::Malformed("Inventor numeric value exceeds target range".into())
-                })?
-                >= 0x4c
-            {
-                return Ok(());
-            } else {
-                32
-            }
+    match section.number {
+        MetaSectionNumber::Nine => references::validate(section.payload, count),
+        MetaSectionNumber::Eleven
+            if u64::from(count) * 4
+                != cadmpeg_core::decode::u64_from_index(section.payload.window().len()) =>
+        {
+            Err(CodecError::malformed(format_args!(
+                "RSe metadata section 11 stores {} bytes for {count} four-byte entries",
+                section.payload.window().len(),
+            )))
         }
-        ReverseSectionNumber::Eight => 20,
-        ReverseSectionNumber::Nine => {
-            return references::validate(payload, discriminator);
-        }
-        ReverseSectionNumber::Ten => 8,
-        ReverseSectionNumber::Eleven => 4,
-        ReverseSectionNumber::Five | ReverseSectionNumber::Six => return Ok(()),
-    };
-    // Sections 7 through 11 are the only numbers that reach here, and each one
-    // passed the test above, so `discriminator` is at most 1000000. The match
-    // states an `item_size` of at most 32, so the product is at most 32000000,
-    // which a 32-bit `usize` holds.
-    let expected = usize::try_from(discriminator)
-        .map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?
-        * item_size;
-    if payload_len != expected {
-        return Err(CodecError::malformed(format_args!(
-            "RSe metadata section {number} stores {payload_len} bytes for {discriminator} entries of {item_size} bytes"
-        )));
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 fn uses_extended_record_trailer(segment_version_major: u8) -> bool {
@@ -901,6 +889,42 @@ mod tests {
                 "Truncated metadata terminal id at offset 8"
             );
         });
+    }
+
+    #[test]
+    fn malformed_auxiliary_contents_keep_their_established_section_frame() {
+        use cadmpeg_ir::unknown::part::Cause;
+
+        for (number, count, payload_len, cause) in [
+            (
+                super::ReverseSectionNumber::Six,
+                super::MAX_METADATA_SECTION_ENTRIES + 1,
+                0,
+                Cause::Undecoded,
+            ),
+            (super::ReverseSectionNumber::Nine, 1, 3, Cause::Unreadable),
+            (
+                super::ReverseSectionNumber::Eleven,
+                1,
+                super::SECTION_11_PAYLOAD_LEN,
+                Cause::Unreadable,
+            ),
+        ] {
+            let mut bytes = 4_u32.to_le_bytes().to_vec();
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.resize(8 + payload_len, 0);
+            let mut end = bytes.len();
+            let mut length = payload_len;
+            let section =
+                super::reverse_section(View::over_retained(&bytes), number, &mut end, &mut length)
+                    .expect("the reverse walk can locate the section and its predecessor");
+            assert_eq!(end, 0);
+            assert_eq!(length, 0);
+            assert_eq!(section.payload.window(), &bytes[8..]);
+            let error = super::validate_auxiliary_section(&section)
+                .expect_err("the established section has a content failure");
+            assert_eq!(Cause::Unreadable.of(&error), cause);
+        }
     }
 
     #[test]

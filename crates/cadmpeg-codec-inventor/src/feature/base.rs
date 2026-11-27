@@ -34,10 +34,7 @@ fn one<T>(mut values: impl Iterator<Item = T>) -> Option<T> {
 }
 
 fn section_count(section: &MetaSection<'_>, width: usize) -> Option<usize> {
-    let count = section
-        .payload
-        .counted(u64::from(section.discriminator), width)?;
-    (count.get().checked_mul(width)? == section.payload.remaining()).then_some(count.get())
+    crate::records::reference_section_count(section.discriminator, section.payload, width).ok()
 }
 
 fn entry<'a>(section: &MetaSection<'a>, index: u32, width: usize) -> Option<View<'a>> {
