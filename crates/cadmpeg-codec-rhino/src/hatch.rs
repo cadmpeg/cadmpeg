@@ -268,11 +268,17 @@ pub(crate) fn decode(
     let basepoint = if minor >= 2 {
         let offset = body.position();
         [
-            scaled_coordinate(body.req_f64_le()?, scale).ok_or_else(|| {
-                GeometryError::malformed(offset, "scaled hatch basepoint is invalid")
+            scaled_coordinate(body.req_f64_le()?, scale).map_err(|unscaled| {
+                unscaled.charge(GeometryError::malformed(
+                    offset,
+                    "scaled hatch basepoint is invalid",
+                ))
             })?,
-            scaled_coordinate(body.req_f64_le()?, scale).ok_or_else(|| {
-                GeometryError::malformed(offset, "scaled hatch basepoint is invalid")
+            scaled_coordinate(body.req_f64_le()?, scale).map_err(|unscaled| {
+                unscaled.charge(GeometryError::malformed(
+                    offset,
+                    "scaled hatch basepoint is invalid",
+                ))
             })?,
         ]
     } else {
@@ -444,15 +450,13 @@ fn gradient_point(
 ) -> Result<[FiniteReal; 3], GeometryError> {
     let offset = reader.position();
     let values = [reader.f64()?, reader.f64()?, reader.f64()?];
-    let [Some(x), Some(y), Some(z)] =
-        values.map(|value| crate::wire::scaled_coordinate(value, scale))
-    else {
-        return Err(GeometryError::malformed(
-            offset,
-            format!("{label} is invalid"),
-        ));
-    };
-    Ok([x, y, z])
+    let invalid = || GeometryError::malformed(offset, format!("{label} is invalid"));
+    let [x, y, z] = values.map(|value| crate::wire::scaled_coordinate(value, scale));
+    Ok([
+        x.map_err(|unscaled| unscaled.charge(invalid()))?,
+        y.map_err(|unscaled| unscaled.charge(invalid()))?,
+        z.map_err(|unscaled| unscaled.charge(invalid()))?,
+    ])
 }
 
 #[derive(serde::Serialize)]
@@ -511,11 +515,17 @@ fn parse_userdata(
     }
     reader.take(16)?;
     let basepoint = [
-        crate::wire::scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-            GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
+        crate::wire::scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+            unscaled.charge(GeometryError::malformed(
+                reader.position() - 8,
+                "invalid V5 hatch base point",
+            ))
         })?,
-        crate::wire::scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-            GeometryError::malformed(reader.position() - 8, "invalid V5 hatch base point")
+        crate::wire::scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+            unscaled.charge(GeometryError::malformed(
+                reader.position() - 8,
+                "invalid V5 hatch base point",
+            ))
         })?,
     ];
     reader.skip_remaining()?;

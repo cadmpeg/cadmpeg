@@ -203,7 +203,7 @@ pub(crate) fn object_record_id(source_order: usize) -> UnknownId {
 }
 
 /// The part a framed object record is (`rhino_3dm.md` §21).
-const OBJECT_RECORD_PART: &str = "object-record";
+pub(crate) const OBJECT_RECORD_PART: &str = "object-record";
 /// The part a framed table record is (`rhino_3dm.md` §21).
 pub(crate) const TABLE_RECORD_PART: &str = "table-record";
 /// The part a view record of a counted view list is (`rhino_3dm.md` §21).

@@ -33,7 +33,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 
 fn instance_members_are_unique(members: &[crate::wire::Uuid]) -> bool {
@@ -144,6 +144,9 @@ impl From<crate::history::ProjectionError> for CandidateError {
 #[derive(Debug)]
 enum ReferenceFailure {
     Semantic(String),
+    /// The reference payload does not parse; the product install gives up
+    /// its object record.
+    GivenUp,
     Codec(cadmpeg_core::CodecError),
 }
 
@@ -156,6 +159,16 @@ impl From<String> for ReferenceFailure {
 impl From<cadmpeg_core::CodecError> for ReferenceFailure {
     fn from(error: cadmpeg_core::CodecError) -> Self {
         Self::Codec(error)
+    }
+}
+
+impl std::fmt::Display for ReferenceFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Semantic(message) => formatter.write_str(message),
+            Self::GivenUp => formatter.write_str("the reference payload does not parse"),
+            Self::Codec(error) => error.fmt(formatter),
+        }
     }
 }
 
@@ -1256,11 +1269,11 @@ impl<'a> DecodeContext<'a> {
             match transform_decoded_curve(self.expand.ctx(), &mut hatch_loop.curve, transform) {
                 Ok(()) => {}
                 Err(ReferenceFailure::Codec(error)) => return Err(error),
-                Err(ReferenceFailure::Semantic(error)) => {
+                Err(failure) => {
                     self.mark_failed(
                         source_order,
                         Cause::Undecoded,
-                        format_args!("hatch loop placement failed: {error}"),
+                        format_args!("hatch loop placement failed: {failure}"),
                     );
                     return Ok(());
                 }
@@ -2145,10 +2158,15 @@ impl<'a> DecodeContext<'a> {
                     Ok(report) => validation_findings(&report),
                     Err(error) => format!("{error}"),
                 };
-                format!("instance expansion rejected atomically by IR admission: {findings}")
+                Some(format!(
+                    "instance expansion rejected atomically by IR admission: {findings}"
+                ))
             }
             Err(ReferenceFailure::Codec(error)) => return Err(error),
-            Err(ReferenceFailure::Semantic(message)) => format!("instance retained: {message}"),
+            Err(ReferenceFailure::Semantic(message)) => {
+                Some(format!("instance retained: {message}"))
+            }
+            Err(ReferenceFailure::GivenUp) => None,
         };
 
         original_model.discard_appended(self.session.edit_appended_model(&original_model)?)?;
@@ -2161,7 +2179,9 @@ impl<'a> DecodeContext<'a> {
             copied_elements: self.expansion_budget.copied_elements,
             ..original_expansion_budget
         };
-        self.scan_warning(source_order, format_args!("{rejection_warning}"));
+        if let Some(warning) = rejection_warning {
+            self.scan_warning(source_order, format_args!("{warning}"));
+        }
         Ok(false)
     }
 
@@ -2228,7 +2248,7 @@ impl<'a> DecodeContext<'a> {
         let identity = &object.identity;
         let reference =
             crate::instances::parse_reference(self.scan.data, object.class_data_range.clone())
-                .map_err(|error| error.to_string())?;
+                .map_err(|_| ReferenceFailure::GivenUp)?;
         if self
             .scan
             .definitions
@@ -2309,7 +2329,14 @@ impl<'a> DecodeContext<'a> {
                 .class_uuid()
                 .is_some_and(crate::instances::is_reference_class)
             {
-                let nested = self.expand_reference_inner(member_order, transform, path, stack)?;
+                let nested = self
+                    .expand_reference_inner(member_order, transform, path, stack)
+                    .map_err(|failure| match failure {
+                        ReferenceFailure::GivenUp => ReferenceFailure::Semantic(format!(
+                            "definition member {member_id} did not decode"
+                        )),
+                        other => other,
+                    })?;
                 self.append_links(member_order, &nested)?;
                 self.mark_decoded(member_order);
 
@@ -2562,6 +2589,13 @@ impl<'a> DecodeContext<'a> {
             Err(error @ crate::subd::SubdError::UnsupportedVersion { .. }) => {
                 self.scan_warning(source_order, format_args!("SubD retained: {error}"));
             }
+            Err(error @ crate::subd::SubdError::Undecoded { .. }) => {
+                self.mark_failed(
+                    source_order,
+                    Cause::Undecoded,
+                    format_args!("SubD failed: {error}"),
+                );
+            }
             Err(error) => {
                 self.mark_failed(
                     source_order,
@@ -2794,7 +2828,12 @@ impl<'a> DecodeContext<'a> {
         )?);
         document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
-        let outcomes = self.class_outcomes()?;
+        let given_up_objects = given_up
+            .iter()
+            .filter(|part| part.kind() == crate::container::OBJECT_RECORD_PART)
+            .map(|part| part.retained().offset())
+            .collect::<HashSet<_>>();
+        let outcomes = self.class_outcomes(&given_up_objects)?;
         let decoded = outcomes
             .iter()
             .map(|(_, outcome)| outcome.decoded)
@@ -3977,7 +4016,12 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
-    fn class_outcomes(&self) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
+    /// The outcome of each object class. An object record at an offset in
+    /// `given_up` is given up as a part, and no outcome counts it.
+    fn class_outcomes(
+        &self,
+        given_up: &HashSet<u64>,
+    ) -> Result<Vec<(String, ClassOutcome<'a>)>, cadmpeg_core::CodecError> {
         let mut outcomes = HashMap::new();
         for (source_order, (object, status)) in
             self.scan.objects.iter().zip(&self.statuses).enumerate()
@@ -4001,6 +4045,8 @@ impl<'a> DecodeContext<'a> {
                 outcome.attribute_degraded += 1;
             }
             match status {
+                None if given_up
+                    .contains(&cadmpeg_core::decode::u64_from_index(object.range().start)) => {}
                 None => outcome.retained += 1,
                 Some(GeometryOutcome::Decoded) => outcome.decoded += 1,
                 Some(GeometryOutcome::Failed(failure)) => {
@@ -4925,9 +4971,12 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
                     .then(index),
             ))
         }?;
-        let position = crate::wire::scaled_point(vertex.point.get(), scale).ok_or_else(|| {
-            crate::curves::GeometryError::unpositioned("scaled Brep vertex coordinate is invalid")
-        })?;
+        let position =
+            crate::wire::scaled_point(vertex.point.get(), scale).map_err(|unscaled| {
+                unscaled.charge(crate::curves::GeometryError::unpositioned(
+                    "scaled Brep vertex coordinate is invalid",
+                ))
+            })?;
         staged.draft.geometry_mut().points.push(Point::new(
             point_id.clone(),
             position,
@@ -5861,8 +5910,11 @@ fn scaled_tolerance(
     let Some(source) = value.positive() else {
         return Ok(None);
     };
-    let scaled = crate::wire::scaled_coordinate(source.get(), scale)
-        .ok_or_else(|| crate::curves::GeometryError::unpositioned("scaled tolerance is invalid"))?;
+    let scaled = crate::wire::scaled_coordinate(source.get(), scale).map_err(|unscaled| {
+        unscaled.charge(crate::curves::GeometryError::unpositioned(
+            "scaled tolerance is invalid",
+        ))
+    })?;
     Ok(Some(
         cadmpeg_ir::scalar::PositiveLength::from_assigned_real(scaled).ok_or_else(|| {
             crate::curves::GeometryError::unpositioned(

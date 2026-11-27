@@ -222,7 +222,7 @@ fn a_brep_staging_refusal_names_no_byte() {
     assert!(matches!(
         error,
         crate::curves::GeometryError::Malformed(
-            crate::chunks::FramingError::Unpositioned { ref message }
+            crate::chunks::FramingError::Unbound { ref message }
         ) if message == "scaled tolerance is invalid"
     ));
     assert_eq!(
@@ -1635,7 +1635,7 @@ fn unknown_surface_placeholder_does_not_report_geometry_transfer() {
 }
 
 #[test]
-fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_deterministically() {
+fn scaled_coordinate_overflow_gives_up_the_object_undecoded_and_repeats_deterministically() {
     let archive = ArchiveVersion::V5;
     let object =
         object_record_with_payload(archive, 1, POINT_CLASS, &point_payload([2.0, 0.0, 0.0]));
@@ -1646,11 +1646,51 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
     assert!(first.ir().geometry.points.is_empty());
     assert_eq!(first.ir(), second.ir());
     assert_eq!(first.report(), second.report());
-    assert!(first
-        .report()
-        .losses
+    // A finite coordinate whose millimetre product passes the f64 range
+    // breaks no format rule: the give-up is undecoded, and no loss is an
+    // error.
+    let losses = &first.report().losses;
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind()),
+        "{losses:#?}"
+    );
+    assert!(
+        !losses.iter().any(|loss| loss.severity == Severity::Error),
+        "{losses:#?}"
+    );
+}
+
+/// A reference whose payload does not parse is given up once: the object
+/// family count and the expansion warnings do not restate it.
+#[test]
+fn an_unparsed_reference_is_one_give_up() {
+    let scan = scan_with_objects(&[object_record_with_payload(
+        ArchiveVersion::V5,
+        0x1000,
+        crate::test_support::test_dump::INSTANCE_REFERENCE_CLASS,
+        &[],
+    )]);
+    let result = crate::decode::decode_for_test(&scan);
+    let losses = &result.report().losses;
+    let charges = losses
         .iter()
-        .any(|loss| loss.severity == Severity::Error));
+        .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
+        .count();
+    assert_eq!(charges, 1, "{losses:#?}");
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.code == RhinoLossCode::ObjectFamilyNotTransferred.kind()),
+        "{losses:#?}"
+    );
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.message.contains("instance retained")),
+        "{losses:#?}"
+    );
 }
 
 /// The body-kind and B-rep domain charges reach the report as typed codes.

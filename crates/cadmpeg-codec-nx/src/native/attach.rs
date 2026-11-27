@@ -258,14 +258,10 @@ pub(super) fn attach(
                 &cadmpeg_ir::identity_namespace!("nx", "container", "object-model"),
                 0_u64,
             );
-            let cause = match error {
-                CodecError::Malformed(_) | CodecError::Truncated { .. } => Cause::Unreadable,
-                _ => Cause::Undecoded,
-            };
             losses.push(
                 GivenUpRecord::new(
                     attachment.clone(),
-                    cause,
+                    Cause::Undecoded,
                     format_args!(
                         "Native object-model attachment failed: {error}. Decoded geometry and \
                          topology are kept. None of the attachment's features, sketches, \

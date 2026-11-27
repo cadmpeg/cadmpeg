@@ -311,8 +311,12 @@ fn scaled3_coordinate(
     scale: MillimeterScale,
     offset: usize,
 ) -> Result<FiniteReal, FramingError> {
-    scaled_coordinate(value, scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled view coordinate is invalid"))
+    scaled_coordinate(value, scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            offset,
+            "scaled view coordinate is invalid",
+        ))
+    })
 }
 
 fn scaled_plane(
@@ -323,8 +327,12 @@ fn scaled_plane(
     value.origin = crate::settings::CoordinateLane::Admitted(
         scaled3(value.origin.get(), scale, offset)?.into(),
     );
-    let constant = scaled_coordinate(value.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled plane equation is invalid"))?;
+    let constant = scaled_coordinate(value.equation[3], scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            offset,
+            "scaled plane equation is invalid",
+        ))
+    })?;
     value.equation = value.equation.with_fourth(constant);
     Ok(value)
 }
@@ -367,10 +375,17 @@ fn parse_trace_image(
         ));
     }
     let legacy_file_path = utf16_deferred(&mut reader)?;
-    let width_mm = scaled_coordinate(reader.f64()?, scale)
-        .ok_or_else(|| FramingError::structural(reader.position() - 8, "trace width is invalid"))?;
-    let height_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-        FramingError::structural(reader.position() - 8, "trace height is invalid")
+    let width_mm = scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            reader.position() - 8,
+            "trace width is invalid",
+        ))
+    })?;
+    let height_mm = scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            reader.position() - 8,
+            "trace height is invalid",
+        ))
     })?;
     let plane = scaled_plane(plane(&mut reader)?, scale, body.start)?;
     let grayscale = minor < 1 || reader.bool()?;
@@ -582,11 +597,17 @@ fn parse_cplane(
         ));
     }
     let value = scaled_plane(plane(&mut reader)?, scale, body.start)?;
-    let grid_spacing_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-        FramingError::structural(reader.position() - 8, "grid spacing is invalid")
+    let grid_spacing_mm = scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            reader.position() - 8,
+            "grid spacing is invalid",
+        ))
     })?;
-    let snap_spacing_mm = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-        FramingError::structural(reader.position() - 8, "snap spacing is invalid")
+    let snap_spacing_mm = scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            reader.position() - 8,
+            "snap spacing is invalid",
+        ))
     })?;
     let grid_line_count = reader.i32()?;
     let thick_line_frequency = reader.i32()?;
@@ -645,8 +666,11 @@ fn parse_viewport(
     let camera_z_axis = vector(&mut reader)?;
     let mut frustum = [FiniteReal::ZERO; 6];
     for coordinate in &mut frustum {
-        *coordinate = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-            FramingError::structural(reader.position() - 8, "viewport frustum is invalid")
+        *coordinate = scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                reader.position() - 8,
+                "viewport frustum is invalid",
+            ))
         })?;
     }
     let mut port = [0; 6];
@@ -949,8 +973,11 @@ fn parse_attributes(
                     "clipping equation is invalid",
                 ));
             };
-            let d = scaled_coordinate(source_d.get(), scale).ok_or_else(|| {
-                FramingError::structural(plane.position() - 8, "clipping equation is invalid")
+            let d = scaled_coordinate(source_d.get(), scale).map_err(|unscaled| {
+                unscaled.charge(FramingError::structural(
+                    plane.position() - 8,
+                    "clipping equation is invalid",
+                ))
             })?;
             let equation = [a, b, c, d];
             let id = uuid(&mut plane)?;
@@ -963,8 +990,11 @@ fn parse_attributes(
                     (raw_depth, false)
                 };
                 (
-                    Some(scaled_coordinate(raw_depth, scale).ok_or_else(|| {
-                        FramingError::structural(plane.position() - 8, "clipping depth is invalid")
+                    Some(scaled_coordinate(raw_depth, scale).map_err(|unscaled| {
+                        unscaled.charge(FramingError::structural(
+                            plane.position() - 8,
+                            "clipping depth is invalid",
+                        ))
                     })?),
                     enabled,
                 )
@@ -998,8 +1028,11 @@ fn parse_attributes(
     }
     if version[1] >= 7 {
         result.focal_blur_distance_mm =
-            Some(scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-                FramingError::structural(reader.position() - 8, "focal distance is invalid")
+            Some(scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+                unscaled.charge(FramingError::structural(
+                    reader.position() - 8,
+                    "focal distance is invalid",
+                ))
             })?);
         result.focal_blur_aperture = Some(reader.f64()?);
         result.focal_blur_jitter = Some(reader.f64()?);
@@ -1257,11 +1290,11 @@ fn parse_view(
                 let raw_point = [reader.f64()?, reader.f64()?, reader.f64()?];
                 let mut point = [FiniteReal::ZERO; 3];
                 for (coordinate, value) in point.iter_mut().zip(raw_point) {
-                    *coordinate = scaled_coordinate(value, scale).ok_or_else(|| {
-                        FramingError::structural(
+                    *coordinate = scaled_coordinate(value, scale).map_err(|unscaled| {
+                        unscaled.charge(FramingError::structural(
                             reader.position() - 24,
                             "scaled view target is invalid",
-                        )
+                        ))
                     })?;
                 }
                 reader.skip_remaining()?;
@@ -1519,7 +1552,11 @@ fn parse_list(
         };
         if view.typecode != VIEW_RECORD || view.short() {
             let part = give_up_view(
-                ctx,                data,                &view,                Cause::Unreadable,                format_args!(
+                ctx,
+                data,
+                &view,
+                Cause::Unreadable,
+                format_args!(
                     "{kind} view list child at offset {child_offset} has unexpected typecode {:#010x}",
                     view.typecode
                 ),
@@ -1529,13 +1566,18 @@ fn parse_list(
         }
         if let Err(error) = reader.skip(view.next_offset() - child_offset) {
             let part = give_up_view(
-                ctx,                data,                &view,                error.cause(),                format_args!(
+                ctx,
+                data,
+                &view,
+                error.cause(),
+                format_args!(
                     "{kind} view record at offset {child_offset} could not advance to its bounded end: {error}"
                 ),
             )?;
             given_up.push(part);
             break;
         }
+        let mut view_losses = Vec::new();
         match parse_view(
             ctx,
             data,
@@ -1546,13 +1588,20 @@ fn parse_list(
                 kind: list_kind,
                 index,
             },
-            &mut losses,
+            &mut view_losses,
         ) {
-            Ok(value) => views.push(value),
+            Ok(value) => {
+                losses.append(&mut view_losses);
+                views.push(value);
+            }
             Err(FramingError::Resource(limit)) => return Err(CodecError::ResourceLimit(limit)),
             Err(error) => {
                 let part = give_up_view(
-                    ctx,                    data,                    &view,                    error.cause(),                    format_args!(
+                    ctx,
+                    data,
+                    &view,
+                    error.cause(),
+                    format_args!(
                         "{kind} view record at offset {child_offset} was omitted after child parsing failed: {error}"
                     ),
                 )?;
@@ -1603,8 +1652,6 @@ fn parse_named_cplanes(
     Ok(values)
 }
 
-/// The codec loss of the settings record `record` of `kind`, which the
-/// decoder retains because the document has no physical unit `binding`.
 /// Gives up the settings record `record` of the table `table_typecode` for
 /// `cause` with `message`, and keeps it as a retained opaque record.
 fn give_up_settings_record(

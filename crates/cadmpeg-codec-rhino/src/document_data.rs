@@ -206,8 +206,11 @@ fn length(
     reader: &mut BoundedReader<'_>,
     scale: MillimeterScale,
 ) -> Result<FiniteReal, FramingError> {
-    scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
-        FramingError::structural(reader.position(), "scaled setting length is invalid")
+    scaled_coordinate(reader.f64()?, scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            reader.position(),
+            "scaled setting length is invalid",
+        ))
     })
 }
 

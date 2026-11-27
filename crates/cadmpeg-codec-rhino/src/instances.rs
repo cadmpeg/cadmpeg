@@ -1330,21 +1330,22 @@ pub(crate) fn parse_reference(
     let _bounds = bbox(&mut reader)?;
     reader.skip_remaining()?;
     if rows[3] != [0.0, 0.0, 0.0, 1.0] {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "instance transform is not affine",
         ));
     }
-    let transform = Transform::affine([rows[0], rows[1], rows[2]])
-        .ok_or_else(|| FramingError::structural(rows_offset, "instance transform is not finite"))?;
+    let transform = Transform::affine([rows[0], rows[1], rows[2]]).ok_or_else(|| {
+        FramingError::unsupported(rows_offset, "instance transform is not finite")
+    })?;
     let inverse = transform.try_inverse_affine().map_err(|error| {
-        FramingError::structural(
+        FramingError::unsupported(
             reader.position(),
             format!("instance transform inverse: {error}"),
         )
     })?;
     let residual = inverse.compose(transform).map_err(|error| {
-        FramingError::structural(
+        FramingError::unsupported(
             reader.position(),
             format!("instance transform inverse product: {error}"),
         )
@@ -1371,7 +1372,7 @@ pub(crate) fn parse_reference(
                 .any(|(column, (actual, expected))| (actual - expected).abs() > tolerance[column])
         })
     {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             reader.position(),
             "instance transform inverse product is not identity",
         ));
@@ -1386,9 +1387,9 @@ pub(crate) fn parse_reference(
 pub(crate) fn scale_translation(transform: Transform, scale: MillimeterScale) -> Option<Transform> {
     let rows = transform.affine_rows();
     let translation = cadmpeg_ir::features::geometry::FiniteVector3::from_components(
-        crate::wire::scaled_coordinate(rows[0][3], scale)?,
-        crate::wire::scaled_coordinate(rows[1][3], scale)?,
-        crate::wire::scaled_coordinate(rows[2][3], scale)?,
+        crate::wire::scaled_coordinate(rows[0][3], scale).ok()?,
+        crate::wire::scaled_coordinate(rows[1][3], scale).ok()?,
+        crate::wire::scaled_coordinate(rows[2][3], scale).ok()?,
     );
     Some(transform.with_translation(translation))
 }

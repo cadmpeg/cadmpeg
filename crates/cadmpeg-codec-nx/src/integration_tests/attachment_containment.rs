@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::report::Severity;
-use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::unknown::part::record_undecoded_kind;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{assert_valid, decode};
@@ -58,8 +58,8 @@ fn try_decode_failing_at(
 /// The one charge that gives up the object-model container after a failed
 /// attachment.
 fn charges_the_object_model(loss: &LossNote) -> bool {
-    loss.code == record_unreadable_kind()
-        && loss.severity == Severity::Error
+    loss.code == record_undecoded_kind()
+        && loss.severity == Severity::Warning
         && loss
             .message
             .contains("Native object-model attachment failed")
@@ -81,22 +81,25 @@ fn attachment_failures(result: &EditableDecodeResult) -> Vec<&LossNote> {
         .collect()
 }
 
-/// The failed attachment is one entry: the give-up of the container, which
-/// carries the error text.
+/// The failed attachment is one entry: the undecoded give-up of the
+/// container, which carries the error text.
 fn assert_attachment_given_up(result: &EditableDecodeResult) {
-    let errors = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.severity == Severity::Error)
-        .collect::<Vec<_>>();
-    assert_eq!(errors.len(), 1, "{errors:#?}");
-    assert_eq!(attachment_failures(result).len(), 1);
-    assert!(charges_the_object_model(errors[0]), "{:#?}", errors[0]);
+    let failures = attachment_failures(result);
+    assert_eq!(failures.len(), 1, "{failures:#?}");
+    assert!(charges_the_object_model(failures[0]), "{:#?}", failures[0]);
     assert!(
-        errors[0].message.contains(INJECTED_MESSAGE),
+        failures[0].message.contains(INJECTED_MESSAGE),
         "{}",
-        errors[0].message
+        failures[0].message
+    );
+    assert!(
+        !result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.severity == Severity::Error),
+        "{:#?}",
+        result.report().losses
     );
 }
 
@@ -201,7 +204,7 @@ fn schemaless_topology_prt() -> Vec<u8> {
 }
 
 #[test]
-fn strict_decode_refuses_a_contained_attachment_failure() {
+fn pinned_decode_keeps_a_contained_attachment_failure() {
     let mut strict = DecodeOptions::default();
     strict.strictness.pinned = true;
     NxCodec
@@ -219,18 +222,9 @@ fn strict_decode_refuses_a_contained_attachment_failure() {
         "{salvaged:#?}"
     );
     assert!(salvaged.iter().any(charges_the_object_model));
-    let error = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, true)
-        .expect_err("strict decode refuses the attachment failure");
-    match error {
-        DecodeFailure::StrictRejected { rejection } => {
-            assert!(
-                charges_the_object_model(rejection.loss()),
-                "{:#?}",
-                rejection.loss()
-            );
-        }
-        other => panic!("expected a strict refusal, got {other:?}"),
-    }
+    let pinned = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, true)
+        .expect("an undecoded attachment pins no strict floor");
+    assert!(pinned.report().losses.iter().any(charges_the_object_model));
 }
 
 #[test]

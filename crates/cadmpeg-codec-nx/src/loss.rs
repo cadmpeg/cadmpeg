@@ -144,7 +144,8 @@ loss_codes! {
     /// A face states no loop on a plane, cylinder, or cone, which no face
     /// covers whole: its boundary is unstated, and the face is stated partial.
     TopologyFaceBoundaryUnstated => ("topology.face-boundary-unstated", Warning, TopologyNotTransferred),
-    /// A shell with no admitted face, or a body with no emitted shell, is withheld.
+    /// A BODY that a SHELL names, that has no emitted SHELL, and that the
+    /// stream graph does not hold as a node is withheld.
     TopologyShellWithheld => ("topology.shell-withheld", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
@@ -171,6 +172,15 @@ loss_codes! {
 }
 
 impl NxLossCode {
+    /// The strict floor `siemens_nx.md` §10 states: a `res_linear` that breaks
+    /// the rule of `parasolid.md` §4 pins Warning.
+    const fn strict_floor(self) -> Option<Severity> {
+        match self {
+            Self::BodyResolutionInvalid => Some(Severity::Warning),
+            _ => None,
+        }
+    }
+
     /// Namespaced [`LossKind`] for this local code.
     #[must_use]
     pub(crate) fn kind(self) -> LossKind {
@@ -184,6 +194,7 @@ impl NxLossCode {
             self.code(),
             self.shared_taxonomy(),
         )
+        .with_strict_floor(self.strict_floor())
         .into()
     }
 
@@ -291,11 +302,16 @@ mod tests {
         }
     }
 
-    /// No NX code pins a strict floor (`siemens_nx.md` §10).
+    /// `body.resolution-invalid` is the one NX code that pins a strict floor,
+    /// Warning (`siemens_nx.md` §10).
     #[test]
-    fn no_code_pins_a_strict_floor() {
+    fn only_an_invalid_resolution_pins_a_strict_floor() {
         for code in NxLossCode::ALL {
-            assert_eq!(code.kind().strict_floor(), None, "{}", code.code());
+            let floor = match code {
+                NxLossCode::BodyResolutionInvalid => Some(cadmpeg_ir::report::Severity::Warning),
+                _ => None,
+            };
+            assert_eq!(code.kind().strict_floor(), floor, "{}", code.code());
         }
     }
 }

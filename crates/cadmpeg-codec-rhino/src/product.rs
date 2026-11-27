@@ -549,7 +549,13 @@ mod tests {
                 ("object-record", source.range.start),
                 Some(&record),
                 &record,
-                cadmpeg_ir::unknown::part::Cause::Unreadable,
+                // The empty payload breaks the reference grammar; a singular or
+                // non-finite transform has no typed reading.
+                if index == 0 {
+                    cadmpeg_ir::unknown::part::Cause::Unreadable
+                } else {
+                    cadmpeg_ir::unknown::part::Cause::Undecoded
+                },
             );
             let provenance = loss.provenance.as_ref().expect("located product loss");
             assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");

@@ -1605,9 +1605,10 @@ fn a_face_keeps_its_ring_loop_when_its_vertex_loop_is_unresolved() {
         loss.code == NxLossCode::TopologyVertexLoopUnresolved.kind()
             && loss.message.contains("LOOP 21 of FACE 4")
     }));
-    assert!(!losses
+    assert!(model
+        .shells
         .iter()
-        .any(|loss| loss.code == NxLossCode::TopologyShellWithheld.kind()));
+        .any(|shell| shell.id.as_str() == "nx:s0:shell#3"));
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);

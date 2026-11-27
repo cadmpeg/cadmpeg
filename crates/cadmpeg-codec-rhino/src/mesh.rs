@@ -517,12 +517,15 @@ pub(crate) fn decode(
     let mut vertices = Vec::new();
     let mut append = |point: [f64; 3]| -> Result<(), GeometryError> {
         vertices.push(FinitePoint3::from_coordinates(
-            crate::wire::scaled_coordinate(point[0], scale)
-                .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?,
-            crate::wire::scaled_coordinate(point[1], scale)
-                .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?,
-            crate::wire::scaled_coordinate(point[2], scale)
-                .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?,
+            crate::wire::scaled_coordinate(point[0], scale).map_err(|unscaled| {
+                unscaled.charge(error(reader.position(), "scaled mesh vertex is invalid"))
+            })?,
+            crate::wire::scaled_coordinate(point[1], scale).map_err(|unscaled| {
+                unscaled.charge(error(reader.position(), "scaled mesh vertex is invalid"))
+            })?,
+            crate::wire::scaled_coordinate(point[2], scale).map_err(|unscaled| {
+                unscaled.charge(error(reader.position(), "scaled mesh vertex is invalid"))
+            })?,
         ));
         Ok(())
     };

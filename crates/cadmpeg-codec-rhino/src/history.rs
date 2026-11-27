@@ -1574,7 +1574,7 @@ fn extended_geometry_json(
         }
         let plane = hatch.plane;
         let millimetres = |coordinate: f64, field: &str| {
-            crate::wire::scaled_coordinate(coordinate, scale).ok_or_else(|| {
+            crate::wire::scaled_coordinate(coordinate, scale).map_err(|_| {
                 cadmpeg_core::CodecError::NotImplemented(format!(
                     "history hatch {field} {coordinate} at {} millimetres per unit has no \
                      finite millimetre value",

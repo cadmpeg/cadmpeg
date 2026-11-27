@@ -318,13 +318,20 @@ fn scaled_plane(
     let origin = plane.origin.get();
     let mut scaled = [cadmpeg_ir::scalar::FiniteReal::ZERO; 3];
     for index in 0..3 {
-        scaled[index] = scaled_coordinate(origin[index], scale).ok_or_else(|| {
-            FramingError::structural(offset, "scaled annotation plane is invalid")
+        scaled[index] = scaled_coordinate(origin[index], scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                offset,
+                "scaled annotation plane is invalid",
+            ))
         })?;
     }
     plane.origin = crate::settings::CoordinateLane::Admitted(scaled.into());
-    let constant = scaled_coordinate(plane.equation[3], scale)
-        .ok_or_else(|| FramingError::structural(offset, "scaled annotation equation is invalid"))?;
+    let constant = scaled_coordinate(plane.equation[3], scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            offset,
+            "scaled annotation equation is invalid",
+        ))
+    })?;
     plane.equation = plane.equation.with_fourth(constant);
     Ok(plane)
 }
@@ -347,8 +354,11 @@ fn decode_annotation(
     let mut annotation = crate::dimensions::annotation(ctx, data, &mut outer, archive)?;
     annotation.plane = scaled_plane(annotation.plane, scale, range.start)?;
     annotation.text_rectangle_width =
-        scaled_coordinate(annotation.text_rectangle_width.get(), scale).ok_or_else(|| {
-            FramingError::structural(range.start, "scaled text rectangle width is invalid")
+        scaled_coordinate(annotation.text_rectangle_width.get(), scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                range.start,
+                "scaled text rectangle width is invalid",
+            ))
         })?;
     let mut points = Vec::new();
     if leader {
@@ -367,14 +377,17 @@ fn decode_annotation(
                 FramingError::structural(outer.position() - 16, "leader point is not finite")
             })?;
             points.push([
-                scaled_coordinate(point[0], scale).ok_or_else(|| {
-                    FramingError::structural(
+                scaled_coordinate(point[0], scale).map_err(|unscaled| {
+                    unscaled.charge(FramingError::structural(
                         outer.position() - 16,
                         "scaled leader point is invalid",
-                    )
+                    ))
                 })?,
-                scaled_coordinate(point[1], scale).ok_or_else(|| {
-                    FramingError::structural(outer.position() - 8, "scaled leader point is invalid")
+                scaled_coordinate(point[1], scale).map_err(|unscaled| {
+                    unscaled.charge(FramingError::structural(
+                        outer.position() - 8,
+                        "scaled leader point is invalid",
+                    ))
                 })?,
             ]);
         }
@@ -460,8 +473,11 @@ fn decode_v2_annotation(
                 "V2 text height is outside the source bound",
             ));
         }
-        let text_height = scaled_coordinate(raw_text_height, scale).ok_or_else(|| {
-            FramingError::structural(reader.position() - 8, "scaled V2 text height is invalid")
+        let text_height = scaled_coordinate(raw_text_height, scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                reader.position() - 8,
+                "scaled V2 text height is invalid",
+            ))
         })?;
         Some(V2Text {
             face_name,
@@ -498,8 +514,11 @@ fn decode_dot(
     let raw_center = [reader.f64()?, reader.f64()?, reader.f64()?];
     let mut center = [FiniteReal::ZERO; 3];
     for (target, value) in center.iter_mut().zip(raw_center) {
-        *target = scaled_coordinate(value, scale).ok_or_else(|| {
-            FramingError::structural(range.start, "scaled text-dot center is invalid")
+        *target = scaled_coordinate(value, scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                range.start,
+                "scaled text-dot center is invalid",
+            ))
         })?;
     }
     let height_points = reader.i32()?;
@@ -548,8 +567,11 @@ fn v2_point(
     let raw_point = [reader.f64()?, reader.f64()?, reader.f64()?];
     let mut point = [FiniteReal::ZERO; 3];
     for (target, value) in point.iter_mut().zip(raw_point) {
-        *target = scaled_coordinate(value, scale).ok_or_else(|| {
-            FramingError::structural(offset, format!("scaled V2 {kind} point is invalid"))
+        *target = scaled_coordinate(value, scale).map_err(|unscaled| {
+            unscaled.charge(FramingError::structural(
+                offset,
+                format!("scaled V2 {kind} point is invalid"),
+            ))
         })?;
     }
     Ok(point)

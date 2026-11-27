@@ -3349,20 +3349,20 @@ handle:u8  04  length:u8  "(Number [units]) name: expression; "  00
 
 ## 10. Given-up records
 
-A Parasolid record is a part (CADIR §3.3): the bytes of the complete record, from its offset in the inflated stream. The decoder gives up a record that it reads and then refuses as a `parasolid-record` part in the stream `nx:parasolid#<index>:<kind>`, where `<index>` is the stream index and `<kind>` is the stream kind. The part is contained in the retained record `nx:container:parasolid#<index>`, which holds the inflated stream, so the part keeps the length and the digest of its bytes. These records are a refused NURBS carrier, a carrier whose control values do not resolve, a CONE or TORUS whose fields state a form that has no surface, and a SHELL that has no admitted FACE. A BODY that has no emitted SHELL and has a given-up SHELL is dropped with that SHELL: the charge of the SHELL names the body id `nx:s<index>:body#<xmt>`. A BODY that has no emitted SHELL and no given-up SHELL is a `parasolid-record` part of its own.
+A Parasolid record is a part (CADIR §3.3): the bytes of the complete record, from its offset in the inflated stream. The decoder gives up a record that it reads and then refuses as a `parasolid-record` part in the stream `nx:parasolid#<index>:<kind>`, where `<index>` is the stream index and `<kind>` is the stream kind. The part is contained in the retained record `nx:container:parasolid#<index>`, which holds the inflated stream, so the part keeps the length and the digest of its bytes. These records are a refused NURBS carrier, a carrier whose control values do not resolve, a CONE or TORUS whose fields state a form that has no surface, and a SHELL that has no admitted FACE. A BODY that has no emitted SHELL and has a given-up SHELL is dropped with that SHELL: the charge of the SHELL names the body id `nx:s<index>:body#<xmt>`. A BODY that has no emitted SHELL and no given-up SHELL is a `parasolid-record` part of its own when the stream graph holds it as a node. When the stream graph holds no node for that BODY, the decoder withholds the body and charges `topology.shell-withheld`, which names the BODY.
 
 An indexed object-model entry is a part. When the section search of an entry stops at its work bound, the decoder gives up the entry as an `om-entry` part in the stream `nx:container`, at the file offset of the entry, with the entry path as its name. The part keeps the entry's bytes when they fit the retained-byte allowance, and their length and digest otherwise.
 
-When the native object model does not attach, the decoder gives up every record of the attachment and keeps the decoded geometry and topology. It charges one give-up that names `nx:container` (CADIR §3.3) and holds the error text. The cause is `record.unreadable` when the attachment stops at a record that is malformed or truncated, and `record.undecoded` otherwise. Each native record and each retained record that the attachment wrote before it failed is dropped with `nx:container`.
+When the native object model does not attach, the decoder gives up every record of the attachment and keeps the decoded geometry and topology. It charges one `record.undecoded` give-up that names `nx:container` (CADIR §3.3) and holds the error text. Each native record and each retained record that the attachment wrote before it failed is dropped with `nx:container`.
 
 Each given-up part is one entry. Its cause is:
 
 | Part kind | Bytes | Cause |
 |---|---|---|
-| `parasolid-record` | A NURBS carrier that stores a control-point weight that is zero or negative, or a dimension, count, or multiplicity that contradicts its fields or arrays. | `record.unreadable` |
+| `parasolid-record` | A NURBS carrier that a terminated node sequence frames and that stores a control-point weight that is zero or negative, a dimension, count, or multiplicity that contradicts its fields or arrays, or a degree that is not less than its pole count (§6.2). | `record.unreadable` |
 | `parasolid-record` | A CONE whose half-angle sine and cosine have a squared sum that differs from one by more than 1e-9. | `record.unreadable` |
-| `parasolid-record` | A NURBS carrier whose lanes state no IR carrier, a carrier whose control values do not resolve, a CONE with a negative half-angle sine or cosine, or a TORUS with a negative major radius. | `record.undecoded` |
-| `parasolid-record` | A SHELL that has no admitted FACE, and a BODY that has no emitted SHELL. | `record.undecoded` |
+| `parasolid-record` | A NURBS carrier that a byte scan reads and that the IR refuses, a NURBS carrier that a terminated node sequence frames and whose lanes state no IR carrier for another reason, a carrier whose control values do not resolve, a CONE with a negative half-angle sine or cosine, or a TORUS with a negative major radius. | `record.undecoded` |
+| `parasolid-record` | A SHELL that has no admitted FACE, and a BODY that the stream graph holds as a node and that has no emitted or given-up SHELL. | `record.undecoded` |
 | `om-entry` | An indexed object-model entry whose section search stops at its work bound. | `record.undecoded` |
 
-No NX code carries a strict floor (CADIR §3.2).
+The one NX code that carries a strict floor is `body.resolution-invalid`, with the floor Warning (CADIR §3.2).

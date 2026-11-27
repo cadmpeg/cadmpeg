@@ -98,6 +98,9 @@ pub(crate) enum SubdError {
     UnsupportedVersion { offset: usize, message: String },
     /// The bounded payload is malformed.
     Malformed { offset: usize, message: String },
+    /// The bounded payload has a form the decoder has no reading for, or a
+    /// value past a decoder bound.
+    Undecoded { message: String },
     /// The bounded payload is malformed by a derived or already-decoded value
     /// that has no byte position of its own.
     Unpositioned { message: String },
@@ -112,6 +115,7 @@ impl fmt::Display for SubdError {
                 write!(formatter, "{message} at byte {offset}")
             }
             Self::Malformed { offset, message } => write!(formatter, "{message} at byte {offset}"),
+            Self::Undecoded { message } => formatter.write_str(message),
             Self::Unpositioned { message } => formatter.write_str(message),
             Self::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(*limit).fmt(formatter),
         }
@@ -119,6 +123,17 @@ impl fmt::Display for SubdError {
 }
 
 impl std::error::Error for SubdError {}
+
+impl crate::wire::DecoderBound for SubdError {
+    fn decoder_bound(self) -> Self {
+        match self {
+            Self::Malformed { offset, message } => Self::Undecoded {
+                message: format!("{message} at byte {offset}"),
+            },
+            other => other,
+        }
+    }
+}
 
 fn insert_incidence(incidence: &mut HashMap<u32, HashSet<u32>>, key: u32, value: u32) -> bool {
     let values = incidence.entry(key).or_default();
@@ -145,10 +160,12 @@ impl From<FramingError> for SubdError {
         let message = value.to_string();
         match value {
             FramingError::Resource(limit) => Self::Resource(limit),
+            FramingError::Unsupported { .. } | FramingError::Unbound { .. } => {
+                Self::Undecoded { message }
+            }
             FramingError::Truncated { offset, .. }
             | FramingError::InvalidLength { offset, .. }
             | FramingError::Structural { offset, .. }
-            | FramingError::Unsupported { offset, .. }
             | FramingError::Overflow { offset }
             | FramingError::OutOfBounds { offset, .. } => Self::Malformed { offset, message },
             FramingError::InvalidHeader
@@ -1172,14 +1189,23 @@ fn materialize(
         let point = vertex.point.get();
         vertices.push(SubdVertex::from_parts(
             FinitePoint3::from_coordinates(
-                crate::wire::scaled_coordinate(point.x, scale).ok_or_else(|| {
-                    malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                crate::wire::scaled_coordinate(point.x, scale).map_err(|unscaled| {
+                    unscaled.charge(malformed(
+                        vertex.base.source_offset,
+                        "scaled SubD vertex is invalid",
+                    ))
                 })?,
-                crate::wire::scaled_coordinate(point.y, scale).ok_or_else(|| {
-                    malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                crate::wire::scaled_coordinate(point.y, scale).map_err(|unscaled| {
+                    unscaled.charge(malformed(
+                        vertex.base.source_offset,
+                        "scaled SubD vertex is invalid",
+                    ))
                 })?,
-                crate::wire::scaled_coordinate(point.z, scale).ok_or_else(|| {
-                    malformed(vertex.base.source_offset, "scaled SubD vertex is invalid")
+                crate::wire::scaled_coordinate(point.z, scale).map_err(|unscaled| {
+                    unscaled.charge(malformed(
+                        vertex.base.source_offset,
+                        "scaled SubD vertex is invalid",
+                    ))
                 })?,
             ),
             tag,

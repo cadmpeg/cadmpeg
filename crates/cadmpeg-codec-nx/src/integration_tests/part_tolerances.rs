@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeDepth;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::loss::NxLossCode;
 use crate::test_support::test_prt::{
@@ -97,6 +97,33 @@ fn a_body_that_stores_no_precision_states_the_modeller_default_and_a_loss() {
     let invalid = messages(&decoded, NxLossCode::BodyResolutionInvalid);
     assert_eq!(invalid.len(), 1, "{invalid:?}");
     assert!(invalid[0].contains(body.id.as_str()), "{invalid:?}");
+}
+
+/// `body.resolution-invalid` pins the strict floor Warning: a pinned decode
+/// refuses a body that stores no precision and keeps one that stores a
+/// precision.
+#[test]
+fn a_pinned_decode_refuses_a_body_that_stores_no_precision() {
+    let pinned = |res_linear: f64| {
+        let mut options = DecodeOptions::default();
+        options.strictness.pinned = true;
+        NxCodec.decode(
+            &mut Cursor::new(prt_with_partition(&primary_stopped_topology_stream(
+                res_linear,
+            ))),
+            &options,
+        )
+    };
+    pinned(1.0e-6).expect("a stored precision pins no refusal");
+    match pinned(-1.0e-6) {
+        Err(DecodeFailure::StrictRejected { rejection }) => assert_eq!(
+            rejection.loss().code,
+            NxLossCode::BodyResolutionInvalid.kind(),
+            "{:#?}",
+            rejection.loss()
+        ),
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
 }
 
 #[test]

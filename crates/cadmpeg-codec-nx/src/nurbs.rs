@@ -65,6 +65,7 @@ pub(crate) fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
     let mut refusals = Vec::new();
     let surfaces = decode_surfaces(
         &graph,
+        lanes.source,
         &lanes.arrays,
         &lanes.surface_payloads,
         &lanes.surface_descriptors,
@@ -75,6 +76,7 @@ pub(crate) fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
 
 fn decode_surfaces(
     graph: &Graph,
+    source: LaneSource,
     arrays: &Arrays<'_>,
     payloads: &BTreeMap<u32, Option<Payload<'_>>>,
     descriptors: &BTreeMap<u32, Option<SurfaceDescriptor>>,
@@ -147,6 +149,10 @@ fn decode_surfaces(
                     refusals.push(CarrierRefusal {
                         pos: node.pos(),
                         family: "B_SURFACE",
+                        source,
+                        degree_reaches_poles: usize::from(descriptor.u_degree)
+                            >= descriptor.u_count
+                            || usize::from(descriptor.v_degree) >= descriptor.v_count,
                         refusal,
                     });
                     return None;
@@ -235,6 +241,7 @@ pub(crate) fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
     let mut refusals = Vec::new();
     let pcurves = decode_pcurves(
         &graph,
+        lanes.source,
         &lanes.arrays,
         &lanes.curve_payloads,
         &lanes.curve_descriptors,
@@ -245,6 +252,7 @@ pub(crate) fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
 
 fn decode_pcurves(
     graph: &Graph,
+    source: LaneSource,
     arrays: &Arrays<'_>,
     controls: &BTreeMap<u32, Option<Payload<'_>>>,
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
@@ -271,6 +279,9 @@ fn decode_pcurves(
                     refusals.push(CarrierRefusal {
                         pos: node.pos(),
                         family: "B_CURVE pcurve",
+                        source,
+                        degree_reaches_poles: usize::from(descriptor.basis.degree)
+                            >= descriptor.basis.poles,
                         refusal,
                     });
                     None
@@ -295,6 +306,7 @@ pub(crate) fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
     let mut refusals = Vec::new();
     let curves = decode_curves(
         &graph,
+        lanes.source,
         &lanes.arrays,
         &lanes.curve_payloads,
         &lanes.curve_descriptors,
@@ -305,6 +317,7 @@ pub(crate) fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
 
 fn decode_curves(
     graph: &Graph,
+    source: LaneSource,
     arrays: &Arrays<'_>,
     controls: &BTreeMap<u32, Option<Payload<'_>>>,
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
@@ -331,6 +344,9 @@ fn decode_curves(
                     refusals.push(CarrierRefusal {
                         pos: node.pos(),
                         family: "B_CURVE",
+                        source,
+                        degree_reaches_poles: usize::from(descriptor.basis.degree)
+                            >= descriptor.basis.poles,
                         refusal,
                     });
                     None
@@ -369,6 +385,15 @@ pub(crate) struct UnresolvedControls {
     pub(crate) family: &'static str,
 }
 
+/// Where the decoder read the lanes of a carrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LaneSource {
+    /// The terminated node sequence of the stream.
+    Records,
+    /// A byte-pattern scan of an unterminated stream.
+    Scan,
+}
+
 /// A carrier record of the right family that states no carrier.
 #[derive(Debug, Clone)]
 pub(crate) struct CarrierRefusal {
@@ -376,37 +401,51 @@ pub(crate) struct CarrierRefusal {
     pub(crate) pos: usize,
     /// Carrier family the record states.
     pub(crate) family: &'static str,
+    /// Where the decoder read the carrier's lanes.
+    pub(crate) source: LaneSource,
+    /// Whether a degree of the descriptor is not less than its pole count
+    /// (`siemens_nx.md` §6.2).
+    pub(crate) degree_reaches_poles: bool,
     /// The carrier's refusal.
     pub(crate) refusal: cadmpeg_parasolid::geometry::nurbs::Refusal,
 }
 
 impl CarrierRefusal {
-    /// Why the decoder gives up this record of Parasolid stream `si`: a
-    /// weight or field that breaks the record's rules is unreadable, and
-    /// lanes the IR carrier refuses are undecoded.
+    /// Why the decoder gives up this record of Parasolid stream `si`. Lanes
+    /// of the terminated node sequence that break a stated rule are
+    /// unreadable. Lanes that a scan finds, and lanes the IR carrier refuses
+    /// for a reason that no stated rule gives, are undecoded.
     pub(crate) fn give_up(&self, si: usize) -> (Cause, String) {
         use cadmpeg_parasolid::geometry::nurbs::Refusal;
         let record = format!("parasolid#{si} {} at byte {}", self.family, self.pos);
-        let (cause, why) = match &self.refusal {
+        let why = match &self.refusal {
+            Refusal::NonpositiveWeight => {
+                "stores a control-point weight that is zero or negative".to_owned()
+            }
+            Refusal::Fields => {
+                "stores a dimension, count, or multiplicity that contradicts its fields or arrays"
+                    .to_owned()
+            }
+            Refusal::Lanes(_) if self.degree_reaches_poles => {
+                "states a degree that is not less than its pole count".to_owned()
+            }
             Refusal::Lanes(error) => {
                 return (
                     Cause::Undecoded,
                     format!("{record} states no carrier: {error}"),
                 )
             }
-            Refusal::NonpositiveWeight => (
-                Cause::Unreadable,
-                "stores a control-point weight that is zero or negative",
-            ),
-            Refusal::Fields => (
-                Cause::Unreadable,
-                "stores a dimension, count, or multiplicity that contradicts its fields or arrays",
-            ),
         };
-        (
-            cause,
-            format!("{record} {why}; the carrier is not emitted."),
-        )
+        match self.source {
+            LaneSource::Records => (
+                Cause::Unreadable,
+                format!("{record} {why}; the carrier is not emitted."),
+            ),
+            LaneSource::Scan => (
+                Cause::Undecoded,
+                format!("{record} read by the lane scan {why}; the carrier is not emitted."),
+            ),
+        }
     }
 }
 
@@ -423,6 +462,7 @@ pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
     Parsed {
         surfaces: decode_surfaces(
             graph,
+            lanes.source,
             &lanes.arrays,
             &lanes.surface_payloads,
             &lanes.surface_descriptors,
@@ -430,6 +470,7 @@ pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
         ),
         curves: decode_curves(
             graph,
+            lanes.source,
             &lanes.arrays,
             &lanes.curve_payloads,
             &lanes.curve_descriptors,
@@ -437,6 +478,7 @@ pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
         ),
         pcurves: decode_pcurves(
             graph,
+            lanes.source,
             &lanes.arrays,
             &lanes.curve_payloads,
             &lanes.curve_descriptors,
@@ -467,6 +509,7 @@ fn unresolved_controls(graph: &Graph, lanes: &Lanes<'_>) -> Vec<UnresolvedContro
 
 /// The record lanes the NURBS decoders join.
 struct Lanes<'a> {
+    source: LaneSource,
     arrays: Arrays<'a>,
     surface_payloads: RecordIndex<Payload<'a>>,
     curve_payloads: RecordIndex<Payload<'a>>,
@@ -478,6 +521,7 @@ fn scanned_lanes<'a>(bytes: &'a [u8], graph: &Graph) -> Lanes<'a> {
     let surface_descriptors = surface_descriptors(bytes);
     let curve_descriptors = curve_descriptors(bytes);
     Lanes {
+        source: LaneSource::Scan,
         arrays: arrays(bytes),
         surface_payloads: referenced_payloads(
             graph,

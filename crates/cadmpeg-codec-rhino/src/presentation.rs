@@ -2034,16 +2034,17 @@ fn class_data_with_userdata(
     Ok((class.class_data_range, userdata))
 }
 
-/// The value of `value`, or `None` with the cause of its failure in `cause`.
+/// The value of `value`, or `None` with the cause and the text of its
+/// failure in `failure`.
 fn optional_malformed<T>(
-    cause: &mut Cause,
+    failure: &mut (Cause, String),
     value: Result<T, FramingError>,
 ) -> Result<Option<T>, CodecError> {
     match value {
         Ok(value) => Ok(Some(value)),
         Err(FramingError::Resource(limit)) => Err(CodecError::ResourceLimit(limit)),
         Err(error) => {
-            *cause = error.cause();
+            *failure = (error.cause(), error.to_string());
             Ok(None)
         }
     }
@@ -2727,8 +2728,11 @@ fn parse_light(
     reader.skip_remaining()?;
     for vector in [&mut location, &mut length, &mut width] {
         for value in vector {
-            *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
-                FramingError::structural(range.start, "scaled light geometry is invalid")
+            *value = scaled_coordinate(value.get(), scale).map_err(|unscaled| {
+                unscaled.charge(FramingError::structural(
+                    range.start,
+                    "scaled light geometry is invalid",
+                ))
             })?;
         }
     }
@@ -2909,11 +2913,11 @@ fn parse_linetype(
     for segment in values {
         let length_millimeters = if always {
             let scale = pattern_document_scale(binding)?;
-            scaled_coordinate(segment.length.get(), scale).ok_or_else(|| {
-                FramingError::structural(
+            scaled_coordinate(segment.length.get(), scale).map_err(|unscaled| {
+                unscaled.charge(FramingError::structural(
                     source_offset,
                     "scaled model-distance linetype segment is invalid",
-                )
+                ))
             })?
         } else {
             segment.length
@@ -3010,8 +3014,11 @@ impl SourceHatchLine {
             .chain(self.offset.iter_mut())
             .chain(self.dashes.iter_mut())
         {
-            *value = scaled_coordinate(value.get(), scale).ok_or_else(|| {
-                FramingError::structural(source_offset, "scaled hatch line is invalid")
+            *value = scaled_coordinate(value.get(), scale).map_err(|unscaled| {
+                unscaled.charge(FramingError::structural(
+                    source_offset,
+                    "scaled hatch line is invalid",
+                ))
             })?;
         }
         Ok(HatchLineRecord {
@@ -3171,8 +3178,11 @@ fn scaled_length(
     label: &str,
 ) -> Result<FiniteReal, FramingError> {
     let value = read_finite(reader, label)?.get();
-    scaled_coordinate(value, scale).ok_or_else(|| {
-        FramingError::structural(reader.position() - 8, format!("scaled {label} is invalid"))
+    scaled_coordinate(value, scale).map_err(|unscaled| {
+        unscaled.charge(FramingError::structural(
+            reader.position() - 8,
+            format!("scaled {label} is invalid"),
+        ))
     })
 }
 
@@ -4104,7 +4114,7 @@ fn parse_rendering_mapping_channel(
     }
     let minor = value.i32()?;
     if minor < 0 {
-        return Err(FramingError::structural(
+        return Err(FramingError::unsupported(
             value.position() - 4,
             "rendering mapping channel minor version is negative",
         ));
@@ -4174,7 +4184,7 @@ fn rendering_attributes(
                 }
                 let minor = value.i32()?;
                 if minor < 0 {
-                    return Err(FramingError::structural(
+                    return Err(FramingError::unsupported(
                         value.position() - 4,
                         "rendering material minor version is negative",
                     ));
@@ -4241,7 +4251,7 @@ fn rendering_attributes(
                 }
                 let minor = value.i32()?;
                 if minor < 0 {
-                    return Err(FramingError::structural(
+                    return Err(FramingError::unsupported(
                         value.position() - 4,
                         "rendering mapping minor version is negative",
                     ));
@@ -4601,10 +4611,11 @@ pub(crate) fn install(
                     | FONT_TABLE
             );
             let mut parsed = false;
-            let mut cause = Cause::Unreadable;
+            let mut failure = (Cause::Unreadable, String::new());
+            let record_losses = losses.len();
             if table_type == GROUP_TABLE {
                 if let Some(range) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     class_data(scan.data, record, scan.archive, GROUP),
                 )? {
                     match parse_group(ctx, scan.data, range, record.range.start) {
@@ -4615,12 +4626,12 @@ pub(crate) fn install(
                         Err(FramingError::Resource(limit)) => {
                             return Err(CodecError::ResourceLimit(limit))
                         }
-                        Err(error) => cause = error.cause(),
+                        Err(error) => failure = (error.cause(), error.to_string()),
                     }
                 }
             } else if table_type == MATERIAL_TABLE {
                 if let Some((range, userdata)) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     class_data_with_userdata(scan.data, record, scan.archive, MATERIAL),
                 )? {
                     let mut material_requires_opaque = false;
@@ -4687,7 +4698,7 @@ pub(crate) fn install(
                         Err(FramingError::Resource(limit)) => {
                             return Err(CodecError::ResourceLimit(limit));
                         }
-                        Err(error) => cause = error.cause(),
+                        Err(error) => failure = (error.cause(), error.to_string()),
                     }
                 }
             } else if table_type == LIGHT_TABLE {
@@ -4703,11 +4714,11 @@ pub(crate) fn install(
                     continue;
                 };
                 if let Some(range) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     class_data_prefix(scan.data, record, scan.archive, LIGHT),
                 )? {
                     if let Some(mut light) = optional_malformed(
-                        &mut cause,
+                        &mut failure,
                         parse_light(ctx, scan.data, range, scale, record.range.start, None),
                     )? {
                         match parse_light_record_attributes(
@@ -4747,7 +4758,7 @@ pub(crate) fn install(
                 }
             } else if table_type == LINETYPE_TABLE {
                 if let Some(range) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     class_data(scan.data, record, scan.archive, LINETYPE),
                 )? {
                     match parse_linetype(
@@ -4783,7 +4794,7 @@ pub(crate) fn install(
                 }
             } else if table_type == HATCH_PATTERN_TABLE {
                 if let Some(range) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     class_data(scan.data, record, scan.archive, HATCH_PATTERN),
                 )? {
                     match parse_hatch_pattern(
@@ -4832,7 +4843,7 @@ pub(crate) fn install(
                 if scan.archive.value() < 60 {
                     let mut extra_requires_opaque = false;
                     if let Some((range, userdata)) = optional_malformed(
-                        &mut cause,
+                        &mut failure,
                         class_data_with_userdata(scan.data, record, scan.archive, V5_DIMSTYLE),
                     )? {
                         let extra =
@@ -4866,7 +4877,7 @@ pub(crate) fn install(
                             None => None,
                         };
                         if let Some(value) = optional_malformed(
-                            &mut cause,
+                            &mut failure,
                             parse_v5_dimension_style(
                                 ctx,
                                 scan.data,
@@ -4884,7 +4895,7 @@ pub(crate) fn install(
                         }
                     }
                 } else if let Some(range) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     class_data(scan.data, record, scan.archive, DIMSTYLE),
                 )? {
                     match parse_dimension_style(
@@ -4902,16 +4913,16 @@ pub(crate) fn install(
                         Err(FramingError::Resource(limit)) => {
                             return Err(CodecError::ResourceLimit(limit));
                         }
-                        Err(error) => cause = error.cause(),
+                        Err(error) => failure = (error.cause(), error.to_string()),
                     }
                 }
             } else if table_type == BITMAP_TABLE {
                 if let Some(range) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     class_data(scan.data, record, scan.archive, EMBEDDED_BITMAP),
                 )? {
                     if let Some(value) = optional_malformed(
-                        &mut cause,
+                        &mut failure,
                         parse_embedded_image(
                             ctx,
                             scan.data,
@@ -4924,7 +4935,7 @@ pub(crate) fn install(
                         parsed = true;
                     }
                 } else if let Some(class) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     parse_class_wrapper(
                         scan.data,
                         record.body(),
@@ -4934,7 +4945,7 @@ pub(crate) fn install(
                 )? {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
                         if let Some(value) = optional_malformed(
-                            &mut cause,
+                            &mut failure,
                             parse_windows_bitmap(
                                 ctx,
                                 scan.data,
@@ -4948,16 +4959,19 @@ pub(crate) fn install(
                             parsed = true;
                         }
                     } else {
-                        cause = Cause::Undecoded;
+                        failure = (
+                            Cause::Undecoded,
+                            format!("bitmap class {} has no typed reading", class.class_uuid),
+                        );
                     }
                 }
             } else if table_type == TEXTURE_MAPPING_TABLE {
                 if let Some(range) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     class_data(scan.data, record, scan.archive, TEXTURE_MAPPING),
                 )? {
                     if let Some(value) = optional_malformed(
-                        &mut cause,
+                        &mut failure,
                         parse_texture_mapping(
                             ctx,
                             scan.data,
@@ -4983,7 +4997,7 @@ pub(crate) fn install(
                 }
             } else if table_type == FONT_TABLE {
                 if let Some(range) = optional_malformed(
-                    &mut cause,
+                    &mut failure,
                     class_data(scan.data, record, scan.archive, TEXT_STYLE),
                 )? {
                     match parse_text_style(
@@ -5016,18 +5030,20 @@ pub(crate) fn install(
                         Err(FramingError::Resource(limit)) => {
                             return Err(CodecError::ResourceLimit(limit))
                         }
-                        Err(error) => cause = error.cause(),
+                        Err(error) => failure = (error.cause(), error.to_string()),
                     }
                 }
             }
             if recognized && !parsed {
+                losses.truncate(record_losses);
+                let (cause, reason) = failure;
                 given_up.push(give_up_table_record(
                     ctx,
                     scan.data,
                     record,
                     cause,
                     format_args!(
-                        "{}: record at offset {} in table {table_type:#x} could not be transferred",
+                        "{}: record at offset {} in table {table_type:#x} could not be transferred: {reason}",
                         RhinoLossCode::PresentationRecordDropped.kind(),
                         record.range.start
                     ),

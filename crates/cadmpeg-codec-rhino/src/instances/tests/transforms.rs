@@ -125,9 +125,13 @@ fn invalid_instance_inverse_is_located_and_later_reference_survives() {
             .report()
             .losses
             .iter()
-            .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+            .filter(|loss| cadmpeg_ir::unknown::part::gives_up(&loss.code))
             .collect();
         assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            cadmpeg_ir::unknown::part::record_undecoded_kind()
+        );
         assert_eq!(losses[0].provenance.as_ref().unwrap().offset, offset);
         assert!(!decoded
             .report()

@@ -218,6 +218,15 @@ impl GeometryError {
     }
 }
 
+impl crate::wire::DecoderBound for GeometryError {
+    fn decoder_bound(self) -> Self {
+        match self {
+            Self::Malformed(error) => Self::Malformed(error.decoder_bound()),
+            other => other,
+        }
+    }
+}
+
 impl std::fmt::Display for GeometryError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1738,8 +1747,12 @@ fn read_point(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let point = native_point(reader)?;
-    crate::wire::scaled_point(point.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))
+    crate::wire::scaled_point(point.0.get(), scale).map_err(|unscaled| {
+        unscaled.charge(error(
+            reader.position(),
+            "scaled point coordinate is invalid",
+        ))
+    })
 }
 
 fn read_cloud(
@@ -1754,8 +1767,12 @@ fn read_cloud(
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
-            crate::wire::scaled_point(point.0.get(), scale)
-                .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))?,
+            crate::wire::scaled_point(point.0.get(), scale).map_err(|unscaled| {
+                unscaled.charge(error(
+                    reader.position(),
+                    "scaled point coordinate is invalid",
+                ))
+            })?,
         );
     }
     plane(reader)?;
@@ -1822,10 +1839,20 @@ fn read_line(
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let from = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
+        .map_err(|unscaled| {
+            unscaled.charge(error(
+                reader.position(),
+                "scaled line coordinate is invalid",
+            ))
+        })?
         .get();
     let to = crate::wire::scaled_point(native_point(reader)?.0.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled line coordinate is invalid"))?
+        .map_err(|unscaled| {
+            unscaled.charge(error(
+                reader.position(),
+                "scaled line coordinate is invalid",
+            ))
+        })?
         .get();
     let domain = interval(reader)?.0.get();
     let dimension = reader.i32()?;
@@ -1864,8 +1891,12 @@ fn read_polyline(
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
-            crate::wire::scaled_point(point.0.get(), scale)
-                .ok_or_else(|| error(reader.position(), "scaled polyline coordinate is invalid"))?,
+            crate::wire::scaled_point(point.0.get(), scale).map_err(|unscaled| {
+                unscaled.charge(error(
+                    reader.position(),
+                    "scaled polyline coordinate is invalid",
+                ))
+            })?,
         );
     }
     let parameter_count = crate::wire::element_count(reader, 8)?;
@@ -1997,8 +2028,9 @@ fn read_circle(
     let xaxis = vector(native.xaxis.get());
     let yaxis = vector(native.yaxis.get());
     let axis = vector(native.zaxis.get());
-    let center = crate::wire::scaled_point(native.origin.get(), scale)
-        .ok_or_else(|| error(reader.position(), "scaled circle center is invalid"))?;
+    let center = crate::wire::scaled_point(native.origin.get(), scale).map_err(|unscaled| {
+        unscaled.charge(error(reader.position(), "scaled circle center is invalid"))
+    })?;
     let norm_x = xaxis.norm();
     let norm_y = yaxis.norm();
     let norm_axis = axis.norm();
