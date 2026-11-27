@@ -501,6 +501,31 @@ fn body_that_names_an_instance_keeps_its_coordinates_with_a_loss() {
 }
 
 #[test]
+fn construction_role_string_on_a_body_charges_a_construction_loss() {
+    use crate::loss::SolidEdgeLossCode::BodyConstruction;
+    let role = |definition: &str, text: &str| {
+        decode_partition(test_support::role_partition(definition, text))
+    };
+    let key = "MONIKER/BODY_ID_ATTRIB";
+    let construction = role(key, "SE 7.0.0.1 Type96");
+    assert!(charged(&construction, BodyConstruction));
+    assert_eq!(construction.ir().geometry.bodies.len(), 1);
+    assert_eq!(construction.ir().geometry.faces.len(), 1);
+    assert!(construction.ir().geometry.bodies[0].visible.is_none());
+    assert!(!charged(&role(key, "SE 7.0.0.1 Type86"), BodyConstruction));
+    assert!(!charged(&role(key, "SE 7.0.0.1 Type"), BodyConstruction));
+    assert!(!charged(&role(key, "Type96"), BodyConstruction));
+    assert!(!charged(
+        &role("SolidEdge/MNKR_ATTR_CID", "SE 7.0.0.1 Type96"),
+        BodyConstruction
+    ));
+    assert!(!charged(
+        &decode_partition(test_support::sphere_partition()),
+        BodyConstruction
+    ));
+}
+
+#[test]
 fn unreadable_partition_preserves_another_partition() {
     let bytes =
         test_support::with_partitions(&[b"broken".to_vec(), test_support::sphere_partition()]);
