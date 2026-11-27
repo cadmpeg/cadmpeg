@@ -6,11 +6,12 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{record_unreadable_kind, Cause};
 
 use crate::test_support::test_fixtures::{
-    acis_sphere_kernel_stream, primary_envelope_fixture_with_design,
+    acis_sphere_kernel_stream, primary_envelope_fixture, primary_envelope_fixture_with_design,
     primary_envelope_fixture_with_drawing_tables, primary_envelope_fixture_with_kernel,
     BaseEnvelopeRecords, EnvelopeDeclarations,
 };
 use crate::InventorCodec;
+use cadmpeg_test_support::bytes::{put_u16, put_u32};
 
 fn charges(losses: &[LossNote]) -> Vec<&str> {
     losses
@@ -42,6 +43,70 @@ fn unpaired_envelope() -> Vec<u8> {
     };
     bytes[at + 4] = b'e';
     bytes
+}
+
+/// The primary envelope with a root stream `U+0005Broken` of 64 bytes, the
+/// left sibling of `RSeStorage`, whose start sector is outside the mini
+/// allocation table, so that its chain breaks.
+fn envelope_with_broken_property_set_stream() -> Vec<u8> {
+    const DIRECTORY: usize = 512;
+    const RSE_STORAGE: usize = 1;
+    const ENTRY: usize = 10;
+    let mut bytes = primary_envelope_fixture();
+    let entry = DIRECTORY + ENTRY * 128;
+    assert_eq!(bytes[entry + 66], 0, "directory entry {ENTRY} is unused");
+    let name = "\u{5}Broken".encode_utf16().collect::<Vec<_>>();
+    for (index, unit) in name.iter().enumerate() {
+        put_u16(&mut bytes, entry + index * 2, *unit);
+    }
+    put_u16(
+        &mut bytes,
+        entry + 64,
+        u16::try_from((name.len() + 1) * 2).expect("the name length fits a u16"),
+    );
+    bytes[entry + 66] = 2;
+    bytes[entry + 67] = 1;
+    put_u32(&mut bytes, entry + 116, 0x00ff_fff0);
+    put_u32(&mut bytes, entry + 120, 64);
+    put_u32(
+        &mut bytes,
+        DIRECTORY + RSE_STORAGE * 128 + 68,
+        u32::try_from(ENTRY).expect("the entry index fits a u32"),
+    );
+    bytes
+}
+
+#[test]
+fn a_property_set_stream_that_does_not_open_is_one_unreadable_give_up() {
+    let bytes = envelope_with_broken_property_set_stream();
+    let decoded = InventorCodec
+        .decode(
+            &mut std::io::Cursor::new(bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .expect("a default decode gives up the stream and continues");
+    let losses = &decoded.report().losses;
+    let noncanonical = crate::loss::InventorLossCode::ContainerNoncanonical
+        .note("")
+        .code;
+    assert!(
+        losses.iter().all(|loss| loss.code != noncanonical),
+        "{losses:#?}"
+    );
+    let broken = charges(losses)
+        .into_iter()
+        .filter(|message| message.contains("Broken"))
+        .collect::<Vec<_>>();
+    assert_eq!(broken.len(), 1, "{losses:#?}");
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    match InventorCodec.decode(&mut std::io::Cursor::new(bytes), &options) {
+        Err(DecodeFailure::StrictRejected { rejection }) => {
+            assert_eq!(rejection.loss().code, record_unreadable_kind());
+        }
+        other => panic!("a pinned decode refuses the give-up: {:?}", other.err()),
+    }
 }
 
 #[test]

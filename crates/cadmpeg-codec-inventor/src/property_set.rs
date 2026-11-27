@@ -137,6 +137,12 @@ fn has_property_set_header(bytes: &[u8]) -> bool {
         && matches!(View::u32_le_at(bytes, 24), Some(1 | 2))
 }
 
+/// Whether `path` names a root stream with the name of an OLE property-set
+/// stream, which starts with U+0005.
+fn is_property_set_name(path: &str) -> bool {
+    path.starts_with('\u{5}') && !path.contains('/')
+}
+
 pub(crate) fn inventory<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
@@ -151,7 +157,20 @@ pub(crate) fn inventory<'a>(
         {
             continue;
         }
-        let view = snapshot.open(ctx, stream)?;
+        let view = match snapshot.open(ctx, stream) {
+            Ok(view) => view,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error) if is_property_set_name(stream.path()) => {
+                let (cause, detail) = crate::issue(error)?;
+                property_sets.push(PropertySetDescriptor {
+                    stream: stream.id(),
+                    path: stream.path().into(),
+                    state: PropertySetState::Unread { cause, detail },
+                });
+                continue;
+            }
+            Err(_) => continue,
+        };
         if !has_property_set_header(view.window())
             && View::u16_le_at(view.window(), 0) != Some(BYTE_ORDER_LE)
         {

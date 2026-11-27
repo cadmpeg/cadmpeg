@@ -83,7 +83,7 @@ The reader gives up a carrier that it cannot read. When the record envelope does
 
 ## 6. OLE properties and preview
 
-Root streams that contain an OLE Property Set self-identify through their byte-order marker, section directory, and FMTID. Section offsets bound each property. Code-page properties select LPSTR decoding. LPWSTR values contain UTF-16LE code units. Scalar, vector, FILETIME, BLOB, and clipboard values retain their type code. A clipboard preview is emitted only when its payload has a recognized image signature.
+Root streams that contain an OLE Property Set self-identify through their byte-order marker, section directory, and FMTID. The name of an OLE property-set stream starts with U+0005. Section offsets bound each property. Code-page properties select LPSTR decoding. LPWSTR values contain UTF-16LE code units. Scalar, vector, FILETIME, BLOB, and clipboard values retain their type code. A clipboard preview is emitted only when its payload has a recognized image signature.
 
 ## 7. Protein package
 
@@ -1739,7 +1739,7 @@ The decoder gives up a part or a record (CADIR §3.3) in these cases:
 | `history-chain` | The `delta_state` chain does not close (§13.10). | `record.unreadable` |
 | `history-chain` | The state scan passes its work limit (§13.10). | `record.undecoded` |
 | History body | The carrier header or the state does not read, a carrier has no solved form, the body is not closed, the feature does not project, or the body passes the cap of history bodies of the part (§13.10). The body is given up by its id. | `record.undecoded` |
-| `property-set` | An OLE property-set stream breaks its framing or grammar (§6). | `record.unreadable` |
+| `property-set` | An OLE property-set stream breaks its framing or grammar, or a root stream whose name starts with U+0005 does not open (§6). | `record.unreadable` |
 | `property-set` | An OLE property-set stream names a code page that the decoder has no table for, or a property, dictionary entry, or vector element count above 65536, the decoder's bound (§6). | `record.undecoded` |
 | `protein-stream` | The `Protein` stream does not read as a package (§7). | `record.unreadable` |
 | `protein-stream` | The schema catalog of the package does not decode (§7). | `record.undecoded` |
@@ -1757,4 +1757,4 @@ The decoder gives up a part or a record (CADIR §3.3) in these cases:
 
 A stream in this table that does not open is given up with no bytes, as `record.unreadable`. When the open passes a resource limit, the cause is `record.undecoded`.
 
-`inventor/container.noncanonical` carries strict floor Warning (CADIR §3.2). It records a compound-file deviation that the reader recovers from: a DIFAT chain that ends with FREESECT (§1), a stream chain that has no ENDOFCHAIN terminator, or a stream chain that is broken. No other Inventor code carries a strict floor.
+`inventor/container.noncanonical` carries strict floor Warning (CADIR §3.2). It records a compound-file deviation that the reader recovers from: a DIFAT chain that ends with FREESECT (§1), a stream chain that has no ENDOFCHAIN terminator, or a stream chain that is broken. The give-up of a property-set stream charges its broken chain. No other Inventor code carries a strict floor.

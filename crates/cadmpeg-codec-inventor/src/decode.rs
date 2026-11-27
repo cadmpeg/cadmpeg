@@ -674,7 +674,13 @@ fn decode_container<'a>(
     namespace.set_arena(ctx, "active_carrier", std::slice::from_ref(&active_carrier))?;
 
     drawing_inventory.write(ctx, namespace)?;
-    let mut losses = crate::container::deviation_losses(&container.snapshot);
+    let unread_streams: Vec<_> = container
+        .property_sets
+        .iter()
+        .filter(|descriptor| matches!(descriptor.state, PropertySetState::Unread { .. }))
+        .map(|descriptor| descriptor.stream)
+        .collect();
+    let mut losses = crate::container::deviation_losses(&container.snapshot, &unread_streams);
     losses.extend(drawing_inventory.losses());
     let mut geometry_failure = None;
     let mut given_up_carrier = None;

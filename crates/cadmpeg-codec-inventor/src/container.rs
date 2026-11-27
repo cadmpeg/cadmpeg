@@ -4,7 +4,9 @@
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::ContainerEntry;
 
-use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
+use cadmpeg_container::compound::{
+    CompoundDeviation, CompoundEntry, CompoundSnapshot, CompoundStreamId,
+};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ContainerSummary;
@@ -95,7 +97,7 @@ impl<'a> InventorContainer<'a> {
         }
         let recovery = crate::dialect::DialectRecovery::of(self);
         let matched = recovery.classify();
-        let mut losses = deviation_losses(&self.snapshot);
+        let mut losses = deviation_losses(&self.snapshot, &[]);
         if let Some(loss) = crate::dialect::dialect_loss(&matched, &recovery) {
             losses.push(loss);
         }
@@ -124,12 +126,17 @@ impl<'a> InventorContainer<'a> {
     }
 }
 
-/// One loss per noncanonical encoding the compound reader admitted.
+/// One loss per noncanonical encoding the compound reader admitted. The
+/// give-up of a stream in `given_up` charges its broken chain.
 pub(crate) fn deviation_losses(
     snapshot: &CompoundSnapshot<'_>,
+    given_up: &[CompoundStreamId],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     snapshot
         .deviations()
+        .filter(|deviation| {
+            !matches!(deviation, CompoundDeviation::StreamChainBroken(id) if given_up.contains(id))
+        })
         .map(|deviation| {
             let message = match deviation.stream().and_then(|id| snapshot.stream_by_id(id)) {
                 Some(stream) => format!("{}: {}", stream.path(), deviation.description()),
