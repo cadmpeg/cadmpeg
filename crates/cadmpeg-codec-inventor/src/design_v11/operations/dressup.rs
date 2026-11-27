@@ -212,11 +212,16 @@ pub(super) fn operation(
                                 return Err("the chamfer size is unresolved")
                             }
                         };
+                        // A named reference fixes the side, so the stored
+                        // direction swap is stated only for the default side.
+                        let flip = reference
+                            .is_none()
+                            .then_some(Dimension::Literal(*flip_direction));
                         Ok(new::ChamferSet {
                             edges: selections::set(selections::edge(&group.edges, inputs)?)?,
                             size: Some(size),
                             reference,
-                            flip: Some(Dimension::Literal(*flip_direction)),
+                            flip,
                             measure: None,
                         })
                     })

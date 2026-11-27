@@ -227,6 +227,8 @@ fn unequal_two_distance_chamfer_with_a_support_state_names_its_reference_face() 
         "chamfer",
         json!({"groups":[{"edges":json::to_value(&selection).expect("edges"),"spec":{"kind":"two_distances","first":2.0,"second":4.0}}],"flip_direction":true}),
     );
+    let expected_reference =
+        selections::support_face(&selection, std::slice::from_ref(&input)).expect("support face");
     let FeatureOperation::Chamfer(value) =
         typed(&operation, selections::SketchData::default(), &[input]).expect("typed")
     else {
@@ -239,7 +241,10 @@ fn unequal_two_distance_chamfer_with_a_support_state_names_its_reference_face() 
             second: Dimension::Literal(positive(4.0)),
         })
     );
-    assert!(value.sets[0].reference.is_some());
+    // The first distance lies on the support face, which the reference names;
+    // with a named reference no side swap is stated.
+    assert_eq!(value.sets[0].reference, Some(expected_reference));
+    assert_eq!(value.sets[0].flip, None);
     assert!(typed(&operation, selections::SketchData::default(), &[]).is_err());
 }
 
