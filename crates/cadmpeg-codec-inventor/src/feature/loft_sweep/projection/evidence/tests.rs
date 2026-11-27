@@ -896,3 +896,107 @@ fn a_naming_tag_of_a_real_carrier_reaches_a_typed_loft_through_the_state_index()
         Err(Unproved::Result)
     ));
 }
+
+/// History states of a joined loft: the state after it and the state before
+/// it, each with its own outcome.
+struct PairStates {
+    after: (CadIr, fn(&CadIr) -> StateModel),
+    before: (CadIr, fn(&CadIr) -> StateModel),
+}
+
+fn held(model: &CadIr) -> StateModel {
+    StateModel::Model(Box::new(model.clone()))
+}
+
+impl ResultStates for PairStates {
+    fn after(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
+        Ok(Rc::new((self.after.1)(&self.after.0)))
+    }
+
+    fn before(&self, _: &DecodeContext<'_>, _: u32) -> Result<Rc<StateModel>, CodecError> {
+        Ok(Rc::new((self.before.1)(&self.before.0)))
+    }
+}
+
+fn join_proof(states: Option<&dyn ResultStates>) -> Result<(), Unproved> {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    loft_join_proof(&ctx, states, 17, [19, 23], legacy_curves)
+}
+
+/// The complete legacy loft with its foreign face removed: the result body
+/// holds the faces of the loft only.
+fn unmerged() -> CadIr {
+    let mut model = legacy_model();
+    model.geometry.faces.pop();
+    model.model.attributes.pop();
+    model
+}
+
+#[test]
+fn a_joined_loft_is_proved_by_its_foreign_face_and_a_solid_before_it() {
+    let states = PairStates {
+        after: (legacy_model(), held),
+        before: (model(), held),
+    };
+    assert!(join_proof(Some(&states)).is_ok());
+    assert!(matches!(join_proof(None), Err(Unproved::Result)));
+}
+
+#[test]
+fn a_result_body_of_the_loft_faces_alone_is_not_a_join() {
+    let states = PairStates {
+        after: (unmerged(), held),
+        before: (model(), held),
+    };
+    assert!(matches!(
+        join_proof(Some(&states)),
+        Err(Unproved::NotJoined)
+    ));
+}
+
+#[test]
+fn a_joined_loft_requires_the_complete_result_in_the_state_after_it() {
+    let states = PairStates {
+        after: (consumed_cap(), held),
+        before: (model(), held),
+    };
+    assert!(matches!(join_proof(Some(&states)), Err(Unproved::Result)));
+}
+
+#[test]
+fn a_joined_loft_requires_a_solid_with_enough_faces_in_the_state_before_it() {
+    for (before, outcome) in [
+        (CadIr::empty(), held as fn(&CadIr) -> StateModel),
+        (model(), |_| StateModel::Unavailable),
+    ] {
+        let states = PairStates {
+            after: (legacy_model(), held),
+            before: (before, outcome),
+        };
+        assert!(matches!(
+            join_proof(Some(&states)),
+            Err(Unproved::NotJoined)
+        ));
+    }
+    let failed = PairStates {
+        after: (legacy_model(), held),
+        before: (model(), |_| StateModel::Failed),
+    };
+    assert!(matches!(
+        join_proof(Some(&failed)),
+        Err(Unproved::StateFailed)
+    ));
+    let bounded = PairStates {
+        after: (legacy_model(), held),
+        before: (model(), |_| StateModel::Bounded),
+    };
+    assert!(matches!(join_proof(Some(&bounded)), Err(Unproved::Bounded)));
+    let after_failed = PairStates {
+        after: (legacy_model(), |_| StateModel::Failed),
+        before: (model(), held),
+    };
+    assert!(matches!(
+        join_proof(Some(&after_failed)),
+        Err(Unproved::StateFailed)
+    ));
+}

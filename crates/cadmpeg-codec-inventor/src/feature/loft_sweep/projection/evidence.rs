@@ -32,6 +32,13 @@ struct NamedFace<'a> {
 }
 
 fn owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<NamedFace<'_>>> {
+    owned_faces_in(ir, generator, false)
+}
+
+/// Faces of the carrier with the schema-44 naming attributes of `generator`.
+/// A joined result body also holds faces of the body it merged with, so
+/// `joined` admits faces that no attribute of the generator names.
+fn owned_faces_in(ir: &CadIr, generator: u32, joined: bool) -> Option<Vec<NamedFace<'_>>> {
     let mut names = HashMap::new();
     for attribute in &ir.model.attributes {
         let AttributeTarget::Face(face) = &attribute.target.entity else {
@@ -115,13 +122,14 @@ fn owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<NamedFace<'_>>> {
         })
         .map(|shell| &shell.id)
         .collect::<HashSet<_>>();
-    if ir
-        .geometry
-        .faces
-        .iter()
-        .filter(|face| shells.contains(&face.shell))
-        .count()
-        != selected.len()
+    if !joined
+        && ir
+            .geometry
+            .faces
+            .iter()
+            .filter(|face| shells.contains(&face.shell))
+            .count()
+            != selected.len()
     {
         return None;
     }
@@ -291,8 +299,18 @@ pub(in crate::feature::loft_sweep) fn loft(
     sections: [u32; 2],
     curve_member: impl Fn(usize, i64) -> bool,
 ) -> Option<()> {
+    loft_in(ir, generator, sections, curve_member, false)
+}
+
+fn loft_in(
+    ir: &CadIr,
+    generator: u32,
+    sections: [u32; 2],
+    curve_member: impl Fn(usize, i64) -> bool,
+    joined: bool,
+) -> Option<()> {
     let geometry = &ir.geometry;
-    let faces = owned_faces(ir, generator)?;
+    let faces = owned_faces_in(ir, generator, joined)?;
     let mut caps = HashSet::new();
     let mut sides = HashSet::new();
     for named in faces {
@@ -529,6 +547,9 @@ pub(in crate::feature::loft_sweep) enum Unproved {
     StateFailed,
     /// The views of history states passed their work cap.
     Bounded,
+    /// The state after the loft holds a complete generator-owned result, and
+    /// the result body does not merge with a body of the preceding state.
+    NotJoined,
     /// The decode of a state failed.
     Codec(CodecError),
 }
@@ -560,6 +581,118 @@ pub(in crate::feature::loft_sweep) fn loft_proof(
         StateModel::Failed => Err(Unproved::StateFailed),
         StateModel::Bounded => Err(Unproved::Bounded),
     }
+}
+
+/// Joined loft result proof (spec section 13.2). The state after the loft
+/// names every cap and side face of the loft in one solid body, and that body
+/// holds at least one face that the loft does not name: the oldest state that
+/// lists the loft holds the features before it and the loft only, so such a
+/// face belongs to a body of the state before the loft, and the loft merged
+/// with that body. The state before the loft holds a solid body with at least
+/// as many faces as the foreign faces of the result body. The final model is
+/// not consulted, because later features can change the merged body.
+pub(in crate::feature::loft_sweep) fn loft_join_proof(
+    ctx: &DecodeContext<'_>,
+    states: Option<&dyn ResultStates>,
+    generator: u32,
+    sections: [u32; 2],
+    section_curves: impl Fn(usize) -> Vec<i64>,
+) -> Result<(), Unproved> {
+    let states = states.ok_or(Unproved::Result)?;
+    let after = states.after(ctx, generator).map_err(Unproved::Codec)?;
+    let foreign = match &*after {
+        StateModel::Model(model) => {
+            joined_result(model, generator, sections, &section_curves).ok_or(Unproved::Result)?
+        }
+        StateModel::Unavailable => return Err(Unproved::Result),
+        StateModel::Failed => return Err(Unproved::StateFailed),
+        StateModel::Bounded => return Err(Unproved::Bounded),
+    };
+    if foreign == 0 {
+        return Err(Unproved::NotJoined);
+    }
+    let before = states.before(ctx, generator).map_err(Unproved::Codec)?;
+    match &*before {
+        StateModel::Model(model) if solid_faces(model) >= foreign => Ok(()),
+        StateModel::Model(_) | StateModel::Unavailable => Err(Unproved::NotJoined),
+        StateModel::Failed => Err(Unproved::StateFailed),
+        StateModel::Bounded => Err(Unproved::Bounded),
+    }
+}
+
+/// Faces of the solid bodies of `ir`.
+fn solid_faces(ir: &CadIr) -> usize {
+    ir.geometry
+        .faces
+        .iter()
+        .filter(|face| {
+            ir.geometry
+                .shells
+                .iter()
+                .find(|shell| shell.id == face.shell)
+                .and_then(|shell| ir.geometry.regions.iter().find(|r| r.id == shell.region))
+                .is_some_and(|region| {
+                    ir.geometry
+                        .bodies
+                        .iter()
+                        .any(|body| body.id == region.body && body.kind == BodyKind::Solid)
+                })
+        })
+        .count()
+}
+
+/// Number of faces of the result body that the loft does not name, when the
+/// loft names a complete result in that body.
+fn joined_result(
+    ir: &CadIr,
+    generator: u32,
+    sections: [u32; 2],
+    section_curves: &impl Fn(usize) -> Vec<i64>,
+) -> Option<usize> {
+    loft_in(
+        ir,
+        generator,
+        sections,
+        |section, name| section_curves(section).contains(&name),
+        true,
+    )
+    .or_else(|| legacy_loft(ir, generator, sections, section_curves))?;
+    let owned = owned_faces_in(ir, generator, true)
+        .map(|faces| {
+            faces
+                .into_iter()
+                .map(|named| named.face)
+                .collect::<Vec<_>>()
+        })
+        .or_else(|| {
+            Some(
+                legacy_owned_faces(ir, generator)?
+                    .into_iter()
+                    .map(|named| named.face)
+                    .collect(),
+            )
+        })?;
+    let body_of = |face: &Face| {
+        let shell = ir
+            .geometry
+            .shells
+            .iter()
+            .find(|shell| shell.id == face.shell)?;
+        let region = ir
+            .geometry
+            .regions
+            .iter()
+            .find(|region| region.id == shell.region)?;
+        Some(&region.body)
+    };
+    let body = body_of(owned.first()?)?;
+    let in_body = ir
+        .geometry
+        .faces
+        .iter()
+        .filter(|face| body_of(face) == Some(body))
+        .count();
+    in_body.checked_sub(owned.len())
 }
 
 const LEGACY_CAP_CLASS: &str =

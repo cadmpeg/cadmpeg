@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Positional solid-loft operand admission.
 
+use cadmpeg_ir::features::operation_settings::BooleanOp;
 use cadmpeg_ir::features::parameters::ParameterValue;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -27,6 +28,7 @@ pub(crate) enum NativeReason {
     ResultTopology,
     ResultStateBounded,
     ResultStateFailed,
+    ResultJoin,
     ResultIdentity,
 }
 
@@ -41,9 +43,10 @@ impl NativeReason {
             | Self::SectionRecord
             | Self::SectionCondition
             | Self::SectionOption => InventorLossCode::FeatureLoftOperandsNative,
-            Self::ResultTopology | Self::ResultStateBounded | Self::ResultStateFailed => {
-                InventorLossCode::FeatureLoftResultOperandsNative
-            }
+            Self::ResultTopology
+            | Self::ResultStateBounded
+            | Self::ResultStateFailed
+            | Self::ResultJoin => InventorLossCode::FeatureLoftResultOperandsNative,
             Self::ResultCollection | Self::Profile | Self::ResultIdentity => {
                 InventorLossCode::FeatureLoftControlsUnresolved
             }
@@ -60,6 +63,7 @@ impl NativeReason {
             Self::Profile => "section selection does not resolve to one consumed planar profile".to_owned(),
             Self::ResultTopology => "complete generator-owned result does not prove ordered positional loft construction".to_owned(),
             Self::ResultStateFailed => "history state of the loft does not decode".to_owned(),
+            Self::ResultJoin => "joined result body does not merge with a body of the preceding history state".to_owned(),
             Self::ResultStateBounded => "history state of the loft passed the local work cap of state views".to_owned(),
             Self::ResultIdentity => "result body identity does not resolve".to_owned(),
         };
@@ -71,7 +75,7 @@ pub(crate) fn sections<'a>(
     source: &PmDcFeature,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
-) -> Result<[PmDcReference; 2], NativeReason> {
+) -> Result<([PmDcReference; 2], BooleanOp), NativeReason> {
     let slots = source.properties.references();
     if slots.len() != 14
         || source.properties.marker() != 2
@@ -81,16 +85,19 @@ pub(crate) fn sections<'a>(
     {
         return Err(NativeReason::Controls);
     }
-    if !matches!(
-        property(slots[1]).ok_or(NativeReason::Slot(1))?.kind,
+    let op = match property(slots[1]).ok_or(NativeReason::Slot(1))?.kind {
         PmDcFeaturePropertyKind::Enumeration {
             family: PmDcFeatureEnumFamily::PartOperation,
             type_value: 5,
             value: 1,
-        }
-    ) {
-        return Err(NativeReason::Slot(1));
-    }
+        } => BooleanOp::NewBody,
+        PmDcFeaturePropertyKind::Enumeration {
+            family: PmDcFeatureEnumFamily::PartOperation,
+            type_value: 5,
+            value: 3,
+        } => BooleanOp::Join,
+        _ => return Err(NativeReason::Slot(1)),
+    };
     for slot in [2, 9] {
         if !matches!(
             property(slots[slot]).ok_or(NativeReason::Slot(slot))?.kind,
@@ -183,7 +190,7 @@ pub(crate) fn sections<'a>(
             return Err(NativeReason::SectionParameters);
         }
     }
-    Ok(links)
+    Ok((links, op))
 }
 
 fn zero_control(property: &PmDcFeatureProperty, type_id: [u8; 16]) -> bool {
@@ -198,19 +205,19 @@ fn zero_control(property: &PmDcFeatureProperty, type_id: [u8; 16]) -> bool {
         )
 }
 
-pub(crate) fn matches_definition(definition: &FeatureDefinition) -> bool {
+pub(crate) fn matches_definition(definition: &FeatureDefinition, expected: BooleanOp) -> bool {
     matches!(definition,
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
-            op: cadmpeg_ir::features::operation_settings::BooleanOp::NewBody,
+            op,
             closed: false,
             solid: true,
             ruled: false,
             linearize: false,
             max_degree: None,
             allow_multi_profile_faces: None,
-        }) if sections.len() == 2 && guides.is_empty()
+        }) if sections.len() == 2 && guides.is_empty() && *op == expected
     )
 }
 
@@ -220,7 +227,7 @@ pub(crate) fn validates<'a>(
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
     parameter: impl Fn(PmDcReference) -> Option<(&'a PmDcParameter, &'a ParameterValue)>,
 ) -> bool {
-    matches_definition(definition) && sections(source, property, parameter).is_ok()
+    sections(source, property, parameter).is_ok_and(|(_, op)| matches_definition(definition, op))
 }
 
 #[cfg(test)]

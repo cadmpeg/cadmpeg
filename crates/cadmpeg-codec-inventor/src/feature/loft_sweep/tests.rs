@@ -431,5 +431,5 @@ fn surface_loft_class_keeps_the_native_kind_and_refuses_solid_admission() {
     });
     assert!(crate::feature::FeatureFamily::from_definition(&definition).is_none());
     assert!(!crate::feature::FeatureFamily::Loft.admits_definition(&definition));
-    assert!(!controls::matches_definition(&definition));
+    assert!(!controls::matches_definition(&definition, BooleanOp::NewBody));
 }
