@@ -75,11 +75,11 @@
 
 ### DR-1021. Topology proxy selections
 
-**Question.** Which edges and faces does a `CLSID_JMTopologyProxy` object select, and which face of a two-setback chamfer is its reference face?
+**Question.** What do the `f64` values after the axis of a circular-edge proxy store, which face of a two-setback chamfer is its reference face, and where does a thin wall with several open faces store the faces after the first?
 
-**Known.** Rounds and chamfers name their edges and reference faces by `CLSID_JMTopologyProxy` identifiers (§7.3, §7.4). A proxy object is 559 bytes for an edge selection and 827 bytes for a chamfer reference face in the read documents.
+**Known.** The geometry records of straight-edge, planar-face and vertex proxies are in §7.5. A circular-edge proxy holds the center and the axis of the circle and then five `f64` values, the first of which is the radius in one read document. A thin wall stores a proxy of 881 bytes 152 bytes after the end of its function name, whatever number of faces the thin wall opens.
 
-**Need.** Documents that differ only in the selected edge of a round, and a two-setback chamfer and its copy with the setbacks swapped.
+**Need.** A round on a circular edge of a second radius, a two-setback chamfer and its copy with the setbacks swapped, and a thin wall whose volume shows two open faces.
 
 ### DR-1022. Tapped hole thread data
 
@@ -91,9 +91,8 @@
 
 ### DR-1025. Round set kinds
 
-**Question.** What does round set kind `2` state, and where does such a set store its size?
+**Question.** What do the blend shape and the setback of a round set store?
 
-**Known.** Set kind `1` is a constant radius with the layout of §7.3. One read round has set kind `2`. Its feature object is longer and holds two more `CLSID_JMTopologyProxy` identifiers and two `CLSID_JDim` identifiers after the kind.
+**Known.** Set kind `1` is a constant radius and set kind `2` is a variable radius (§7.3). A corner round with unequal radii holds one set of kind `1` for each edge.
 
-**Need.** A variable-radius round and a round with a setback or other non-constant section, each with a copy that differs in one value.
-
+**Need.** A round with a conic or G2 blend shape and a round with a setback, each with a copy that differs in one value, saved from the Solid Edge user interface.

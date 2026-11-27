@@ -443,7 +443,17 @@ Its object identifiers after the end of its function name are:
 
 `k` runs from `0` to `n` − 1. Set kind `1` is a constant radius. The count
 `n` is the number of consecutive `CLSID_JMTopologyProxy` identifiers from
-72 bytes after the name.
+72 bytes after the name. A round of the three edges that meet at one corner
+holds three sets of kind `1`, one for each edge, each with its own radius.
+
+Set kind `2` is a variable radius. In a round of one set of kind `2`, the
+radius slot of the set holds `0`. The vertex proxies follow: `m` consecutive
+`CLSID_JMTopologyProxy` identifiers, 20 bytes apart, start 168 bytes after the
+name. The `m` radii follow: `m` `CLSID_JDim` identifiers, 20 bytes apart, start
+12 bytes after the last vertex proxy. Vertex `j` and radius `j` form one
+station. A vertex proxy (§7.5) holds an end point of the edge of the set. The
+station is at the start of the edge when the vertex is the start point of the
+edge, and at its end when the vertex is the end point.
 
 ### 7.4 Chamfers
 
@@ -460,6 +470,30 @@ object identifiers after the end of its function name:
 
 Chamfer type `41` has one setback on both faces. Type `43` has two setbacks.
 Type `42` has a setback and an angle.
+
+### 7.5 Topology proxies
+
+A `CLSID_JMTopologyProxy` object holds the geometry of the entity it selects,
+in the part frame and in metres. The geometry class identifier is the first
+16-byte sequence in the object whose last ten bytes are `CE 11 9A 5E 08 00 36
+9B 41 02`. The geometry record starts at the byte after it. The first six
+bytes of the identifier give the geometry class:
+
+| First six bytes | Selected entity | Geometry record |
+| --- | --- | --- |
+| `74 0C 54 25 15 3A` | straight edge | `u8` `3`, `f64` start point (3), `f64` unit direction (3), `f64` `0`, `f64` length |
+| `76 E3 FE 7C 16 3A` | planar face | `u8` `14`, `f64` point (3), `f64` unit normal (3), `f64` unit vector (3) |
+| `72 C7 D4 1D 15 3A` | vertex | `f64` point (3) |
+| `92 DA 66 66 16 3A` | circular edge | `u8` `15`, `f64` center (3), `f64` unit axis (3) |
+
+The end point of a straight edge is the start point plus the length times the
+direction. The unit normal of a planar face points out of the material.
+
+### 7.6 Thin walls
+
+A `CLSID_JMPart` feature with function `JMThinwallAssocFunctionNew` stores the
+`CLSID_JMTopologyProxy` of the open face 124 bytes after the end of its
+function name.
 
 
 ## 8. Kernel stream map
