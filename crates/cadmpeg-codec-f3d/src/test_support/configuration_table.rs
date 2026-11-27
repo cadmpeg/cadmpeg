@@ -395,7 +395,9 @@ impl Natives {
         let mut model = cadmpeg_ir::document::Model::default();
         model.parameters = self.neutral_parameters.clone();
         model.features = std::mem::take(&mut self.neutral_features);
-        crate::design::configurations::attach(&native, &mut model, &mut Vec::new()).unwrap();
+        let producers = crate::design::configurations::body_producers(&model.features);
+        crate::design::configurations::attach(&native, &mut model, &producers, &mut Vec::new())
+            .unwrap();
         self.neutral_features = model.features;
         model.configurations
     }

@@ -24,7 +24,9 @@ use crate::records::configuration::table::ConfiguredValue;
 use crate::records::configuration::{
     DesignConfiguration, DesignConfigurationActiveRow, DesignConfigurationKind,
 };
-use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignParameterScope, DesignScopeTailFlags,
+};
 use crate::test_support::configuration_table::{
     bool_cell, expression_cell, neutral_feature, object_target, property_target, scope,
     string_cell, table_document, Natives,
@@ -422,6 +424,63 @@ fn an_unedited_feature_whose_state_the_active_row_supplies_is_not_charged() {
     let (unchanged, losses) = charged(&natives, &documents, &decoded, &decoded.configurations);
     assert!(unchanged);
     assert!(losses.is_empty(), "{losses:#?}");
+}
+
+/// The feature of column `F`, an Extrude and then a Sketch, whose scope
+/// tail stores an active state, under row `tall`, which suppresses it. A
+/// write that keeps that stored state and the cell of the source's active row
+/// is not charged: the source holds the same contradiction. A write that
+/// makes `tall` active over source row `c1`, which computes the feature, is.
+#[test]
+fn a_stored_state_the_source_row_contradicts_is_charged_only_where_the_write_changes_the_row() {
+    for sketch in [false, true] {
+        let mut natives = natives();
+        let offset = natives.scopes[0].feature_ordinal_offset();
+        natives.scopes[0].tail_flags = Some(DesignScopeTailFlags {
+            suppression: [false, false],
+            unevaluated: false,
+            wide_state: None,
+            state_offset: offset + 1,
+            no_result: false,
+            rolled_back: false,
+            no_result_offset: offset + 4,
+            envelope_offset: None,
+        });
+        if sketch {
+            natives.neutral_features[0]
+                .evaluation
+                .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
+                }));
+        }
+        let feature = natives.neutral_features[0].id.clone();
+
+        let tall = active_in_source("tall");
+        let configurations = natives.attach(&tall);
+        assert_eq!(natives.neutral_features[0].suppressed, Some(false));
+        let decoded = Projection {
+            configurations,
+            ..project(&tall, &natives.targets()).unwrap()
+        };
+        let (unchanged, losses) = charged(&natives, &tall, &decoded, &decoded.configurations);
+        assert!(unchanged);
+        assert!(losses.is_empty(), "sketch {sketch}: {losses:#?}");
+
+        let c1 = active_in_source("c1");
+        let decoded = reconciled(&natives, &c1);
+        let mut moved = decoded.configurations.clone();
+        configuration(&mut moved, "c1").active = false;
+        configuration(&mut moved, "tall").active = true;
+        let (_, losses) = charged(&natives, &c1, &decoded, &moved);
+        assert_eq!(losses.len(), 1, "sketch {sketch}: {losses:#?}");
+        assert_eq!(losses[0].0, "export/value.unwritable");
+        assert!(
+            losses[0].1.contains(&format!(
+                "{feature} stated {{\"kind\":\"active\",\"outputs\":[]}}, the active row states {{\"kind\":\"suppressed\"}}"
+            )),
+            "sketch {sketch}: {losses:#?}"
+        );
+    }
 }
 
 /// The table documents of [`documents`] with `row` active.

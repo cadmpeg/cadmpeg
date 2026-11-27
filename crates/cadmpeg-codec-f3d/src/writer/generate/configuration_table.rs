@@ -44,6 +44,9 @@ pub(super) struct Written<'a> {
     /// The configuration of each written row, keyed by the configuration id
     /// the row reads back as.
     expected: BTreeMap<String, &'a Configuration>,
+    /// Whether the active row of `decoded` suppresses each feature it
+    /// states.
+    source_cells: BTreeMap<FeatureId, bool>,
 }
 
 /// Write `documents` with the rows, cells, row order and rule targets of
@@ -93,12 +96,20 @@ pub(super) fn regenerate<'a>(
         .filter(|(written, configuration)| configuration.id.as_str() != written.as_str())
         .map(|(written, configuration)| (written.clone(), configuration.id.to_string()))
         .collect();
+    let source_cells = decoded
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.active)
+        .flat_map(|configuration| &configuration.feature_states)
+        .map(|(feature, state)| (feature.clone(), state.evaluation.is_suppressed()))
+        .collect();
     Ok((
         Written {
             documents,
             projection,
             generated,
             expected,
+            source_cells,
         },
         losses,
     ))
@@ -111,7 +122,9 @@ impl Written<'_> {
     /// reconciles the features with that row (f3d.md §1.2: the design
     /// stores the state of the active row). A feature whose suppression that
     /// row states otherwise than the reconciled feature is written in a state
-    /// the row contradicts.
+    /// the row contradicts, unless the write keeps both the state its scope
+    /// stores and the cell of the source's active row: the source holds the
+    /// same contradiction.
     pub(super) fn read_back(
         &self,
         active: Option<&str>,
@@ -159,13 +172,31 @@ impl Written<'_> {
             .filter(|configuration| configuration.active)
             .flat_map(|configuration| &configuration.feature_states)
             .collect::<BTreeMap<_, _>>();
+        let stored = targets
+            .scopes
+            .iter()
+            .filter_map(|scope| {
+                Some((
+                    crate::ids::neutral_feature_id(scope),
+                    scope.stored_suppression()?,
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let kept = |feature: &cadmpeg_ir::features::Feature, row: bool| {
+            feature
+                .suppressed
+                .is_some_and(|state| stored.get(&feature.id) == Some(&state))
+                && self.source_cells.get(&feature.id) == Some(&row)
+        };
         losses.extend(value_unwritable(
             "F3D",
             "writes an active row of the configuration table that states these features otherwise than the document: the Design stream stores the state of its active row, so a feature whose scope stores no suppression reads back in the row's state",
             features.iter().filter_map(|feature| {
                 let row = &active_states.get(&feature.id)?.evaluation;
                 let current = feature.configuration_state().evaluation;
-                (row.is_suppressed() != current.is_suppressed()).then(|| {
+                (row.is_suppressed() != current.is_suppressed()
+                    && !kept(feature, row.is_suppressed()))
+                .then(|| {
                     let shown = |state: &ConfigurationEvaluation| {
                         serde_json::to_string(state).unwrap_or_default()
                     };

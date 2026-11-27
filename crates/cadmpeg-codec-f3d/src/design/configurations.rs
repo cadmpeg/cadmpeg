@@ -420,13 +420,26 @@ fn project_row(
     Ok(configuration)
 }
 
+/// The features to which the body history binds an output body.
+pub(crate) fn body_producers(
+    features: &[cadmpeg_ir::features::Feature],
+) -> BTreeSet<cadmpeg_ir::features::FeatureId> {
+    features
+        .iter()
+        .filter(|feature| !feature.evaluation.outputs().is_empty())
+        .map(|feature| feature.id.clone())
+        .collect()
+}
+
 /// Project the configuration tables of `native` into `model` and reconcile
 /// the active configuration with the features. A row copies the definition
 /// and dependencies of each feature it states, so this runs after every
-/// decode pass that rewrites a feature.
+/// decode pass that rewrites a feature. `producers` is [`body_producers`]
+/// taken before the owner pass, which can drop output links.
 pub(crate) fn attach(
     native: &crate::native::F3dNative,
     model: &mut cadmpeg_ir::document::Model,
+    producers: &BTreeSet<cadmpeg_ir::features::FeatureId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut configurations = crate::design::decode::record::recover_partial(
@@ -449,7 +462,7 @@ pub(crate) fn attach(
     let unstored = native
         .design_parameter_scopes
         .iter()
-        .filter(|scope| scope.tail_flags.is_none() && scope.companion_suppressed.is_none())
+        .filter(|scope| scope.stored_suppression().is_none())
         .map(crate::ids::neutral_feature_id)
         .collect::<BTreeSet<_>>();
     // A feature that produces a body is active in the stored geometry.
@@ -457,7 +470,7 @@ pub(crate) fn attach(
         .features
         .iter()
         .filter(|feature| {
-            feature.evaluation.outputs().is_empty()
+            !producers.contains(&feature.id)
                 && (feature.suppressed.is_none() || unstored.contains(&feature.id))
         })
         .map(|feature| feature.id.clone())
