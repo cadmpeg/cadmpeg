@@ -420,18 +420,19 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         Some("322")
     );
     assert_eq!(bounded.record_index.map(|index| index.value), Some(102));
-    assert_eq!(native.persistent_references.len(), 3);
+    let mut references = native
+        .persistent_references
+        .iter()
+        .map(|reference| (reference.value, reference.kind))
+        .collect::<Vec<_>>();
+    references.sort_by_key(|&(value, _)| value);
     assert_eq!(
-        native
-            .persistent_references
-            .iter()
-            .map(|reference| reference.value)
-            .collect::<Vec<_>>(),
-        [900, 100, 500]
-    );
-    assert_eq!(
-        native.persistent_references[1].kind,
-        PersistentReferenceKind::CurvePrimary
+        references,
+        [
+            (100, PersistentReferenceKind::CurvePrimary),
+            (500, PersistentReferenceKind::CurveSecondary),
+            (900, PersistentReferenceKind::Point),
+        ]
     );
     assert_eq!(native.lost_edge_references.len(), 1);
     assert_eq!(native.lost_edge_references[0].class_tag.as_str(), "419");

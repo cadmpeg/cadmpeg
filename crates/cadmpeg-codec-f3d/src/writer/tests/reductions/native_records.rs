@@ -472,6 +472,31 @@ fn a_record_header_that_shadows_a_typed_sketch_record_is_dropped_alone() {
 }
 
 #[test]
+fn a_sketch_relation_is_read_back_beside_persistent_references() {
+    use crate::records::references::{PersistentReference, PersistentReferenceKind};
+
+    let mut ir = crate::writer::tests::source_less_design::sketch_graph_cube();
+    f3d_native_mut(&mut ir)
+        .persistent_references
+        .push(PersistentReference {
+            id: "f3d:generated:persistent-reference#0".into(),
+            byte_offset: 0,
+            value_offset: 0,
+            kind: PersistentReferenceKind::Point,
+            value: 4321,
+        });
+
+    let (report, decoded) = write_with_report(&ir);
+    assert_no_whole_drop(&report);
+    let native = f3d_native(&decoded);
+    assert_eq!(native.sketch_relations.len(), 1);
+    assert!(native
+        .persistent_references
+        .iter()
+        .any(|reference| reference.value == 4321));
+}
+
+#[test]
 fn sketch_records_whose_owner_is_absent_are_dropped_alone() {
     use crate::records::decal::DesignRecordHeader;
     use crate::records::entity_header::{
