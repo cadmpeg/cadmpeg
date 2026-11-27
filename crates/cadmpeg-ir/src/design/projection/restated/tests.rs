@@ -253,6 +253,32 @@ fn a_projected_entity_names_what_it_does_not_state() {
     );
 }
 
+/// A design entity states the center record of the model entity only where
+/// the design point of that record is its center.
+#[test]
+fn a_projected_entity_states_its_center_record_through_its_center_point() {
+    let mut ir = sketch_fixture();
+    let line = ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id().as_str() == LINE)
+        .unwrap();
+    line.center_ref = Some("test:native#end".to_owned());
+    assert_eq!(cuts(&ir)[LINE], fields(["center_ref"]));
+    let end_point = ir
+        .design
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id.as_str() == END)
+        .unwrap();
+    end_point.roles.push(EntityRole {
+        of: entity_id(LINE),
+        role: DefiningRole::Center,
+    });
+    assert_eq!(cuts(&ir)[LINE], fields([]));
+}
+
 /// A design sketch on another frame names its placement.
 #[test]
 fn a_projected_sketch_on_another_frame_names_its_placement() {

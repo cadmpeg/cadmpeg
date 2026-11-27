@@ -823,8 +823,9 @@ fn a_feature_column_beside_parameter_scopes_is_charged_with_its_configuration() 
             report.losses
         );
     }
-    assert!(f3d_native(round_trip.ir())
-        .design_configurations
+    let documents = f3d_native(round_trip.ir()).design_configurations;
+    assert!(!documents.is_empty());
+    assert!(documents
         .iter()
         .all(|document| document.payload().is_empty()));
     assert!(round_trip.ir().model.configurations.is_empty());

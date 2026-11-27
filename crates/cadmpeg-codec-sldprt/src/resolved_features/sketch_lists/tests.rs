@@ -180,6 +180,7 @@ fn point_records_supply_points() {
             })
             .unwrap(),
             endpoints: None,
+            center: None,
             construction: false,
             outside_profile: false,
             index_basis_loss: None,

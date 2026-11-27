@@ -235,9 +235,13 @@ pub(crate) fn project(
         curves
             .iter()
             .map(|curve| (curve.id.as_str(), curve.record_index)),
-        points
-            .iter()
-            .map(|point| (point.id.as_str(), point.companion().incident_curves)),
+        points.iter().map(|point| {
+            (
+                point.id.as_str(),
+                point.companion().incident_curves,
+                point.flags()[5] != 0,
+            )
+        }),
     );
     let mut spans = span(&ir.model.product_definitions, &placers, &scopes);
     let mut sketches = sketch::Sketches::default();

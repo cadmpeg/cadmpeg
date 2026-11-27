@@ -2762,10 +2762,16 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                             ),
                         );
                     }
+                    let center_ref = listed
+                        .as_ref()
+                        .and_then(|listed| listed.center)
+                        .and_then(|at| object_marker_ids.get(&u64_from_index(at)))
+                        .map(|id| (*id).to_owned());
                     let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry)
                         .with_construction(construction)
                         .with_native_ref(Some(marker.id().to_owned()))
-                        .with_endpoint_refs(endpoint_refs);
+                        .with_endpoint_refs(endpoint_refs)
+                        .with_center_ref(center_ref);
                     if let Some(loss) = listed
                         .as_ref()
                         .and_then(|listed| listed.index_basis_loss.clone())
@@ -2779,7 +2785,11 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                         }
                         listed_entities.insert(
                             entity.id().clone(),
-                            (entity.geometry.clone(), entity.endpoint_refs.clone()),
+                            (
+                                entity.geometry.clone(),
+                                entity.endpoint_refs.clone(),
+                                entity.center_ref.clone(),
+                            ),
                         );
                     }
                     if held_handle {
@@ -2815,6 +2825,10 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                     .filter_map(|at| object_marker_ids.get(&u64_from_index(at)))
                     .map(|id| (*id).to_owned())
                     .collect();
+                let center_ref = listed
+                    .center
+                    .and_then(|at| object_marker_ids.get(&u64_from_index(at)))
+                    .map(|id| (*id).to_owned());
                 let (construction, assumed) = marker_is_construction(
                     &lane.native_payload,
                     record_lists,
@@ -2834,7 +2848,8 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                 }
                 let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
                     .with_construction(construction)
-                    .with_endpoint_refs(endpoint_refs);
+                    .with_endpoint_refs(endpoint_refs)
+                    .with_center_ref(center_ref);
                 if listed.outside_profile {
                     outside_profile.insert(entity.id().clone());
                 }
@@ -2844,11 +2859,15 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
                 }
                 listed_entities.insert(
                     entity.id().clone(),
-                    (entity.geometry.clone(), entity.endpoint_refs.clone()),
+                    (
+                        entity.geometry.clone(),
+                        entity.endpoint_refs.clone(),
+                        entity.center_ref.clone(),
+                    ),
                 );
                 projected.push(entity);
             }
-            let listed_curves = listed_entities.values().any(|(geometry, _)| {
+            let listed_curves = listed_entities.values().any(|(geometry, _, _)| {
                 !matches!(
                     geometry.definition(),
                     SketchGeometryDefinition::Point { .. }
@@ -3034,9 +3053,12 @@ pub(crate) fn project_marker_backed_sketches_with_cache(
             );
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
             for entity in &mut projected {
-                if let Some((geometry, endpoint_refs)) = listed_entities.get(entity.id()) {
+                if let Some((geometry, endpoint_refs, center_ref)) =
+                    listed_entities.get(entity.id())
+                {
                     entity.geometry = geometry.clone();
                     entity.endpoint_refs = endpoint_refs.clone();
+                    entity.center_ref = center_ref.clone();
                 }
             }
             let closed = marker_sketch_profiles(

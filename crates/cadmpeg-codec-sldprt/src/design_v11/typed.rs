@@ -300,8 +300,9 @@ fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
     if !sketches.ambiguous.is_empty() {
         notes.push(SldprtLossCode::DesignSketchLocusAmbiguous.note(format!(
             "{} points of sketch curves hold two or more point entities that the curve \
-             records name alike; no point entity holds the role there, and a relation on \
-             such a point names a point minted there: {}",
+             record names alike: a center the record names by its position alone, or a \
+             point record that two point entities hold; no point entity holds the role \
+             there, and a relation on such a point names a point minted there: {}",
             sketches.ambiguous.len(),
             listed(sketches.ambiguous.iter().cloned()),
         )));

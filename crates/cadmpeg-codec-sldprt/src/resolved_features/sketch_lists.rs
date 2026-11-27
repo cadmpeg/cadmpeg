@@ -543,6 +543,9 @@ pub(super) struct ListedEntity {
     /// The stream offsets of the point records a line or an arc runs
     /// between, the first at the start of [`Self::geometry`].
     pub(super) endpoints: Option<[usize; 2]>,
+    /// The stream offset of the point record at the center of an arc or a
+    /// circle.
+    pub(super) center: Option<usize>,
     /// The record is a curve record whose selector has bit 3 set.
     pub(super) construction: bool,
     /// The record is a curve record of state `0`: a curve outside the
@@ -677,6 +680,7 @@ fn read_listed_entity(
             geometry: SketchGeometry::try_from(SketchGeometryDefinition::Point { position })
                 .ok()?,
             endpoints: None,
+            center: None,
             construction: false,
             outside_profile: false,
             index_basis_loss: None,
@@ -685,10 +689,11 @@ fn read_listed_entity(
     let construction = construction_record(payload, offset);
     let outside_profile =
         View::u16_le_at(payload, offset.checked_add(STATE)?)? == STATE_OUTSIDE_PROFILE;
-    let entity = |geometry, endpoints| {
+    let entity = |geometry, endpoints, center| {
         Some(Ok(ListedEntity {
             geometry,
             endpoints,
+            center,
             construction,
             outside_profile,
             index_basis_loss: point_record_index_basis_loss(payload, offset),
@@ -704,7 +709,7 @@ fn read_listed_entity(
                 end: project(point_coordinates(payload, end)?)?,
             })
             .ok()?;
-            return entity(geometry, Some([start, end]));
+            return entity(geometry, Some([start, end]), None);
         }
         Some(CurveForm::Arc {
             start,
@@ -730,7 +735,7 @@ fn read_listed_entity(
     };
     if start == end {
         return match arc_geometry(center_m, start_m, end_m, ArcSweep::Full, project) {
-            Some(circle) => entity(circle, None),
+            Some(circle) => entity(circle, None, Some(center_at)),
             None => Some(Err(ChordConflict::NoArc)),
         };
     }
@@ -770,11 +775,11 @@ fn read_listed_entity(
     } else if near(first, end_ir) && near(last, start_ir) {
         [end_at, start_at]
     } else if chord == ChordTest::Waived {
-        return entity(arc, None);
+        return entity(arc, None, Some(center_at));
     } else {
         return Some(Err(ChordConflict::MissesChord));
     };
-    entity(arc, Some(endpoints))
+    entity(arc, Some(endpoints), Some(center_at))
 }
 
 /// The conflict of the listed curve record at `offset` with a line that a
