@@ -695,7 +695,7 @@ fn a_face_whose_loop_chain_is_cut_is_noted() {
     let notes: Vec<_> = out
         .losses
         .iter()
-        .filter(|loss| loss.code.local_code() == "topology.loop-chain-cut")
+        .filter(|loss| loss.code == SldprtLossCode::TopologyLoopChainCut.kind())
         .collect();
     let [note] = notes.as_slice() else {
         panic!("one chain-cut note: {:#?}", out.losses);
