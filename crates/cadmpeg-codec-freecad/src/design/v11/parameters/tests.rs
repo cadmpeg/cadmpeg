@@ -196,7 +196,7 @@ fn a_cell_reads_its_content_as_freecad_does() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
 <ObjectData Count="1">
-<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="10">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="11">
 <Cell address="A1" content="3 bolts"/>
 <Cell address="A2" content="-abc"/>
 <Cell address="A3" content="2*3"/>
@@ -207,6 +207,7 @@ fn a_cell_reads_its_content_as_freecad_does() {
 <Cell address="A8" content="3 dm" displayUnit="kg"/>
 <Cell address="A9" content="5 mA"/>
 <Cell address="A10" content="'note" displayUnit="mm"/>
+<Cell address="A11" content="3 dm" displayUnit="dm"/>
 </Cells></Property></Properties></Object>
 </ObjectData></Document>"#;
     let ir = decode(&archive(document));
@@ -252,8 +253,9 @@ fn a_cell_reads_its_content_as_freecad_does() {
     );
     assert!(cell("A7").source_settings.is_empty());
 
-    // A unit with no symbol keeps the source's text; a display unit of
-    // another quantity, or of a text cell, stays a source setting.
+    // A unit with no symbol keeps the source's text. A display unit of a
+    // quantity cell that is no neutral unit is a native option; that of a
+    // text cell is a source setting.
     assert_eq!(cell("A8").kind, ValueKind::Quantity(Quantity::LENGTH));
     assert_eq!(
         cell("A8").value,
@@ -269,10 +271,14 @@ fn a_cell_reads_its_content_as_freecad_does() {
         })
     );
     assert_eq!(cell("A8").unit, None);
-    for address in ["A8", "A10"] {
-        let settings = json::to_value(&cell(address).source_settings).unwrap();
-        assert!(settings.get("fcstd:displayUnit").is_some(), "{settings}");
+    for address in ["A8", "A11"] {
+        let native = json::to_value(&cell(address).native_options).unwrap();
+        assert!(native.get("fcstd:displayUnit").is_some(), "{native}");
+        assert!(cell(address).source_settings.is_empty(), "{address}");
     }
+    let settings = json::to_value(&cell("A10").source_settings).unwrap();
+    assert!(settings.get("fcstd:displayUnit").is_some(), "{settings}");
+    assert!(cell("A10").native_options.is_empty());
 
     // A unit of a dimension the vocabulary does not type is a native kind.
     assert_eq!(
@@ -444,4 +450,127 @@ fn a_lone_reference_to_a_formula_cell_takes_the_cells_quantity() {
             vec!["fcstd:design:parameter#Sheet:cell:A2".to_owned()]
         )
     );
+}
+
+/// Decodes `document` and returns its IR and loss notes.
+fn decode_with_losses(document: &str) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_valid_document(decoded.ir());
+    (decoded.ir().clone(), decoded.report().losses.clone())
+}
+
+fn charged(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    code: crate::loss::FreecadLossCode,
+    id: &str,
+) -> bool {
+    let code = code.note("").code;
+    losses
+        .iter()
+        .any(|loss| loss.code == code && loss.message.contains(id))
+}
+
+#[test]
+fn a_formula_cell_takes_the_kind_freecad_computes() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/></Objects>
+<ObjectData Count="2">
+<Object name="Vars"><Properties Count="4">
+<Property name="Label" type="App::PropertyString"><String value="Settings"/></Property>
+<Property name="L" type="App::PropertyLength" status="1"><Float value="4"/></Property>
+<Property name="Face" type="App::PropertyArea" status="1"><Float value="9"/></Property>
+<Property name="Count" type="App::PropertyInteger" status="1"><Integer value="3"/></Property>
+</Properties></Object>
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="16">
+<Cell address="A1" alias="w" content="5 mm"/>
+<Cell address="A2" content="=abs(A1)"/>
+<Cell address="A3" content="=A1^2"/>
+<Cell address="A4" content="=str(A1)"/>
+<Cell address="A5" content="=Vars.L"/>
+<Cell address="A6" content="=.A1 * 2"/>
+<Cell address="A7" content="=&lt;&lt;w&gt;&gt;"/>
+<Cell address="A8" content="=Vars.Label"/>
+<Cell address="A9" content="=Vars.Face"/>
+<Cell address="A10" content="=&lt;&lt;Settings&gt;&gt;.L"/>
+<Cell address="A11" content="=Vars.Count * 2"/>
+<Cell address="A12" content="=A3 / A2"/>
+<Cell address="A13" content="=trunc(A1 / 1 mm)"/>
+<Cell address="A14" content="=2 +"/>
+<Cell address="A15" content="=A15 + 1 mm"/>
+<Cell address="A16" content="inf"/>
+</Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let (ir, losses) = decode_with_losses(document);
+    let id = |address: &str| format!("fcstd:design:parameter#Sheet:cell:{address}");
+    let cell = |address: &str| parameter(&ir, &id(address));
+    let quantity = |address: &str, quantity: Quantity| {
+        assert_eq!(
+            cell(address).kind,
+            ValueKind::Quantity(quantity),
+            "{address}"
+        );
+        assert!(
+            !charged(
+                &losses,
+                crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+                &id(address)
+            ),
+            "{address}: {losses:?}"
+        );
+    };
+    quantity("A2", Quantity::LENGTH);
+    quantity("A3", Quantity::AREA);
+    quantity("A5", Quantity::LENGTH);
+    quantity("A6", Quantity::LENGTH);
+    quantity("A9", Quantity::AREA);
+    quantity("A10", Quantity::LENGTH);
+    quantity("A11", Quantity::REAL);
+    quantity("A12", Quantity::LENGTH);
+    quantity("A13", Quantity::REAL);
+    for address in ["A4", "A7", "A8"] {
+        assert_eq!(cell(address).kind, ValueKind::Text, "{address}");
+    }
+    assert_eq!(neutral(cell("A3")), ("$0^2".to_owned(), vec![id("A1")]));
+
+    // A property of an object that is no parameter stays the source's text.
+    for address in ["A5", "A8", "A9", "A10", "A11"] {
+        assert!(
+            charged(
+                &losses,
+                crate::loss::FreecadLossCode::ParameterDependencyDropped,
+                &id(address)
+            ),
+            "{address}: {losses:?}"
+        );
+    }
+
+    // FreeCAD keeps a formula it does not parse as the cell's text.
+    assert_eq!(cell("A14").kind, ValueKind::Text);
+    assert_eq!(
+        cell("A14").value,
+        Some(cadmpeg_ir::design::parameter::ParameterValue::Text(
+            "=2 +".to_owned()
+        ))
+    );
+
+    // A formula in a cycle has no kind the file determines.
+    assert_eq!(cell("A15").kind, ValueKind::Quantity(Quantity::REAL));
+    assert!(charged(
+        &losses,
+        crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+        &id("A15")
+    ));
+
+    assert_eq!(cell("A16").kind, ValueKind::Quantity(Quantity::REAL));
+    assert_eq!(cell("A16").value, None);
+    assert!(charged(
+        &losses,
+        crate::loss::FreecadLossCode::ParameterValueNonFinite,
+        &id("A16")
+    ));
 }

@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
-    self, Expression, ExpressionDialect, ExpressionToken, MulOp, Neutral, Node, UnaryOp,
+    self, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
 };
 use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
@@ -26,8 +26,12 @@ use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 
+use cadmpeg_ir::spreadsheets::CellAddress;
+
+use crate::design::cell_content::formula::{self, Kind, Origin, Path, Reference, Scope, Unparsed};
 use crate::design::cell_content::{self, CellContent, CellKind};
 use crate::loss::FreecadLossCode;
+use crate::native::{ObjectRecord, PropertyRecord};
 
 /// The property type of a sketch's constraints, whose values `FreeCAD` stores
 /// in millimetres and radians.
@@ -45,15 +49,20 @@ const DISPLAY_UNIT: &str = "displayUnit";
 
 /// Each parameter the decoder read that one of `features` or a Body owns, in
 /// the scope of `definition`. `containers` maps a Body's feature to its
-/// container, and `carriers` a property record to its type.
+/// container.
 pub(super) fn project(
     ir: &CadIr,
     definition: &ProductDefinitionId,
     containers: &BTreeMap<FeatureId, ContainerId>,
     features: &[Feature],
-    carriers: &HashMap<&str, &str>,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
 ) -> Vec<DesignParameter> {
+    let carriers = properties
+        .iter()
+        .map(|property| (property.id.as_str(), property.type_name.as_str()))
+        .collect::<HashMap<_, _>>();
     let features = features
         .iter()
         .map(|feature| &feature.id)
@@ -82,10 +91,25 @@ pub(super) fn project(
         .filter(|parameter| owners.contains_key(&parameter.id))
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
-    // The legacy parameters follow their dependencies, so a quantity found
-    // for a parameter with no stored value is known before an expression
-    // that references it.
-    let mut known = BTreeMap::new();
+    let is_cell = |parameter: &LegacyParameter| {
+        parameter
+            .native_ref
+            .as_deref()
+            .and_then(|property| carriers.get(property).copied())
+            == Some(SHEET)
+    };
+    let catalog = Catalog::new(&by_id, objects, properties);
+    let formulas = by_id
+        .values()
+        .filter(|parameter| is_cell(parameter))
+        .filter_map(
+            |parameter| match cell_content::read(&parameter.expression) {
+                CellContent::Formula(text) => Some((&parameter.id, formula::parse(text))),
+                CellContent::Text(_) | CellContent::Value(_) => None,
+            },
+        )
+        .collect::<BTreeMap<_, _>>();
+    let kinds = cell_kinds(&by_id, &formulas, &catalog, &is_cell);
     let mut parameters = Vec::new();
     for parameter in &ir.model.parameters {
         let Some(owner) = owners.get(&parameter.id) else {
@@ -98,8 +122,14 @@ pub(super) fn project(
             .native_ref
             .as_deref()
             .and_then(|property| carriers.get(property).copied());
-        let (kind, value, parameter_definition) = if carrier == Some(SHEET) {
-            let (kind, value, expression) = cell(parameter, &by_id, &known, losses);
+        let sheet = carrier == Some(SHEET);
+        let context = Context {
+            catalog: &catalog,
+            kinds: &kinds,
+        };
+        let (kind, value, parameter_definition) = if sheet {
+            let (kind, value, expression) =
+                cell(parameter, formulas.get(&parameter.id), &context, losses);
             (kind, value, ParameterDefinition::Expression(expression))
         } else {
             let (kind, value) = kind_and_value(parameter.value.as_ref());
@@ -107,26 +137,28 @@ pub(super) fn project(
                 ParameterDefinition::Driven
             } else {
                 ParameterDefinition::Expression(expression(
-                    parameter, &by_id, &known, &kind, carriers, losses,
+                    parameter, &context, &kind, carrier, losses,
                 ))
             };
             (kind, value, parameter_definition)
         };
-        if let ValueKind::Quantity(quantity) = kind {
-            if value.is_some() || carrier == Some(SHEET) {
-                known.insert(&parameter.id, quantity);
-            }
-        }
-        let (name, unit, source_settings) = if carrier == Some(SHEET) {
+        let (name, unit, native_options, source_settings) = if sheet {
             let unit = display_unit(parameter, &kind);
+            let (native_options, source_settings) = cell_settings(parameter, &kind, unit.is_none());
             (
                 property(parameter, "alias")
                     .and_then(|alias| NonBlankString::new(alias.to_owned())),
-                unit.clone(),
-                cell_settings(parameter, unit.is_none()),
+                unit,
+                native_options,
+                source_settings,
             )
         } else {
-            (name(parameter), None, BTreeMap::default())
+            (
+                name(parameter),
+                None,
+                BTreeMap::default(),
+                BTreeMap::default(),
+            )
         };
         parameters.push(DesignParameter {
             id: parameter.id.clone(),
@@ -141,13 +173,399 @@ pub(super) fn project(
             tolerance: None,
             decimals: None,
             comment: None,
-            native_options: BTreeMap::default(),
+            native_options,
             source_settings,
             native_ref: parameter.native_ref.clone(),
         });
     }
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
     parameters
+}
+
+/// The objects, properties, and parameters that a formula's paths name.
+struct Catalog<'a> {
+    parameters: &'a BTreeMap<&'a ParameterId, &'a LegacyParameter>,
+    /// Each object by its name.
+    names: HashMap<&'a str, &'a ObjectRecord>,
+    /// Each object by its label, where no other object has the label.
+    labels: HashMap<&'a str, Option<&'a ObjectRecord>>,
+    /// Each object by its feature.
+    objects: HashMap<FeatureId, &'a ObjectRecord>,
+    /// The feature of each object, by the object's id.
+    features: HashMap<&'a str, FeatureId>,
+    /// The type of each property, by its owner's id and its name.
+    types: HashMap<(&'a str, &'a str), &'a str>,
+    /// Each parameter by its owner and a name a path gives it: a
+    /// property's name, `Constraints.<name>`, and a cell's alias and
+    /// address. A name that two parameters share names neither.
+    named: HashMap<(FeatureId, String), Option<&'a ParameterId>>,
+    /// The cells of each sheet, with their addresses.
+    cells: HashMap<FeatureId, Vec<(CellAddress, &'a ParameterId)>>,
+}
+
+/// What a path names.
+enum Target<'a> {
+    Parameter(&'a ParameterId),
+    /// A property that is no parameter, with the kind of its value.
+    Property(Kind),
+    /// A property of another document or of a sub-object.
+    Outside,
+    Unresolved,
+}
+
+impl<'a> Catalog<'a> {
+    fn new(
+        parameters: &'a BTreeMap<&'a ParameterId, &'a LegacyParameter>,
+        objects: &'a [ObjectRecord],
+        properties: &'a [PropertyRecord],
+    ) -> Self {
+        let mut catalog = Self {
+            parameters,
+            names: HashMap::new(),
+            labels: HashMap::new(),
+            objects: HashMap::new(),
+            features: HashMap::new(),
+            types: HashMap::new(),
+            named: HashMap::new(),
+            cells: HashMap::new(),
+        };
+        for object in objects {
+            catalog.names.insert(object.name().as_str(), object);
+            if let Ok(feature) = crate::design::feature_id(object) {
+                catalog.objects.insert(feature.clone(), object);
+                catalog.features.insert(object.id().as_str(), feature);
+            }
+        }
+        let ids = objects
+            .iter()
+            .map(|object| (object.id().as_str(), object))
+            .collect::<HashMap<_, _>>();
+        for property in properties {
+            catalog.types.insert(
+                (property.owner.as_str(), property.name.as_str()),
+                property.type_name.as_str(),
+            );
+            let label = (property.name == "Label" && property.type_name == "App::PropertyString")
+                .then(|| property.values().iter().find(|value| value.tag == "String"))
+                .flatten()
+                .and_then(|value| value.attributes.get("value"));
+            if let (Some(label), Some(object)) = (label, ids.get(property.owner.as_str())) {
+                catalog
+                    .labels
+                    .entry(label.as_str())
+                    .and_modify(|found| *found = None)
+                    .or_insert(Some(object));
+            }
+        }
+        for parameter in parameters.values() {
+            let Some(owner) = parameter.owner.as_ref() else {
+                continue;
+            };
+            let mut names = vec![parameter.name.clone()];
+            names.extend(property(parameter, "alias").map(str::to_owned));
+            if let Some(address) = property(parameter, "address") {
+                names.push(address.to_owned());
+                if let Some(address) = CellAddress::parse(address) {
+                    catalog
+                        .cells
+                        .entry(owner.clone())
+                        .or_default()
+                        .push((address, &parameter.id));
+                }
+            }
+            names.extend(
+                property(parameter, "source_name").map(|name| format!("Constraints.{name}")),
+            );
+            names.sort();
+            names.dedup();
+            for name in names {
+                catalog
+                    .named
+                    .entry((owner.clone(), name))
+                    .and_modify(|found| *found = None)
+                    .or_insert(Some(&parameter.id));
+            }
+        }
+        catalog
+    }
+
+    /// What `path` names in a formula of `owner`. A path of one component,
+    /// or one that starts with `.`, names a property of `owner`; a longer
+    /// path names a property of the object its first component names, by
+    /// name and then by label, and of `owner` where no object has the name.
+    fn resolve(&self, owner: Option<&FeatureId>, path: &Path) -> Target<'a> {
+        if path.origin == Origin::Outside {
+            return Target::Outside;
+        }
+        let Some(own) = owner.and_then(|owner| self.objects.get(owner)) else {
+            return Target::Unresolved;
+        };
+        let components = path.components.as_slice();
+        let (object, rest) = match components.split_first() {
+            Some((first, rest)) if path.origin != Origin::Own && !rest.is_empty() => {
+                let named = (path.origin != Origin::Label)
+                    .then(|| self.names.get(first.as_str()).copied())
+                    .flatten();
+                match named.or_else(|| self.labels.get(first.as_str()).copied().flatten()) {
+                    Some(object) => (object, rest),
+                    None => (*own, components),
+                }
+            }
+            _ => (*own, components),
+        };
+        let Some((property, _)) = rest.split_first() else {
+            return Target::Unresolved;
+        };
+        if path.indexed {
+            return Target::Unresolved;
+        }
+        let Some(feature) = self.features.get(object.id().as_str()) else {
+            return Target::Unresolved;
+        };
+        let key = std::iter::once(property.replace('$', ""))
+            .chain(rest[1..].iter().cloned())
+            .collect::<Vec<_>>()
+            .join(".");
+        if let Some(Some(id)) = self.named.get(&(feature.clone(), key)) {
+            return Target::Parameter(id);
+        }
+        match self.types.get(&(object.id().as_str(), property.as_str())) {
+            Some(type_name) => Target::Property(property_kind(type_name, &rest[1..])),
+            None => Target::Unresolved,
+        }
+    }
+
+    /// The cells of the sheet `owner` from `from` to `to`, each an address or
+    /// an alias.
+    fn range(
+        &self,
+        owner: Option<&FeatureId>,
+        from: &str,
+        to: &str,
+    ) -> Option<Vec<&'a ParameterId>> {
+        let owner = owner?;
+        let cells = self.cells.get(owner)?;
+        let corner = |name: &str| {
+            CellAddress::parse(&name.replace('$', "")).or_else(|| {
+                let id = (*self.named.get(&(owner.clone(), name.to_owned()))?)?;
+                cells
+                    .iter()
+                    .find(|(_, cell)| *cell == id)
+                    .map(|(address, _)| *address)
+            })
+        };
+        let (from, to) = (corner(from)?, corner(to)?);
+        let rows = from.row().min(to.row())..=from.row().max(to.row());
+        let columns = from.col().min(to.col())..=from.col().max(to.col());
+        Some(
+            cells
+                .iter()
+                .filter(|(address, _)| {
+                    rows.contains(&address.row()) && columns.contains(&address.col())
+                })
+                .map(|(_, id)| *id)
+                .collect(),
+        )
+    }
+}
+
+/// The kind of the value of a property of type `type_name`, or of its
+/// component `sub` (§5.12, Kind).
+fn property_kind(type_name: &str, sub: &[String]) -> Kind {
+    let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
+    let quantity = match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
+        (Some("Placement"), ["Base", "x" | "y" | "z"])
+        | (Some("VectorDistance" | "Position"), ["x" | "y" | "z"]) => Quantity::LENGTH,
+        (Some("Placement"), ["Rotation", "Angle"]) => Quantity::ANGLE,
+        (
+            Some("Placement"),
+            ["Rotation", "Axis", "x" | "y" | "z"] | ["Rotation", "Yaw" | "Pitch" | "Roll"],
+        ) => Quantity::REAL,
+        (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font"), []) => {
+            return Kind::Text
+        }
+        (Some(name), []) => match property_quantity(name) {
+            Some(quantity) => quantity,
+            None => return Kind::Unknown,
+        },
+        _ => return Kind::Unknown,
+    };
+    Kind::Quantity(quantity)
+}
+
+/// The quantity of a quantity property `App::Property<name>`.
+fn property_quantity(name: &str) -> Option<Quantity> {
+    Some(match name {
+        "Length" | "Distance" => Quantity::LENGTH,
+        "Angle" => Quantity::ANGLE,
+        "Area" => Quantity::of(2, 0, 0, 0),
+        "Volume" => Quantity::of(3, 0, 0, 0),
+        "Mass" => Quantity::of(0, 1, 0, 0),
+        "Time" => Quantity::of(0, 0, 0, 1),
+        "Frequency" => Quantity::of(0, 0, 0, -1),
+        "Force" => Quantity::of(1, 1, 0, -2),
+        "Pressure"
+        | "Stress"
+        | "ShearModulus"
+        | "YoungsModulus"
+        | "YieldStrength"
+        | "UltimateTensileStrength"
+        | "CompressiveStrength" => Quantity::of(-1, 1, 0, -2),
+        "Speed" | "Velocity" => Quantity::of(1, 0, 0, -1),
+        "Acceleration" => Quantity::of(1, 0, 0, -2),
+        "Power" => Quantity::of(2, 1, 0, -3),
+        "Work" | "Moment" => Quantity::of(2, 1, 0, -2),
+        "Density" => Quantity::of(-3, 1, 0, 0),
+        "InverseLength" => Quantity::of(-1, 0, 0, 0),
+        "InverseArea" => Quantity::of(-2, 0, 0, 0),
+        "InverseVolume" => Quantity::of(-3, 0, 0, 0),
+        "VolumeFlowRate" => Quantity::of(3, 0, 0, -1),
+        "KinematicViscosity" => Quantity::of(2, 0, 0, -1),
+        "DynamicViscosity" => Quantity::of(-1, 1, 0, -1),
+        "SpecificEnergy" => Quantity::of(2, 0, 0, -2),
+        "DissipationRate" => Quantity::of(2, 0, 0, -3),
+        "Float" | "FloatConstraint" | "Precision" | "Integer" | "IntegerConstraint" | "Percent"
+        | "Bool" => Quantity::REAL,
+        _ => return None,
+    })
+}
+
+/// The kinds of the cells of each sheet, each formula after the cells it
+/// references. A formula in a cycle has no kind the file determines.
+fn cell_kinds<'a>(
+    parameters: &BTreeMap<&'a ParameterId, &'a LegacyParameter>,
+    formulas: &BTreeMap<&'a ParameterId, Result<formula::Node<'a>, Unparsed>>,
+    catalog: &Catalog<'a>,
+    is_cell: &dyn Fn(&LegacyParameter) -> bool,
+) -> HashMap<&'a ParameterId, Kind> {
+    let mut kinds = HashMap::new();
+    for parameter in parameters.values().filter(|parameter| is_cell(parameter)) {
+        let kind = match cell_content::read(&parameter.expression) {
+            CellContent::Text(_) => Kind::Text,
+            CellContent::Value(value) => match value.kind {
+                CellKind::Quantity(quantity) => Kind::Quantity(quantity),
+                CellKind::Native(_) => Kind::Unknown,
+            },
+            CellContent::Formula(_) => match formulas.get(&parameter.id) {
+                Some(Err(Unparsed::Syntax)) => Kind::Text,
+                Some(Ok(_) | Err(Unparsed::Limit)) | None => continue,
+            },
+        };
+        kinds.insert(&parameter.id, kind);
+    }
+    let pending = formulas
+        .iter()
+        .filter_map(|(id, node)| Some((*id, node.as_ref().ok()?)))
+        .collect::<BTreeMap<_, _>>();
+    let mut waiting = BTreeMap::new();
+    let mut dependents = BTreeMap::<&ParameterId, Vec<&ParameterId>>::new();
+    for (id, node) in &pending {
+        let owner = parameters
+            .get(id)
+            .and_then(|parameter| parameter.owner.as_ref());
+        let mut sources = BTreeSet::new();
+        for reference in node.references() {
+            match reference {
+                Reference::Path(path) => {
+                    if let Target::Parameter(target) = catalog.resolve(owner, path) {
+                        sources.insert(target);
+                    }
+                }
+                Reference::Range(from, to) => {
+                    sources.extend(catalog.range(owner, from, to).unwrap_or_default());
+                }
+            }
+        }
+        sources.retain(|source| pending.contains_key(source));
+        for source in &sources {
+            dependents.entry(*source).or_default().push(*id);
+        }
+        waiting.insert(*id, sources.len());
+    }
+    let mut ready = waiting
+        .iter()
+        .filter(|(_, count)| **count == 0)
+        .map(|(id, _)| *id)
+        .collect::<Vec<_>>();
+    while let Some(id) = ready.pop() {
+        let owner = parameters
+            .get(id)
+            .and_then(|parameter| parameter.owner.as_ref());
+        let kind = pending[id].kind(&mut Lookup {
+            catalog,
+            kinds: &kinds,
+            owner,
+            projected: false,
+        });
+        kinds.insert(id, kind);
+        for dependent in dependents.get(id).into_iter().flatten() {
+            if let Some(count) = waiting.get_mut(dependent) {
+                *count -= 1;
+                if *count == 0 {
+                    ready.push(*dependent);
+                }
+            }
+        }
+    }
+    for id in formulas.keys() {
+        kinds.entry(*id).or_insert(Kind::Unknown);
+    }
+    kinds
+}
+
+/// The kinds a formula's paths take: a parameter's from its cell's kind or
+/// its stored value, and a property's from its type.
+struct Lookup<'c, 'a> {
+    catalog: &'c Catalog<'a>,
+    kinds: &'c HashMap<&'a ParameterId, Kind>,
+    owner: Option<&'c FeatureId>,
+    /// A cell of no kind the file determines is the real it is projected
+    /// as.
+    projected: bool,
+}
+
+impl Lookup<'_, '_> {
+    fn parameter(&self, id: &ParameterId) -> Kind {
+        if let Some(kind) = self.kinds.get(id) {
+            return match kind {
+                Kind::Unknown if self.projected => Kind::Quantity(Quantity::REAL),
+                kind => *kind,
+            };
+        }
+        let Some(parameter) = self.catalog.parameters.get(id) else {
+            return Kind::Unknown;
+        };
+        match &parameter.value {
+            Some(LegacyValue::Length(_)) => Kind::Quantity(Quantity::LENGTH),
+            Some(LegacyValue::Angle(_)) => Kind::Quantity(Quantity::ANGLE),
+            Some(LegacyValue::Real(_) | LegacyValue::Integer(_) | LegacyValue::Boolean(_)) => {
+                Kind::Quantity(Quantity::REAL)
+            }
+            Some(LegacyValue::String(_)) => Kind::Text,
+            None => Kind::Unknown,
+        }
+    }
+}
+
+impl Scope for Lookup<'_, '_> {
+    fn path(&mut self, path: &Path) -> Kind {
+        match self.catalog.resolve(self.owner, path) {
+            Target::Parameter(id) => self.parameter(id),
+            Target::Property(kind) => kind,
+            Target::Outside | Target::Unresolved => Kind::Unknown,
+        }
+    }
+
+    fn range(&mut self, from: &str, to: &str) -> Option<Vec<Kind>> {
+        let ids = self.catalog.range(self.owner, from, to)?;
+        Some(ids.into_iter().map(|id| self.parameter(id)).collect())
+    }
+}
+
+/// What the projection of a parameter's expression reads.
+struct Context<'c, 'a> {
+    catalog: &'c Catalog<'a>,
+    kinds: &'c HashMap<&'a ParameterId, Kind>,
 }
 
 fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
@@ -168,29 +586,31 @@ fn name(parameter: &LegacyParameter) -> Option<NonBlankString> {
 /// A cell's kind, value, and expression (§5.12), read as `FreeCAD` reads
 /// its content (`cell_content`). A value of a quantity whose units have
 /// symbols is a neutral literal; another value is the source's text. A
-/// formula with no stored value has the quantity of its neutral tree, and
-/// where that is unknown it is a real, with a loss.
+/// formula that `FreeCAD` does not parse is text. A formula has the kind of
+/// its result, and where the file does not determine that kind it is a real,
+/// with a loss.
 fn cell(
     parameter: &LegacyParameter,
-    parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
-    known: &BTreeMap<&ParameterId, Quantity>,
+    formula: Option<&Result<formula::Node<'_>, Unparsed>>,
+    context: &Context<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> (ValueKind, Option<ParameterValue>, Expression) {
     let content = parameter.expression.as_str();
-    let formula = match cell_content::read(content) {
-        CellContent::Formula(formula) => formula,
-        CellContent::Text(text) => {
-            return (
-                ValueKind::Text,
-                Some(ParameterValue::Text(text.to_owned())),
-                Expression::Neutral(Neutral(Node::Text(text.to_owned()))),
-            )
-        }
+    let text = match cell_content::read(content) {
+        CellContent::Formula(text) => text,
+        CellContent::Text(text) => return text_cell(text),
         CellContent::Value(value) => {
             let kind = match value.kind {
                 CellKind::Quantity(quantity) => ValueKind::Quantity(quantity),
                 CellKind::Native(unit) => ValueKind::Native(unit),
             };
+            if !value.number.is_finite() {
+                losses.push(FreecadLossCode::ParameterValueNonFinite.note(format!(
+                    "FCStd cell {} holds a number that is not finite; the cell keeps its \
+                     content and has no value",
+                    parameter.id.as_str()
+                )));
+            }
             let expression = value
                 .neutral
                 .and_then(|text| expr::parse(&text, &[], &[]).ok())
@@ -205,25 +625,53 @@ fn cell(
             );
         }
     };
-    if parameter.value.is_some() {
-        let (kind, value) = kind_and_value(parameter.value.as_ref());
-        let expression = translated(parameter, formula, parameters, known, Some(&kind));
-        return (kind, value, expression);
-    }
-    let expression = translated(parameter, formula, parameters, known, None);
-    let stated = match &expression {
-        Expression::Neutral(Neutral(tree)) => quantity(tree, parameters, known),
-        Expression::Source { .. } => None,
+    let node = match formula {
+        Some(Ok(node)) => node,
+        Some(Err(Unparsed::Limit)) => {
+            assumed(parameter, losses);
+            return (
+                ValueKind::Quantity(Quantity::REAL),
+                None,
+                source(text, Vec::new()),
+            );
+        }
+        Some(Err(Unparsed::Syntax)) | None => return text_cell(content),
     };
-    let quantity = stated.unwrap_or_else(|| {
-        losses.push(FreecadLossCode::ParameterQuantityAssumed.note(format!(
-            "FCStd cell {} has a formula whose quantity the decoder does not find; its \
-             kind is a dimensionless real",
-            parameter.id.as_str()
-        )));
-        Quantity::REAL
-    });
-    (ValueKind::Quantity(quantity), None, expression)
+    let kind = context
+        .kinds
+        .get(&parameter.id)
+        .copied()
+        .unwrap_or(Kind::Unknown);
+    let expression = translated(parameter, text, node, context, kind, None, losses);
+    match kind {
+        Kind::Quantity(quantity) => {
+            let (stored, value) = kind_and_value(parameter.value.as_ref());
+            let kind = ValueKind::Quantity(quantity);
+            let value = value.filter(|_| stored == kind);
+            (kind, value, expression)
+        }
+        Kind::Text => (ValueKind::Text, None, expression),
+        Kind::Unknown => {
+            assumed(parameter, losses);
+            (ValueKind::Quantity(Quantity::REAL), None, expression)
+        }
+    }
+}
+
+fn text_cell(text: &str) -> (ValueKind, Option<ParameterValue>, Expression) {
+    (
+        ValueKind::Text,
+        Some(ParameterValue::Text(text.to_owned())),
+        Expression::Neutral(Neutral(Node::Text(text.to_owned()))),
+    )
+}
+
+fn assumed(parameter: &LegacyParameter, losses: &mut Vec<LossNote>) {
+    losses.push(FreecadLossCode::ParameterQuantityAssumed.note(format!(
+        "FCStd cell {} has a formula whose kind the file does not determine; its kind is \
+         a dimensionless real",
+        parameter.id.as_str()
+    )));
 }
 
 /// The unit of a cell's display unit, where it has the cell's quantity and
@@ -237,17 +685,32 @@ fn display_unit(parameter: &LegacyParameter, kind: &ValueKind) -> Option<Unit> {
 }
 
 /// A cell's display attributes, which only a `FreeCAD` writer writes (Rule N
-/// case (b)), with its display unit where `display_unit` is true.
-fn cell_settings(parameter: &LegacyParameter, display_unit: bool) -> NativeOptions {
-    CELL_DISPLAY
+/// case (b)), and its display unit where `display_unit` is true: a native
+/// option of a number, which another writer charges, and a source setting
+/// of a text. The first map holds the native options.
+fn cell_settings(
+    parameter: &LegacyParameter,
+    kind: &ValueKind,
+    display_unit: bool,
+) -> (NativeOptions, NativeOptions) {
+    let option = |attribute: &str| {
+        let value = NonBlankString::new(property(parameter, attribute)?.to_owned())?;
+        let key = CodecName::new(&cadmpeg_ir::codec_id!("fcstd"), attribute)?;
+        Some((key, NativeOption::Text(Dimension::Literal(value))))
+    };
+    let mut settings = CELL_DISPLAY
         .iter()
-        .chain(display_unit.then_some(&DISPLAY_UNIT))
-        .filter_map(|attribute| {
-            let value = NonBlankString::new(property(parameter, attribute)?.to_owned())?;
-            let key = CodecName::new(&cadmpeg_ir::codec_id!("fcstd"), attribute)?;
-            Some((key, NativeOption::Text(Dimension::Literal(value))))
-        })
-        .collect()
+        .filter_map(|attribute| option(attribute))
+        .collect::<NativeOptions>();
+    let mut native = NativeOptions::default();
+    if let Some((key, value)) = display_unit.then(|| option(DISPLAY_UNIT)).flatten() {
+        if *kind == ValueKind::Text {
+            settings.insert(key, value);
+        } else {
+            native.insert(key, value);
+        }
+    }
+    (native, settings)
 }
 
 fn kind_and_value(value: Option<&LegacyValue>) -> (ValueKind, Option<ParameterValue>) {
@@ -280,17 +743,12 @@ fn kind_and_value(value: Option<&LegacyValue>) -> (ValueKind, Option<ParameterVa
 /// stored value and charged a loss.
 fn expression(
     parameter: &LegacyParameter,
-    parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
-    known: &BTreeMap<&ParameterId, Quantity>,
+    context: &Context<'_, '_>,
     kind: &ValueKind,
-    carriers: &HashMap<&str, &str>,
+    carrier: Option<&str>,
     losses: &mut Vec<LossNote>,
 ) -> Expression {
     let text = parameter.expression.as_str();
-    let carrier = parameter
-        .native_ref
-        .as_deref()
-        .and_then(|property| carriers.get(property).copied());
     if text.trim().is_empty() {
         return empty_expression(parameter, carrier, losses);
     }
@@ -299,7 +757,16 @@ fn expression(
             return Expression::Neutral(Neutral(literal));
         }
     }
-    translated(parameter, text, parameters, known, Some(kind))
+    let Ok(node) = formula::parse(text) else {
+        return source(text, Vec::new());
+    };
+    let stated = node.kind(&mut Lookup {
+        catalog: context.catalog,
+        kinds: context.kinds,
+        owner: parameter.owner.as_ref(),
+        projected: true,
+    });
+    translated(parameter, text, &node, context, stated, Some(kind), losses)
 }
 
 /// The expression of a parameter that stores no expression text: its stored
@@ -425,135 +892,147 @@ fn decimal(stored: f64, canonical: fn(f64) -> f64) -> String {
         .map_or_else(|| format!("{stored}"), |candidate| format!("{candidate}"))
 }
 
-/// A `FreeCAD` expression as a neutral tree where every construct translates
-/// and its quantity is `kind`, or any quantity where `kind` is `None`, and as
-/// the source's tokens with each resolved reference otherwise.
+/// A `FreeCAD` formula of the kind `stated` as a neutral tree where every
+/// construct translates and its quantity is `kind`, or any quantity where
+/// `kind` is `None`, and as the source's tokens with each reference to a
+/// parameter it depends on otherwise. A reference to a property that is no
+/// parameter stays the source's text, with a loss.
 fn translated(
     parameter: &LegacyParameter,
     text: &str,
-    parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
-    known: &BTreeMap<&ParameterId, Quantity>,
+    node: &formula::Node<'_>,
+    context: &Context<'_, '_>,
+    stated: Kind,
     kind: Option<&ValueKind>,
+    losses: &mut Vec<LossNote>,
 ) -> Expression {
-    let targets = reference_paths(parameter, parameters);
-    let mut tokens = Vec::new();
-    let mut neutral = String::new();
-    let mut refs: Vec<ParameterRef> = Vec::new();
-    let mut translates = true;
-    let mut text_start = 0;
-    let bytes = text.as_bytes();
-    let mut cursor = 0;
-    while cursor < text.len() {
-        let start = cursor;
-        let Some(ch) = text[cursor..].chars().next() else {
-            break;
+    let mut spans = BTreeMap::new();
+    let mut dropped = Vec::new();
+    for reference in node.references() {
+        let Reference::Path(path) = reference else {
+            continue;
         };
-        cursor += ch.len_utf8();
-        if ch.is_ascii_digit() || (ch == '.' && bytes.get(cursor).is_some_and(u8::is_ascii_digit)) {
-            while bytes
-                .get(cursor)
-                .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'.')
+        match context.catalog.resolve(parameter.owner.as_ref(), path) {
+            Target::Parameter(id)
+                if parameter
+                    .dependencies
+                    .iter()
+                    .any(|dependency| dependency == id) =>
             {
-                cursor += 1;
-            }
-            if matches!(bytes.get(cursor), Some(b'e' | b'E'))
-                && bytes
-                    .get(cursor + 1)
-                    .is_some_and(|byte| byte.is_ascii_digit() || matches!(byte, b'+' | b'-'))
-            {
-                cursor += 2;
-                while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
-                    cursor += 1;
-                }
-            }
-            let number = &text[start..cursor];
-            let mut after = cursor;
-            while bytes.get(after) == Some(&b' ') {
-                after += 1;
-            }
-            let unit_end = text[after..]
-                .char_indices()
-                .find(|(_, ch)| !(ch.is_alphabetic() || *ch == '°' || *ch == 'µ'))
-                .map_or(text.len(), |(at, _)| after + at);
-            let word = &text[after..unit_end];
-            if word.is_empty() {
-                neutral.push_str(number);
-            } else if let Some(symbol) = unit_symbol(word) {
-                neutral.push_str(number);
-                neutral.push('[');
-                neutral.push_str(symbol);
-                neutral.push(']');
-                cursor = unit_end;
-            } else {
-                translates = false;
-            }
-        } else if ch.is_alphabetic() || ch == '_' {
-            while let Some(next) = text[cursor..].chars().next() {
-                if next.is_alphanumeric() || next == '_' || next == '.' {
-                    cursor += next.len_utf8();
-                } else {
-                    break;
-                }
-            }
-            let path = &text[start..cursor];
-            if let Some(target) = targets.get(path) {
                 let reference = ParameterRef {
-                    target: RefTarget::Parameter((*target).clone()),
+                    target: RefTarget::Parameter(id.clone()),
                     through: None,
                 };
-                if start > text_start {
-                    tokens.push(ExpressionToken::Text(text[text_start..start].to_owned()));
-                }
-                tokens.push(ExpressionToken::Reference(reference.clone()));
-                text_start = cursor;
-                let index = refs
-                    .iter()
-                    .position(|known| *known == reference)
-                    .unwrap_or_else(|| {
-                        refs.push(reference);
-                        refs.len() - 1
-                    });
-                neutral.push('$');
-                neutral.push_str(&index.to_string());
-            } else {
-                translates = false;
+                spans.insert(path.span.start, (path.span.end, reference));
             }
-        } else if matches!(ch, '+' | '-' | '*' | '/' | '(' | ')') {
-            neutral.push(ch);
-        } else if !ch.is_whitespace() {
-            translates = false;
+            Target::Property(_) | Target::Outside => {
+                dropped.push(text.get(path.span.clone()).unwrap_or(text));
+            }
+            Target::Parameter(_) | Target::Unresolved => {}
         }
     }
-    if text_start < text.len() {
-        tokens.push(ExpressionToken::Text(text[text_start..].to_owned()));
+    if !dropped.is_empty() {
+        losses.push(FreecadLossCode::ParameterDependencyDropped.note(format!(
+            "FCStd parameter {} references {}, which is no parameter; the reference stays \
+             the source's text",
+            parameter.id.as_str(),
+            dropped.join(", ")
+        )));
     }
-    if translates {
-        if let Ok(tree) = expr::parse(&neutral, &refs, &[]) {
-            let stated = quantity(&tree, parameters, known);
-            let Some(kind) = kind else {
-                if stated.is_some() {
-                    return Expression::Neutral(Neutral(tree));
-                }
-                return source(text, tokens);
-            };
-            if stated.map(ValueKind::Quantity).as_ref() == Some(kind) {
+    let mut tokens = Vec::new();
+    let mut at = 0;
+    for (start, (end, reference)) in &spans {
+        if *start > at {
+            tokens.push(ExpressionToken::Text(text[at..*start].to_owned()));
+        }
+        tokens.push(ExpressionToken::Reference(reference.clone()));
+        at = *end;
+    }
+    if at < text.len() {
+        tokens.push(ExpressionToken::Text(text[at..].to_owned()));
+    }
+    let mut refs = Vec::new();
+    let tree = neutral_text(node, &spans, &mut refs)
+        .and_then(|neutral| Some((expr::parse(&neutral, &refs, &[]).ok()?, neutral)));
+    if let (Some((tree, neutral)), Kind::Quantity(quantity)) = (tree, stated) {
+        let Some(kind) = kind else {
+            return Expression::Neutral(Neutral(tree));
+        };
+        if ValueKind::Quantity(quantity) == *kind {
+            return Expression::Neutral(Neutral(tree));
+        }
+        // FreeCAD takes a dimensionless result in the property's internal
+        // unit (§5.12, Kind).
+        let internal = match kind {
+            ValueKind::Quantity(Quantity::LENGTH) => Some("mm"),
+            ValueKind::Quantity(Quantity::ANGLE) => Some("deg"),
+            _ => None,
+        };
+        if let (Quantity::REAL, Some(unit)) = (quantity, internal) {
+            if let Ok(tree) = expr::parse(&format!("({neutral}) * 1[{unit}]"), &refs, &[]) {
                 return Expression::Neutral(Neutral(tree));
-            }
-            // FreeCAD takes a dimensionless result in the property's
-            // internal unit (§5.12, Kind).
-            let internal = match kind {
-                ValueKind::Quantity(Quantity::LENGTH) => Some("mm"),
-                ValueKind::Quantity(Quantity::ANGLE) => Some("deg"),
-                _ => None,
-            };
-            if let (Some(Quantity::REAL), Some(unit)) = (stated, internal) {
-                if let Ok(tree) = expr::parse(&format!("({neutral}) * 1[{unit}]"), &refs, &[]) {
-                    return Expression::Neutral(Neutral(tree));
-                }
             }
         }
     }
     source(text, tokens)
+}
+
+/// The neutral text of a formula of numbers, units, the constants `pi` and
+/// `e`, references at `spans`, signs, groups, and `+ - * / ^`. Each operation
+/// is parenthesized, since the neutral syntax binds `^` tighter than a sign.
+fn neutral_text(
+    node: &formula::Node<'_>,
+    spans: &BTreeMap<usize, (usize, ParameterRef)>,
+    refs: &mut Vec<ParameterRef>,
+) -> Option<String> {
+    use formula::{Node as Formula, Operator};
+    Some(match node {
+        Formula::Number { text, unit } => {
+            let number = text.replace(',', ".");
+            let number = if number.starts_with('.') {
+                format!("0{number}")
+            } else {
+                number
+            };
+            match unit {
+                None => number,
+                Some(unit) => format!("{number}[{}]", unit.spelling()?),
+            }
+        }
+        Formula::Constant { name, .. } if matches!(*name, "pi" | "e") => (*name).to_owned(),
+        Formula::Path(path) => {
+            let (_, reference) = spans.get(&path.span.start)?;
+            let index = refs
+                .iter()
+                .position(|known| known == reference)
+                .unwrap_or_else(|| {
+                    refs.push(reference.clone());
+                    refs.len() - 1
+                });
+            format!("${index}")
+        }
+        Formula::Negate(inner) => format!("(-({}))", neutral_text(inner, spans, refs)?),
+        Formula::Plus(inner) | Formula::Group(inner) => {
+            format!("({})", neutral_text(inner, spans, refs)?)
+        }
+        Formula::Binary { op, left, right } => {
+            let symbol = match op {
+                Operator::Add => "+",
+                Operator::Subtract => "-",
+                Operator::Multiply => "*",
+                Operator::Divide => "/",
+                Operator::Power => "^",
+                Operator::Remainder | Operator::Compare => return None,
+            };
+            let left = neutral_text(left, spans, refs)?;
+            let right = match right.as_ref() {
+                Formula::Unit(unit) => format!("1[{}]", unit.spelling()?),
+                right => neutral_text(right, spans, refs)?,
+            };
+            format!("({left} {symbol} {right})")
+        }
+        _ => return None,
+    })
 }
 
 /// The source's tokens of `text`. A source token list holds a text token
@@ -570,165 +1049,6 @@ fn source(text: &str, mut tokens: Vec<ExpressionToken<ParameterRef>>) -> Express
         dialect: ExpressionDialect::FreeCad,
         tokens,
     }
-}
-
-/// The paths by which the expression names each parameter it depends on:
-/// `Object.Property`, `Object.Constraints.name`, and a cell's
-/// `Object.alias` and `Object.address`. A parameter of the expression's own
-/// owner is also named without its object (a cell's `=A1 * 2`).
-fn reference_paths<'a>(
-    parameter: &LegacyParameter,
-    parameters: &BTreeMap<&ParameterId, &'a LegacyParameter>,
-) -> BTreeMap<String, &'a ParameterId> {
-    let mut paths = BTreeMap::new();
-    for dependency in &parameter.dependencies {
-        let Some(target) = parameters.get(dependency) else {
-            continue;
-        };
-        let Some(object) = target
-            .owner
-            .as_ref()
-            .and_then(|owner| owner.as_str().split_once('#'))
-            .map(|(_, key)| key)
-        else {
-            continue;
-        };
-        let mut names = vec![target.name.clone()];
-        if let Some(name) = property(target, "source_name") {
-            names.push(format!("Constraints.{name}"));
-        }
-        if let Some(address) = property(target, "address") {
-            names.push(address.to_owned());
-        }
-        let local = target.owner == parameter.owner;
-        for name in names {
-            if local {
-                paths.entry(name.clone()).or_insert(&target.id);
-            }
-            paths
-                .entry(format!("{object}.{name}"))
-                .or_insert(&target.id);
-        }
-    }
-    paths
-}
-
-/// The `UnitSymbol` of a `FreeCAD` unit word.
-fn unit_symbol(word: &str) -> Option<&'static str> {
-    Some(match word {
-        "nm" => "nm",
-        "um" | "µm" => "um",
-        "mm" => "mm",
-        "cm" => "cm",
-        "m" => "m",
-        "km" => "km",
-        "in" => "in",
-        "ft" => "ft",
-        "yd" => "yd",
-        "mi" => "mi",
-        "deg" | "°" => "deg",
-        "rad" => "rad",
-        "gon" => "grad",
-        "s" => "s",
-        "min" => "min",
-        "h" => "h",
-        "g" => "g",
-        "kg" => "kg",
-        "lb" => "lb",
-        _ => return None,
-    })
-}
-
-/// The quantity of a tree of literals, references, signs, and the four
-/// arithmetic operators, or `None` where it has none.
-fn quantity(
-    tree: &Node<ParameterRef>,
-    parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
-    known: &BTreeMap<&ParameterId, Quantity>,
-) -> Option<Quantity> {
-    let mut pending = vec![(tree, false)];
-    let mut values: Vec<Quantity> = Vec::new();
-    while let Some((node, visited)) = pending.pop() {
-        match (node, visited) {
-            (Node::Number { unit, .. }, _) => {
-                let mut quantity = Quantity::REAL;
-                for factor in &unit.0 {
-                    let slot = match factor.symbol.name() {
-                        "rad" | "deg" | "grad" | "arcmin" | "arcsec" | "rev" => &mut quantity.angle,
-                        "s" | "min" | "h" => &mut quantity.time,
-                        "g" | "kg" | "lb" => &mut quantity.mass,
-                        _ => &mut quantity.length,
-                    };
-                    *slot = slot.checked_add(factor.power.get())?;
-                }
-                values.push(quantity);
-            }
-            (
-                Node::Reference(ParameterRef {
-                    target: RefTarget::Parameter(id),
-                    ..
-                }),
-                _,
-            ) => {
-                if let Some(quantity) = known.get(id) {
-                    values.push(*quantity);
-                    continue;
-                }
-                let target = parameters.get(id)?;
-                let (ValueKind::Quantity(quantity), _) = kind_and_value(target.value.as_ref())
-                else {
-                    return None;
-                };
-                target.value.as_ref()?;
-                values.push(quantity);
-            }
-            (
-                Node::Unary {
-                    op: UnaryOp::Negate,
-                    operand,
-                },
-                false,
-            ) => pending.push((operand, false)),
-            (Node::Sum { .. } | Node::Product { .. }, false) => {
-                pending.push((node, true));
-                let operands: Vec<_> = node.operands().collect();
-                pending.extend(operands.into_iter().rev().map(|operand| (operand, false)));
-            }
-            (Node::Sum { rest, .. }, true) => {
-                let start = values.len().checked_sub(rest.len() + 1)?;
-                let run = values.split_off(start);
-                let (&first, rest) = run.split_first()?;
-                rest.iter()
-                    .all(|quantity| *quantity == first)
-                    .then_some(())?;
-                values.push(first);
-            }
-            (Node::Product { rest, .. }, true) => {
-                let start = values.len().checked_sub(rest.len() + 1)?;
-                let run = values.split_off(start);
-                let (&first, operands) = run.split_first()?;
-                let mut held = first;
-                for ((op, _), right) in rest.iter().zip(operands) {
-                    let combine = |a: i8, b: i8| match op {
-                        MulOp::Multiply => a.checked_add(b),
-                        MulOp::Divide => a.checked_sub(b),
-                    };
-                    held = Quantity {
-                        length: combine(held.length, right.length)?,
-                        mass: combine(held.mass, right.mass)?,
-                        angle: combine(held.angle, right.angle)?,
-                        time: combine(held.time, right.time)?,
-                    };
-                }
-                values.push(held);
-            }
-            _ => return None,
-        }
-    }
-    let [quantity] = values.as_slice() else {
-        return None;
-    };
-    Some(*quantity)
 }
 
 #[cfg(test)]

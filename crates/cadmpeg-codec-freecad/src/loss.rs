@@ -89,6 +89,12 @@ pub(crate) enum FreecadLossCode {
     /// A spreadsheet formula's quantity is not found; its parameter is a
     /// dimensionless real.
     ParameterQuantityAssumed,
+    /// A spreadsheet cell holds a number that is not finite; its parameter
+    /// has no value.
+    ParameterValueNonFinite,
+    /// An expression references a property that is no parameter; the
+    /// reference stays the source's text.
+    ParameterDependencyDropped,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// A sketch B-spline has no admitted finite neutral representation.
@@ -178,6 +184,8 @@ impl FreecadLossCode {
         Self::FeatureJointUnresolved,
         Self::ParameterExpressionEmpty,
         Self::ParameterQuantityAssumed,
+        Self::ParameterValueNonFinite,
+        Self::ParameterDependencyDropped,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
@@ -243,6 +251,8 @@ impl FreecadLossCode {
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
             Self::ParameterQuantityAssumed => "parameter.quantity-assumed",
+            Self::ParameterValueNonFinite => "parameter.value-non-finite",
+            Self::ParameterDependencyDropped => "parameter.dependency-dropped",
             Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
@@ -318,6 +328,8 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
             | Self::ParameterQuantityAssumed
+            | Self::ParameterValueNonFinite
+            | Self::ParameterDependencyDropped
             | Self::FeatureLinkPlacementUnresolved
             | Self::FeatureJointUnresolved
             | Self::PersistencePayloadUnresolved
@@ -382,6 +394,8 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
             | Self::ParameterQuantityAssumed
+            | Self::ParameterValueNonFinite
+            | Self::ParameterDependencyDropped
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
@@ -463,6 +477,8 @@ mod tests {
                 "feature.joint-unresolved",
                 "parameter.expression-empty",
                 "parameter.quantity-assumed",
+                "parameter.value-non-finite",
+                "parameter.dependency-dropped",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
                 "sketch.native-constraint",

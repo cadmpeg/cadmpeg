@@ -8,6 +8,8 @@ use std::f64::consts::PI;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::units::{Quantity, Unit as IrUnit, UnitFactor, UnitSymbol};
 
+pub(in crate::design) mod formula;
+
 /// What a cell's content states.
 pub(super) enum CellContent<'a> {
     /// A formula: the text after the `=`.
@@ -46,7 +48,7 @@ pub(super) fn read(content: &str) -> CellContent<'_> {
         return CellContent::Text(text);
     }
     let trimmed = content.trim();
-    if let Ok(number) = trimmed.parse::<f64>() {
+    if let Some(number) = c_number(trimmed) {
         return CellContent::Value(CellValue {
             number,
             kind: CellKind::Quantity(Quantity::REAL),
@@ -54,6 +56,38 @@ pub(super) fn read(content: &str) -> CellContent<'_> {
         });
     }
     value(trimmed).map_or(CellContent::Text(content), CellContent::Value)
+}
+
+/// `text` as C's `strtod` reads a whole number: a decimal, a hexadecimal
+/// such as `0x1.8p1`, an infinity, or a NaN.
+fn c_number(text: &str) -> Option<f64> {
+    text.parse().ok().or_else(|| hexadecimal(text))
+}
+
+fn hexadecimal(text: &str) -> Option<f64> {
+    let (negative, unsigned) = match text.as_bytes().first() {
+        Some(b'-') => (true, &text[1..]),
+        Some(b'+') => (false, &text[1..]),
+        _ => (false, text),
+    };
+    let digits = unsigned
+        .strip_prefix("0x")
+        .or_else(|| unsigned.strip_prefix("0X"))?;
+    let (mantissa, exponent) = match digits.split_once(['p', 'P']) {
+        Some((mantissa, exponent)) => (mantissa, exponent.parse::<i32>().ok()?),
+        None => (digits, 0),
+    };
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    if whole.is_empty() && fraction.is_empty() {
+        return None;
+    }
+    let mut value = 0.0_f64;
+    for digit in whole.chars().chain(fraction.chars()) {
+        value = value * 16.0 + f64::from(digit.to_digit(16)?);
+    }
+    let shift = i32::try_from(fraction.len()).ok()?.checked_mul(4)?;
+    let value = value * 2.0_f64.powi(exponent.checked_sub(shift)?);
+    Some(if negative { -value } else { value })
 }
 
 /// The unit `text` names, where its quantity is one of length, mass, angle,
@@ -145,8 +179,8 @@ fn value(text: &str) -> Option<CellValue> {
 
 /// A unit as `FreeCAD` writes it: its exponents of length, mass, angle, and
 /// time, its factor to their canonical units, and its symbols.
-#[derive(Clone)]
-struct Unit {
+#[derive(Debug, Clone)]
+pub(in crate::design) struct Unit {
     exponents: [i8; 4],
     scale: f64,
     /// A word of the unit has a dimension other than the four.
@@ -227,7 +261,7 @@ impl Unit {
     }
 
     /// The unit in neutral expression syntax.
-    fn spelling(&self) -> Option<String> {
+    pub(in crate::design) fn spelling(&self) -> Option<String> {
         let symbols = self.symbols.as_ref()?;
         let factors = symbols
             .iter()

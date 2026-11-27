@@ -166,16 +166,13 @@ pub(crate) fn project(
     }
     containers.sort_by(|a, b| a.id().cmp(b.id()));
     features.sort_by(|a, b| a.id.cmp(&b.id));
-    let carriers = properties
-        .iter()
-        .map(|property| (property.id.as_str(), property.type_name.as_str()))
-        .collect::<HashMap<_, _>>();
     let parameters = parameters::project(
         ir,
         &definition,
         &body_containers,
         &features,
-        &carriers,
+        objects,
+        properties,
         losses,
     );
     if features.is_empty() && parameters.is_empty() {

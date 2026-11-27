@@ -45,6 +45,9 @@ fn a_number_is_a_real() {
         ("1e3", 1000.0, "1000"),
         (".5", 0.5, "0.5"),
         ("12,5", 12.5, "12.5"),
+        ("0x10", 16.0, "16"),
+        ("-0x1.8p1", -3.0, "-3"),
+        ("0XAp-1", 5.0, "5"),
     ] {
         assert_eq!(
             value(content),
@@ -103,6 +106,13 @@ fn a_non_finite_number_has_no_neutral_text() {
     let (quantity, _, number, neutral) = value("inf");
     assert_eq!(quantity, Some(Quantity::REAL));
     assert!(number.is_infinite());
+    assert_eq!(neutral, None);
+    let (quantity, _, number, neutral) = value("-Infinity");
+    assert_eq!(quantity, Some(Quantity::REAL));
+    assert!(number.is_infinite() && number < 0.0);
+    assert_eq!(neutral, None);
+    let (_, _, number, neutral) = value("NaN");
+    assert!(number.is_nan());
     assert_eq!(neutral, None);
 }
 
