@@ -112,9 +112,9 @@
 
 **Need.** Flanges at two angles under bend method `1`, and documents set to each other bend method the software offers.
 
-### DR-1073. Flange offset end and slots after the offset extent
+### DR-1073. Offset end of extent kind 138
 
-**Question.** From which end of the edge does the offset of extent kind `138` (§10.3) count, and where do the bend method, bend deduction and bend allowance slots lie for that kind?
+**Question.** From which end of the edge does the offset of extent kind `138` (§10.3) count, and do the bend method, bend deduction and bend allowance slots lie 44 bytes later than for the extent kind `134`, as they do for extent kind `140`?
 
 **Known.** The offset and the width are two `CLSID_JDim` slots at offsets 492 and 512. The relief type is at offset 540. The offset equals the remaining edge length less the width in every stored flange of this kind, so both ends have the same setback.
 

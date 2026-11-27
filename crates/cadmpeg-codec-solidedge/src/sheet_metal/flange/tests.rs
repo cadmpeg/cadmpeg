@@ -159,6 +159,66 @@ fn offset_extent_shifts_the_relief_type_and_leaves_the_width_unread() {
 }
 
 #[test]
+fn from_ends_extent_states_the_setbacks_and_shifts_the_relief_type() {
+    let result = decode(&[FlangeSpec {
+        extent: 140.0,
+        offset: 0.003,
+        partial_width: 0.008,
+        relief_type: 52.0,
+        relief_width: 0.0015,
+        relief_length: 0.003,
+        ..FlangeSpec::default()
+    }]);
+    let flange = flange(&result, 0);
+    let Some(FlangeWidth::FromEnds {
+        first: Dimension::Literal(first),
+        second: Dimension::Literal(second),
+    }) = &flange.width
+    else {
+        panic!("expected setbacks from both ends");
+    };
+    assert!((first.get() - 3.0).abs() <= EPS_VALUE);
+    assert!((second.get() - 8.0).abs() <= EPS_VALUE);
+    let relief = flange.bend.relief.as_ref().unwrap();
+    assert_eq!(relief.shape, Some(ReliefShape::Obround));
+    assert!((millimetres(relief.width.as_ref()) - 1.5).abs() <= EPS_VALUE);
+    assert!(codes(&result)
+        .iter()
+        .all(|code| !code.starts_with("sheet-metal.flange")));
+}
+
+#[test]
+fn from_ends_extent_keeps_the_start_and_end_slots_apart() {
+    let result = decode(&[FlangeSpec {
+        extent: 140.0,
+        offset: 0.008,
+        partial_width: 0.003,
+        ..FlangeSpec::default()
+    }]);
+    let Some(FlangeWidth::FromEnds {
+        first: Dimension::Literal(first),
+        second: Dimension::Literal(second),
+    }) = &flange(&result, 0).width
+    else {
+        panic!("expected setbacks from both ends");
+    };
+    assert!((first.get() - 8.0).abs() <= EPS_VALUE);
+    assert!((second.get() - 3.0).abs() <= EPS_VALUE);
+}
+
+#[test]
+fn negative_setback_leaves_the_width_unread() {
+    let result = decode(&[FlangeSpec {
+        extent: 140.0,
+        offset: -0.003,
+        partial_width: 0.008,
+        ..FlangeSpec::default()
+    }]);
+    assert!(flange(&result, 0).width.is_none());
+    assert!(codes(&result).contains(&"sheet-metal.flange-field-unread".to_owned()));
+}
+
+#[test]
 fn square_relief_is_a_native_shape_and_zero_length_states_no_depth() {
     let result = decode(&[FlangeSpec {
         relief_type: 51.0,
