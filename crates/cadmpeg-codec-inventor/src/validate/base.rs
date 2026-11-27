@@ -20,16 +20,10 @@ pub(super) fn valid(
             && label.header.owner.record_ordinal() == Some(source.identity.record_ordinal)
     });
     let Some(label) = labels.next() else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     };
     if labels.next().is_some() {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     }
     let property_at = |ordinal| {
         let mut matches = data.pm_dc_feature_properties.iter().filter(|property| {
@@ -40,17 +34,11 @@ pub(super) fn valid(
         matches.next().is_none().then_some(property)
     };
     let Some((input, output)) = base::wrappers(source, label.class_id(), property_at) else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     };
     if label.class_id() == crate::feature::derived::CLASS_ID {
         if !label.participants.references().is_empty() {
-            {
-                eprintln!("BASEVALID return-false at line {}", line!());
-                return false;
-            };
+            return false;
         }
         let Some(operands) = crate::feature::derived::operands(
             source,
@@ -68,42 +56,27 @@ pub(super) fn valid(
             },
             &data.pm_dc_transforms,
         ) else {
-            {
-                eprintln!("BASEVALID return-false at line {}", line!());
-                return false;
-            };
+            return false;
         };
         if feature.source_properties.get("derived_source") != Some(&operands.source.id())
             || feature.source_properties.get("derived_transform") != Some(&operands.transform.id())
         {
-            {
-                eprintln!("BASEVALID return-false at line {}", line!());
-                return false;
-            };
+            return false;
         }
     } else if feature.source_properties.contains_key("derived_source")
         || feature.source_properties.contains_key("derived_transform")
     {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     }
     let Some(output_reference) = base::surface_reference(output) else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     };
     let mut external_sections = data.meta_sections.iter().filter(|section| {
         section.token == source.identity.segment_token.as_str()
             && section.number == crate::records::MetaSectionNumber::Ten
     });
     let Some(external_section) = external_sections.next() else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     };
     if external_sections.next().is_some()
         || output_reference.index() > external_section.discriminator
@@ -111,33 +84,21 @@ pub(super) fn valid(
             cadmpeg_core::decode::u64_from_index(crate::layout::meta_external_reference::LEN),
         ) != Some(external_section.payload_len)
     {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     }
     let Some(reference) = base::surface_reference(input) else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     };
     if reference.index() != 0 {
         if !reference.qualified() {
-            {
-                eprintln!("BASEVALID return-false at line {}", line!());
-                return false;
-            };
+            return false;
         }
         let mut links = data.pm_dc_kernel_entity_links.iter().filter(|link| {
             link.identity.segment_token == input.identity.segment_token
                 && Some(link.identity.record_ordinal) == reference.record_ordinal()
         });
         let Some(link) = links.next() else {
-            {
-                eprintln!("BASEVALID return-false at line {}", line!());
-                return false;
-            };
+            return false;
         };
         if links.next().is_some()
             || link.state != 0
@@ -150,23 +111,12 @@ pub(super) fn valid(
                         == crate::pmdc::type_id_string(crate::kernel::KERNEL_RECORD_TYPE_ID)
             })
         {
-            {
-                eprintln!("BASEVALID return-false at line {}", line!());
-                return false;
-            };
+            return false;
         }
     } else if reference.qualified() {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     }
-    let Some(result) = result else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        }
-    };
+    let Some(result) = result else { return false };
     if ir
         .model
         .feature_result_topologies
@@ -181,32 +131,20 @@ pub(super) fn valid(
         || !result.edges().is_empty()
         || !result.vertices().is_empty()
     {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     }
     let Some(link_id) = feature.source_properties.get(base::RESULT_LINK_PROPERTY) else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     };
     let mut links = data
         .pm_dc_kernel_entity_links
         .iter()
         .filter(|link| link.id() == *link_id);
     let Some(link) = links.next() else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     };
     if links.next().is_some() || !base::unique_link_header(link, &data.pm_dc_kernel_entity_links) {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     }
     let crate::native::ActiveCarrierRecord::Selected {
         segment_token,
@@ -215,20 +153,14 @@ pub(super) fn valid(
         ..
     } = &data.active_carrier
     else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     };
     let mut metadata = data
         .metadata
         .iter()
         .filter(|meta| meta.token == *segment_token && meta.kind == "pm_brep");
     let Some(target) = metadata.next() else {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     };
     if metadata.next().is_some()
         || data
@@ -267,16 +199,10 @@ pub(super) fn valid(
             .count()
             != 1
     {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     }
     if PmDcReference::from_packed(*selected_key) != link.body {
-        {
-            eprintln!("BASEVALID return-false at line {}", line!());
-            return false;
-        };
+        return false;
     }
     if let Some(body) = base::current_body(
         output,
