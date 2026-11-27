@@ -85,6 +85,7 @@ fn body_key_edit_does_not_rewrite_ordinal_design_selector() {
                 asm_body_key_offset: 40,
                 asm_body_key: 0,
                 entity_suffix: 1,
+                browser_node_entity: 2,
                 visible: true,
             },
         )
@@ -186,14 +187,7 @@ fn generated_f3d_regenerates_on_lossy_truecolor_edit() {
             .expect("valid color"),
     );
 
-    crate::test_support::assert_written_with_loss(
-        &edited,
-        Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
-        "",
-    );
+    crate::test_support::assert_patch_declined(&edited, Some(&fidelity), "");
 }
 
 #[test]
@@ -208,14 +202,7 @@ fn generated_f3d_regenerates_on_decimal_color_text_growth() {
     edited.geometry.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"));
 
-    crate::test_support::assert_written_with_loss(
-        &edited,
-        Some(&fidelity),
-        &crate::loss::F3dLossCode::WriterPatchDeclined
-            .kind()
-            .to_string(),
-        "",
-    );
+    crate::test_support::assert_patch_declined(&edited, Some(&fidelity), "");
 }
 
 #[test]

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datums: every element, with and without a link.
 
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 use super::{
     construction, id, native_options, point3, positive_real, refuses, selection, to_value, unread,

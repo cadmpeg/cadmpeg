@@ -1,58 +1,655 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed IGES entity accessors and neutral projection.
 
+use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 
+use cadmpeg_ir::ids::Identity;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{
+    dropped_with, needs, record_unreadable_kind, DecodeParts, GivenUpPart, GivenUpRecord, Part,
+};
+use cadmpeg_ir::{CadIr, SourceFidelity, StreamName};
 
-use crate::directory::DirectoryEntry;
+use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
 use crate::loss::IgesLossCode;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{ParameterRecord, QuarantinedParameterRecord};
+use crate::representation::Representation;
 
+/// The part kind of an entity whose neutral projection the decoder gives up:
+/// the entity's Directory Entry pair.
+const ENTITY_PART: &str = "entity";
+/// The part kind of a quarantined Directory Entry record.
+pub(crate) const DIRECTORY_ENTRY_PART: &str = "directory-entry";
+/// The part kind of an entity's quarantined Parameter Data record.
+pub(crate) const PARAMETER_DATA_PART: &str = "parameter-data";
+
+/// The card image the reader frames records in: the source itself for Fixed
+/// ASCII input, and the fixed-card image that the reader normalizes Compressed
+/// ASCII and Binary input to, in the stream `fixed-card-image`. Every record
+/// offset of the reader is an offset in this image.
+pub(crate) struct CardImage<'a> {
+    bytes: &'a [u8],
+    stream: Option<StreamName>,
+}
+
+impl<'a> CardImage<'a> {
+    pub(crate) fn new(bytes: &'a [u8], representation: Representation) -> Self {
+        let stream = (representation != Representation::FixedAscii)
+            .then(|| cadmpeg_ir::stream_name!("fixed-card-image"));
+        Self { bytes, stream }
+    }
+
+    /// The part of `kind` that holds the `length` bytes from `offset`, for
+    /// the record of Directory sequence `sequence`.
+    pub(crate) fn part(
+        &self,
+        kind: &'static str,
+        sequence: u32,
+        offset: u64,
+        length: u64,
+    ) -> Result<Part<'a>, CodecError> {
+        let bytes = usize::try_from(offset)
+            .ok()
+            .zip(usize::try_from(length).ok())
+            .and_then(|(start, length)| self.bytes.get(start..start.checked_add(length)?))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "IGES record D{sequence} lies outside the card image"
+                ))
+            })?;
+        Ok(self
+            .placed(Part::at("iges", kind, offset, bytes, [ArenaClass::Model]))
+            .named(format!("D{sequence}")))
+    }
+
+    /// The stub id of the part of `kind` at `offset`.
+    pub(crate) fn part_id(&self, kind: &'static str, offset: u64) -> Result<Identity, CodecError> {
+        Ok(self
+            .placed(Part::at("iges", kind, offset, &[], []))
+            .id()?
+            .into())
+    }
+
+    fn placed(&self, part: Part<'a>) -> Part<'a> {
+        match &self.stream {
+            Some(stream) => part.in_stream(stream.clone()),
+            None => part,
+        }
+    }
+}
+
+/// Gives up `part` for the codec loss `why`: the `record.unreadable` error
+/// text is `why`'s code and message.
+pub(crate) fn give_up_part(
+    ctx: &DecodeContext<'_>,
+    part: Part<'_>,
+    why: &LossNote,
+) -> Result<GivenUpPart, CodecError> {
+    ctx.give_up_part(
+        part,
+        CodecError::malformed(format_args!("{}: {}", why.code, why.message)),
+    )
+}
+
+/// The ids by which the decode's `record.unreadable` entries name given-up
+/// records, for a pass that drops an entity only because it needs one.
+pub(crate) struct GivenUpIds<'a> {
+    image: &'a CardImage<'a>,
+    quarantined: BTreeMap<u32, Identity>,
+}
+
+impl<'a> GivenUpIds<'a> {
+    pub(crate) fn new(
+        image: &'a CardImage<'a>,
+        directory: &[QuarantinedDirectoryRecord],
+        parameters: &[QuarantinedParameterRecord],
+    ) -> Result<Self, CodecError> {
+        let mut quarantined = BTreeMap::new();
+        for record in directory {
+            quarantined.insert(
+                record.sequence,
+                image.part_id(DIRECTORY_ENTRY_PART, record.source_offset)?,
+            );
+        }
+        for record in parameters {
+            if let std::collections::btree_map::Entry::Vacant(slot) =
+                quarantined.entry(record.sequence)
+            {
+                slot.insert(image.part_id(PARAMETER_DATA_PART, record.source_offset())?);
+            }
+        }
+        Ok(Self { image, quarantined })
+    }
+
+    /// The id of `entry`'s entity part: the stub of its give-up, or the id
+    /// by which a give-up that drops it names it.
+    fn entity(&self, entry: &DirectoryEntry) -> Result<Identity, CodecError> {
+        self.image.part_id(ENTITY_PART, entry.source_offset)
+    }
+
+    /// The stub of the quarantined record that keeps the entity of
+    /// `sequence` from the projection.
+    fn quarantined(&self, sequence: u32) -> Option<&Identity> {
+        self.quarantined.get(&sequence)
+    }
+}
+
+fn attributed_note(
+    entry: &DirectoryEntry,
+    code: IgesLossCode,
+    message: fmt::Arguments<'_>,
+) -> LossNote {
+    code.note(message.to_string())
+        .with_provenance(entry.loss_provenance())
+}
+
+/// Pushes a loss on `entry` that gives up no record of it: the projection
+/// keeps the entity with less content, or the entity's type or form has no
+/// neutral record.
 fn push_attributed_loss(
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
     code: IgesLossCode,
     message: fmt::Arguments<'_>,
 ) {
+    losses.push(attributed_note(entry, code, message));
+}
+
+/// Pushes a loss on `entry` whose entity the projection gives up, with the
+/// entity's `record.unreadable`.
+fn push_given_up_loss(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    code: IgesLossCode,
+    message: fmt::Arguments<'_>,
+) {
+    give_up(losses, entry, attributed_note(entry, code, message));
+}
+
+/// The id of the native record of the entity of Directory sequence
+/// `sequence`.
+fn entity_record(sequence: u32) -> Identity {
+    Identity::compose(
+        &cadmpeg_ir::identity_namespace!("iges", "entity", "directory"),
+        sequence,
+    )
+}
+
+/// Pushes `why` and the `record.unreadable` that gives up `entry`'s entity.
+/// [`give_up_entities`] makes it the give-up of the entity's part.
+fn give_up(losses: &mut Vec<LossNote>, entry: &DirectoryEntry, why: LossNote) {
+    let unreadable = GivenUpRecord::caused_by(entity_record(entry.sequence), &why);
+    losses.push(why);
+    losses.push(unreadable.loss());
+}
+
+/// The id of the neutral record that the projection mints for `entry`'s
+/// entity and that names the entity's records in a give-up. `None` where the
+/// entity's records take their ids from another entity, from a path, or from
+/// a position in a list.
+fn projected_record(entry: &DirectoryEntry) -> Option<Identity> {
+    let stem = crate::ids::Stem::directory(entry.sequence);
+    Some(match entry.entity_type {
+        100 | 102 | 104 | 110 | 112 | 126 | 130 => crate::ids::curve(&stem).into(),
+        116 | 125 => crate::ids::point(&stem).into(),
+        108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198 => {
+            crate::ids::surface(&stem).into()
+        }
+        143 | 144 => crate::ids::face(&stem).into(),
+        186 => crate::ids::body(&stem).into(),
+        514 if entry.form == 2 => crate::ids::shell(&stem).into(),
+        _ => return None,
+    })
+}
+
+/// Pushes `why` for `entry`'s entity, which the projection drops. Where it
+/// drops the entity because the entity of Directory sequence `needs` has no
+/// projected record, it pushes the marker that [`give_up_entities`] settles:
+/// the entity's records, named by `record`, are dropped with `needs` where
+/// the decode gives `needs` up, and otherwise the entity is given up on its
+/// own. `record` is the id of [`projected_record`], or of the record that the
+/// pass mints for the entity in its place. Where `needs` is `None`, it pushes
+/// the entity's own `record.unreadable`.
+fn give_up_needing(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    record: Option<Identity>,
+    needs: Option<u32>,
+    why: LossNote,
+) {
+    let Some(needs) = needs else {
+        give_up(losses, entry, why);
+        return;
+    };
+    losses.push(why);
     losses.push(
-        code.note(message.to_string())
-            .with_provenance(entry.loss_provenance()),
+        dropped_with(
+            record.unwrap_or_else(|| entity_record(entry.sequence)),
+            entity_record(needs),
+        )
+        .with_provenance(entry.loss_provenance()),
     );
 }
 
-fn push_entity_loss(
+/// Pushes `why` and the give-up of `record`, a neutral record that a pass
+/// mints from `entry`'s decoded entity and then drops. Where it drops the
+/// record because the entity of Directory sequence `needs` has no projected
+/// record, it pushes the marker that [`give_up_entities`] settles, and
+/// otherwise the `record.unreadable` of `record`. Neither carries `entry`'s
+/// entity tag, so the settlement of the entity's own give-up leaves them.
+fn give_up_record(
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
-    reason: fmt::Arguments<'_>,
+    record: impl Into<Identity>,
+    needs: Option<u32>,
+    why: LossNote,
 ) {
-    push_attributed_loss(
-        losses,
+    let mut provenance = entry.loss_provenance();
+    provenance.tag = None;
+    let unreadable = match needs {
+        Some(needs) => dropped_with(record, entity_record(needs)).with_provenance(provenance),
+        None => GivenUpRecord::caused_by(record, &why).at(provenance).loss(),
+    };
+    losses.push(why);
+    losses.push(unreadable);
+}
+
+/// Pushes `why` and the give-up of `record`, a neutral record that a pass
+/// mints from `entry`'s decoded entity and then drops, naming `marked`, the
+/// record that states its unstated children for the drop (§5.6).
+fn give_up_marking(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    record: impl Into<Identity>,
+    marked: Option<impl Into<Identity>>,
+    why: LossNote,
+) {
+    let mut provenance = entry.loss_provenance();
+    provenance.tag = None;
+    let unreadable = GivenUpRecord::caused_by(record, &why)
+        .at(provenance)
+        .marking(marked)
+        .loss();
+    losses.push(why);
+    losses.push(unreadable);
+}
+
+/// Keeps the first `record.unreadable` of each entity for which the
+/// projection holds no record, and removes the others, and each
+/// `record.dropped-with` note of an entity that the projection holds.
+fn settle_given_up(losses: &mut Vec<LossNote>, decoded: &BTreeSet<u32>) {
+    let mut charged = BTreeSet::new();
+    losses.retain(|loss| {
+        if needs(loss).is_some() {
+            return entity_tag(loss).is_none_or(|sequence| !decoded.contains(&sequence));
+        }
+        given_up_entity(loss)
+            .is_none_or(|sequence| !decoded.contains(&sequence) && charged.insert(sequence))
+    });
+}
+
+fn given_up_entity(loss: &LossNote) -> Option<u32> {
+    if loss.code != record_unreadable_kind() {
+        return None;
+    }
+    entity_tag(loss)
+}
+
+/// The record that a [`give_up_needing`] or [`give_up_record`] marker drops,
+/// and the Directory sequence of the entity it names as needed.
+fn marker(loss: &LossNote) -> Option<(&Identity, u32)> {
+    let (record, needed) = needs(loss)?;
+    let directory = needed.as_str().strip_prefix("iges:entity:directory#")?;
+    Some((record, directory.parse().ok()?))
+}
+
+fn entity_tag(loss: &LossNote) -> Option<u32> {
+    loss.provenance
+        .as_ref()?
+        .tag
+        .as_deref()?
+        .strip_prefix("directory_entry:D")?
+        .parse()
+        .ok()
+}
+
+/// Settles the [`give_up_needing`] markers of the projection, then gives up
+/// the part of each entity whose `record.unreadable` is in `losses` and puts
+/// the part's `record.unreadable` in its place. The part is the entity's
+/// Directory Entry pair. The native entity record and the `cards` arena keep
+/// its bytes, so the part keeps their digest.
+pub(crate) fn give_up_entities(
+    losses: &mut Vec<LossNote>,
+    directory: &[DirectoryEntry],
+    ids: &GivenUpIds<'_>,
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    fidelity: &mut SourceFidelity,
+) -> Result<(), CodecError> {
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        entries.insert(entry.sequence, entry);
+    }
+    settle_needs(losses, &entries, ids)?;
+    for at in 0..losses.len() {
+        let Some(sequence) = given_up_entity(&losses[at]) else {
+            continue;
+        };
+        let (entry, why) = entries
+            .get(&sequence)
+            .zip(at.checked_sub(1).and_then(|before| losses.get(before)))
+            .filter(|(_, why)| entity_tag(why) == Some(sequence))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "IGES give-up of D{sequence} has no Directory Entry or cause"
+                ))
+            })?;
+        let length = entry.source_length.ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "IGES Directory Entry D{sequence} has no card span"
+            ))
+        })?;
+        let part = ids
+            .image
+            .part(ENTITY_PART, sequence, entry.source_offset, length)?
+            .digest_only();
+        let unreadable = give_up_part(ctx, part, why)?.commit(ctx, ir, fidelity)?;
+        losses[at] = unreadable;
+    }
+    Ok(())
+}
+
+/// Settles each [`give_up_needing`] marker of an entity that has no
+/// `record.unreadable` of its own. The entity is dropped with a needed
+/// entity that the decode gives up: one with a `record.unreadable`, a
+/// quarantined one, or one that is itself dropped with such an entity. Its
+/// marker becomes the `record.dropped-with` note of the entity's projected
+/// record, which names the needed entity as the decode's give-ups name it:
+/// the stub of its part, or its projected record where it is dropped. An
+/// entity without a projected record keeps only its codec loss, and an
+/// entity that needs it names what it is dropped with. Otherwise the entity
+/// is given up on its own, once: none of the entities it needs is given up,
+/// or it needs itself through a cycle of such entities, of which the walk
+/// gives up one. Each [`give_up_record`] marker is settled the same way, as
+/// a record that no entity needs.
+fn settle_needs(
+    losses: &mut Vec<LossNote>,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    ids: &GivenUpIds<'_>,
+) -> Result<(), CodecError> {
+    let charged = losses
+        .iter()
+        .filter_map(given_up_entity)
+        .collect::<BTreeSet<_>>();
+    let mut markers = Vec::new();
+    let mut records = Vec::new();
+    let mut heads = BTreeMap::<u32, Identity>::new();
+    let mut needs = BTreeMap::<u32, Vec<u32>>::new();
+    let mut needed_by = BTreeMap::<u32, Vec<u32>>::new();
+    for (at, loss) in losses.iter().enumerate() {
+        let Some((record, needed)) = marker(loss) else {
+            continue;
+        };
+        let Some(entity) = entity_tag(loss) else {
+            records.push((at, record.clone(), needed));
+            continue;
+        };
+        markers.push((at, entity, needed));
+        if record.as_str() != entity_record(entity).as_str() {
+            heads.entry(entity).or_insert_with(|| record.clone());
+        }
+        if !charged.contains(&entity) {
+            needs.entry(entity).or_default().push(needed);
+            needed_by.entry(needed).or_default().push(entity);
+        }
+    }
+    if markers.is_empty() && records.is_empty() {
+        return Ok(());
+    }
+    // `Some(needed)`: dropped with `needed`; `None`: given up on its own.
+    let mut settled = BTreeMap::<u32, Option<u32>>::new();
+    let mut gone = needed_by
+        .keys()
+        .copied()
+        .filter(|needed| charged.contains(needed) || ids.quarantined(*needed).is_some())
+        .collect::<VecDeque<_>>();
+    drop_dependents(&mut gone, &needed_by, &mut settled);
+    for &entity in needs.keys() {
+        if settled.contains_key(&entity) {
+            continue;
+        }
+        let mut walked = BTreeSet::new();
+        let mut at = entity;
+        let own = loop {
+            walked.insert(at);
+            let next = needs.get(&at).and_then(|targets| {
+                targets
+                    .iter()
+                    .copied()
+                    .find(|target| needs.contains_key(target) && !settled.contains_key(target))
+            });
+            match next {
+                None => break at,
+                Some(next) if walked.contains(&next) => break next,
+                Some(next) => at = next,
+            }
+        };
+        settled.insert(own, None);
+        gone.push_back(own);
+        drop_dependents(&mut gone, &needed_by, &mut settled);
+    }
+    let entity_id = |sequence: u32| {
+        entries
+            .get(&sequence)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "IGES entity D{sequence} needed by the projection has no Directory Entry"
+                ))
+            })
+            .and_then(|entry| ids.entity(entry))
+    };
+    let gone = |sequence: u32| {
+        charged.contains(&sequence)
+            || ids.quarantined(sequence).is_some()
+            || settled.contains_key(&sequence)
+    };
+    // The id by which the decode's give-ups name the gone entity `sequence`:
+    // an entity dropped without a projected record is named by what it is
+    // dropped with.
+    let given_up_id = |mut sequence: u32| -> Result<Identity, CodecError> {
+        loop {
+            if let Some(stub) = ids.quarantined(sequence) {
+                return Ok(stub.clone());
+            }
+            match settled.get(&sequence) {
+                Some(Some(with)) => match heads.get(&sequence) {
+                    Some(head) => return Ok(head.clone()),
+                    None => sequence = *with,
+                },
+                _ => return entity_id(sequence),
+            }
+        }
+    };
+    let mut written = BTreeSet::new();
+    let mut removed = BTreeSet::new();
+    for (at, entity, needed) in markers {
+        let settlement = settled.get(&entity).copied();
+        if charged.contains(&entity) || !written.insert(entity) {
+            removed.insert(at);
+            continue;
+        }
+        losses[at] = match settlement {
+            Some(Some(with)) if with == needed => {
+                let Some(head) = heads.get(&entity) else {
+                    removed.insert(at);
+                    continue;
+                };
+                let mut note = dropped_with(head.clone(), given_up_id(with)?);
+                note.provenance.clone_from(&losses[at].provenance);
+                note
+            }
+            Some(Some(_)) => {
+                written.remove(&entity);
+                removed.insert(at);
+                continue;
+            }
+            _ => {
+                let why = at
+                    .checked_sub(1)
+                    .and_then(|before| losses.get(before))
+                    .filter(|why| entity_tag(why) == Some(entity))
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "IGES give-up of D{entity} has no cause"
+                        ))
+                    })?;
+                GivenUpRecord::caused_by(entity_record(entity), why).loss()
+            }
+        };
+    }
+    for (at, record, needed) in records {
+        let provenance = losses[at].provenance.clone();
+        losses[at] = if gone(needed) {
+            let mut note = dropped_with(record, given_up_id(needed)?);
+            note.provenance = provenance;
+            note
+        } else {
+            let why = at
+                .checked_sub(1)
+                .and_then(|before| losses.get(before))
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("IGES give-up of {record} has no cause"))
+                })?;
+            GivenUpRecord::caused_by(record, why).at(provenance).loss()
+        };
+    }
+    let mut at = 0;
+    losses.retain(|_| {
+        let kept = !removed.contains(&at);
+        at += 1;
+        kept
+    });
+    Ok(())
+}
+
+/// Settles as dropped each entity that needs an entity of `gone`, and
+/// then each entity that needs one of those, until none is left.
+fn drop_dependents(
+    gone: &mut VecDeque<u32>,
+    needed_by: &BTreeMap<u32, Vec<u32>>,
+    settled: &mut BTreeMap<u32, Option<u32>>,
+) {
+    while let Some(needed) = gone.pop_front() {
+        for &entity in needed_by.get(&needed).into_iter().flatten() {
+            if let std::collections::btree_map::Entry::Vacant(slot) = settled.entry(entity) {
+                slot.insert(Some(needed));
+                gone.push_back(entity);
+            }
+        }
+    }
+}
+
+fn entity_note(entry: &DirectoryEntry, reason: fmt::Arguments<'_>) -> LossNote {
+    attributed_note(
         entry,
         IgesLossCode::EntityNotProjected,
         format_args!(
             "IGES entity type {} form {} was not projected: {reason}",
             entry.entity_type, entry.form
         ),
-    );
+    )
 }
 
-fn push_geometry_loss(
-    losses: &mut Vec<LossNote>,
-    entry: &DirectoryEntry,
-    reason: fmt::Arguments<'_>,
-) {
-    push_attributed_loss(
-        losses,
+fn geometry_note(entry: &DirectoryEntry, reason: fmt::Arguments<'_>) -> LossNote {
+    attributed_note(
         entry,
         IgesLossCode::GeometryNotProjected,
         format_args!(
             "IGES entity type {} form {} geometry was not projected: {reason}",
             entry.entity_type, entry.form
         ),
+    )
+}
+
+/// Pushes the loss of an entity that the projection gives up, with its
+/// `record.unreadable`.
+fn push_entity_loss(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) {
+    give_up(losses, entry, entity_note(entry, reason));
+}
+
+/// Pushes the loss of an entity that the projection drops, as
+/// [`give_up_needing`] does.
+fn push_entity_loss_needing(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    needs: Option<u32>,
+    reason: fmt::Arguments<'_>,
+) {
+    give_up_needing(
+        losses,
+        entry,
+        projected_record(entry),
+        needs,
+        entity_note(entry, reason),
     );
+}
+
+/// Pushes the finding of a pass that only validates `entry`. The document
+/// keeps the entity's native record whether or not it passes, so the
+/// finding gives up no record.
+fn push_entity_finding(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) {
+    losses.push(entity_note(entry, reason));
+}
+
+/// Pushes the loss of geometry that the projection gives up, with its
+/// `record.unreadable`.
+fn push_geometry_loss(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) {
+    give_up(losses, entry, geometry_note(entry, reason));
+}
+
+/// Pushes the loss of geometry that the projection drops: where it drops it
+/// because the entity of Directory sequence `needs` has no projected record,
+/// with the marker of [`give_up_needing`], and otherwise with its own
+/// `record.unreadable`.
+fn push_geometry_loss_needing(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    needs: Option<u32>,
+    reason: fmt::Arguments<'_>,
+) {
+    give_up_needing(
+        losses,
+        entry,
+        projected_record(entry),
+        needs,
+        geometry_note(entry, reason),
+    );
+}
+
+/// Pushes a geometry loss that gives up no record: the projection keeps the
+/// geometry with less content, or the pass only validates an entity whose
+/// native record the document keeps.
+fn push_retained_geometry_loss(
+    losses: &mut Vec<LossNote>,
+    entry: &DirectoryEntry,
+    reason: fmt::Arguments<'_>,
+) {
+    losses.push(geometry_note(entry, reason));
 }
 
 fn non_resource_error(error: CodecError) -> Result<String, CodecError> {
@@ -132,7 +729,7 @@ pub(crate) mod geometry;
 pub(crate) mod nurbs_controls;
 mod offsets;
 pub(crate) mod ownership;
-mod presentation;
+pub(crate) mod presentation;
 mod splines;
 pub(crate) mod structure;
 mod surfaces;

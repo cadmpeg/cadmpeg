@@ -395,6 +395,11 @@ pub(crate) struct Exchange {
     omitted_spans: Vec<Range<usize>>,
     /// Statements given up as parts, in source order.
     given_up: Vec<GivenUpStatement>,
+    /// Instance names outside the interpreted graph because a given-up
+    /// statement gives them up or they need one, each to that statement.
+    lost_records: BTreeMap<u64, usize>,
+    /// Instances the reader gives up or drops.
+    lost: crate::reader::LostInstances,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
     implementation_level: DeclaredImplementationLevel,
     entity_ids: EntityIndex,
@@ -467,6 +472,17 @@ impl Exchange {
         &self.given_up
     }
 
+    /// The index in [`Self::given_up`] of the statement that instance `id`
+    /// is given up with, or that it needs.
+    pub(crate) fn lost_record(&self, id: u64) -> Option<usize> {
+        self.lost_records.get(&id).copied()
+    }
+
+    /// Instances the reader gives up or drops.
+    pub(crate) fn lost(&self) -> &crate::reader::LostInstances {
+        &self.lost
+    }
+
     /// Every statement outside the interpreted graph whose exact source is
     /// retained: omitted statements and given-up parts.
     pub(crate) fn retained_statement_spans(&self) -> impl Iterator<Item = &Range<usize>> {
@@ -532,17 +548,20 @@ impl Exchange {
         self.entity_ids().keys().any(|name| matches(name))
     }
 
-    pub(crate) fn matching_entity_ids<'a>(
-        &'a self,
-        matches: impl Fn(&str) -> bool + 'a,
-    ) -> impl Iterator<Item = u64> + 'a {
-        self.records.iter().filter_map(move |(&id, record)| {
-            record
-                .partials
-                .iter()
-                .any(|partial| matches(&partial.name))
-                .then_some(id)
-        })
+    /// The ids of the records with a partial whose name `matches`, ascending.
+    pub(crate) fn matching_entity_ids(
+        &self,
+        matches: impl Fn(&str) -> bool,
+    ) -> std::vec::IntoIter<u64> {
+        let mut ids = self
+            .entity_ids()
+            .iter()
+            .filter(|(name, _)| matches(name))
+            .flat_map(|(_, ids)| ids.iter().copied())
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.dedup();
+        ids.into_iter()
     }
 
     pub(crate) fn entities(&self, name: &str) -> impl Iterator<Item = (u64, &RawRecord)> {
@@ -553,17 +572,13 @@ impl Exchange {
             .map(|id| (*id, &self.records[id]))
     }
 
+    /// The records with a partial named in `names`, in ascending id order.
     pub(crate) fn entities_any<'a>(
         &'a self,
-        names: &'a [&str],
+        names: &[&str],
     ) -> impl Iterator<Item = (u64, &'a RawRecord)> + 'a {
-        self.records.iter().filter_map(move |(&id, record)| {
-            record
-                .partials
-                .iter()
-                .any(|partial| names.contains(&partial.name.as_str()))
-                .then_some((id, record))
-        })
+        self.matching_entity_ids(|name| names.contains(&name))
+            .map(|id| (id, &self.records[&id]))
     }
 }
 
@@ -629,21 +644,31 @@ pub(crate) struct ParseDiagnostic {
     pub(crate) message: String,
 }
 
-/// A HEADER or DATA statement the parser could not read, given up as one
-/// part.
+/// A HEADER, ANCHOR, or DATA statement the parser could not read or keep,
+/// given up as one part.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct GivenUpStatement {
-    /// `header_record` or `data_record`.
+    /// `header_record`, `anchor_record`, or `data_record`.
     pub(crate) kind: &'static str,
     /// The statement's exact source extent, through its terminator.
     pub(crate) span: Range<usize>,
     /// Why the statement could not be read.
     pub(crate) cause: GiveUpCause,
-    /// Source offsets of the records dropped because they need it.
-    pub(crate) dropped: Vec<usize>,
+    /// The statements dropped because they need it.
+    pub(crate) dropped: Vec<DroppedStatement>,
     /// Instance names of kept records and of the entries they lost from an
     /// unordered aggregate because the entries need it.
     pub(crate) lost: Vec<(u64, u64)>,
+}
+
+/// A statement the parser drops because it needs a given-up statement. The
+/// parser keeps its exact source as an omitted statement.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DroppedStatement {
+    /// The statement's name: `#12` or `<name>`.
+    pub(crate) name: String,
+    /// The byte offset of the statement, which keys its omitted record.
+    pub(crate) offset: usize,
 }
 
 /// Why a statement was given up.
@@ -653,12 +678,14 @@ pub(crate) enum GiveUpCause {
     Syntax(String),
     /// The statement exceeded a bound that applies to one part.
     Resource(ResourceLimit),
+    /// The statement reads, but its content cannot stand in the exchange.
+    Content(String),
 }
 
 impl GiveUpCause {
     pub(crate) fn into_error(self) -> CodecError {
         match self {
-            Self::Syntax(message) => CodecError::Malformed(message),
+            Self::Syntax(message) | Self::Content(message) => CodecError::Malformed(message),
             Self::Resource(limit) => limit.into(),
         }
     }
@@ -684,6 +711,7 @@ pub(crate) fn parse_inner(
         diagnostics: Vec::new(),
         given_up: Vec::new(),
         given_up_names: BTreeMap::new(),
+        given_up_anchors: BTreeMap::new(),
         omitted_entity_names: None,
         defer_lexical_errors: false,
         budget,
@@ -709,8 +737,11 @@ struct Parser<'input, 'ctx, 'arena> {
     diagnostics: Vec<ParseDiagnostic>,
     given_up: Vec<GivenUpStatement>,
     /// Instance names of given-up DATA statements, each to the first
-    /// statement that bears it.
+    /// statement that bears it, and of the instances dropped because they
+    /// need a given-up statement, each to that statement.
     given_up_names: BTreeMap<u64, usize>,
+    /// Names of given-up anchors, each to its statement.
+    given_up_anchors: BTreeMap<String, usize>,
     omitted_entity_names: Option<(usize, NonZeroUsize)>,
     defer_lexical_errors: bool,
     budget: &'ctx DecodeContext<'arena>,
@@ -1283,7 +1314,7 @@ impl Parser<'_, '_, '_> {
 
         let mut refs = Vec::new();
         let mut value_refs = Vec::new();
-        let mut dependent = BoundedExpansions::default();
+        let mut dependent = BTreeMap::new();
         for anchor in &anchors {
             let mut bounded_reference = None;
             for value in anchor.values() {
@@ -1298,11 +1329,8 @@ impl Parser<'_, '_, '_> {
                     break;
                 }
             }
-            if let Some(id) = bounded_reference {
-                dependent.anchors.insert(
-                    anchor.name.clone(),
-                    format!("depends on instance #{id}, omitted at its expansion limit"),
-                );
+            if let Some(part) = bounded_reference.and_then(|id| self.given_up_names.get(&id)) {
+                dependent.insert(anchor.name.clone(), *part);
                 continue;
             }
             refs.clear();
@@ -1338,11 +1366,10 @@ impl Parser<'_, '_, '_> {
                 }
             }
         }
-        self.omit_bounded_expansions(
+        self.drop_anchors(
             dependent,
             &mut anchors,
             &mut anchor_spans,
-            &mut records,
             &mut omitted_spans,
             &mut omissions,
         );
@@ -1393,6 +1420,8 @@ impl Parser<'_, '_, '_> {
                 records,
                 omitted_spans,
                 given_up: self.given_up,
+                lost_records: self.given_up_names,
+                lost: crate::reader::LostInstances::default(),
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
                 entity_ids,
@@ -2857,6 +2886,18 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     }
 }
 
+/// The end of the bound of an item that names an anchor omitted at its
+/// expansion limit.
+const OMITTED_ANCHOR_TAIL: &str = ">, omitted at its expansion limit";
+
+/// The anchor that `bound` names when the item needs that omitted anchor.
+fn omitted_anchor_named(bound: &str) -> Option<&str> {
+    let (_, anchor) = bound
+        .strip_suffix(OMITTED_ANCHOR_TAIL)?
+        .rsplit_once(" names anchor <")?;
+    Some(anchor)
+}
+
 struct ReferenceResolver<'a, 'ctx, 'arena> {
     bindings: BTreeMap<ReferenceName, &'a str>,
     anchors: &'a BTreeMap<String, Value>,
@@ -2921,7 +2962,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     }
 
     fn omitted_anchor_bound(key: ReferenceName, fragment: &str) -> String {
-        format!("REFERENCE {key} names anchor <{fragment}>, omitted at its expansion limit")
+        format!("REFERENCE {key} names anchor <{fragment}{OMITTED_ANCHOR_TAIL}")
     }
 
     fn discard_limit_bound() -> String {

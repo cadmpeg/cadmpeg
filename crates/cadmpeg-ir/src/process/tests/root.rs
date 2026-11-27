@@ -4,10 +4,10 @@
 //! `process` home of a document.
 
 use cadmpeg_core::decode::{ArenaClass, ContentScope};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::json;
 
 use super::root_fixtures as root;
 use super::{read_desktop, refuses, round_trip, to_value};

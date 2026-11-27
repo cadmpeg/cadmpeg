@@ -4,11 +4,11 @@
 //! document.
 
 use cadmpeg_core::decode::{ArenaClass, ContentScope};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::json;
 
 use super::fixtures::{feature, id, name_tables};
 use super::root_fixtures as root;

@@ -4,7 +4,8 @@
 
 use cadmpeg_core::CodecError;
 
-fn slice_streamed_faces(streams: &[(&str, Vec<u8>)]) -> Result<usize, CodecError> {
+/// How many faces of the decoded `streams` state every loop.
+fn slice_complete_faces(streams: &[(&str, Vec<u8>)]) -> Result<usize, CodecError> {
     use crate::test_support::parasolid::parasolid_with_body;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
@@ -27,8 +28,12 @@ fn slice_streamed_faces(streams: &[(&str, Vec<u8>)]) -> Result<usize, CodecError
         .zip(&headers)
         .map(|(stream, header)| (stream.as_slice(), header))
         .collect();
-    super::decode_bodies(&ctx, &bodies, &cadmpeg_ir::stream_name!("slice"))
-        .map(|brep| brep.faces.len())
+    super::decode_bodies(&ctx, &bodies, &cadmpeg_ir::stream_name!("slice")).map(|brep| {
+        brep.faces
+            .iter()
+            .filter(|face| !face.loops.is_partial())
+            .count()
+    })
 }
 
 fn drain_point(body: &mut Vec<u8>) {
@@ -46,31 +51,31 @@ fn partition_and_deltas_streams_merge_at_slice_level() {
     use crate::test_support::parasolid::{triangle_body, tripled_world_point};
     let full = triangle_body();
     assert_eq!(
-        slice_streamed_faces(&[("partition body", full.clone())]).expect("partition decodes"),
+        slice_complete_faces(&[("partition body", full.clone())]).expect("partition decodes"),
         1
     );
     let mut partial = full;
     drain_point(&mut partial);
     assert_eq!(
-        slice_streamed_faces(&[("partition body", partial.clone())]).expect("partial decodes"),
+        slice_complete_faces(&[("partition body", partial.clone())]).expect("partial decodes"),
         0
     );
     let supplied = tripled_world_point(60, [2.0, 0.0, 0.0]);
     assert_eq!(
-        slice_streamed_faces(&[("partition body", partial), ("deltas body", supplied)])
+        slice_complete_faces(&[("partition body", partial), ("deltas body", supplied)])
             .expect("merged streams decode"),
         1
     );
 }
 
 #[test]
-fn nonfinite_partition_point_drops_the_face() {
+fn nonfinite_partition_point_drops_the_loop() {
     use crate::test_support::parasolid::{triangle_body, world_point};
     let mut partial = triangle_body();
     drain_point(&mut partial);
     partial.extend(world_point(60, [f64::NAN, 0.0, 0.0]));
     assert_eq!(
-        slice_streamed_faces(&[("partition body", partial)]).expect("rejected point decodes"),
+        slice_complete_faces(&[("partition body", partial)]).expect("rejected point decodes"),
         0
     );
 }

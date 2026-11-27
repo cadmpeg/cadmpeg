@@ -3,7 +3,7 @@
 //! writes exactly, or leaves out with the body that holds them.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, LoopId, PointId, ProceduralCurveId, ProceduralSurfaceId, VertexId};
@@ -28,7 +28,7 @@ fn cube() -> cadmpeg_ir::CadIr {
 
 pub(super) fn plan_losses(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .unwrap()
         .report()
         .losses
@@ -445,6 +445,31 @@ fn history_with_another_formats_native_references_is_written() {
     );
     let decoded = crate::test_support::ir::encode_decode(&ir);
     assert_eq!(decoded.model.sketches.len(), 1);
+}
+
+/// A source that does not state suppression leaves its features unsuppressed
+/// (§5.10): the history is written whole, with no note for it.
+#[test]
+fn history_whose_source_does_not_state_suppression_is_written_unsuppressed() {
+    let mut ir = cube_with_foreign_history();
+    for feature in &mut ir.model.features {
+        feature.suppressed = None;
+    }
+    let losses = plan_losses(&ir);
+    assert!(
+        loss(&losses, "writer.features-omitted").is_none(),
+        "{losses:#?}"
+    );
+    let decoded = crate::test_support::ir::encode_decode(&ir);
+    for name in ["Profile", "Boss"] {
+        let feature = decoded
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("{name} decodes back"));
+        assert_eq!(feature.suppressed, Some(false), "{name}");
+    }
 }
 
 /// Push a feature of another format named `name`, with the input topology

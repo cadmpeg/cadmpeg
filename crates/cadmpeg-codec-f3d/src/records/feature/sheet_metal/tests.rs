@@ -8,17 +8,17 @@ use cadmpeg_core::serde_erase::json;
 
 fn edge_flange_wire_for_borrowed(mode: &str) -> serde_json::Value {
     let (owners, owners_by_edge) = match mode {
-        "full_edge" => (serde_json::json!([]), serde_json::json!([])),
-        "symmetric" => (serde_json::json!([50]), serde_json::json!([])),
-        "two_sides" => (serde_json::json!([50, 51]), serde_json::json!([])),
-        "symmetric_per_edge" => (serde_json::json!([50, 51]), serde_json::json!([])),
+        "full_edge" => (cadmpeg_core::json!([]), cadmpeg_core::json!([])),
+        "symmetric" => (cadmpeg_core::json!([50]), cadmpeg_core::json!([])),
+        "two_sides" => (cadmpeg_core::json!([50, 51]), cadmpeg_core::json!([])),
+        "symmetric_per_edge" => (cadmpeg_core::json!([50, 51]), cadmpeg_core::json!([])),
         "two_sides_per_edge" => (
-            serde_json::json!([50, 51, 52, 53]),
-            serde_json::json!([[50, 51], [52, 53]]),
+            cadmpeg_core::json!([50, 51, 52, 53]),
+            cadmpeg_core::json!([[50, 51], [52, 53]]),
         ),
         _ => unreachable!(),
     };
-    serde_json::json!({
+    cadmpeg_core::json!({
         "edge_wrapper_record_indices":[10,11], "edge_group_record_indices":[20,21],
         "edge_operand_record_indices":[23,24], "aggregate_group_record_index":30,
         "aggregate_operand_record_indices":[34,35], "height_owner_record_index":40,
@@ -72,7 +72,7 @@ fn edge_flange_operation_native_retained_limit_refuses_before_clone() {
 
 #[test]
 fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "edge_wrapper_record_index":1, "edge_group_record_index":2, "edge_operand_record_index":5,
         "aggregate_group_record_index":6, "aggregate_operand_record_index":9,
         "parameter_owners":{"kind":"gap_length", "gap_owner_record_index":10, "length_owner_record_index":11},
@@ -85,10 +85,10 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
     assert!(reversed.flipped);
     assert_eq!(json::to_value(reversed).unwrap(), flipped);
     for (field, value) in [
-        ("flipped", serde_json::json!(2)),
-        ("bend_position", serde_json::json!("unknown")),
-        ("bend_position", serde_json::json!("tangent")),
-        ("direction_reversal_byte", serde_json::json!(0)),
+        ("flipped", cadmpeg_core::json!(2)),
+        ("bend_position", cadmpeg_core::json!("unknown")),
+        ("bend_position", cadmpeg_core::json!("tangent")),
+        ("direction_reversal_byte", cadmpeg_core::json!(0)),
     ] {
         let mut invalid = wire.clone();
         invalid[field] = value;
@@ -104,8 +104,8 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
         ),
     ] {
         let mut invalid = wire.clone();
-        invalid[group] = serde_json::json!(u32::MAX);
-        invalid[operand] = serde_json::json!(u32::MAX);
+        invalid[group] = cadmpeg_core::json!(u32::MAX);
+        invalid[operand] = cadmpeg_core::json!(u32::MAX);
         assert!(json::from_value::<DesignHemOperation>(invalid).is_err());
     }
     operation.edge_group_record_index = 20_u32.try_into().unwrap();
@@ -120,7 +120,7 @@ fn hem_operand_indices_derive_from_groups_and_reject_wire_disagreement() {
         "aggregate_operand_record_index",
     ] {
         let mut invalid = wire.clone();
-        invalid[field] = serde_json::json!(99);
+        invalid[field] = cadmpeg_core::json!(99);
         assert!(json::from_value::<DesignHemOperation>(invalid).is_err());
     }
 }
@@ -177,7 +177,7 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
         30
     )
     .is_ok());
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "edge_wrapper_record_indices":[10], "edge_group_record_indices":[20], "edge_operand_record_indices":[23],
         "aggregate_group_record_index":30, "aggregate_operand_record_indices":[33],
         "height_owner_record_index":40, "angle_owner_record_index":41, "width_mode":"full_edge",
@@ -190,13 +190,13 @@ fn flange_selection_couples_single_edge_aggregate_and_preserves_multiple_operand
         "aggregate_operand_record_indices",
     ] {
         let mut invalid = wire.clone();
-        invalid[field] = serde_json::json!([99]);
+        invalid[field] = cadmpeg_core::json!([99]);
         assert!(json::from_value::<DesignEdgeFlangeOperation>(invalid).is_err());
     }
     let mut multiple = wire;
-    multiple["edge_wrapper_record_indices"] = serde_json::json!([10, 11]);
-    multiple["edge_group_record_indices"] = serde_json::json!([20, 21]);
-    multiple["edge_operand_record_indices"] = serde_json::json!([23, 24]);
-    multiple["aggregate_operand_record_indices"] = serde_json::json!([34, 35]);
+    multiple["edge_wrapper_record_indices"] = cadmpeg_core::json!([10, 11]);
+    multiple["edge_group_record_indices"] = cadmpeg_core::json!([20, 21]);
+    multiple["edge_operand_record_indices"] = cadmpeg_core::json!([23, 24]);
+    multiple["aggregate_operand_record_indices"] = cadmpeg_core::json!([34, 35]);
     assert!(json::from_value::<DesignEdgeFlangeOperation>(multiple).is_ok());
 }

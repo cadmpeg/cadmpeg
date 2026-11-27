@@ -37,19 +37,35 @@ fn a_feature_without_an_id_is_omitted_with_one_named_loss() {
 }
 
 #[test]
-fn a_repeated_feature_id_omits_the_repeat_and_keeps_the_rest() {
+fn a_repeated_feature_id_with_other_content_gives_up_the_repeat_and_keeps_the_rest() {
     let whole = wire(&decode(&fixture("plate-fillet")));
     let total = feature_count(&whole);
+    let mut repeat = String::new();
     let bytes = edit(&fixture("plate-fillet"), |path, response| {
         if path.ends_with("features.json") {
             let first = response["features"][0]["featureId"].clone();
             let last = response["features"].as_array().unwrap().len() - 1;
             response["features"][last]["featureId"] = first;
+            repeat = format!("{path}#/features/{last}");
         }
     });
     let result = decode(&bytes);
     assert_eq!(malformed_losses(&result), 1, "{:?}", result.report().losses);
     assert_eq!(feature_count(&wire(&result)), total - 1);
+    let repeat = crate::archive::source_record(&repeat);
+    let given_up = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss
+                    .message
+                    .split_whitespace()
+                    .any(|word| word == repeat.as_str())
+        })
+        .count();
+    assert_eq!(given_up, 1, "{:?}", result.report().losses);
 }
 
 #[test]
@@ -126,18 +142,19 @@ fn an_oversized_topology_table_keeps_other_tables_and_degrades_its_consumer() {
     for table in ["bodies", "faces", "edges", "vertices", "loops", "coedges"] {
         let bytes = edit(&fixture("plate-fillet"), |path, response| {
             if path.ends_with("bodydetails/2.json") {
-                let rows = serde_json::json!([null]);
+                let rows = cadmpeg_core::json!([null]);
                 let oversized = Value::Array(
                     std::iter::repeat_n(rows[0].clone(), crate::reader::ROWS + 1).collect(),
                 );
                 match table {
                     "bodies" => response["bodies"] = oversized,
                     "loops" => {
-                        response["bodies"][0]["faces"] = serde_json::json!([{"loops": oversized}]);
+                        response["bodies"][0]["faces"] =
+                            cadmpeg_core::json!([{"loops": oversized}]);
                     }
                     "coedges" => {
                         response["bodies"][0]["faces"] =
-                            serde_json::json!([{"loops": [{"coedges": oversized}]}]);
+                            cadmpeg_core::json!([{"loops": [{"coedges": oversized}]}]);
                     }
                     key => response["bodies"][0][key] = oversized,
                 }
@@ -147,6 +164,15 @@ fn an_oversized_topology_table_keeps_other_tables_and_degrades_its_consumer() {
         assert_eq!(
             named_losses(&result, "onshape/topology.too-large"),
             1,
+            "{table}"
+        );
+        assert!(
+            result.report().losses.iter().any(|loss| {
+                loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                    && loss.message.starts_with(
+                        "part archive-entry \"partstudios/studio/bodydetails/2.json\" ",
+                    )
+            }),
             "{table}"
         );
         assert_eq!(
@@ -181,6 +207,20 @@ fn unreadable_step_keeps_readable_history_and_reports_missing_geometry() {
         });
         let result = decode(&bytes);
         assert_eq!(named_losses(&result, "onshape/step.unreadable"), 1);
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(
+                    |loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                        && loss
+                            .message
+                            .starts_with("part archive-entry \"partstudios/studio/export.step\" ")
+                )
+                .count(),
+            1
+        );
         assert_eq!(feature_count(&wire(&result)), 3);
         assert!(result.ir().geometry.bodies.is_empty());
         let [root] = result.ir().model.product_definitions.as_slice() else {
@@ -197,7 +237,7 @@ fn unreadable_step_without_history_remains_an_error() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let bytes = edit(&fixture("plate-fillet"), |path, value| {
         if path.ends_with("features.json") {
-            value["features"] = serde_json::json!([]);
+            value["features"] = cadmpeg_core::json!([]);
         }
     });
     let bytes = crate::test_support::review::members(&bytes, |members| {

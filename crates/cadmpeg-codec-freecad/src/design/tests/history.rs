@@ -642,7 +642,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     corrupted["merged_ranges"]
         .as_array_mut()
         .expect("merged ranges")
-        .push(serde_json::json!({"start": "A1", "end": "A2"}));
+        .push(cadmpeg_core::json!({"start": "A1", "end": "A2"}));
     let error = json::from_value::<cadmpeg_ir::Spreadsheet>(corrupted)
         .expect_err("overlapping merge ranges");
     assert!(error.to_string().contains("merged ranges overlap"));

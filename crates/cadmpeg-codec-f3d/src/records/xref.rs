@@ -336,25 +336,25 @@ mod tests {
     use cadmpeg_core::serde_erase::json;
     #[test]
     fn native_xref_required_text_refuses_empty_fields() {
-        let design = serde_json::json!({"id":"f3d:xref:design#0","ordinal":0,"file_version":1,
+        let design = cadmpeg_core::json!({"id":"f3d:xref:design#0","ordinal":0,"file_version":1,
             "target_file_name":"part.f3d","display_name":"","lineage_urn":"","version_urn":""});
-        let reference = serde_json::json!({"id":"f3d:xref:reference#0","ordinal":0,
+        let reference = cadmpeg_core::json!({"id":"f3d:xref:reference#0","ordinal":0,
             "from":"root.f3d","relative_path":"part.f3d","neutron_role":"role","neutron_data":""});
         let mut empty = design.clone();
-        empty["target_file_name"] = serde_json::json!("");
+        empty["target_file_name"] = cadmpeg_core::json!("");
         assert!(json::from_value::<XrefDesign>(empty).is_err());
         for field in ["from", "relative_path", "neutron_role"] {
             let mut empty = reference.clone();
-            empty[field] = serde_json::json!("");
+            empty[field] = cadmpeg_core::json!("");
             assert!(json::from_value::<XrefReference>(empty).is_err(), "{field}");
             let mut whitespace = reference.clone();
-            whitespace[field] = serde_json::json!(" ");
+            whitespace[field] = cadmpeg_core::json!(" ");
             let record = json::from_value::<XrefReference>(whitespace.clone()).unwrap();
-            whitespace["occurrence_ordinal"] = serde_json::json!(0);
+            whitespace["occurrence_ordinal"] = cadmpeg_core::json!(0);
             assert_eq!(json::to_value(record).unwrap(), whitespace);
         }
         let mut whitespace = design;
-        whitespace["target_file_name"] = serde_json::json!(" ");
+        whitespace["target_file_name"] = cadmpeg_core::json!(" ");
         assert_eq!(
             json::to_value(json::from_value::<XrefDesign>(whitespace.clone()).unwrap()).unwrap(),
             whitespace
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn derived_reference_native_shape_round_trip() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "f3d:derived:reference#0", "ordinal": 0,
             "from": "root.f3d", "relative_path": "source.f3d",
             "neutron_role": "role", "neutron_data": "data"
@@ -372,7 +372,7 @@ mod tests {
         assert_eq!(json::to_value(restored).unwrap(), wire);
         for field in ["from", "relative_path", "neutron_role"] {
             let mut invalid = wire.clone();
-            invalid[field] = serde_json::json!("");
+            invalid[field] = cadmpeg_core::json!("");
             assert!(json::from_value::<super::DerivedReference>(invalid).is_err());
         }
     }

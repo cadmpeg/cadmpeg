@@ -47,14 +47,14 @@ fn a_native_collider_shape_keeps_its_name() {
     let json = json::to_value(&collider).unwrap();
     assert_eq!(
         json["shape"],
-        serde_json::json!({"kind": "native", "name": "sdf"})
+        cadmpeg_core::json!({"kind": "native", "name": "sdf"})
     );
     assert_eq!(json::from_value::<Collider>(json).unwrap(), collider);
 }
 
 #[test]
 fn an_explicit_null_mass_is_refused() {
-    let json = serde_json::json!({
+    let json = cadmpeg_core::json!({
         "id": "test:model:mass#0",
         "target": {"kind": "occurrence", "occurrence": "test:model:occurrence#0"},
         "mass": null,

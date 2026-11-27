@@ -28,13 +28,13 @@ fn topology(value: &serde_json::Value) -> Topology {
 /// `key`.
 fn state(key: &str, points: &[(&str, f64)]) -> Topology {
     let id = |kind: &str, child: &str| format!("fcstd:model:{kind}#{key}:{child}");
-    topology(&serde_json::json!({
+    topology(&cadmpeg_core::json!({
         "bodies": [{"id": id("body", "1"), "kind": "solid"}],
         "regions": [{"id": id("region", "1"), "body": id("body", "1"), "shells": [id("shell", "1")]}],
         "shells": [{"id": id("shell", "1"), "region": id("region", "1"), "members": []}],
         "points": points
             .iter()
-            .map(|(child, x)| serde_json::json!({"id": id("point", child), "position": {"x": x, "y": 0.0, "z": 0.0}}))
+            .map(|(child, x)| cadmpeg_core::json!({"id": id("point", child), "position": {"x": x, "y": 0.0, "z": 0.0}}))
             .collect::<Vec<_>>(),
     }))
 }
@@ -85,7 +85,7 @@ fn a_record_that_differs_only_in_its_source_object_is_shared() {
     let with_source = |key: &str, object: &str| {
         let mut topology = state(key, &[("1", 3.0)]);
         let mut wire = json::to_value(&topology).unwrap();
-        wire["points"][0]["source_object"] = serde_json::json!({
+        wire["points"][0]["source_object"] = cadmpeg_core::json!({
             "format": "fcstd",
             "object_id": format!("fcstd:native:object#{object}"),
             "instance_path": [],
@@ -116,19 +116,19 @@ fn a_record_that_differs_only_in_its_source_object_is_shared() {
 /// construction `key:1:construction` that bounds the basis to it.
 fn cylinder(key: &str, subset: bool) -> Topology {
     let surface = |child: &str| format!("fcstd:model:surface#{key}:{child}");
-    let geometry = serde_json::json!({"kind": "solved", "value": {"kind": "cylinder",
+    let geometry = cadmpeg_core::json!({"kind": "solved", "value": {"kind": "cylinder",
         "origin": {"x": 0.0, "y": 0.0, "z": 0.0}, "axis": {"x": 0.0, "y": 0.0, "z": 1.0},
         "ref_direction": {"x": 1.0, "y": 0.0, "z": 0.0}, "radius": 2.0}});
     let constructions = if subset {
         vec![
-            serde_json::json!({"id": surface("1:construction"), "surface": surface("1"),
+            cadmpeg_core::json!({"id": surface("1:construction"), "surface": surface("1"),
             "definition": {"kind": "subset", "support": surface("1:basis"),
                 "parameter_ranges": [[0.0, 3.0], [0.0, 5.0]]}}),
         ]
     } else {
         Vec::new()
     };
-    topology(&serde_json::json!({
+    topology(&cadmpeg_core::json!({
         "surfaces": [{"id": surface("1"), "geometry": geometry},
                      {"id": surface("1:basis"), "geometry": geometry}],
         "procedural_surfaces": constructions,

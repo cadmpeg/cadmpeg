@@ -58,14 +58,14 @@ fn source_chart_retains_frames_and_checks_its_wire() {
         *chart
     );
     for (side, field, value) in [
-        (0, "source_offset", serde_json::json!(boundary + 1)),
+        (0, "source_offset", cadmpeg_core::json!(boundary + 1)),
         (
             1,
             "operand",
-            serde_json::json!({"value": 10, "encoding": "inline"}),
+            cadmpeg_core::json!({"value": 10, "encoding": "inline"}),
         ),
-        (2, "interval", serde_json::json!([0.0, 4.0])),
-        (2, "sign_ambiguous", serde_json::json!(false)),
+        (2, "interval", cadmpeg_core::json!([0.0, 4.0])),
+        (2, "sign_ambiguous", cadmpeg_core::json!(false)),
     ] {
         let mut wrong = wire.clone();
         wrong["sides"][side][field] = value;
@@ -77,10 +77,10 @@ fn source_chart_retains_frames_and_checks_its_wire() {
         .expect("payload");
     let mut changed = payload.to_owned();
     changed.replace_range(2..4, "16");
-    wrong["sides"][0]["frame"]["payload"] = serde_json::json!(changed);
+    wrong["sides"][0]["frame"]["payload"] = cadmpeg_core::json!(changed);
     assert!(json::from_value::<CatiaConsolidatedA5Chart>(wrong).is_err());
     let mut wrong = wire;
-    wrong["sides"][3]["frame"]["byte_offset"] = serde_json::json!(u64::MAX);
+    wrong["sides"][3]["frame"]["byte_offset"] = cadmpeg_core::json!(u64::MAX);
     assert!(json::from_value::<CatiaConsolidatedA5Chart>(wrong).is_err());
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store chart");

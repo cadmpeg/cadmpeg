@@ -520,7 +520,7 @@ fn validation_detects_changed_translation_rotation_selection_and_copy_count() {
         &std::collections::HashMap::new()
     ));
     let mut changed_source = json::to_value(&source).expect("synthetic source");
-    changed_source["properties"]["marker"] = serde_json::json!(3);
+    changed_source["properties"]["marker"] = cadmpeg_core::json!(3);
     let changed_source = json::from_value(changed_source).expect("synthetic source");
     assert!(!index.matches(
         &changed_source,
@@ -697,7 +697,7 @@ fn native_motion_lists_require_type_2_markers_after_deserialization() {
         );
         assert!(property_is_valid(&valid, |_| None));
         let mut changed = json::to_value(&valid).expect("synthetic property");
-        changed["kind"]["items"]["marker"] = serde_json::json!(3);
+        changed["kind"]["items"]["marker"] = cadmpeg_core::json!(3);
         let changed = json::from_value(changed).expect("synthetic property");
         assert!(!property_is_valid(&changed, |_| None));
     }
@@ -709,7 +709,7 @@ fn native_motion_lists_require_type_2_markers_after_deserialization() {
     );
     assert!(property_is_valid(&valid, |_| None));
     let mut changed = json::to_value(&valid).expect("synthetic face item");
-    changed["kind"]["index_references"]["marker"] = serde_json::json!(3);
+    changed["kind"]["index_references"]["marker"] = cadmpeg_core::json!(3);
     let changed = json::from_value(changed).expect("synthetic face item");
     assert!(!property_is_valid(&changed, |_| None));
 }

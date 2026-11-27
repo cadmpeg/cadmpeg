@@ -347,7 +347,7 @@ fn configuration_body_membership_round_trips_and_validates() {
 fn configuration_name_preserves_resolution_state() {
     use crate::features::parameters::DesignConfiguration;
 
-    let unresolved = serde_json::json!({
+    let unresolved = cadmpeg_core::json!({
         "id": "synthetic:test:configuration#0",
         "ordinal": 0,
         "active": false,
@@ -442,7 +442,7 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
     let mut restated = wire;
     restated.as_object_mut().unwrap().insert(
         "suppressed_features".into(),
-        serde_json::json!([feature.id.0.clone()]),
+        cadmpeg_core::json!([feature.id.0.clone()]),
     );
     let error =
         json::from_value::<crate::features::parameters::DesignConfiguration>(restated).unwrap_err();
@@ -466,21 +466,21 @@ fn configuration_evaluation_wire_is_flat_and_strict() {
     let wire = json::to_value(&active).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({"kind": "active", "outputs": ["synthetic:test:body#evaluation"]})
+        cadmpeg_core::json!({"kind": "active", "outputs": ["synthetic:test:body#evaluation"]})
     );
     assert_eq!(
         json::from_value::<ConfigurationEvaluation>(wire).unwrap(),
         active
     );
     assert!(
-        json::from_value::<ConfigurationEvaluation>(serde_json::json!({
+        json::from_value::<ConfigurationEvaluation>(cadmpeg_core::json!({
             "kind": "suppressed",
             "outputs": []
         }))
         .is_err()
     );
     assert!(
-        json::from_value::<ConfigurationEvaluation>(serde_json::json!({
+        json::from_value::<ConfigurationEvaluation>(cadmpeg_core::json!({
             "kind": "active",
             "outputs": [],
             "suppressed": true
@@ -498,11 +498,11 @@ fn active_configuration_evaluation_can_have_no_body_outputs() {
     };
     assert_eq!(
         json::to_value(&active).unwrap(),
-        serde_json::json!({"kind": "active", "outputs": []})
+        cadmpeg_core::json!({"kind": "active", "outputs": []})
     );
     assert_eq!(
         json::from_value::<ConfigurationEvaluation>(
-            serde_json::json!({"kind": "active", "outputs": []})
+            cadmpeg_core::json!({"kind": "active", "outputs": []})
         )
         .unwrap(),
         active,

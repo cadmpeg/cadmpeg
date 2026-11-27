@@ -297,7 +297,7 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
     .unwrap()
     .is_empty());
     let mut bad_terminal = json::to_value(&references[1]).unwrap();
-    bad_terminal["terminal"] = serde_json::json!(false);
+    bad_terminal["terminal"] = cadmpeg_core::json!(false);
     assert!(json::from_value::<FeatureSketchReference>(bad_terminal)
         .unwrap_err()
         .to_string()

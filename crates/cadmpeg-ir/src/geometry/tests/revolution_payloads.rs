@@ -48,7 +48,7 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
                 "angular_interval",
                 "angular_parameter_interval",
                 "parameter_interval",
-            ][slot]] = serde_json::json!(range);
+            ][slot]] = cadmpeg_core::json!(range);
             assert!(json::from_value::<ProceduralSurfaceDefinition>(wire).is_err());
         }
     }
@@ -68,7 +68,7 @@ fn revolution_requires_three_strict_finite_intervals_on_all_routes() {
     let wire = json::to_value(&surface).unwrap();
     assert_eq!(
         wire["definition"]["angular_interval"],
-        serde_json::json!([-1.0, 0.0])
+        cadmpeg_core::json!([-1.0, 0.0])
     );
     assert!(wire["definition"]
         .get("angular_parameter_interval")

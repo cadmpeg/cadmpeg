@@ -67,14 +67,14 @@ fn parameter_owner_frame_forms_are_closed() {
         assert!(json::from_value::<DesignParameterOwner>(json::to_value(input).unwrap()).is_ok());
     }
     for (field, value) in [
-        ("frame_length", serde_json::json!(0)),
-        ("frame_length", serde_json::json!(99)),
-        ("evaluated_value_offset", serde_json::json!(139)),
-        ("variant", serde_json::json!(2)),
+        ("frame_length", cadmpeg_core::json!(0)),
+        ("frame_length", cadmpeg_core::json!(99)),
+        ("evaluated_value_offset", cadmpeg_core::json!(139)),
+        ("variant", cadmpeg_core::json!(2)),
         ("variant", serde_json::Value::Null),
-        ("record_index", serde_json::json!(9)),
-        ("parameter_record_index", serde_json::json!(12)),
-        ("companion_record_index", serde_json::json!(11)),
+        ("record_index", cadmpeg_core::json!(9)),
+        ("parameter_record_index", cadmpeg_core::json!(12)),
+        ("companion_record_index", cadmpeg_core::json!(11)),
     ] {
         let mut json = json::to_value(wire()).unwrap();
         json[field] = value;
@@ -137,8 +137,8 @@ fn text_parameter_owner_stores_its_text_in_place_of_the_scalar() {
     long["frame_length"] = 110.into();
     assert!(json::from_value::<DesignParameterOwner>(long.clone()).is_ok());
     for (field, value) in [
-        ("frame_length", serde_json::json!(104)),
-        ("text_value_offset", serde_json::json!(145)),
+        ("frame_length", cadmpeg_core::json!(104)),
+        ("text_value_offset", cadmpeg_core::json!(145)),
         ("text_value_offset", serde_json::Value::Null),
     ] {
         let mut changed = long.clone();

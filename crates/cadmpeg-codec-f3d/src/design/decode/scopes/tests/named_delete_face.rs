@@ -49,7 +49,7 @@ fn named_delete_scope(kind: &str, label: &str) -> Vec<u8> {
 }
 
 fn face_group() -> DesignConstructionOperandGroup {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": "f3d:Design/BulkStream.dat:group#100",
         "scope_record_index": 77,
         "scope_reference_ordinal": 0,

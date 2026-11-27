@@ -229,7 +229,7 @@ pub(in crate::history) fn sync_neutral_features(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &lane_bytes,
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
+        edits.ctx().policy(),
     )?;
     // The end specs whose reversal flag an edit clears, read from the stored
     // records as the decoder read them; `None` where the context refuses the
@@ -442,15 +442,12 @@ pub(in crate::history) fn sync_neutral_features(
                 .map(|edit| edit.applied(original, feature))
                 .collect::<Vec<_>>()
         });
+        // A feature whose source does not state suppression is not
+        // suppressed (§5.10).
         let suppressed = feature
             .suppressed
             .or_else(|| existing.as_deref().map(|record| record.suppressed))
-            .ok_or_else(|| {
-                CodecError::NotImplemented(format!(
-                    "SLDPRT writing requires resolved suppression for feature {}",
-                    feature.id
-                ))
-            })?;
+            .unwrap_or(false);
         let encoder = |feature, contradicted_travel: bool| NeutralFeatureEncoder {
             contradicted_travel,
             feature,
@@ -768,7 +765,8 @@ pub(in crate::history) fn sync_neutral_features(
             &mut record.parameters,
         );
     }
-    let projected_features = project_features_with_native_inputs(native)?;
+    let projected_features =
+        project_features_with_native_inputs(native, edits.ctx().policy().limits)?;
     let projected_features = projected_features
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
@@ -1326,7 +1324,10 @@ mod tests {
             &[],
             &[],
             &mut Some(native),
-            &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+            &mut crate::history::write::edits::SourceEdits::without_source(
+                &ir,
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+            ),
         )
         .expect_err("two lanes state the same object name");
         assert_eq!(
@@ -1351,7 +1352,10 @@ mod tests {
             &[],
             &[],
             &mut Some(sldprt_native(decoded.ir())),
-            &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+            &mut crate::history::write::edits::SourceEdits::without_source(
+                &ir,
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+            ),
         )
         .expect_err("a blank object name is not writable");
         assert_eq!(
@@ -1381,7 +1385,10 @@ mod tests {
                 &ir.model.parameters,
                 &ir.geometry.bodies,
                 &mut native,
-                &mut crate::history::write::edits::SourceEdits::without_source(&ir),
+                &mut crate::history::write::edits::SourceEdits::without_source(
+                    &ir,
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
+                ),
             )
             .expect("the history is written");
             let mut native = native.expect("native history");
@@ -1567,7 +1574,7 @@ mod tests {
     fn cleared_extrusion() -> cadmpeg_ir::features::Feature {
         use cadmpeg_ir::features::extents::ExtrudeDirection;
         use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-        let history: crate::records::FeatureHistory = json::from_value(serde_json::json!({
+        let history: crate::records::FeatureHistory = json::from_value(cadmpeg_core::json!({
             "id":"history", "features":[{
                 "id":"native", "parent":"history", "ordinal":0,
                 "name":"Extrude", "kind":"BossExtrude", "xml_tag":"Extrusion",
@@ -1683,7 +1690,7 @@ mod tests {
         ];
         let lane = |id: &str, configuration: Option<&str>| -> crate::records::FeatureInputLane {
             let payload = format!("{}01{}", "00".repeat(REVERSAL), "00".repeat(31 - REVERSAL));
-            let mut value = serde_json::json!({
+            let mut value = cadmpeg_core::json!({
                 "id": id,
                 "native_payload": payload,
                 "classes": [],

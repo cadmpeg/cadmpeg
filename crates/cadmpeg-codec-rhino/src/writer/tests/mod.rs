@@ -49,8 +49,9 @@ fn written(ir: &CadIr) -> (CadIr, Vec<String>) {
     let mut bytes = Vec::new();
     let report = RhinoCodec
         .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            cadmpeg_ir::codec::write::EncodeInput::new(ir, None).with_target(
+                TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+            ),
         )
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the document");
@@ -75,8 +76,8 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                cadmpeg_ir::codec::write::EncodeInput::new(ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("required invariant");

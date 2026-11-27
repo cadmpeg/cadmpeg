@@ -311,7 +311,7 @@ fn position_shares_large_repeated_paths_on_wire_and_enforces_aggregate_budget() 
         json::from_value::<DesignParameterScope>(wire.clone()).unwrap(),
         scope
     );
-    for index in [serde_json::json!(1), serde_json::Value::Null] {
+    for index in [cadmpeg_core::json!(1), serde_json::Value::Null] {
         let mut invalid = wire.clone();
         invalid["captured_positions"]["rows"][1]["path_index"] = index;
         assert!(json::from_value::<DesignParameterScope>(invalid).is_err());

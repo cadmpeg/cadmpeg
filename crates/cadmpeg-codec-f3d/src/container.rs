@@ -50,6 +50,9 @@ pub(crate) const DETECT_MARKERS: &[&[u8]] = &[
     b"FusionDocType",
     b".smbh",
 ];
+/// The kind of the part an archive entry gives up as.
+pub(crate) const ENTRY_PART: &str = "archive-entry";
+
 /// Marker names that distinguish a multi-document F3Z archive from a generic ZIP.
 pub(crate) const F3Z_DETECT_MARKERS: &[&[u8]] =
     &[b"Manifest.json", b"DesignDescription.json", b".f3d"];
@@ -276,6 +279,11 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) manifest_lineage_urn: Option<String>,
     /// Optional archive entries the scan could not open.
     pub(crate) given_up: Vec<GivenUpPart>,
+    /// The stream of the outer document that holds this archive, for a
+    /// scanned F3Z member.
+    stream: Option<StreamName>,
+    /// The stored byte range of each entry in `source_image`, by archive path.
+    stored_ranges: BTreeMap<String, cadmpeg_core::decode::ByteRange>,
     /// Design `BulkStream` record runs after the last indexed record, by
     /// entry name, with the stream's stored length. Their entry views end
     /// where the run starts; complete stored bytes remain in `source_image`.
@@ -319,6 +327,8 @@ impl<'a> ContainerScan<'a> {
             manifest_reference_extension: self.manifest_reference_extension,
             manifest_lineage_urn: self.manifest_lineage_urn.clone(),
             given_up: self.given_up.clone(),
+            stream: self.stream.clone(),
+            stored_ranges: self.stored_ranges.clone(),
             unindexed_record_runs: self.unindexed_record_runs.clone(),
             inflated_entries: self.inflated_entries.clone(),
             archive: self.archive.clone(),
@@ -357,6 +367,50 @@ impl<'a> ContainerScan<'a> {
 
     pub(crate) fn has_entry(&self, name: &str) -> bool {
         self.inflated_entries.contains_key(name) || self.deferred_members.contains_key(name)
+    }
+
+    /// Gives up the archive entry `name`, whose payload opened and then
+    /// failed to decode with `error`, as an `archive-entry` part holding
+    /// content of the classes its role holds. The source image keeps the
+    /// entry's stored bytes, so the part keeps their digest. `None` when the
+    /// scan did not open the entry: the scan gave that entry up itself.
+    ///
+    /// # Errors
+    ///
+    /// `error` itself when it is fatal to the session, or a refusal of the
+    /// part helper.
+    pub(crate) fn give_up_entry(
+        &self,
+        ctx: &DecodeContext<'_>,
+        name: &str,
+        error: CodecError,
+    ) -> Result<Option<GivenUpPart>, CodecError> {
+        if !self.has_entry(name) {
+            return Ok(None);
+        }
+        let classes = self
+            .entries
+            .iter()
+            .find(|entry| entry.name == name)
+            .map_or(&ArenaClass::ALL[..], |entry| held_classes(entry.role));
+        let stored = self
+            .stored_ranges
+            .get(name)
+            .and_then(|range| {
+                let start = usize::try_from(range.start).ok()?;
+                let end = usize::try_from(range.end).ok()?;
+                View::over_retained(self.source_image).child(start, end)
+            })
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("F3D entry {name} has no stored span"))
+            })?;
+        let mut part = Part::new("f3d", ENTRY_PART, stored, classes.iter().copied())
+            .named(name)
+            .digest_only();
+        if let Some(stream) = &self.stream {
+            part = part.in_stream(stream.clone());
+        }
+        ctx.give_up_part(part, error).map(Some)
     }
 
     pub(crate) fn member_view<'b>(
@@ -539,9 +593,13 @@ fn scan_in<'a>(
     let mut breps = Vec::new();
     let mut inflated_entries = BTreeMap::new();
     let mut given_up = Vec::new();
+    let mut stored_ranges = BTreeMap::new();
 
     for file in archive.entries() {
         let name = file.name.clone();
+        if let Ok(range) = file.stored_range() {
+            stored_ranges.insert(name.clone(), range);
+        }
         let role = classify(&name);
         let compression = file.compression;
         let compressed_size = file.compressed_size;
@@ -605,7 +663,7 @@ fn scan_in<'a>(
                 // The source image record keeps every stored byte of the archive.
                 let mut part = Part::new(
                     "f3d",
-                    "archive-entry",
+                    ENTRY_PART,
                     stored,
                     held_classes(role).iter().copied(),
                 )
@@ -614,7 +672,14 @@ fn scan_in<'a>(
                 if let Some(stream) = stream {
                     part = part.in_stream(stream.clone());
                 }
-                given_up.push(ctx.give_up_part(part, error)?);
+                let part = ctx.give_up_part(part, error)?;
+                // Two directory entries can name one stored span.
+                if given_up
+                    .iter()
+                    .all(|kept: &GivenUpPart| kept.id() != part.id())
+                {
+                    given_up.push(part);
+                }
                 None
             }
             Err(error) => return Err(error),
@@ -797,6 +862,8 @@ fn scan_in<'a>(
         manifest_reference_extension,
         manifest_lineage_urn,
         given_up,
+        stream: stream.cloned(),
+        stored_ranges,
         unindexed_record_runs: Vec::new(),
         inflated_entries,
         archive,

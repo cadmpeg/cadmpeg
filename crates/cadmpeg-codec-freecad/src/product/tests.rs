@@ -878,14 +878,14 @@ fn link_group_retains_element_list_on_the_native_wire() {
     assert_eq!(wire["kind"], "link_group");
     assert_eq!(
         wire["element_objects"],
-        serde_json::json!(["fcstd:native:object#Member"])
+        cadmpeg_core::json!(["fcstd:native:object#Member"])
     );
     assert_eq!(
         json::from_value::<native::ProductNodeRecord>(wire.clone()).unwrap(),
         *group
     );
     let mut invalid = wire;
-    invalid["prototype"] = serde_json::json!("fcstd:native:object#Member");
+    invalid["prototype"] = cadmpeg_core::json!("fcstd:native:object#Member");
     assert!(json::from_value::<native::ProductNodeRecord>(invalid).is_err());
 }
 
@@ -1636,7 +1636,7 @@ fn equal_stale_arrays_do_not_establish_missing_element_count() {
         .expect("link occurrence");
     assert_eq!(
         occurrence["element_visibility"],
-        serde_json::json!([true, false])
+        cadmpeg_core::json!([true, false])
     );
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())

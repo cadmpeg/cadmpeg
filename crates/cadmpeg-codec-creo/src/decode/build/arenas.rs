@@ -684,7 +684,7 @@ pub(super) fn emit_geometry_arenas(
     for (record, offset) in &pcurve_endpoints {
         annotate(
             annotations,
-            &record.id,
+            super::super::native::native_key(&record.id)?,
             "VisibGeom",
             cadmpeg_core::decode::u64_from_index(*offset),
             "pcurve_endpoint_frames",
@@ -961,7 +961,7 @@ pub(super) fn emit_geometry_arenas(
         let source_section = source_section_ref(scan, source.expression_offset);
         annotate(
             annotations,
-            &expression.id,
+            super::super::native::native_key(&expression.id)?,
             source_section,
             cadmpeg_core::decode::u64_from_index(source.expression_offset),
             "curve_expression_program",
@@ -985,7 +985,7 @@ pub(super) fn emit_geometry_arenas(
                 .map_or("MdlStatus", |section| section.name());
             annotate(
                 annotations,
-                &state.id,
+                super::super::native::native_key(&state.id)?,
                 section,
                 cadmpeg_core::decode::u64_from_index(state.offset),
                 "feature_operation_state",
@@ -1012,7 +1012,7 @@ pub(super) fn emit_geometry_arenas(
     if let Some(family_table) = family_table_record(scan) {
         annotate(
             annotations,
-            super::super::records::CreoFamilyTableRecord::ID,
+            super::super::native::native_key(super::super::records::CreoFamilyTableRecord::ID)?,
             "FamilyInf",
             cadmpeg_core::decode::u64_from_index(family_table.offset),
             "configuration_driver_table_pointer",
