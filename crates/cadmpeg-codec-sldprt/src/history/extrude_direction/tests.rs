@@ -241,6 +241,7 @@ fn decoded_side_cap_prevents_a_contradiction() {
         sense: 1.0,
         vertices: Vec::new(),
         triangles: Vec::new(),
+        triangle_bounds: None,
         transform: Transform::identity(),
         polygons: Some(vec![vec![
             Point3::new(0.0, 0.0, 20.0),

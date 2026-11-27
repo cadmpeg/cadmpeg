@@ -991,6 +991,7 @@ pub(crate) fn native_object_graph(
             }),
             suffix: None,
             suffix_schema_selection: None,
+            cached_value_views: crate::native::entity_record::CachedValueViews::default(),
         };
         entities.push(row);
     }

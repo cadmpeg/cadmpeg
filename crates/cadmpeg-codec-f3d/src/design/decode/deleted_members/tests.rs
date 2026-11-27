@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{deleted_members, owner_timestamp_table, table_evidence};
+use super::{deleted_members_for_test as deleted_members, owner_timestamp_table, table_evidence};
 use crate::records::feature::deleted_members::DesignRecordTimestamp;
 use crate::records::identity::Located;
 use cadmpeg_core::decode::u64_from_index;

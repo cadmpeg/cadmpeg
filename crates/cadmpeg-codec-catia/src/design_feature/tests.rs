@@ -423,6 +423,7 @@ fn compact_entity(entity_id: u32, class: &str) -> crate::native::entity_record::
         reference_signature: None,
         suffix: None,
         suffix_schema_selection: None,
+        cached_value_views: crate::native::entity_record::CachedValueViews::default(),
     }
 }
 

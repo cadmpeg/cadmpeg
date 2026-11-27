@@ -37,20 +37,24 @@ pub(super) fn regeneration_order(timeline: &mut Timeline, model: &Model) -> Opti
         .filter_map(|&index| slots[index].take())
         .collect();
     let mut dropped = Vec::new();
-    timeline.folders = std::mem::take(&mut timeline.folders)
+    let folders = std::mem::take(&mut timeline.folders)
         .into_iter()
-        .filter_map(|folder| match run(&folder, &position) {
-            Some((first, last)) => Some(Folder {
-                first,
-                last,
-                ..folder
-            }),
-            None => {
-                dropped.push(folder.name.unwrap_or_default());
-                None
+        .zip(std::mem::take(&mut timeline.folder_records))
+        .zip(std::mem::take(&mut timeline.folder_children));
+    for ((folder, record), children) in folders {
+        match run(&folder, &position) {
+            Some((first, last)) => {
+                timeline.folders.push(Folder {
+                    first,
+                    last,
+                    ..folder
+                });
+                timeline.folder_records.push(record);
+                timeline.folder_children.push(children);
             }
-        })
-        .collect();
+            None => dropped.push(folder.name.unwrap_or_default()),
+        }
+    }
     (!dropped.is_empty()).then(|| {
         SldprtLossCode::DesignFolderDropped.note(format!(
             "{} feature folders hold members that regeneration order does not keep together: {}",
