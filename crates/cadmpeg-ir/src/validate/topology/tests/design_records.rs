@@ -23,7 +23,7 @@ fn missing(home: Home) -> Vec<String> {
     let configuration = ConfigurationId::mint("test:design:configuration#large").unwrap();
     let scope = ProductDefinitionId::mint("test:model:product-definition#part").unwrap();
     let mut ir = CadIr::empty();
-    ir.set_scope(ContentScope::design()).unwrap();
+    ir.set_scope(ContentScope::design());
     match home {
         Home::Model => {
             ir.model

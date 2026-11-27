@@ -3,12 +3,13 @@
 //! `ResourceLimits::max_state_chain_depth` and refuses a cycle (§2.5).
 
 use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimits};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 
 use super::fixtures::id;
 use super::root_fixtures as root;
 use crate::design::evaluation::{Evaluation, StateBase, StateContent, StateDelta};
-use crate::design::read::{self, Ceiling};
+use crate::design::read;
 use crate::document::CadIr;
 
 /// The desktop and service limits, with distinct state chain ceilings low
@@ -66,18 +67,18 @@ fn document(evaluations: Vec<Evaluation>) -> String {
     let mut ir = CadIr::empty();
     ir.design.evaluations = evaluations;
     ir.finalize();
-    serde_json::to_string(&ir).unwrap()
+    json::to_string(&ir).unwrap()
 }
 
 fn admitted(evaluations: Vec<Evaluation>, limits: &ResourceLimits) {
     let text = document(evaluations);
     let back = read::from_str::<CadIr>(&text, limits)
         .unwrap_or_else(|error| panic!("a chain within the ceiling is refused: {error}"));
-    assert_eq!(serde_json::to_string(&back).unwrap(), text);
+    assert_eq!(json::to_string(&back).unwrap(), text);
 }
 
 fn refused_past(evaluations: Vec<Evaluation>, limits: &ResourceLimits) {
-    let limit = Ceiling::StateChain.of(limits);
+    let limit = limits.max_state_chain_depth;
     match read::from_str::<CadIr>(&document(evaluations), limits) {
         Err(CodecError::ResourceLimit(refusal)) => {
             assert_eq!(refusal.dimension, ResourceDimension::RecursionDepth);
@@ -103,7 +104,7 @@ fn refused_cycle(evaluations: Vec<Evaluation>, limits: &ResourceLimits) {
 #[test]
 fn a_chain_at_the_ceiling_reads_and_one_past_is_refused() {
     for limits in policies().into_iter().chain([ResourceLimits::desktop()]) {
-        let limit = Ceiling::StateChain.of(&limits);
+        let limit = limits.max_state_chain_depth;
         admitted(chain(limit), &limits);
         refused_past(chain(limit + 1), &limits);
     }
@@ -115,7 +116,7 @@ fn a_chain_at_the_ceiling_reads_and_one_past_is_refused() {
 #[test]
 fn the_depth_is_the_longest_chain_in_any_arena_order() {
     for limits in policies() {
-        let limit = Ceiling::StateChain.of(&limits);
+        let limit = limits.max_state_chain_depth;
         let mut tip_first = chain(limit - 1);
         tip_first.push(evaluation(limit, on(limit - 1)));
         tip_first.push(evaluation(limit + 1, on(limit - 1)));
@@ -149,7 +150,7 @@ fn a_cycle_of_state_bases_is_refused() {
 #[test]
 fn a_chain_far_past_the_ceiling_is_refused_one_past_it() {
     let [_, limits] = policies();
-    let long = chain(2 * Ceiling::StateChain.of(&limits));
+    let long = chain(2 * limits.max_state_chain_depth);
     refused_past(long.clone(), &limits);
     let mut tip_first = long;
     tip_first.reverse();

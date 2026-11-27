@@ -33,11 +33,11 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | From | Event | To (exit) | Report |
 | --- | --- | --- | --- |
 | running | command completes | 0 | `ok` |
-| running | `CheckFailed`, loss policy, unsupported dialect/target, strict decode, insufficient measure depth | 1 | `refused` |
+| running | `CheckFailed`, strict decode/export/measure, unsupported dialect/target, insufficient measure depth | 1 | `refused` |
 | running | `diff` models or geometry disagree | 1 | `ok` with `different: true` |
 | running | I/O, `DecodeFailed`, resource limit, binary stdout | 2 | `refused` when typed |
 
-`diff` reporting `ok` with exit 1 is the documented verdict split. Measure depth refusals reuse `insufficient_depth` with wire `stage: plan`.
+`diff` reporting `ok` with exit 1 is the documented verdict split. `diff --geometry` depth refusals reuse `insufficient_depth` with wire `stage: plan`. `measure --reject-empty` refuses `measure:output.empty` with `strict_measure_rejected` at stage `measure`.
 
 ### Convert stages
 
@@ -47,13 +47,13 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | --- | --- | --- | --- | --- |
 | start | resolve target / destination | existing output and no `--force` | refused before decode | continue |
 | open | `load_artifact` | native / CADIR / sidecar | `Decoded` / `Restored` / `Neutral` | operational error |
-| decoded | `--reject-lossy` decode | any decode loss | `decode_loss_rejected` | continue |
-| decoded | `validate_loaded` | `--reject-errors` and error findings in the payload | `check_failed` | continue |
-| checked | `encoder.plan` | plan `Err`, `--reject-errors`, and error findings | `check_failed` preferred | plan refusal |
-| planned | export losses and reject-lossy | nonempty export losses | `export_loss_rejected` | write |
+| decoded | decode `Strictness` | an entry of this invocation's decode report refused | `strict_decode_rejected` | continue |
+| decoded | `validate_loaded` | resource ceiling and `--reject-errors` | `resource_limit` at `check` | continue, check reported incomplete |
+| checked | `encoder.plan` | plan `Err` | plan refusal | charge `export:record.invalid` per carried error |
+| planned | write `Strictness` | an entry of the export report refused | `strict_export_rejected` | write |
 | write | `NamedTempFile` then rename | persist fails | operational error | `ok` |
 
-Convert writes after check errors and reports them; `--reject-errors` refuses. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch, and the next load ignores the sidecar with `sidecar.stale` and loads the document without it.
+Convert writes after check errors and reports them; `--reject-errors` refuses through `export:record.invalid`. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch, and the next load ignores the sidecar with `sidecar.stale` and loads the document without it.
 
 No CLI retry loop exists.
 
@@ -66,7 +66,7 @@ No CLI retry loop exists.
 - Requested depth is immutable for the session.
 - Budget fuse is sticky. `finish_session` resurfaces it.
 - `DecodeContext` is `!Sync`. Parallel work snapshots a `DecodeCheckpoint`, resumes on a private arena, and commits with `accept_trace` on the owning thread.
-- `DecodeResult::new` records `CadIr.scope` from the transfer and the request, and refuses a record in an arena whose class the scope excludes. Each requested class the scope lacks charges `decode/depth.not-delivered`.
+- `DecodeResult::new` records `CadIr.scope` from the transfer and the request. A record in an arena whose class the scope excludes stays in the document, and validation reports it. Each requested class the scope lacks charges `decode/depth.not-delivered`.
 
 | From | Event | To | Else |
 | --- | --- | --- | --- |
@@ -80,13 +80,12 @@ No CLI retry loop exists.
 
 ### Dialect layers and admission
 
-**Explicit.** `Admission`: `Admitted` \| `Unverified { using }` \| `Residual` \| `Refused`. `DialectLayers`: one primary plus extras unique by `(format, instance)`. An extra in the primary format carries an instance. Sites: `crates/cadmpeg-core/src/dialect.rs`. Architecture: [architecture.md](architecture.md) “Every classified report has one primary layer.”
+**Explicit.** `Admission`: `Admitted` \| `Unverified { using }` \| `Residual` \| `Refused`. `DialectLayers`: one primary plus extras, every layer unique by `(format, instance)`. Sites: `crates/cadmpeg-core/src/dialect.rs`. Architecture: [architecture.md](architecture.md) “Every classified report has one primary layer.”
 
 | From | Event | Guard | To | Else |
 | --- | --- | --- | --- | --- |
 | empty | `of(primary)` | — | `{primary, []}` | — |
-| set | `insert(layer)` | same `(format, instance)` | — | `Duplicate` |
-| set | `insert(layer)` | primary format and empty instance | — | `MissingInstance` |
+| set | `insert(layer)` | same `(format, instance)` | — | `DuplicateDialectLayer` |
 | set | `insert(layer)` | distinct key | extras extended | — |
 | wire | deserialize | insert fails | — | read error |
 
@@ -136,7 +135,7 @@ Registry `read` in `dialect-support.toml` is a capability column. Golden tests r
 
 **Explicit.** Backend `WritePath`: `VerbatimReplay` \| `Patched` \| `Synthesized`. Fidelity: `NotProvided` \| `NotConsumed` \| `Replayed` \| `Degraded`. `into_report` collapses by `fidelity_provided`. Verbatim cannot be `NotConsumed`. Synthesized cannot be `Replayed`.
 
-Strict decode evaluates `LossNote::strict_consequence` once in `DecodeResult::new` for non-container Strict mode. CLI `--reject-lossy` counts every loss, including Info.
+The sealed decode, write and measurement wrappers apply the caller's `Strictness` (`report/strictness.rs`) once to the completed report: `Strictness::refuses` is the one refusal rule, and `LossKind::strict_floor` is the one floor it reads. A pinned strictness refuses an entry whose severity reaches its code's floor, except in a decode at `Container` depth. CLI `--reject-lossy` refuses every loss at or above `--reject-lossy-floor`, whose default `info` refuses every loss.
 
 ## Topology and measurement
 
@@ -217,9 +216,9 @@ Related fixes share an issue. [#1021](https://github.com/cadmpeg/cadmpeg/issues/
 
 ### Issue 1: Dialect layer identity
 
-Enforce the architecture rule at `DialectLayers::insert` and serde: an extra layer in the primary format must carry a nonempty instance. Keep `(format, instance)` uniqueness. Untagged extra versus untagged primary remains `Duplicate`.
+`DialectLayers::insert` and serde keep `(format, instance)` uniqueness, the one condition CADIR v11 §2.7 states. An untagged extra beside a tagged primary of its format is a layer of its own; an untagged extra beside an untagged primary is `DuplicateDialectLayer`.
 
-Regression: `dialect_layers_reject_an_untagged_extra_in_a_tagged_primary_format` and the matching deserialize test in `crates/cadmpeg-core/src/dialect.rs`.
+Regression: `an_untagged_extra_beside_a_tagged_primary_of_its_format_is_kept` and `dialect_layers_deserialization_reads_an_untagged_extra_beside_a_tagged_primary` in `crates/cadmpeg-core/src/dialect.rs`.
 
 ### Issue 2: Configuration suppression
 

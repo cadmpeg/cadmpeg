@@ -10,7 +10,7 @@ use crate::{build_encoder, Format};
 
 fn export(format: Format, ir: &CadIr) -> Result<(Vec<u8>, String), String> {
     let plan = build_encoder(format)
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     let report = plan
@@ -32,9 +32,11 @@ fn every_encoder_exports_a_document_with_history_bodies_as_one_without() {
         if build_encoder(format).id().as_str() == "cadir" {
             continue;
         }
+        // The nested export runs between the two plain exports, so a stamp
+        // that both plain exports share also stamps the nested one.
         let baseline = export(format, &plain);
-        let again = export(format, &plain);
         let with = export(format, &nested);
+        let again = export(format, &plain);
         if baseline.is_ok() && baseline == again {
             deterministic += 1;
         }

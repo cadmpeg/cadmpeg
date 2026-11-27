@@ -21,10 +21,10 @@ impl<const N: usize> crate::schema::rewrite::typed::RewriteIdentities for super:
     ) -> Result<(), cadmpeg_core::CodecError> {
         Ok(())
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        _map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(self)
     }
@@ -38,10 +38,10 @@ impl<const N: usize> crate::schema::rewrite::typed::RewriteIdentities for super:
     ) -> Result<(), cadmpeg_core::CodecError> {
         Ok(())
     }
-    fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    fn rewrite_identities(
         self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+        _map: &mut crate::schema::rewrite::typed::IdentityMap<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(self)
     }

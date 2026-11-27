@@ -361,6 +361,30 @@ impl GeneratedDesignRegistry {
         )?;
         dynamic_class_tag(ordinal)
     }
+
+    /// Register `entity_id` in place of `source` under the registered type
+    /// that lists `source`, and return the type's class tag; `None` when no
+    /// type lists it or that type's GUID is `unless`.
+    pub(super) fn register_in_place_of(
+        &mut self,
+        source: u32,
+        entity_id: u32,
+        unless: &str,
+    ) -> Result<Option<crate::records::references::DesignClassTag>, CodecError> {
+        let source = u64::from(source);
+        let Some(ordinal) = self.types.iter().position(|design_type| {
+            design_type.entity_ids.contains(&source)
+                && !design_type.type_guid.as_str().eq_ignore_ascii_case(unless)
+        }) else {
+            return Ok(None);
+        };
+        let entity_ids = &mut self.types[ordinal].entity_ids;
+        entity_ids.retain(|entity| *entity != source);
+        entity_ids.push(u64::from(entity_id));
+        entity_ids.sort_unstable();
+        entity_ids.dedup();
+        dynamic_class_tag(ordinal).map(Some)
+    }
 }
 
 fn allocate_record_index(used: &mut BTreeSet<u32>, next: &mut u32) -> Result<u32, CodecError> {

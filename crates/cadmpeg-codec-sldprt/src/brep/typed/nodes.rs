@@ -97,6 +97,7 @@ fn body(node: &impl NodeFields, body_offset: usize) -> Option<Read<BodyNode>> {
             topology_refs,
             ownership_refs: Vec::new(),
             kind,
+            linear_resolution: linear,
             offset,
             end,
         })

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{payload_for_decode, read, LinkedFacePayload, CLASSES, SOURCE_KEYS, WAVE_KEYS};
 use crate::om::operation_record::OperationPayload;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 fn text(bytes: &mut Vec<u8>, value: &str) {
@@ -45,11 +46,11 @@ fn payload() -> (Vec<u8>, usize) {
 #[test]
 fn linked_face_cache_validates_names_and_retains_the_unassigned_tail() {
     let (bytes, prefix) = payload();
-    let wire = serde_json::to_value(NativeBytes::from(bytes.clone())).unwrap();
-    let decoded: LinkedFacePayload = serde_json::from_value(wire.clone()).unwrap();
+    let wire = json::to_value(NativeBytes::from(bytes.clone())).unwrap();
+    let decoded: LinkedFacePayload = json::from_value(wire.clone()).unwrap();
     assert_eq!(decoded.as_bytes(), bytes);
     assert_eq!(decoded.tables().unwrap()[1][1], "Face");
-    assert_eq!(serde_json::to_value(&decoded).unwrap(), wire);
+    assert_eq!(json::to_value(&decoded).unwrap(), wire);
     for end in 0..prefix {
         assert!(read(&bytes[..end]).is_none(), "prefix {end}");
     }
@@ -62,8 +63,8 @@ fn linked_face_cache_validates_names_and_retains_the_unassigned_tail() {
     let name = bytes.windows(4).position(|w| w == b"Name").unwrap();
     let mut changed = bytes;
     changed[name] = b'X';
-    assert!(serde_json::from_value::<LinkedFacePayload>(
-        serde_json::to_value(NativeBytes::from(changed)).unwrap()
+    assert!(json::from_value::<LinkedFacePayload>(
+        json::to_value(NativeBytes::from(changed)).unwrap()
     )
     .is_err());
 }

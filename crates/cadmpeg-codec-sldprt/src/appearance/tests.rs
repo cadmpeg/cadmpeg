@@ -178,8 +178,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
                 .appearance_bindings
                 .iter()
                 .find(|binding| {
-                    binding.target
-                        == AppearanceTarget::Tessellation(tessellation.id.to_string()).into()
+                    binding.target == AppearanceTarget::Tessellation(tessellation.id.clone()).into()
                 })?;
             let color = colors[&binding.appearance];
             let table_index = tessellation
@@ -510,7 +509,7 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
         [0.0, 0.0, 1.0],
         [1.0, 0.0, 0.0],
     ));
-    body.extend(bridge_owned(110, 120, 200, 701));
+    body.extend(bridge_owned(110, 1, 200, 701));
 
     let result = SldprtCodec
         .decode(

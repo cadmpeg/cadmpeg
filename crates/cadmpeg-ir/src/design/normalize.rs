@@ -32,7 +32,7 @@
 mod constructions;
 mod pmi;
 mod selections;
-mod states;
+pub(crate) mod states;
 mod walk;
 
 #[cfg(test)]
@@ -72,7 +72,7 @@ pub(crate) fn normalize(ir: &mut CadIr, policy: &DecodePolicy) -> Result<Vec<Str
 fn normalize_in(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<String>, CodecError> {
     let states = States::new(&ir.design);
     states.normalize_design(&mut ir.design);
-    states.normalize_model(&mut ir.model);
+    states.normalize_model(ir);
     states.normalize_process(&mut ir.process);
     let CadIr {
         geometry,

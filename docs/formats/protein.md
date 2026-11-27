@@ -30,15 +30,15 @@ The page header holds three fields. Bytes 0 through 3 are the little-endian i32 
 | ------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Record start | `80 00 01 00` at bytes 4..8 | Opens a logical record and contributes the complete body at bytes 8..136.                                         |
 | Continuation | `80 00 00 00` at bytes 4..8 | Extends the current record with its complete body.                                                                |
-| Terminal     | `ff ff ff ff` at bytes 0..4 | Closes the current record, or carries one complete short record when no record is open; bytes 8..`8 + used` contribute, where `used` is the little-endian `u16` at bytes 4..6. |
+| Terminal     | `ff ff ff ff` at bytes 0..4 | Closes the current record, or carries one complete record when no record is open; bytes 8..`8 + used` contribute, where `used` is the little-endian `u16` at bytes 4..6. |
 
 A record-start page or continuation page stores its four-byte marker at offset 4: the count `128` and the record-start flag. Bytes 0 through 3 hold the next-page index.
 
-A terminal page stores `ff ff ff ff` at offset 0 and the used payload length as a little-endian u16 at offset 4. Bytes 6 through 7 hold the record-start flag: `1` when the terminal page is the only page of its record, and `0` when it closes a record that a record-start page opened. `used` is at most 128. The body bytes after the first `used` bytes carry no record data.
+A terminal page stores `ff ff ff ff` at offset 0 and the used payload length as a little-endian u16 at offset 4. A page with `ff ff ff ff` at bytes 0 through 3 is a terminal page at every used length. The used length is `128` when the record ends at the end of the page body. Bytes 4 through 7 of that page equal the continuation marker, or the record-start marker when the page is the only page of its record. Bytes 6 through 7 hold the record-start flag: `1` when the terminal page is the only page of its record, and `0` when it closes a record that a record-start page opened. `used` is at most 128. The body bytes after the first `used` bytes carry no record data.
 
 The pages of a record are consecutive: each next-page index is the index of the page that follows it. The records of a stream are consecutive and in table-of-contents order (§6). A stream has no page outside a record.
 
-A continuation page requires an open record. A terminal page without an open record carries one complete short record whose opening record marker is implicit. A stream ending with an open record is valid: the last open record is complete. A record-start page also ends the record before it.
+A continuation page requires an open record. A terminal page without an open record carries one complete record whose opening record marker is implicit. A stream ending with an open record is valid: the last open record is complete. A record-start page also ends the record before it, and so does a terminal page whose record-start flag is `1`.
 
 ## 4. Instance logical record
 

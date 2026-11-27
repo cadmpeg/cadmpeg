@@ -21,6 +21,8 @@ use std::marker::PhantomData;
 use serde::de::{Deserialize, Deserializer, Error, MapAccess, SeqAccess, Visitor};
 use serde::ser::{Serialize, SerializeSeq, Serializer};
 
+use crate::read_session::{self, Repair};
+
 /// Reads a `BTreeMap`, refusing a key the document states twice.
 ///
 /// # Errors
@@ -167,8 +169,8 @@ where
 /// A map with a key that is not a JSON string, as `[key, value]` pairs.
 pub mod pairs {
     use super::{
-        fmt, BTreeMap, Debug, Deserialize, Deserializer, Error, PhantomData, SeqAccess, Serialize,
-        SerializeSeq, Serializer, Visitor,
+        fmt, read_session, BTreeMap, Debug, Deserialize, Deserializer, Error, PhantomData, Repair,
+        SeqAccess, Serialize, SerializeSeq, Serializer, Visitor,
     };
 
     /// Writes the entries in key order.
@@ -198,14 +200,14 @@ pub mod pairs {
     where
         D: Deserializer<'de>,
         K: Deserialize<'de> + Ord + Debug,
-        V: Deserialize<'de>,
+        V: Deserialize<'de> + PartialEq,
     {
         struct Pairs<K, V>(PhantomData<fn() -> (K, V)>);
 
         impl<'de, K, V> Visitor<'de> for Pairs<K, V>
         where
             K: Deserialize<'de> + Ord + Debug,
-            V: Deserialize<'de>,
+            V: Deserialize<'de> + PartialEq,
         {
             type Value = BTreeMap<K, V>;
 
@@ -216,18 +218,42 @@ pub mod pairs {
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
                 let mut out = BTreeMap::new();
+                let mut unsorted = false;
+                let mut restated = false;
                 while let Some((key, value)) = access.next_element::<(K, V)>()? {
-                    if out.contains_key(&key) {
-                        return Err(A::Error::custom(format_args!(
-                            "key {key:?} is stated twice"
-                        )));
+                    if let Some(held) = out.get(&key) {
+                        if !read_session::active() {
+                            return Err(A::Error::custom(format_args!(
+                                "key {key:?} is stated twice"
+                            )));
+                        }
+                        if *held != value {
+                            return Err(A::Error::custom(format_args!(
+                                "key {key:?} is stated twice with different values"
+                            )));
+                        }
+                        restated = true;
+                        continue;
                     }
                     if out.last_key_value().is_some_and(|(last, _)| key < *last) {
-                        return Err(A::Error::custom(format_args!(
-                            "key {key:?} is out of key order"
-                        )));
+                        if !read_session::active() {
+                            return Err(A::Error::custom(format_args!(
+                                "key {key:?} is out of key order"
+                            )));
+                        }
+                        unsorted = true;
                     }
                     out.insert(key, value);
+                }
+                if unsorted {
+                    read_session::repair(Repair::Spelling, &|| {
+                        "a pair map states its keys out of order".into()
+                    });
+                }
+                if restated {
+                    read_session::repair(Repair::Spelling, &|| {
+                        "a pair map states a key twice with one value".into()
+                    });
                 }
                 Ok(out)
             }
@@ -240,8 +266,8 @@ pub mod pairs {
 /// A set, as an array sorted by value.
 pub mod set {
     use super::{
-        fmt, BTreeSet, Deserialize, Deserializer, Error, PhantomData, SeqAccess, Serialize,
-        Serializer, Visitor,
+        fmt, read_session, BTreeSet, Deserialize, Deserializer, Error, PhantomData, Repair,
+        SeqAccess, Serialize, Serializer, Visitor,
     };
 
     /// Writes the members in order.
@@ -279,14 +305,33 @@ pub mod set {
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
                 let mut out = BTreeSet::new();
+                let mut unsorted = false;
+                let mut restated = false;
                 while let Some(value) = access.next_element::<T>()? {
                     if out.contains(&value) {
-                        return Err(A::Error::custom("a set states a member twice"));
+                        if !read_session::active() {
+                            return Err(A::Error::custom("a set states a member twice"));
+                        }
+                        restated = true;
+                        continue;
                     }
                     if out.last().is_some_and(|last| value < *last) {
-                        return Err(A::Error::custom("a set states a member out of order"));
+                        if !read_session::active() {
+                            return Err(A::Error::custom("a set states a member out of order"));
+                        }
+                        unsorted = true;
                     }
                     out.insert(value);
+                }
+                if unsorted {
+                    read_session::repair(Repair::Spelling, &|| {
+                        "a set states its members out of order".into()
+                    });
+                }
+                if restated {
+                    read_session::repair(Repair::Spelling, &|| {
+                        "a set states a member twice".into()
+                    });
                 }
                 Ok(out)
             }
@@ -393,6 +438,29 @@ mod tests {
             let error = serde_json::from_str::<Sorted>(wire).expect_err("a repeat is refused");
             assert!(error.to_string().contains(expected), "{error}");
         }
+    }
+
+    #[test]
+    fn a_read_session_sorts_pairs_and_sets_and_keeps_one_copy_of_an_equal_repeat() {
+        let (read, repairs) = crate::read_session::run(|| {
+            serde_json::from_str::<Sorted>(r#"{"pairs":[[2,"b"],[1,"a"],[2,"b"]],"set":[3,1,3]}"#)
+        });
+        let read = read.expect("a session reads each spelling with one reading");
+        assert_eq!(
+            serde_json::to_string(&read).expect("writes"),
+            r#"{"pairs":[[1,"a"],[2,"b"]],"set":[1,3]}"#
+        );
+        assert_eq!(repairs.len(), 4, "{repairs:?}");
+        let (read, _) = crate::read_session::run(|| {
+            serde_json::from_str::<Sorted>(r#"{"pairs":[[1,"a"],[1,"b"]],"set":[]}"#)
+        });
+        let error = read.expect_err("a key with two values has no reading");
+        assert!(
+            error
+                .to_string()
+                .contains("key 1 is stated twice with different values"),
+            "{error}"
+        );
     }
 
     #[test]

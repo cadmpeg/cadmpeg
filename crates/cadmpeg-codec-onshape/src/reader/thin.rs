@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::json;
 use cadmpeg_ir::{document::Model, CadIr};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::{features, id, number, push, rows, text, topology, Mapping};
 
@@ -45,6 +46,9 @@ pub(super) fn owner(ir: &CadIr) -> Mapping<cadmpeg_ir::ids::ProductDefinitionId>
     }
     Ok(definition.id.clone())
 }
+
+/// The path of a one-sided thin wall's side in its design feature.
+pub(super) const SIDE: &str = "definition.operation.value.output.body.thickness.value.side";
 
 pub(super) fn feature(
     source: &Value,
@@ -231,13 +235,14 @@ pub(super) fn feature(
         .iter()
         .map(|entity| json!({"target":{"kind":"sketch_entity","value":entity}}))
         .collect();
-    Ok((
-        json!({"id":id("feature",text(source,"featureId")?),"suppressed":{"kind":"literal","value":false},"definition":{"operation":{"kind":"extrude","value":{
+    let mut row = json!({"id":id("feature",text(source,"featureId")?),"definition":{"operation":{"kind":"extrude","value":{
         "profile":{"at":{"kind":"input"},"picks":{"kind":"named","value":picks}},
         "direction":{"kind":"profile_normal","reversed":{"kind":"literal","value":reversed}},"origin":{"kind":"profile_plane"},"span":span,
-        "output":{"body":{"kind":"thin","thickness":thickness},"boolean":boolean},"native_options":{},"source_settings":{}}}}}),
-        assumed,
-    ))
+        "output":{"body":{"kind":"thin","thickness":thickness},"boolean":boolean},"native_options":{},"source_settings":{}}}}});
+    if super::suppression_stated(source) {
+        row["suppressed"] = json!({"kind":"literal","value":false});
+    }
+    Ok((row, assumed))
 }
 
 pub(super) fn install_scope(

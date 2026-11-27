@@ -19,6 +19,7 @@
 //! and a record field holding a `serde_json::Value` states its own shape, so
 //! the descent is counted against [`MAX_NATIVE_NESTING_DEPTH`].
 
+use cadmpeg_core::serde_erase::json;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt::{Display, Write as _};
@@ -158,8 +159,8 @@ impl Members {
                 .map_err(|_| NativeConvertError::MissingId)?;
             crate::ids::Identity::new(text)?
         } else {
-            let id = serde_json::from_slice::<String>(raw_id)
-                .map_err(|_| NativeConvertError::MissingId)?;
+            let id =
+                json::from_slice::<String>(raw_id).map_err(|_| NativeConvertError::MissingId)?;
             crate::ids::Identity::new(id)?
         };
         let already_canonical = self.start == 0

@@ -2,7 +2,7 @@
 //! Unit tests for the writable brep model the encoder builds from CADIR.
 
 use super::{adjacent_quad_sheet, polygon_sheet};
-use crate::writer::model::{WritableFaceSurface, WritableModel};
+use crate::writer::model::{TrimEdge, WritableFaceSurface, WritableModel};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -119,7 +119,7 @@ fn multi_face_resolves_domains_and_incidence_in_arena_order() {
                 .map(cadmpeg_ir::units::FiniteVector::finite_components)
         );
         for coedge in &edge.uses {
-            assert_eq!(model.coedges[*coedge].edge, position);
+            assert_eq!(model.coedges[*coedge].edge, TrimEdge::Edge(position));
         }
     }
     for face in &model.faces {

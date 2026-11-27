@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::json;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::DistinctMembers;
-use serde_json::json;
 
 use super::*;
 
@@ -37,7 +38,7 @@ fn projected(parameters: Vec<LegacyParameter>) -> Vec<DesignParameter> {
 }
 
 fn definition_json(parameter: &DesignParameter) -> serde_json::Value {
-    serde_json::to_value(&parameter.definition).expect("definition")
+    json::to_value(&parameter.definition).expect("definition")
 }
 
 fn reference_json(key: &str) -> serde_json::Value {
@@ -108,7 +109,7 @@ fn a_unit_of_unit_symbols_declares_its_quantity() {
     ]);
     let kinds = projected
         .iter()
-        .map(|parameter| serde_json::to_value(&parameter.kind).unwrap())
+        .map(|parameter| json::to_value(&parameter.kind).unwrap())
         .collect::<Vec<_>>();
     let quantity = |length: i8, mass: i8, time: i8| json!({"kind": "quantity", "value": {"length": length, "mass": mass, "angle": 0, "time": time}});
     assert_eq!(
@@ -122,7 +123,7 @@ fn a_unit_of_unit_symbols_declares_its_quantity() {
         ]
     );
     assert_eq!(
-        serde_json::to_value(&projected[2].unit).unwrap(),
+        json::to_value(&projected[2].unit).unwrap(),
         json!([
             {"symbol": "kg", "power": 1},
             {"symbol": "m", "power": 1},
