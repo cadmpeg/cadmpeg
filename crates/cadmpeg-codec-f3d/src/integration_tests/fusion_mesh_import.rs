@@ -78,8 +78,8 @@ fn a_moved_mesh_body_is_the_current_mesh_its_move_selects() {
         panic!("a mesh import");
     };
     assert_eq!(
-        serde_json::to_value(tessellations).unwrap(),
-        serde_json::json!({"kind": "tessellations", "value": [mesh.id.as_str()]})
+        cadmpeg_core::serde_erase::json::to_value(tessellations).unwrap(),
+        cadmpeg_core::json!({"kind": "tessellations", "value": [mesh.id.as_str()]})
     );
 
     let modify = model
@@ -148,8 +148,8 @@ fn removed_mesh(result: &cadmpeg_ir::DecodeResult, before_tag: &str) -> [f64; 6]
         panic!("a mesh import");
     };
     assert_eq!(
-        serde_json::to_value(tessellations).unwrap(),
-        serde_json::json!({"kind": "tessellations", "value": [mesh.id.as_str()]})
+        cadmpeg_core::serde_erase::json::to_value(tessellations).unwrap(),
+        cadmpeg_core::json!({"kind": "tessellations", "value": [mesh.id.as_str()]})
     );
     let FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: BodySelection::Local { bodies, .. },
