@@ -12,6 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
+
 use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue, PostStep};
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
@@ -44,6 +46,7 @@ use cadmpeg_ir::units::UnitVector3;
 use crate::loss::FreecadLossCode;
 use crate::native::frame::FiniteFrame;
 use crate::native::{ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord};
+use crate::persistence::Graph;
 
 mod parameters;
 pub(crate) mod sketches;
@@ -57,12 +60,13 @@ pub(crate) mod states;
 pub(crate) fn project(
     ir: &mut CadIr,
     definition: ProductDefinitionId,
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
+    graph: &Graph,
     links: &[ProductNodeRecord],
     stored_sketches: &sketches::StoredSketches,
+    ctx: &DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), ResourceLimit> {
+    let (objects, properties) = (graph.objects.as_slice(), graph.properties.as_slice());
     let source = Source::of(objects, properties);
     let history = History::of(&ir.model.features, &source);
     let mut features = history
@@ -173,10 +177,11 @@ pub(crate) fn project(
         losses,
     );
     if features.is_empty() && parameters.is_empty() {
-        return;
+        return Ok(());
     }
     let sketches = sketches::project(
         &sketches::Scope {
+            ctx,
             ir,
             stored: stored_sketches,
             source: &source,
@@ -187,7 +192,7 @@ pub(crate) fn project(
         },
         &mut features,
         losses,
-    );
+    )?;
     ir.design.sketches = sketches.sketches;
     ir.design.sketch_entities = sketches.entities;
     ir.design.sketch_constraints = sketches.constraints;
@@ -227,6 +232,7 @@ pub(crate) fn project(
         current,
         unproduced: BTreeSet::new(),
     });
+    Ok(())
 }
 
 /// List as unproduced each body that a definition the scope spans owns and

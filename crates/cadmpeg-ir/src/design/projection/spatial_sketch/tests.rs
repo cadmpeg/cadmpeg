@@ -157,3 +157,54 @@ fn an_arc_that_crosses_its_reference_direction_has_an_increasing_range() {
     assert!((range[0] - 5.0).abs() < 1e-12);
     assert!((range[1] - (1.0 + std::f64::consts::TAU)).abs() < 1e-12);
 }
+
+#[test]
+fn a_native_spatial_relation_keeps_its_operands_and_state() {
+    let mut model = model();
+    for entity in &mut model.spatial_sketch_entities {
+        entity.native_ref = Some(format!("record:{}", entity.id().as_str()));
+    }
+    model.spatial_sketch_constraints.push(
+        json::from_value::<SpatialSketchConstraint>(json!({
+            "id": "test:model:sketch-constraint#bend",
+            "sketch": "test:model:spatial-sketch#s",
+            "definition": {"kind": "native", "native_kind": "test:Bend", "native_state": 3,
+                "operands": [
+                    {"native_kind": "test:curve",
+                        "native_ref": "record:test:model:spatial-sketch-entity#l"},
+                    {"native_kind": "test:curve", "native_ref": "record:elsewhere"}]},
+        }))
+        .expect("valid constraint"),
+    );
+    let out = restate(
+        &cadmpeg_core::nonblank_literal!("test"),
+        &FeatureId::mint("test:model:feature#path").unwrap(),
+        &model.spatial_sketches[0],
+        &model,
+        |_, _| false,
+    );
+    let bend = out
+        .constraints
+        .iter()
+        .find(|constraint| constraint.id.as_str() == "test:model:sketch-constraint#bend")
+        .expect("the native relation");
+    let SketchRelation::Native { kind, operands, .. } = &bend.relation else {
+        panic!("a native relation: {:?}", bend.relation);
+    };
+    assert_eq!(kind.as_str(), "test:Bend");
+    assert!(matches!(&operands[..], [Operand::Entity(l)]
+        if l.as_str() == "test:model:spatial-sketch-entity#l"));
+    assert_eq!(
+        bend.native_options
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.clone()))
+            .collect::<Vec<_>>(),
+        [(
+            "test:native_state",
+            crate::design::options::NativeOption::Integer(Dimension::Literal(3))
+        )]
+    );
+    assert!(out
+        .native_relations
+        .contains(&"test:model:sketch-constraint#bend".to_owned()));
+}

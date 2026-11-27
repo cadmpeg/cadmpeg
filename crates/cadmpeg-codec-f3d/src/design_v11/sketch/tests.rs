@@ -166,6 +166,9 @@ fn unresolved_sketch(id: &str) -> Feature {
 static ROOT: std::sync::LazyLock<cadmpeg_ir::ids::ProductDefinitionId> =
     std::sync::LazyLock::new(crate::tree::file_root_id);
 
+static NO_INCIDENCE: std::sync::LazyLock<super::Incidence> =
+    std::sync::LazyLock::new(super::Incidence::default);
+
 /// The scope of the root definition, whose design parameters are
 /// `parameters` and whose unordered members are `unordered`.
 fn scope<'a>(
@@ -173,8 +176,24 @@ fn scope<'a>(
     unordered: &'a BTreeSet<FeatureId>,
     parameters: &'a [&'a cadmpeg_ir::design::parameter::DesignParameter],
 ) -> super::Scope<'a> {
+    scope_with(model, &NO_INCIDENCE, unordered, parameters)
+}
+
+/// The scope of [`scope`] whose curve records name the point records
+/// `incidence` gives.
+fn scope_with<'a>(
+    model: &'a Model,
+    incidence: &'a super::Incidence,
+    unordered: &'a BTreeSet<FeatureId>,
+    parameters: &'a [&'a cadmpeg_ir::design::parameter::DesignParameter],
+) -> super::Scope<'a> {
     super::Scope {
+        ctx: Box::leak(Box::new(
+            cadmpeg_core::decode::test_support::service_decode_context(),
+        )),
         model,
+        incidence,
+        linear: 1.0e-6,
         definition: &ROOT,
         unordered,
         parameters,
@@ -318,7 +337,8 @@ fn a_sketch_states_its_entities_and_binds_its_dimensions_to_parameters_of_its_sc
         &mut features,
         &mut out,
         &mut losses,
-    );
+    )
+    .expect("the session admits the evaluation");
 
     let sketch = SketchId::mint(SKETCH).unwrap();
     assert_eq!(
@@ -427,7 +447,8 @@ fn a_sketch_of_an_unordered_member_anchors_its_plane_in_the_current_state() {
         &mut features,
         &mut out,
         &mut Vec::new(),
-    );
+    )
+    .expect("the session admits the evaluation");
     let SketchPlane::Placed(plane) = &out.records[0].plane else {
         panic!("a placed plane");
     };
@@ -483,7 +504,8 @@ fn a_native_dimension_binds_its_parameter_and_a_reference_dimension_binds_a_driv
         &mut features,
         &mut out,
         &mut losses,
-    );
+    )
+    .expect("the session admits the evaluation");
     let relation = |key: &str| {
         &out.constraints
             .iter()
@@ -541,6 +563,9 @@ fn a_native_dimension_binds_its_parameter_and_a_reference_dimension_binds_a_driv
 #[test]
 fn a_relation_on_a_line_end_names_a_point_minted_there() {
     let mut model = model();
+    let mut entities = json::to_value(&model.sketch_entities).unwrap();
+    entities.as_array_mut().unwrap()[2]["geometry"]["end"]["u"] = cadmpeg_core::json!(40.0);
+    model.sketch_entities = json::from_value(entities).unwrap();
     let mut constraints = json::to_value(&model.sketch_constraints).unwrap();
     constraints
         .as_array_mut()
@@ -557,7 +582,8 @@ fn a_relation_on_a_line_end_names_a_point_minted_there() {
         &mut features,
         &mut out,
         &mut Vec::new(),
-    );
+    )
+    .expect("the session admits the evaluation");
     let end = format!("{}:end", entity("line"));
     let point = out
         .entities
@@ -660,7 +686,8 @@ fn a_spatial_sketch_is_the_operation_of_its_feature_and_construction_joins_its_g
         &mut features,
         &mut out,
         &mut losses,
-    );
+    )
+    .expect("the session admits the evaluation");
     let [sketch] = out.spatial.as_slice() else {
         panic!("one spatial sketch: {:#?}", out.spatial);
     };
@@ -695,7 +722,8 @@ fn a_relation_on_the_start_of_a_circle_states_the_circle_and_is_charged() {
         &mut features,
         &mut out,
         &mut losses,
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(
         out.constraints
             .iter()
@@ -708,4 +736,166 @@ fn a_relation_on_the_start_of_a_circle_states_the_circle_and_is_charged() {
         F3dLossCode::DesignSketchLocusUnplaced,
         &constraint("on")
     ));
+}
+
+/// The point records of [`model`] with native records, a construction arc
+/// about `p0` from `p1`, and a point `stray` at `p0` that no curve names.
+fn stored_points_model() -> (Model, super::Incidence) {
+    let mut model = model();
+    let mut entities = json::to_value(&model.sketch_entities).unwrap();
+    let list = entities.as_array_mut().unwrap();
+    for (index, record) in [(0, "point#1"), (1, "point#2"), (2, "curve#10")] {
+        list[index]["native_ref"] = cadmpeg_core::json!(format!("{STREAM}:sketch-{record}"));
+    }
+    list.push(cadmpeg_core::json!({"id": entity("arc"), "sketch": SKETCH,
+        "construction": true, "endpoint_refs": [],
+        "native_ref": format!("{STREAM}:sketch-curve#11"),
+        "geometry": {"kind": "arc", "center": {"u": 0.0, "v": 0.0}, "radius": 30.0,
+            "start_angle": 0.0, "end_angle": 1.5}}));
+    list.push(
+        cadmpeg_core::json!({"id": entity("stray"), "sketch": SKETCH,
+        "construction": false, "endpoint_refs": [],
+        "native_ref": format!("{STREAM}:sketch-point#3"),
+        "geometry": {"kind": "point", "position": {"u": 0.0, "v": 0.0}}}),
+    );
+    model.sketch_entities = json::from_value(entities).unwrap();
+    let mut constraints = json::to_value(&model.sketch_constraints).unwrap();
+    let list = constraints.as_array_mut().unwrap();
+    for (key, locus, curve) in [("end", "end", "line"), ("center", "center", "arc")] {
+        list.push(cadmpeg_core::json!({
+            "id": constraint(key), "sketch": SKETCH,
+            "definition": {"kind": "point_on_object",
+                "point": {"kind": locus, "value": entity(curve)}, "entity": entity("circle")}}));
+    }
+    model.sketch_constraints = json::from_value(constraints).unwrap();
+    let curve = |index: u32| super::CurveRecord {
+        id: format!("{STREAM}:sketch-curve#{index}"),
+        record_index: index,
+    };
+    let point = |index: u32, incident_curves: Vec<u32>| super::PointRecord {
+        id: format!("{STREAM}:sketch-point#{index}"),
+        companion: super::PointCompanion { incident_curves },
+    };
+    let incidence = super::Incidence::new(
+        &[curve(10), curve(11)],
+        &[
+            point(1, vec![10, 11]),
+            point(2, vec![10, 11]),
+            point(3, Vec::new()),
+        ],
+    );
+    (model, incidence)
+}
+
+#[test]
+fn a_line_with_stored_end_points_and_an_arc_with_a_stored_center_name_those_points() {
+    let (model, incidence) = stored_points_model();
+    let mut features = [unresolved_sketch(OWNER)];
+    let mut out = super::Sketches::default();
+    let mut losses = Vec::new();
+    super::project(
+        &scope_with(&model, &incidence, &BTreeSet::new(), &[]),
+        &mut features,
+        &mut out,
+        &mut losses,
+    )
+    .expect("the session admits the evaluation");
+    let id = |key: &str| cadmpeg_ir::sketches::SketchEntityId::mint(entity(key)).unwrap();
+    let roles = |key: &str| {
+        out.entities
+            .iter()
+            .find(|candidate| candidate.id == id(key))
+            .unwrap()
+            .roles
+            .clone()
+    };
+    let role = |of: &str, role| EntityRole { of: id(of), role };
+    assert_eq!(
+        roles("p0"),
+        vec![
+            role("arc", DefiningRole::Center),
+            role("line", DefiningRole::Start)
+        ]
+    );
+    assert_eq!(
+        roles("p1"),
+        vec![
+            role("arc", DefiningRole::Start),
+            role("line", DefiningRole::End)
+        ]
+    );
+    assert!(roles("stray").is_empty());
+    assert_eq!(
+        out.entities.len(),
+        7,
+        "no point is minted: {:#?}",
+        out.entities
+    );
+    let named = |key: &str| {
+        let relation = &out
+            .constraints
+            .iter()
+            .find(|candidate| candidate.id.as_str() == constraint(key))
+            .unwrap()
+            .relation;
+        match relation {
+            SketchRelation::Coincident {
+                a: Operand::Entity(a),
+                ..
+            } => a.clone(),
+            _ => panic!("a coincidence: {relation:#?}"),
+        }
+    };
+    assert_eq!(named("end"), id("p1"));
+    assert_eq!(named("center"), id("p0"));
+    assert!(!names(
+        &losses,
+        F3dLossCode::DesignSketchLocusUnplaced,
+        &constraint("center")
+    ));
+}
+
+#[test]
+fn two_points_at_a_center_that_no_point_record_names_leave_it_to_a_minted_point() {
+    let (model, _) = stored_points_model();
+    let mut features = [unresolved_sketch(OWNER)];
+    let mut out = super::Sketches::default();
+    super::project(
+        &scope(&model, &BTreeSet::new(), &[]),
+        &mut features,
+        &mut out,
+        &mut Vec::new(),
+    )
+    .expect("the session admits the evaluation");
+    let center = format!("{}:center", entity("arc"));
+    assert!(
+        out.entities
+            .iter()
+            .any(|candidate| candidate.id.as_str() == center),
+        "{:#?}",
+        out.entities
+    );
+}
+
+#[test]
+fn a_document_with_no_timeline_item_and_no_sketch_holds_its_construction_features() {
+    let mut model = model();
+    model.sketches.clear();
+    model.features[0].evaluation = FeatureEvaluation::from_definition(LegacyDefinition::Operation(
+        LegacyOperation::PointGeometry {
+            position: cadmpeg_ir::features::geometry::FinitePoint3::new(
+                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            )
+            .unwrap(),
+        },
+    ));
+    let outside =
+        super::outside(&model, &BTreeSet::new(), &BTreeSet::new(), &mut Vec::new()).unwrap();
+    let [construction] = outside.get("").unwrap().as_slice() else {
+        panic!("one construction point: {outside:#?}");
+    };
+    assert_eq!(construction.id.as_str(), OWNER);
+    let listing = BTreeSet::from([String::new()]);
+    let listed = super::outside(&model, &BTreeSet::new(), &listing, &mut Vec::new()).unwrap();
+    assert!(listed.is_empty(), "{listed:#?}");
 }

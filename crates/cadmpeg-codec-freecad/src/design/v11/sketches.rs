@@ -11,6 +11,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
     kinds, Construction, ConstructionInput, FrameAxis, InputReference, InputRole, PostStep,
@@ -30,6 +31,7 @@ use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::projection::sketch::{
     native_entity_kind, planar_curve, stored_frame, stored_value, DimensionValue, LocusPoints,
+    StoredPoints,
 };
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::{
@@ -127,6 +129,7 @@ pub(super) struct Projected {
 
 /// What the projection of one document's sketches reads.
 pub(super) struct Scope<'a> {
+    pub(super) ctx: &'a DecodeContext<'a>,
     pub(super) ir: &'a CadIr,
     pub(super) stored: &'a StoredSketches,
     pub(super) source: &'a Source<'a>,
@@ -153,7 +156,7 @@ pub(super) fn project(
     scope: &Scope<'_>,
     features: &mut [Feature],
     losses: &mut Vec<LossNote>,
-) -> Projected {
+) -> Result<Projected, ResourceLimit> {
     let targets = Targets {
         features: features
             .iter()
@@ -204,10 +207,10 @@ pub(super) fn project(
         let Some(record) = sketches.get(&feature.id) else {
             continue;
         };
-        sketch(scope, &targets, feature, record, &mut out, losses);
+        sketch(scope, &targets, feature, record, &mut out, losses)?;
         feature.definition.operation = FeatureOperation::Sketch(record.id.clone());
     }
-    out
+    Ok(out)
 }
 
 fn sketch(
@@ -217,7 +220,7 @@ fn sketch(
     record: &LegacySketch,
     out: &mut Projected,
     losses: &mut Vec<LossNote>,
-) {
+) -> Result<(), ResourceLimit> {
     let model = &scope.ir.model;
     let anchor = if scope.grouped.contains(&Member::Feature(feature.id.clone())) {
         Anchor::Current
@@ -251,7 +254,8 @@ fn sketch(
         );
         loci.extend(ends_measured(stored, &entities));
     }
-    let points = LocusPoints::of_loci(&loci, &entities, |_| false);
+    // A `FreeCAD` sketch stores the points of its curves in the curves.
+    let points = LocusPoints::of_loci(scope.ctx, &loci, &entities, &StoredPoints::default())?;
     let minted = points.entities(&record.id);
     let view = View {
         entities: entities
@@ -394,6 +398,7 @@ fn sketch(
         source_settings: NativeOptions::new(),
         native_ref: record.native_ref.clone(),
     });
+    Ok(())
 }
 
 /// Whether `id` is one of the entities the decoder adds for the sketch's

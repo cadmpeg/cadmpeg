@@ -620,8 +620,9 @@ pub(crate) enum SldprtLossCode {
     /// out, its dimension naming the stored curve they lie on, or states
     /// construction where no face of the solid witnesses them.
     DesignSketchDimensionCircle,
-    /// Sketch relations on the start, end, or center of a curve whose
-    /// position there is not stored: they state the curve.
+    /// Sketch relations on an end of a closed curve, the center of a curve
+    /// that has none, or a point whose minted id another entity holds: they
+    /// state the curve.
     DesignSketchLocusUnplaced,
     /// Spatial sketch relations with no typed relation of their operands and
     /// value: they state their native kind.

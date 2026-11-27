@@ -864,12 +864,14 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let sketches = typed.sketches;
     let [sketch] = sketches.records.as_slice() else {
@@ -1003,6 +1005,53 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     assert_no_design_findings(&ir);
 }
 
+#[test]
+fn a_point_at_the_center_of_a_circle_holds_the_center_role() {
+    use cadmpeg_ir::design::ops::sketch::{DefiningRole, EntityRole};
+
+    let (mut ir, native) = sketch_and_extrude();
+    let mut entities = json::to_value(&ir.model.sketch_entities).unwrap();
+    entities.as_array_mut().unwrap().push(
+        cadmpeg_core::json!({"id": "sldprt:model:sketch-entity#test:center",
+            "sketch": "sldprt:model:sketch#test", "construction": false,
+            "native_ref": "native:center", "endpoint_refs": [],
+            "geometry": {"kind": "point", "position": {"u": 25.0, "v": 15.0}}}),
+    );
+    ir.model.sketch_entities = json::from_value(entities).unwrap();
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    let definition = ir.design.scopes[0].definition.clone();
+    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let typed = super::typed::project(
+        &ir.model,
+        &native.feature_histories,
+        &[],
+        &mut timeline,
+        &entries,
+        &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
+            definition: &definition,
+            outside_profile: &std::collections::HashSet::new(),
+            surfaces: &ir.geometry.surfaces,
+            angular: ir.tolerances.angular.get(),
+        },
+    )
+    .expect("the session admits the evaluation");
+    let center = typed
+        .sketches
+        .entities
+        .iter()
+        .find(|entity| entity.id.as_str().ends_with(":center"))
+        .unwrap();
+    assert_eq!(
+        center.roles,
+        vec![EntityRole {
+            of: cadmpeg_ir::sketches::SketchEntityId::mint("sldprt:model:sketch-entity#test:hole")
+                .unwrap(),
+            role: DefiningRole::Center,
+        }]
+    );
+}
+
 /// The timeline of `ir`'s design, with its sketches and extrudes typed, and
 /// the parameter entries of its features.
 fn typed_timeline<'a>(
@@ -1022,12 +1071,14 @@ fn typed_timeline<'a>(
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &ir.design.scopes[0].definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     (timeline, entries, typed)
 }
 
@@ -1505,12 +1556,14 @@ fn members_follow_the_features_they_depend_on() {
         &mut timeline,
         &entries,
         &super::typed::Scope {
+            ctx: &cadmpeg_core::decode::test_support::service_decode_context(),
             definition: &definition,
             outside_profile: &std::collections::HashSet::new(),
             surfaces: &ir.geometry.surfaces,
             angular: ir.tolerances.angular.get(),
         },
-    );
+    )
+    .expect("the session admits the evaluation");
     assert!(typed.loss.is_none(), "{:?}", typed.loss);
     let boss = &timeline.features[member_position(&timeline, "Boss")];
     assert!(

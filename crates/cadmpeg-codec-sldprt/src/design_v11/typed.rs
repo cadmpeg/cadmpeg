@@ -81,6 +81,7 @@ pub(super) struct Typed {
 /// The scope the typed records belong to, and what the decoder read of
 /// their sketches' profiles.
 pub(super) struct Scope<'a> {
+    pub(super) ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
     pub(super) definition: &'a ProductDefinitionId,
     /// The sketch entities read from a curve record of state `0`.
     pub(super) outside_profile: &'a HashSet<SketchEntityId>,
@@ -98,11 +99,12 @@ pub(super) fn project(
     timeline: &mut Timeline,
     entries: &Entries<'_>,
     scope: &Scope<'_>,
-) -> Typed {
+) -> Result<Typed, cadmpeg_core::decode::ResourceLimit> {
     let supports = supports(&model.features, histories, lanes, timeline);
     let mut sketches = sketch::project(
         &mut timeline.features,
         &sketch::Context {
+            ctx: scope.ctx,
             model,
             entries,
             scope: scope.definition,
@@ -110,7 +112,7 @@ pub(super) fn project(
             outside_profile: scope.outside_profile,
             surfaces: scope.surfaces,
         },
-    );
+    )?;
     let stated = sketches
         .records
         .iter()
@@ -194,7 +196,7 @@ pub(super) fn project(
     let sketch_notes = sketch_notes(&sketches);
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
-    Typed {
+    Ok(Typed {
         measured,
         references,
         bound: bound
@@ -217,7 +219,7 @@ pub(super) fn project(
         revolve_sense_assumed,
         sketch_notes,
         datums,
-    }
+    })
 }
 
 /// One note naming the sketches outside the timeline, one naming the
@@ -269,8 +271,8 @@ fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
     }
     if !unplaced.is_empty() {
         notes.push(SldprtLossCode::DesignSketchLocusUnplaced.note(format!(
-            "{} sketch relations name the start, end, or center of a curve whose position \
-             there is not stored, and state the curve: {}",
+            "{} sketch relations name an end of a closed curve, the center of a curve that \
+             has none, or a point whose minted id another entity holds, and state the curve: {}",
             unplaced.len(),
             listed(unplaced.into_iter()),
         )));

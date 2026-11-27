@@ -1410,6 +1410,47 @@ fn a_hidden_body_of_a_base_feature_design_is_charged_as_written_visible() {
     }
 }
 
+/// A Base Feature design written beside native B-rep records checks a body
+/// visibility against the key its body has before the history stream keys
+/// the bodies from `0`.
+#[test]
+fn a_base_feature_design_checks_a_body_visibility_before_it_rekeys_the_bodies() {
+    let mut ir = scoped_cube();
+    ir.geometry.bodies[0].visible = Some(true);
+    let body = ir.geometry.bodies[0].id.clone();
+    f3d_native_mut(&mut ir).body_visibilities =
+        vec![crate::records::bodies::BodyVisibility::try_from(
+            crate::records::bodies::BodyVisibilityWire {
+                id: "f3d:design:body-visibility#1".into(),
+                body,
+                stream: "FusionAssetName[Active]/Design1/BulkStream.dat".into(),
+                byte_offset: 0,
+                asm_body_key_offset: 0,
+                asm_body_key: 1,
+                entity_suffix: 42,
+                visible: true,
+            },
+        )
+        .unwrap()];
+    let mut bytes = Cursor::new(Vec::new());
+    super::super::attempt(
+        &ir,
+        false,
+        true,
+        MissingStateForm::GeometryTrue,
+        &super::Fallback::default(),
+        &mut bytes,
+    )
+    .expect("the Base Feature design is written with the native visibility");
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(bytes.into_inner()),
+            &DecodeOptions::default(),
+        )
+        .expect("the written file decodes");
+    assert!(!decoded.ir().design.features.is_empty());
+}
+
 mod dimensions;
 mod extrude;
 mod planes;

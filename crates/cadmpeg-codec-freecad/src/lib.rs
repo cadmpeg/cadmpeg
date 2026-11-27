@@ -1178,12 +1178,12 @@ impl CodecBackend for FcstdCodec {
                 design::v11::project(
                     &mut ir,
                     product::document_definition_id()?,
-                    &graph.objects,
-                    &graph.properties,
+                    &graph,
                     &product_nodes,
                     &stored_sketches,
+                    ctx,
                     &mut transfer_losses,
-                );
+                )?;
             }
             design::v11::states::state(
                 ctx,
