@@ -585,10 +585,10 @@ fn a_stream_whose_geometry_classes_are_unknown_decodes_no_carriers() {
     assert!(loss_kinds(&result).contains(&AlibreLossCode::GeometryFramedWithoutCarriers.kind()));
 }
 
-/// The offset in the ACIS binary `stream` of the surface reference token of
-/// the first face record that names a shell, and the record's offset.
 /// A face record on a shell in the `SAB_DATA` stream `stream`.
 struct ShellFace {
+    /// The id of the face.
+    face: String,
     /// The position of the face's surface reference token.
     surface_reference: usize,
     /// The face record's offset.
@@ -599,6 +599,8 @@ struct ShellFace {
     shell: String,
 }
 
+/// The offset in the ACIS binary `stream` of the surface reference token of
+/// the first face record that names a shell, and the record's offset.
 fn face_surface_reference(stream: &[u8]) -> ShellFace {
     use cadmpeg_asm::kernel_header::RefWidth;
     use cadmpeg_asm::{acis_header, sab};
@@ -662,6 +664,7 @@ fn face_surface_reference(stream: &[u8]) -> ShellFace {
         next_loop = record(lp).ref_at(3);
     }
     ShellFace {
+        face: id(i64::try_from(face.index).expect("a record index")),
         surface_reference: at[0],
         offset: face.offset,
         loops_and_coedges,
@@ -713,9 +716,21 @@ fn a_face_whose_surface_names_no_record_is_given_up_in_the_sab_data_stream() {
         .split_once("]; marked=[")
         .expect("the charge names what it marks");
     let dropped: Vec<&str> = dropped.split(", ").collect();
+    assert!(dropped.contains(&face.face.as_str()), "{dropped:?}");
     assert!(!face.loops_and_coedges.is_empty());
     for child in &face.loops_and_coedges {
         assert!(dropped.contains(&child.as_str()), "{child} in {dropped:?}");
+    }
+    let geometry = &whole.ir().geometry;
+    let kept = geometry
+        .faces
+        .iter()
+        .map(|candidate| candidate.id.as_str())
+        .filter(|id| *id != face.face)
+        .chain(geometry.edges.iter().map(|edge| edge.id.as_str()))
+        .chain(geometry.vertices.iter().map(|vertex| vertex.id.as_str()));
+    for id in kept {
+        assert!(!dropped.contains(&id), "{id} in {dropped:?}");
     }
     assert_eq!(marked, format!("{}]", face.shell));
     let shell = result
@@ -738,5 +753,13 @@ fn a_face_whose_surface_names_no_record_is_given_up_in_the_sab_data_stream() {
     assert_eq!(
         result.ir().geometry.faces.len() + 1,
         whole.ir().geometry.faces.len()
+    );
+    assert_eq!(
+        result.ir().geometry.edges.len(),
+        whole.ir().geometry.edges.len()
+    );
+    assert_eq!(
+        result.ir().geometry.vertices.len(),
+        whole.ir().geometry.vertices.len()
     );
 }
