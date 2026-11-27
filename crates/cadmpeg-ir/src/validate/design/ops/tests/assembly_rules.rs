@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     assert_no_finding_containing, combine, empty_construction, entity, feature, hole, in_context,
-    joint, named, own_occurrences, participant, split_by_tools, unread, with,
+    joint, named, own_occurrences, participant, pick, split_by_tools, unread, with,
 };
 use crate::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use crate::design::feature::{Driver, FeatureOperation, OperationFamily};
@@ -21,7 +21,9 @@ use crate::design::ops::shared::{Coupling, JointConnector, JointKind};
 use crate::design::options::BooleanOp;
 use crate::design::refs::Member;
 use crate::design::scope::DesignScope;
-use crate::design::selection::{OccurrencePath, PathStep, PickContext, Picked, StepRef};
+use crate::design::selection::{
+    OccurrencePath, PathStep, PickContext, PickTarget, Picked, StepRef,
+};
 use crate::document::CadIr;
 use crate::ids::OccurrenceId;
 use crate::products::{Occurrence, ProductDefinition, Storage};
@@ -310,4 +312,45 @@ fn an_unlisted_participant_leaves_the_operand_rules_unchecked() {
     }
     own_occurrences(&mut ir, &["a", "b"]);
     assert_no_finding_containing(&ir, "picks a part that is no participant");
+}
+
+#[test]
+fn coupling_joints_pick_joint_features() {
+    let coupling = || {
+        joint(JointKind::Coupling {
+            coupling: Coupling::Screw { pitch: None },
+            joints: Some(named(vec![
+                pick(PickTarget::Feature(feature("fillet"))),
+                pick(PickTarget::Feature(feature("other"))),
+            ])),
+        })
+    };
+    let mut ir = with(coupling());
+    ir.design
+        .features
+        .push(fixture::unresolved("other", OperationFamily::Extrude));
+    assert_finding(&ir, "which is no Joint feature");
+    for feature in &mut ir.design.features[1..] {
+        feature.definition.operation = FeatureOperation::Unresolved {
+            family: OperationFamily::Joint,
+        };
+    }
+    assert_no_finding_containing(&ir, "which is no Joint feature");
+}
+
+#[test]
+fn a_coupling_counts_a_native_joint_pick_toward_its_two() {
+    let coupling = |picks| {
+        with(joint(JointKind::Coupling {
+            coupling: Coupling::Screw { pitch: None },
+            joints: Some(named(picks)),
+        }))
+    };
+    let native = || pick(PickTarget::Native { within: None });
+    let message = "Coupling.joints picks other than two other Joint features";
+    assert_no_finding_containing(
+        &coupling(vec![pick(PickTarget::Feature(feature("fillet"))), native()]),
+        message,
+    );
+    assert_finding(&coupling(vec![native()]), message);
 }
