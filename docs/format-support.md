@@ -76,7 +76,7 @@ its result.
 | STEP Part 21                                      | L8    |
 | Solid Edge `.par`, `.psm`, and `.asm`             | L2    |
 | IronCAD `.ics`                                    | L0    |
-| Onshape bundle                                    | L0    |
+| Onshape bundle                                    | L4    |
 
 <!-- /generated: ladder-table -->
 
@@ -112,7 +112,7 @@ Structural detection requires directory evidence. The codec enumerates the compl
 - **ACIS part carriers: L3.** The 32-bit ACIS header and solved SAB partition transfer through the same direct and embedded kernel decoder at every save format. Connected B-rep validation and direct-carrier parity pass for majors 217 and 218, the verified bands. A carrier outside them decodes with the nearer verified band's grammar, reports the `acis:` kernel layer as `Admission::Unverified`, and charges `source.kernel-dialect-unverified`; a carrier that reads no geometry is retained verbatim and produces blocking `geometry_not_transferred`.
 - **Assemblies: partial extra.** A `UFRxDoc` occurrence transfers when its external file reference, `AmDc` occurrence identity, and active finite affine `AmGraphics` placement form one exact join. Placement translations convert from centimetres to millimetres. Suppressed occurrences transfer with hidden visibility and may use an identity placement when graphics are absent. External prototypes remain unresolved, no persisted path is opened, and local prototypes and nested parent links remain untransferred.
 - **Materials: partial extra.** Shared Protein schema decoding produces typed native assets and neutral appearance definitions. One exact `PmApp` default-style-to-rendering-style-to-asset join binds the selected appearance to transferred part bodies. One exact `PmGraphics` face-to-style-collection-to-primary-color join creates a direct face appearance that overrides the body default. Other style and texture families remain native.
-- **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Browser work planes, including the origin planes, transfer as datum planes at their history positions. Solid splits by a work plane or a surface transfer as body splits that keep both sides. The version-19 selected-face form transfers as a face split by a work plane and retains its result-body identity. The bounded version-19 surface-tool form transfers as a body trim with its kept side retained natively. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
+- **Design intent: partial extra.** Closed scalar parameter graphs and closed planar point, line, circle, ellipse, and constraint graphs transfer with native cross-links. Extrude, hole, constant-radius edge fillet, and equal-distance and joined unequal two-distance edge chamfer operations transfer only when every required typed property, dimension, native selection, placement, and result-body reference resolves. Each transferred result has a native intermediate-body identity. Browser work planes, including the origin planes, transfer as datum planes at their history positions. Solid splits by a work plane or a surface transfer as body splits that keep both sides. The version-19 selected-face form transfers as a face split by a work plane and retains its result-body identity. The bounded version-19 surface-tool form transfers as a body trim with its kept side retained natively. Suppression and dependency state remain unresolved, so this extra does not advance the score to L4.
 - **Write:** None. The codec has no encoder, replay path, or patch path.
 
 See [`formats/inventor.md`](formats/inventor.md), [`formats/inventor-open-items.md`](formats/inventor-open-items.md), and [`formats/protein.md`](formats/protein.md).
@@ -782,7 +782,7 @@ See [`formats/ironcad.md`](formats/ironcad.md) and
 
 <!-- generated: dialects onshape -->
 
-**Ladder: L0.**
+**Ladder: L4.**
 
 | Dialect            | Read     | Write |
 | ------------------ | -------- | ----- |
@@ -792,11 +792,15 @@ See [`formats/ironcad.md`](formats/ironcad.md) and
 <!-- /generated: dialects onshape -->
 
 The decoder reads the Part Studios and the root assembly of an offline
-version 1 bundle. It composes final STEP geometry and maps supported
-sketches, variables, extrusions, revolves, fillets, chamfers and holes.
-Historical picks use rollback topology. An assembly maps to product
-definitions, occurrences with placements and suppression, grounded joints,
-and mate joints with evaluated connector frames. Mate limits and offsets stay
-in the native feature responses. Original members remain embedded assets. Synthetic tests
-pin the reader projection and resource bounds. Real-file evaluation is
-pending.
+version 1 bundle, with captured Derived studios. It composes final STEP
+geometry and maps sketches on default planes, offset planes and model faces,
+variables, extrusions (including up to next), revolves, sweeps, fillets,
+chamfers, holes, shells and subtractions after a Derived insert. Historical
+picks use rollback topology. An assembly maps to product definitions,
+occurrences with placements and suppression, grounded joints, and mate joints
+with evaluated connector frames. Mate limits and offsets stay in the native
+feature responses. Original members remain embedded assets. Typed features
+with operation semantics, sketch geometry, ordering and dependencies set L4. A
+recorded evaluation backs it. Body and face colours and the full sketch
+constraint and feature-family set are not yet established, so L5 and L6 are
+not claimed. Synthetic tests pin the reader projection and resource bounds.
