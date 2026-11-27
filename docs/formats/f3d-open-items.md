@@ -4255,7 +4255,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
 
-### DR-1070. Numbered stock-box origin selectors
+### DR-1080. Numbered stock-box origin selectors
 
 **Question.** Which stock-box point does each numbered `wcs_origin_boxPoint` selector identify?
 
