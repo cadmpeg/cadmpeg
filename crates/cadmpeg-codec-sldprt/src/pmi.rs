@@ -240,8 +240,8 @@ pub(crate) fn patch_payload(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(kept);
     };
-    let native =
-        crate::native::SldprtNative::load(namespace).map_err(cadmpeg_core::CodecError::from)?;
+    let native = crate::native::SldprtNative::load(namespace, ir.tolerances.linear)
+        .map_err(cadmpeg_core::CodecError::from)?;
     let records_by_id = native
         .pmi_dimensions
         .iter()
@@ -755,7 +755,7 @@ fn collect_dimensions(
             Ok(Some(record)) => {
                 crate::annotations::note(
                     annotations,
-                    record.id.clone(),
+                    crate::annotations::native_key(&record.id)?,
                     stream,
                     u64_from_index(offset),
                     "messagepack_dim_sem_data",
@@ -765,9 +765,18 @@ fn collect_dimensions(
             }
             Ok(None) => {}
             Err(PmiParseError::Malformed(message)) => {
-                losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(format!(
-                    "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
-                )));
+                losses.extend(cadmpeg_ir::unknown::part::record_given_up(
+                    cadmpeg_ir::ids::Identity::new(format!("sldprt:pmi:dimension#{normalized}"))?,
+                    SldprtLossCode::PmiSemanticRecordMalformed
+                        .note(format!(
+                            "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
+                        ))
+                        .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
+                            "sldprt",
+                            stream.clone(),
+                            u64_from_index(offset),
+                        )),
+                ));
             }
             Err(PmiParseError::Capped) => {
                 let skipped = candidates.count() + 1;

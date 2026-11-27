@@ -29,6 +29,7 @@
 //! A codec without a cut delivers `Full` for the geometry request and passes on
 //! the same terms; [`DepthSummary::cut`] counts the inputs where it did not.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
@@ -138,8 +139,7 @@ pub fn assert_each_depth_records_its_scope(codec: &dyn Codec, bytes: &[u8]) {
                 if result.ir().process.entity_count() != 0 {
                     failures.push(format!(
                         "a {depth} decode holds process records: {}",
-                        serde_json::to_string(&result.ir().process)
-                            .expect("serialize decoded process")
+                        json::to_string(&result.ir().process).expect("serialize decoded process")
                     ));
                 }
             }

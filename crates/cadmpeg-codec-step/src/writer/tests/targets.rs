@@ -4,6 +4,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
@@ -96,10 +97,12 @@ fn planning_reports_unrepresentable_content_under_strict_write_options() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("planning returns the representable subset and its losses");
     assert!(
-        plan.report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("source-native record(s)")),
+        plan.report().losses.iter().any(|loss| loss.code.to_string()
+            == "export/native.records-omitted"
+            && loss.message.ends_with(
+                "of `f3d` arena `asm_histories` which the STEP writer does not write: \
+                     f3d:test:asm-history#0"
+            )),
         "{:?}",
         plan.report().losses
     );
@@ -282,7 +285,7 @@ fn inherit_writes_an_unrecognized_source_declaration_as_the_default() {
 fn inherit_writes_a_step_source_that_records_no_dialect_as_the_default() {
     let mut ir = CadIr::empty();
     ir.source = Some(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": crate::dialect::FORMAT},
             "attributes": {},
         }))

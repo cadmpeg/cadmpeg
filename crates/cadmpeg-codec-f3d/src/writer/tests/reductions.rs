@@ -38,7 +38,7 @@ fn source_less(smbh: &[u8]) -> CadIr {
 fn write(ir: &CadIr) -> (ExportReport, CadIr) {
     let mut bytes = Vec::new();
     let report = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes what it can encode");
     let decoded = F3dCodec
@@ -742,4 +742,5 @@ fn a_carrier_whose_encoding_fails_still_drops_its_body() {
 }
 
 mod edge_ranges;
+mod native_records;
 mod per_record;

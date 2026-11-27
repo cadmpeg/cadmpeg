@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The write-target request reaching this encoder's `plan`.
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use cadmpeg_ir::codec::write::{
@@ -86,7 +87,7 @@ fn inherit_falls_back_to_the_catalog_default_with_nothing_to_inherit() {
 fn inherit_writes_a_source_that_records_no_dialect_as_the_default() {
     let mut ir = CadIr::empty();
     ir.source = Some(
-        serde_json::from_value(serde_json::json!({
+        json::from_value(cadmpeg_core::json!({
             "identity": {"kind": "unclassified", "format": "rhino"},
             "attributes": {},
         }))

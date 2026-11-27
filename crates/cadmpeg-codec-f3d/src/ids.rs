@@ -5,6 +5,7 @@
 //! length-prefixes. Callers build IDs through the named functions below.
 
 use crate::records::feature::combine::DesignCombineExternalBodyIdentity;
+use crate::records::feature::combine::DesignCombineLegacyExternalBodyIdentity;
 
 use crate::records::feature::{
     assembly::{DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection},
@@ -558,6 +559,25 @@ pub(crate) fn neutral_combine_external_body_id(
             property_key.len(), property_key,
             u8::from(identity.external_version().is_some()), version_urn.len(), version_urn,
         )
+}
+
+/// Feature-input-local body key for one complete legacy external `Combine`
+/// selector path.
+pub(crate) fn neutral_combine_legacy_external_body_id(
+    identity: &DesignCombineLegacyExternalBodyIdentity,
+) -> String {
+    let selector_asset = identity_key_component(identity.selector_asset_id.as_str());
+    let selector_context = identity_key_component(identity.selector_context_id.as_str());
+    format!(
+        "f3d:feature-input:body#combine-legacy-external:{}:{}:{}:{}:{}:{}:{}",
+        selector_asset.len(),
+        selector_asset,
+        selector_context.len(),
+        selector_context,
+        identity.occurrence_reference,
+        identity.browser_node_entity,
+        identity.source_occurrence_identity,
+    )
 }
 
 /// Feature-input-local connector key for one pathless axial assembly selector.
@@ -1161,6 +1181,7 @@ mod tests {
     use crate::records::{
         feature::assembly::DesignAssemblyLegacySelection, recipes::ConstructionRecipeKind,
     };
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn sheet_metal_rule_ids_preserve_owner_stream_and_record_identity() {
@@ -1337,8 +1358,8 @@ mod tests {
             "f3d:model:component#aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
         );
         assert_eq!(
-            serde_json::to_string(&guid).unwrap(),
-            serde_json::to_string(text).unwrap()
+            json::to_string(&guid).unwrap(),
+            json::to_string(text).unwrap()
         );
         let token_text = format!("{text}_Post2015_Post2015");
         let token: crate::records::references::DesignVisualToken =
@@ -1348,8 +1369,8 @@ mod tests {
             format!("f3d:design:appearance#{token_text}")
         );
         assert_eq!(
-            serde_json::to_string(&token).unwrap(),
-            serde_json::to_string(&token_text).unwrap()
+            json::to_string(&token).unwrap(),
+            json::to_string(&token_text).unwrap()
         );
         assert!(crate::records::mesh::DesignRelaxedGuidText::try_from(String::new()).is_err());
         assert!(crate::records::references::DesignVisualToken::try_from(String::new()).is_err());

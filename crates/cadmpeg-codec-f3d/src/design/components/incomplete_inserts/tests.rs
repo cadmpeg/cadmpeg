@@ -4,6 +4,7 @@ use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::selections::{DistinctMembers, InsertedComponents};
 use cadmpeg_ir::features::{Feature, FeatureContent, FeatureDefinition, FeatureOperation};
 use std::collections::BTreeMap;
@@ -15,7 +16,7 @@ fn scope() -> DesignParameterScope {
         30,
     );
     if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
-        payload.unresolved_placement = Some(serde_json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":54,"value":[[0,-1,0,2.5],[1,0,0,-4],[0,0,1,7],[0,0,0,1]]}}"#).unwrap());
+        payload.unresolved_placement = Some(json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":54,"value":[[0,-1,0,2.5],[1,0,0,-4],[0,0,1,7],[0,0,0,1]]}}"#).unwrap());
     }
     scope
 }
@@ -209,11 +210,11 @@ fn legacy_partial_insert_projection_names_its_membership_assumption() {
             .unwrap();
         if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
             payload.unresolved_placement = Some(if frame == 385 {
-                serde_json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":46,"value":[[0.6,-0.8,0,1],[0.8,0.6,0,2],[0,0,1,3],[0,0,0,1]]}}"#).unwrap()
+                json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":46,"value":[[0.6,-0.8,0,1],[0.8,0.6,0,2],[0,0,1,3],[0,0,0,1]]}}"#).unwrap()
             } else if frame >= 389 {
-                serde_json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":50,"value":[[0.6,-0.8,0,1],[0.8,0.6,0,2],[0,0,1,3],[0,0,0,1]]}}"#).unwrap()
+                json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":50,"value":[[0.6,-0.8,0,1],[0.8,0.6,0,2],[0,0,1,3],[0,0,0,1]]}}"#).unwrap()
             } else {
-                serde_json::from_slice(br#"{"occurrence_identity":19}"#).unwrap()
+                json::from_slice(br#"{"occurrence_identity":19}"#).unwrap()
             });
         }
         let scopes = std::slice::from_ref(&scope);

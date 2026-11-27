@@ -25,17 +25,19 @@ use crate::design::ops::sheet_metal::{
 use crate::design::refs::EntityRef;
 use crate::design::selection::{Anchor, MemberOrder, PickTarget, Picked, Picks, Selection};
 use crate::features::ConfigurationId;
-use crate::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::geometry::SolvedSurfaceGeometry;
 use crate::ids::VertexId;
 use crate::math::Point3;
 use crate::report::check::{Finding, Ruled};
 use crate::scalar::NonNegativeLength;
-use crate::topology::{BodyKind, EdgeCarrier};
+use crate::topology::BodyKind;
 
+use super::frames::{self, values_frame};
 use super::index::DesignIndex;
 use super::matching::{Matcher, Matchers, StateTopology};
 use super::selections::{anchored_states, Site};
 use super::Holder;
+use apart::{straight_length, surface_distance};
 
 /// Checks the picks of every feature definition in the stored states they
 /// anchor in.
@@ -196,7 +198,7 @@ fn all_entities<'a, O: MemberOrder>(
 }
 
 /// The analytic shape of a face's surface, through every placement of an
-/// inline basis, and whether a placement was passed.
+/// inline basis, and whether each placement passed is rigid.
 fn surface_shape<'a>(
     topology: &StateTopology<'a>,
     face: &str,
@@ -207,12 +209,12 @@ fn surface_shape<'a>(
         .get(face.surface.as_str())?
         .geometry
         .solved()?;
-    let mut placed = false;
+    let mut rigid = true;
     while let SolvedSurfaceGeometry::Transformed(inner) = geometry {
+        rigid &= inner.transform().is_proper_rigid();
         geometry = inner.basis();
-        placed = true;
     }
-    Some((geometry, placed))
+    Some((geometry, rigid))
 }
 
 /// Whether a face is planar. `None` where its surface is not analytic.
@@ -231,11 +233,11 @@ fn planar(topology: &StateTopology<'_>, face: &str) -> Option<bool> {
 }
 
 /// Whether a face is cylindrical. `None` where its surface is not analytic,
-/// is a cone, or places a cylinder by an affine map.
+/// is a cone, or places a cylinder by a map that is not rigid.
 fn cylindrical(topology: &StateTopology<'_>, face: &str) -> Option<bool> {
-    let (geometry, placed) = surface_shape(topology, face)?;
+    let (geometry, rigid) = surface_shape(topology, face)?;
     match geometry {
-        SolvedSurfaceGeometry::Cylinder(_) => (!placed).then_some(true),
+        SolvedSurfaceGeometry::Cylinder(_) => rigid.then_some(true),
         SolvedSurfaceGeometry::Plane(_)
         | SolvedSurfaceGeometry::Sphere(_)
         | SolvedSurfaceGeometry::Torus(_) => Some(false),
@@ -247,66 +249,10 @@ fn cylindrical(topology: &StateTopology<'_>, face: &str) -> Option<bool> {
     }
 }
 
-/// The distance of `point` from the surface of `face`, where the surface is
-/// an unplaced plane or cylinder of a body with no placement of its own.
-fn surface_distance(topology: &StateTopology<'_>, face: &str, point: Point3) -> Option<f64> {
-    if topology.face_body(face)?.transform.is_some() {
-        return None;
-    }
-    let (geometry, false) = surface_shape(topology, face)? else {
-        return None;
-    };
-    match geometry {
-        SolvedSurfaceGeometry::Plane(plane) => {
-            let normal = *plane.frame().axis().as_raw();
-            Some(point.vector_from(plane.origin().get()).dot(normal).abs())
-        }
-        SolvedSurfaceGeometry::Cylinder(cylinder) => {
-            let axis = *cylinder.frame().axis().as_raw();
-            let offset = point.vector_from(cylinder.origin().get());
-            Some((offset.cross(axis).norm() - cylinder.radius().get()).abs())
-        }
-        _ => None,
-    }
-}
-
 /// The position of a vertex.
 fn position(topology: &StateTopology<'_>, vertex: &str) -> Option<Point3> {
     let point = topology.vertices.get(vertex)?.point.as_str();
     Some(topology.points.get(point)?.position().get())
-}
-
-/// Whether a body that holds `edge` has a placement of its own.
-fn edge_placed(topology: &StateTopology<'_>, edge: &str) -> bool {
-    topology.edge_bodies(edge).into_iter().any(|body| {
-        topology
-            .bodies
-            .get(body)
-            .is_some_and(|body| body.transform.is_some())
-    })
-}
-
-/// The length of a straight edge: one on an unplaced line with two ends, of
-/// bodies with no placement of their own.
-fn straight_length(topology: &StateTopology<'_>, edge: &str) -> Option<f64> {
-    if edge_placed(topology, edge) {
-        return None;
-    }
-    let edge = topology.edges.get(edge)?;
-    let (EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _)) = &edge.carrier else {
-        return None;
-    };
-    let curve = topology.curves.get(curve.as_str())?.geometry.solved()?;
-    if !matches!(curve, SolvedCurveGeometry::Line(_)) {
-        return None;
-    }
-    let ends = edge.ends.as_ref()?;
-    let start = position(topology, ends.start.as_str())?;
-    Some(
-        position(topology, ends.end.as_str())?
-            .vector_from(start)
-            .norm(),
-    )
 }
 
 pub(super) fn literal<T: Copy>(dimension: &Dimension<T>) -> Option<T> {
@@ -349,7 +295,7 @@ impl<'a> Probe<'_, 'a> {
             .filter_map(|state| {
                 let configuration = state.configuration(records);
                 let applies = std::ptr::eq(
-                    records.definition_in(self.feature, configuration),
+                    records.definition_in(self.feature, configuration, None),
                     self.definition,
                 );
                 applies.then_some(())?;
@@ -361,29 +307,32 @@ impl<'a> Probe<'_, 'a> {
             .collect()
     }
 
-    /// The value of a point construction in a state's configuration: the
-    /// active configuration's is `resolved`.
+    /// The value of a point construction in a state's configuration, carried
+    /// into the definition's frame by the placement resolved in that
+    /// configuration (§5.2): the active configuration's is `resolved`.
     fn point_in(
         &self,
         construction: &'a Construction<kinds::Point>,
         configuration: Option<&str>,
     ) -> Option<Point3> {
+        let feature = self.feature.id.as_str();
         let active = self
             .index
-            .owner_definition(self.feature.id.as_str())
+            .owner_definition(feature)
             .and_then(|owner| self.index.records.scopes.get(owner.as_str()))
             .and_then(|scope| scope.active_configuration.as_ref())
             .map(ConfigurationId::as_str);
+        let configuration = configuration.filter(|configuration| Some(*configuration) != active);
         let value = match configuration {
             None => construction.resolved.as_ref(),
-            Some(configuration) if Some(configuration) == active => construction.resolved.as_ref(),
             Some(configuration) => construction
                 .resolved_in
                 .iter()
                 .find(|(id, _)| id.as_str() == configuration)
                 .map(|(_, value)| value),
-        };
-        value.map(|point| point.get())
+        }?;
+        let frame = values_frame(&self.index.records, feature, configuration)?;
+        frames::point(frame, value.get())
     }
 
     fn operation(&mut self, operation: &'a FeatureOperation) {
@@ -1004,6 +953,7 @@ fn pieces(topology: &StateTopology<'_>, sheet: &str, cut: &BTreeSet<&str>) -> us
         .count()
 }
 
+mod apart;
 mod chains;
 mod operands;
 

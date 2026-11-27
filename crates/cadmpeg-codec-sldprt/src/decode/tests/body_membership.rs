@@ -200,11 +200,14 @@ fn a_shared_metadata_head_does_not_supply_loop_or_body_ownership() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 1);
-    assert_eq!(
-        result.ir().geometry.faces[0].id.as_str(),
-        "sldprt:brep:face#10"
-    );
+    let [owner, other] = &result.ir().geometry.faces[..] else {
+        panic!("the loop's face and the face that shares its metadata head");
+    };
+    assert_eq!(owner.id.as_str(), "sldprt:brep:face#10");
+    assert!(!owner.loops.is_partial());
+    assert_eq!(other.id.as_str(), "sldprt:brep:face#11");
+    assert!(other.loops.is_partial());
+    assert_eq!(other.loops.stated().count(), 0);
 }
 
 #[test]
@@ -227,12 +230,13 @@ fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().geometry.faces.len(), 2);
+    assert_eq!(result.ir().geometry.faces.len(), 3);
     let identities: std::collections::HashSet<_> = result
         .ir()
         .geometry
         .faces
         .iter()
+        .filter(|face| !face.loops.is_partial())
         .map(|face| face.id.as_str())
         .collect();
     assert_eq!(
@@ -244,6 +248,7 @@ fn distinct_faces_with_shared_metadata_head_retain_typed_body_membership() {
         .ir()
         .geometry
         .stated_shell_faces(&shell.id)
+        .filter(|face| !face.loops.is_partial())
         .count()
         == 1));
 }

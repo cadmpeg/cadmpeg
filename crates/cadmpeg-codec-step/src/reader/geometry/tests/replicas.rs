@@ -5,6 +5,7 @@
 #![allow(clippy::default_trait_access)]
 
 use crate::ids::kind;
+use cadmpeg_core::serde_erase::json;
 use std::fmt::Write as _;
 use std::io::Cursor;
 
@@ -978,7 +979,7 @@ const DEEPEST_DOCUMENT_REPLICA_CHAIN: usize = MAX_DOCUMENT_DEPTH - 7;
 /// The JSON depth of `ir` (§2.5): a scalar is no level, and an array or
 /// object is one more than its deepest member.
 fn document_depth(ir: &CadIr) -> usize {
-    let value = serde_json::to_value(ir).expect("document to JSON");
+    let value = json::to_value(ir).expect("document to JSON");
     let mut deepest = 0;
     let mut work = vec![(&value, 0)];
     while let Some((value, above)) = work.pop() {

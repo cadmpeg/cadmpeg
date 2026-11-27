@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
+
 #[test]
 fn work_plane_binds_explicit_unmarked_and_identity_placements() {
     use crate::records::feature::scope::DesignParameterScope;
@@ -16,8 +18,8 @@ fn work_plane_binds_explicit_unmarked_and_identity_placements() {
         let losses = super::bind(std::slice::from_mut(&mut scope), &[placement]);
         assert!(losses.is_empty());
         assert_eq!(scope.work_plane_transform(), Some(expected));
-        let wire = serde_json::to_value(&scope).unwrap();
-        let restored: DesignParameterScope = serde_json::from_value(wire).unwrap();
+        let wire = json::to_value(&scope).unwrap();
+        let restored: DesignParameterScope = json::from_value(wire).unwrap();
         assert_eq!(restored, scope);
     }
 }

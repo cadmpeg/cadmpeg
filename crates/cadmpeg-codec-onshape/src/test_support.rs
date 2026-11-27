@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic bundle builders and reader assertion adapters.
 use crate::{reader::Model, OnshapeCodec};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 use std::io::{Cursor, Write};
@@ -12,19 +13,30 @@ pub(crate) mod regions;
 pub(crate) fn codec() -> OnshapeCodec {
     OnshapeCodec::new(|ctx, view| cadmpeg_codec_step::StepCodec::default().decode_impl(ctx, view))
 }
-fn step() -> &'static [u8] {
+fn encode_step(ir: &cadmpeg_ir::CadIr) -> Vec<u8> {
+    let plan = cadmpeg_codec_step::StepCodec::default()
+        .plan(
+            EncodeInput::new(ir, None),
+            TargetRequest::Explicit("step:ap214"),
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    bytes
+}
+pub(crate) fn step() -> &'static [u8] {
+    static STEP: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    STEP.get_or_init(|| encode_step(&cadmpeg_ir::examples::unit_cube().unwrap()))
+}
+/// A STEP export whose sole solid states no name.
+fn unnamed_step() -> &'static [u8] {
     static STEP: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     STEP.get_or_init(|| {
-        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let plan = cadmpeg_codec_step::StepCodec::default()
-            .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit("step:ap214"),
-            )
-            .unwrap();
-        let mut bytes = Vec::new();
-        plan.write_to(&mut bytes).unwrap();
-        bytes
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        for body in &mut ir.geometry.bodies {
+            body.name = None;
+        }
+        encode_step(&ir)
     })
 }
 pub(crate) fn fixture(name: &str) -> Vec<u8> {
@@ -34,11 +46,20 @@ pub(crate) fn fixture(name: &str) -> Vec<u8> {
         .compression_method(zip::CompressionMethod::Deflated);
     for (path, value) in members.as_object().unwrap() {
         zip.start_file(path, options).unwrap();
-        zip.write_all(&serde_json::to_vec(value).unwrap()).unwrap();
+        zip.write_all(&json::to_vec(value).unwrap()).unwrap();
     }
-    zip.start_file("partstudios/studio/export.step", options)
-        .unwrap();
-    zip.write_all(step()).unwrap();
+    for path in members.as_object().unwrap().keys() {
+        if let Some(folder) = path.strip_suffix("/features.json") {
+            zip.start_file(format!("{folder}/export.step"), options)
+                .unwrap();
+            zip.write_all(if name == "derived" {
+                unnamed_step()
+            } else {
+                step()
+            })
+            .unwrap();
+        }
+    }
     zip.finish().unwrap().into_inner()
 }
 #[derive(Debug)]

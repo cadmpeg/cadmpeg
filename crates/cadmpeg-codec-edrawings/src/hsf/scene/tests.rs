@@ -115,8 +115,8 @@ fn the_tree_bodies_names_and_slots_are_collected() {
     assert_eq!(scene.current_state.as_deref(), Some("disp0"));
     assert_eq!(scene.components.len(), 1);
     assert!(!scene.components.first().unwrap().visible);
-    assert_eq!(scene.orphan_slots, 0);
-    assert_eq!(scene.duplicate_objects, 0);
+    assert!(scene.orphan_slots.is_empty());
+    assert!(scene.duplicate_objects.is_empty());
 }
 
 #[test]
@@ -141,15 +141,22 @@ fn shared_bodies_are_defined_once() {
 }
 
 #[test]
-fn slots_outside_a_body_and_repeated_ids_are_counted() {
+fn slots_outside_a_body_and_repeated_ids_are_listed() {
     let mut s = Stream::new();
     s.shell_placeholder().slot();
     s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
     s.shell(0, &[[0.0; 3]; 3], &[vec![0, 1, 2]]);
     s.raw(b"z");
     let scene = Scene::collect(View::over_retained(s.bytes()), Grammar::Resaved).unwrap();
-    assert_eq!((scene.orphan_slots, scene.duplicate_objects), (1, 1));
+    assert_eq!(scene.orphan_slots, [0]);
+    let [(id, later)] = scene.duplicate_objects.as_slice() else {
+        panic!("one repeated object: {:?}", scene.duplicate_objects);
+    };
+    assert_eq!(*id, 0);
     assert_eq!(scene.objects.len(), 1);
+    let kept = scene.objects.get(&0).unwrap().span;
+    assert!(kept.start < kept.end && kept.end <= later.start && later.start < later.end);
+    assert!(later.end <= scene.stream.len());
 }
 
 #[test]
@@ -246,8 +253,8 @@ fn a_solidworks_scene_collects_materials_bodies_and_states() {
     // states are no components.
     assert_eq!(scene.current_state.as_deref(), Some("disp0"));
     assert_eq!(scene.components.len(), 5);
-    assert_eq!(scene.orphan_slots, 0);
-    assert_eq!(scene.duplicate_objects, 0);
+    assert!(scene.orphan_slots.is_empty());
+    assert!(scene.duplicate_objects.is_empty());
 }
 
 #[test]
@@ -269,6 +276,7 @@ fn a_cross_body_instance_resolves_through_the_global_object_table() {
         .slots
         .iter()
         .filter_map(|id| scene.objects.get(id))
+        .map(|stored| stored.object)
         .find(|object| matches!(object, super::Object::Instance(_)))
     else {
         panic!("no instance in the second body");
@@ -276,7 +284,7 @@ fn a_cross_body_instance_resolves_through_the_global_object_table() {
     let source = u32::try_from(instance.source).unwrap();
     assert!(source_body.slots.contains(&source));
     assert!(matches!(
-        scene.objects.get(&source),
+        scene.objects.get(&source).map(|stored| stored.object),
         Some(super::Object::Shell(_))
     ));
 }
@@ -345,8 +353,8 @@ fn geometry_side_objects_take_one_object_id_each() {
         .raw(b"z");
     let scene = Scene::collect(View::over_retained(s.bytes()), Grammar::Resaved).unwrap();
     assert_eq!(scene.texts.get(&1).map(String::as_str), Some("after"));
-    assert_eq!(scene.duplicate_objects, 0);
-    assert_eq!(scene.orphan_slots, 0);
+    assert!(scene.duplicate_objects.is_empty());
+    assert!(scene.orphan_slots.is_empty());
 }
 
 #[test]
@@ -381,7 +389,7 @@ fn relative_library_paths_define_bodies_and_a_part_keeps_every_include() {
     }
     s.close().close().raw(b"z");
     let scene = Scene::collect(View::over_retained(s.bytes()), Grammar::Resaved).unwrap();
-    assert_eq!(scene.orphan_slots, 0);
+    assert!(scene.orphan_slots.is_empty());
     assert_eq!(scene.bodies.len(), 2);
     assert_eq!(scene.bodies.first().map(|b| b.slots.len()), Some(1));
     assert_eq!(scene.bodies.first().unwrap().colour, Some([1, 2, 3]));

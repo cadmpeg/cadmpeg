@@ -603,8 +603,7 @@
           "value": {
             "code": "geometry.kernel-carrier-not-transferred",
             "kind": "geometry_not_transferred",
-            "namespace": "inventor",
-            "strict_floor": "warning"
+            "namespace": "inventor"
           }
         },
         "message": "the part has no bodies: its active kernel carrier holds no model records",

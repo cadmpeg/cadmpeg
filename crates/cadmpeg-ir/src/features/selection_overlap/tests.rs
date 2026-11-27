@@ -128,9 +128,28 @@ fn selection_overlap_preserves_every_membership_form() {
         }]),
         native: "native".to_owned().try_into().expect("native selection"),
     };
+    let generated_set = |feature: &str, local: &str| BodySelection::GeneratedSet {
+        members: BodyMembers(vec![BodyMember::new(
+            GeneratedBodyRef {
+                feature: FeatureId::mint(format!("test:model:feature#{feature}"))
+                    .expect("feature identity"),
+                local_id: local.to_owned().try_into().expect("local identity"),
+            },
+            native(),
+        )]),
+    };
     let local_body = |name: &str| BodySelection::Local {
         bodies: NativeSelections(vec![name.into()]),
         native: "native".to_owned().try_into().expect("native selection"),
+    };
+    let occurrence_body = |occurrence: &str, name: &str| BodySelection::Occurrence {
+        occurrence: crate::ids::OccurrenceId::mint(format!("test:model:occurrence#{occurrence}"))
+            .expect("occurrence identity"),
+        occurrence_path: Vec::new(),
+        bodies: vec![BodyId::mint(format!("test:model:body#{name}")).expect("body identity")]
+            .try_into()
+            .expect("distinct bodies"),
+        native: "native".into(),
     };
     let body_cases = [
         (bodies("same"), paired_body(false, false), true),
@@ -155,8 +174,39 @@ fn selection_overlap_preserves_every_membership_form() {
             generated_body("same", "other"),
             false,
         ),
+        (
+            generated_body("same", "same"),
+            generated_set("same", "same"),
+            true,
+        ),
+        (
+            generated_set("same", "same"),
+            generated_set("same", "same"),
+            true,
+        ),
+        (
+            generated_set("same", "same"),
+            generated_set("same", "other"),
+            false,
+        ),
         (local_body("same"), local_body("same"), true),
         (local_body("same"), local_body("other"), false),
+        (
+            occurrence_body("same", "same"),
+            occurrence_body("same", "same"),
+            true,
+        ),
+        (
+            occurrence_body("same", "same"),
+            occurrence_body("other", "same"),
+            false,
+        ),
+        (
+            occurrence_body("same", "same"),
+            occurrence_body("same", "other"),
+            false,
+        ),
+        (bodies("same"), occurrence_body("same", "same"), false),
         (bodies("same"), historical_body(), false),
     ];
     for (first, second, expected) in face_cases {

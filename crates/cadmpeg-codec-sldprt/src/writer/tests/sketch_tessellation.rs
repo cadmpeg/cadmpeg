@@ -829,7 +829,7 @@ fn semantic_writer_keeps_stored_tessellations_past_f32_range() {
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .write_to(&mut output)
@@ -966,7 +966,7 @@ fn semantic_writer_writes_default_channels_for_more_auxiliary_channels_than_the_
     let report = SldprtCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Unnamed,
         )
         .unwrap()
         .report()

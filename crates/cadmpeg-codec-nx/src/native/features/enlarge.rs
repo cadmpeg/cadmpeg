@@ -165,9 +165,10 @@ pub(in crate::native) fn feature_enlarge_construction_envelopes(
 #[cfg(test)]
 mod tests {
     use super::FeatureEnlargeConstructionEnvelope;
+    use cadmpeg_core::serde_erase::json;
 
     fn wire() -> serde_json::Value {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id":"nx:test:enlarge#0", "operation_label":"nx:test:operation#0", "parameter_class_index":57,
             "references":[{"object_index":0,"raw_object_index":"f000"},
                 {"object_index":256,"raw_object_index":"f10100"},
@@ -184,27 +185,26 @@ mod tests {
     #[test]
     fn enlarge_wire_checks_atoms_and_complete_span_before_native_admission() {
         let wire = wire();
-        let envelope: FeatureEnlargeConstructionEnvelope =
-            serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(&envelope).unwrap(), wire);
+        let envelope: FeatureEnlargeConstructionEnvelope = json::from_value(wire.clone()).unwrap();
+        assert_eq!(json::to_value(&envelope).unwrap(), wire);
         cadmpeg_test_support::native_serialization::assert_native_limit(&envelope, wire.clone());
         for (field, value) in [
-            ("parameter_class_index", serde_json::json!(0)),
-            ("byte_len", serde_json::json!(62)),
-            ("source_offset", serde_json::json!(u64::MAX)),
+            ("parameter_class_index", cadmpeg_core::json!(0)),
+            ("byte_len", cadmpeg_core::json!(62)),
+            ("source_offset", cadmpeg_core::json!(u64::MAX)),
         ] {
             let mut invalid = wire.clone();
             invalid[field] = value;
-            assert!(serde_json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
+            assert!(json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
         }
         let mut invalid = wire.clone();
-        invalid["scalars"][0] = serde_json::json!(2.0);
-        assert!(serde_json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
+        invalid["scalars"][0] = cadmpeg_core::json!(2.0);
+        assert!(json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
         let mut invalid = wire.clone();
-        invalid["raw_scalars"][1] = serde_json::json!("0000");
-        assert!(serde_json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
+        invalid["raw_scalars"][1] = cadmpeg_core::json!("0000");
+        assert!(json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
         let mut invalid = wire.clone();
-        invalid["references"][0]["raw_object_index"] = serde_json::json!("00");
-        assert!(serde_json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
+        invalid["references"][0]["raw_object_index"] = cadmpeg_core::json!("00");
+        assert!(json::from_value::<FeatureEnlargeConstructionEnvelope>(invalid).is_err());
     }
 }

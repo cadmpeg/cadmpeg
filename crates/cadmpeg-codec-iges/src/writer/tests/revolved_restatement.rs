@@ -4,11 +4,9 @@
 //! a pole or apex, and writes the support as the exact rational Type 128.
 
 use std::f64::consts::{PI, TAU};
-use std::io::Cursor;
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::eval::decode::{curve_point_solved, pcurve_uv, surface_point_solved};
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
@@ -33,7 +31,11 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::FiniteVector;
 use cadmpeg_ir::CadIr;
 
+use crate::test_support::decoded_with;
 use crate::{IgesCodec, IgesVersion};
+
+mod boundary_start;
+mod loop_periods;
 
 /// The sweep of the sphere lune and the cone sector, narrower than 45°.
 const SECTOR: f64 = PI / 6.0;
@@ -398,18 +400,9 @@ fn charged<'a>(losses: &'a [LossNote], code: &str) -> Vec<&'a str> {
 }
 
 /// `ir` with its body under `stretch`, written and read back with every face
-/// and parameter curve.
-fn read_back(mut ir: CadIr, stretch: Stretch) -> CadIr {
-    for body in &mut ir.geometry.bodies {
-        body.transform = stretch.transform();
-    }
-    let plan = IgesCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
-        )
-        .expect("the document is written");
-    let losses = plan.report().losses.clone();
+/// and parameter curve and with no loss.
+fn read_back(ir: CadIr, stretch: Stretch) -> CadIr {
+    let (losses, read) = written_under(ir, stretch, &[]);
     for code in [
         "iges/writer.body-omitted",
         "iges/writer.face-omitted",
@@ -417,21 +410,20 @@ fn read_back(mut ir: CadIr, stretch: Stretch) -> CadIr {
     ] {
         assert!(charged(&losses, code).is_empty(), "{losses:#?}");
     }
-    let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).expect("the file is written");
-    IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes")
-        .ir()
-        .clone()
+    read
 }
 
 /// The support points at sixteen equal steps of each parameter curve on the
 /// boundary of the one face of `read`, and the end points of each curve.
 fn boundary(read: &CadIr) -> (Vec<Point3>, Vec<[f64; 2]>) {
+    assert_eq!(read.geometry.faces.len(), 1);
+    face_boundary(read, &read.geometry.faces[0])
+}
+
+/// The support points at sixteen equal steps of each parameter curve on the
+/// boundary of `face` of `read`, and the end points of each curve.
+fn face_boundary(read: &CadIr, face: &Face) -> (Vec<Point3>, Vec<[f64; 2]>) {
     let geometry = &read.geometry;
-    assert_eq!(geometry.faces.len(), 1);
-    let face = &geometry.faces[0];
     let surface = geometry
         .surfaces
         .iter()
@@ -686,8 +678,9 @@ fn cut_cylinder_sector(sweep: f64, bottom_pcurve: bool) -> CadIr {
 }
 
 /// `ir` with its body under `stretch`, written, with the losses of the
-/// write and the document that reads back.
-fn written_under(mut ir: CadIr, stretch: Stretch) -> (Vec<LossNote>, CadIr) {
+/// write and the document that reads back with a loss of each code in
+/// `expected` and with no other loss.
+fn written_under(mut ir: CadIr, stretch: Stretch, expected: &[&str]) -> (Vec<LossNote>, CadIr) {
     for body in &mut ir.geometry.bodies {
         body.transform = stretch.transform();
     }
@@ -700,12 +693,7 @@ fn written_under(mut ir: CadIr, stretch: Stretch) -> (Vec<LossNote>, CadIr) {
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("the file is written");
-    let read = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("the written file decodes")
-        .ir()
-        .clone();
-    (losses, read)
+    (losses, decoded_with(&bytes, expected))
 }
 
 /// Points at 32 equal steps of each edge curve of `read` over its range.
@@ -747,7 +735,13 @@ fn edge_points(read: &CadIr) -> Vec<Point3> {
 fn a_cylinder_face_whose_parameter_curves_have_no_exact_form_keeps_its_model_space_boundary() {
     let sweep = PI / 3.0;
     for (stretch, bottom_pcurve) in [(STRETCH, false), (MIRROR_STRETCH, false), (STRETCH, true)] {
-        let (losses, read) = written_under(cut_cylinder_sector(sweep, bottom_pcurve), stretch);
+        // A boundary with no parameter curves on a curved support keeps its
+        // written traversal on read.
+        let (losses, read) = written_under(
+            cut_cylinder_sector(sweep, bottom_pcurve),
+            stretch,
+            &["iges/topology.boundary-winding-unresolved"],
+        );
         for code in ["iges/writer.body-omitted", "iges/writer.face-omitted"] {
             assert!(charged(&losses, code).is_empty(), "{losses:#?}");
         }
@@ -800,27 +794,7 @@ fn a_cylinder_face_whose_parameter_curves_have_no_exact_form_keeps_its_model_spa
 /// Points of the support of the one face of `read` at a 24 × 24 grid of its
 /// knot domain.
 fn support_points(read: &CadIr) -> Vec<Point3> {
-    let face = &read.geometry.faces[0];
-    let surface = read
-        .geometry
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)
-        .expect("the face support reads back");
-    let support = match &surface.geometry {
-        SurfaceGeometry::Solved(solved) => solved,
-        SurfaceGeometry::Procedural { cache, .. } => {
-            cache.as_ref().expect("the support reads back solved")
-        }
-    };
-    let SolvedSurfaceGeometry::Nurbs(nurbs) = support else {
-        panic!("the support reads back as {support:?}");
-    };
-    let domain = |knots: &[f64]| [knots[0], knots[knots.len() - 1]];
-    let [u_domain, v_domain] = [
-        domain(nurbs.u_knots().as_slice()),
-        domain(nurbs.v_knots().as_slice()),
-    ];
+    let (support, [u_domain, v_domain]) = rational_support(read);
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())
         .expect("an evaluation context");
@@ -837,6 +811,55 @@ fn support_points(read: &CadIr) -> Vec<Point3> {
         }
     }
     points
+}
+
+/// The rational support of the one face of `read` and its parameter domain.
+fn rational_support(read: &CadIr) -> (&SolvedSurfaceGeometry, [[f64; 2]; 2]) {
+    face_support(read, &read.geometry.faces[0])
+}
+
+/// The rational support of `face` of `read` and its parameter domain.
+fn face_support<'a>(read: &'a CadIr, face: &Face) -> (&'a SolvedSurfaceGeometry, [[f64; 2]; 2]) {
+    let surface = read
+        .geometry
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .expect("the face support reads back");
+    let support = match &surface.geometry {
+        SurfaceGeometry::Solved(solved) => solved,
+        SurfaceGeometry::Procedural { cache, .. } => {
+            cache.as_ref().expect("the support reads back solved")
+        }
+    };
+    let SolvedSurfaceGeometry::Nurbs(nurbs) = support else {
+        panic!("the support reads back as {support:?}");
+    };
+    let domain = |knots: &[f64]| [knots[0], knots[knots.len() - 1]];
+    (
+        support,
+        [
+            domain(nurbs.u_knots().as_slice()),
+            domain(nurbs.v_knots().as_slice()),
+        ],
+    )
+}
+
+/// Assert that each parameter curve end on the boundary of each face of
+/// `read` lies in the parameter domain of its rational support.
+fn assert_boundary_in_domain(read: &CadIr) {
+    for face in &read.geometry.faces {
+        let (_, domain) = face_support(read, face);
+        let (_, ends) = face_boundary(read, face);
+        for end in &ends {
+            for (value, [low, high]) in end.iter().zip(domain) {
+                assert!(
+                    (low - ON_SURFACE..=high + ON_SURFACE).contains(value),
+                    "the parameter curve end {end:?} lies outside the domain {domain:?}"
+                );
+            }
+        }
+    }
 }
 
 /// The largest gap between consecutive angles of `angles` around the turn.
@@ -875,7 +898,7 @@ fn a_sphere_or_torus_face_that_states_no_loop_covers_its_whole_support() {
     .loopless();
     for stretch in [STRETCH, MIRROR_STRETCH] {
         for (ir, circular) in [(sphere.clone(), false), (torus.clone(), true)] {
-            let (losses, read) = written_under(ir, stretch);
+            let (losses, read) = written_under(ir, stretch, &[]);
             for code in [
                 "iges/writer.body-omitted",
                 "iges/writer.face-omitted",
@@ -1276,6 +1299,27 @@ fn sphere_lune_with_covering_pole_uses(sweep: f64) -> CadIr {
 fn a_pole_use_over_part_of_its_parameter_curve_writes_only_the_part_it_covers() {
     for stretch in [UNMOVED, STRETCH, MIRROR_STRETCH] {
         let read = read_back(sphere_lune_with_covering_pole_uses(SECTOR), stretch);
+        assert_lune_boundary(&read, stretch);
+    }
+}
+
+/// The amount by which a use reaches past the end of its parameter curve,
+/// within the tolerance on equal parameter ranges.
+const NEAR_RANGE_GAP: f64 = 1.0e-12;
+
+#[test]
+fn a_use_almost_equal_to_the_range_of_its_parameter_curve_keeps_the_curve() {
+    let mut ir = sphere_lune_with_pole_uses(SECTOR);
+    ir.geometry
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id == id(CoedgeId::mint, "coedge", "end"))
+        .expect("the lune coedge")
+        .pcurves[0]
+        .parameter_range =
+        Some(DirectedParameterRange::new([0.0, PI + NEAR_RANGE_GAP]).expect("a range"));
+    for stretch in [STRETCH, MIRROR_STRETCH] {
+        let read = read_back(ir.clone(), stretch);
         assert_lune_boundary(&read, stretch);
     }
 }

@@ -137,7 +137,7 @@ fn each_target_arm_names_a_record_of_its_kind() {
             id("occurrence"),
         ),
         (
-            AttributeTarget::Tessellation(id("tessellation")),
+            AttributeTarget::Tessellation(id("tessellation").try_into().unwrap()),
             "tessellation",
             id("tessellation"),
         ),
@@ -188,7 +188,7 @@ fn a_record_target_names_an_arena_and_an_id_of_it() {
     let body = ir.geometry.bodies[0].id.to_string();
     let record = |arena: &str, id: &str| AttributeTarget::Record {
         arena: cadmpeg_core::text::NonBlankString::new(arena).unwrap(),
-        id: id.into(),
+        id: id.try_into().unwrap(),
     };
     assert_eq!(
         with_attribute(record("bodies", &body), Vec::new()),
@@ -217,7 +217,7 @@ fn a_record_target_names_an_arena_and_an_id_of_it() {
         .appearance_bindings
         .push(binding(AppearanceTarget::Record {
             arena: cadmpeg_core::text::NonBlankString::new("point_clouds").unwrap(),
-            id: "test:model:cloud#1".into(),
+            id: "test:model:cloud#1".try_into().unwrap(),
         }));
     assert_eq!(
         design_findings(&ir, BINDING),
@@ -429,7 +429,7 @@ fn a_record_target_names_no_arena_another_arm_names() {
         .appearance_bindings
         .push(binding(AppearanceTarget::Record {
             arena: cadmpeg_core::nonblank_const!("bodies"),
-            id: body,
+            id: body.try_into().unwrap(),
         }));
     assert_eq!(
         design_findings(&ir, BINDING),

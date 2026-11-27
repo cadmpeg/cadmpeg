@@ -180,7 +180,7 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
         construction,
         cache: None,
     };
-    let result = StepCodec::default().plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
+    let result = StepCodec::default().plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed);
     assert!(matches!(
         result,
         Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))

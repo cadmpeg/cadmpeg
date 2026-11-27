@@ -180,7 +180,11 @@ fn bad_shells_report_their_reason() {
     );
     assert!(mesh.positions.is_empty());
     // A face list whose count overruns the section.
-    if let Some(crate::hsf::scene::Object::Shell(shell)) = scene.objects.get_mut(&5) {
+    if let Some(crate::hsf::scene::Stored {
+        object: crate::hsf::scene::Object::Shell(shell),
+        ..
+    }) = scene.objects.get_mut(&5)
+    {
         shell.facelist = &[8, 5, 0, 1];
     }
     assert_eq!(

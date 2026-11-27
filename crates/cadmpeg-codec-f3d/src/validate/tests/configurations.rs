@@ -5,6 +5,7 @@ use crate::test_support::configuration_table::{property_target, string_cell, tab
 use crate::test_support::native_test::update_f3d_native;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
+use cadmpeg_core::serde_erase::json;
 
 const FINDING: &str = "Fusion Design configurations have no single authored table order";
 
@@ -57,11 +58,11 @@ fn configuration_documents_with_rows_in_two_tables_have_no_single_order() {
 }
 
 fn scoped_document(scope: &str, name: &str, rows: bool) -> DesignConfiguration {
-    let mut value = serde_json::to_value(document(name, rows)).unwrap();
-    value["id"] = serde_json::json!(format!(
+    let mut value = json::to_value(document(name, rows)).unwrap();
+    value["id"] = cadmpeg_core::json!(format!(
         "f3d:role-{scope}/reference-0/occurrence-0@configuration:entry#{name}"
     ));
-    serde_json::from_value(value).unwrap()
+    json::from_value(value).unwrap()
 }
 
 fn configuration_messages(documents: Vec<DesignConfiguration>) -> Vec<String> {

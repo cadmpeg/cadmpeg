@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -33,7 +34,7 @@ fn unresolved(family: UnresolvedFamily) -> LegacyOperation {
 }
 
 fn body(key: &str) -> cadmpeg_ir::topology::Body {
-    serde_json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": format!("creo:visibgeom:body#{key}"),
         "kind": "solid",
     }))

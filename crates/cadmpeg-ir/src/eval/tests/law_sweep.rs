@@ -648,7 +648,7 @@ fn a_law_sweep_whose_law_overflows_reaches_no_coordinate() {
         ),
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[0].geometry,
             0.5,
             1.0,
@@ -700,7 +700,7 @@ fn a_law_sweep_whose_law_derivative_has_no_value_keeps_its_point() {
     assert_eq!(
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
-            &ir,
+            &crate::index::ModelIndex::new_model_only(&ir),
             &ir.geometry.surfaces[0].geometry,
             0.5,
             0.0

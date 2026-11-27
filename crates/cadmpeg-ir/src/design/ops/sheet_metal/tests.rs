@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::*;
 use crate::design::ops::shared::tests::fixtures::*;

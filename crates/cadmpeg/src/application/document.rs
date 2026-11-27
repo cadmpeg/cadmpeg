@@ -67,11 +67,7 @@ impl LoadedDocument {
     /// neutral document, or a read one where the read retained the text of
     /// a part it gave up.
     pub(crate) fn read(read: CadirRead, input_bytes: u64) -> Self {
-        let CadirRead {
-            document,
-            report,
-            fidelity,
-        } = read;
+        let (document, report, fidelity) = read.without_sidecar();
         let mut loaded = Self::neutral(document, input_bytes);
         if !fidelity.retained_records().is_empty() {
             loaded.origin = LoadOrigin::Read {

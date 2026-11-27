@@ -385,7 +385,9 @@ fn kernel_layer_for_state(state: &ActiveCarrierState<'_>) -> Option<DialectMatch
             Ok(header) => Some(kernel_layer(carrier.family, header)),
             Err(_) => Some(unknown_kernel_layer()),
         },
-        ActiveCarrierState::NotApplicable | ActiveCarrierState::Unavailable(_) => None,
+        ActiveCarrierState::NotApplicable
+        | ActiveCarrierState::Unavailable(_)
+        | ActiveCarrierState::Unreadable { .. } => None,
     }
 }
 
@@ -397,16 +399,13 @@ pub(crate) fn layers(
 ) -> Result<DialectLayers, CodecError> {
     let mut layers = DialectLayers::of(primary.clone());
     if let Some(kernel) = kernel_layer_for_state(carrier) {
-        layers.insert(kernel).map_err(|error| match error {
-            cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected) => CodecError::malformed(
-                format_args!("duplicate Inventor dialect layer: {rejected:?}"),
-            ),
-            cadmpeg_core::dialect::DialectLayerError::MissingInstance(rejected) => {
+        layers.insert(kernel).map_err(
+            |cadmpeg_core::dialect::DuplicateDialectLayer(rejected)| {
                 CodecError::malformed(format_args!(
-                    "Inventor extra dialect layer in the primary format needs an instance: {rejected:?}"
+                    "duplicate Inventor dialect layer: {rejected:?}"
                 ))
-            }
-        })?;
+            },
+        )?;
     }
     Ok(layers)
 }

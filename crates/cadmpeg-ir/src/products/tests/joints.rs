@@ -6,6 +6,7 @@ use crate::products::{
     PlaneSense,
 };
 use crate::transform::Transform;
+use cadmpeg_core::serde_erase::json;
 
 fn connector() -> JointConnector {
     JointConnector {
@@ -139,38 +140,41 @@ fn a_joint_family_refuses_a_scalar_outside_it_by_name() {
         ),
     ];
     let fields = [
-        ("angle", serde_json::json!(0.5)),
-        ("translation_offset", serde_json::json!([1.0, 2.0, 3.0])),
-        ("distance", serde_json::json!(2.0)),
-        ("distance2", serde_json::json!(3.0)),
-        ("offset", serde_json::json!(1.5)),
-        ("ratio", serde_json::json!(0.5)),
-        ("coupled_joints", serde_json::json!(["test:model:joint#1"])),
+        ("angle", cadmpeg_core::json!(0.5)),
+        ("translation_offset", cadmpeg_core::json!([1.0, 2.0, 3.0])),
+        ("distance", cadmpeg_core::json!(2.0)),
+        ("distance2", cadmpeg_core::json!(3.0)),
+        ("offset", cadmpeg_core::json!(1.5)),
+        ("ratio", cadmpeg_core::json!(0.5)),
+        (
+            "coupled_joints",
+            cadmpeg_core::json!(["test:model:joint#1"]),
+        ),
         (
             "angular_limits",
-            serde_json::json!({"kind": "range", "minimum": 0.0, "maximum": 1.0}),
+            cadmpeg_core::json!({"kind": "range", "minimum": 0.0, "maximum": 1.0}),
         ),
         (
             "linear_limits",
-            serde_json::json!({"kind": "range", "minimum": 0.0, "maximum": 2.0}),
+            cadmpeg_core::json!({"kind": "range", "minimum": 0.0, "maximum": 2.0}),
         ),
     ];
     for (kind, allowed) in families {
         let joint =
             AssemblyJoint::paired(joint_id(), kind.clone(), [connector(), connector()], None);
-        let wire = serde_json::to_value(&joint).unwrap();
+        let wire = json::to_value(&joint).unwrap();
         assert_eq!(
-            serde_json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
+            json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
             joint
         );
         for (field, value) in &fields {
             let mut candidate = wire.clone();
             candidate["operands"]["value"]["kind"][*field] = value.clone();
-            let result = serde_json::from_value::<AssemblyJoint>(candidate.clone());
+            let result = json::from_value::<AssemblyJoint>(candidate.clone());
             assert_eq!(result.is_ok(), allowed.contains(field), "{kind:?}: {field}");
             match result {
                 Ok(joint) => assert_eq!(
-                    serde_json::to_value(joint).unwrap(),
+                    json::to_value(joint).unwrap(),
                     candidate,
                     "{kind:?}: {field}"
                 ),
@@ -206,23 +210,20 @@ fn a_coupling_ratio_keeps_its_sign_and_refuses_zero() {
     ] {
         let joint =
             AssemblyJoint::paired(joint_id(), kind.clone(), [connector(), connector()], None);
-        let wire = serde_json::to_value(&joint).unwrap();
+        let wire = json::to_value(&joint).unwrap();
         for ratio in [-0.5, 2.0] {
             let mut candidate = wire.clone();
-            candidate["operands"]["value"]["kind"]["ratio"] = serde_json::json!(ratio);
-            let decoded = serde_json::from_value::<AssemblyJoint>(candidate.clone()).unwrap();
+            candidate["operands"]["value"]["kind"]["ratio"] = cadmpeg_core::json!(ratio);
+            let decoded = json::from_value::<AssemblyJoint>(candidate.clone()).unwrap();
             assert_eq!(
-                serde_json::to_value(decoded).unwrap(),
+                json::to_value(decoded).unwrap(),
                 candidate,
                 "{kind:?}: {ratio}"
             );
         }
         let mut zero = wire.clone();
-        zero["operands"]["value"]["kind"]["ratio"] = serde_json::json!(0.0);
-        assert!(
-            serde_json::from_value::<AssemblyJoint>(zero).is_err(),
-            "{kind:?}"
-        );
+        zero["operands"]["value"]["kind"]["ratio"] = cadmpeg_core::json!(0.0);
+        assert!(json::from_value::<AssemblyJoint>(zero).is_err(), "{kind:?}");
     }
 }
 
@@ -231,26 +232,26 @@ fn a_coupling_ratio_keeps_its_sign_and_refuses_zero() {
 #[test]
 fn the_joint_wire_refuses_the_deleted_keys() {
     let joint = AssemblyJoint::grounded(joint_id(), connector(), None);
-    let wire = serde_json::to_value(&joint).unwrap();
+    let wire = json::to_value(&joint).unwrap();
     assert_eq!(wire["operands"]["kind"], "grounded");
     assert!(wire.get("kind").is_none());
     assert!(wire.get("frames").is_none());
     assert!(wire.get("detached").is_none());
     assert_eq!(
-        serde_json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
+        json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
         joint
     );
 
     for (level, key, value) in [
-        ("properties", serde_json::json!({})),
-        ("frames", serde_json::json!([])),
-        ("detached", serde_json::json!([false, false])),
+        ("properties", cadmpeg_core::json!({})),
+        ("frames", cadmpeg_core::json!([])),
+        ("detached", cadmpeg_core::json!([false, false])),
     ]
     .map(|(key, value)| ("joint", key, value))
     {
         let mut candidate = wire.clone();
         candidate.as_object_mut().unwrap().insert(key.into(), value);
-        let error = serde_json::from_value::<AssemblyJoint>(candidate)
+        let error = json::from_value::<AssemblyJoint>(candidate)
             .unwrap_err()
             .to_string();
         assert!(
@@ -260,8 +261,8 @@ fn the_joint_wire_refuses_the_deleted_keys() {
     }
 
     let mut candidate = wire;
-    candidate["operands"]["value"]["distance"] = serde_json::json!(1);
-    let error = serde_json::from_value::<AssemblyJoint>(candidate)
+    candidate["operands"]["value"]["distance"] = cadmpeg_core::json!(1);
+    let error = json::from_value::<AssemblyJoint>(candidate)
         .unwrap_err()
         .to_string();
     assert!(error.contains("unknown field `distance`"), "{error}");
@@ -284,7 +285,7 @@ fn a_nonfinite_joint_scalar_is_refused() {
         [connector(), connector()],
         None,
     );
-    let wire = serde_json::to_string(&joint).unwrap();
+    let wire = json::to_string(&joint).unwrap();
     for field in ["angle", "distance", "distance2"] {
         let candidate = wire.replace(
             "\"name\":\"custom\"",
@@ -323,16 +324,16 @@ fn a_plane_coincidence_keeps_its_sense_path_and_driving_parameter() {
     );
     joint.driving_parameter =
         Some(crate::features::ParameterId::mint("test:model:parameter#0").unwrap());
-    let wire = serde_json::to_value(&joint).unwrap();
+    let wire = json::to_value(&joint).unwrap();
     assert_eq!(wire["operands"]["value"]["kind"]["sense"], "aligned");
     assert_eq!(wire["operands"]["value"]["kind"]["offset"], -2.5);
     assert_eq!(
         wire["operands"]["value"]["connectors"][1]["operand"]["container"]["occurrence_path"],
-        serde_json::json!(["2", "7"])
+        cadmpeg_core::json!(["2", "7"])
     );
     assert_eq!(wire["driving_parameter"], "test:model:parameter#0");
     assert_eq!(
-        serde_json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
+        json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
         joint
     );
 
@@ -341,13 +342,16 @@ fn a_plane_coincidence_keeps_its_sense_path_and_driving_parameter() {
         .as_object_mut()
         .unwrap()
         .remove("sense");
-    assert!(serde_json::from_value::<AssemblyJoint>(missing_sense).is_err());
+    assert!(json::from_value::<AssemblyJoint>(missing_sense).is_err());
 
     let flat = JointOperand::occurrence(occurrence, "part:object", Vec::new());
-    let wire = serde_json::to_value(&flat).unwrap();
-    assert_eq!(wire["container"]["occurrence_path"], serde_json::json!([]));
+    let wire = json::to_value(&flat).unwrap();
+    assert_eq!(
+        wire["container"]["occurrence_path"],
+        cadmpeg_core::json!([])
+    );
     assert!(matches!(
-        serde_json::from_value::<JointOperand>(wire).unwrap().container,
+        json::from_value::<JointOperand>(wire).unwrap().container,
         OperandContainer::Occurrence { occurrence_path, .. } if occurrence_path.is_empty()
     ));
 }
@@ -373,10 +377,10 @@ fn insert_and_tangent_joints_keep_their_sense_and_contact() {
         ),
     ] {
         let joint = AssemblyJoint::paired(joint_id(), kind, [connector(), connector()], None);
-        let wire = serde_json::to_value(&joint).unwrap();
+        let wire = json::to_value(&joint).unwrap();
         assert_eq!(wire["operands"]["value"]["kind"][key], value);
         assert_eq!(
-            serde_json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
+            json::from_value::<AssemblyJoint>(wire.clone()).unwrap(),
             joint
         );
         let mut missing = wire;
@@ -384,7 +388,7 @@ fn insert_and_tangent_joints_keep_their_sense_and_contact() {
             .as_object_mut()
             .unwrap()
             .remove(key);
-        assert!(serde_json::from_value::<AssemblyJoint>(missing).is_err());
+        assert!(json::from_value::<AssemblyJoint>(missing).is_err());
     }
 }
 
@@ -404,25 +408,19 @@ fn a_joint_frame_sense_round_trips_and_is_optional() {
         [connector(), connector()],
         None,
     );
-    let unsensed = serde_json::to_value(&joint).unwrap();
+    let unsensed = json::to_value(&joint).unwrap();
     assert!(unsensed["operands"]["value"].get("frame_sense").is_none());
-    assert_eq!(
-        serde_json::from_value::<AssemblyJoint>(unsensed).unwrap(),
-        joint
-    );
+    assert_eq!(json::from_value::<AssemblyJoint>(unsensed).unwrap(), joint);
 
     assert!(joint.set_frame_sense(Some(PlaneSense::Opposed)));
-    let wire = serde_json::to_value(&joint).unwrap();
+    let wire = json::to_value(&joint).unwrap();
     assert_eq!(wire["operands"]["value"]["frame_sense"], "opposed");
-    assert_eq!(
-        serde_json::from_value::<AssemblyJoint>(wire).unwrap(),
-        joint
-    );
+    assert_eq!(json::from_value::<AssemblyJoint>(wire).unwrap(), joint);
 
     let mut grounded = AssemblyJoint::grounded(joint_id(), connector(), None);
     assert!(!grounded.set_frame_sense(Some(PlaneSense::Aligned)));
     assert_eq!(grounded.frame_sense(), None);
-    let mut wire = serde_json::to_value(&grounded).unwrap();
-    wire["operands"]["value"]["frame_sense"] = serde_json::json!("aligned");
-    assert!(serde_json::from_value::<AssemblyJoint>(wire).is_err());
+    let mut wire = json::to_value(&grounded).unwrap();
+    wire["operands"]["value"]["frame_sense"] = cadmpeg_core::json!("aligned");
+    assert!(json::from_value::<AssemblyJoint>(wire).is_err());
 }

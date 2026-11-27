@@ -19,7 +19,8 @@ pub(crate) mod sweep;
 pub(crate) mod validation;
 
 pub(crate) fn retained_control_losses<'a>(
-    definitions: impl IntoIterator<Item = &'a cadmpeg_ir::features::FeatureDefinition>,
+    features: impl IntoIterator<Item = (&'a cadmpeg_ir::features::FeatureDefinition, Option<&'a str>)>,
+    refused_surface_lofts: &std::collections::HashSet<String>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use cadmpeg_ir::features::profiles::PathRef;
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
@@ -29,7 +30,7 @@ pub(crate) fn retained_control_losses<'a>(
     let mut native_paths = 0_usize;
     let mut lofts = 0_usize;
     let mut surface_lofts = 0_usize;
-    for definition in definitions {
+    for (definition, native_ref) in features {
         if matches!(
             definition,
             FeatureDefinition::Operation(FeatureOperation::Sweep {
@@ -48,7 +49,11 @@ pub(crate) fn retained_control_losses<'a>(
                 sweeps += 1;
             } else if kind == Family::SolidLoft.native_name() {
                 lofts += 1;
-            } else if kind == Family::SurfaceLoft.native_name() {
+            } else if kind == Family::SurfaceLoft.native_name()
+                && !native_ref.is_some_and(|id| refused_surface_lofts.contains(id))
+            {
+                // A surface loft that the wrapper guard refused has its own
+                // operation loss, so it is not counted here.
                 surface_lofts += 1;
             }
         }
@@ -82,6 +87,11 @@ pub(super) const SECTION_LIST_TYPE: [u8; 16] = [
 ];
 pub(super) const SECTION_TYPE: [u8; 16] = [
     0xe8, 0x50, 0x31, 0x4b, 0xd1, 0x11, 0xd6, 0x41, 0x00, 0x08, 0x80, 0xba, 0x32, 0xa3, 0xdc, 0x09,
+];
+/// The participant record of a surface-loft label that lists the edge items
+/// of a face-loop section.
+pub(super) const FACE_LOOP_PARTICIPANT_TYPE: [u8; 16] = [
+    0x7c, 0xa8, 0x82, 0xb3, 0xf4, 0x45, 0xb9, 0xff, 0xfe, 0x4a, 0x74, 0x86, 0x10, 0x48, 0x13, 0xa4,
 ];
 pub(super) const SECTION_CONDITION_TYPE: [u8; 16] = [
     0x6c, 0x1c, 0x6c, 0x3c, 0x9a, 0x43, 0xe3, 0x94, 0x73, 0x18, 0xe2, 0xbb, 0xd0, 0xc3, 0x9f, 0xf8,
