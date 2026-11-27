@@ -14,7 +14,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 
-use crate::history_records::AsmHistory;
+use crate::history_records::{AsmDeltaState, AsmHistory};
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 
@@ -26,8 +26,15 @@ pub(crate) struct BodyHistoryTail {
     previous: FeatureId,
     native: String,
     state: Option<i64>,
-    previous_state: Option<i64>,
+    start: TailStart,
     bounded: bool,
+}
+
+#[derive(Debug)]
+enum TailStart {
+    Unread,
+    Known(i64),
+    Repeated(i64),
 }
 
 /// Bodies whose changes after the last feature are retained or not checked.
@@ -42,6 +49,7 @@ pub(crate) fn collect(
     features: &[Feature],
     scopes: &[DesignParameterScope],
     histories: &[AsmHistory],
+    scope_histories: &HashMap<String, String>,
     primary_brep: Option<&str>,
 ) -> BodyHistoryTails {
     let mut latest = BTreeMap::<&BodyId, &Feature>::new();
@@ -72,49 +80,61 @@ pub(crate) fn collect(
             unread.push((body.clone(), feature.id.clone()));
             continue;
         };
-        let unproved = |native: String, previous_state, state, bounded| BodyHistoryTail {
+        let unproved = |native: String, start, state, bounded| BodyHistoryTail {
             body: body.clone(),
             previous: feature.id.clone(),
             native,
             state,
-            previous_state,
+            start,
             bounded,
         };
         let Some(head) = history
             .states_oldest_first()
             .and_then(|order| order.last().copied())
         else {
-            tails.push(unproved(history.id.clone(), None, None, false));
+            tails.push(unproved(history.id.clone(), TailStart::Unread, None, false));
             continue;
         };
         let head = &history.states()[head];
-        let Some((current, _)) =
-            super::feature_outputs::feature_history_states(feature, scopes, histories)
-        else {
-            tails.push(unproved(head.id.clone(), None, Some(head.state_id), false));
+        let Some(placement) = super::feature_outputs::feature_history_states(
+            feature,
+            scopes,
+            histories,
+            scope_histories,
+        ) else {
+            tails.push(unproved(
+                head.id.clone(),
+                TailStart::Unread,
+                Some(head.state_id),
+                false,
+            ));
             continue;
         };
+        let current = placement.state_id;
+        let states = state_maps
+            .entry(std::ptr::from_ref(history))
+            .or_insert_with(|| super::history_states::history_state_index(history));
+        if matches!(states.get(&current), Some(None)) {
+            tails.push(unproved(
+                head.id.clone(),
+                TailStart::Repeated(current),
+                Some(head.state_id),
+                false,
+            ));
+            continue;
+        }
         if current == head.state_id {
             continue;
         }
         let Some(slot) = super::body_closures::stable_ref(body.as_str()) else {
             tails.push(unproved(
                 head.id.clone(),
-                Some(current),
+                TailStart::Known(current),
                 Some(head.state_id),
                 false,
             ));
             continue;
         };
-        let states = state_maps
-            .entry(std::ptr::from_ref(history))
-            .or_insert_with(|| {
-                history
-                    .states()
-                    .iter()
-                    .map(|state| (state.state_id, state))
-                    .collect::<HashMap<_, _>>()
-            });
         let work = WorkBudget::new(MAX_HISTORY_TAIL_WORK);
         if changed_after_with_cache(
             history,
@@ -127,7 +147,7 @@ pub(crate) fn collect(
         ) {
             tails.push(unproved(
                 head.id.clone(),
-                Some(current),
+                TailStart::Known(current),
                 Some(head.state_id),
                 work.exhausted(),
             ));
@@ -154,11 +174,7 @@ fn changed_after(
     body: i64,
     work: &WorkBudget,
 ) -> bool {
-    let states = history
-        .states()
-        .iter()
-        .map(|state| (state.state_id, state))
-        .collect::<HashMap<_, _>>();
+    let states = super::history_states::history_state_index(history);
     let mut touch_cache = HashMap::new();
     changed_after_with_cache(
         history,
@@ -174,14 +190,11 @@ fn changed_after(
 fn changed_after_with_cache(
     history: &AsmHistory,
     histories: &[AsmHistory],
-    states: &HashMap<i64, &crate::history_records::AsmDeltaState>,
+    states: &HashMap<i64, Option<&AsmDeltaState>>,
     (previous, current): (i64, i64),
     body: i64,
     work: &WorkBudget,
-    touch_cache: &mut HashMap<
-        (*const crate::history_records::AsmDeltaState, bool),
-        CachedStateTouch,
-    >,
+    touch_cache: &mut HashMap<(*const AsmDeltaState, bool), CachedStateTouch>,
 ) -> bool {
     if !work.charge_by(work_units(history.states().len())) {
         return true;
@@ -192,7 +205,7 @@ fn changed_after_with_cache(
         return true;
     };
     for id in chain.states {
-        let Some(&state) = states.get(&id) else {
+        let Some(state) = states.get(&id).copied().flatten() else {
             return true;
         };
         let Some(transition) = state.transition.as_ref() else {
@@ -201,7 +214,10 @@ fn changed_after_with_cache(
         if transition.geometry_unchanged {
             continue;
         }
-        let Some(&before) = transition.previous_state_id.and_then(|id| states.get(&id)) else {
+        let Some(before) = transition
+            .previous_state_id
+            .and_then(|id| states.get(&id).copied().flatten())
+        else {
             return true;
         };
         for (target_state, deleted) in [(state, false), (before, true)] {
@@ -259,13 +275,6 @@ fn changed_after_with_cache(
     false
 }
 
-fn state_text(state: Option<i64>, noun: &str) -> String {
-    state.map_or_else(
-        || "an unread state".into(),
-        |state| format!("{noun}{state}"),
-    )
-}
-
 pub(crate) fn append(
     model: &mut Model,
     found: &BodyHistoryTails,
@@ -287,6 +296,14 @@ pub(crate) fn append(
         ordinal = ordinal
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("body history ordinal"))?;
+        let start = match tail.start {
+            TailStart::Unread => "an unread state".into(),
+            TailStart::Known(state) => format!("state {state}"),
+            TailStart::Repeated(state) => format!("an ambiguous occurrence of state {state}"),
+        };
+        let end = tail
+            .state
+            .map_or_else(|| "an unread state".into(), |state| state.to_string());
         let mut owners = model
             .product_definitions
             .iter()
@@ -306,10 +323,8 @@ pub(crate) fn append(
                     "no owner"
                 };
                 losses.push(F3dLossCode::FeatureBodyHistoryOwnerUnresolved.note(format!(
-                    "Body {} has {gap} in product definitions; the native history interval from {} to {} remains unowned and retains the imported final shape.",
+                    "Body {} has {gap} in product definitions; the native history interval from {start} to {end} remains unowned and retains the imported final shape.",
                     tail.body,
-                    state_text(tail.previous_state, "state "),
-                    state_text(tail.state, ""),
                 )));
                 (None, String::new())
             }
@@ -342,10 +357,8 @@ pub(crate) fn append(
             ""
         };
         losses.push(F3dLossCode::FeatureBodyHistoryIncomplete.note(format!(
-            "Body {} retains the native history interval from {} to {} after feature {}.{ownership}{bound}",
+            "Body {} retains the native history interval from {start} to {end} after feature {}.{ownership}{bound}",
             tail.body,
-            state_text(tail.previous_state, "state "),
-            state_text(tail.state, ""),
             tail.previous,
         )));
     }
