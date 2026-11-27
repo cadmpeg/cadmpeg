@@ -305,6 +305,22 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
                         // The recipe identity of the operands outranks a face match.
                         super::generated_bodies::keep_recipe_body_slots(bodies, native, scope, inputs);
                         super::tail_bodies::bind_tail_model_bodies(bodies, scope, inputs);
+                        // A scope that stores no preceding state takes it from
+                        // its history state.
+                        if let Some(previous_state_id) =
+                            super::history_states::effective_scope_previous_history_state_id(
+                                scope,
+                                inputs.histories,
+                            )
+                        {
+                            super::tail_bodies::bind_tail_history_bodies(
+                                bodies,
+                                feature_id,
+                                previous_state_id,
+                                scope,
+                                inputs,
+                            );
+                        }
                     }
                     break 'feature_edit;
                 }

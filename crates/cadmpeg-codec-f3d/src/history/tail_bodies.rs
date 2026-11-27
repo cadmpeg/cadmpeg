@@ -115,6 +115,78 @@ fn node_body_ordinal(
         .ok_or(())
 }
 
+/// The body slots of the preceding history state that the tail nodes of the
+/// native body group `group_id` name, with the native group identity, or the
+/// reason that they name none.
+fn tail_history_slots(
+    group_id: &str,
+    previous_state_id: i64,
+    scope: &DesignParameterScope,
+    inputs: &FeatureBodySelectionInputs<'_>,
+) -> Result<(String, Vec<i64>), &'static str> {
+    let (native, nodes) = group_nodes(group_id, scope, inputs)
+        .ok_or("its group members are not single tail records that name nodes")?;
+    let stream = crate::ids::native_stream(&scope.id).ok_or("its scope has no stream")?;
+    let state_id = scope
+        .history_state_id()
+        .ok_or("its scope stores no history state")?;
+    let history = bound_history(scope, inputs).ok_or("its scope is bound to no history")?;
+    let (_, _, previous) = history_state_pair(history, state_id, previous_state_id, false)
+        .ok_or("its history state pair is not unique")?;
+    let input = history
+        .topology(previous)
+        .ok_or("its preceding history state has no topology")?;
+    let mut slots = Vec::new();
+    for node in nodes {
+        let mut creators = inputs.scopes.iter().filter(|candidate| {
+            candidate.record_index == node.creating_scope_record_index
+                && crate::ids::native_stream(&candidate.id) == Some(stream)
+        });
+        let (Some(creator), None) = (creators.next(), creators.next()) else {
+            return Err("a node's creating scope is not a single decoded scope");
+        };
+        if inputs.scope_histories.get(&creator.id) != Some(&history.id) {
+            return Err("a node's creating scope reads another history");
+        }
+        let creator_state = creator
+            .history_state_id()
+            .ok_or("a node's creating scope has no history state")?;
+        if !state_reaches(history, previous_state_id, creator_state) {
+            return Err("a node's creating state does not precede the consuming scope");
+        }
+        let mut states = history
+            .states()
+            .iter()
+            .filter(|state| state.state_id == creator_state);
+        let (Some(state), None) = (states.next(), states.next()) else {
+            return Err("a node's creating history state is not unique");
+        };
+        let inserted = state.transition.as_ref().map_or(&[][..], |transition| {
+            &transition.topology.bodies.inserted[..]
+        });
+        let Ok(ordinal) = node_body_ordinal(node, stream, history, inputs) else {
+            return Err("a node's body-map pair names another history");
+        };
+        let slot = match (inserted, ordinal) {
+            ([slot], None) => slot,
+            ([slot], Some(ordinal)) if *slot == ordinal => slot,
+            ([_, _, ..], Some(ordinal)) => inserted
+                .iter()
+                .find(|slot| **slot == ordinal)
+                .ok_or("a node's solved body is not inserted by its creating state")?,
+            _ => return Err("a node's creating state does not supply one body"),
+        };
+        if !input.bodies.contains(slot) {
+            return Err("a node's body is absent from the preceding history state");
+        }
+        if slots.contains(slot) {
+            return Err("two nodes name one body");
+        }
+        slots.push(*slot);
+    }
+    Ok((native, slots))
+}
+
 /// Bind a native body group to the history bodies that its tail nodes name in
 /// the preceding history state.
 ///
@@ -136,72 +208,9 @@ pub(super) fn bind_tail_history_bodies(
     let BodySelection::Native(group_id) = selection else {
         return;
     };
-    let Some((native, nodes)) = group_nodes(group_id, scope, inputs) else {
+    let Ok((native, slots)) = tail_history_slots(group_id, previous_state_id, scope, inputs) else {
         return;
     };
-    let Some(stream) = crate::ids::native_stream(&scope.id) else {
-        return;
-    };
-    let Some(state_id) = scope.history_state_id() else {
-        return;
-    };
-    let Some(history) = bound_history(scope, inputs) else {
-        return;
-    };
-    let Some((_, _, previous)) = history_state_pair(history, state_id, previous_state_id, false)
-    else {
-        return;
-    };
-    let Some(input) = history.topology(previous) else {
-        return;
-    };
-    let mut slots = Vec::new();
-    for node in nodes {
-        let mut creators = inputs.scopes.iter().filter(|candidate| {
-            candidate.record_index == node.creating_scope_record_index
-                && crate::ids::native_stream(&candidate.id) == Some(stream)
-        });
-        let (Some(creator), None) = (creators.next(), creators.next()) else {
-            return;
-        };
-        if inputs.scope_histories.get(&creator.id) != Some(&history.id) {
-            return;
-        }
-        let Some(creator_state) = creator.history_state_id() else {
-            return;
-        };
-        if !state_reaches(history, previous_state_id, creator_state) {
-            return;
-        }
-        let mut states = history
-            .states()
-            .iter()
-            .filter(|state| state.state_id == creator_state);
-        let (Some(state), None) = (states.next(), states.next()) else {
-            return;
-        };
-        let inserted = state.transition.as_ref().map_or(&[][..], |transition| {
-            &transition.topology.bodies.inserted[..]
-        });
-        let Ok(ordinal) = node_body_ordinal(node, stream, history, inputs) else {
-            return;
-        };
-        let slot = match (inserted, ordinal) {
-            ([slot], None) => slot,
-            ([slot], Some(ordinal)) if *slot == ordinal => slot,
-            ([_, _, ..], Some(ordinal)) => {
-                let Some(slot) = inserted.iter().find(|slot| **slot == ordinal) else {
-                    return;
-                };
-                slot
-            }
-            _ => return,
-        };
-        if !input.bodies.contains(slot) || slots.contains(slot) {
-            return;
-        }
-        slots.push(*slot);
-    }
     let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let bodies = slots
         .into_iter()
@@ -285,8 +294,18 @@ pub(super) fn unbound_tail_notes(
         }
         for group in native {
             if group_nodes(group, scope, inputs).is_some() {
+                let reason = match super::history_states::effective_scope_previous_history_state_id(
+                    scope,
+                    inputs.histories,
+                ) {
+                    Some(previous) => match tail_history_slots(group, previous, scope, inputs) {
+                        Err(reason) => reason,
+                        Ok(_) => "its bodies are not selected in the preceding history state",
+                    },
+                    None => "its scope has no preceding history state",
+                };
                 notes.push(crate::loss::F3dLossCode::FeatureBodyTailUnbound.note(format!(
-                    "feature {} names its bodies through browser nodes of {group} that bind no body",
+                    "feature {} names its bodies through browser nodes of {group} that bind no body: {reason}",
                     feature.id
                 )));
             }
