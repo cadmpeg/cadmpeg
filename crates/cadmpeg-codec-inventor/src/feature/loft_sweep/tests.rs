@@ -71,22 +71,23 @@ fn decoded_sweeps_report_native_paths_separately_from_native_controls() {
     use cadmpeg_ir::sketches::SketchId;
 
     let definition = |path: PathRef| {
-        let operation: FeatureOperation = serde_json::from_value(serde_json::json!({
-            "kind": "sweep",
-            "value": {
-                "shape": {
-                    "kind": "solid", "op": "new_body",
-                    "section": {"kind": "profile", "value": {
-                        "kind": "native", "value": "test:pmdc:profile#section"
-                    }},
-                    "sections": []
-                },
-                "path": path,
-                "path_tangent": false,
-                "linearize": false
-            }
-        }))
-        .expect("sweep operands");
+        let operation: FeatureOperation =
+            cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
+                "kind": "sweep",
+                "value": {
+                    "shape": {
+                        "kind": "solid", "op": "new_body",
+                        "section": {"kind": "profile", "value": {
+                            "kind": "native", "value": "test:pmdc:profile#section"
+                        }},
+                        "sections": []
+                    },
+                    "path": path,
+                    "path_tangent": false,
+                    "linearize": false
+                }
+            }))
+            .expect("sweep operands");
         FeatureDefinition::Operation(operation)
     };
     let definitions = [

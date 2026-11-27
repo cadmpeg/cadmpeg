@@ -5,7 +5,7 @@ use crate::pmdc::{PmDcListMetadata, PmDcReference, PmDcReferenceList};
 #[test]
 fn spatial_sketch_members_resolve_in_the_owning_segment() {
     let type_id = crate::pmdc::type_id_string(crate::sketch::spatial::TYPE);
-    let record = serde_json::from_value(serde_json::json!({
+    let record = cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
         "id": "inventor:pmdc:spatial-sketch#segment-0",
         "segment_token": "segment", "record_ordinal": 0, "type_id": type_id,
         "save_version_major": 31,
@@ -20,7 +20,7 @@ fn spatial_sketch_members_resolve_in_the_owning_segment() {
         "values": [0,0], "lower": [0,0,0], "upper": [1,1,1]
     }))
     .expect("spatial sketch record");
-    let raw = serde_json::from_value(serde_json::json!({
+    let raw = cadmpeg_core::serde_erase::json::from_value(cadmpeg_core::json!({
         "id": "inventor:rse:record#segment-0", "token": "segment", "ordinal": 0,
         "selector": 0, "type_index": 0, "type_id": type_id,
         "payload_offset": 0, "payload_len": 0, "payload_sha256": "",

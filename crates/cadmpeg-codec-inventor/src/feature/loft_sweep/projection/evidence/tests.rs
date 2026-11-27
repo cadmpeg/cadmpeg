@@ -816,13 +816,16 @@ fn tagged_model(faces: &[TaggedFace]) -> CadIr {
     }).collect::<Vec<_>>();
     let partial = partial.as_object_mut().expect("partial model");
     let mut ir = CadIr::empty();
-    let mut geometry = serde_json::to_value(&ir.geometry).expect("empty topology");
+    let mut geometry =
+        cadmpeg_core::serde_erase::json::to_value(&ir.geometry).expect("empty topology");
     geometry
         .as_object_mut()
         .expect("topology object")
         .extend(partial.clone());
-    ir.geometry = serde_json::from_value(geometry).expect("synthetic owned solid");
-    ir.model.attributes = serde_json::from_value(attributes.into()).expect("synthetic attributes");
+    ir.geometry =
+        cadmpeg_core::serde_erase::json::from_value(geometry).expect("synthetic owned solid");
+    ir.model.attributes = cadmpeg_core::serde_erase::json::from_value(attributes.into())
+        .expect("synthetic attributes");
     ir
 }
 
@@ -1173,7 +1176,8 @@ fn the_section_follows_the_path_frame_over_the_spans_before_each_span() {
 fn a_cut_or_join_result_can_keep_faces_of_the_bodies_it_works_on() {
     let mut model = tagged_model(&rectangle_faces(0.0));
     let mut other = model.geometry.faces[2].clone();
-    other.id = serde_json::from_value(json!("test:model:face#other")).expect("face id");
+    other.id = cadmpeg_core::serde_erase::json::from_value(json!("test:model:face#other"))
+        .expect("face id");
     model.geometry.faces.push(other);
     let check = |op| partition_of(&model, op);
     assert!(check(SolidSweepOperation::Cut).is_some());
@@ -1351,9 +1355,11 @@ fn a_malformed_legacy_name_leaves_its_face_unowned_unless_it_names_the_sweep() {
     // name stays unowned and the sweep stays proved.
     let mut other = legacy.clone();
     let mut stray = other.model.attributes[0].clone();
-    stray.id = serde_json::from_value(json!("test:model:attribute#stray")).expect("id");
+    stray.id = cadmpeg_core::serde_erase::json::from_value(json!("test:model:attribute#stray"))
+        .expect("id");
     stray.target.entity = AttributeTarget::Face(
-        serde_json::from_value(json!("test:model:face#stray")).expect("face id"),
+        cadmpeg_core::serde_erase::json::from_value(json!("test:model:face#stray"))
+            .expect("face id"),
     );
     other.model.attributes.push(stray.clone());
     for malformed in [
