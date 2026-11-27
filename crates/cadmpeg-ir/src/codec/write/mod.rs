@@ -244,22 +244,24 @@ impl<E: EncoderBackend> Encoder for E {
             limits: input.limits,
         };
         let session = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-        let (report, coverage, outputs, payloads, annotations) = if let [_] = outputs.as_slice() {
-            let (report, coverage, bytes, annotations) = plan_output(self, &session, unchecked)?;
-            let census = report.census.clone();
-            (
-                report,
-                coverage,
-                outputs,
-                vec![(bytes, census)],
-                annotations,
-            )
+        let planned = if let [_] = outputs.as_slice() {
+            plan_output(self, &session, unchecked).map(|(report, coverage, bytes, annotations)| {
+                let census = report.census.clone();
+                (
+                    report,
+                    coverage,
+                    outputs,
+                    vec![(bytes, census)],
+                    annotations,
+                )
+            })
         } else {
-            plan_encode_set(self, &session, unchecked, outputs)?
+            plan_encode_set(self, &session, unchecked, outputs)
         };
         if let Some(limit) = session.resource_refusal() {
             return Err(EncodeError::from_backend(CodecError::ResourceLimit(limit)));
         }
+        let (report, coverage, outputs, payloads, annotations) = planned?;
         let (payloads, censuses) = payloads.into_iter().unzip();
         let mut plan = ExportPlan {
             report,

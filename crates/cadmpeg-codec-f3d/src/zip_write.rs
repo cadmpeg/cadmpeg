@@ -71,30 +71,39 @@ pub(crate) fn expand_member<R: Read>(
         )));
     }
     let arena = DecodeArena::new();
-    ctx.with_arena(&arena, |ctx| {
-        if zstd {
-            let crc32 = entry.crc32();
-            let compressed_size = entry.compressed_size();
-            let stored = read_entry_bounded(entry, compressed_size, name)?;
-            expand_zstd_member_owned(ctx, &stored, ExpandSpec::Exact(declared_size), crc32)
-        } else {
-            let mut expanded = ctx.begin_expand(ExpandSpec::Exact(declared_size))?;
-            let mut chunk = [0_u8; 16 * 1024];
-            loop {
-                let read = entry.read(&mut chunk)?;
-                if read == 0 {
-                    break;
+    let result = ctx.with_arena(&arena, |ctx| {
+        ctx.run_part(|| {
+            if zstd {
+                let crc32 = entry.crc32();
+                let compressed_size = entry.compressed_size();
+                let stored = read_entry_bounded(entry, compressed_size, name)?;
+                expand_zstd_member_owned(ctx, &stored, ExpandSpec::Exact(declared_size), crc32)
+            } else {
+                let mut expanded = ctx.begin_expand(ExpandSpec::Exact(declared_size))?;
+                let mut chunk = [0_u8; 16 * 1024];
+                loop {
+                    let read = entry.read(&mut chunk)?;
+                    if read == 0 {
+                        break;
+                    }
+                    expanded.write(&chunk[..read])?;
                 }
-                expanded.write(&chunk[..read])?;
+                expanded.finalize_owned()
             }
-            expanded.finalize_owned()
-        }
-    })
+        })
+    });
+    match result {
+        Ok(Err(error @ CodecError::ResourceLimit(_))) => Err(CodecError::NotImplemented(format!(
+            "ZIP entry {name}: {error}"
+        ))),
+        Ok(result) => result,
+        Err(error) => Err(error),
+    }
     .map_err(|error| match error {
+        CodecError::Io(error) => CodecError::malformed(format_args!("ZIP entry {name}: {error}")),
         CodecError::Malformed(message) => {
             CodecError::malformed(format_args!("ZIP entry {name}: {message}"))
         }
-        CodecError::Io(error) => CodecError::malformed(format_args!("ZIP entry {name}: {error}")),
         other => other,
     })
 }
@@ -143,6 +152,36 @@ mod tests {
     use zip::ZipArchive;
 
     use super::{expand_member, is_zstd_member};
+
+    #[test]
+    fn a_zstandard_member_past_its_staging_allowance_leaves_the_session_open() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+
+        let plain = b"stored Zstandard block";
+        let frame = zip_fixture::zstd_stored_frame(plain);
+        let allowance = u64::try_from(plain.len()).unwrap();
+        assert!(frame.len() > plain.len());
+        let archive = zip_fixture::archive(&[RawEntry::compressed(
+            "unread.bin",
+            zip_fixture::ZSTD,
+            &frame,
+            plain,
+        )]);
+        let mut archive = ZipArchive::new(Cursor::new(archive)).unwrap();
+        let mut entry = archive.by_index_raw(0).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_decompressed_bytes_per_expand = allowance;
+        let session = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+
+        let error = expand_member(&session, &mut entry, "unread.bin", true).unwrap_err();
+
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::NotImplemented(reason)
+            if reason.contains("unread.bin"))
+        );
+        assert_eq!(session.resource_refusal(), None);
+    }
 
     /// A member larger than the 16 MiB a context with no input allows expands, because the
     /// session reads the archive that holds it as input, as on read.
