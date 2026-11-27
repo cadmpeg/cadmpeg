@@ -602,7 +602,7 @@ pub fn decode_with_table(
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
-        given_up::list_withheld(&mut out, records, &by_index, &reach, format)?;
+        given_up::list_withheld(ctx, &mut out, records, bytes, &by_index, &reach, format)?;
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;
         emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
 

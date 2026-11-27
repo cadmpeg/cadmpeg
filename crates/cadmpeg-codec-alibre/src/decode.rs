@@ -66,7 +66,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let withheld = std::mem::take(&mut brep.withheld)
         .iter()
         .map(|record| {
-            let part = record.part(FORMAT, bytes)?.in_stream(stream.clone());
+            let part = record.part(FORMAT).in_stream(stream.clone());
             ctx.give_up_part(part, record.error())
         })
         .collect::<Result<Vec<_>, _>>()?;

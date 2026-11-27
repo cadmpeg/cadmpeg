@@ -13,7 +13,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{u64_from_index, ArenaClass};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{Identity, ShellId};
 use cadmpeg_ir::topology::Unstated;
@@ -39,8 +39,8 @@ pub struct WithheldRecord {
     pub kind: &'static str,
     /// The record's offset in the decoded ASM bytes.
     pub offset: usize,
-    /// The record's length in bytes.
-    pub len: usize,
+    /// The record's bytes, from `offset`.
+    pub bytes: Vec<u8>,
     /// Why the decode leaves the record out.
     pub cause: &'static str,
     /// The neutral id the record would carry, then the ids of the records
@@ -52,35 +52,19 @@ pub struct WithheldRecord {
 }
 
 impl WithheldRecord {
-    /// The part of `codec` over this record's bytes in `stream`, the ASM
-    /// bytes the decode read, naming the records it drops and marks.
-    ///
-    /// # Errors
-    ///
-    /// [`CodecError::Malformed`] when the record's span leaves `stream`.
-    pub fn part<'a>(&self, codec: &'static str, stream: &'a [u8]) -> Result<Part<'a>, CodecError> {
-        let span = self
-            .offset
-            .checked_add(self.len)
-            .and_then(|end| stream.get(self.offset..end))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "{} record at byte {} declares {} bytes, beyond the {} the stream holds",
-                    self.kind,
-                    self.offset,
-                    self.len,
-                    stream.len()
-                ))
-            })?;
-        Ok(Part::at(
+    /// The part of `codec` over this record's bytes, naming the records it
+    /// drops and marks.
+    #[must_use]
+    pub fn part(&self, codec: &'static str) -> Part<'_> {
+        Part::at(
             codec,
             self.kind,
             u64_from_index(self.offset),
-            span,
+            &self.bytes,
             [ArenaClass::Model],
         )
         .dropping(self.dropped.iter().cloned())
-        .marking(self.marked.iter().cloned()))
+        .marking(self.marked.iter().cloned())
     }
 
     /// The error the part's give-up states.
@@ -93,14 +77,19 @@ impl WithheldRecord {
 /// Lists in `out.withheld` each record of `records` that the walk reached
 /// and no emit pass emitted, and each face that names a shell but no surface
 /// record. A record that one part names is named by no other part. The
-/// emitted shell of each listed face states unstated members.
+/// emitted shell of each listed face states unstated members. Each listed
+/// record keeps its bytes of `bytes`, the stream `records` were framed in.
 ///
 /// # Errors
 ///
-/// [`CodecError::Malformed`] when a record index exceeds the `i64` range.
+/// [`CodecError::Malformed`] when a record index exceeds the `i64` range or
+/// a listed record's span leaves `bytes`, and a refusal of the allocation
+/// that keeps a record's bytes.
 pub(super) fn list_withheld(
+    ctx: &DecodeContext<'_>,
     out: &mut AsmBrep,
     records: &[Record],
+    bytes: &[u8],
     by_index: &HashMap<i64, &Record>,
     reach: &Reachable,
     format: IdFormat,
@@ -170,10 +159,25 @@ pub(super) fn list_withheld(
                 }
             }
         }
+        let span = r
+            .offset
+            .checked_add(r.len)
+            .and_then(|end| bytes.get(r.offset..end))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "{kind} record {} at byte {} declares {} bytes, beyond the {} the stream holds",
+                    r.index,
+                    r.offset,
+                    r.len,
+                    bytes.len()
+                ))
+            })?;
+        let mut record_bytes = ctx.alloc_filled(span.len(), 0_u8, "withheld ASM record bytes")?;
+        record_bytes.copy_from_slice(span);
         out.withheld.push(WithheldRecord {
             kind,
             offset: r.offset,
-            len: r.len,
+            bytes: record_bytes,
             cause,
             dropped,
             marked,

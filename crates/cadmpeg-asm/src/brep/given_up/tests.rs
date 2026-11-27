@@ -53,8 +53,7 @@ fn decode_and_give_up(source: &str, purpose: DecodePurpose) -> (AsmBrep, Vec<Los
             .withheld
             .iter()
             .map(|record| {
-                let part = record.part("f3d", bytes).expect("record span in stream");
-                ctx.give_up_part(part, record.error())
+                ctx.give_up_part(record.part("f3d"), record.error())
                     .expect("part given up")
                     .loss()
             })
@@ -126,6 +125,21 @@ fn a_face_whose_surface_names_no_record_drops_its_loops_and_coedges() {
             marked: &["f3d:brep:entity#2"],
         }],
     );
+}
+
+/// A withheld record keeps the bytes of its record in the stream, so its
+/// part reads them without the stream.
+#[test]
+fn a_withheld_record_keeps_the_bytes_of_its_record() {
+    let face = "face $-1 -1 $-1 $-1 $6 $2 $-1 $99 forward single #";
+    let source = edited("face $-1 -1 $-1 $-1 $6 $2 $-1 $8 forward single #", face);
+    let brep = decode(&source, DecodePurpose::Model);
+    assert_eq!(brep.withheld.len(), 1);
+    let record = &brep.withheld[0];
+    assert_eq!(record.kind, "face");
+    assert_eq!(record.offset, source.find(&format!("{face}\n")).unwrap());
+    assert!(record.bytes.starts_with(face.as_bytes()));
+    assert!(source.as_bytes()[record.offset..].starts_with(&record.bytes));
 }
 
 /// The cone's face 3 stands on a surface reference that names no record.

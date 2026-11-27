@@ -584,3 +584,92 @@ fn a_stream_whose_geometry_classes_are_unknown_decodes_no_carriers() {
     assert!(!result.report().geometry_transferred());
     assert!(loss_kinds(&result).contains(&AlibreLossCode::GeometryFramedWithoutCarriers.kind()));
 }
+
+/// The offset in the ACIS binary `stream` of the surface reference token of
+/// the first face record that names a shell, and the record's offset.
+fn face_surface_reference(stream: &[u8]) -> (usize, usize) {
+    use cadmpeg_asm::kernel_header::RefWidth;
+    use cadmpeg_asm::{acis_header, sab};
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(stream, &arena, &policy).unwrap();
+    let kernel = crate::dialect::kernel_stream(stream).unwrap();
+    let header = &kernel.header;
+    let limit = acis_header::solved_record_limit_with_header(stream, header);
+    let records = sab::frame_for_header(
+        &ctx,
+        stream,
+        kernel.records_at,
+        limit.unwrap_or(stream.len()),
+        RefWidth::Four,
+        &header.metadata,
+        limit.is_none(),
+    )
+    .unwrap();
+    // The shared entity fields hold the face's shell at 5 and its surface
+    // at 7 once the extended entity base is removed.
+    let mut normalized = records.clone();
+    sab::normalize_extended_base(&mut normalized, header.metadata.save_format_version);
+    let (index, surface) = normalized
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| record.head() == "face" && record.ref_at(5).is_some())
+        .find_map(|(index, record)| record.ref_at(7).map(|surface| (index, surface)))
+        .expect("a face record on a shell");
+    let face = &records[index];
+    let at: Vec<usize> = (0..)
+        .map_while(|token| sab::payload_token(stream, face, RefWidth::Four, token))
+        .filter(|(_, token)| *token == sab::Token::Ref(surface))
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(at.len(), 1, "one reference names the surface");
+    assert_eq!(stream[at[0]], 0x0c, "a reference token");
+    (at[0], face.offset)
+}
+
+#[test]
+fn a_face_whose_surface_names_no_record_is_given_up_in_the_sab_data_stream() {
+    let mut face_offset = None;
+    let patched = with_sab(BOX, |stream| {
+        let (at, offset) = face_surface_reference(stream);
+        stream[at + 1..at + 5].copy_from_slice(&i32::MAX.to_le_bytes());
+        face_offset = Some(offset);
+    });
+    let face_offset = face_offset.unwrap();
+    let whole = decode(BOX);
+    let result = decode(&patched);
+    let charges: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .collect();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    let charge = charges[0];
+    assert_eq!(charge.severity, Severity::Error);
+    assert!(
+        charge.message.starts_with(&format!(
+            "part face stream=\"alibre:SAB_DATA\" offset={face_offset} "
+        )),
+        "{}",
+        charge.message
+    );
+    assert!(
+        charge
+            .message
+            .contains("the face record's surface reference names no record"),
+        "{}",
+        charge.message
+    );
+    assert!(result.report().geometry_transferred());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(
+        result.ir().geometry.bodies.len(),
+        whole.ir().geometry.bodies.len()
+    );
+    assert_eq!(
+        result.ir().geometry.faces.len() + 1,
+        whole.ir().geometry.faces.len()
+    );
+}

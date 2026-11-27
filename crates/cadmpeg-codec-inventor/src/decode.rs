@@ -2336,20 +2336,10 @@ fn history_chain_part<'a>(
 
 /// The topology record `record` that the kernel decode of `carrier` read and
 /// left out, as a part over its bytes in the bulk stream.
-fn withheld_part<'a>(
-    carrier: &crate::kernel::ActiveCarrier<'a>,
-    record: &cadmpeg_asm::brep::given_up::WithheldRecord,
-) -> Result<Part<'a>, CodecError> {
-    let span = record
-        .offset
-        .checked_add(record.len)
-        .and_then(|end| carrier.bytes.window().get(record.offset..end))
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "Inventor kernel {} record at byte {} leaves its carrier",
-                record.kind, record.offset
-            ))
-        })?;
+fn withheld_part<'r>(
+    carrier: &crate::kernel::ActiveCarrier<'_>,
+    record: &'r cadmpeg_asm::brep::given_up::WithheldRecord,
+) -> Result<Part<'r>, CodecError> {
     let offset = carrier
         .carrier_offset
         .checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
@@ -2358,7 +2348,7 @@ fn withheld_part<'a>(
         record.kind,
         (carrier.segment_token.as_str(), carrier.record_ordinal),
         offset,
-        span,
+        &record.bytes,
         ArenaClass::Model,
     )?
     .dropping(record.dropped.iter().cloned())
