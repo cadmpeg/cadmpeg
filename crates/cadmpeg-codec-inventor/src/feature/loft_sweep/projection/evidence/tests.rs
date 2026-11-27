@@ -529,12 +529,21 @@ fn a_legacy_side_face_can_join_several_curves_of_one_section() {
         [vec![8, 9, 10], vec![3]][section].clone()
     })
     .is_none());
-    // The last section can hold the several curves.
+    // Two groups of the last section after one of the first section (ABB)
+    // are outside the stated form.
     let last = legacy_side(&[3, 8, 19, 258, 0, 0, 3, 23, 258, 0, 0, 4, 23, 258, 0, 0]);
     assert!(legacy_loft(&last, 17, [19, 23], |section| {
         [vec![8], vec![3, 4]][section].clone()
     })
-    .is_some());
+    .is_none());
+    // Four groups are outside the stated form.
+    let four = legacy_side(&[
+        4, 8, 19, 258, 0, 0, 9, 19, 258, 0, 0, 10, 19, 258, 0, 0, 3, 23, 258, 0, 0,
+    ]);
+    assert!(legacy_loft(&four, 17, [19, 23], |section| {
+        [vec![8, 9, 10], vec![3]][section].clone()
+    })
+    .is_none());
 }
 
 #[test]
