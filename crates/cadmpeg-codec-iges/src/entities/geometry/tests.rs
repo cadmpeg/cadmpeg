@@ -19,13 +19,13 @@ use super::{
 
 #[test]
 fn planar_pair_budget_refuses_an_item_without_spending_its_pairs() {
-    let budget = PlanarPairBudget::new();
+    let budget = PlanarPairBudget::new(super::ProjectionLimits::DEFAULT);
     assert!(!budget.admit(32_769));
     assert!(budget.admit(32_768));
     assert!(!budget.admit(1));
     assert!(!budget.admit(usize::MAX));
 
-    let budget = PlanarPairBudget::new();
+    let budget = PlanarPairBudget::new(super::ProjectionLimits::DEFAULT);
     for _ in 0..1024 {
         assert!(budget.admit(1024));
     }
