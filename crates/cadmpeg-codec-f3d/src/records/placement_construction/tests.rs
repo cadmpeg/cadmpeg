@@ -11,14 +11,14 @@ fn native_placement_frames_retain_source_references_and_reject_inconsistent_loca
         assert_eq!(json::to_value(&record).unwrap(), native);
         for field in ["member_offset", "paired_byte_offset"] {
             let mut invalid = native.clone();
-            invalid[field] = serde_json::json!(invalid[field].as_u64().unwrap() + 1);
+            invalid[field] = cadmpeg_core::json!(invalid[field].as_u64().unwrap() + 1);
             assert!(json::from_value::<DesignPlacementConstruction>(invalid).is_err());
         }
         let mut invalid = native.clone();
-        invalid["fields"]["values"]["count"]["value"] = serde_json::json!(1000);
+        invalid["fields"]["values"]["count"]["value"] = cadmpeg_core::json!(1000);
         assert!(json::from_value::<DesignPlacementConstruction>(invalid).is_err());
         let mut invalid = native;
-        invalid["fields"]["ref_type"]["offset"] = serde_json::json!(0);
+        invalid["fields"]["ref_type"]["offset"] = cadmpeg_core::json!(0);
         assert!(json::from_value::<DesignPlacementConstruction>(invalid).is_err());
     }
 }

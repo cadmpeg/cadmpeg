@@ -170,7 +170,7 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|record| record["values"] == serde_json::json!([key])));
+            .any(|record| record["values"] == cadmpeg_core::json!([key])));
     }
     let entities = json::to_value(&arenas["parasolid_entity_51_records"]).unwrap();
     assert!(entities
@@ -179,7 +179,7 @@ fn historical_blends_share_a_body_without_inheriting_its_carriers() {
         .iter()
         .any(|record| record["definition_xmt"] == 702
             && record["leading_references"][0] == 4
-            && record["trailing_references"] == serde_json::json!([711, 712])));
+            && record["trailing_references"] == cadmpeg_core::json!([711, 712])));
     assert!(!arenas["parasolid_topology_attribute_class_uses"].is_empty());
     assert!(!arenas["parasolid_entity_51_numeric_uses"].is_empty());
 }

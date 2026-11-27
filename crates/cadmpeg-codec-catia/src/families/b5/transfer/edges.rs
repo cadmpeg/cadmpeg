@@ -387,7 +387,7 @@ pub(super) fn emit_edges(
             geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ) {
-            annotations.derived(curve_id.as_str(), "geometry")?;
+            annotations.derived(&curve_id, "geometry")?;
         }
         let model_curve_id = curve_id.clone();
         admission.charge()?;
@@ -430,7 +430,7 @@ pub(super) fn emit_edges(
                 tag,
                 Exactness::Derived,
             )?;
-            annotations.derived(procedural_id.as_str(), "definition")?;
+            annotations.derived(&procedural_id, "definition")?;
             let mut definition = definition;
             if let Some(tolerance) = cache_fit_tolerance {
                 definition
@@ -453,10 +453,10 @@ pub(super) fn emit_edges(
             Exactness::ByteExact,
         )?;
         for field in ["ends.start", "ends.end"] {
-            annotations.derived(id.as_str(), field)?;
+            annotations.derived(&id, field)?;
         }
         if edge_range.is_some() {
-            annotations.derived(id.as_str(), "carrier.param_range")?;
+            annotations.derived(&id, "carrier.param_range")?;
         }
         let map_id = id.clone();
         edge_id_map.insert(edge_id, map_id);

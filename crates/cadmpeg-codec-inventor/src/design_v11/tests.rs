@@ -158,7 +158,7 @@ fn geometry_without_design_records_keeps_no_scope() {
     for key in ["a", "b", "other"] {
         ir.geometry.bodies.push(
             json::from_value(
-                serde_json::json!({"id":format!("inventor:brep:body#{key}"),"kind":"solid"}),
+                cadmpeg_core::json!({"id":format!("inventor:brep:body#{key}"),"kind":"solid"}),
             )
             .expect("body"),
         );
@@ -297,7 +297,7 @@ fn with_bodies(mut ir: CadIr) -> CadIr {
     for key in ["b", "a", "other"] {
         ir.geometry.bodies.push(
             json::from_value(
-                serde_json::json!({"id":format!("inventor:brep:body#{key}"),"kind":"solid"}),
+                cadmpeg_core::json!({"id":format!("inventor:brep:body#{key}"),"kind":"solid"}),
             )
             .expect("body"),
         );
@@ -453,7 +453,7 @@ fn native_operation_keeps_all_source_parameter_strings() {
 fn current_body_membership_survives_geometry_arena_sorting() {
     let mut ir = part(vec![feature("producer", 0)]);
     for name in ["b", "a"] {
-        let body: cadmpeg_ir::topology::Body = json::from_value(serde_json::json!({
+        let body: cadmpeg_ir::topology::Body = json::from_value(cadmpeg_core::json!({
             "id":format!("inventor:brep:body#{name}"), "kind":"solid"
         }))
         .expect("body");

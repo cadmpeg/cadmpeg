@@ -15,7 +15,13 @@ fn emitted_vertex_records_keep_body_ownership_and_optional_tolerance() {
         for vertex in &mut ir.geometry.vertices {
             vertex.tolerance = tolerance;
         }
-        let body = crate::writer::brep_body(&ir, 0.001, false).unwrap();
+        let body = crate::writer::brep_body(
+            &ir,
+            0.001,
+            cadmpeg_parasolid::precision::DEFAULT_LINEAR_RESOLUTION,
+            false,
+        )
+        .unwrap();
         let native = crate::test_support::container::sldprt_with_body(&body);
         let decoded = crate::SldprtCodec
             .decode(&mut Cursor::new(native), &DecodeOptions::default())

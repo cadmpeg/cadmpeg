@@ -10,9 +10,9 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
         T: serde::de::DeserializeOwned + serde::Serialize + std::fmt::Debug,
     {
         for binding in [
-            serde_json::json!({}),
-            serde_json::json!({"historical_entity_kind": "loop", "historical_entity_ref": 42}),
-            serde_json::json!({"historical_entity_kind": "loop", "historical_entity_ref": 42, "historical_state_ids": [2, 3]}),
+            cadmpeg_core::json!({}),
+            cadmpeg_core::json!({"historical_entity_kind": "loop", "historical_entity_ref": 42}),
+            cadmpeg_core::json!({"historical_entity_kind": "loop", "historical_entity_ref": 42, "historical_state_ids": [2, 3]}),
         ] {
             let mut wire = base.clone();
             wire.as_object_mut()
@@ -22,11 +22,11 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
             assert_eq!(json::to_value(value).unwrap(), wire);
         }
         for binding in [
-            serde_json::json!({"historical_entity_kind": "loop"}),
-            serde_json::json!({"historical_entity_ref": 42}),
-            serde_json::json!({"historical_state_ids": [2]}),
-            serde_json::json!({"historical_entity_kind": "loop", "historical_state_ids": [2]}),
-            serde_json::json!({"historical_entity_ref": 42, "historical_state_ids": [2]}),
+            cadmpeg_core::json!({"historical_entity_kind": "loop"}),
+            cadmpeg_core::json!({"historical_entity_ref": 42}),
+            cadmpeg_core::json!({"historical_state_ids": [2]}),
+            cadmpeg_core::json!({"historical_entity_kind": "loop", "historical_state_ids": [2]}),
+            cadmpeg_core::json!({"historical_entity_ref": 42, "historical_state_ids": [2]}),
         ] {
             let mut invalid = base.clone();
             invalid
@@ -39,7 +39,7 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
             assert!(error.contains("historical_state_ids"));
         }
     }
-    let mut member = serde_json::json!({
+    let mut member = cadmpeg_core::json!({
         "id": "member", "group_record_index": 1, "group_member_ordinal": 0,
         "record_index": 2, "byte_offset": 10, "class_tag": "346",
         "local_id": 17, "local_id_offset": 31,
@@ -51,7 +51,7 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     check::<crate::records::topology::extrude_selection::DesignExtrudeSelectionMember>(&member);
     for field in ["asset_id", "context_id"] {
         let mut invalid = member.clone();
-        invalid[field] = serde_json::json!("asset");
+        invalid[field] = cadmpeg_core::json!("asset");
         assert!(json::from_value::<
             crate::records::topology::extrude_selection::DesignExtrudeSelectionMember,
         >(invalid)
@@ -67,11 +67,11 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     ] {
         member.as_object_mut().unwrap().remove(field);
     }
-    member["scope_record_index"] = serde_json::json!(4);
-    member["compact_layout"] = serde_json::json!(false);
-    member["local_id_offset"] = serde_json::json!(34);
-    member["asset_id_offset"] = serde_json::json!(52);
-    member["context_id_offset"] = serde_json::json!(128);
+    member["scope_record_index"] = cadmpeg_core::json!(4);
+    member["compact_layout"] = cadmpeg_core::json!(false);
+    member["local_id_offset"] = cadmpeg_core::json!(34);
+    member["asset_id_offset"] = cadmpeg_core::json!(52);
+    member["context_id_offset"] = cadmpeg_core::json!(128);
     check::<crate::records::topology::edge_identity::DesignEdgeIdentityOperand>(&member);
     for (compact, local_id_offset) in [(true, 32), (true, 33), (false, 34)] {
         let mut framed = member.clone();
@@ -102,7 +102,7 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     }
     for field in ["asset_id", "context_id"] {
         let mut invalid = member.clone();
-        invalid[field] = serde_json::json!("asset");
+        invalid[field] = cadmpeg_core::json!("asset");
         assert!(json::from_value::<
             crate::records::topology::edge_identity::DesignEdgeIdentityOperand,
         >(invalid)

@@ -37,15 +37,15 @@ mod tests {
             value: cadmpeg_ir::identity_key!("generated"),
         };
         let value = json::to_value(&token)?;
-        assert_eq!(value, serde_json::json!({"value": "generated"}));
+        assert_eq!(value, cadmpeg_core::json!({"value": "generated"}));
         let decoded: Token = json::from_value(value)?;
         assert_eq!(decoded.value.as_str(), "generated");
         for value in [
-            serde_json::json!(""),
-            serde_json::json!(7),
-            serde_json::json!([]),
+            cadmpeg_core::json!(""),
+            cadmpeg_core::json!(7),
+            cadmpeg_core::json!([]),
         ] {
-            assert!(json::from_value::<Token>(serde_json::json!({"value": value})).is_err());
+            assert!(json::from_value::<Token>(cadmpeg_core::json!({"value": value})).is_err());
         }
         Ok(())
     }

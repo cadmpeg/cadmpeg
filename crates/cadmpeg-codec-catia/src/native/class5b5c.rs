@@ -216,15 +216,15 @@ mod tests {
             class: CatiaClass5b5c::Class5b,
         };
         let mut wire = json::to_value(&record).expect("serialize raw frame");
-        assert_eq!(wire["byte_offset"], serde_json::json!(42));
-        assert_eq!(wire["byte_len"], serde_json::json!(9));
-        assert_eq!(wire["payload"], serde_json::json!("000000"));
+        assert_eq!(wire["byte_offset"], cadmpeg_core::json!(42));
+        assert_eq!(wire["byte_len"], cadmpeg_core::json!(9));
+        assert_eq!(wire["payload"], cadmpeg_core::json!("000000"));
         assert_eq!(
             json::from_value::<CatiaConsolidatedClass5b5cRecord>(wire.clone())
                 .expect("load raw frame"),
             record
         );
-        wire["byte_len"] = serde_json::json!(8);
+        wire["byte_len"] = cadmpeg_core::json!(8);
         assert!(json::from_value::<CatiaConsolidatedClass5b5cRecord>(wire)
             .expect_err("reject truncated declared frame")
             .to_string()

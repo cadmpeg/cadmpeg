@@ -10,10 +10,10 @@ use std::num::NonZeroU32;
 use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::json;
 use cadmpeg_core::text::NonBlankString;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::json;
 
 use super::*;
 use crate::design::construction::{

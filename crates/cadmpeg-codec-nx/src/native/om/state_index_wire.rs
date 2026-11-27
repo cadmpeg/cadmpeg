@@ -467,9 +467,9 @@ mod tests {
         let json = r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":"02","timestamp":0,"value_marker":160,"value":0,"raw_value":"a00000","raw":"040213e000000000a00000","source_entry":"om","source_offset":0,"end_offset":11}"#;
         let wire: serde_json::Value = serde_json::from_str(json).unwrap();
         for (field, replacement) in [
-            ("raw", serde_json::json!("")),
-            ("end_offset", serde_json::json!(12)),
-            ("source_offset", serde_json::json!(u64::MAX)),
+            ("raw", cadmpeg_core::json!("")),
+            ("end_offset", cadmpeg_core::json!(12)),
+            ("source_offset", cadmpeg_core::json!(u64::MAX)),
         ] {
             let mut invalid = wire.clone();
             invalid[field] = replacement;

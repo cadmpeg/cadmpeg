@@ -340,8 +340,8 @@
       }
     },
     "tolerances": {
-      "angular": 1e-10,
-      "linear": 1e-6
+      "angular": 1e-11,
+      "linear": 0.00001
     },
     "units": {
       "angle": "radian",
@@ -424,6 +424,24 @@
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "record sldprt:brep:face#10 stream=\"Contents/Config-0-Partition\" offset=91 given up: sldprt/topology.face-withheld: no loop of the face decodes; dropped=[sldprt:brep:surf#10]",
+        "provenance": {
+          "format": "sldprt",
+          "offset": 91,
+          "stream": "Contents/Config-0-Partition"
+        },
+        "severity": "error"
       },
       {
         "code": {
@@ -569,6 +587,7 @@
       "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
+      "sldprt_linear_tolerance_local_sha256": "<elided: digest over tolerantly compared geometry>",
       "sldprt_native_configuration_sha256": "a6a9e3af32106ac486286c5b0526863edbbfe38f7659acb8e5325933fd8e4e66",
       "sldprt_native_history_sha256": "4813e18a77f366ff5f17995bb17623fb92d2d53e66d6c33f119b4bfef16588b1",
       "sldprt_native_parameter_sha256": "1269173203e9b534703f9d9bdd7ab433dbd9e1ebe660d240782ee509b6ec3898",

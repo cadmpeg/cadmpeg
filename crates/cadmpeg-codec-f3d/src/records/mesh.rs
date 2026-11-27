@@ -1955,6 +1955,7 @@ impl DesignMeshCollection {
             record.frame_length() == length || record.frame_length() == length + 4
         } else {
             record.frame_length() == length
+                || (body_count != 0 && record.frame_length() == length + 4)
         };
         if !valid_length {
             return Err("bodies count must match collection record length and entries".into());

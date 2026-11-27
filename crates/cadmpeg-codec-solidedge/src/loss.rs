@@ -25,6 +25,7 @@ pub(crate) enum SolidEdgeLossCode {
     IntersectionFrameFromSupportsAssumed,
     TopologyToleranceInvalid,
     BodyResolutionInvalid,
+    BodyResolutionUnread,
     IntersectionPlanarSupportAssumed,
     IntersectionNurbsBoundaryAssumed,
     IntersectionNurbsIsolineAssumed,
@@ -86,6 +87,9 @@ impl SolidEdgeLossCode {
                 "body.resolution-invalid",
                 LossTaxonomy::SourceTopologyInvalid,
             ),
+            Self::BodyResolutionUnread => {
+                ("body.resolution-unread", LossTaxonomy::DecodeDiagnostic)
+            }
             Self::TopologyToleranceInvalid => (
                 "topology.tolerance-invalid",
                 LossTaxonomy::SourceTopologyInvalid,

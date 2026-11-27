@@ -363,6 +363,9 @@ The part kind names the part in a `record.unreadable` loss.
 | `parasolid-streams` | The Parasolid streams of one block or compound stream | Direct `PS 00 00` streams, wrapped streams, and chained sections in the section payload (§1, §3.1.1) |
 | `parasolid-site` | The partition and deltas streams of one site | The streams of one block or one compound stream (§3.2) |
 | `feature-input-parasolid-stream` | One Parasolid stream in a `ResolvedFeatures` section | Its stream header and its extent in the section (§3.1, §3.3) |
+| `imported-body-stream` | One Parasolid stream in a `Config-N-FeatureBodies` section | Its stream header and its extent in the section (§3.3) |
+| `history-member` | One Keywords history member that the decoder reads no record from | The block or compound stream that holds the member (§1) |
+| `component-tree` | One component tree section that gives no occurrence | The section's stream (§11.1) |
 
 A compound stream's bytes are the sectors its chain reaches through the
 sectors its size requires. Two streams whose chains reach one sector are
@@ -371,6 +374,30 @@ compound structure; every other stream is read. A given-up stream keeps the
 bytes of the sectors its chain reached before it stopped. A native block
 that a ZIP central entry names and whose DEFLATE member, size or CRC fails is
 given up; the directory and its other members are read.
+
+A Parasolid site whose streams frame entity records that build no geometry is
+given up as a `parasolid-site` part. A component tree gives no occurrence
+when its XML does not parse, when it repeats a model or file id, when it
+names no active configuration or more than one, when its active model has no
+valid identity or no definition, and when the document holds two different
+trees. Each tree section is then given up as a `component-tree` part. The
+section that the decoder reads is also kept whole, so the part keeps only
+the length and digest of its bytes.
+
+A record that the decoder parses and then drops is given up without a part.
+Its `record.unreadable` loss names the record by its id, and gives its stream
+and offset where the decoder holds them. Such records are a B-rep face or
+ring edge that the topology walk withholds, a PMI dimension map that does not
+parse, and a feature-input sketch whose face projects no edge to a sketch
+entity. A record of an alternate configuration is named by its id with the
+`@<site>` suffix of that configuration.
+
+A record that the decoder drops only because it needs a given-up record is
+not given up by itself. The loss of the given-up record lists it as dropped.
+A withheld face drops its surface, its loops, and the coedges, surface-parameter
+curves, edges, curves, vertices, and points that only its loops use. A loop
+that uses a withheld edge drops with the edge, and the face that owns that
+loop keeps its other loops.
 
 ---
 
@@ -1349,11 +1376,11 @@ A complete native-class roster selects one feature-manager allocation layout. Th
 
 Within the current layout, classless `Feature` source ID `6` is the lights-and-cameras container, `12` is an ambient light, and `13`, `14`, and `15` are directional lights. Within the legacy and origin-at-six layouts, source ID `2` is the lights-and-cameras container, `7` is an ambient light, and `8` is a directional light. Within the default-frame light layout, source IDs `6`, `7`, and `8` have those roles. Within the folders-at-seven layout, source ID `6` is the lights-and-cameras container, `10` is an ambient light, and `11` and `12` are directional lights. Another classless or scene-class light with the same nonempty native kind as the layout's unique ambient-light or first directional-light node has that node's role. A classless payload-free `Feature` at source ID `-1` is the sheet-metal node. A classless `Feature` with an empty name and no payload is the exploded-views container.
 
-`moConstraintCoincLineParallelPlaneRefplaneData_c`, `moConstraintPerpPlnTanOneCylinderRefplaneData_c`, and `moFacePtRefPlnData_c` store a 97-byte constructed reference-plane frame immediately after the class name. `moFixedRefPlnData_c` uses the same 97-byte extent and either the pairwise-orthogonal form or the repeated-normal form. `moDefaultRefPlnData_c` and `moConstraintPrllPlnTanOneCylinderRefplaneData_c` store the 81-byte minimal frame at the same position. `moFaceRefPlnData_c` stores either 97-byte form or the 81-byte form. Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres. Three f64 values at `+24`, `+32`, and `+40` store the unit normal. Byte `+48` is `1` in the 97-byte frame. In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`; the three basis vectors are pairwise orthogonal. In the repeated-normal form, exactly one of those two triples is a unit vector orthogonal to the normal and the other is codirectional or antiparallel to the normal; the orthogonal triple is the plane u-axis. The 81-byte frame has zero bytes at `+48` through `+55`, byte `+56` equal to `0x80`, an f64 `-0.0` at `+57`, the negated origin z at `+65`, and f64 `1` at `+73`. The frame belongs to the immediately preceding feature object and precedes the next feature object.
+`moConstraintCoincLineParallelPlaneRefplaneData_c`, `moConstraintPerpPlnTanOneCylinderRefplaneData_c`, and `moFacePtRefPlnData_c` store a 97-byte constructed reference-plane frame immediately after the class name. `moFixedRefPlnData_c` uses the same 97-byte extent and either the pairwise-orthogonal form or the repeated-normal form. `moDefaultRefPlnData_c` and `moConstraintPrllPlnTanOneCylinderRefplaneData_c` store the 81-byte minimal frame at the same position. `moFaceRefPlnData_c` stores either 97-byte form or the 81-byte form. `moPerLinePtRefPlnData_c` stores either the 121-byte matrix frame below or the 81-byte frame. Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres. Three f64 values at `+24`, `+32`, and `+40` store the unit normal. Byte `+48` is `1` in the 97-byte frame. In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`; the three basis vectors are pairwise orthogonal. In the repeated-normal form, exactly one of those two triples is a unit vector orthogonal to the normal and the other is codirectional or antiparallel to the normal; the orthogonal triple is the plane u-axis. The 81-byte frame has byte `0` at `+48`, the negated origin as three f64 at `+49`, `+57`, and `+65`, and f64 `1` at `+73`; its normal is `(0, 0, 1)` and its plane u-axis is `(1, 0, 0)`. The frame belongs to the immediately preceding feature object and precedes the next feature object.
 
 An `moFaceRefPlnData_c` record may carry the supporting face after its frame as one counted component-path vector. The vector has the duplicated 16-byte component marker, a positive little-endian u32 slot count at marker −12, a component-vector selector whose byte 1 is `02`, whose byte 0 is a lane-specific subtype, and whose final two bytes are zero at marker −8, and two zero bytes at marker +16. Its tagged and identifier-less entries use the compact mixed component-path grammar. The slot count equals the entry count or includes one serialized root slot. Exactly one complete vector in the reference-plane object identifies the supporting face. The final component identifier is the feature-local face identifier, and the final component source is the producing feature.
 
-`moConstraintCoincLineAtAnglePlaneRefplaneData_c` stores a 121-byte matrix reference-plane frame immediately after the class name. Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame. A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order. The first matrix column is the plane u-axis, and the third column is codirectional with the stored normal.
+`moConstraintCoincLineAtAnglePlaneRefplaneData_c` and `moConstraintCoincLinePerpPlaneRefplaneData_c` store a 121-byte matrix reference-plane frame immediately after the class name. Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame. A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order. The first matrix column is the plane u-axis, and the third column is codirectional with the stored normal.
 
 When no data-class anchor selects a reference-plane frame layout, every structurally valid encoding in the feature interval participates in one uniqueness check. A valid 121-byte matrix frame owns the 97-byte prefix at the same byte offset; the prefix is not a separate fixed frame. A valid 97-byte pairwise-orthogonal or repeated-normal fixed frame is one candidate at its byte offset. A compact candidate whose byte range overlaps a valid matrix or fixed candidate is nested in that frame and is not an independent candidate. Distinct non-nested frames at different offsets leave the reference plane unresolved.
 
@@ -1363,7 +1390,7 @@ An offset reference-plane object may store two ordered frame records using the s
 
 The `moConstraintMidPlaneRefplaneData_c` class declaration is followed by an eight-byte body prefix, an f64 geometric tolerance, an f64 signed plane distance in metres, and an xyz unit normal as three f64 values. The body prefix is opaque to plane construction and may be zero or nonzero. The resulting plane satisfies `normal · position = distance`. The record does not store an independent in-plane axis. A coordinate frame chosen to represent this plane is not the profile orientation; an attached profile uses the in-plane basis and origin from its component reference-plane placement.
 
-A reference-axis data class stores an 88-byte axis frame immediately after its class name. `moPlaneInterAxisData_c`, `moSurfaceAxisData_c`, and `moTwoPtsAxisData_c` use this layout. Two endpoint xyz triples occupy offsets `+0` through `+40` as little-endian f64 values in metres. Two finite f64 scalar fields occupy `+48` and `+56`. A unit direction xyz triple occupies `+64` through `+80`; it is codirectional with the endpoint delta. The frame belongs to the reference-axis feature interval containing the data-class declaration. The canonical axis origin is the closest point on the endpoint line to the model origin, expressed in millimetres.
+A reference-axis data class stores an 88-byte axis frame immediately after its class name. `moLineAxisData_c`, `moPlaneInterAxisData_c`, `moSurfaceAxisData_c`, and `moTwoPtsAxisData_c` use this layout. Two endpoint xyz triples occupy offsets `+0` through `+40` as little-endian f64 values in metres. Two finite f64 scalar fields occupy `+48` and `+56`. A unit direction xyz triple occupies `+64` through `+80`; it is codirectional with the endpoint delta. The frame belongs to the reference-axis feature interval containing the data-class declaration. The canonical axis origin is the closest point on the endpoint line to the model origin, expressed in millimetres.
 
 A zero-origin angular reference-plane frame stores redundant normal z and y components as two f64 values, followed by byte `1`, an unaligned xyz unit u-axis, an xyz unit normal, and an xyz unit v-axis. The three vectors begin 17, 41, and 65 bytes after the first redundant component and are pairwise orthogonal. Normal x is zero; the redundant components equal normal z and y. Twenty-four zero bytes and f64 value `1` terminate the 121-byte frame.
 
@@ -2687,9 +2714,37 @@ from the embedded schema. The ownership field sequence contains the shell,
 boundary-surface, boundary-curve, boundary-point, region, edge, and vertex
 references plus the index-map fields. The region head is selected by a unique
 FACE → SHELL → REGION → BODY closure; a fixed ordinal or numeric chain is not
-an ownership selector. A BODY is valid only when exactly one schema field
-interpretation satisfies the complete field grammar, the resolution values
-are finite, and `body_type` is one of the four defined values.
+an ownership selector. A header reference count reads a BODY when the
+complete field grammar holds at that count: `resolution_size` is in
+`[1, 1e6]`, `resolution_linear` is finite and nonzero, `state` is `1`, and
+`body_type` is one of the four defined values. A count that is too high reads
+reference bytes as `resolution_size`, which gives a value near `1e-302`
+outside its range. A count one reference too low can also read a BODY: where
+the last header reference has the bytes of the high word of an f64 in
+`[1, 1e6]`, `resolution_size` reads in range and `resolution_linear` reads a
+subnormal value. When one count reads a BODY, that count is the layout. When
+more than one count reads a BODY, the layout is the one count whose
+`resolution_linear` magnitude is in `[1e-15, 1e-2]` m. A BODY with no count,
+or with several counts and no such single count, is not valid. A `00 0c` tag
+offset that no edited schema header frames has two readings: the node after
+an `ff` byte that follows the tag, and the node directly after the tag. A
+two-word index pointer starts with `ff`, so both readings can hold a BODY.
+The BODY of the tag is the reading whose `resolution_linear` magnitude is in
+`[1e-15, 1e-2]` m; where both or neither are in that range, it is the reading
+after `ff`. A tagged BODY with a `resolution_linear` magnitude outside
+`[1e-15, 1e-2]` m is valid only when a SHELL or REGION names its index in the
+`body` field and no other BODY holds the same index: neither a BODY that an
+edited schema header frames, whatever its magnitude, nor a tagged BODY with a
+magnitude in that range.
+
+`resolution_size` and `resolution_linear` are the BODY fields `res_size` and
+`res_linear` in metres. `resolution_linear` takes every finite nonzero value.
+The part's linear tolerance comes from `resolution_linear` of its bodies, and
+its angular tolerance is the Parasolid angular precision
+([`parasolid.md`](parasolid.md) §4). A `resolution_linear` that states no
+linear precision leaves its body valid and is charged
+`body.resolution-invalid`. A body that the decode derives without a BODY
+node that reads is charged `body.resolution-unread`.
 
 A SHELL has eight references:
 
@@ -3588,6 +3643,7 @@ The `SourceFidelity.codec_digests` of a SLDPRT decode (CADIR §3.1, Rule B) hold
 | `brep_local_sha256` | The B-rep: geometry, topology, and face appearances, without names, colors, tessellations, history, and native records. |
 | `sldprt_configuration_feature_states_local_sha256` | The feature states of each configuration. |
 | `sldprt_configuration_parameter_values_local_sha256` | The parameter values of each configuration. |
+| `sldprt_linear_tolerance_local_sha256` | The linear tolerance. |
 | `sldprt_native_configuration_sha256` | The configurations of the native feature histories. |
 | `sldprt_native_history_sha256` | The native feature histories. |
 | `sldprt_native_parameter_sha256` | The parameters of the native feature histories. |

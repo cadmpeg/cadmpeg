@@ -935,7 +935,7 @@ pub(super) fn emit_pcurves(
                 Exactness::ByteExact,
             )?;
             if *cylinder_reparameterized {
-                annotations.derived(id.as_str(), "geometry.control_points")?;
+                annotations.derived(&id, "geometry.control_points")?;
             }
             if graph
                 .pcurves
@@ -943,7 +943,7 @@ pub(super) fn emit_pcurves(
                 .and_then(|pcurve| pcurve.parameter_range)
                 != Some(parameter_range)
             {
-                annotations.derived(id.as_str(), "metadata.form.parameter_range")?;
+                annotations.derived(&id, "metadata.form.parameter_range")?;
             }
             for occurrence in occurrences {
                 let use_id = id.clone();

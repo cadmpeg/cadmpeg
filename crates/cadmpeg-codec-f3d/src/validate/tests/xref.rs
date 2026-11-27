@@ -16,7 +16,7 @@ fn attributed_legacy_placement_sources_validate_every_frame_length() {
         let frame =
             crate::test_support::legacy_attributed_external_placement(ROLE, attributes, transform);
         assert_eq!(frame.len(), length);
-        let reference = json::from_value(serde_json::json!({
+        let reference = json::from_value(cadmpeg_core::json!({
             "id":"f3d:xref:reference#0", "ordinal":0,
             "from":"root.f3d", "relative_path":"part.f3d",
             "neutron_role":ROLE, "neutron_data":"",
@@ -144,7 +144,7 @@ fn placement_occurrence_key_must_match_the_complete_source_frame() {
         frame.push(0);
         frame.extend(local_reference(3));
 
-        let reference = json::from_value(serde_json::json!({
+        let reference = json::from_value(cadmpeg_core::json!({
             "id":"f3d:xref:reference#0", "ordinal":0,
             "from":"root.f3d", "relative_path":"part.f3d",
             "neutron_role":ROLE, "neutron_data":"",
@@ -210,7 +210,7 @@ fn placement_occurrence_key_must_match_the_complete_source_frame() {
 
 #[test]
 fn derived_reference_native_shape_uses_required_text_validation() {
-    use serde_json::json;
+    use cadmpeg_core::json;
     let row = json!({
         "id": "f3d:derived:reference#0", "ordinal": 0,
         "from": "root.f3d", "relative_path": "source.f3d",

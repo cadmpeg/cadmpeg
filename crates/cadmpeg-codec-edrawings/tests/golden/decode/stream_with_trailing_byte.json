@@ -76,7 +76,16 @@
       "tessellations": [],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "edrawings": {
+        "unknowns": [
+          {
+            "id": "edrawings:source:part#fe0ef8a6c0b97e155c86ab12d6187cbf4e92573b6b75576619658dfcba7fd14f",
+            "links": []
+          }
+        ]
+      }
+    },
     "process": {
       "features": [],
       "groups": [],
@@ -157,6 +166,24 @@
         },
         "message": "the model stream broke a record rule (bracket record is not the 24 byte trailer at byte 1315); the package carries no model data",
         "severity": "blocking"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "strict_floor": "error"
+          }
+        },
+        "message": "part archive-entry \"eModel\" stream=\"\" offset=36 length=1399 record=edrawings:source:part#fe0ef8a6c0b97e155c86ab12d6187cbf4e92573b6b75576619658dfcba7fd14f: malformed container: bracket record is not the 24 byte trailer at byte 1315; dropped=[]",
+        "provenance": {
+          "format": "edrawings",
+          "offset": 36,
+          "tag": "archive-entry"
+        },
+        "severity": "error"
       }
     ],
     "notes": [],
@@ -177,7 +204,21 @@
     "content_digest": "<elided: digest over tolerantly compared geometry>",
     "decode_digest": "6f5de904e0733c47f374e6488daf0e902f906c99f815be79c4352ad4caedb932",
     "file_digests": {},
-    "retained_records": {},
-    "unrepresented": []
+    "retained_records": {
+      "edrawings:source:part#fe0ef8a6c0b97e155c86ab12d6187cbf4e92573b6b75576619658dfcba7fd14f": {
+        "bytes": {
+          "data": "OzsgSFNGIFYxOS4xMCAKSQQAAABCAAAAAL8AAAAAAACAvgAAAD8AAIA/AACAPlp4AQE8BcP6WwIAAAC+vr5dfQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAdkZWZhdWx0VQoAbGVuZ3RoPWAzYCgJcmVmZXJlbmNlKAdyZWZuYW1lVv8A//8AAAcAKXEoBHBhdGhW/wD//wAABwApcSkoB2NvbmZpZzBVEwBjb25maWcgbmFtZT1gZW1wdHlgPwVkaXNwMCgGc2hlZXQwKAV2aWV3MCgHM2Rtb2RlbEgEgAACBAAAAgFSABAAAAAQAAAAKAhpbmNsdWRlcygJaW5zdGFuY2UwKAlyZWZlcmVuY2UoB3JlZm5hbWVW/wD//wAABwApcSgEcGF0aFb/AP//AAAHAClxKSgEcGFydCUAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAoLS9pbmNsdWRlIGxpYnJhcnkvbW9kZWxfMV9pbmNsdWRlL3NoYXJlZC9ib2R5MH4ByGQyKAlib2R5MHN1YjBTkAIAAHFTkAIAAHFTkAIAAHFTkAIAAHFTkAIAAHFTkAIAAHEpKTwtL2luY2x1ZGUgbGlicmFyeS9tb2RlbF8xX2luY2x1ZGUvc2hhcmVkL2JvZHkwKSkpKSkpKQEoGz9JbmNsdWRlIExpYnJhcnkvcmVmZXJlbmNlc1MOCQAAAAAEAAAACtcjPAAAAAAAAAAACtcjPArXIzwAAAAACtcjPArXIzwK1yM8CtcjPAAAAAAK1yM8AQYAAAAIBAABAwIBBwwMAAAAQEBAQEBAQEBAQEBAAFMOCAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK1yM8AAAAAArXIzwK1yM8AAAAAArXIzwAAAAAAQYAAAAIBAABAwIBBwwMAAAAQEBAQEBAQEBAQEBAAFMOBwAAAAAEAAAAAAAAAArXIzwAAAAAAAAAAArXIzwK1yM8CtcjPArXIzwK1yM8CtcjPArXIzwAAAAAAQYAAAAIBAABAwIBBwwMAAAAQEBAQEBAQEBAQEBAAFMOBgAAAAAEAAAAAAAAAAAAAAAAAAAACtcjPAAAAAAAAAAACtcjPAAAAAAK1yM8AAAAAAAAAAAK1yM8AQYAAAAIBAABAwIBBwwMAAAAQEBAQEBAQEBAQEBAAFMOBQAAAAAEAAAAAAAAAAAAAAAK1yM8CtcjPAAAAAAK1yM8CtcjPArXIzwK1yM8AAAAAArXIzwK1yM8AQYAAAAIBAABAwIBBwwMAAAAQEBAQEBAQEBAQEBAAFMOBAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAArXIzwAAAAACtcjPArXIzwAAAAACtcjPAAAAAAAAAAAAQYAAAAIBAABAwIBBwwMAAAAQEBAQEBAQEBAQEBAACkBcwMAAAB4AAAAAAAAAAAAAAAABTBDADoAXABwAHIAaQB2AGEAdABlAFwAcwBvAHUAcgBjAGUALgBzAGwAZABwAHIAdAAAKXMCAAAAeAAAAAAAAAAAAAAAAAUccwB5AG4AdABoAGUAdABpAGMAIABjAHUAYgBlAAApcwEAAAB4AAAAAAAAAAAAAAAABTBDADoAXABwAHIAaQB2AGEAdABlAFwAcwBvAHUAcgBjAGUALgBzAGwAZABwAHIAdAAAKXMAAAAAeAAAAAAAAAAAAAAAAAUqcwB5AG4AdABoAGUAdABpAGMAIABjAHUAYgBlAC4AcwBsAGQAcAByAHQAACkBAVsJAAAAvjMAAAAAAAAAAAAAAAAAAABdegCWp/RgAA==",
+          "kind": "inline"
+        },
+        "offset": 36,
+        "stream": "",
+        "untyped": [
+          "model"
+        ]
+      }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

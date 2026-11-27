@@ -46,12 +46,7 @@ fn traversal_decode(bytes: &[u8], options: &DecodeOptions) -> Result<DecodeResul
         .compose_in_traversal_for_test(&ctx)
         .map_err(DecodeFailure::from)
         .and_then(|decoded| {
-            DecodeResult::from_decoded(
-                &ctx,
-                decoded,
-                FormatId::new("f3d"),
-                &cadmpeg_ir::report::strictness::Strictness::default(),
-            )
+            DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d"), &options.strictness)
         });
     ctx.finish_session()?;
     result
