@@ -96,6 +96,15 @@ fn bounded_defects_preserve_independent_instances_and_exact_bytes() {
     }
 }
 
+/// The names (`#12`, `<name>`) of the records dropped with `statement`.
+fn dropped_names(statement: &crate::parse::GivenUpStatement) -> Vec<String> {
+    statement
+        .dropped
+        .iter()
+        .map(|record| record.name.clone())
+        .collect()
+}
+
 fn given_up_losses(report: &DecodeReport) -> Vec<&LossNote> {
     report
         .losses
@@ -133,10 +142,18 @@ fn a_given_up_statement_names_the_records_that_need_it() {
     };
     let given_up = source.find("#2=").expect("given-up statement");
     let unresolved = source.find("#5=").expect("record with a missing reference");
-    // Each dependent is named by the id of its DATA instance; the native record that
-    // keeps its source is held.
-    assert!(part_at(given_up, "#2=ITEM(%,3);")
-        .ends_with("; dropped=[step:data:instance#3, step:data:instance#4]; lost=[#6 entry #3]"));
+    // Each dependent is named by the id of the omitted record that keeps its
+    // source.
+    let mut dropped = [dependent, transitive].map(|offset| format!("step:file:omitted#{offset}"));
+    dropped.sort_unstable();
+    let given_up_part = part_at(given_up, "#2=ITEM(%,3);");
+    assert!(
+        given_up_part.ends_with(&format!(
+            "; dropped=[{}]; lost=[#6 entry #3]",
+            dropped.join(", ")
+        )),
+        "{given_up_part}"
+    );
     assert!(part_at(unresolved, "#5=ITEM(#9);").ends_with(
         ": malformed container: instance #5 omitted: unresolved instance reference #9; \
          exact source retained; dropped=[]"
@@ -184,7 +201,7 @@ fn a_set_loses_only_its_given_up_entries_and_a_positional_list_drops_its_record(
     let [statement] = parsed.given_up() else {
         panic!("one given-up statement");
     };
-    let mut dropped = statement.dropped.clone();
+    let mut dropped = dropped_names(statement);
     dropped.sort_unstable();
     // #5 lists #2 in an aggregate of unknown order, and #7 nests it below
     // the set's entries; both would shift the entries that follow it.
@@ -221,7 +238,9 @@ fn a_polyline_that_loses_a_point_is_dropped_and_named() {
     let (source, decoded, message) = decode_with_point_three_given_up(data);
     let polyline = source.find("#10=").expect("polyline");
     assert!(
-        message.ends_with("; dropped=[step:data:instance#10]; lost=[#11 entry #10]"),
+        message.ends_with(&format!(
+            "; dropped=[step:file:omitted#{polyline}]; lost=[#11 entry #10]"
+        )),
         "{message}"
     );
     assert!(source[polyline..].starts_with("#10=POLYLINE"));
@@ -235,10 +254,11 @@ fn a_b_spline_that_loses_a_pole_is_dropped_and_named() {
         "#10=B_SPLINE_CURVE_WITH_KNOTS('',2,(#1,#2,#3,#4,#5),.UNSPECIFIED.,.F.,.F.,\
          (3,1,1,3),(0.,1.,2.,3.),.UNSPECIFIED.);",
     ] {
-        let (_, decoded, message) =
+        let (source, decoded, message) =
             decode_with_point_three_given_up(&format!("{curve}#11=GEOMETRIC_SET('',(#10));"));
+        let curve_at = source.find("#10=").expect("curve");
         assert!(
-            message.contains("; dropped=[step:data:instance#10]"),
+            message.contains(&format!("; dropped=[step:file:omitted#{curve_at}]")),
             "{message}"
         );
         assert!(message.ends_with("; lost=[#11 entry #10]"), "{message}");
@@ -309,7 +329,7 @@ fn a_face_that_loses_a_bound_and_a_solid_that_loses_a_void_are_dropped() {
     let [statement] = parsed.given_up() else {
         panic!("one given-up statement");
     };
-    let mut dropped = statement.dropped.clone();
+    let mut dropped = dropped_names(statement);
     dropped.sort_unstable();
     let names = (30..=36).map(|id| format!("#{id}")).collect::<Vec<_>>();
     assert_eq!(dropped, names);
@@ -374,7 +394,7 @@ fn dangling_references_remove_transitive_dependents_without_removing_cycles() {
         panic!("one given-up statement");
     };
     assert_eq!(&source[statement.span.clone()], "#1=ITEM(#90);");
-    assert_eq!(statement.dropped, ["#2", "#3"]);
+    assert_eq!(dropped_names(statement), ["#2", "#3"]);
     assert_eq!(parsed.omitted_spans().len(), 2);
     assert_eq!(
         diagnostics
@@ -457,7 +477,7 @@ fn a_defective_first_statement_gives_up_its_instance_name() {
         };
         // The user #2 needs the given-up first statement; each later copy
         // of #1 is read, not stated, and a part of its own.
-        assert_eq!(statement.dropped, ["#2"]);
+        assert_eq!(dropped_names(statement), ["#2"]);
         assert_eq!(copies.len(), later);
         assert_eq!(parsed.omitted_spans().len(), 1);
         assert_eq!(

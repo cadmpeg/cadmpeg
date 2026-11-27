@@ -20,7 +20,17 @@ fn facts(members: &[(&str, &[u8])]) -> (Vec<SourceAttribute>, Annotations, Vec<L
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let scan = crate::container::scan(&ctx, root).unwrap();
     let (mut out, mut notes, mut losses) = (Vec::new(), Annotations::default(), Vec::new());
-    append(&ctx, &scan, &mut out, &mut notes, &mut losses).unwrap();
+    let mut given_up = Vec::new();
+    append(
+        &ctx,
+        &scan,
+        &mut out,
+        &mut notes,
+        &mut losses,
+        &mut given_up,
+    )
+    .unwrap();
+    losses.extend(given_up.iter().map(GivenUpPart::loss));
     (out, notes, losses)
 }
 
@@ -254,7 +264,17 @@ fn compound_facts(
             });
     }
     let (mut rows, mut notes, mut losses) = (Vec::new(), Annotations::default(), Vec::new());
-    append(&ctx, &scan, &mut rows, &mut notes, &mut losses).unwrap();
+    let mut given_up = Vec::new();
+    append(
+        &ctx,
+        &scan,
+        &mut rows,
+        &mut notes,
+        &mut losses,
+        &mut given_up,
+    )
+    .unwrap();
+    losses.extend(given_up.iter().map(GivenUpPart::loss));
     (rows, notes, losses)
 }
 

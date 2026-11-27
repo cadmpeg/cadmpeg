@@ -389,12 +389,11 @@ fn a_wireframe_model_whose_shells_all_fail_drops_them_with_it() {
     let [charge] = charges.as_slice() else {
         panic!("one charge: {charges:#?}");
     };
-    // The wire shell #33 drops with the model and has no charge of its own.
+    // The wire shell drops with the model and has no charge of its own. The
+    // charge names it by the shell id that the model mints for it.
     assert!(charge.message.starts_with(&head), "{}", charge.message);
     assert!(
-        charge
-            .message
-            .ends_with("; dropped=[step:data:instance#33]"),
+        charge.message.ends_with("; dropped=[step:data:shell#33]"),
         "{}",
         charge.message
     );
