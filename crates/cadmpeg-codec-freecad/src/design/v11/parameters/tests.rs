@@ -325,3 +325,20 @@ fn a_constraint_parameter_is_placed_by_its_index_in_the_constraint_list() {
         assert_eq!(parameter(&ir, &id).position, Some(position), "{id}");
     }
 }
+
+/// A spreadsheet orders its cell parameters by its cells, so a cell
+/// parameter states no position.
+#[test]
+fn a_spreadsheet_cell_parameter_states_no_position() {
+    let ir = decode(SHEET_BOUND);
+    let cells = ir
+        .design
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.id.as_str().contains(":cell:"))
+        .collect::<Vec<_>>();
+    assert!(!cells.is_empty(), "{:?}", ir.design.parameters);
+    for cell in cells {
+        assert_eq!(cell.position, None, "{}", cell.id.as_str());
+    }
+}

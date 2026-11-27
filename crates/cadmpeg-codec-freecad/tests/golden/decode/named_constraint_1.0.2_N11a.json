@@ -1441,7 +1441,6 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Dimensions"
           },
-          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1484,7 +1483,6 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Dimensions"
           },
-          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {

@@ -34,6 +34,10 @@ const CONSTRAINT_LIST: &str = "Sketcher::PropertyConstraintList";
 /// generates as parameters.
 const PLACEMENT: &str = "App::PropertyPlacement";
 
+/// The property type of a spreadsheet's cells, whose sheet orders its cell
+/// parameters.
+const SHEET: &str = "Spreadsheet::PropertySheet";
+
 /// The list a `FreeCAD` object lists a parameter in.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum List {
@@ -134,11 +138,12 @@ pub(super) fn project(
 
 /// The list `parameter`'s ordinal places it in: a sketch's constraint list,
 /// or its object's property list for a property the source stores. A
-/// placement's base component is generated, so it has none.
+/// placement's base component is generated, and a spreadsheet cell is placed
+/// by its sheet, so neither has one.
 fn list(parameter: &LegacyParameter, carriers: &HashMap<&str, &str>) -> Option<List> {
     match carriers.get(parameter.native_ref.as_deref()?).copied()? {
         CONSTRAINT_LIST => Some(List::Constraints),
-        PLACEMENT => None,
+        PLACEMENT | SHEET => None,
         _ => Some(List::Properties),
     }
 }

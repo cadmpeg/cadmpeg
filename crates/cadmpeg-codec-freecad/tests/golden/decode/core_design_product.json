@@ -381,7 +381,6 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Parameters"
           },
-          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -418,7 +417,6 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Parameters"
           },
-          "position": 2,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -461,7 +459,6 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Parameters"
           },
-          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -504,7 +501,6 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Parameters"
           },
-          "position": 3,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
