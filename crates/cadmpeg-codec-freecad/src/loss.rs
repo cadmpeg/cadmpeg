@@ -151,8 +151,6 @@ pub(crate) enum FreecadLossCode {
     /// A sketch relation states a curve for a point whose position the curve
     /// does not store.
     DesignSketchLocusUnplaced,
-    /// A sketch dimension binds no design parameter of its scope.
-    DesignSketchDimensionUnbound,
 }
 
 impl FreecadLossCode {
@@ -218,7 +216,6 @@ impl FreecadLossCode {
         Self::DesignSketchEntityNative,
         Self::DesignSketchRelationNative,
         Self::DesignSketchLocusUnplaced,
-        Self::DesignSketchDimensionUnbound,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -294,7 +291,6 @@ impl FreecadLossCode {
             Self::DesignSketchEntityNative => "design.sketch-entity-native",
             Self::DesignSketchRelationNative => "design.sketch-relation-native",
             Self::DesignSketchLocusUnplaced => "design.sketch-locus-unplaced",
-            Self::DesignSketchDimensionUnbound => "design.sketch-dimension-unbound",
         }
     }
 
@@ -360,8 +356,7 @@ impl FreecadLossCode {
             | Self::DesignSketchOffsetUnstated
             | Self::DesignSketchEntityNative
             | Self::DesignSketchRelationNative
-            | Self::DesignSketchLocusUnplaced
-            | Self::DesignSketchDimensionUnbound => Severity::Warning,
+            | Self::DesignSketchLocusUnplaced => Severity::Warning,
         }
     }
 
@@ -424,8 +419,7 @@ impl FreecadLossCode {
             | Self::DesignSketchOffsetUnstated
             | Self::DesignSketchEntityNative
             | Self::DesignSketchRelationNative
-            | Self::DesignSketchLocusUnplaced
-            | Self::DesignSketchDimensionUnbound => LossTaxonomy::FeatureHistoryRetained,
+            | Self::DesignSketchLocusUnplaced => LossTaxonomy::FeatureHistoryRetained,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
@@ -519,7 +513,6 @@ mod tests {
                 "design.sketch-entity-native",
                 "design.sketch-relation-native",
                 "design.sketch-locus-unplaced",
-                "design.sketch-dimension-unbound",
             ]
         );
     }

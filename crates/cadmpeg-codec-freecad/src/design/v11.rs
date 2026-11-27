@@ -188,7 +188,6 @@ pub(crate) fn project(
             objects,
             bodies: body_objects,
             grouped: &grouped,
-            parameters: &parameters,
         },
         &mut features,
         losses,

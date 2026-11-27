@@ -585,3 +585,122 @@ fn an_offset_rotation_is_a_yaw_about_z() {
     };
     assert!((angle.get() - FRAC_PI_2).abs() < 1e-12);
 }
+
+/// Whether decoding `document` charges `code` with a message that holds
+/// `subject`.
+fn charges(document: &str, code: crate::loss::FreecadLossCode, subject: &str) -> bool {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let code = code.note("").code;
+    decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == code && loss.message.contains(subject))
+}
+
+#[test]
+fn a_sketch_on_an_object_no_design_record_restates_has_an_unread_support() {
+    let document = BODY_SKETCH
+        .replace(r#"<Objects Count="4">"#, r#"<Objects Count="5">"#)
+        .replace(
+            r#" <Object type="Sketcher::SketchObject" name="Sketch" id="4"/>"#,
+            r#" <Object type="Sketcher::SketchObject" name="Sketch" id="4"/>
+ <Object type="Part::FeaturePython" name="Wall" id="5"/>"#,
+        )
+        .replace(r#"<ObjectData Count="4">"#, r#"<ObjectData Count="5">"#)
+        .replace(
+            r#"<Link obj="XY_Plane" sub=""/>"#,
+            r#"<Link obj="Wall" sub=""/>"#,
+        )
+        .replace(
+            "</ObjectData>",
+            r#"<Object name="Wall"><Properties Count="0"/></Object></ObjectData>"#,
+        );
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchSupportUnread,
+        "fcstd:design:sketch#Sketch"
+    ));
+}
+
+#[test]
+fn an_offset_of_a_translate_attachment_is_left_to_the_resolved_frame() {
+    let document = BODY_SKETCH.replace(r#"<Integer value="5"/>"#, r#"<Integer value="1"/>"#);
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchOffsetUnstated,
+        "fcstd:design:sketch#Sketch"
+    ));
+    let ir = decode(&document);
+    let SketchPlane::Placed(plane) = &ir.design.sketches[0].plane else {
+        panic!("{:?}", ir.design.sketches);
+    };
+    assert!(plane.after.is_empty(), "{:?}", plane.after);
+}
+
+#[test]
+fn a_curve_with_no_planar_form_states_its_native_kind() {
+    let document = BODY_SKETCH
+        .replace(r#"<GeometryList count="3">"#, r#"<GeometryList count="4">"#)
+        .replace(
+            "</GeometryList>",
+            r#"<Geometry type="Part::GeomOffsetCurve"><OffsetCurve Offset="1"/><Construction value="0"/></Geometry></GeometryList>"#,
+        );
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchEntityNative,
+        "fcstd:design:sketch-entity#Sketch:4"
+    ));
+    let ir = decode(&document);
+    assert!(
+        matches!(
+            &entity(&ir, "4").definition,
+            EntityDefinition::Defined { form, .. } if matches!(form.as_ref(), EntityForm::Native(_))
+        ),
+        "{:?}",
+        entity(&ir, "4")
+    );
+}
+
+#[test]
+fn a_constraint_form_no_typed_relation_holds_stays_native() {
+    let document = BODY_SKETCH
+        .replace(r#"<ConstraintList count="7">"#, r#"<ConstraintList count="8">"#)
+        .replace(
+            "</ConstraintList>",
+            r#"<Constrain Name="" Type="4" First="0" FirstPos="1" Second="1" SecondPos="2"/></ConstraintList>"#,
+        );
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchRelationNative,
+        "fcstd:design:sketch-constraint#Sketch:8"
+    ));
+    let ir = decode(&document);
+    assert!(
+        relations(&ir)
+            .iter()
+            .any(|relation| matches!(relation, SketchRelation::Native { kind, .. } if kind.as_str() == "fcstd:parallel")),
+        "{:?}",
+        relations(&ir)
+    );
+}
+
+#[test]
+fn a_constraint_on_a_point_the_curve_does_not_store_states_the_curve() {
+    let document = BODY_SKETCH
+        .replace(r#"<ConstraintList count="7">"#, r#"<ConstraintList count="8">"#)
+        .replace(
+            "</ConstraintList>",
+            r#"<Constrain Name="" Type="1" First="2" FirstPos="1" Second="0" SecondPos="1"/></ConstraintList>"#,
+        );
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchLocusUnplaced,
+        "fcstd:design:sketch-constraint#Sketch:8"
+    ));
+}

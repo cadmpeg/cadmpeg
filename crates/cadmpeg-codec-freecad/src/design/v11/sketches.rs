@@ -28,17 +28,15 @@ use cadmpeg_ir::design::ops::sketch::{
     SketchConstraint, SketchEntity, SketchPlane, SketchRelation, SketchSolve, SolveState,
 };
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
-use cadmpeg_ir::design::parameter::DesignParameter;
 use cadmpeg_ir::design::projection::sketch::{
-    native_entity_kind, planar_curve, stored_frame, stored_value, DimensionValue, LocusPoints,
-    StoredPoints,
+    native_entity_kind, planar_curve, stored_frame, DimensionValue, LocusPoints, StoredPoints,
 };
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::selection::{
     Anchor, Members, NativeOwner, OrderedSelection, PickTarget, Picked, Picks, PrincipalEntity,
     Selection,
 };
-use cadmpeg_ir::design::units::{Quantity, ValueKind};
+use cadmpeg_ir::design::units::Quantity;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::ParameterValue as StoredValue;
 use cadmpeg_ir::features::{
@@ -138,7 +136,6 @@ pub(super) struct Scope<'a> {
     pub(super) bodies: HashMap<&'a str, ContainerId>,
     /// The members of the root `Group`.
     pub(super) grouped: &'a BTreeSet<Member>,
-    pub(super) parameters: &'a [DesignParameter],
 }
 
 /// What a link to an object of the document picks.
@@ -300,16 +297,10 @@ fn sketch(
         let Some(stored) = scope.stored.constraints.get(&constraint.id) else {
             continue;
         };
-        let stated = relation(scope, &view, stored);
+        let stated = relation(&view, stored);
         if stated.native {
             losses.push(FreecadLossCode::DesignSketchRelationNative.note(format!(
                 "sketch constraint {} has no typed relation of its stored operands; it states its native kind",
-                constraint.id
-            )));
-        }
-        if stated.binding == Some(Binding::Stored) {
-            losses.push(FreecadLossCode::DesignSketchDimensionUnbound.note(format!(
-                "sketch dimension {} binds no design parameter of its scope; it states the value it stores",
                 constraint.id
             )));
         }
@@ -370,7 +361,7 @@ fn sketch(
             id: constraint.id.clone(),
             sketch: record.id.clone(),
             relation: stated.relation,
-            name: if stated.binding == Some(Binding::Parameter) {
+            name: if stated.bound {
                 None
             } else {
                 constraint.name.clone()
@@ -571,22 +562,13 @@ struct Stated {
     relation: SketchRelation<Planar>,
     /// The relation is `Native` where §6.1 types the constraint's kind.
     native: bool,
-    /// What the relation's dimension states.
-    binding: Option<Binding>,
+    /// The relation's dimension binds the constraint's design parameter.
+    bound: bool,
     /// The relation states a curve for a point whose position is not
     /// stored.
     unplaced: bool,
     /// The angle a pointwise tangency stores.
     angle_at_point: Option<Angle>,
-}
-
-/// What a constraint's dimension states.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Binding {
-    /// The design parameter that holds the stored value.
-    Parameter,
-    /// The stored value, where no design parameter of the scope holds it.
-    Stored,
 }
 
 /// The quantity of the value of a constraint of type `code`.
@@ -600,24 +582,12 @@ fn quantity(code: i64) -> Option<Quantity> {
 }
 
 /// The relation that states the stored constraint `stored` (§6.1).
-fn relation(scope: &Scope<'_>, view: &View<'_>, stored: &StoredConstraint) -> Stated {
-    let mut binding = None;
+fn relation(view: &View<'_>, stored: &StoredConstraint) -> Stated {
     let value = stored
         .code
         .and_then(quantity)
         .zip(stored.parameter.as_ref())
-        .and_then(|(quantity, parameter)| {
-            if scope.parameters.iter().any(|candidate| {
-                &candidate.id == parameter && candidate.kind == ValueKind::Quantity(quantity)
-            }) {
-                binding = Some(Binding::Parameter);
-                Some((quantity, DimensionValue::Parameter(parameter.clone())))
-            } else {
-                binding = Some(Binding::Stored);
-                stored_value(&scope.ir.model.parameters, parameter, quantity)
-                    .map(|value| (quantity, value))
-            }
-        });
+        .map(|(quantity, parameter)| (quantity, DimensionValue::Parameter(parameter.clone())));
     // A pointwise tangency or perpendicularity stores the angle at its
     // point, which the solver keeps.
     let at_point = stored
@@ -637,7 +607,7 @@ fn relation(scope: &Scope<'_>, view: &View<'_>, stored: &StoredConstraint) -> St
         return Stated {
             relation,
             native: false,
-            binding,
+            bound: value.is_some(),
             unplaced: false,
             angle_at_point,
         };
@@ -664,7 +634,7 @@ fn relation(scope: &Scope<'_>, view: &View<'_>, stored: &StoredConstraint) -> St
             values,
         },
         native: !matches!(stored.code, Some(0 | 16 | 20 | 21)),
-        binding,
+        bound: value.is_some(),
         unplaced: stored.operands.iter().any(|operand| view.unplaced(operand)),
         angle_at_point: None,
     }
