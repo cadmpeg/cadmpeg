@@ -23,6 +23,7 @@ use serde_json::Value;
 use super::{id, push, RollbackBar};
 use crate::loss::OnshapeLossCode;
 
+pub(in crate::reader) mod assembly;
 mod constraints;
 mod operation;
 mod parameters;

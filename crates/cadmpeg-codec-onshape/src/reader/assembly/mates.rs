@@ -67,6 +67,13 @@ pub(super) fn project(
                     )?;
                     continue;
                 }
+                structure.joint_paths.insert(
+                    mapped.joint.id.clone(),
+                    super::NativePaths {
+                        connectors: mapped.paths,
+                        listed: path.to_vec(),
+                    },
+                );
                 structure.model.ir.model.assembly_joints.push(mapped.joint);
                 if mapped.nested {
                     structure.mate_loss(
@@ -98,6 +105,7 @@ pub(super) fn project(
 
 struct MappedMate {
     joint: AssemblyJoint,
+    paths: [Vec<String>; 2],
     nested: bool,
     unresolved_sense: bool,
 }
@@ -105,6 +113,8 @@ struct Connector {
     joint: JointConnector,
     world: Option<Transform>,
     nested: bool,
+    /// The native path from the root to the mated occurrence.
+    steps: Vec<String>,
 }
 type MateResult = Result<MappedMate, (OnshapeLossCode, String)>;
 fn unsupported(reason: String) -> (OnshapeLossCode, String) {
@@ -165,6 +175,7 @@ fn mate(
         }
     };
     let native = text(feature, "id").map_err(unsupported)?;
+    let paths = [first.steps, second.steps];
     let mut joint = AssemblyJoint::paired(
         id("joint", &format!("{}:{native}", key(path)))
             .try_into()
@@ -182,6 +193,7 @@ fn mate(
             .unwrap_or(false);
     Ok(MappedMate {
         joint,
+        paths,
         nested: first.nested || second.nested,
         unresolved_sense: sense.is_none(),
     })
@@ -228,6 +240,7 @@ fn connector(
         .placements
         .get(&path)
         .ok_or("mate occurrence path is unresolved")?;
+    let steps = path.clone();
     let cs = entity
         .get("matedCS")
         .ok_or("evaluated mate coordinate system is missing")?;
@@ -272,6 +285,7 @@ fn connector(
         },
         world,
         nested: components.len() > 1,
+        steps,
     })
 }
 

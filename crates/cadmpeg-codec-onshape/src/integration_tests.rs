@@ -2,6 +2,7 @@
 //! Synthetic bundle parity and admission tests.
 mod assembly;
 mod assembly_bodies;
+mod assembly_design;
 mod assembly_identity;
 mod assembly_review;
 mod bundle;
