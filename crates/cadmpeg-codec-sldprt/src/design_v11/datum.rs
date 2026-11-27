@@ -2,22 +2,27 @@
 //! Typed user datums: a reference plane, axis, point or coordinate system
 //! whose decoded record states its geometry is a datum whose construction
 //! resolves to that geometry, and an offset plane is a datum offset from its
-//! reference plane by its distance.
+//! reference plane or face by its distance.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
     kinds, AnyConstruction, AxisValue, Construction, ConstructionInput, ConstructionKind,
     FrameValue, InputReference, InputRole, PlaneValue, Relation, ScalarDimension, Subject,
 };
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::options::NativeOptions;
-use cadmpeg_ir::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
+use cadmpeg_ir::design::selection::{
+    Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, Selection,
+};
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::datums::DatumPlaneReference;
 use cadmpeg_ir::features::geometry::{FeatureDatumPlaneFrame, FeatureDirection3};
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::Vector3;
@@ -244,7 +249,8 @@ fn element(definition: &FeatureDefinition, fixed: bool, reading: &Reading) -> Op
 }
 
 /// The input reference of an offset plane's reference: the datum feature it
-/// names, or the plane the decoder resolved for it.
+/// names, the plane the decoder resolved for it, or the face it names by its
+/// native selection.
 fn plane_reference(reference: &DatumPlaneReference) -> Option<InputReference> {
     Some(match reference {
         DatumPlaneReference::Feature { feature } => {
@@ -272,7 +278,34 @@ fn plane_reference(reference: &DatumPlaneReference) -> Option<InputReference> {
                 x_axis: unit(frame.u_axis())?,
             }))))
         }
-        DatumPlaneReference::Face { .. } => return None,
+        DatumPlaneReference::Face { face } => InputReference::Picks(native_face(face)?),
+    })
+}
+
+/// The `Native` pick of a face selection by its native selection.
+fn native_face(face: &FaceSelection) -> Option<OrderedSelection> {
+    let native = match face {
+        FaceSelection::Native(native) | FaceSelection::Resolved { native, .. } => native.as_str(),
+        FaceSelection::Historical { native, .. }
+        | FaceSelection::HistoricalPartial { native, .. } => native.as_str(),
+        FaceSelection::Generated { native, .. } => native.as_str(),
+        FaceSelection::Unresolved | FaceSelection::Faces(_) => return None,
+    };
+    let pick = Picked {
+        target: PickTarget::Native { within: None },
+        context: None,
+        native: Some(NativeName {
+            codec: cadmpeg_ir::codec_id!("sldprt"),
+            value: NativeNameValue::Text(NonBlankString::new(native)?),
+        }),
+        domain: None,
+        witness: None,
+        resolved: None,
+    };
+    Some(Selection {
+        at: Anchor::Input,
+        picks: Picks::Named(Members::new(vec![pick]).ok()?),
+        native: None,
     })
 }
 
