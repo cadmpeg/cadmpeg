@@ -11,7 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_core::decode::{u64_from_index, DecodeDepth};
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::serde_erase::json;
 
 use cadmpeg_test_support::EditableDecodeResult;
