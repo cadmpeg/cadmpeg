@@ -480,7 +480,7 @@ fn a_body_removed_from_its_collection_stays_in_its_scope() {
     assert_eq!(removed.scope_record_index, Some(109));
     assert_eq!(removed.scope_body_ordinal, Some(0));
     assert_eq!(feature.scope_bodies().count(), 1);
-    let wire = serde_json::to_value(feature).unwrap();
+    let wire = cadmpeg_core::serde_erase::json::to_value(feature).unwrap();
     assert!(wire["bodies"].as_array().unwrap().is_empty());
     assert_eq!(
         wire["removed_bodies"][0]["body_record"]["record_index"],
