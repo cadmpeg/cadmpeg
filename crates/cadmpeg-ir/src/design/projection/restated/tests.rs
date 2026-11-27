@@ -61,6 +61,12 @@ fn cuts(ir: &CadIr) -> BTreeMap<String, BTreeSet<String>> {
         )
         .chain(
             ir.model
+                .configurations
+                .iter()
+                .map(|configuration| configuration.id.as_str()),
+        )
+        .chain(
+            ir.model
                 .sketch_constraints
                 .iter()
                 .map(|constraint| constraint.id.as_str()),
@@ -552,6 +558,48 @@ fn a_parameter_ordinal_requires_positions_in_one_design_list() {
             duplicate_position[parameter_id(key).as_str()],
             fields(["ordinal"])
         );
+    }
+}
+
+#[test]
+fn a_configuration_position_carries_the_same_model_ordinal() {
+    use crate::design::configuration::{DesignConfiguration, Overrides};
+    use crate::features::parameters::DesignConfiguration as ModelConfiguration;
+    use crate::features::ConfigurationId;
+
+    let id = ConfigurationId::mint("test:design:configuration#variant").unwrap();
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(ModelConfiguration {
+        id: id.clone(),
+        ordinal: 4,
+        active: true,
+        source_index: None,
+        name: Some("Variant".to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    ir.design.configurations.push(DesignConfiguration {
+        id: id.clone(),
+        scope: ProductDefinitionId::mint(SCOPE).unwrap(),
+        name: "Variant".to_owned(),
+        position: Some(4),
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    });
+    assert_eq!(cuts(&ir)[id.as_str()], fields(["active"]));
+
+    for position in [Some(0), None] {
+        ir.design.configurations[0].position = position;
+        assert_eq!(cuts(&ir)[id.as_str()], fields(["active", "ordinal"]));
     }
 }
 

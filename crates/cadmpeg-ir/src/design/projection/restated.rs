@@ -536,9 +536,26 @@ pub(crate) fn same_id_cuts<'ir>(
     let models = model_values(ir, &compared);
     let wanted = models.iter().map(|(id, _)| *id).collect::<HashSet<_>>();
     let designs = design_values(ir, &wanted);
+    let configuration_positions = ir
+        .design
+        .configurations
+        .iter()
+        .filter_map(|design| Some((&design.id, design.position?)))
+        .collect::<HashMap<_, _>>();
+    let carried_ordinals = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|model| configuration_positions.get(&model.id) == Some(&model.ordinal))
+        .map(|model| model.id.as_str())
+        .collect::<HashSet<_>>();
     for (id, model) in models {
         if let (Some(model), Some(design)) = (model, designs.get(id)) {
-            cuts.insert(id, record_cut(&model, design));
+            let mut cut = record_cut(&model, design);
+            if carried_ordinals.contains(id) {
+                cut.remove("ordinal");
+            }
+            cuts.insert(id, cut);
         }
     }
     cuts
