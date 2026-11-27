@@ -465,7 +465,6 @@ fn formula_results_require_a_proven_operation() {
         "list(cos(5 mm); 1)",
         "tuple(cos(5 mm))",
         "translationm(tuple(1; <<x>>; 3))",
-        "create(<<vector>>; <<bad>>; 2; 3)",
     ] {
         assert_eq!(
             parse(text).unwrap().value(&mut scope).classes(),
@@ -493,6 +492,7 @@ fn formula_results_require_a_proven_operation() {
         ("2 A * 3 Ohm / 2 V", REAL),
         ("sum(list(1; 2) + list(3); 2 mm)", LENGTH),
         ("sum(create(<<vector>>); 2 mm)", LENGTH),
+        ("sum(create(<<vector>>; <<bad>>; 2; 3); 2 mm)", LENGTH),
         (
             "vangle(create(<<vector>>; 1; 2; 3); vector(1; 0; 0))",
             ANGLE,

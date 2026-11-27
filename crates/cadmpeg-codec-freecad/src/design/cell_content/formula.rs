@@ -1245,25 +1245,26 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
         }
         Function::Text => outcomes(
             Text,
-            all_options(&values[0], |class| {
-                (!matches!(class, Object | Raises)).then_some(true)
+            all_options(&values[0], |class| match class {
+                Text | Int | Float | Boolean | Class::Quantity(_) | Vector | Placement => {
+                    Some(true)
+                }
+                Refused if matches!(values[0].1, Some(Fact::None)) => Some(true),
+                Refused | List | Tuple | Dict | Object => None,
+                Raises => Some(false),
             }),
         ),
         Function::Parse => parse_quantity(&values[0]),
         Function::Address => address(&values),
-        Function::Make(class) => construct(name, class, &values),
+        // FreeCAD returns the allocated object regardless of PyInit status.
+        Function::Make(class) => Value::of(&[class]),
         Function::Create => match values[0].text_fact() {
-            Some(name) if name.eq_ignore_ascii_case("vector") => {
-                construct("vector", Vector, &values[1..])
-            }
-            Some(name) if name.eq_ignore_ascii_case("placement") => {
-                construct("placement", Placement, &values[1..])
-            }
-            Some(name) if name.eq_ignore_ascii_case("matrix") => {
-                construct("matrix", Object, &values[1..])
-            }
-            Some(name) if name.eq_ignore_ascii_case("rotation") => {
-                construct("rotation", Object, &values[1..])
+            Some(name) if name.eq_ignore_ascii_case("vector") => Value::of(&[Vector]),
+            Some(name) if name.eq_ignore_ascii_case("placement") => Value::of(&[Placement]),
+            Some(name)
+                if name.eq_ignore_ascii_case("matrix") || name.eq_ignore_ascii_case("rotation") =>
+            {
+                Value::of(&[Object])
             }
             Some(_) => Value::of(&[Raises]),
             None if values[0].contains(Text) => Value::any(),
@@ -1333,27 +1334,6 @@ fn sequence_of_three(value: &Value) -> Option<bool> {
         Object => None,
         _ => Some(false),
     })
-}
-
-fn construct(name: &str, class: Class, values: &[Value]) -> Value {
-    let succeeds = match (name, values) {
-        (_, []) => Some(true),
-        ("vector", [only]) => {
-            let scalar = as_double(only);
-            let vector = sequence_of_three(only);
-            match (scalar, vector) {
-                (Some(true), _) | (_, Some(true)) => Some(true),
-                (Some(false), Some(false)) => Some(false),
-                _ => None,
-            }
-        }
-        ("vector", [_, _] | [_, _, _]) => require_all(values.iter().map(as_double)),
-        ("vector", _) => Some(false),
-        ("matrix", _) if values.len() > 16 => Some(false),
-        ("matrix", _) if values.iter().all(|value| as_double(value) == Some(true)) => Some(true),
-        _ => None,
-    };
-    outcomes(class, succeeds)
 }
 
 fn parse_quantity(value: &Value) -> Value {
