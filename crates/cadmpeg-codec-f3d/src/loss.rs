@@ -1037,6 +1037,10 @@ pub(crate) enum F3dLossCode {
     /// A tool of an operand-list Combine names a body that another component
     /// builds, and the generating feature is not proven.
     FeatureCombineToolBodyUnbound,
+    /// The legacy cross-document tool selectors of a Combine bind no single
+    /// occurrence and distinct bodies of an archive member, or the operands
+    /// refuse that binding, so the tools stay local.
+    FeatureCombineToolExternalBodyUnbound,
     /// A generated tool body of an operand-list Combine keeps its body-map
     /// pair identity: the generating feature has no one history state, or its
     /// creating state inserts no one body slot.
@@ -2095,6 +2099,7 @@ impl F3dLossCode {
         Self::FeatureCombineComponentDestinationAssumed,
         Self::FeatureCombineNamedTailPrologueAssumed,
         Self::FeatureCombineToolBodyUnbound,
+        Self::FeatureCombineToolExternalBodyUnbound,
         Self::FeatureCombineToolResultStateUnbound,
         Self::FeatureCombineOperandBodyUnbound,
         Self::FeatureCombineToolRecipeReplacementAssumed,
@@ -3290,6 +3295,9 @@ impl F3dLossCode {
                 "feature.combine-named-tail-prologue-assumed"
             }
             Self::FeatureCombineToolBodyUnbound => "feature.combine-tool-body-unbound",
+            Self::FeatureCombineToolExternalBodyUnbound => {
+                "feature.combine-tool-external-body-unbound"
+            }
             Self::FeatureCombineToolResultStateUnbound => {
                 "feature.combine-tool-result-state-unbound"
             }
@@ -4255,6 +4263,7 @@ impl F3dLossCode {
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
+            | Self::FeatureCombineToolExternalBodyUnbound
             | Self::FeatureCombineToolResultStateUnbound
             | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
@@ -5040,6 +5049,7 @@ impl F3dLossCode {
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
+            | Self::FeatureCombineToolExternalBodyUnbound
             | Self::FeatureCombineToolResultStateUnbound
             | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombineToolRecipeReplacementAssumed
@@ -6030,6 +6040,7 @@ mod tests {
                 "feature.combine-component-destination-assumed",
                 "feature.combine-named-tail-prologue-assumed",
                 "feature.combine-tool-body-unbound",
+                "feature.combine-tool-external-body-unbound",
                 "feature.combine-tool-result-state-unbound",
                 "feature.combine-operand-body-unbound",
                 "feature.combine-tool-recipe-replacement-assumed",

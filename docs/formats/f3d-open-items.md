@@ -1196,6 +1196,16 @@ In a design with three solid bodies, records 193 to 200 are the further design b
 
 ## 2. External references
 
+### DR-1077. Closing bytes of a legacy typed occurrence placement
+
+**Question.** Do the closing bytes `00 01 04 00 00 00 00 00 00 00 00 00` of a legacy typed occurrence placement name a local owner record, and is the record the legacy typed placement or the compact legacy external placement?
+
+**Known.** `f3d.md` §1.4 "A legacy typed occurrence placement uses" gives the typed envelope and its closing bytes `u8 0`, `u8 1`, `u8 4`, `u8[9] zero`. These bytes have the form of a zero byte and an eleven-byte untyped local reference to record `4`. `f3d.md` §1.4 "A compact legacy external placement uses" closes with a zero byte and an untyped local owner reference with a nonzero target. With root-component targets, the typed fields `u32 1`, `u8 0`, `u32 1` after the path discriminator have the form of the compact present-empty property block and a member ordinal of `1`. Both grammars then close the same record, at 403 bytes for identity and 531 bytes for a matrix. Record `4` of the Design stream can be a component naming space of type `904F885E-D859-4755-A7EF-6EBED8732FAD`.
+
+**Need.** A legacy typed placement whose Design stream holds a record of another type at index `4`, or a legacy placement whose closing reference has a target other than `4`.
+
+**Note.** The decoder reads a record that closes both grammars as the legacy typed placement, with no owner and no source occurrence key.
+
 ### DR-111. Component-path poses of nested occurrences
 
 **Question.** How does a component-path record with more than two path elements join to a nested occurrence, and does its world pose supersede that occurrence's own placement?
