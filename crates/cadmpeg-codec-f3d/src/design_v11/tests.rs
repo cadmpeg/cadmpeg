@@ -425,9 +425,27 @@ fn an_unread_item_before_the_rolled_back_items_charges_the_marker_bound_loss() {
 }
 
 #[test]
-fn an_unread_item_after_the_first_rolled_back_item_charges_the_rollback_loss() {
+fn an_unread_item_after_the_first_rolled_back_item_stands_after_the_marker() {
     let (rollback, members, losses) = rollback_of(&[10, 20], &[(10, true)]);
     assert_eq!(rollback, Rollback::Before(members[0].clone()));
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn an_unread_item_before_a_read_built_item_stands_before_the_marker() {
+    let (rollback, _, losses) = rollback_of(&[10, 20, 30], &[(10, false), (30, false)]);
+    assert_eq!(rollback, Rollback::End);
+    assert!(losses.is_empty(), "{losses:?}");
+    let (rollback, members, losses) =
+        rollback_of(&[10, 20, 30, 40], &[(10, false), (30, false), (40, true)]);
+    assert_eq!(rollback, Rollback::Before(members[3].clone()));
+    assert!(losses.is_empty(), "{losses:?}");
+}
+
+#[test]
+fn an_unread_item_after_the_last_read_built_item_leaves_the_marker_open() {
+    let (rollback, _, losses) = rollback_of(&[10, 20], &[(10, false)]);
+    assert_eq!(rollback, Rollback::End);
     assert_eq!(
         losses,
         [crate::loss::F3dLossCode::HistoryRollbackUnread.kind()]
