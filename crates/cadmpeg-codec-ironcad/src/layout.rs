@@ -62,6 +62,8 @@ pub(crate) mod scene_object_header {
 pub(crate) mod scene_record_matrix_short {
     /// Offset of `flag` (`u8`). Spec §5.
     pub(crate) const FLAG: usize = 32;
+    /// Stated value of `flag` (`u8`). Spec §5.
+    pub(crate) const FLAG_VALUE: u8 = 1;
     /// Offset of `matrix` (`f64[16]`, little-endian). Spec §5.
     pub(crate) const MATRIX: usize = 33;
 }

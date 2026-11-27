@@ -23,6 +23,12 @@ pub(crate) const PART_COPY_CLASS: u32 = 0x3de1_004b;
 /// Version of a part copy record that stores a part.
 pub(crate) const PART_COPY_VERSION: u32 = 2;
 
+/// Versions of a part or assembly record.
+pub(crate) const PART_VERSIONS: [u32; 2] = [2, 3];
+
+/// Class of the body property set that a version 3 part record holds.
+pub(crate) const BODY_SET_CLASS: u32 = 0x3de5_0020;
+
 /// Marker before a record name: `ff ff fe` and a UTF-16 code-unit count.
 pub(crate) const NAME_MARKER: [u8; 3] = [0xff, 0xff, 0xfe];
 
@@ -66,6 +72,12 @@ pub(crate) struct SceneRecord {
     pub(crate) transform: Option<Transform>,
     /// The matrix lies at no fixed offset and was found by a search.
     pub(crate) matrix_searched: bool,
+    /// A class `0x3de1004a` record stores a version outside
+    /// [`PART_VERSIONS`].
+    pub(crate) version_unrecognized: bool,
+    /// The class and the properties of a property set that a part or
+    /// assembly record holds between its `ModelGUID` text and its matrix.
+    pub(crate) embedded: Option<(u32, Vec<(String, PropertyValue)>)>,
     /// The set properties, in stored order.
     pub(crate) properties: Vec<(String, PropertyValue)>,
     /// The name of a property whose value type the reader does not read; the
@@ -134,7 +146,9 @@ pub(crate) fn records(payload: &[u8]) -> Vec<SceneRecord> {
         }
         let next = next_name(payload, after).unwrap_or(payload.len());
         let record = payload.get(after..next).unwrap_or_default();
-        out.push(scene_record(name, role, class, record));
+        let mut scene = scene_record(name, role, class, record);
+        scene.version_unrecognized = class == PART_CLASS && !PART_VERSIONS.contains(&version);
+        out.push(scene);
         at = after;
     }
     out
@@ -155,7 +169,8 @@ fn object_header(payload: &[u8], at: usize) -> Option<(u32, u32)> {
 /// bytes after the name are `record`.
 ///
 /// A part copy record stores its `ModelGUID` first, then a part property set
-/// that ends at the matrix flag.
+/// that ends at the matrix flag. A part or assembly record can hold a
+/// property set of another class in the same place.
 fn scene_record(name: String, role: Role, class: u32, record: &[u8]) -> SceneRecord {
     let (mut parsed, mut unread_property) = properties(record);
     let guid_end = parsed
@@ -163,27 +178,50 @@ fn scene_record(name: String, role: Role, class: u32, record: &[u8]) -> SceneRec
         .find(|property| property.name == "ModelGUID")
         .map(|guid| guid.end);
     let located = guid_end.and_then(|end| locate_matrix(record, end));
+    let between = guid_end
+        .and_then(|start| record.get(start..located.map_or(record.len(), |(at, _, _)| at)))
+        .unwrap_or_default();
+    let mut embedded = None;
     if class == PART_COPY_CLASS {
-        if let (Some(start), Some((at, _, _))) = (guid_end, located) {
-            let (copied, unread) = record.get(start..at).map(properties).unwrap_or_default();
-            parsed.extend(copied);
-            unread_property = unread_property.or(unread);
-        }
+        let (copied, unread) = properties(between);
+        parsed.extend(copied);
+        unread_property = unread_property.or(unread);
+    } else if let Some((set_class, set)) = embedded_set(between) {
+        let (found, unread) = properties(set);
+        unread_property = unread_property.or(unread);
+        embedded = Some((set_class, kept(found)));
     }
-    let properties = parsed
-        .into_iter()
-        .filter(|property| property.value != PropertyValue::Real(UNSET_REAL))
-        .filter(|property| !matches!(&property.value, PropertyValue::Text(text) if text.is_empty()))
-        .map(|property| (property.name, property.value))
-        .collect();
     SceneRecord {
         name,
         role,
         transform: located.map(|(_, transform, _)| transform),
         matrix_searched: located.is_some_and(|(_, _, searched)| searched),
-        properties,
+        version_unrecognized: false,
+        embedded,
+        properties: kept(parsed),
         unread_property,
     }
+}
+
+/// The class of the first property set that `bytes` holds and the bytes
+/// after its class GUID.
+fn embedded_set(bytes: &[u8]) -> Option<(u32, &[u8])> {
+    let tail = find(bytes, &CLASS_TAIL, scene_object_header::CLASS_TAIL)?;
+    let class = View::u32_le_at(
+        bytes,
+        tail - scene_object_header::CLASS_TAIL + scene_object_header::CLASS,
+    )?;
+    Some((class, bytes.get(tail + CLASS_TAIL.len()..)?))
+}
+
+/// The set properties of `parsed` as name and value pairs.
+fn kept(parsed: Vec<Property>) -> Vec<(String, PropertyValue)> {
+    parsed
+        .into_iter()
+        .filter(|property| property.value != PropertyValue::Real(UNSET_REAL))
+        .filter(|property| !matches!(&property.value, PropertyValue::Text(text) if text.is_empty()))
+        .map(|property| (property.name, property.value))
+        .collect()
 }
 
 /// The offset of the matrix of `record`, the matrix, and whether a search
@@ -192,17 +230,21 @@ fn scene_record(name: String, role: Role, class: u32, record: &[u8]) -> SceneRec
 /// The short and long forms place the matrix at a fixed offset. Otherwise
 /// the matrix is the first rigid matrix after a flag byte.
 fn locate_matrix(record: &[u8], guid_end: usize) -> Option<(usize, Transform, bool)> {
-    let flag =
-        |offset: usize| record.get(guid_end + offset) == Some(&scene_record_matrix::FLAG_VALUE);
-    let fixed = if flag(scene_record_matrix_short::FLAG) {
+    let flag = |offset: usize, value: u8| record.get(guid_end + offset) == Some(&value);
+    let fixed = if flag(
+        scene_record_matrix_short::FLAG,
+        scene_record_matrix_short::FLAG_VALUE,
+    ) {
         Some(guid_end + scene_record_matrix_short::MATRIX)
-    } else if flag(scene_record_matrix::FLAG) {
+    } else if flag(scene_record_matrix::FLAG, scene_record_matrix::FLAG_VALUE) {
         Some(guid_end + scene_record_matrix::MATRIX)
     } else {
         None
     };
-    if let Some(at) = fixed {
-        return matrix(record, at).map(|transform| (at, transform, false));
+    if let Some(found) =
+        fixed.and_then(|at| matrix(record, at).map(|transform| (at, transform, false)))
+    {
+        return Some(found);
     }
     let last = record.len().checked_sub(MATRIX_BYTES)?;
     (guid_end + 1..=last)

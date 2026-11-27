@@ -25,6 +25,7 @@ pub(crate) enum IronCadLossCode {
     PlacementBoundByOrder,
     PlacementUnbound,
     PlacementMatrixSearched,
+    PlacementRecordVersionUnrecognized,
     AssemblyFlattened,
     AssemblyBoundByOrder,
     PropertyUnread,
@@ -90,6 +91,10 @@ impl IronCadLossCode {
             Self::PlacementMatrixSearched => {
                 ("placement.matrix-searched", LossTaxonomy::DecodeDiagnostic)
             }
+            Self::PlacementRecordVersionUnrecognized => (
+                "placement.record-version-unrecognized",
+                LossTaxonomy::DecodeDiagnostic,
+            ),
             Self::AssemblyFlattened => (
                 "assembly.flattened",
                 LossTaxonomy::AssemblyPlacementsNotTransferred,

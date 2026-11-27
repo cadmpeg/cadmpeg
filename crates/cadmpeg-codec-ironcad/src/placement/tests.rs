@@ -2,8 +2,8 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{
-    records, PropertyValue, CLASS_TAIL, EMPTY_PROPERTY, FEATURE, INTEGER_PROPERTY, NAME_MARKER,
-    PART_CLASS, PART_COPY_CLASS, PROPERTY_MARKER, STRING_PROPERTY,
+    records, PropertyValue, BODY_SET_CLASS, CLASS_TAIL, EMPTY_PROPERTY, FEATURE, INTEGER_PROPERTY,
+    NAME_MARKER, PART_CLASS, PART_COPY_CLASS, PROPERTY_MARKER, STRING_PROPERTY,
 };
 use crate::layout::{scene_record_matrix, scene_record_matrix_short};
 
@@ -135,7 +135,7 @@ fn a_matrix_without_an_affine_column_is_dropped() {
 }
 
 #[test]
-fn a_property_of_another_value_type_ends_the_read_and_is_named() {
+fn a_property_of_another_value_type_is_named_and_the_read_continues() {
     let odd_name: Vec<u8> = "Odd\0".encode_utf16().flat_map(u16::to_le_bytes).collect();
     let mut odd = PROPERTY_MARKER.to_vec();
     odd.extend_from_slice(&u32::try_from(odd_name.len()).unwrap().to_le_bytes());
@@ -276,4 +276,69 @@ fn a_record_of_another_class_does_not_count_as_a_feature() {
         .map(super::SceneRecord::is_part)
         .collect();
     assert_eq!(parts, [true, false]);
+}
+
+#[test]
+fn a_body_property_set_before_the_matrix_is_read_apart_from_the_part() {
+    let mut body_set = vec![0; scene_record_matrix::FLAG];
+    body_set.extend_from_slice(&BODY_SET_CLASS.to_le_bytes());
+    body_set.extend_from_slice(&CLASS_TAIL);
+    body_set.extend(property("PartName", "Body<1>"));
+    body_set.push(scene_record_matrix::FLAG_VALUE);
+    let payload = [
+        feature("Block"),
+        object("Part1", 3, PART_CLASS),
+        property("PartName", "Part1"),
+        property("ModelGUID", "{0}"),
+        body_set,
+        matrix(IDENTITY, [0.0; 3]),
+    ]
+    .concat();
+    let scene = records(&payload);
+    assert_eq!(
+        scene[0].property("PartName"),
+        Some(&PropertyValue::Text("Part1".to_owned()))
+    );
+    assert_eq!(
+        scene[0].embedded,
+        Some((
+            BODY_SET_CLASS,
+            vec![(
+                "PartName".to_owned(),
+                PropertyValue::Text("Body<1>".to_owned())
+            )]
+        ))
+    );
+    assert!(scene[0].transform.is_some());
+    assert!(!scene[0].version_unrecognized);
+}
+
+#[test]
+fn a_fixed_flag_before_values_that_are_not_affine_falls_back_to_the_search() {
+    let mut gap = long_gap();
+    gap.extend(vec![0xff; 128]);
+    gap.push(scene_record_matrix::FLAG_VALUE);
+    let payload = [
+        feature("Block"),
+        object("Part1", 2, PART_CLASS),
+        property("ModelGUID", "{0}"),
+        gap,
+        matrix(IDENTITY, [0.0, 0.0, 0.04]),
+    ]
+    .concat();
+    let scene = records(&payload);
+    assert_eq!(scene[0].transform.unwrap().affine_rows()[2][3], 40.0);
+    assert!(scene[0].matrix_searched);
+}
+
+#[test]
+fn a_part_record_of_another_version_is_read_and_marked() {
+    let mut record = object("Part1", 7, PART_CLASS);
+    record.extend(property("ModelGUID", "{0}"));
+    record.extend(long_gap());
+    record.extend(matrix(IDENTITY, [0.0; 3]));
+    let scene = records(&[feature("Block"), record].concat());
+    assert!(scene[0].is_part());
+    assert!(scene[0].version_unrecognized);
+    assert!(scene[0].transform.is_some());
 }

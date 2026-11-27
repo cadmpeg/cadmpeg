@@ -520,8 +520,18 @@ fn feature_shape(carrier: &str) -> LossNote {
     ))
 }
 
-/// Charges each record that holds a property the reader does not read.
+/// Charges each record that holds a property the reader does not read, and
+/// each part or assembly record of an unrecognized version.
 fn property_losses(records: &[SceneRecord], losses: &mut Vec<LossNote>) {
+    for record in records.iter().filter(|record| record.version_unrecognized) {
+        losses.push(
+            IronCadLossCode::PlacementRecordVersionUnrecognized.note(format!(
+            "record `{}`: the class 0x3de1004a record stores a version other than 2 or 3 and is \
+             read as a version 2 or 3 record",
+            record.name
+        )),
+        );
+    }
     for record in records {
         if let Some(name) = &record.unread_property {
             losses.push(IronCadLossCode::PropertyUnread.note(format!(
@@ -563,6 +573,43 @@ fn scene_records(
             )));
             Ok(None)
         }
+    }
+}
+
+/// Names the one body of a part by the `PartName` of the body property set
+/// that its record holds, and charges every other property of a set that a
+/// record holds before its matrix.
+fn embedded_set(
+    ir: &mut CadIr,
+    record: &SceneRecord,
+    bodies: &[BodyId],
+    losses: &mut Vec<LossNote>,
+) {
+    let Some((class, set)) = &record.embedded else {
+        return;
+    };
+    let mut named = None;
+    if let ([body], true) = (bodies, *class == placement::BODY_SET_CLASS) {
+        if let Some((_, PropertyValue::Text(name))) = set.iter().find(|(key, _)| key == "PartName")
+        {
+            if let Some(target) = ir.geometry.bodies.iter_mut().find(|item| item.id == *body) {
+                target.name = Some(name.clone());
+                named = Some("PartName");
+            }
+        }
+    }
+    let rest: Vec<&str> = set
+        .iter()
+        .map(|(key, _)| key.as_str())
+        .filter(|key| Some(*key) != named)
+        .collect();
+    if !rest.is_empty() {
+        losses.push(IronCadLossCode::PropertyUnread.note(format!(
+            "record `{}`: the properties {} of the property set of class {class:#010x} before \
+             the matrix are not transferred",
+            record.name,
+            rest.join(", ")
+        )));
     }
 }
 
@@ -664,6 +711,7 @@ fn place(
         let mut definition = ProductDefinition::new(definition_id.clone(), Storage::Embedded);
         definition.kind = Some(ProductDefinitionKind::Part);
         definition.source_name = Some(part.name.clone());
+        embedded_set(ir, part, &bodies, losses);
         definition.bodies = bodies;
         part_properties(part, &mut definition);
         if let Some(mass) = mass_properties(part, &definition_id, rank) {

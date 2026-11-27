@@ -156,8 +156,8 @@ and `ModelGUID`. Values are SI: lengths are metres, masses are kilograms, and
 `MassDensity` is kilograms per cubic metre.
 
 The `ModelGUID` value is a brace-enclosed GUID string. The record matrix
-follows the end of that string and a flag byte `1`. In a part record of
-version `2` and in an assembly record, the flag is at a fixed offset.
+follows the end of that string and a flag byte `1`. In a class `0x3de1004a`
+record of version `2`, the flag is at a fixed offset.
 
 In the **short form**, the flag directly follows 32 bytes.
 
