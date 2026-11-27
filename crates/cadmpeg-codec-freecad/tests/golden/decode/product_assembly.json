@@ -37,6 +37,10 @@
               {
                 "kind": "feature",
                 "value": "fcstd:design:feature#PinPrototype"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:model:joint#RevoluteJoint:constraint"
               }
             ]
           }
@@ -268,6 +272,304 @@
           "id": "fcstd:design:feature#PinPrototype",
           "name": "PinPrototype",
           "native_ref": "fcstd:native:object#PinPrototype"
+        },
+        {
+          "component": "fcstd:model:product_definition#Assembly:definition",
+          "definition": {
+            "operation": {
+              "kind": "joint",
+              "value": {
+                "connectors": [
+                  {
+                    "after": [
+                      {
+                        "kind": "fixed",
+                        "value": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.5
+                          ]
+                        ]
+                      }
+                    ],
+                    "inputs": [
+                      {
+                        "reference": {
+                          "kind": "picks",
+                          "value": {
+                            "at": {
+                              "kind": "current"
+                            },
+                            "picks": {
+                              "kind": "named",
+                              "value": [
+                                {
+                                  "context": {
+                                    "kind": "occurrence",
+                                    "value": [
+                                      {
+                                        "occurrence": {
+                                          "kind": "occurrence",
+                                          "value": "fcstd:model:occurrence#BracketOccurrence:instance"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "native": {
+                                    "codec": "fcstd",
+                                    "value": {
+                                      "kind": "text",
+                                      "value": "Face1"
+                                    }
+                                  },
+                                  "target": {
+                                    "kind": "native",
+                                    "value": {}
+                                  }
+                                },
+                                {
+                                  "context": {
+                                    "kind": "occurrence",
+                                    "value": [
+                                      {
+                                        "occurrence": {
+                                          "kind": "occurrence",
+                                          "value": "fcstd:model:occurrence#BracketOccurrence:instance"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "native": {
+                                    "codec": "fcstd",
+                                    "value": {
+                                      "kind": "text",
+                                      "value": "Edge1"
+                                    }
+                                  },
+                                  "target": {
+                                    "kind": "native",
+                                    "value": {}
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "kind": "frame",
+                    "resolved": {
+                      "origin": {
+                        "x": 20.0,
+                        "y": 6.0,
+                        "z": 3.0
+                      },
+                      "x_axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "y_axis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "z_axis": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      }
+                    },
+                    "resolved_in": {}
+                  },
+                  {
+                    "after": [
+                      {
+                        "kind": "fixed",
+                        "value": [
+                          [
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            0.0,
+                            0.0,
+                            1.0,
+                            -0.5
+                          ]
+                        ]
+                      }
+                    ],
+                    "inputs": [
+                      {
+                        "reference": {
+                          "kind": "picks",
+                          "value": {
+                            "at": {
+                              "kind": "current"
+                            },
+                            "picks": {
+                              "kind": "named",
+                              "value": [
+                                {
+                                  "context": {
+                                    "kind": "occurrence",
+                                    "value": [
+                                      {
+                                        "occurrence": {
+                                          "kind": "occurrence",
+                                          "value": "fcstd:model:occurrence#PinOccurrence:instance"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "native": {
+                                    "codec": "fcstd",
+                                    "value": {
+                                      "kind": "text",
+                                      "value": "Face2"
+                                    }
+                                  },
+                                  "target": {
+                                    "kind": "native",
+                                    "value": {}
+                                  }
+                                },
+                                {
+                                  "context": {
+                                    "kind": "occurrence",
+                                    "value": [
+                                      {
+                                        "occurrence": {
+                                          "kind": "occurrence",
+                                          "value": "fcstd:model:occurrence#PinOccurrence:instance"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "native": {
+                                    "codec": "fcstd",
+                                    "value": {
+                                      "kind": "text",
+                                      "value": "Edge3"
+                                    }
+                                  },
+                                  "target": {
+                                    "kind": "native",
+                                    "value": {}
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "kind": "frame",
+                    "resolved": {
+                      "origin": {
+                        "x": 20.0,
+                        "y": 6.0,
+                        "z": 3.0
+                      },
+                      "x_axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                      },
+                      "y_axis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                      },
+                      "z_axis": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.0
+                      }
+                    },
+                    "resolved_in": {}
+                  }
+                ],
+                "kind": {
+                  "kind": "motion",
+                  "value": {
+                    "drives": [],
+                    "limits": [
+                      {
+                        "axis": "z",
+                        "kind": "rotation",
+                        "limits": {
+                          "max": {
+                            "kind": "literal",
+                            "value": 0.9599310885968813
+                          },
+                          "min": {
+                            "kind": "literal",
+                            "value": -0.6108652381980153
+                          }
+                        }
+                      }
+                    ],
+                    "motion": {
+                      "kind": "revolute",
+                      "value": {
+                        "axis": "z"
+                      }
+                    },
+                    "offset": {}
+                  }
+                },
+                "native_options": {
+                  "fcstd:Angle": {
+                    "kind": "angle",
+                    "value": {
+                      "kind": "literal",
+                      "value": 0.20943951023931956
+                    }
+                  }
+                },
+                "source_settings": {
+                  "fcstd:Detach1": {
+                    "kind": "bool",
+                    "value": {
+                      "kind": "literal",
+                      "value": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "id": "fcstd:model:joint#RevoluteJoint:constraint",
+          "name": "RevoluteJoint",
+          "native_ref": "fcstd:native:object#RevoluteJoint",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
         }
       ],
       "names": [],
@@ -310,7 +612,13 @@
             }
           ],
           "definition": "fcstd:model:product_definition#document:root",
-          "occurrences": {},
+          "occurrences": {
+            "fcstd:model:occurrence#BracketOccurrence:instance": {
+              "arrangements": [],
+              "grounded": true,
+              "parameters": {}
+            }
+          },
           "roots": [
             "fcstd:design:container#document:group"
           ],
