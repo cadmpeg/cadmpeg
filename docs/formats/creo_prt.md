@@ -7059,7 +7059,7 @@ give-up is one entry.
 | `feature-table-rows` part | A feature table declares more rows than the reader decodes. | `record.undecoded` |
 | Placed occurrence | The row frame is not a proper rigid placement (§9). | `record.unreadable` |
 | Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | A scalar row without continuation rows holds text that breaks the scalar grammar of its type, or an array whose element runs all read has run counts that do not sum to the product of its extents (§1). | `record.unreadable` |
-| Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | A scalar row has continuation rows, an array header has no element rows, an element row holds text that the decoder does not read, a run-count product is larger than the decoder index width, or a real word decodes to a non-finite value (§1). A `[1]` array and its direct element rows give one entry. | `record.undecoded` |
+| Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | A scalar row has continuation rows, a type-2 or type-6 array header has no element rows, an element row holds text that the decoder does not read, a run-count product is larger than the decoder index width, or a real word decodes to a non-finite value (§1). A `[1]` array and its direct element rows give one entry. | `record.undecoded` |
 | Legacy type-3, type-4, or type-10 scalar value row | The row uses an undefined continuation form. | `record.undecoded` |
 | PMI record of geometric-tolerance or dimensional attributes | The attributes form no PMI record. | `record.undecoded` |
 | Face | Face admission rejects the face, or the component admission gate withholds it. | `record.undecoded` |

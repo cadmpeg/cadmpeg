@@ -405,8 +405,9 @@ pub(super) fn push_legacy_value_losses(
 /// partial payload are not charged. A scalar whose text breaks the scalar
 /// grammar of its type, or an array whose read runs miscount its extents, is
 /// unreadable; a row of a form without a reading here (a continued scalar, a
-/// header without element rows, element text that does not read, a
-/// non-finite real word, an undefined continuation) is undecoded.
+/// type-2 or type-6 array header without element rows, element text that
+/// does not read, a non-finite real word, an undefined continuation) is
+/// undecoded.
 pub(super) fn push_unread_legacy_rows(
     losses: &mut Vec<LossNote>,
     scan: &ContainerScan,

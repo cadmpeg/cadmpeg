@@ -130,6 +130,11 @@ pub(crate) enum NumericPayload<T> {
     },
     /// A complete multidimensional array, retained as source runs.
     Array(numeric_array::NumericArray<T>),
+    /// An array header without element rows, which stores no elements.
+    Empty {
+        /// Declared extents from outermost to innermost dimension.
+        dimensions: Vec<u32>,
+    },
 }
 
 impl<T> NumericPayload<T> {
@@ -143,6 +148,7 @@ impl<T> NumericPayload<T> {
         match self {
             Self::Scalar { .. } => 1,
             Self::Array(array) => array.element_count(),
+            Self::Empty { .. } => 0,
         }
     }
 }
@@ -542,9 +548,9 @@ pub(crate) struct Scope {
 /// Why a legacy value row forms no typed record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RowFault {
-    /// The row uses a form that has no reading here: a continued scalar, an
-    /// array header without element rows, element text that does not read,
-    /// or a non-finite real word.
+    /// The row uses a form that has no reading here: a continued scalar, a
+    /// type-2 or type-6 array header without element rows, element text
+    /// that does not read, or a non-finite real word.
     Unread,
     /// A scalar row without continuation whose text breaks the scalar
     /// grammar of its type.
@@ -864,7 +870,7 @@ impl Persistence {
         matches.next().is_none().then_some(())?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(*value),
-            NumericPayload::Array(_) => None,
+            NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
         }
     }
 
@@ -878,7 +884,7 @@ impl Persistence {
         matches.next().is_none().then_some(())?;
         match &record.payload {
             NumericPayload::Scalar { value } => Some(value.value()),
-            NumericPayload::Array(_) => None,
+            NumericPayload::Array(_) | NumericPayload::Empty { .. } => None,
         }
     }
 
@@ -1409,6 +1415,8 @@ struct ScalarGrammar<T> {
     read: fn(&[u8]) -> Option<T>,
     /// Whether a token is written in the scalar grammar of the type.
     written: fn(&[u8]) -> bool,
+    /// Whether an array header without element rows stores an empty array.
+    empty_header: bool,
 }
 
 fn numeric_records<K, T>(
@@ -1484,10 +1492,15 @@ where
                 } else {
                     RowFault::Unread
                 };
-                let Some(payload) = elements_read
-                    .then(|| NumericPayload::array(dimensions, runs))
-                    .flatten()
-                else {
+                let header_only = elements_read && value.continuation.is_none() && runs.is_empty();
+                let payload = if header_only && grammar.empty_header {
+                    Some(NumericPayload::Empty { dimensions })
+                } else {
+                    elements_read
+                        .then(|| NumericPayload::array(dimensions, runs))
+                        .flatten()
+                };
+                let Some(payload) = payload else {
                     unresolved.push(row(fault));
                     index = next_index;
                     continue;
@@ -1685,14 +1698,17 @@ pub(crate) fn scan(
     let real = ScalarGrammar {
         read: compact_real,
         written: is_compact_real,
+        empty_header: false,
     };
     let signed = ScalarGrammar {
         read: signed_integer,
         written: is_signed_integer,
+        empty_header: true,
     };
     let unsigned = ScalarGrammar {
         read: unsigned_integer,
         written: is_unsigned_integer,
+        empty_header: true,
     };
     let real_values = numeric_records(data, &scopes, ValueKind::REAL, &real, &parents);
     let integer_values = numeric_records(data, &scopes, ValueKind::INTEGER, &signed, &parents);

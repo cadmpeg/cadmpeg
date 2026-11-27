@@ -1151,6 +1151,65 @@ fn legacy_value_rows_split_by_the_rule_they_break() {
 }
 
 #[test]
+fn integer_array_headers_without_element_rows_are_empty_arrays() {
+    let rows = b"@integers 7 1\n0 7 [2]\n\
+        @single 8 1\n0 8 [1]\n\
+        @type_5 9 5\n0 9 [3]\n\
+        @type_7 10 7\n0 10 [2][2]\n\
+        @type_9 11 9\n0 11 [1]\n\
+        @type_11 12 11\n0 12 [4]\n";
+    let persistence = scan(rows, std::iter::once(0..rows.len()))
+        .expect("the fixture states every scope inside its own bytes");
+    let empty = |dimensions: &[u32]| NumericPayload::<i32>::Empty {
+        dimensions: dimensions.to_vec(),
+    };
+    let integers = &persistence.integer_values;
+    assert!(integers.unresolved.is_empty());
+    assert_eq!(
+        integers
+            .rows
+            .iter()
+            .map(|row| row.payload.clone())
+            .collect::<Vec<_>>(),
+        [empty(&[2]), empty(&[1])]
+    );
+    macro_rules! assert_one_empty {
+        ($values:expr, $dimensions:expr) => {{
+            let values = &$values;
+            assert!(values.unresolved.is_empty());
+            let [row] = values.rows.as_slice() else {
+                panic!("one row: {}", values.rows.len());
+            };
+            assert_eq!(
+                row.payload,
+                NumericPayload::<u32>::Empty {
+                    dimensions: $dimensions.to_vec(),
+                }
+            );
+            assert_eq!(row.payload.element_count(), 0);
+        }};
+    }
+    assert_one_empty!(persistence.type_5_values, [3]);
+    assert_one_empty!(persistence.type_7_values, [2, 2]);
+    assert_one_empty!(persistence.type_9_values, [1]);
+    assert_one_empty!(persistence.type_11_values, [4]);
+
+    let mut data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n".to_vec();
+    data.extend_from_slice(rows);
+    data.extend_from_slice(b"#END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n");
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("legacy value-row decode");
+    let losses = &result.report().losses;
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !cadmpeg_ir::unknown::part::gives_up(&loss.code)),
+        "{losses:#?}"
+    );
+}
+
+#[test]
 fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
     let data = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n\
         #P_OBJECT 6\n@P_object 1 0\n0 1 ->\n@value #END_OF_P_OBJECT\n\
@@ -1334,12 +1393,23 @@ fn numeric_array_withholds_child_at_maximum_depth() {
     let data = b"@value 1 1\n4294967295 1 [1]\n4294967295 1 7\n";
     let persistence =
         scan(data, std::iter::once(0..data.len())).expect("maximum-depth fixture is admitted");
-    assert_eq!(persistence.integer_values.rows.len(), 1);
-    assert!(matches!(
-        persistence.integer_values.rows[0].payload,
-        IntegerPayload::Scalar { value: 7 }
-    ));
-    assert_eq!(persistence.integer_values.unresolved.len(), 1);
+    // The header has no element row one depth deeper, so it stores no
+    // elements; the row at its depth is a scalar of its own.
+    assert_eq!(
+        persistence
+            .integer_values
+            .rows
+            .iter()
+            .map(|row| row.payload.clone())
+            .collect::<Vec<_>>(),
+        [
+            IntegerPayload::Empty {
+                dimensions: vec![1]
+            },
+            IntegerPayload::Scalar { value: 7 }
+        ]
+    );
+    assert!(persistence.integer_values.unresolved.is_empty());
 }
 
 #[test]
