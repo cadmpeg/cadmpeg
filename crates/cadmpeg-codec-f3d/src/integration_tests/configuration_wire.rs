@@ -7,7 +7,6 @@ use std::io::{Cursor, Write};
 use std::num::NonZeroI8;
 
 use cadmpeg_core::serde_erase::json;
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::configuration::{DesignConfiguration, ParameterOverride};
@@ -255,7 +254,7 @@ fn saved(ir: &CadIr) -> CadIr {
 fn written(ir: &CadIr, sidecar: &SourceFidelity) -> DecodeResult {
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(ir, Some(sidecar)), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, Some(sidecar)))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("write");
     decode(&bytes)
