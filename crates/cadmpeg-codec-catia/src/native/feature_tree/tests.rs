@@ -276,13 +276,16 @@ fn a_short_list_is_a_single_token_and_not_members() {
 #[test]
 fn feature_containers_round_trip_through_the_native_wire() {
     let native = CatiaNative::decode(&stream(&part()));
-    let wire = serde_json::to_value(&native.feature_containers).expect("serialize containers");
-    let back =
-        serde_json::from_value::<Vec<CatiaFeatureContainer>>(wire).expect("containers read back");
+    let wire = cadmpeg_core::serde_erase::json::to_value(&native.feature_containers)
+        .expect("serialize containers");
+    let back = cadmpeg_core::serde_erase::json::from_value::<Vec<CatiaFeatureContainer>>(wire)
+        .expect("containers read back");
     assert_eq!(back, native.feature_containers);
-    let entities = serde_json::to_value(&native.entity_records).expect("serialize entities");
-    let back =
-        serde_json::from_value::<Vec<crate::native::entity_record::CatiaEntityRecord>>(entities)
-            .expect("entities read back");
+    let entities = cadmpeg_core::serde_erase::json::to_value(&native.entity_records)
+        .expect("serialize entities");
+    let back = cadmpeg_core::serde_erase::json::from_value::<
+        Vec<crate::native::entity_record::CatiaEntityRecord>,
+    >(entities)
+    .expect("entities read back");
     assert_eq!(back, native.entity_records);
 }

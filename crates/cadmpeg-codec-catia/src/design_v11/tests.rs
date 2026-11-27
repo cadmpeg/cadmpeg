@@ -19,7 +19,9 @@ use cadmpeg_ir::{CadIr, ReadOptions};
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::test_container::outer_container_catpart;
-use crate::test_support::test_feature_tree::{compact, part, stream, stream_with_sketches, SKETCH};
+use crate::test_support::test_feature_tree::{
+    compact, part, stream, stream_with_catalog, stream_with_sketches, SKETCH,
+};
 use crate::test_support::test_formula::standard_catpart_with_formula_relation;
 use crate::test_support::test_object_graph::{
     catalog_stream, entity_backed_object_graph, object_graph_record,
@@ -378,6 +380,85 @@ fn the_in_work_object_is_the_rollback_of_the_body_that_lists_it() {
     assert_eq!(rollbacks(0x87), [(3, Some(Rollback::End)), (7, None)]);
     assert_eq!(rollbacks(0x88), [(3, None), (7, Some(Rollback::End))]);
     assert_eq!(rollbacks(0x85), [(3, None), (7, None)]);
+}
+
+/// A `HybridBody` that `MainTool` does not select is a set whose kind is
+/// unread: neither it nor its members are stated, and a loss names it.
+#[test]
+fn a_set_whose_kind_is_unread_is_unstated() {
+    let mut records = part();
+    assert_eq!(records[0].2[21], 0x84, "the main-body token");
+    records[0].2[21] = 0x88;
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    let ir = result.ir();
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one design scope");
+    };
+    assert_eq!(
+        scope
+            .roots
+            .iter()
+            .map(|id| (id.as_str().split('#').next().unwrap(), entity(id.as_str())))
+            .collect::<Vec<_>>(),
+        [
+            ("catia:outer:feature-group", 2),
+            ("catia:outer:feature-container", 7),
+        ]
+    );
+    assert_eq!(
+        ir.design
+            .features
+            .iter()
+            .map(|feature| entity(feature.id.as_str()))
+            .collect::<Vec<_>>(),
+        [4]
+    );
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CatiaLossCode::DesignTreeRecordsUnstated
+            .note("")
+            .code
+        && loss
+            .message
+            .contains("is a set whose ordered or unordered kind is unread")));
+    assert_eq!(design_findings(&result), Vec::<String>::new());
+    assert_design_survives_cadir(ir);
+}
+
+/// A feature the decoder reads from a record whose compact class
+/// contradicts the reading is not restated, and a loss names it.
+#[test]
+fn a_feature_whose_record_class_contradicts_the_reading_is_not_restated() {
+    let catalog = [
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "xy-plane",
+        "Pad",
+    ];
+    let records = [
+        (2, compact(0x08, 0x39), vec![0xfe]),
+        (3, compact(0x08, 0x39), vec![0xfe]),
+    ];
+    let result = decode(
+        outer_container_catpart(&stream_with_catalog(&records, &catalog)).0,
+        &DecodeOptions::default(),
+    );
+    let ir = result.ir();
+    let [legacy] = ir.model.features.as_slice() else {
+        panic!("one typed feature");
+    };
+    assert!(ir.design.features.is_empty());
+    assert!(ir.design.containers.is_empty());
+    assert!(result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::CatiaLossCode::DesignFeaturesContradicted
+            .note("")
+            .code
+        && loss.message.contains(legacy.id.as_str())
+        && loss.message.contains("record class Pad")));
 }
 
 /// A part that stores no part root keeps each feature the decoder types as a

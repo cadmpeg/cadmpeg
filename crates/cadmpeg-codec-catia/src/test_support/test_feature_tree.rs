@@ -56,7 +56,11 @@ pub(crate) fn stream_with_sketches(records: &[(u32, Vec<u8>, Vec<u8>)]) -> Vec<u
     stream_with_catalog(records, &catalog)
 }
 
-fn stream_with_catalog(records: &[(u32, Vec<u8>, Vec<u8>)], catalog: &[&str]) -> Vec<u8> {
+/// [`stream`] with `catalog` in place of [`CATALOG`].
+pub(crate) fn stream_with_catalog(
+    records: &[(u32, Vec<u8>, Vec<u8>)],
+    catalog: &[&str],
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     for (entity_id, prefix, _) in records {
         bytes.extend(entity_table_record_with_definition_and_value(
