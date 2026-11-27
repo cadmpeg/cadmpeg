@@ -4679,6 +4679,7 @@ fn attach_standard_topology(
         refusal,
         admission,
     } = inputs;
+    let mesh_cache = missing_edge::StandardMeshCache::new();
 
     let face_count = ir.geometry.faces.len();
     let edge_count = if edge_table_form == EdgeTableForm::FbbOnly {
@@ -5320,13 +5321,15 @@ fn attach_standard_topology(
                 })
                 .collect::<Vec<_>>();
             let mut changed = false;
-            if let Some(placement_domains) = missing_edge::standard_mesh_placement_endpoint_pairs(
-                ctx,
-                spine,
-                &edge_faces,
-                &seeds,
-            )
-            .map_err(StandardTopologyError::Codec)?
+            if let Some(placement_domains) =
+                missing_edge::standard_mesh_placement_endpoint_pairs_with_cache(
+                    ctx,
+                    spine,
+                    &edge_faces,
+                    &seeds,
+                    &mesh_cache,
+                )
+                .map_err(StandardTopologyError::Codec)?
             {
                 for (edge, mut domain) in placement_domains.into_iter().enumerate() {
                     if deferred_port_edges[edge] {
@@ -5490,7 +5493,8 @@ fn attach_standard_topology(
     };
     let mesh_propagated_endpoint_pairs = if let Some((options, ports)) =
         endpoint_options.as_ref().zip(
-            missing_edge::standard_mesh_edge_ports(ctx, spine)
+            mesh_cache
+                .edge_ports(ctx, spine)
                 .map_err(StandardTopologyError::Codec)?,
         ) {
         let pairs = options
@@ -5535,7 +5539,9 @@ fn attach_standard_topology(
     };
     if let (Some(options), Some(ports)) = (
         constrained_endpoint_options.as_mut(),
-        missing_edge::standard_mesh_edge_ports(ctx, spine).map_err(StandardTopologyError::Codec)?,
+        mesh_cache
+            .edge_ports(ctx, spine)
+            .map_err(StandardTopologyError::Codec)?,
     ) {
         let pruned = if deferred_port_edges.iter().any(|deferred| *deferred) {
             fbb::prune_edge_candidates_by_port_domains_with_deferred(
@@ -5592,7 +5598,9 @@ fn attach_standard_topology(
         include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
     }
     let fbb_mesh_ports = if edge_table_form == EdgeTableForm::FbbOnly {
-        missing_edge::standard_mesh_edge_ports(ctx, spine).map_err(StandardTopologyError::Codec)?
+        mesh_cache
+            .edge_ports(ctx, spine)
+            .map_err(StandardTopologyError::Codec)?
     } else {
         None
     };
@@ -5845,6 +5853,7 @@ fn attach_standard_topology(
                         preferred_assignment_edges: &partial_constraint_edges,
                         priority_edges: Some(&partial_constraint_edges),
                         assignment_dependencies: None,
+                        mesh_cache: Some(&mesh_cache),
                         budget: &preferred_budget,
                         partial_solution_valid: |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
@@ -5903,6 +5912,7 @@ fn attach_standard_topology(
                             preferred_assignment_edges: &partial_constraint_edges,
                             priority_edges: Some(&partial_constraint_edges),
                             assignment_dependencies: None,
+                            mesh_cache: Some(&mesh_cache),
                             budget: &fallback_budget,
                             partial_solution_valid: |pairs| {
                                 endpoint_pairs_on_selected_faces(pairs)
@@ -5997,7 +6007,7 @@ fn attach_standard_topology(
         let Some(options) = constrained_endpoint_options.as_ref() else {
             return Ok(None);
         };
-        if let Some(ports) = missing_edge::standard_mesh_edge_ports(ctx, spine)? {
+        if let Some(ports) = mesh_cache.edge_ports(ctx, spine)? {
             let candidate = fbb::parse_standard_port_endpoint_candidates(
                 ctx,
                 spine,
