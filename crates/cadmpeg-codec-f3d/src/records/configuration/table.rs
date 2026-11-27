@@ -439,7 +439,8 @@ pub(crate) fn new_row(id: &str, name: &str, guids: RowGuids) -> Value {
 /// Add the column `id` with the display title `title` that names the Design
 /// record of `target` to the table at `position` of the `tables` array: its
 /// `columnData` entry and its `columnOrder` entry. A document-property
-/// target is not added. Returns whether the column was added.
+/// target is added by [`push_property_column`]. Returns whether the column
+/// was added.
 pub(crate) fn push_column(
     payload: &mut Map<String, Value>,
     position: usize,
@@ -447,14 +448,86 @@ pub(crate) fn push_column(
     title: &str,
     target: &ColumnTarget,
 ) -> bool {
-    use cadmpeg_core::json;
-
     let (kind, record) = match target {
         ColumnTarget::Parameter(record) => ("UserParameterValue", record),
         ColumnTarget::OwnedParameter(record) => ("ParameterDoubleValue", record),
         ColumnTarget::Feature(record) => ("DcFeature", record),
         ColumnTarget::Property(_) => return false,
     };
+    let object = typed_value(
+        &format!("{COMPONENT_PREFIX}configuredObject-1.0.0"),
+        cadmpeg_core::json!({
+            "id": typed_value("String", Value::from(record.to_string())),
+            "type": typed_value("String", Value::from(kind)),
+        }),
+    );
+    insert_column(payload, position, id, title, &object)
+}
+
+/// Add the column `id` that names the document property `key`, in the
+/// empty property set, of the component `component`, under the title
+/// `key`, to the table at `position` of the `tables` array. Returns whether
+/// the column was added.
+pub(crate) fn push_property_column(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    id: &str,
+    key: &str,
+    component: &str,
+) -> bool {
+    let object = typed_value(
+        &format!("{COMPONENT_PREFIX}configuredProperty-1.0.0"),
+        cadmpeg_core::json!({
+            "id": typed_value("String", Value::from(component)),
+            "propertyKey": typed_value("String", Value::from(key)),
+            "propertySet": typed_value("String", Value::from("")),
+            "type": typed_value("String", Value::from("Property")),
+        }),
+    );
+    insert_column(payload, position, id, key, &object)
+}
+
+/// The `id` of the first property column of the table at `position` of the
+/// `tables` array: the component whose properties the column names.
+pub(crate) fn property_component(payload: &Map<String, Value>, position: usize) -> Option<String> {
+    let table = payload.get("tables")?.as_array()?.get(position)?;
+    let table = asset(table.get("asset")?, "configurationTable-1.1.0")?;
+    let definition = component(table, "tableDefinition", "tableDefinition-1.1.0")?;
+    typed(
+        definition.get("columnData")?,
+        "map<autodesk.configuration:components.columnData-1.1.0>",
+    )?
+    .as_object()?
+    .values()
+    .find_map(|column| {
+        let column = typed_component(column, "columnData-1.1.0")?;
+        let property = typed_component(column.get("object")?, "configuredProperty-1.0.0")?;
+        string(property, "id").map(str::to_owned)
+    })
+}
+
+/// Append `entry`, a test-row cell, as a string to the `testRowData` array of
+/// `payload`. Returns whether the document holds the array.
+pub(crate) fn push_test_row(payload: &mut Map<String, Value>, entry: &Map<String, Value>) -> bool {
+    let Some(cells) = payload.get_mut("testRowData").and_then(Value::as_array_mut) else {
+        return false;
+    };
+    cells.push(Value::from(Value::Object(entry.clone()).to_string()));
+    true
+}
+
+/// Add the column `id` with the title `title` and the configured `object`
+/// to the table at `position` of the `tables` array: its `columnData` entry
+/// and its `columnOrder` entry.
+fn insert_column(
+    payload: &mut Map<String, Value>,
+    position: usize,
+    id: &str,
+    title: &str,
+    object: &Value,
+) -> bool {
+    use cadmpeg_core::json;
+
     let Some(members) = table_mut(payload, position) else {
         return false;
     };
@@ -474,13 +547,7 @@ pub(crate) fn push_column(
             json!({
                 "id": typed_value("String", Value::from(id)),
                 "isCustom": typed_value("Bool", Value::from(false)),
-                "object": typed_value(
-                    &format!("{COMPONENT_PREFIX}configuredObject-1.0.0"),
-                    json!({
-                        "id": typed_value("String", Value::from(record.to_string())),
-                        "type": typed_value("String", Value::from(kind)),
-                    }),
-                ),
+                "object": object,
                 "title": typed_value("String", Value::from(title)),
             }),
         ),

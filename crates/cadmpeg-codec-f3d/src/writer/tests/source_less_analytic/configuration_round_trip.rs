@@ -143,8 +143,11 @@ fn written(ir: &cadmpeg_ir::CadIr, fidelity: Option<&SourceFidelity>) -> (Export
 }
 
 /// `report` charges no configuration and names no configuration document.
-fn assert_uncharged(shape: Shape, report: &ExportReport) {
-    for loss in &report.losses {
+fn assert_uncharged<'a>(
+    shape: Shape,
+    losses: impl IntoIterator<Item = &'a cadmpeg_ir::report::loss::LossNote>,
+) {
+    for loss in losses {
         let code = loss.code.to_string();
         assert!(
             ![
@@ -208,7 +211,7 @@ fn every_table_shape_written_unedited_is_written_as_stated_with_no_charge() {
         read.model.drop_omitted_arenas();
         let fidelity = Some(decoded.source_fidelity());
         let preserved = if shape.moved {
-            "synthesized"
+            "patched"
         } else {
             "verbatim_replay"
         };
@@ -235,18 +238,19 @@ fn every_table_shape_written_unedited_is_written_as_stated_with_no_charge() {
                 "{shape:?} {path}: {:?}",
                 report.write_path()
             );
-            assert_uncharged(shape, &report);
-            if shape.moved && fidelity.is_some() {
-                assert!(
-                    matches!(
-                        report.synthesis_cause(),
-                        Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason })
-                            if reason.contains("changes the Design root record")
-                    ),
-                    "{shape:?} {path}: {:?}",
-                    report.write_path()
-                );
-            }
+            let moved_root = |loss: &&cadmpeg_ir::report::loss::LossNote| {
+                loss.code.to_string() == "export/value.unwritable"
+                    && loss.message.contains("DesignConfigurationRoot")
+                    && loss.message.contains("row wide of table 1")
+            };
+            let moved = shape.moved && fidelity.is_some();
+            assert_eq!(
+                report.losses.iter().filter(moved_root).count(),
+                usize::from(moved),
+                "{shape:?} {path}: {:#?}",
+                report.losses
+            );
+            assert_uncharged(shape, report.losses.iter().filter(|loss| !moved_root(loss)));
             assert_eq!(documents(&bytes), documents(&archive), "{shape:?} {path}");
         }
     }

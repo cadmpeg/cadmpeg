@@ -4,18 +4,17 @@
 //! documents project, the neutral record wins (cadir-v11.md §3.4, W2; §5.14):
 //! the write regenerates the rows of the table, their cells and order, and
 //! the targets of the rules from the configurations (f3d.md §1.2). A
-//! parameter or feature with no column gets a column, and an
-//! empty table document gets a table (cadir-v11.md §5.11).
+//! parameter, feature, part number or description with no column gets a
+//! column, whose cell in each row states what the row's configuration
+//! resolves, and an empty table document gets a table (cadir-v11.md §5.11).
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{edit_dropped, record_residual_unavailable, value_unwritable};
-use cadmpeg_ir::features::parameters::{
-    ConfigurationFeatureState, DesignConfiguration as Configuration, ParameterValue,
-};
-use cadmpeg_ir::features::{FeatureId, ParameterId};
+use cadmpeg_ir::features::parameters::{DesignConfiguration as Configuration, ParameterValue};
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::schema::EntityKind;
@@ -28,14 +27,17 @@ use crate::design::feature_project::DESIGN_LENGTH_TO_MILLIMETRE;
 use crate::ids::neutral_configuration_id;
 use crate::native::F3dNative;
 use crate::records::configuration::table::{
-    new_document, new_row, push_column, push_row, remove_row, set_cell, set_row_name,
-    set_row_order, AdmittedTables, CellData, ColumnTarget, ConfigurationColumn, ConfigurationRow,
-    ConfigurationTable, ConfiguredValue, RowGuids, TableNames,
+    new_document, new_row, property_component, push_column, push_property_column, push_row,
+    push_test_row, remove_row, set_cell, set_row_name, set_row_order, AdmittedTables, CellData,
+    ColumnTarget, ConfigurationColumn, ConfigurationRow, ConfigurationTable, ConfiguredValue,
+    RowGuids, TableNames,
 };
-use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
+use crate::records::configuration::{
+    DesignConfiguration, DesignConfigurationActiveRow, DesignConfigurationKind,
+};
 use crate::writer::primitives::{
     bases, configuration_targets, decoded_configurations, differences, projection, projects,
-    reconciled, same_row, Difference,
+    reconciled, same_row, Bases, Difference,
 };
 
 /// The configuration documents the write holds, and what they read back as.
@@ -70,7 +72,7 @@ pub(super) fn regenerate<'a>(
 ) -> Result<(Written<'a>, Vec<LossNote>), CodecError> {
     let mut payloads = vec![None; documents.len()];
     let mut losses = Vec::new();
-    let bases = bases(targets.neutral_features);
+    let bases = bases(targets.neutral_features, targets.neutral_parameters);
     let stored = host(documents, decoded.table);
     let created = match stored {
         None if !configurations.is_empty() => created(documents),
@@ -81,7 +83,7 @@ pub(super) fn regenerate<'a>(
         losses.extend(record_residual_unavailable(
             "F3D",
             &format!(
-                "writes a table into this empty configuration table document with the table name {NEW_TABLE_NAME:?} and the table type {NEW_TABLE_TYPE:?}, a table id and asset ids the writer generates, and an empty testRowData: f3d-open-items.md DR-1069 leaves these members of a new table open"
+                "writes a table into this empty configuration table document with the table name {NEW_TABLE_NAME:?} and the table type {NEW_TABLE_TYPE:?}, and a table id and asset ids the writer generates: f3d-open-items.md DR-1069 leaves these members of a new table open"
             ),
             [documents[*index].id()],
         ));
@@ -94,16 +96,23 @@ pub(super) fn regenerate<'a>(
                 .map(|(index, payload, table)| (*index, payload, table))
         });
     let expected = match host {
-        Some((index, source, table)) => Rows {
-            entry: documents[index].entry_name(),
-            source,
-            payload: &mut payloads[index],
-            table,
-            columns: table.columns.clone(),
-            targets,
-            bases: &bases,
+        Some((index, source, table)) => {
+            let (expected, written) = Rows {
+                entry: documents[index].entry_name(),
+                source,
+                payload: &mut payloads[index],
+                table,
+                columns: table.columns.clone(),
+                added: BTreeSet::new(),
+                targets,
+                bases: &bases,
+                unfilled: Vec::new(),
+                components: Vec::new(),
+            }
+            .write(&decoded.configurations, configurations);
+            losses.extend(written);
+            expected
         }
-        .write(&decoded.configurations, configurations),
         None => {
             losses.extend(edit_dropped(
                 EntityKind::Configuration,
@@ -163,7 +172,7 @@ impl Written<'_> {
         let mut losses = compare(
             &self.expected,
             &read.configurations,
-            &bases(targets.neutral_features),
+            &bases(targets.neutral_features, targets.neutral_parameters),
         );
         losses.extend(value_unwritable(
             "F3D",
@@ -226,16 +235,23 @@ fn host(
     (tables.next().is_none() && first.1.rows.is_empty()).then_some(first)
 }
 
+/// The configuration documents a patch of the retained archive carries, and
+/// the losses of what they state otherwise than the configurations.
+pub(in crate::writer) struct Patched {
+    pub(in crate::writer) documents: Vec<DesignConfiguration>,
+    pub(in crate::writer) losses: Vec<LossNote>,
+}
+
 /// The configuration documents of `target`, whose native records are
-/// `native`, rewritten to state its configurations where the stored
-/// documents project others: the documents a patch of the retained archive
-/// carries. `None` where the documents project the configurations, or the
-/// rewrite adds a row, moves the active row, or states a configuration
-/// otherwise than `target`.
+/// `native`, rewritten to state its configurations; `None` where the stored
+/// documents project them. The `DesignConfigurationRoot` record is rewritten
+/// in place, so a moved active row is written where its row id has the
+/// UTF-16 length of the stored one in the same table; otherwise the stored
+/// record is kept and charged.
 pub(in crate::writer) fn patched(
     target: &CadIr,
     native: &F3dNative,
-) -> Result<Option<Vec<DesignConfiguration>>, CodecError> {
+) -> Result<Option<Patched>, CodecError> {
     let targets = configuration_targets(target, native);
     let configurations = &target.model.configurations;
     let documents = &native.design_configurations;
@@ -243,14 +259,77 @@ pub(in crate::writer) fn patched(
         return Ok(None);
     }
     let decoded = decoded_configurations(documents, &targets)?;
-    let (written, losses) = regenerate(documents, &decoded, configurations, &targets)?;
-    if !losses.is_empty()
-        || !written.generated.is_empty()
-        || !projects(configurations, &written.documents, &targets)?
-    {
-        return Ok(None);
+    let (written, mut losses) = regenerate(documents, &decoded, configurations, &targets)?;
+    let plan =
+        super::configuration_root::plan(target, documents, decoded.table, &written, configurations);
+    let mut patched = written.documents.to_vec();
+    let active = written.moved(&mut patched, &plan, &mut losses)?;
+    losses.extend(written.read_back(active.as_deref(), &targets)?);
+    losses.extend(plan.into_losses());
+    Ok(Some(Patched {
+        documents: patched,
+        losses,
+    }))
+}
+
+impl Written<'_> {
+    /// Write into `documents`, the written documents, the active row that
+    /// `plan` names, where the table of the document's
+    /// `DesignConfigurationRoot` record holds it. The patch rewrites the
+    /// source's record in place or charges it. Return the configuration whose
+    /// row the record then names.
+    fn moved(
+        &self,
+        documents: &mut [DesignConfiguration],
+        plan: &super::configuration_root::Plan,
+        losses: &mut Vec<LossNote>,
+    ) -> Result<Option<String>, CodecError> {
+        let stored = documents
+            .iter()
+            .enumerate()
+            .find_map(|(index, document)| Some((index, document.active_row()?.clone())));
+        let named = |index: usize, row: &str| {
+            let read = neutral_configuration_id(documents[index].entry_name(), row).to_string();
+            self.expected
+                .get(&read)
+                .map_or(read, |configuration| configuration.id.to_string())
+        };
+        Ok(match (plan.row(), stored) {
+            (Some((table, row)), Some((_, stored)))
+                if (table, row) == (stored.table_id.as_str(), stored.row_id.as_str()) =>
+            {
+                plan.active().map(str::to_owned)
+            }
+            (Some((table, row)), Some((index, stored))) if table == stored.table_id => {
+                documents[index].set_active_row(DesignConfigurationActiveRow {
+                    row_id: row.to_owned(),
+                    ..stored
+                })?;
+                plan.active().map(str::to_owned)
+            }
+            (planned, Some((index, stored))) => {
+                losses.extend(value_unwritable(
+                    "F3D",
+                    "keeps the stored DesignConfigurationRoot record, which names the row of this configuration active: the patch rewrites the record in place, and the active configuration has no row in the table of the stored record",
+                    [format!(
+                        "{} in place of {}",
+                        named(index, &stored.row_id),
+                        planned.map_or("no row", |(_, row)| row)
+                    )],
+                ));
+                Some(named(index, &stored.row_id))
+            }
+            (Some(_), None) => {
+                losses.extend(value_unwritable(
+                    "F3D",
+                    "writes no DesignConfigurationRoot record for this active configuration: the patch rewrites a stored record in place, and the archive holds none",
+                    plan.active(),
+                ));
+                None
+            }
+            (None, None) => None,
+        })
     }
-    Ok(Some(written.documents.into_owned()))
 }
 
 /// The only table document of `documents`, where it is the empty object, as
@@ -298,24 +377,36 @@ struct Rows<'s, 'p> {
     table: &'s ConfigurationTable,
     /// The columns of `table` and the columns the write adds.
     columns: Vec<ConfigurationColumn>,
+    /// The ids of the columns the write adds.
+    added: BTreeSet<String>,
     targets: &'s ConfigurationTargets<'s>,
-    /// The state of each feature in a configuration that states none.
-    bases: &'s BTreeMap<&'s FeatureId, ConfigurationFeatureState>,
+    /// What a configuration that states no override resolves to.
+    bases: &'s Bases<'s>,
+    /// Each row the write leaves with no cell of a property column it adds.
+    unfilled: Vec<String>,
+    /// Each property column the write adds under a component id it
+    /// generates.
+    components: Vec<String>,
 }
 
 impl Rows<'_, '_> {
     /// Write a row of each of `configurations`: the row of its id, else a
-    /// new row. Regenerate the cells of each row whose configuration states
-    /// another row than `decoded` ([`same_row`]); remove the other rows;
-    /// write the rows in the order of the configurations' ordinals. Return
-    /// the configuration of each written row, keyed by the configuration id
-    /// it reads back as.
+    /// new row. Add a column for each target a configuration states that no
+    /// column names. Regenerate the cells of each row whose configuration
+    /// states another row than `decoded` ([`same_row`]), and write a cell of
+    /// each added column into each other row; remove the other rows; write
+    /// the rows in the order of the configurations' ordinals. Return the
+    /// configuration of each written row, keyed by the configuration id it
+    /// reads back as, and the losses of what the rows cannot state.
     fn write<'c>(
         mut self,
         decoded: &[Configuration],
         configurations: &'c [Configuration],
-    ) -> BTreeMap<String, &'c Configuration> {
+    ) -> (BTreeMap<String, &'c Configuration>, Vec<LossNote>) {
         let (entry, table) = (self.entry, self.table);
+        for configuration in configurations {
+            self.grow(configuration);
+        }
         let decoded = decoded
             .iter()
             .map(|configuration| (configuration.id.as_str(), configuration))
@@ -337,9 +428,7 @@ impl Rows<'_, '_> {
                     let unchanged = decoded
                         .get(configuration.id.as_str())
                         .is_some_and(|decoded| same_row(configuration, decoded, self.bases));
-                    if !unchanged {
-                        self.cells(&row.id, Some(row), configuration);
-                    }
+                    self.cells(&row.id, Some(row), configuration, unchanged);
                     row.id.clone()
                 }
                 None => {
@@ -362,7 +451,7 @@ impl Rows<'_, '_> {
                         },
                     );
                     push_row(edit(self.payload, self.source), table.position, row);
-                    self.cells(&row_id, None, configuration);
+                    self.cells(&row_id, None, configuration, false);
                     row_id
                 }
             };
@@ -391,7 +480,18 @@ impl Rows<'_, '_> {
         {
             set_row_order(edit(self.payload, self.source), table.position, &order);
         }
-        hosted
+        let mut losses = self.test_rows(configurations);
+        losses.extend(value_unwritable(
+            "F3D",
+            "writes no cell of the property column the write adds in these rows, whose configurations state no value of the property",
+            std::mem::take(&mut self.unfilled),
+        ));
+        losses.extend(record_residual_unavailable(
+            "F3D",
+            "writes these property columns the write adds with a component id the writer generates: no property column of the table names the component, and f3d-open-items.md DR-1069 leaves the id of an added property column open",
+            std::mem::take(&mut self.components),
+        ));
+        let expected = hosted
             .into_iter()
             .map(|(configuration, row)| {
                 (
@@ -399,20 +499,22 @@ impl Rows<'_, '_> {
                     configuration,
                 )
             })
-            .collect()
+            .collect();
+        (expected, losses)
     }
 
     /// Write the name and the cells of `configuration` into the row
-    /// `row_id`, which `stored` states.
+    /// `row_id`, which `stored` states; where the row is `unchanged`, only
+    /// its cells of the added columns.
     fn cells(
         &mut self,
         row_id: &str,
         stored: Option<&ConfigurationRow>,
         configuration: &Configuration,
+        unchanged: bool,
     ) {
-        self.grow(configuration);
         let name = configuration.name.as_deref().unwrap_or_default();
-        if stored.is_some_and(|row| row.name != name) {
+        if !unchanged && stored.is_some_and(|row| row.name != name) {
             set_row_name(
                 edit(self.payload, self.source),
                 self.table.position,
@@ -421,11 +523,22 @@ impl Rows<'_, '_> {
             );
         }
         for column in &self.columns {
+            let added = self.added.contains(&column.id);
+            if unchanged && !added {
+                continue;
+            }
             let value = stored
                 .and_then(|row| row.cells.iter().find(|cell| cell.column_id == column.id))
                 .map(|cell| &cell.value);
-            let data = match cell(column, configuration, value, self.targets) {
-                Cell::Keep => continue,
+            let data = match cell(column, configuration, value, self.targets, self.bases) {
+                Cell::Keep => {
+                    if let (true, ColumnTarget::Property(key), None) =
+                        (added, &column.target, value)
+                    {
+                        self.unfilled.push(format!("{key} in {}", configuration.id));
+                    }
+                    continue;
+                }
                 Cell::Write(data) => Some(data),
                 Cell::Remove => None,
             };
@@ -439,9 +552,10 @@ impl Rows<'_, '_> {
         }
     }
 
-    /// Add a column for each parameter `configuration` overrides, and for
-    /// each feature whose state it sets otherwise than the feature's own
-    /// where it is not the active configuration, that no column names.
+    /// Add a column for each parameter `configuration` overrides, for each
+    /// feature whose state it sets otherwise than the feature's own where it
+    /// is not the active configuration, and for its part number and its
+    /// description, that no column names.
     fn grow(&mut self, configuration: &Configuration) {
         let targets = self.targets;
         let parameters = self
@@ -457,6 +571,14 @@ impl Rows<'_, '_> {
                 _ => None,
             })
             .collect::<BTreeSet<_>>();
+        let properties = self
+            .columns
+            .iter()
+            .filter_map(|column| match &column.target {
+                ColumnTarget::Property(key) => Some(key.as_str()),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
         let mut added = Vec::new();
         for id in configuration
             .parameter_overrides
@@ -464,10 +586,10 @@ impl Rows<'_, '_> {
             .filter(|id| !parameters.contains(*id))
         {
             if let Some(target) = targets.parameter_column(id) {
-                let title = targets
-                    .neutral_parameters
-                    .iter()
-                    .find(|parameter| parameter.id == *id)
+                let title = self
+                    .bases
+                    .parameters
+                    .get(id)
                     .map_or(id.as_str(), |parameter| parameter.name.as_str());
                 added.push((id.to_string(), title.to_owned(), target));
             }
@@ -476,6 +598,7 @@ impl Rows<'_, '_> {
             for (id, state) in &configuration.feature_states {
                 let own = self
                     .bases
+                    .features
                     .get(id)
                     .map(|base| base.evaluation.is_suppressed());
                 if features.contains(id) || own == Some(state.evaluation.is_suppressed()) {
@@ -492,22 +615,156 @@ impl Rows<'_, '_> {
                 }
             }
         }
+        for key in [PART_NUMBER, DESCRIPTION] {
+            if !properties.contains(key)
+                && configuration
+                    .properties
+                    .contains_key(format!("property:{key}").as_str())
+            {
+                added.push((
+                    format!("property:{key}"),
+                    key.to_owned(),
+                    ColumnTarget::Property(key.to_owned()),
+                ));
+            }
+        }
         for (key, title, target) in added {
             let id = deterministic_guid("configuration column", &key);
             if self.columns.iter().any(|column| column.id == id) {
                 continue;
             }
-            if push_column(
-                edit(self.payload, self.source),
-                self.table.position,
-                &id,
-                &title,
-                &target,
-            ) {
+            let pushed = match &target {
+                ColumnTarget::Property(key) => {
+                    let component = property_component(
+                        self.payload.as_ref().unwrap_or(self.source),
+                        self.table.position,
+                    );
+                    let component = component.unwrap_or_else(|| {
+                        self.components.push(key.clone());
+                        deterministic_guid("configuration property component", self.entry)
+                    });
+                    push_property_column(
+                        edit(self.payload, self.source),
+                        self.table.position,
+                        &id,
+                        key,
+                        &component,
+                    )
+                }
+                _ => push_column(
+                    edit(self.payload, self.source),
+                    self.table.position,
+                    &id,
+                    &title,
+                    &target,
+                ),
+            };
+            if pushed {
+                self.added.insert(id.clone());
                 self.columns.push(ConfigurationColumn { id, target });
             }
         }
     }
+
+    /// Append a `testRowData` entry for each added column, with the value of
+    /// the active configuration of `configurations`, else the base (f3d.md
+    /// §1.2). Return the loss of the entries the write adds.
+    fn test_rows(&mut self, configurations: &[Configuration]) -> Vec<LossNote> {
+        let active = configurations
+            .iter()
+            .find(|configuration| configuration.active);
+        let mut written = false;
+        for column in self
+            .columns
+            .iter()
+            .filter(|column| self.added.contains(&column.id))
+        {
+            if let Some(entry) = test_row(column, active, self.targets, self.bases) {
+                written |= push_test_row(edit(self.payload, self.source), &entry);
+            }
+        }
+        if !written {
+            return Vec::new();
+        }
+        record_residual_unavailable(
+            "F3D",
+            "writes a testRowData entry of each column the write adds to this configuration table document, with the value of the active row, in the members f3d.md §1.2 names: f3d-open-items.md DR-1069 leaves the member order and the unit of the value of such an entry open",
+            [self.entry],
+        )
+        .into_iter()
+        .collect()
+    }
+}
+
+/// The key of the property column of the part number.
+const PART_NUMBER: &str = "Part Number";
+/// The key of the property column of the description.
+const DESCRIPTION: &str = "Description";
+
+/// The `testRowData` entry of `column` that states its value in `active`,
+/// or in a configuration that states no override where there is no active
+/// configuration (f3d.md §1.2): a parameter's name, expression and value in
+/// database units, whether a feature is computed, or a property's text. A
+/// part number states `Option` 0 with the row's name where its cell is
+/// empty, else `Option` 1 with the text.
+fn test_row(
+    column: &ConfigurationColumn,
+    active: Option<&Configuration>,
+    targets: &ConfigurationTargets<'_>,
+    bases: &Bases<'_>,
+) -> Option<Map<String, Value>> {
+    let mut entry = Map::new();
+    let mut set = |member: &str, value: Value| {
+        entry.insert(member.to_owned(), value);
+    };
+    match &column.target {
+        ColumnTarget::Parameter(_) | ColumnTarget::OwnedParameter(_) => {
+            let parameter = column_parameter(&column.target, targets)?;
+            let base = bases.parameters.get(&parameter)?;
+            let (expression, value) = match active {
+                Some(active) => (
+                    bases.expression(active, &parameter)?,
+                    bases.value(active, &parameter)?,
+                ),
+                None => (&base.expression, base.value.as_ref()?),
+            };
+            let value = evaluated(&parameter, value, targets)?;
+            set("DataType", Value::from("ParameterDoubleValue"));
+            set("ColumnUniqueID", Value::from(column.id.as_str()));
+            set("UserName", Value::from(base.name.as_str()));
+            set("Expression", Value::from(expression.as_str()));
+            set("Value", Value::from(value.get()));
+        }
+        ColumnTarget::Feature(record) => {
+            let feature = &targets.feature(*record)?.id;
+            let state = match active {
+                Some(active) => bases.feature(active, feature)?,
+                None => bases.features.get(feature)?,
+            };
+            set("DataType", Value::from("BoolValue"));
+            set("ColumnUniqueID", Value::from(column.id.as_str()));
+            set("Value", Value::from(!state.evaluation.is_suppressed()));
+        }
+        ColumnTarget::Property(key) => {
+            let active = active?;
+            let text = active.properties.get(format!("property:{key}").as_str())?;
+            if key == PART_NUMBER {
+                let (text, option) = match text.as_str() {
+                    "" => (active.name.as_deref().unwrap_or_default(), 0),
+                    text => (text, 1),
+                };
+                set("DataType", Value::from("StringOptionValue"));
+                set("ColumnUniqueID", Value::from(column.id.as_str()));
+                set("Value", Value::from(text));
+                set("Option", Value::from(option));
+            } else {
+                set("DataType", Value::from("StringValue"));
+                set("ColumnUniqueID", Value::from(column.id.as_str()));
+                set("Value", Value::from(text.as_str()));
+            }
+        }
+    }
+    Some(entry)
 }
 
 /// The neutral parameter that a column of `target` names.
@@ -529,14 +786,17 @@ enum Cell {
     Remove,
 }
 
-/// The cell of `column` that states what `configuration` states of the
-/// column's target, where the row stores `stored`. A cell the write cannot
-/// state is kept, and the read-back charges it.
+/// The cell of `column` that states what `configuration` resolves for the
+/// column's target, where the row stores `stored`. A configuration that
+/// states no override of a feature or a parameter takes its base in
+/// `bases`. A cell the write cannot state is kept, and the read-back
+/// charges it.
 fn cell(
     column: &ConfigurationColumn,
     configuration: &Configuration,
     stored: Option<&ConfiguredValue>,
     targets: &ConfigurationTargets<'_>,
+    bases: &Bases<'_>,
 ) -> Cell {
     let absent = if stored.is_some() {
         Cell::Remove
@@ -558,9 +818,8 @@ fn cell(
         }
         ColumnTarget::Feature(record) => {
             let computed = match targets.feature(*record) {
-                Some(feature) => configuration
-                    .feature_states
-                    .get(&feature.id)
+                Some(feature) => bases
+                    .feature(configuration, &feature.id)
                     .map(|state| !state.evaluation.is_suppressed()),
                 None => match configuration
                     .properties
@@ -587,6 +846,7 @@ fn cell(
             configuration,
             stored,
             targets,
+            bases,
         ),
         ColumnTarget::OwnedParameter(record) => expression_cell(
             column,
@@ -594,6 +854,7 @@ fn cell(
             configuration,
             stored,
             targets,
+            bases,
         ),
     }
 }
@@ -606,11 +867,12 @@ fn expression_cell(
     configuration: &Configuration,
     stored: Option<&ConfiguredValue>,
     targets: &ConfigurationTargets<'_>,
+    bases: &Bases<'_>,
 ) -> Cell {
     let (expression, value) = match parameter {
         Some(parameter) => (
-            configuration.parameter_overrides.get(parameter),
-            configuration.parameter_values.get(parameter),
+            bases.expression(configuration, parameter),
+            bases.value(configuration, parameter),
         ),
         None => (
             configuration
@@ -775,12 +1037,12 @@ fn written(
 
 /// The losses of the configurations that the written rows, `read`, state
 /// otherwise than `expected`, the configuration of each row keyed by the
-/// configuration id it reads back as. `bases` holds the state of each
-/// feature in a configuration that states none.
+/// configuration id it reads back as. `bases` holds what a configuration
+/// that states no override resolves to.
 fn compare(
     expected: &BTreeMap<String, &Configuration>,
     read: &[Configuration],
-    bases: &BTreeMap<&FeatureId, ConfigurationFeatureState>,
+    bases: &Bases<'_>,
 ) -> Vec<LossNote> {
     let read = read
         .iter()
@@ -808,13 +1070,14 @@ fn compare(
         }
         let evaluated = configuration
             .parameter_overrides
-            .iter()
-            .filter(|(parameter, expression)| {
-                back.parameter_overrides.get(*parameter) == Some(*expression)
-                    && back.parameter_values.get(*parameter)
-                        != configuration.parameter_values.get(*parameter)
+            .keys()
+            .chain(back.parameter_overrides.keys())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter(|parameter| {
+                bases.expression(configuration, parameter) == bases.expression(back, parameter)
+                    && bases.value(back, parameter) != bases.value(configuration, parameter)
             })
-            .map(|(parameter, _)| parameter)
             .collect::<Vec<_>>();
         values.extend(
             evaluated

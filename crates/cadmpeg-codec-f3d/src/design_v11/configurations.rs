@@ -18,18 +18,20 @@
 //! design does not state, the unresolved targets a row keeps as properties
 //! among them.
 //!
-//! [`restate`] is the inverse: it writes what the configurations state into
-//! the v10 rows of the configuration tables, from which the writer writes
-//! the tables.
+//! [`restate`] is the inverse: it writes what the configurations resolve
+//! into the v10 rows of the configuration tables, from which the writer
+//! writes the tables.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::codec::write::{edit_dropped, value_unwritable};
 use cadmpeg_ir::design::configuration::{
     DefinitionOverride, DesignConfiguration, FeatureStateOverride, Overrides, ParameterOverride,
     PartNumber,
 };
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
+use cadmpeg_ir::design::edit::{evaluate, Value};
 use cadmpeg_ir::design::expr::{
     Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
 };
@@ -38,14 +40,15 @@ use cadmpeg_ir::design::units::{Quantity, Unit, ValueKind};
 use cadmpeg_ir::document::Design;
 use cadmpeg_ir::features::parameters::{
     ConfigurationEvaluation, ConfigurationFeatureState, DesignConfiguration as LegacyConfiguration,
-    ParameterValue as LegacyValue,
+    DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
 };
 use cadmpeg_ir::features::selections::DistinctMembers;
 use cadmpeg_ir::features::{ConfigurationId, Feature as LegacyFeature, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::products::ProductDefinition;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
+use cadmpeg_ir::schema::EntityKind;
 
 use super::parameters::{cache, expression};
 use super::timeline::document_prefix;
@@ -95,7 +98,7 @@ pub(super) fn project(
             inactive.push(row.id.as_str());
             continue;
         }
-        let overrides = projected(row, scope, row.active, features, parameters, &mut omitted);
+        let overrides = projected(row, scope, features, parameters, &mut omitted);
         out.records.push(DesignConfiguration {
             id: row.id.clone(),
             scope: scope.clone(),
@@ -157,17 +160,17 @@ struct Omitted {
     properties: Vec<String>,
 }
 
-/// The overrides of `row` of `scope`: none for the `active` row, else those
+/// The overrides of `row` of `scope`: none for the active row, else those
 /// of its cells and identity properties. Names what the design omits in
 /// `omitted`.
 fn projected(
     row: &LegacyConfiguration,
     scope: &ProductDefinitionId,
-    active: bool,
     features: &BTreeSet<&str>,
     parameters: &[DesignParameter],
     omitted: &mut Omitted,
 ) -> Overrides {
+    let active = row.active;
     let mut overrides = if active {
         Overrides::default()
     } else {
@@ -269,12 +272,40 @@ fn overrides(
     overrides
 }
 
-/// The v10 rows that state a design's configurations, and each field of
-/// them that no row states.
+/// The v10 rows that state a design's configurations, with what they cannot
+/// state.
 pub(crate) struct Restated {
-    pub(crate) rows: Vec<LegacyConfiguration>,
-    /// One `<path>: <why>` per field.
-    pub(crate) unstated: Vec<String>,
+    rows: Vec<LegacyConfiguration>,
+    charges: Charges,
+}
+
+/// What restated rows cannot state.
+#[derive(Default)]
+struct Charges {
+    /// One `<path>: <why>` per field that no row states.
+    unstated: Vec<String>,
+    /// One `<path>` per parameter cell whose expression has no value here,
+    /// which states the parameter's own value as its evaluated value.
+    uncached: Vec<String>,
+}
+
+impl Restated {
+    /// The rows; charges to `losses` each field that no row states, and each
+    /// cell whose evaluated value is the parameter's own.
+    pub(crate) fn into_rows(self, losses: &mut Vec<LossNote>) -> Vec<LegacyConfiguration> {
+        losses.extend(edit_dropped(
+            EntityKind::DesignConfiguration,
+            "F3D",
+            "drops these configuration edits, which a row of the configuration table cannot state",
+            self.charges.unstated,
+        ));
+        losses.extend(value_unwritable(
+            "F3D",
+            "writes these parameter cells with the parameter's own value as the evaluated value of their expression, which has no value here",
+            self.charges.uncached,
+        ));
+        self.rows
+    }
 }
 
 /// The inputs of one row's overlay.
@@ -283,9 +314,14 @@ struct Scoped<'a> {
     /// The ids of the design's features.
     features: &'a BTreeSet<&'a str>,
     parameters: &'a [DesignParameter],
+    /// The v10 parameters: the expression and the value of each in a
+    /// configuration that overrides neither.
+    own: &'a [LegacyParameter],
     /// The v10 features whose states the rows set.
     history: &'a [LegacyFeature],
     active: &'a BTreeSet<&'a ConfigurationId>,
+    records: &'a BTreeMap<&'a ConfigurationId, &'a DesignConfiguration>,
+    definitions: &'a [ProductDefinition],
 }
 
 /// `rows`, the v10 configurations of the configuration tables, with what
@@ -294,13 +330,14 @@ struct Scoped<'a> {
 /// documents where they name an active row or there are none. A row of
 /// such a scope with no configuration of its id is removed. A configuration
 /// with no row becomes a new row after the others, in arena order. The rows
-/// are numbered again in their order. `history` holds the v10 features whose
-/// states the rows set.
+/// are numbered again in their order. `history` holds the v10 features
+/// whose states the rows set, and `own` the v10 parameters.
 pub(crate) fn restate(
     rows: &[LegacyConfiguration],
     design: &Design,
     definitions: &[ProductDefinition],
     history: &[LegacyFeature],
+    own: &[LegacyParameter],
 ) -> Restated {
     let scoped = design
         .scopes
@@ -338,9 +375,19 @@ pub(crate) fn restate(
         .iter()
         .map(|configuration| (&configuration.id, configuration))
         .collect::<BTreeMap<_, _>>();
+    let input = |scope| Scoped {
+        scope,
+        features: &features,
+        parameters: &design.parameters,
+        own,
+        history,
+        active: &active,
+        records: &records,
+        definitions,
+    };
     let mut out = Restated {
         rows: Vec::new(),
-        unstated: Vec::new(),
+        charges: Charges::default(),
     };
     let mut held = BTreeSet::new();
     for row in rows {
@@ -354,16 +401,14 @@ pub(crate) fn restate(
         held.insert(&row.id);
         let mut restated = row.clone();
         if record.scope == scope {
-            let input = Scoped {
-                scope: &scope,
-                features: &features,
-                parameters: &design.parameters,
-                history,
-                active: &active,
-            };
-            overlay(&mut restated, record, &input, &mut out.unstated);
+            overlay(
+                &mut restated,
+                record,
+                &input(&record.scope),
+                &mut out.charges,
+            );
         } else {
-            out.unstated.push(format!(
+            out.charges.unstated.push(format!(
                 "design.configurations[{}].scope: the configuration table of its row belongs to {scope}",
                 record.id
             ));
@@ -376,7 +421,7 @@ pub(crate) fn restate(
             continue;
         }
         if !restates(&record.scope) {
-            out.unstated.push(format!(
+            out.charges.unstated.push(format!(
                 "design.configurations[{}]: the design has no scope {}, or the configuration table of that scope names no active row",
                 record.id, record.scope
             ));
@@ -396,14 +441,7 @@ pub(crate) fn restate(
             bodies: None,
             native_ref: record.native_ref.clone(),
         };
-        let input = Scoped {
-            scope: &record.scope,
-            features: &features,
-            parameters: &design.parameters,
-            history,
-            active: &active,
-        };
-        overlay(&mut row, record, &input, &mut out.unstated);
+        overlay(&mut row, record, &input(&record.scope), &mut out.charges);
         added.push(row);
     }
     out.rows
@@ -412,29 +450,97 @@ pub(crate) fn restate(
     for (at, row) in (0_u32..).zip(&mut out.rows) {
         row.ordinal = at;
     }
-    out.unstated.sort();
+    out.charges.unstated.sort();
+    out.charges.uncached.sort();
     out
 }
 
-/// Write into `row` what `record` states otherwise than the overrides the
+/// `record` and the configurations it inherits from, nearest first: its
+/// parent, that one's parent, and so on, while each is a configuration of
+/// `record`'s scope that the chain does not hold yet.
+fn chain<'a>(
+    record: &'a DesignConfiguration,
+    records: &BTreeMap<&ConfigurationId, &'a DesignConfiguration>,
+) -> Vec<&'a DesignConfiguration> {
+    let mut chain = vec![record];
+    let mut next = record.parent.as_ref();
+    while let Some(parent) = next.and_then(|id| records.get(id).copied()) {
+        if parent.scope != record.scope || chain.iter().any(|held| held.id == parent.id) {
+            break;
+        }
+        chain.push(parent);
+        next = parent.parent.as_ref();
+    }
+    chain
+}
+
+/// The overrides that the first configuration of `chain` resolves: each
+/// value its own where it states one, else the nearest of the others'
+/// (cadir-v11.md §5.11, Resolution).
+fn resolved(chain: &[&DesignConfiguration]) -> Overrides {
+    let mut out = Overrides::default();
+    for link in chain.iter().rev() {
+        let stated = &link.overrides;
+        out.parameters.extend(stated.parameters.clone());
+        out.occurrences.extend(stated.occurrences.clone());
+        for (id, state) in &stated.features {
+            let held = out
+                .features
+                .entry(id.clone())
+                .or_insert(FeatureStateOverride {
+                    suppressed: None,
+                    definition: None,
+                });
+            if state.suppressed.is_some() {
+                held.suppressed = state.suppressed;
+            }
+            if state.definition.is_some() {
+                held.definition.clone_from(&state.definition);
+            }
+        }
+        for (id, definition) in &stated.definitions {
+            let held = out.definitions.entry(id.clone()).or_default();
+            for (field, value) in [
+                (&mut held.source_name, &definition.source_name),
+                (&mut held.label, &definition.label),
+                (&mut held.description, &definition.description),
+            ] {
+                if value.is_some() {
+                    field.clone_from(value);
+                }
+            }
+            if definition.part_number.is_some() {
+                held.part_number.clone_from(&definition.part_number);
+            }
+            held.bom_properties
+                .extend(definition.bom_properties.clone());
+        }
+    }
+    out
+}
+
+/// Write into `row` what `record` resolves otherwise than the overrides the
 /// decoder projects from `row`, under the row's own activity: the active
-/// row projects none, so a removal applies to another row only. Names each
-/// field no row states in `unstated`.
+/// row projects none, so a removal applies to another row only. A row has
+/// no parent, so it states the values `record` inherits. Charges each field
+/// no row states, and each cell whose evaluated value is the parameter's
+/// own, to `charges`.
 fn overlay(
     row: &mut LegacyConfiguration,
     record: &DesignConfiguration,
     input: &Scoped<'_>,
-    unstated: &mut Vec<String>,
+    charges: &mut Charges,
 ) {
     let stored_active = row.active;
     let projected = projected(
         row,
         input.scope,
-        stored_active,
         input.features,
         input.parameters,
         &mut Omitted::default(),
     );
+    let chain = chain(record, input.records);
+    let resolved = resolved(&chain);
     let path = |field: &str| format!("design.configurations[{}].{field}", record.id);
     if row.name.as_deref().unwrap_or_default() != record.name {
         row.name = Some(record.name.clone());
@@ -454,45 +560,65 @@ fn overlay(
         .values()
         .filter_map(|parameter| Some((&parameter.id, parameter.name.as_ref()?.as_str())))
         .collect::<HashMap<_, _>>();
-    for (id, stated) in &record.overrides.parameters {
+    for (id, stated) in &resolved.parameters {
         if projected.parameters.get(id) == Some(stated) {
             continue;
         }
         let field = path(&format!("overrides.parameters[{id}]"));
         let Some(parameter) = scoped.get(id) else {
-            unstated.push(format!("{field}: the scope holds no such parameter"));
+            charges
+                .unstated
+                .push(format!("{field}: the scope holds no such parameter"));
             continue;
         };
-        let Some(expression) = &stated.expression else {
-            unstated.push(format!(
-                "{field}: a parameter cell states the value of an expression"
-            ));
-            continue;
+        let own = input.own.iter().find(|own| own.id == *id);
+        let text = match (&stated.expression, own) {
+            (Some(expression), _) => {
+                let text = spelled(expression, &names).filter(|text| {
+                    &super::parameters::expression(text, &parameter.kind, &vocabulary) == expression
+                });
+                let Some(text) = text else {
+                    charges.unstated.push(format!(
+                        "{field}.expression: a parameter cell has no Fusion text that reads back as it"
+                    ));
+                    continue;
+                };
+                text
+            }
+            (None, Some(own)) => own.expression.clone(),
+            (None, None) => {
+                charges.unstated.push(format!(
+                    "{field}.value: a parameter cell states an expression, and the history holds no expression of the parameter"
+                ));
+                continue;
+            }
         };
-        let Some(text) = spelled(expression, &names).filter(|text| {
-            &super::parameters::expression(text, &parameter.kind, &vocabulary) == expression
-        }) else {
-            unstated.push(format!(
-                "{field}.expression: a parameter cell has no Fusion text that reads back as it"
-            ));
-            continue;
-        };
-        row.parameter_overrides.insert(id.clone(), text);
-        match stated
+        let value = stated
             .value
             .as_ref()
-            .and_then(|value| legacy_value(value, &parameter.kind))
-        {
+            .and_then(|value| legacy_value(value, &parameter.kind));
+        if stated.value.is_some() && value.is_none() {
+            charges.unstated.push(format!(
+                "{field}.value: the value is not of the parameter's kind"
+            ));
+        }
+        let value = value.or_else(|| {
+            let evaluated = stated
+                .expression
+                .as_ref()
+                .and_then(|expression| evaluated(expression, parameter, &resolved, &scoped));
+            if evaluated.is_none() {
+                charges.uncached.push(field.clone());
+            }
+            evaluated.or_else(|| own.and_then(|own| own.value.clone()))
+        });
+        row.parameter_overrides.insert(id.clone(), text);
+        match value {
             Some(value) => {
                 row.parameter_values.insert(id.clone(), value);
             }
             None => {
                 row.parameter_values.remove(id);
-                if stated.value.is_some() {
-                    unstated.push(format!(
-                        "{field}.value: the value is not of the parameter's kind"
-                    ));
-                }
             }
         }
     }
@@ -500,19 +626,19 @@ fn overlay(
         for id in projected
             .parameters
             .keys()
-            .filter(|id| !record.overrides.parameters.contains_key(*id))
+            .filter(|id| !resolved.parameters.contains_key(*id))
         {
             row.parameter_overrides.remove(id);
             row.parameter_values.remove(id);
         }
     }
-    for (id, stated) in &record.overrides.features {
+    for (id, stated) in &resolved.features {
         if projected.features.get(id) == Some(stated) {
             continue;
         }
         let field = path(&format!("overrides.features[{id}]"));
         if stated.definition.is_some() {
-            unstated.push(format!(
+            charges.unstated.push(format!(
                 "{field}.definition: a feature cell states only whether the feature is computed"
             ));
         }
@@ -526,7 +652,7 @@ fn overlay(
             .find(|feature| feature.id == *id)
             .filter(|_| input.features.contains(id.as_str()));
         let Some(feature) = feature else {
-            unstated.push(format!(
+            charges.unstated.push(format!(
                 "{field}.suppressed: the history holds no such feature"
             ));
             continue;
@@ -550,61 +676,121 @@ fn overlay(
         for id in projected
             .features
             .keys()
-            .filter(|id| !record.overrides.features.contains_key(*id))
+            .filter(|id| !resolved.features.contains_key(*id))
         {
             row.feature_states.remove(id);
         }
     }
     identities(
         row,
-        record,
+        &chain,
+        &resolved,
         &projected,
-        input.scope,
+        input,
         stored_active,
-        unstated,
+        &mut charges.unstated,
     );
+    let theme = "theme tables (`childTables`), which f3d.md §1.2 does not read";
     for (stated, field, why) in [
-        (record.parent.is_some(), "parent", "a row has no parent row"),
+        (
+            record.parent.is_some(),
+            "parent",
+            "a row has no parent row, so the row states the values it inherits".to_owned(),
+        ),
         (
             record.comment.is_some(),
             "comment",
-            "a row stores no comment",
+            "a row stores no comment".to_owned(),
         ),
         (
             !record.active_arrangements.is_empty(),
             "active_arrangements",
-            "a row puts no arrangement in force",
+            format!("a row selects its appearance theme from the {theme}"),
         ),
         (
             !record.materials.is_empty(),
             "materials",
-            "a row stores no material",
+            format!("a row selects its material theme from the {theme}"),
         ),
         (
-            !record.overrides.occurrences.is_empty(),
+            !resolved.occurrences.is_empty(),
             "overrides.occurrences",
-            "a row has no cell for an occurrence",
+            "a row has no cell for an occurrence".to_owned(),
         ),
     ] {
         if stated {
-            unstated.push(format!("{}: {why}", path(field)));
+            charges.unstated.push(format!("{}: {why}", path(field)));
         }
     }
 }
 
-/// Write into `row` the part number and description `record` states of
-/// `scope` otherwise than `projected`, as the row's `Part Number` and
+/// The v10 value of `expression`, the expression of `parameter` in a
+/// configuration that resolves `resolved`. A reference takes the value that
+/// configuration states for its parameter, else that parameter's own cache
+/// among `scoped`. `None` where the expression has no value.
+fn evaluated(
+    expression: &Expression,
+    parameter: &DesignParameter,
+    resolved: &Overrides,
+    scoped: &HashMap<&ParameterId, &DesignParameter>,
+) -> Option<LegacyValue> {
+    let Expression::Neutral(Neutral(node)) = expression else {
+        return None;
+    };
+    let mut reference = |reference: &ParameterRef| {
+        let (RefTarget::Parameter(id), None) = (&reference.target, &reference.through) else {
+            return None;
+        };
+        let target = scoped.get(id)?;
+        let value = resolved
+            .parameters
+            .get(id)
+            .and_then(|stated| stated.value.as_ref())
+            .or(target.value.as_ref())?;
+        edit_value(value, &target.kind)
+    };
+    let value = match (evaluate(node, &mut reference).ok()?, &parameter.kind) {
+        (Value::Number { value, quantity }, ValueKind::Quantity(kind)) if quantity == *kind => {
+            ParameterValue::Number(FiniteReal::new(value)?)
+        }
+        (Value::Boolean(flag), ValueKind::Boolean) => ParameterValue::Boolean(flag),
+        (Value::Text(text), ValueKind::Text) => ParameterValue::Text(text),
+        _ => return None,
+    };
+    legacy_value(&value, &parameter.kind)
+}
+
+/// The value the evaluator takes for `value`, a value of a parameter of
+/// `kind`.
+fn edit_value(value: &ParameterValue, kind: &ValueKind) -> Option<Value> {
+    Some(match (value, kind) {
+        (ParameterValue::Number(number), ValueKind::Quantity(quantity)) => Value::Number {
+            value: number.get(),
+            quantity: *quantity,
+        },
+        (ParameterValue::Boolean(flag), _) => Value::Boolean(*flag),
+        (ParameterValue::Text(text), _) => Value::Text(text.clone()),
+        _ => return None,
+    })
+}
+
+/// Write into `row` the part number and description that `chain[0]`, whose
+/// chain of parents is the rest of `chain`, resolves (`resolved`) for the
+/// scope otherwise than `projected`, as the row's `Part Number` and
 /// `Description` property cells.
 fn identities(
     row: &mut LegacyConfiguration,
-    record: &DesignConfiguration,
+    chain: &[&DesignConfiguration],
+    resolved: &Overrides,
     projected: &Overrides,
-    scope: &ProductDefinitionId,
+    input: &Scoped<'_>,
     stored_active: bool,
     unstated: &mut Vec<String>,
 ) {
+    let record = chain[0];
+    let scope = input.scope;
     let path = |field: &str| format!("design.configurations[{}].{field}", record.id);
-    for definition in record.overrides.definitions.keys() {
+    for definition in resolved.definitions.keys() {
         if definition != scope {
             unstated.push(format!(
                 "{}: a row's property cells set the definition of its own scope",
@@ -617,7 +803,7 @@ fn identities(
         .get(scope)
         .cloned()
         .unwrap_or_default();
-    let stated = match record.overrides.definitions.get(scope) {
+    let stated = match resolved.definitions.get(scope) {
         Some(stated) => stated.clone(),
         None if stored_active => base.clone(),
         None => DefinitionOverride::default(),
@@ -628,25 +814,83 @@ fn identities(
             "{field}: a row's property cells set only the part number and the description"
         ));
     }
-    if stated.part_number != base.part_number {
-        match &stated.part_number {
-            None => set_property(row, "property:Part Number", None),
-            Some(PartNumber::Text(text)) => {
-                set_property(row, "property:Part Number", Some(text.clone()));
-            }
-            Some(PartNumber::ConfigurationName) => {
-                set_property(row, "property:Part Number", Some(String::new()));
-            }
-            Some(PartNumber::ParentConfigurationName | PartNumber::DocumentName) => {
-                unstated.push(format!(
-                    "{field}.part_number: a part-number cell holds a text, or is empty for the configuration name"
-                ));
-            }
+    let part_number = match written_part_number(chain, input) {
+        Ok(part_number) => part_number,
+        Err(why) => {
+            unstated.push(format!("{field}.part_number: {why}"));
+            base.part_number.clone()
         }
+    };
+    if part_number != base.part_number {
+        let text = part_number.map(|part_number| match part_number {
+            PartNumber::Text(text) => text,
+            _ => String::new(),
+        });
+        set_property(row, "property:Part Number", text);
     }
     if stated.description != base.description {
         set_property(row, "property:Description", stated.description.clone());
     }
+}
+
+/// The part number that `chain[0]` resolves for the scope, as a row's cell
+/// states it: a text, or `ConfigurationName` for the row's own name. A rule
+/// is evaluated at the configuration of `chain` that states it, and the
+/// string of a rule the cell does not hold is written as `Text`
+/// (cadir-v11.md §5.11, Identity). The error names why the rule has no
+/// string.
+fn written_part_number(
+    chain: &[&DesignConfiguration],
+    input: &Scoped<'_>,
+) -> Result<Option<PartNumber>, &'static str> {
+    let stated = chain.iter().enumerate().find_map(|(at, link)| {
+        Some((
+            at,
+            link.overrides
+                .definitions
+                .get(input.scope)?
+                .part_number
+                .as_ref()?,
+        ))
+    });
+    let Some((at, part_number)) = stated else {
+        return Ok(None);
+    };
+    let holder = chain[at];
+    Ok(Some(match part_number {
+        PartNumber::Text(text) => PartNumber::Text(text.clone()),
+        PartNumber::ConfigurationName if at == 0 => PartNumber::ConfigurationName,
+        PartNumber::ConfigurationName => PartNumber::Text(holder.name.clone()),
+        PartNumber::ParentConfigurationName => {
+            let parent = holder
+                .parent
+                .as_ref()
+                .and_then(|parent| input.records.get(parent))
+                .ok_or("the configuration that states the rule has no parent")?;
+            PartNumber::Text(parent.name.clone())
+        }
+        PartNumber::DocumentName => {
+            let own = resolved(&chain[at..]);
+            let own = own.definitions.get(input.scope);
+            let definition = input
+                .definitions
+                .iter()
+                .find(|definition| &definition.id == input.scope);
+            let title = |properties: &BTreeMap<NonBlankString, String>| {
+                properties
+                    .iter()
+                    .find(|(key, _)| key.as_str() == "Title")
+                    .map(|(_, title)| title.clone())
+            };
+            let name = own
+                .and_then(|own| title(&own.bom_properties))
+                .or_else(|| definition.and_then(|definition| title(&definition.bom_properties)))
+                .or_else(|| own.and_then(|own| own.source_name.clone()))
+                .or_else(|| definition.and_then(|definition| definition.source_name.clone()))
+                .ok_or("the definition states no title and no source name")?;
+            PartNumber::Text(name)
+        }
+    }))
 }
 
 /// Set the property `key` of `row` to `text`, or remove it.

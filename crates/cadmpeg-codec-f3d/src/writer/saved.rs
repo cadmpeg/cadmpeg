@@ -9,17 +9,16 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
-use cadmpeg_ir::codec::write::{edit_dropped, EncodeInput};
+use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::schema::EntityKind;
 
 use super::primitives::{configuration_targets, decoded_configurations, f3d_native};
-use crate::design_v11::configurations::restate;
+use crate::design_v11::configurations::{restate, Restated};
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec};
 
@@ -54,25 +53,14 @@ pub(crate) fn restore(
                 "the retained F3D archive cannot be decoded: {other}"
             )),
         })
-        .and_then(|decoded| {
-            let edited = configurations_edited(input.ir, decoded.ir());
-            Ok((
-                restore_history(input.ir, decoded.ir(), &FusionText)?,
-                edited,
-            ))
-        })
-        .and_then(|(mut restored, edited)| {
-            let unstated = reproject(ctx, &mut restored.ir, edited)?;
-            Ok((restored, unstated))
+        .and_then(|decoded| restore_history(input.ir, decoded.ir(), &FusionText))
+        .and_then(|restored| {
+            let rows = reproject(ctx, &restored.ir)?;
+            Ok((restored, rows))
         });
     match restored {
-        Ok((restored, unstated)) if restored.unwritten.is_empty() => {
-            losses.extend(edit_dropped(
-                EntityKind::DesignConfiguration,
-                "F3D",
-                "drops these configuration edits, which a row of the configuration table cannot state",
-                unstated,
-            ));
+        Ok((mut restored, rows)) if restored.unwritten.is_empty() => {
+            restored.ir.model.configurations = rows.into_rows(losses);
             Ok(Some(restored.ir))
         }
         Ok((restored, _)) => {
@@ -92,28 +80,13 @@ pub(crate) fn restore(
     }
 }
 
-/// Whether the design configurations of `read`, or the configurations its
-/// design scopes state active, differ from those of `decoded`.
-fn configurations_edited(read: &CadIr, decoded: &CadIr) -> bool {
-    let active = |ir: &CadIr| {
-        ir.design
-            .scopes
-            .iter()
-            .map(|scope| (scope.definition.clone(), scope.active_configuration.clone()))
-            .collect::<Vec<_>>()
-    };
-    read.design.configurations != decoded.design.configurations || active(read) != active(decoded)
-}
-
-/// Replaces the configurations `ir` took from the archive's decode with the
-/// ones the decoder states for the configuration tables `ir` was read with.
-/// Where `edited` holds, the configurations of its `design` records are
-/// written in. Returns each field of those that no row states.
+/// The rows of the configuration tables `ir` was read with, as the decoder
+/// states them, with the configurations of its `design` records written in:
+/// the neutral record wins over the stored tables (cadir-v11.md §3.4, W2).
 fn reproject(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    ir: &mut CadIr,
-    edited: bool,
-) -> Result<Vec<String>, CodecError> {
+    ir: &CadIr,
+) -> Result<Restated, CodecError> {
     let base = match f3d_native(ctx, ir)? {
         Some(native) => {
             decoded_configurations(
@@ -124,18 +97,13 @@ fn reproject(
         }
         None => Vec::new(),
     };
-    if !edited {
-        ir.model.configurations = base;
-        return Ok(Vec::new());
-    }
-    let restated = restate(
+    Ok(restate(
         &base,
         &ir.design,
         &ir.model.product_definitions,
         &ir.model.features,
-    );
-    ir.model.configurations = restated.rows;
-    Ok(restated.unstated)
+        &ir.model.parameters,
+    ))
 }
 
 /// Records and charges why the history arenas were not restored.

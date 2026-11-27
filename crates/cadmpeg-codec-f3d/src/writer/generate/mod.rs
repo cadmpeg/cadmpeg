@@ -416,19 +416,16 @@ fn attempt<W: Write + Seek>(
         let neutral = if held {
             Cow::Borrowed(target.model.configurations.as_slice())
         } else {
-            let restated = crate::design_v11::configurations::restate(
-                &decoded.configurations,
-                &target.design,
-                &target.model.product_definitions,
-                targets.neutral_features,
-            );
-            table_losses.extend(cadmpeg_ir::codec::write::edit_dropped(
-                cadmpeg_ir::schema::EntityKind::DesignConfiguration,
-                "F3D",
-                "drops these configuration edits, which a row of the configuration table cannot state",
-                restated.unstated,
-            ));
-            Cow::Owned(restated.rows)
+            Cow::Owned(
+                crate::design_v11::configurations::restate(
+                    &decoded.configurations,
+                    &target.design,
+                    &target.model.product_definitions,
+                    targets.neutral_features,
+                    targets.neutral_parameters,
+                )
+                .into_rows(&mut table_losses),
+            )
         };
         let neutral = neutral.as_ref();
         let (written, losses) = configuration_table::regenerate(

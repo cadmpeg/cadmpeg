@@ -9,18 +9,22 @@ use std::num::NonZeroI8;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
-use cadmpeg_ir::design::configuration::{DesignConfiguration, ParameterOverride};
+use cadmpeg_ir::design::configuration::{
+    DefinitionOverride, DesignConfiguration, ParameterOverride, PartNumber,
+};
 use cadmpeg_ir::design::expr::{Expression, Neutral, Node};
 use cadmpeg_ir::design::parameter::ParameterValue;
 use cadmpeg_ir::design::units::{Unit, UnitFactor, UnitSymbol};
 use cadmpeg_ir::features::parameters::ParameterValue as LegacyValue;
 use cadmpeg_ir::features::{FeatureId, ParameterId};
+use cadmpeg_ir::report::export::WritePath;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::{CadIr, SourceFidelity};
 use serde_json::Value;
 
 use crate::design::configurations::ConfigurationTargets;
-use crate::records::configuration::table::{AdmittedTables, ColumnTarget};
+use crate::records::configuration::table::{AdmittedTables, ColumnTarget, ConfiguredValue};
 use crate::records::configuration::{
     DesignConfiguration as TableDocument, DesignConfigurationKind,
 };
@@ -107,9 +111,9 @@ fn object(target: &ColumnTarget) -> Value {
 
 /// The source with its empty table document holding a table `1` whose
 /// columns are a part number `P`, a feature `S` and, where `width` holds, a
-/// length parameter `W`, and whose rows are `a` (`20 mm`, computed) and `b`
-/// (`7 mm`, suppressed), with a root record that names row `a` active,
-/// decoded.
+/// length parameter `W`, and whose rows are `a` (`20 mm`, computed), `b`
+/// (`7 mm`, suppressed) and `c` (`12 mm`, computed), with a root record
+/// that names row `a` active, decoded.
 fn fixture(width: bool) -> (DecodeResult, Fixture) {
     let plain = decode(SOURCE);
     let ir = plain.ir();
@@ -122,12 +126,19 @@ fn fixture(width: bool) -> (DecodeResult, Fixture) {
     ];
     let mut a = vec![("P", string_cell("A-1")), ("S", bool_cell(true))];
     let mut b = vec![("P", string_cell("B-1")), ("S", bool_cell(false))];
+    let mut c = vec![("P", string_cell("C-1")), ("S", bool_cell(true))];
     if width {
         columns.push(("W", object(&length_target)));
         a.push(("W", expression_cell("20 mm", 2.0)));
         b.push(("W", expression_cell("7 mm", 0.7)));
+        c.push(("W", expression_cell("12 mm", 1.2)));
     }
-    let document = table_document("1", &columns, &[("a", "A", a), ("b", "B", b)], &["a", "b"]);
+    let document = table_document(
+        "1",
+        &columns,
+        &[("a", "A", a), ("b", "B", b), ("c", "C", c)],
+        &["a", "b", "c"],
+    );
     let bytes = with_root_segment_in(
         replaced(SOURCE, &entry, &json::to_vec(&document).unwrap()),
         "FusionDesignSegmentType2",
@@ -137,7 +148,7 @@ fn fixture(width: bool) -> (DecodeResult, Fixture) {
     let stated = &decoded.ir().design;
     assert_eq!(
         stated.configurations.len(),
-        2,
+        3,
         "the fixture states its rows as design configurations: rows {:?}, scopes {:?}",
         decoded
             .ir()
@@ -250,14 +261,89 @@ fn saved(ir: &CadIr) -> CadIr {
     read
 }
 
-/// `ir` written with `sidecar` and decoded again.
-fn written(ir: &CadIr, sidecar: &SourceFidelity) -> DecodeResult {
+/// `ir` written with `sidecar` from the retained archive and decoded again,
+/// with the losses of the write.
+fn written_with_losses(ir: &CadIr, sidecar: &SourceFidelity) -> (DecodeResult, Vec<LossNote>) {
     let mut bytes = Vec::new();
-    F3dCodec
+    let report = F3dCodec
         .plan(EncodeInput::new(ir, Some(sidecar)))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("write");
-    decode(&bytes)
+    assert!(
+        !matches!(report.write_path(), WritePath::Synthesized { .. }),
+        "{:?}: {:#?}",
+        report.write_path(),
+        report.losses
+    );
+    (decode(&bytes), report.losses)
+}
+
+/// `ir` written with `sidecar` from the retained archive and decoded again.
+fn written(ir: &CadIr, sidecar: &SourceFidelity) -> DecodeResult {
+    written_with_losses(ir, sidecar).0
+}
+
+/// The id of the column of `parameter` in the table document at `entry` of
+/// `ir`.
+fn parameter_column(ir: &CadIr, entry: &str, parameter: &ParameterId) -> String {
+    let native = f3d_native(ir);
+    let target = targets(ir, &native)
+        .parameter_column(parameter)
+        .expect("a column target");
+    stored_table(ir, entry)
+        .columns
+        .into_iter()
+        .find(|stored| stored.target == target)
+        .expect("the column of the parameter")
+        .id
+}
+
+/// The expression and the database-unit value of the cell of row `row` in
+/// the column of `parameter` of the table document at `entry` of `ir`.
+fn parameter_cell(ir: &CadIr, entry: &str, row: &str, parameter: &ParameterId) -> (String, f64) {
+    let column = parameter_column(ir, entry, parameter);
+    let table = stored_table(ir, entry);
+    let row = table
+        .rows
+        .iter()
+        .find(|stored| stored.id == row)
+        .unwrap_or_else(|| panic!("row {row}"));
+    let cell = row
+        .cells
+        .iter()
+        .find(|cell| cell.column_id == column)
+        .unwrap_or_else(|| panic!("row {} has no cell of column {column}", row.id));
+    match &cell.value {
+        ConfiguredValue::Parameter {
+            expression, value, ..
+        }
+        | ConfiguredValue::OwnedParameter {
+            expression, value, ..
+        } => (expression.clone(), value.get()),
+        other => panic!("a parameter cell: {other:?}"),
+    }
+}
+
+/// The expression and the value in millimetres of `parameter` of `ir`.
+fn own(ir: &CadIr, parameter: &ParameterId) -> (String, f64) {
+    let own = ir
+        .model
+        .parameters
+        .iter()
+        .find(|own| own.id == *parameter)
+        .expect("the parameter");
+    let Some(LegacyValue::Length(length)) = &own.value else {
+        panic!("a length: {:?}", own.value);
+    };
+    (own.expression.clone(), length.get())
+}
+
+/// The part number that row `name` of `ir` states.
+fn part_number<'a>(ir: &'a CadIr, name: &str) -> Option<&'a str> {
+    row(ir, name)
+        .properties
+        .get("property:Part Number")
+        .map(String::as_str)
 }
 
 /// The design configuration of `ir` named `name`.
@@ -388,4 +474,190 @@ fn a_parameter_no_column_names_gets_a_column() {
         named(round_trip.ir(), "B").overrides.parameters[&fixture.width].expression,
         added.expression
     );
+    let (expression, millimetres) = own(round_trip.ir(), &fixture.width);
+    for unchanged in ["a", "c"] {
+        let (cell, value) =
+            parameter_cell(round_trip.ir(), &fixture.entry, unchanged, &fixture.width);
+        assert_eq!(cell, expression, "row {unchanged}");
+        assert!(
+            (value - millimetres / 10.0).abs() < 1e-9,
+            "row {unchanged}: {value}"
+        );
+    }
+    for name in ["A", "C"] {
+        let stated = named(round_trip.ir(), name)
+            .overrides
+            .parameters
+            .get(&fixture.width);
+        assert!(
+            stated.is_none_or(|stated| stated.value
+                == Some(ParameterValue::Number(
+                    FiniteReal::new(millimetres).unwrap()
+                ))),
+            "{name}: {stated:?}"
+        );
+    }
+    let documents = f3d_native(round_trip.ir()).design_configurations;
+    let column = parameter_column(round_trip.ir(), &fixture.entry, &fixture.width);
+    let entries = documents[table(&documents, &fixture.entry)].payload()["testRowData"]
+        .as_array()
+        .expect("testRowData")
+        .iter()
+        .map(|entry| serde_json::from_str::<Value>(entry.as_str().unwrap()).unwrap())
+        .filter(|entry| entry["ColumnUniqueID"] == column.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["DataType"], "ParameterDoubleValue");
+    assert_eq!(entries[0]["Expression"], expression.as_str());
+}
+
+#[test]
+fn an_active_row_moved_through_cadir_is_named_by_the_root_record() {
+    let (decoded, _) = fixture(true);
+    let mut read = saved(decoded.ir());
+    let b = named(&read, "B").id.clone();
+    let scope = read
+        .design
+        .scopes
+        .iter_mut()
+        .find(|scope| scope.active_configuration.is_some())
+        .unwrap();
+    scope.active_configuration = Some(b.clone());
+    let (round_trip, losses) = written_with_losses(&read, decoded.source_fidelity());
+    assert!(round_trip
+        .ir()
+        .design
+        .scopes
+        .iter()
+        .any(|scope| scope.active_configuration.as_ref() == Some(&b)));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "export/value.unwritable"
+                && loss.message.contains("DesignConfigurationRoot")),
+        "{losses:#?}"
+    );
+}
+
+#[test]
+fn a_configuration_added_through_cadir_is_a_row_of_the_written_table() {
+    let (decoded, fixture) = fixture(true);
+    let mut read = saved(decoded.ir());
+    let mut added = named(&read, "B").clone();
+    added.id = cadmpeg_ir::features::ConfigurationId::mint("test:configuration:variant#d").unwrap();
+    added.name = "D".into();
+    added.native_ref = None;
+    added
+        .overrides
+        .parameters
+        .insert(fixture.width.clone(), length_override(4.0));
+    read.design.configurations.push(added);
+    let round_trip = written(&read, decoded.source_fidelity());
+    assert_eq!(
+        row(round_trip.ir(), "D")
+            .parameter_overrides
+            .get(&fixture.width)
+            .map(String::as_str),
+        Some("4 mm")
+    );
+    assert_eq!(stored_table(round_trip.ir(), &fixture.entry).rows.len(), 4);
+}
+
+#[test]
+fn an_override_of_one_member_writes_the_cell_it_resolves_to() {
+    let (decoded, fixture) = fixture(true);
+    let mut read = saved(decoded.ir());
+    let mut expression = length_override(9.0);
+    expression.value = None;
+    named_mut(&mut read, "B")
+        .overrides
+        .parameters
+        .insert(fixture.width.clone(), expression);
+    let mut value = length_override(5.0);
+    value.expression = None;
+    named_mut(&mut read, "C")
+        .overrides
+        .parameters
+        .insert(fixture.width.clone(), value);
+    let round_trip = written(&read, decoded.source_fidelity());
+    let (text, evaluated) = parameter_cell(round_trip.ir(), &fixture.entry, "b", &fixture.width);
+    assert_eq!(text, "9 mm");
+    assert!((evaluated - 0.9).abs() < 1e-9, "{evaluated}");
+    let (expression, _) = own(round_trip.ir(), &fixture.width);
+    let (text, cached) = parameter_cell(round_trip.ir(), &fixture.entry, "c", &fixture.width);
+    assert_eq!(text, expression);
+    assert!((cached - 0.5).abs() < 1e-9, "{cached}");
+}
+
+#[test]
+fn an_edit_the_table_has_no_cell_for_is_charged_and_the_rest_is_written() {
+    let (decoded, fixture) = fixture(true);
+    let mut read = saved(decoded.ir());
+    let b = named_mut(&mut read, "B");
+    b.comment = Some("hand-made".into());
+    b.overrides
+        .parameters
+        .insert(fixture.width.clone(), length_override(9.0));
+    let id = b.id.to_string();
+    let (round_trip, losses) = written_with_losses(&read, decoded.source_fidelity());
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "export/edit.dropped"
+                && loss.message.contains(&format!("{id}].comment"))),
+        "{losses:#?}"
+    );
+    assert_eq!(
+        row(round_trip.ir(), "B")
+            .parameter_overrides
+            .get(&fixture.width)
+            .map(String::as_str),
+        Some("9 mm")
+    );
+}
+
+#[test]
+fn a_configuration_s_row_holds_what_it_inherits_and_its_parent_s_name() {
+    let (decoded, fixture) = fixture(true);
+    let mut read = saved(decoded.ir());
+    let b = named(&read, "B").id.clone();
+    let c = named_mut(&mut read, "C");
+    c.parent = Some(b);
+    c.overrides.parameters.remove(&fixture.width);
+    let scope = c.scope.clone();
+    c.overrides.definitions.insert(
+        scope,
+        DefinitionOverride {
+            part_number: Some(PartNumber::ParentConfigurationName),
+            ..DefinitionOverride::default()
+        },
+    );
+    let round_trip = written(&read, decoded.source_fidelity());
+    assert_eq!(
+        row(round_trip.ir(), "C")
+            .parameter_overrides
+            .get(&fixture.width)
+            .map(String::as_str),
+        Some("7 mm")
+    );
+    assert_eq!(part_number(round_trip.ir(), "C"), Some("B"));
+}
+
+#[test]
+fn a_document_name_part_number_is_written_as_its_text() {
+    let (decoded, _) = fixture(false);
+    let mut read = saved(decoded.ir());
+    let b = named_mut(&mut read, "B");
+    let scope = b.scope.clone();
+    let mut definition = DefinitionOverride {
+        part_number: Some(PartNumber::DocumentName),
+        ..DefinitionOverride::default()
+    };
+    definition.bom_properties.insert(
+        cadmpeg_core::text::NonBlankString::new("Title").unwrap(),
+        "Bracket".to_owned(),
+    );
+    b.overrides.definitions.insert(scope, definition);
+    let round_trip = written(&read, decoded.source_fidelity());
+    assert_eq!(part_number(round_trip.ir(), "B"), Some("Bracket"));
 }

@@ -611,8 +611,13 @@ fn configurations_with_an_empty_table_document_are_written_into_a_new_table() {
     let decoded = project(&documents, &natives.targets()).unwrap();
     let mut configurations = decoded.configurations;
     for configuration in &mut configurations {
-        configuration.properties.clear();
+        configuration
+            .properties
+            .retain(|key, _| key.as_str().starts_with("property:"));
     }
+    assert!(configurations.iter().all(|configuration| configuration
+        .properties
+        .contains_key("property:Part Number")));
     let empty = vec![DesignConfiguration::try_new(
         ENTRY.into(),
         DesignConfigurationKind::Table,
@@ -625,12 +630,15 @@ fn configurations_with_an_empty_table_document_are_written_into_a_new_table() {
         &configurations,
         &natives,
     );
-    assert_eq!(losses.len(), 1, "{losses:#?}");
-    assert_eq!(
-        losses[0].code.to_string(),
-        "export/record.residual-unavailable"
-    );
-    assert!(losses[0].message.contains("DR-1069"));
+    assert!(!losses.is_empty());
+    for loss in &losses {
+        assert_eq!(
+            loss.code.to_string(),
+            "export/record.residual-unavailable",
+            "{losses:#?}"
+        );
+        assert!(loss.message.contains("DR-1069"), "{losses:#?}");
+    }
     let tables = written.documents[0].tables();
     assert_eq!(tables.len(), 1);
     let mut rows = tables[0]
@@ -649,6 +657,7 @@ fn configurations_with_an_empty_table_document_are_written_into_a_new_table() {
             .find(|read| read.id == configuration.id)
             .unwrap();
         assert_eq!(read.parameter_overrides, configuration.parameter_overrides);
+        assert_eq!(read.properties, configuration.properties);
     }
 }
 

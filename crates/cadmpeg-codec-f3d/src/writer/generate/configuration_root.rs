@@ -416,6 +416,21 @@ impl Plan {
         self.active.as_deref()
     }
 
+    /// The table id and the row id the root record names, where it names
+    /// them as the documents state them.
+    pub(super) fn row(&self) -> Option<(&str, &str)> {
+        self.root
+            .as_ref()
+            .filter(|root| root.renamed.is_none())
+            .map(|root| (root.table_id.as_str(), root.row_id.as_str()))
+    }
+
+    /// The losses of what the record states otherwise than the
+    /// configurations.
+    pub(super) fn into_losses(self) -> Vec<LossNote> {
+        self.losses
+    }
+
     /// The bytes of `configuration`, the written document at `index`, with
     /// the ids the root record cuts or renames written as the record writes
     /// them.

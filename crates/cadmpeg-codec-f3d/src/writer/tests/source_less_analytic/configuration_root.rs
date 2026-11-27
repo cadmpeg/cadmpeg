@@ -19,10 +19,6 @@ use crate::F3dCodec;
 
 const ENTRY: &str = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
 
-/// The reason the patch path gives for a document whose configurations
-/// differ from the projection of its configuration tables.
-const DECLINED: &str = "the patch carries the configuration tables as stored";
-
 /// `archive` decoded, with no source and no unknown native records.
 fn source_less(archive: Vec<u8>) -> cadmpeg_ir::CadIr {
     let decoded = EditableDecodeResult::from(
@@ -583,8 +579,11 @@ fn a_renamed_configuration_keeps_its_rule() {
     assert_eq!(rule["activate"], "Mid");
 }
 
+/// A CADIR document whose configuration tables state rows that no design
+/// configuration states: the write takes the tables of the document, with
+/// the sidecar as without it (cadir-v11.md W2).
 #[test]
-fn a_patch_of_a_document_read_from_cadir_is_not_declined_over_its_configurations() {
+fn a_document_read_from_cadir_writes_its_tables_with_and_without_the_sidecar() {
     let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut Cursor::new(configured()), &DecodeOptions::default())
@@ -613,6 +612,20 @@ fn a_patch_of_a_document_read_from_cadir_is_not_declined_over_its_configurations
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("patched round trip");
     assert_eq!(f3d_native(round_trip.ir()).design_configurations, expected);
+    let mut unsourced = read.clone();
+    unsourced.source = None;
+    unsourced
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
+        .unwrap();
+    let (_, generated) = write_and_decode(&unsourced);
+    assert_eq!(
+        f3d_native(generated.ir()).design_configurations,
+        f3d_native(round_trip.ir()).design_configurations
+    );
 }
 
 #[test]
@@ -692,18 +705,46 @@ fn contradicted(ir: &mut cadmpeg_ir::CadIr) -> (String, String) {
     (configuration.id.to_string(), feature.id.to_string())
 }
 
+/// `ir` written with `fidelity`: the report, which must name the patched
+/// write path.
+fn patched(
+    ir: &cadmpeg_ir::CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+) -> cadmpeg_ir::report::export::ExportReport {
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, Some(fidelity)))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write");
+    assert!(
+        matches!(
+            report.write_path(),
+            cadmpeg_ir::report::export::WritePath::Patched { .. }
+        ),
+        "{:?}: {:#?}",
+        report.write_path(),
+        report.losses
+    );
+    report
+}
+
 #[test]
-fn a_suppression_no_column_holds_declines_the_patch_and_is_charged() {
+fn a_suppression_the_active_row_contradicts_is_charged_and_the_patch_is_kept() {
     let decoded = EditableDecodeResult::from(
         F3dCodec
-            .decode(&mut Cursor::new(designed()), &DecodeOptions::default())
+            .decode(
+                &mut Cursor::new(with_root_segment(
+                    designed(),
+                    root_record(*b"256", ROOT_RECORD, "1", "a"),
+                )),
+                &DecodeOptions::default(),
+            )
             .expect("design decode"),
     );
     assert!(!decoded.ir().model.configurations.is_empty());
     let mut ir = decoded.ir().clone();
     let (configuration, _) = contradicted(&mut ir);
-    let report =
-        crate::test_support::assert_patch_declined(&ir, Some(decoded.source_fidelity()), DECLINED);
+    let report = patched(&ir, decoded.source_fidelity());
     assert!(
         report
             .losses
@@ -715,9 +756,10 @@ fn a_suppression_no_column_holds_declines_the_patch_and_is_charged() {
 }
 
 /// A configuration that states a definition other than its feature's: the
-/// patch path declines, and the regenerated file charges the configuration.
+/// table holds no cell for it, so the patch charges the configuration and
+/// writes the rest of the design.
 #[test]
-fn a_definition_no_column_holds_writes_and_is_charged() {
+fn a_definition_no_column_holds_is_charged_and_the_patch_is_kept() {
     let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(&mut Cursor::new(designed()), &DecodeOptions::default())
@@ -740,20 +782,15 @@ fn a_definition_no_column_holds_writes_and_is_charged() {
         .unwrap()
         .feature_states
         .insert(feature.id.clone(), state);
-    let report = crate::test_support::assert_written_with_loss(
-        &ir,
-        Some(decoded.source_fidelity()),
-        "f3d/writer.configuration-omitted",
-        id.as_str(),
-    );
+    let report = patched(&ir, decoded.source_fidelity());
     assert!(
-        matches!(
-            report.synthesis_cause(),
-            Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason })
-                if reason.contains(DECLINED)
-        ),
-        "{:?}",
-        report.write_path()
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "export/edit.dropped"
+                && loss.message.contains(id.as_str())),
+        "{:#?}",
+        report.losses
     );
 }
 

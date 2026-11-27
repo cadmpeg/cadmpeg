@@ -220,22 +220,7 @@ pub fn restore_history(
         }
     }
     if text.restates_configurations() {
-        replayed
-            .design
-            .configurations
-            .clone_from(&read.design.configurations);
-        for scope in &mut replayed.design.scopes {
-            if let Some(stated) = read
-                .design
-                .scopes
-                .iter()
-                .find(|stated| stated.definition == scope.definition)
-            {
-                scope
-                    .active_configuration
-                    .clone_from(&stated.active_configuration);
-            }
-        }
+        adopt_configurations(&mut replayed.design, &read.design);
     }
     let json = |design: &crate::document::Design| {
         cadmpeg_core::serde_erase::to_json_value(design).map_err(|error| {
@@ -301,6 +286,23 @@ pub fn restore_history(
         ir: restored,
         unwritten,
     })
+}
+
+/// Give `design` the configurations of `read`, and to each of its scopes the
+/// active configuration of `read`'s scope of the same definition.
+pub fn adopt_configurations(design: &mut crate::document::Design, read: &crate::document::Design) {
+    design.configurations.clone_from(&read.configurations);
+    for scope in &mut design.scopes {
+        if let Some(stated) = read
+            .scopes
+            .iter()
+            .find(|stated| stated.definition == scope.definition)
+        {
+            scope
+                .active_configuration
+                .clone_from(&stated.active_configuration);
+        }
+    }
 }
 
 /// Adds to `out` the path of each value where `read` differs from `stored`,
