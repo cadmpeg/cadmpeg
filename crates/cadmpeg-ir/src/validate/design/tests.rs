@@ -730,15 +730,11 @@ fn grouped_beside_an_unbuilt_body() -> CadIr {
 }
 
 #[test]
-fn a_group_member_attached_to_an_unbuilt_stateless_feature_does_not_order_it() {
-    // Only a stateless member of an unordered container depend-orders before
-    // the attached member's `Current` selections (§5.3); `a` is not built.
-    assert_finding(
-        &grouped_beside_an_unbuilt_body(),
-        Check::Design,
-        Severity::Error,
-        "does not depend-order before its anchor",
-    );
+fn a_group_member_attached_to_an_unbuilt_stateless_feature_orders_it_before_its_picks() {
+    // A member of an unordered container depends on each stateless feature
+    // its own selections pick, in whichever container that feature sits
+    // (§5.3).
+    assert_clean(&grouped_beside_an_unbuilt_body());
 }
 
 #[test]
@@ -750,9 +746,7 @@ fn a_group_member_attached_to_a_suppressed_member_orders_it_before_its_picks() {
         family: crate::design::feature::OperationFamily::Extrude,
     };
     ir.design.features[0].suppressed = Some(crate::design::dimension::Dimension::Literal(true));
-    assert!(!findings(&ir).iter().any(|finding| finding
-        .message
-        .contains("does not depend-order before its anchor")));
+    assert_clean(&ir);
 }
 
 #[test]

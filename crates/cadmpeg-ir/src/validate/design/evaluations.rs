@@ -11,7 +11,7 @@ use super::selections::check_path;
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
+use crate::design::feature::{Feature, FeatureOperation};
 use crate::design::refs::Position;
 use crate::design::selection::OccurrencePath;
 use crate::features::ConfigurationId;
@@ -110,24 +110,7 @@ fn has_own_result(
     if is_stateless(index, feature, configuration) {
         return Some(false);
     }
-    let places = matches!(
-        operation,
-        FeatureOperation::Place(_)
-            | FeatureOperation::PlaceSet(_)
-            | FeatureOperation::Joint(_)
-            | FeatureOperation::RigidGroup(_)
-            | FeatureOperation::ComponentPattern(_)
-            | FeatureOperation::MirrorComponents(_)
-            | FeatureOperation::Unresolved {
-                family: OperationFamily::Place
-                    | OperationFamily::PlaceSet
-                    | OperationFamily::Joint
-                    | OperationFamily::RigidGroup
-                    | OperationFamily::ComponentPattern
-                    | OperationFamily::MirrorComponents
-            }
-    );
-    Some(!places)
+    Some(!operation.places_occurrences())
 }
 
 /// A `Pinned` anchor or a `StateBase::Current` is at no `After(m)` for a

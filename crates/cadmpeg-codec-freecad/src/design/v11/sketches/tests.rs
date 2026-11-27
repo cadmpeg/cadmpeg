@@ -519,14 +519,18 @@ fn document(objects: &[(&str, &str, String)]) -> String {
 
 /// The properties of a Body of `members` whose `Tip` is the last.
 fn body(members: &[&str]) -> String {
+    body_tip(members, members.last().unwrap())
+}
+
+/// The properties of a Body of `members` whose `Tip` is `tip`.
+fn body_tip(members: &[&str], tip: &str) -> String {
     let links = members.iter().fold(String::new(), |mut out, member| {
         write!(out, r#"<Link value="{member}"/>"#).unwrap();
         out
     });
     format!(
-        r#"<Property name="Group" type="App::PropertyLinkList"><LinkList count="{}">{links}</LinkList></Property><Property name="Tip" type="App::PropertyLink"><Link value="{}"/></Property>"#,
+        r#"<Property name="Group" type="App::PropertyLinkList"><LinkList count="{}">{links}</LinkList></Property><Property name="Tip" type="App::PropertyLink"><Link value="{tip}"/></Property>"#,
         members.len(),
-        members.last().unwrap()
     )
 }
 
@@ -751,6 +755,67 @@ fn a_group_sketch_reads_the_result_of_the_one_group_member_it_picks() {
     assert_eq!(support_anchor(&ir, "Sketch"), after("Block"));
     assert_eq!(source_anchor(&ir, "Sketch", 0), Anchor::Current);
     assert_eq!(source_anchor(&ir, "Sketch", 1), Anchor::Current);
+}
+
+#[test]
+fn a_group_sketch_picks_a_body_sketch_after_the_tip_by_native_name() {
+    // `Body::addObject` puts a new sketch or datum at the end of the Body
+    // and moves `Tip` only for a solid feature. `FreeCAD` computes `Later`,
+    // and no current state holds it (§5.2).
+    let document = document(&[
+        (
+            "PartDesign::Body",
+            "Body",
+            body_tip(&["Pad", "Later"], "Pad"),
+        ),
+        ("PartDesign::Pad", "Pad", String::new()),
+        ("Sketcher::SketchObject", "Later", sketch_on("", 0, &[])),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on("", 0, &[("Later", "Edge1")]),
+        ),
+    ]);
+    let ir = decode(&document);
+    assert_eq!(
+        native_paths(&source_selection(&ir, "Sketch", 0).picks),
+        ["Later.Edge1"]
+    );
+    assert_eq!(source_anchor(&ir, "Sketch", 0), Anchor::Current);
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchSourceUnread,
+        "its source is the native pick of the link"
+    ));
+}
+
+#[test]
+fn a_group_sketch_attached_to_a_feature_after_the_tip_picks_it_by_native_name() {
+    let document = document(&[
+        (
+            "PartDesign::Body",
+            "Body",
+            body_tip(&["Pad", "Pocket"], "Pad"),
+        ),
+        ("PartDesign::Pad", "Pad", String::new()),
+        ("PartDesign::Pocket", "Pocket", String::new()),
+        (
+            "Sketcher::SketchObject",
+            "Sketch",
+            sketch_on(&link("Pocket", "Face1"), 5, &[]),
+        ),
+    ]);
+    let ir = decode(&document);
+    assert_eq!(
+        native_paths(&support_selection(&ir, "Sketch").picks),
+        ["Pocket.Face1"]
+    );
+    assert_eq!(support_anchor(&ir, "Sketch"), Anchor::Current);
+    assert!(charges(
+        &document,
+        crate::loss::FreecadLossCode::DesignSketchSupportUnread,
+        "its support is the native pick of each reference"
+    ));
 }
 
 #[test]

@@ -17,7 +17,7 @@ use cadmpeg_ir::design::construction::{
     kinds, Construction, ConstructionInput, FrameAxis, InputReference, InputRole, PostStep,
     Relation, ScalarDimension, SourceMode, Subject,
 };
-use cadmpeg_ir::design::container::Container;
+use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, LinkState, OperationFamily};
@@ -152,6 +152,10 @@ struct Targets {
     order: HashMap<FeatureId, (ContainerId, usize)>,
     /// The features of the root `Group`.
     grouped: HashSet<FeatureId>,
+    /// The features a Body lists at or after its stated rollback (its
+    /// `Tip`), which no current state holds (§5.2). `FreeCAD` computes them
+    /// all the same.
+    unbuilt: HashSet<FeatureId>,
     /// The features with no state or result of their own (§5.4): a sketch,
     /// a datum, a suppressed feature.
     stateless: HashSet<FeatureId>,
@@ -250,6 +254,23 @@ pub(super) fn project(
                 Member::Container(_) => None,
             })
             .collect(),
+        unbuilt: scope
+            .containers
+            .iter()
+            .filter_map(|container| match container {
+                Container::Ordered {
+                    members,
+                    rollback: Some(Rollback::Before(first)),
+                    ..
+                } => Some(members.iter().skip_while(move |member| *member != first)),
+                Container::Ordered { .. } | Container::Unordered { .. } => None,
+            })
+            .flatten()
+            .filter_map(|member| match member {
+                Member::Feature(feature) => Some(feature.clone()),
+                Member::Container(_) => None,
+            })
+            .collect(),
         stateless: features
             .iter()
             .filter(|feature| {
@@ -260,7 +281,7 @@ pub(super) fn project(
             .collect(),
         placing: features
             .iter()
-            .filter(|feature| places(&feature.definition.operation))
+            .filter(|feature| feature.definition.operation.places_occurrences())
             .map(|feature| feature.id.clone())
             .collect(),
     };
@@ -1409,28 +1430,6 @@ fn origins(scope: &Scope<'_>) -> HashMap<String, PickTarget> {
     out
 }
 
-/// Whether `operation` places occurrences, which gives it no result of its
-/// own in an unordered container (§5.3).
-fn places(operation: &FeatureOperation) -> bool {
-    matches!(
-        operation,
-        FeatureOperation::Place(_)
-            | FeatureOperation::PlaceSet(_)
-            | FeatureOperation::Joint(_)
-            | FeatureOperation::RigidGroup(_)
-            | FeatureOperation::ComponentPattern(_)
-            | FeatureOperation::MirrorComponents(_)
-            | FeatureOperation::Unresolved {
-                family: OperationFamily::Place
-                    | OperationFamily::PlaceSet
-                    | OperationFamily::Joint
-                    | OperationFamily::RigidGroup
-                    | OperationFamily::ComponentPattern
-                    | OperationFamily::MirrorComponents
-            }
-    )
-}
-
 /// The anchor of a selection of the sketch `holder` that picks the objects
 /// `links` name (§5.8). `FreeCAD` computes a sketch after every object it
 /// links, in dependency order (`Document::recompute`), and reads the shape
@@ -1451,8 +1450,10 @@ fn places(operation: &FeatureOperation) -> bool {
 /// `None` where the spec states no anchor that holds what the selection
 /// picks and not the sketch: a feature that the sketch's Body lists after
 /// it (every state at or after it holds the sketch), a stateless member of
-/// the `Group` picked from a Body (no state holds it), and targets that no
-/// one state holds. An origin entity, a feature that places occurrences,
+/// the `Group` picked from a Body (no state holds it), a member of a Body at
+/// or after its rollback picked from the `Group` (the current geometry does
+/// not hold it, and the `Group` sketch has no other anchor), and targets
+/// that no one state holds. An origin entity, a feature that places occurrences,
 /// and an object that no feature restates ask nothing of the anchor.
 fn anchor(
     targets: &Targets,
@@ -1470,6 +1471,12 @@ fn anchor(
     let grouped_result =
         |feature: &FeatureId| targets.grouped.contains(feature) && stateful(feature);
     if targets.grouped.contains(holder) {
+        if linked
+            .iter()
+            .any(|feature| targets.unbuilt.contains(*feature))
+        {
+            return None;
+        }
         return match linked.as_slice() {
             [only] if grouped_result(only) => Some(Anchor::Pinned(Position::After(
                 Member::Feature((*only).clone()),
@@ -1520,7 +1527,11 @@ fn anchor(
 /// the current geometry for a member of the root `Group`, else the state
 /// entering it.
 fn unlinked(targets: &Targets, holder: &FeatureId) -> Anchor {
-    anchor(targets, holder, &[]).unwrap_or(Anchor::Input)
+    if targets.grouped.contains(holder) {
+        Anchor::Current
+    } else {
+        Anchor::Input
+    }
 }
 
 /// The links of the support of the sketch `object`, one per subelement, as

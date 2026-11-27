@@ -795,21 +795,15 @@ fn check_target_order<'a>(
 }
 
 /// Whether `target` is a stateless feature (§5.4), in every configuration
-/// of its scope, of an unordered container that `holder`, a member of an
-/// unordered container, picks from a selection anchored `Current`: the
-/// attachment depend-orders `target` before the member's `Current`
-/// selections (§5.3). The pick itself makes `holder` depend on `target`. A
-/// target in an ordered container needs no such order: the current state
-/// holds it where it is built at all.
+/// of its scope, that `holder`, a member of an unordered container, picks
+/// from a selection anchored `Current`: the attachment depend-orders
+/// `target` before the member's `Current` selections (§5.3). The pick itself
+/// makes `holder` depend on `target`.
 fn attached(index: &DesignIndex<'_>, site: Site<'_>, holder: &str, target: &str) -> bool {
     use crate::design::container::Container;
     matches!(site.anchor, Anchor::Current)
         && matches!(
             index.place(MemberKey::Feature(holder)),
-            Some((Container::Unordered { .. }, _))
-        )
-        && matches!(
-            index.place(MemberKey::Feature(target)),
             Some((Container::Unordered { .. }, _))
         )
         && stateless_everywhere(index, target)
