@@ -2285,6 +2285,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
+    limits: super::geometry::ProjectionLimits,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
@@ -2298,7 +2299,7 @@ pub(super) fn project(
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
-    let planar_pairs = PlanarPairBudget::new();
+    let planar_pairs = PlanarPairBudget::new(limits);
     let boundary_rules = PlaneBoundaryRules {
         resolution: global.minimum_resolution_mm(),
         pairs: &planar_pairs,

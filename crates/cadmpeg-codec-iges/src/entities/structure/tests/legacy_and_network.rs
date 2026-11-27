@@ -624,16 +624,27 @@ fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
     );
 }
 
+/// The caps of a decode under the default policy that emits `output`
+/// product occurrences.
+fn occurrence_limits(output: usize) -> crate::reader::DecodeLimits {
+    crate::reader::DecodeLimits {
+        occurrences: crate::native::ProductOccurrenceLimits::new(
+            output,
+            crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+        ),
+        projection: crate::entities::geometry::ProjectionLimits::DEFAULT,
+    }
+}
+
 #[test]
 fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
     for pinned in [true, false] {
         let mut options = DecodeOptions::default();
         options.strictness.pinned = pinned;
-        let result = crate::reader::decode_with_test_occurrence_limits(
+        let result = crate::reader::decode_with_test_limits(
             &occurrence_limit_file(),
             &options,
-            100,
-            crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+            occurrence_limits(100),
         )
         .unwrap();
         let native = result.ir().native.namespace("iges").unwrap();
@@ -666,11 +677,10 @@ fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
 
 #[test]
 fn decode_bounds_product_occurrence_member_output_with_a_named_loss() {
-    let result = crate::reader::decode_with_test_occurrence_limits(
+    let result = crate::reader::decode_with_test_limits(
         &nested_subfigure_file(),
         &DecodeOptions::default(),
-        1,
-        crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+        occurrence_limits(1),
     )
     .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();

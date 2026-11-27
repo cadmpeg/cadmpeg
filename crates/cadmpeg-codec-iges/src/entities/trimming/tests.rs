@@ -78,7 +78,8 @@ const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 
 #[test]
 fn decode_skips_a_boundary_over_its_endpoint_cluster_limit() {
-    let segment_count = 8_193_usize;
+    let cluster_limit = 16;
+    let segment_count = cluster_limit / 2 + 1;
     let mut entities = Vec::new();
     entities.push(OwnedTestEntity {
         entity_type: 108,
@@ -129,20 +130,23 @@ fn decode_skips_a_boundary_over_its_endpoint_cluster_limit() {
         parameters: format!("143,0,1,1,{boundary_sequence};"),
     });
 
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&entities)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    let decoded = crate::reader::decode_with_test_limits(
+        &owned_test_file(&entities),
+        &DecodeOptions::default(),
+        crate::reader::DecodeLimits::with_projection(crate::entities::geometry::ProjectionLimits {
+            boundary_cluster_endpoints: cluster_limit,
+            ..crate::entities::geometry::ProjectionLimits::DEFAULT
+        }),
+    )
+    .unwrap();
 
     assert!(decoded.ir().geometry.faces.is_empty());
     assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
-            && loss
-                .message
-                .contains("endpoint clustering is limited to 16384")
+            && loss.message.contains(&format!(
+                "endpoint clustering is limited to {cluster_limit}"
+            ))
     }));
 }
 
@@ -161,7 +165,7 @@ fn decode_skips_a_trimmed_face_whose_linear_boundary_exceeds_the_pair_budget() {
             form: 0,
             label: "RING".into(),
             status: "00010000",
-            parameters: closed_ring_linear_nurbs_parameters(32_770),
+            parameters: closed_ring_linear_nurbs_parameters(9),
         },
         OwnedTestEntity {
             entity_type: 142,
@@ -179,12 +183,16 @@ fn decode_skips_a_trimmed_face_whose_linear_boundary_exceeds_the_pair_budget() {
         },
     ];
 
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&entities)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    // The 9 ring points need 9² pairs, over the pass's 80.
+    let decoded = crate::reader::decode_with_test_limits(
+        &owned_test_file(&entities),
+        &DecodeOptions::default(),
+        crate::reader::DecodeLimits::with_projection(crate::entities::geometry::ProjectionLimits {
+            planar_point_pairs: 80,
+            ..crate::entities::geometry::ProjectionLimits::DEFAULT
+        }),
+    )
+    .unwrap();
 
     assert!(decoded.ir().geometry.faces.is_empty());
     assert!(

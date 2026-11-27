@@ -31,12 +31,16 @@ fn closed_planar_copious_curve_over_the_pair_budget_is_skipped_with_a_loss() {
             count,
         ),
     };
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&[ring(32_770), ring(5)])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
+    // 9² pairs exceed the pass's 80, and the 5² of the second ring fit.
+    let result = crate::reader::decode_with_test_limits(
+        &owned_test_file(&[ring(9), ring(5)]),
+        &DecodeOptions::default(),
+        crate::reader::DecodeLimits::with_projection(crate::entities::geometry::ProjectionLimits {
+            planar_point_pairs: 80,
+            ..crate::entities::geometry::ProjectionLimits::DEFAULT
+        }),
+    )
+    .unwrap();
 
     let curve_ids: Vec<_> = result
         .ir()
@@ -49,7 +53,7 @@ fn closed_planar_copious_curve_over_the_pair_budget_is_skipped_with_a_loss() {
     assert!(curve_ids.contains(&"iges:model:curve#D3"), "{curve_ids:?}");
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
-            && loss.message.contains("32770 points")
+            && loss.message.contains("9 points")
             && loss.message.contains("MAX_PLANAR_POINT_PAIRS")
     }));
 }

@@ -117,13 +117,29 @@ pub(super) fn closed_polyline_has_duplicate<T>(
 /// drops that item and reports a geometry loss naming this limit.
 pub(super) const MAX_PLANAR_POINT_PAIRS: usize = 1 << 30;
 
+/// The caps a geometry projection applies: [`MAX_PLANAR_POINT_PAIRS`] and
+/// the trimming pass's `MAX_BOUNDARY_CLUSTER_ENDPOINTS` unless a test lowers
+/// them.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ProjectionLimits {
+    pub(crate) planar_point_pairs: usize,
+    pub(crate) boundary_cluster_endpoints: usize,
+}
+
+impl ProjectionLimits {
+    pub(crate) const DEFAULT: Self = Self {
+        planar_point_pairs: MAX_PLANAR_POINT_PAIRS,
+        boundary_cluster_endpoints: super::trimming::MAX_BOUNDARY_CLUSTER_ENDPOINTS,
+    };
+}
+
 /// The point-pair allowance of one projection pass's planar polyline checks.
 pub(super) struct PlanarPairBudget(cadmpeg_core::decode::WorkBudget);
 
 impl PlanarPairBudget {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(limits: ProjectionLimits) -> Self {
         Self(cadmpeg_core::decode::WorkBudget::new(
-            MAX_PLANAR_POINT_PAIRS,
+            limits.planar_point_pairs,
         ))
     }
 
@@ -1420,6 +1436,7 @@ pub(crate) fn project_geometry(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
+    limits: ProjectionLimits,
     ctx: &DecodeContext<'_>,
 ) -> Result<Projection, CodecError> {
     let mut sequences = SourceSequences::default();
@@ -2563,7 +2580,16 @@ pub(crate) fn project_geometry(
         &mut wire_edges,
     );
 
-    super::copious::project(ir, directory, parameters, global, ctx, &mut sequences)?.merge_into(
+    super::copious::project(
+        ir,
+        directory,
+        parameters,
+        global,
+        limits,
+        ctx,
+        &mut sequences,
+    )?
+    .merge_into(
         &mut decoded,
         &mut losses,
         &mut wire_edges,
@@ -2642,8 +2668,15 @@ pub(crate) fn project_geometry(
         ir.geometry.shells.push(shell);
     }
 
-    let (trimming_projection, trimming_vertex_derivations) =
-        super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences)?;
+    let (trimming_projection, trimming_vertex_derivations) = super::trimming::project(
+        ir,
+        directory,
+        parameters,
+        global,
+        limits,
+        ctx,
+        &mut sequences,
+    )?;
 
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses);
@@ -2660,6 +2693,7 @@ pub(crate) fn project_geometry(
         parameters,
         trailing_pointer_analysis,
         global,
+        limits,
         ctx,
         &mut sequences,
     )?;

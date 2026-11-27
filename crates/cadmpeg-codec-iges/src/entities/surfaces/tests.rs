@@ -565,21 +565,22 @@ fn ruled_carrier_of_long_interleaved_rails_partitions_by_search() {
 fn ruled_rails_over_the_blend_limit_are_skipped_with_a_loss() {
     use crate::test_support::test_curves_and_surfaces::planar_nurbs_parameters;
 
-    // One aligned span of degree 4096 + 4097 needs 8194² blends, over 2^26.
+    // 129 + 129 - 1 aligned spans of degree 255 + 256 need 257 * 512² blends,
+    // over 2^26.
     let rail = |label: &str, degree: u32, y: f64| OwnedTestEntity {
         entity_type: 126,
         form: 0,
         label: label.into(),
         status: "00010000",
-        parameters: planar_nurbs_parameters(degree, 1, false, |index| {
+        parameters: planar_nurbs_parameters(degree, 129, false, |index| {
             [f64::from(index) / f64::from(degree), y]
         }),
     };
     let result = IgesCodec
         .decode(
             &mut Cursor::new(owned_test_file(&[
-                rail("RAIL1", 4096, 0.0),
-                rail("RAIL2", 4097, 1.0),
+                rail("RAIL1", 255, 0.0),
+                rail("RAIL2", 256, 1.0),
                 OwnedTestEntity {
                     entity_type: 118,
                     form: 1,

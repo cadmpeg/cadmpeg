@@ -44,7 +44,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Endpoint clustering compares every endpoint pair of one boundary. A boundary
 /// with more endpoints than this is not projected and reports a geometry loss.
-const MAX_BOUNDARY_CLUSTER_ENDPOINTS: usize = 16_384;
+pub(super) const MAX_BOUNDARY_CLUSTER_ENDPOINTS: usize = 16_384;
 
 struct BoundarySegment {
     model_curve: u32,
@@ -1931,6 +1931,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
+    limits: super::geometry::ProjectionLimits,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<(ProjectionOutcome, Vec<BoundaryVertexDerivation>), CodecError> {
@@ -1946,7 +1947,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut boundary_vertex_derivations = Vec::new();
     let mut boundaries = BTreeMap::new();
-    let planar_pairs = super::geometry::PlanarPairBudget::new();
+    let planar_pairs = super::geometry::PlanarPairBudget::new(limits);
 
     let carrier_index = ModelIndex::new_model_only(ir);
 
@@ -2829,13 +2830,14 @@ pub(super) fn project(
                 valid = false;
                 break;
             };
-            if source_endpoints.len() > MAX_BOUNDARY_CLUSTER_ENDPOINTS {
+            if source_endpoints.len() > limits.boundary_cluster_endpoints {
                 super::push_geometry_loss(
                     &mut losses,
                     entry,
                     format_args!(
-                        "boundary has {} segment endpoints; endpoint clustering is limited to {MAX_BOUNDARY_CLUSTER_ENDPOINTS}",
-                        source_endpoints.len()
+                        "boundary has {} segment endpoints; endpoint clustering is limited to {}",
+                        source_endpoints.len(),
+                        limits.boundary_cluster_endpoints
                     ),
                 );
                 valid = false;
