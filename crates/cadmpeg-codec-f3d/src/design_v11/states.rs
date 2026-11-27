@@ -22,7 +22,9 @@
 //! The walk takes a joint origin, a grounding, a rigid group, a motion link,
 //! a reference image, and a decal as stateless. The current position is the
 //! last item that commits a state; the state after it and after each later
-//! item is the current state (§5.4 Keys). An
+//! item is the current state (§5.4 Keys). Where a history stores states
+//! above the state of its last item and no later item can hold them, the
+//! current position is the scope's current position. An
 //! item before the current position that is not stateless and whose state
 //! the walk places has an evaluation of the state after it, whose base is
 //! the state after the next later such item, and `Current` at the scope's
@@ -516,25 +518,52 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
 /// `others` where that is later; every item is current where none commits
 /// one. An item is taken to commit no state where it is stateless, or where
 /// the walk does not place its state and every history's head is the state
-/// of its last item.
-fn mark_current(entries: &mut [Entry<'_>], heads: &[Option<i64>], others: &[usize]) {
-    let tail = last_items(entries, heads)
+/// of its last item. Where a history's head is above the state of its last
+/// item and no item after that one leaves its state unplaced, the current
+/// position is `end`, the scope's current position.
+fn mark_current(entries: &mut [Entry<'_>], heads: &[Option<i64>], others: &[usize], end: usize) {
+    let mut last = vec![None; heads.len()];
+    for entry in entries.iter() {
+        if let Kind::Bound { history, state, .. } = entry.kind {
+            last[history] = Some((state, entry.position));
+        }
+    }
+    let open = last
         .iter()
         .zip(heads)
-        .any(|(last, head)| last.map(|(state, _)| state) != *head && last.is_some());
-    let commits = |entry: &Entry<'_>| {
+        .filter_map(|(last, head)| last.filter(|(state, _)| Some(*state) != *head))
+        .map(|(_, position)| position)
+        .collect::<Vec<_>>();
+    let unplaced = |entry: &Entry<'_>| {
         !entry.stateless
-            && match entry.kind {
-                Kind::Bound { .. } | Kind::NoState => true,
-                Kind::Tailless | Kind::Unresolved(_) | Kind::Ambiguous { .. } => tail,
-            }
+            && matches!(
+                entry.kind,
+                Kind::Tailless | Kind::Unresolved(_) | Kind::Ambiguous { .. }
+            )
     };
-    let at = entries
+    let holders = entries
         .iter()
-        .filter(|entry| commits(entry))
+        .filter(|entry| unplaced(entry))
         .map(|entry| entry.position)
         .chain(others.iter().copied())
         .max();
+    let at = if open
+        .iter()
+        .any(|position| holders.is_none_or(|holder| holder < *position))
+    {
+        Some(end)
+    } else {
+        entries
+            .iter()
+            .filter(|entry| {
+                !entry.stateless
+                    && (matches!(entry.kind, Kind::Bound { .. } | Kind::NoState)
+                        || !open.is_empty() && unplaced(entry))
+            })
+            .map(|entry| entry.position)
+            .chain(others.iter().copied())
+            .max()
+    };
     for entry in entries {
         entry.current = at.is_none_or(|at| entry.position >= at);
     }
@@ -1034,11 +1063,11 @@ impl<'r> Reader<'r, '_> {
         } else {
             None
         };
-        let built = match &scope.at {
+        let (end, built) = match &scope.at {
             Position::Start(_) => return Ok(Ok(())),
             Position::After(member) => {
                 match scope.members.iter().position(|found| found == member) {
-                    Some(at) => &scope.members[..=at],
+                    Some(at) => (at, &scope.members[..=at]),
                     None => {
                         return Ok(Err(
                             "the position of its current state is not read".to_owned()
@@ -1082,7 +1111,7 @@ impl<'r> Reader<'r, '_> {
             .map(|history| history.blob.stream)
             .collect::<Vec<_>>();
         let inferred = resolve(&mut entries, &heads, &histories);
-        mark_current(&mut entries, &heads, &others);
+        mark_current(&mut entries, &heads, &others, end);
         self.losses.extend(unstated(&scope.definition, &entries));
         self.losses.extend(unresolved(&scope.definition, &entries));
         let Plan { planned, stop } = plan(&entries, &heads, &names);

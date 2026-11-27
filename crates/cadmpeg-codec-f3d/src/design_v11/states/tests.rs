@@ -428,7 +428,16 @@ fn walk<'d>(
     let histories = histories(stored);
     let heads = heads(&histories);
     let inferred = resolve(&mut entries, &heads, &histories);
-    mark_current(&mut entries, &heads, &[]);
+    let Position::After(at) = &design.scope.at else {
+        panic!("a position after a member");
+    };
+    let end = design
+        .scope
+        .members
+        .iter()
+        .position(|member| member == at)
+        .expect("the member at the current position");
+    mark_current(&mut entries, &heads, &[], end);
     (entries, inferred)
 }
 
@@ -1236,9 +1245,14 @@ fn an_item_followed_only_by_stateless_items_holds_the_current_state() {
         &no_fidelity(),
     );
     assert_eq!(outcome.evaluations.len(), 1);
-    let [tail] = outcome.losses.as_slice() else {
-        panic!("one loss: {:#?}", outcome.losses);
+    let [unread, tail] = outcome.losses.as_slice() else {
+        panic!("two losses: {:#?}", outcome.losses);
     };
+    assert_eq!(unread.code, F3dLossCode::HistoryStateUnread.kind());
+    assert!(
+        unread.message.contains(&feature_id("u").to_string()),
+        "{unread:#?}"
+    );
     assert_eq!(tail.code, F3dLossCode::HistoryStateTailAssumed.kind());
 }
 
@@ -1302,6 +1316,43 @@ fn the_one_item_with_no_scope_tail_after_the_last_item_of_a_history_takes_its_he
         panic!("one placed state: {inferred:#?}");
     };
     assert!(why.contains("its state is the head"), "{why}");
+}
+
+#[test]
+fn the_states_a_history_stores_above_its_last_item_put_the_current_position_at_the_scopes() {
+    let design = design(&["a", "b", "c", "group"], "group", Vec::new());
+    let stored = [
+        Stored {
+            name: "BREP.x",
+            states: &[1, 2, 3],
+        },
+        Stored {
+            name: "BREP.y",
+            states: &[5],
+        },
+    ];
+    let (entries, inferred) = walk(
+        &design,
+        vec![
+            bound(0, 1, None),
+            bound(0, 2, Some(1)),
+            bound(1, 5, None),
+            Kind::NoState,
+        ],
+        &stored,
+    );
+    assert!(inferred.is_empty());
+    assert!(entries[3].current && entries[..3].iter().all(|entry| !entry.current));
+    let Plan { planned, stop } = plan_of(&entries, &stored);
+    assert!(stop.is_none());
+    assert_eq!(
+        planned
+            .iter()
+            .map(|planned| planned.entry)
+            .collect::<Vec<_>>(),
+        [2, 1, 0]
+    );
+    assert_eq!(planned[0].targets, [Some(2), Some(5)]);
 }
 
 #[test]
