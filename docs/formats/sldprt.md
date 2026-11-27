@@ -72,10 +72,10 @@ with one frame is the degenerate chained form.
 
 A frame whose member does not inflate to `uncompressed_size`, a frame whose
 member runs past the section, or bytes after the frames that are neither a
-frame nor zero padding cut the section at that frame. The decoder reads the
-concatenation of the frames before the cut as the section's stream, which ends
-early, and gives up the bytes from the cut to the section end. A section cut
-at its first frame is given up whole.
+frame nor zero padding cut the section at that frame. The frames before the
+cut concatenate to the section's stream, which then ends early; the bytes from
+the cut to the section end are given up. A section cut at its first frame holds
+no stream and is given up whole.
 
 ### 1.1 Outer header and block frame
 
