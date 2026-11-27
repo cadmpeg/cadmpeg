@@ -3,7 +3,7 @@
 
 use crate::records::{
     recipes::ConstructionRecipeKind,
-    references::PersistentReferenceKind,
+    references::{PersistentReference, PersistentReferenceKind},
     sketch_geometry::{SketchCurveGeometry, SketchPointRecordForm, SketchText},
 };
 use crate::writer::primitives::zero_fill_to;
@@ -21,7 +21,7 @@ use super::{
 use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Generated Design `BulkStream` and the primary offsets known while writing it.
 #[derive(Default)]
@@ -203,7 +203,7 @@ pub(super) fn encode_design_bulkstream(
     // A primary-indexed record extends to the next primary-indexed record, so
     // the reference runs, which no primary entry bounds, precede every record.
     let mut out = Vec::new();
-    for reference in &native.persistent_references {
+    for reference in standalone_references(native) {
         out.extend_from_slice(persistent_reference_name(reference.kind));
         out.extend_from_slice(&2u32.to_le_bytes());
         out.extend_from_slice(&14u32.to_le_bytes());
@@ -238,38 +238,8 @@ pub(super) fn encode_design_bulkstream(
         without_primary.insert(u64::from(reference.next_record_index));
     }
     out.extend_from_slice(&parameters.bytes);
-    if let Some(body_map) = &registry.body_map {
-        let class_tag = body_map.class_tag.as_str();
-        let record_index = body_map.record_index;
-        primary_records.push(primary_record(record_index, out.len())?);
-        native_lp_ascii(&mut out, class_tag)?;
-        out.extend_from_slice(&record_index.to_le_bytes());
-        out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
-        let count = u32::try_from(body_map.entries.as_map().len())
-            .map_err(|_| CodecError::NotImplemented("Design body map exceeds u32::MAX".into()))?;
-        out.extend_from_slice(&count.to_le_bytes());
-        for (&body_key, &entity_suffix) in body_map.entries.as_map() {
-            out.extend_from_slice(&body_key.to_le_bytes());
-            out.extend_from_slice(&entity_suffix.to_le_bytes());
-        }
-        out.extend_from_slice(&0u64.to_le_bytes());
-        out.extend_from_slice(&0u32.to_le_bytes());
-        native_lp_utf16(&mut out, "BREP.generated.smbh")?;
-    }
-    encode_browser_nodes(&mut out, &mut primary_records, registry)?;
-    if let Some(records) = neutral {
-        let base = out.len();
-        for &(record_index, offset) in &records.primaries {
-            primary_records.push(primary_record(record_index, base + offset)?);
-        }
-        without_primary.extend(
-            records
-                .secondaries
-                .iter()
-                .map(|&(record_index, _)| u64::from(record_index)),
-        );
-        out.extend_from_slice(&records.bytes);
-    }
+    // The recipes, the `BodiesRoot` record and the record-header stubs hold
+    // no primary index entry, so they precede the first primary record.
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -321,10 +291,48 @@ pub(super) fn encode_design_bulkstream(
         }
         out.push(0);
     }
-    for header in &native.design_record_headers {
+    // The prefix of a typed sketch record is written with that record.
+    let own = super::preconditions::own_record_headers(native);
+    for header in native
+        .design_record_headers
+        .iter()
+        .filter(|header| !own.contains(header.id.as_str()))
+    {
         native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
         without_primary.insert(u64::from(header.record_index));
+    }
+    if let Some(body_map) = &registry.body_map {
+        let class_tag = body_map.class_tag.as_str();
+        let record_index = body_map.record_index;
+        primary_records.push(primary_record(record_index, out.len())?);
+        native_lp_ascii(&mut out, class_tag)?;
+        out.extend_from_slice(&record_index.to_le_bytes());
+        out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
+        let count = u32::try_from(body_map.entries.as_map().len())
+            .map_err(|_| CodecError::NotImplemented("Design body map exceeds u32::MAX".into()))?;
+        out.extend_from_slice(&count.to_le_bytes());
+        for (&body_key, &entity_suffix) in body_map.entries.as_map() {
+            out.extend_from_slice(&body_key.to_le_bytes());
+            out.extend_from_slice(&entity_suffix.to_le_bytes());
+        }
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        native_lp_utf16(&mut out, "BREP.generated.smbh")?;
+    }
+    encode_browser_nodes(&mut out, &mut primary_records, registry)?;
+    if let Some(records) = neutral {
+        let base = out.len();
+        for &(record_index, offset) in &records.primaries {
+            primary_records.push(primary_record(record_index, base + offset)?);
+        }
+        without_primary.extend(
+            records
+                .secondaries
+                .iter()
+                .map(|&(record_index, _)| u64::from(record_index)),
+        );
+        out.extend_from_slice(&records.bytes);
     }
     for header in &native.design_entity_headers {
         primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
@@ -955,6 +963,53 @@ fn construction_recipe_name(kind: ConstructionRecipeKind) -> &'static [u8] {
         ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data",
         ConstructionRecipeKind::Edge => b"edge_recipe_data",
         ConstructionRecipeKind::Vertex => b"vertex_recipe_data",
+    }
+}
+
+/// The persistent references the written sketch records do not restate. A
+/// written sketch point stores its `pt_tag` reference and a written sketch
+/// curve its `crv_primary_id` and `crv_secondary_id` references, which read
+/// back as persistent references; each restates one reference of its kind
+/// and value.
+fn standalone_references(native: &F3dNative) -> Vec<&PersistentReference> {
+    let mut restated = BTreeMap::<(u8, u64), usize>::new();
+    let mut restate = |kind: PersistentReferenceKind, value: u64| {
+        *restated
+            .entry((reference_kind_key(kind), value))
+            .or_default() += 1;
+    };
+    for point in &native.sketch_points {
+        if let Some(persistent_id) = point.persistent_id() {
+            restate(PersistentReferenceKind::Point, persistent_id);
+        }
+    }
+    for curve in &native.sketch_curve_identities {
+        restate(
+            PersistentReferenceKind::CurvePrimary,
+            curve.primary_id.get(),
+        );
+        restate(PersistentReferenceKind::CurveSecondary, curve.secondary_id);
+    }
+    native
+        .persistent_references
+        .iter()
+        .filter(|reference| {
+            match restated.get_mut(&(reference_kind_key(reference.kind), reference.value)) {
+                Some(count) if *count > 0 => {
+                    *count -= 1;
+                    false
+                }
+                _ => true,
+            }
+        })
+        .collect()
+}
+
+fn reference_kind_key(kind: PersistentReferenceKind) -> u8 {
+    match kind {
+        PersistentReferenceKind::Point => 0,
+        PersistentReferenceKind::CurvePrimary => 1,
+        PersistentReferenceKind::CurveSecondary => 2,
     }
 }
 

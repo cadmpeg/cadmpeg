@@ -36,7 +36,7 @@ use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::geometry::FinitePoint3;
-use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::geometry::legacy_cache::FitTolerance;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -357,6 +357,9 @@ pub(super) struct Reduction<'a> {
     /// The reduction before the first held state, which the writer takes
     /// again where it no longer writes the held items.
     unheld: Option<Box<Reduction<'a>>>,
+    /// The native parameter records removed for the neutral Design stream to
+    /// regenerate, each with the neutral parameter it projects to.
+    regenerated_parameters: Vec<(String, Option<ParameterId>)>,
 }
 
 impl<'a> Reduction<'a> {
@@ -380,6 +383,7 @@ impl<'a> Reduction<'a> {
             opened: BTreeMap::new(),
             assumed_arcs: Vec::new(),
             unheld: None,
+            regenerated_parameters: Vec::new(),
         }
     }
 
@@ -1568,6 +1572,10 @@ impl<'a> Reduction<'a> {
     /// Returns whether it removed one.
     fn drop_design_stream(&mut self, reason: &str) -> bool {
         let regenerated = self.neutral_regenerated_arenas();
+        if regenerated.contains(&"design_parameters") {
+            let records = self.native_parameter_records();
+            self.regenerated_parameters.extend(records);
+        }
         let rewritten = self.remove_native_arenas(|arena| regenerated.contains(&arena));
         let dropped = self.remove_native_arenas(|arena| !BREP_ARENAS.contains(&arena));
         let progressed = !dropped.is_empty() || !rewritten.is_empty();
@@ -1580,6 +1588,64 @@ impl<'a> Reduction<'a> {
         }
         self.native.drop_records("f3d", reason, dropped);
         progressed
+    }
+
+    /// The native parameter records of the document, each with the neutral
+    /// parameter it projects to.
+    fn native_parameter_records(&self) -> Vec<(String, Option<ParameterId>)> {
+        let Some(records) = self
+            .ir
+            .native
+            .namespace("f3d")
+            .and_then(|namespace| namespace.arenas().get("design_parameters"))
+        else {
+            return Vec::new();
+        };
+        records
+            .iter()
+            .map(|record| {
+                let parameter = record
+                    .field("record_index")
+                    .as_ref()
+                    .and_then(Value::as_u64)
+                    .and_then(|index| u32::try_from(index).ok())
+                    .map(|index| crate::ids::neutral_parameter_id_of(record.id(), index));
+                (record.id().to_owned(), parameter)
+            })
+            .collect()
+    }
+
+    /// Declare the native parameter records the written Design stream
+    /// regenerates. `restated` holds the neutral parameters the written
+    /// parameter records restate, where the attempt regenerated them from the
+    /// neutral parameters. A regenerated record whose neutral parameter no
+    /// written record restates is dropped.
+    pub(super) fn declare_regenerated_parameters(
+        &mut self,
+        restated: Option<&BTreeSet<ParameterId>>,
+    ) {
+        let mut records = std::mem::take(&mut self.regenerated_parameters);
+        if restated.is_some() {
+            records.extend(self.native_parameter_records());
+        } else if records.is_empty() {
+            return;
+        }
+        self.native
+            .arena("f3d", "design_parameters", NativeDisposition::Regenerated);
+        let unrestated = records
+            .into_iter()
+            .filter(|(_, parameter)| {
+                !parameter
+                    .as_ref()
+                    .is_some_and(|parameter| restated.is_some_and(|set| set.contains(parameter)))
+            })
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+        self.native.drop_records(
+            "f3d",
+            "because no written parameter record restates their neutral parameters",
+            unrestated,
+        );
     }
 
     /// The native Design arenas the neutral Design stream writes again: the

@@ -201,7 +201,7 @@ struct PlannedParameter {
 /// Where the native path takes its parameter records from.
 pub(in crate::writer::generate) enum ParameterSource {
     /// The native records: the neutral parameters equal their projection,
-    /// with the expressions and values of `NativeParameters::edits`.
+    /// up to the edited expressions and values.
     Native(NativeParameters),
     /// The design scope's parameters: the neutral parameters were edited.
     Neutral(ParameterPlan),
@@ -213,8 +213,8 @@ type ValueEdits = BTreeMap<String, (String, f64)>;
 
 /// The native parameter records the native path writes.
 pub(in crate::writer::generate) struct NativeParameters {
-    /// The edits of the neutral parameters.
-    edits: ValueEdits,
+    /// The records in their user form, encoded.
+    records: ParameterRecords,
     /// The losses of the user form.
     losses: Vec<LossNote>,
 }
@@ -541,17 +541,28 @@ pub(in crate::writer::generate) fn plan(
     }
 }
 
-/// The native records when the neutral parameters equal their projection;
-/// otherwise the root scope's parameters, and a loss naming each neutral
-/// parameter that no scope parameter restates. It never refuses.
+/// The native records when the neutral parameters equal their projection,
+/// or when the document does not hold its neutral parameters (a CADIR read
+/// without its decode sidecar states no parameter edit); otherwise the root
+/// scope's parameters, and a loss naming each neutral parameter that no scope
+/// parameter restates. It never refuses.
 pub(in crate::writer::generate) fn native_or_neutral(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<ParameterSource, CodecError> {
-    if let Some(edits) = value_edits(ctx, &target.model.parameters, native)? {
-        let losses = user_form(native, &edits)?.1;
-        return Ok(ParameterSource::Native(NativeParameters { edits, losses }));
+    let edits = if target.model.omitted_arenas_held() {
+        value_edits(ctx, &target.model.parameters, native)?
+    } else {
+        Some(ValueEdits::new())
+    };
+    if let Some(edits) = edits {
+        let (form, losses) = user_form(native, &edits)?;
+        let records = encode_document_parameters(&form, NATIVE_PARAMETER_COLLECTION)?;
+        return Ok(ParameterSource::Native(NativeParameters {
+            records,
+            losses,
+        }));
     }
     let mut plan = super::root_scope(target).map_or_else(
         || ParameterPlan {
@@ -742,17 +753,14 @@ fn user_form<'a>(
     Ok((written, losses))
 }
 
-/// The parameter records of `source`, encoded.
+/// The parameter records of `source`, encoded. It takes the encoded native
+/// records out of `source`.
 pub(in crate::writer::generate) fn encode(
-    source: &ParameterSource,
-    native: &F3dNative,
+    source: &mut ParameterSource,
     registry: &mut GeneratedDesignRegistry,
 ) -> Result<ParameterRecords, CodecError> {
     match source {
-        ParameterSource::Native(parameters) => encode_document_parameters(
-            &user_form(native, &parameters.edits)?.0,
-            NATIVE_PARAMETER_COLLECTION,
-        ),
+        ParameterSource::Native(parameters) => Ok(std::mem::take(&mut parameters.records)),
         ParameterSource::Neutral(plan) => {
             let indices = plan.allocate(registry)?;
             plan.encode(registry, &indices, None)
@@ -852,6 +860,23 @@ impl ParameterPlan {
     /// The ids of the written parameters.
     pub(in crate::writer::generate) fn written(&self) -> impl Iterator<Item = &ParameterId> {
         self.written.iter().map(|parameter| &parameter.source)
+    }
+
+    /// The ids of the parameters a written record restates: the written
+    /// user parameters, those written features own, and the driven
+    /// parameters a written dimension binds.
+    pub(in crate::writer::generate) fn restated(&self) -> BTreeSet<ParameterId> {
+        self.written
+            .iter()
+            .chain(&self.claimed)
+            .map(|parameter| parameter.source.clone())
+            .chain(
+                self.driven
+                    .iter()
+                    .filter(|parameter| parameter.taken)
+                    .map(|parameter| parameter.source.clone()),
+            )
+            .collect()
     }
 
     pub(in crate::writer::generate) fn into_losses(self) -> Vec<LossNote> {

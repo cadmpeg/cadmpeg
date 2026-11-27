@@ -8,7 +8,7 @@ use std::io::{Seek, Write};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::subset_lowering::{lower_subset_curves, SubsetLowering};
 use cadmpeg_ir::codec::write::{
-    ArenaDisposition, ArenaDispositions, MissingStateForm, NativeDisposition, NativeDispositions,
+    ArenaDisposition, ArenaDispositions, MissingStateForm, NativeDispositions,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
@@ -38,7 +38,7 @@ use preconditions::{
     validate_source_less_auxiliary_geometry, validate_source_less_design_links,
     validate_source_less_design_ownership, validate_source_less_history_graph,
     validate_source_less_procedural_carriers, validate_source_less_recipes,
-    validate_source_less_sketch_graph, validate_source_less_topology_tolerances, StampMark,
+    validate_source_less_topology_tolerances, StampMark,
 };
 use presentation::{BodySelection, GeneratedDesignRegistry};
 use records::{encode_design_bulkstream, encode_design_metastream};
@@ -85,7 +85,7 @@ pub(super) fn write_new(
     let mut reduction = Reduction::new(ctx, lowered.as_ref(), missing_states);
     reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
-    let (staged, mut coverage, design_losses, regenerated_parameters) = loop {
+    let (staged, mut coverage, design_losses, restated_parameters) = loop {
         let mut staged = std::io::Cursor::new(Vec::new());
         let form = AttemptForm {
             write_design: reduction.writes_design(),
@@ -98,8 +98,8 @@ pub(super) fn write_new(
             Ok(Attempted {
                 coverage,
                 losses,
-                regenerated_parameters,
-            }) => break (staged, coverage, losses, regenerated_parameters),
+                restated_parameters,
+            }) => break (staged, coverage, losses, restated_parameters),
             Err(failure) => {
                 reduction.degrade(failure, |target, stage| writes_alone(ctx, target, stage))?;
             }
@@ -120,10 +120,8 @@ pub(super) fn write_new(
         .ok()
         .flatten()
         .is_some_and(|design| design.rolls_back());
-    let (mut losses, mut native) = reduction.finish();
-    if regenerated_parameters {
-        native.arena("f3d", "design_parameters", NativeDisposition::Regenerated);
-    }
+    reduction.declare_regenerated_parameters(restated_parameters.as_ref());
+    let (mut losses, native) = reduction.finish();
     losses.extend(staged_loss);
     losses.extend(design_losses);
     Ok(Generated {
@@ -326,7 +324,6 @@ fn attempt<W: Write + Seek>(
             validate_source_less_history_graph(target, &native)?;
             let parameters = design::parameters::native_or_neutral(ctx, target, &native)?;
             validate_source_less_design_ownership(&native)?;
-            validate_source_less_sketch_graph(&native)?;
             validate_source_less_recipes(&native)?;
             Ok(parameters)
         };
@@ -374,6 +371,7 @@ fn attempt<W: Write + Seek>(
             coverage.design.sketch_entities = ArenaDisposition::Reported;
             coverage.design.sketch_constraints = ArenaDisposition::Reported;
         }
+        let restated_parameters = Some(design.restated_parameters());
         let mut losses = appearance_losses(target);
         losses.extend(design.into_losses());
         losses.extend(history_notes);
@@ -386,7 +384,7 @@ fn attempt<W: Write + Seek>(
             return Ok(Attempted {
                 coverage,
                 losses,
-                regenerated_parameters: false,
+                restated_parameters,
             });
         }
         losses.extend(unstated_visibility);
@@ -403,11 +401,11 @@ fn attempt<W: Write + Seek>(
         return Ok(Attempted {
             coverage,
             losses,
-            regenerated_parameters: false,
+            restated_parameters,
         });
     }
     let mut neutral_records = None;
-    let parameter_records = match (neutral.as_mut(), &native_parameters) {
+    let parameter_records = match (neutral.as_mut(), native_parameters.as_mut()) {
         (Some(neutral), _) => {
             let (parameter_records, records) = neutral
                 .records(&mut design_registry)
@@ -415,8 +413,9 @@ fn attempt<W: Write + Seek>(
             neutral_records = Some(records);
             parameter_records
         }
-        (None, Some(source)) => design::parameters::encode(source, &native, &mut design_registry)
-            .map_err(Failure::design)?,
+        (None, Some(source)) => {
+            design::parameters::encode(source, &mut design_registry).map_err(Failure::design)?
+        }
         (None, None) => records::ParameterRecords::default(),
     };
     let mut configurations = Vec::new();
@@ -530,6 +529,7 @@ fn attempt<W: Write + Seek>(
             ArenaDisposition::Written
         }
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
+            let restated_parameters = Some(plan.restated());
             let mut losses = plan.into_losses();
             losses.extend(unstated_visibility);
             losses.extend(member_runs);
@@ -542,13 +542,16 @@ fn attempt<W: Write + Seek>(
                     ArenaDisposition::Written,
                 ),
                 losses,
-                regenerated_parameters: true,
+                restated_parameters,
             });
         }
         None if neutral.is_some() => ArenaDisposition::Reported,
         None => ArenaDisposition::Dropped,
     };
     let written = neutral.is_some();
+    let restated_parameters = neutral
+        .as_ref()
+        .map(design::NeutralDesign::restated_parameters);
     let mut losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
     losses.extend(native_losses);
     losses.extend(unstated_visibility);
@@ -557,17 +560,18 @@ fn attempt<W: Write + Seek>(
     Ok(Attempted {
         coverage: coverage(write_design, parameters, written, ArenaDisposition::Written),
         losses,
-        regenerated_parameters: false,
+        restated_parameters,
     })
 }
 
 /// What one attempt wrote: the arena coverage, the losses of the design
-/// scope's records, and whether the native parameter records were
-/// regenerated from the design scope's parameters.
+/// scope's records, and, where it regenerated the native parameter records
+/// from the neutral parameters, the ids of those the written records
+/// restate.
 struct Attempted {
     coverage: ArenaDispositions,
     losses: Vec<LossNote>,
-    regenerated_parameters: bool,
+    restated_parameters: Option<std::collections::BTreeSet<cadmpeg_ir::features::ParameterId>>,
 }
 
 /// The snapshot stream of a Base Feature design: the B-rep stream of

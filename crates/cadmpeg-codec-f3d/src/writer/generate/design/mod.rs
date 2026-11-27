@@ -60,7 +60,7 @@ use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::StepRef;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::FeatureId;
+use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchConstraintId;
@@ -1217,6 +1217,11 @@ impl NeutralDesign<'_> {
             .items
             .iter()
             .any(|item| !item.dimensions.is_empty())
+    }
+
+    /// The ids of the parameters a written record restates.
+    pub(super) fn restated_parameters(&self) -> BTreeSet<ParameterId> {
+        self.parameters.restated()
     }
 
     pub(super) fn into_losses(self) -> Vec<LossNote> {
