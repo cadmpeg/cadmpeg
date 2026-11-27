@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-scoped addresses of consolidated allocations.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::wire::bytes::{allocation_reference, AllocationReference, AllocationReferenceEncoding};
 use crate::wire::records::{
-    parse_consolidated_allocation_record, records_are_contiguous, ConsolidatedRecord, SourceExtent,
+    parse_consolidated_allocation_record, records_are_contiguous, ConsolidatedFamily,
+    ConsolidatedRecord, SourceExtent,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -193,6 +195,101 @@ impl<'a> AllocationJournal<'a> {
         (self.locations.get(origin)?.scope == self.locations.get(target)?.scope)
             .then(|| self.records.get(target))?
     }
+}
+
+fn resolve_journal_reference<'a>(
+    journal: &AllocationJournal<'a>,
+    origin: usize,
+    reference: AllocationReference,
+) -> Option<(usize, &'a ConsolidatedRecord)> {
+    let record = match reference.encoding {
+        AllocationReferenceEncoding::BackwardDistance | AllocationReferenceEncoding::WidthCoded => {
+            journal.resolve_weighted_distance(origin, reference.value)?
+        }
+        AllocationReferenceEncoding::OwnedChild
+        | AllocationReferenceEncoding::TaggedU8
+        | AllocationReferenceEncoding::TaggedU16
+        | AllocationReferenceEncoding::TaggedU24 => journal.resolve_address(
+            origin,
+            journal
+                .address(origin)?
+                .checked_add(u64::from(reference.value))?
+                .checked_add(1)?,
+        )?,
+        AllocationReferenceEncoding::Selector2 => return None,
+    };
+    let target = journal.index(record.source_index(), record.source_range().start)?;
+    Some((target, record))
+}
+
+/// Extract exact `[start_vertex, end_vertex]` allocation-journal identities from
+/// consolidated `b2 03 5e` edge records whose endpoint references resolve to
+/// `b2 03 5d` vertex records in the same allocation scope.
+pub(crate) fn consolidated_edge_vertex_references(
+    data: &[u8],
+    sources: &[Vec<SourceExtent>],
+    records: &[ConsolidatedRecord],
+) -> BTreeMap<u32, [u32; 2]> {
+    let journal = AllocationJournal::with_sources(data, sources, records);
+    let mut resolved = BTreeMap::<u32, Option<[u32; 2]>>::new();
+    for (index, record) in records.iter().enumerate() {
+        if record.family() != ConsolidatedFamily::B || record.class() != 0x5e {
+            continue;
+        }
+        let Some(edge_tag) = journal
+            .absolute_address(index)
+            .and_then(|addr| u32::try_from(addr).ok())
+        else {
+            continue;
+        };
+        let Some(payload) = record.payload_bytes(data, sources) else {
+            continue;
+        };
+        let mut at = 0usize;
+        let mut refs = Vec::new();
+        let mut terminal_len = 0usize;
+        while at < payload.len() && refs.len() < 6 {
+            let start = at;
+            let Some(reference) = allocation_reference(&payload, &mut at) else {
+                refs.clear();
+                break;
+            };
+            terminal_len = at - start;
+            refs.push(reference);
+        }
+        if at != payload.len() || terminal_len != 1 {
+            continue;
+        }
+        let [start_ref, end_ref] = match refs.as_slice() {
+            [_, start, end, _, _, _] => [*start, *end],
+            [start, end, _, _, _] => [*start, *end],
+            _ => continue,
+        };
+        let resolve_vertex = |reference: AllocationReference| -> Option<u32> {
+            let (target_idx, target) = resolve_journal_reference(&journal, index, reference)?;
+            if target.family() != ConsolidatedFamily::B || target.class() != 0x5d {
+                return None;
+            }
+            u32::try_from(journal.absolute_address(target_idx)?).ok()
+        };
+        let (Some(start_tag), Some(end_tag)) = (resolve_vertex(start_ref), resolve_vertex(end_ref))
+        else {
+            continue;
+        };
+        let pair = [start_tag, end_tag];
+        resolved
+            .entry(edge_tag)
+            .and_modify(|existing| {
+                if *existing != Some(pair) {
+                    *existing = None;
+                }
+            })
+            .or_insert(Some(pair));
+    }
+    resolved
+        .into_iter()
+        .filter_map(|(edge, pair)| pair.map(|pair| (edge, pair)))
+        .collect()
 }
 
 /// Walk a logical byte gap inside one record source and return the signed sum
