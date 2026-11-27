@@ -219,8 +219,9 @@ F3Z members have separate CAM identity namespaces and source member paths.
 Parameters keep their source expressions as Fusion CAM expression tokens.
 Unclassified numbers keep their source numeric value. Native parameter records
 keep the exact evaluated text and XML spelling. Face strategies map to plane
-milling. A parameter's unit is the `mm`, `mmpm`, or `rpm` suffix of its
-expression literal; any other suffix is unread (`cam.parameter-unit-unread`).
+milling. A parameter's quantity is the unit suffix of its expression literal (`mm`, `cm`,
+`in`; `mmpm`, `cmpm`, `inpm`; `rpm`); its `value` is in millimetres, millimetres
+per minute, or revolutions per minute whatever the suffix. Any other suffix is unread (`cam.parameter-unit-unread`).
 Feeds convert from millimetres per minute to millimetres per second; spindle speeds
 convert from revolutions per minute to radians per second. A number with no
 stated unit is neither bound to a feed nor to a length field.

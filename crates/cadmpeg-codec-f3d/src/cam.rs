@@ -239,7 +239,7 @@ impl<'a> Index<'a> {
 }
 
 /// The numeric literal and unit suffix of an `expression` of the form
-/// `2mm`, `1000mmpm`, `10000rpm`.
+/// `2mm`, `0.2cm`, `1000mmpm`, `10000rpm`.
 fn literal_suffix(expression: &str) -> Option<&str> {
     let expression = expression.trim();
     let split = expression.find(|c: char| c.is_ascii_alphabetic())?;
@@ -247,13 +247,14 @@ fn literal_suffix(expression: &str) -> Option<&str> {
     Some(&expression[split..])
 }
 
-/// The unit an `expression` literal names. Only the suffixes the format
-/// states name a unit: `mm`, `mmpm`, and `rpm`. The parameter's `value` is
-/// the number in that unit.
+/// The unit of a parameter's `value`, from the unit suffix of its `expression`
+/// literal. The suffix states the unit the user typed (`mm`, `cm`, `in`; `mmpm`,
+/// `cmpm`, `inpm`; `rpm`); `value` is always in millimeters, millimeters per
+/// minute, or revolutions per minute. Any other suffix names no unit.
 fn expression_unit(expression: &str) -> Option<&'static str> {
     match literal_suffix(expression)? {
-        "mm" => Some("mm"),
-        "mmpm" => Some("mm/min"),
+        "mm" | "cm" | "in" => Some("mm"),
+        "mmpm" | "cmpm" | "inpm" => Some("mm/min"),
         "rpm" => Some("rpm"),
         _ => None,
     }

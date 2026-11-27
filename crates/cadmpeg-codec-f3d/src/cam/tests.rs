@@ -340,9 +340,32 @@ fn cam_unstated_strategy_name_stays_native_with_a_loss() {
 }
 
 #[test]
+fn cam_value_is_in_canonical_units_whatever_suffix_the_expression_types() {
+    let (target, losses) = parse_text(
+        r#"<document><object id="job" strategy="setup"><Parameters><Parameter name="job_stockOffsetSides" value="2" expression="0.2cm"/><Parameter name="job_stockOffsetTop" value="1.9999999999920006" expression="0.03937007874in"/><Parameter name="a" value="1000" expression="100cmpm"/><Parameter name="b" value="999.99999999600004" expression="39.37007874inpm"/><Parameter name="c" value="2" expression="2mm"/></Parameters></object></document>"#,
+    );
+    let units: Vec<_> = target.setups[0]
+        .parameters
+        .iter()
+        .map(|parameter| parameter.unit.as_deref())
+        .collect();
+    assert_eq!(
+        units,
+        [
+            Some("mm"),
+            Some("mm"),
+            Some("mm/min"),
+            Some("mm/min"),
+            Some("mm")
+        ]
+    );
+    assert!(!has_loss(&losses, F3dLossCode::CamParameterUnitUnread));
+}
+
+#[test]
 fn cam_unstated_unit_suffix_names_no_unit_and_is_a_loss() {
     let (target, losses) = parse_text(
-        r#"<document><object id="job" strategy="setup"><Parameters><Parameter name="job_stockOffsetTop" value="1" expression="1in"/><Parameter name="job_stockOffsetSides" value="2" expression="2mm"/></Parameters></object></document>"#,
+        r#"<document><object id="job" strategy="setup"><Parameters><Parameter name="job_stockOffsetTop" value="1" expression="1m"/><Parameter name="job_stockOffsetSides" value="2" expression="2mm"/></Parameters></object></document>"#,
     );
     let parameters = &target.setups[0].parameters;
     assert_eq!(parameters[0].unit, None);

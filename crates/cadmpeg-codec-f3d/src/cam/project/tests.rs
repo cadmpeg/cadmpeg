@@ -146,13 +146,19 @@ fn technology_binds_parameters_of_the_stated_units() {
 }
 
 #[test]
-fn technology_leaves_unstated_unit_suffixes_unbound() {
-    let (_, operation, losses) = operation_with(
-        r#"<Parameter name="tool_feedPlunge" value="40" expression="40inpm"/><Parameter name="tool_feedRamp" value="30" expression="30cmpm"/><Parameter name="stepover" value="0.5" expression="0.5in"/><Parameter name="tolerance" value="0.1"/>"#,
+fn technology_values_are_canonical_whatever_unit_the_expression_types() {
+    let (ir, operation, losses) = operation_with(
+        r#"<Parameter name="tool_feedCutting" value="1000" expression="100cmpm"/><Parameter name="tool_feedPlunge" value="999.99999999600004" expression="39.37007874inpm"/><Parameter name="stepover" value="4.5" expression="0.45cm"/><Parameter name="tolerance" value="0.1" expression="0.1m"/>"#,
     );
     let technology = &operation["technology"];
-    assert_eq!(technology["feeds"].as_array().unwrap().len(), 0);
-    assert!(technology.get("stepover").is_none());
+    assert_eq!(technology["feeds"].as_array().unwrap().len(), 2);
+    let (_, cutting) = parameter(&ir, "operation", "tool_feedCutting");
+    assert!((cutting - 1000.0 / 60.0).abs() < 1e-9);
+    let (_, plunge) = parameter(&ir, "operation", "tool_feedPlunge");
+    assert!((plunge - 1000.0 / 60.0).abs() < 1e-6);
+    let (stepover, value) = parameter(&ir, "operation", "stepover");
+    assert!((value - 4.5).abs() < 1e-9);
+    assert_eq!(technology["stepover"], bound(&stepover));
     assert!(technology.get("tolerance").is_none());
     assert!(has_loss(&losses, F3dLossCode::CamParameterUnitUnread));
 }
