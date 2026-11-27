@@ -91,10 +91,10 @@ pub(crate) enum FreecadLossCode {
     /// points, which `FreeCAD`'s solver cannot satisfy; the joint keeps the
     /// distance as a native option.
     FeatureJointDistanceUnsatisfiable,
-    /// An assembly joint property that an `ExpressionEngine` entry drives
-    /// has a joint value that binds no parameter: the stated value is the
-    /// stored one or derived from it, and the expression stays in the
-    /// native record or the parameter.
+    /// An `ExpressionEngine` entry of an assembly joint drives a property
+    /// that binds no parameter: a joint value stated as the stored one or
+    /// derived from it, or a property the joint does not state. The
+    /// expression stays in the native record or the parameter.
     FeatureJointValueUnbound,
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
@@ -102,6 +102,9 @@ pub(crate) enum FreecadLossCode {
     /// A spreadsheet formula's quantity is not found; its parameter is a
     /// dimensionless real.
     ParameterQuantityAssumed,
+    /// A formula's kind repeats a string by a plain number whose value the
+    /// file does not store; the kind takes the number as an integer.
+    ParameterIntegerAssumed,
     /// A spreadsheet cell holds a number that is not finite; its parameter
     /// has no value.
     ParameterValueNonFinite,
@@ -200,6 +203,7 @@ impl FreecadLossCode {
         Self::FeatureJointValueUnbound,
         Self::ParameterExpressionEmpty,
         Self::ParameterQuantityAssumed,
+        Self::ParameterIntegerAssumed,
         Self::ParameterValueNonFinite,
         Self::ParameterDependencyDropped,
         Self::SketchNativeGeometry,
@@ -270,6 +274,7 @@ impl FreecadLossCode {
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
             Self::ParameterQuantityAssumed => "parameter.quantity-assumed",
+            Self::ParameterIntegerAssumed => "parameter.integer-assumed",
             Self::ParameterValueNonFinite => "parameter.value-non-finite",
             Self::ParameterDependencyDropped => "parameter.dependency-dropped",
             Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
@@ -347,6 +352,7 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
             | Self::ParameterQuantityAssumed
+            | Self::ParameterIntegerAssumed
             | Self::ParameterValueNonFinite
             | Self::ParameterDependencyDropped
             | Self::FeatureLinkPlacementUnresolved
@@ -419,6 +425,7 @@ impl FreecadLossCode {
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
             | Self::ParameterQuantityAssumed
+            | Self::ParameterIntegerAssumed
             | Self::ParameterValueNonFinite
             | Self::ParameterDependencyDropped
             | Self::SourceGuiPropertyKeyBlank
@@ -505,6 +512,7 @@ mod tests {
                 "feature.joint-value-unbound",
                 "parameter.expression-empty",
                 "parameter.quantity-assumed",
+                "parameter.integer-assumed",
                 "parameter.value-non-finite",
                 "parameter.dependency-dropped",
                 "sketch.native-geometry",

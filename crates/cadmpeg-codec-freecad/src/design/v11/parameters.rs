@@ -27,7 +27,9 @@ use cadmpeg_ir::scalar::FiniteReal;
 
 use cadmpeg_ir::spreadsheets::CellAddress;
 
-use crate::design::cell_content::formula::{self, Kind, Origin, Path, Reference, Scope, Unparsed};
+use crate::design::cell_content::formula::{
+    self, Kind, Origin, Path, Python, Reference, Scope, Unparsed, Value,
+};
 use crate::design::cell_content::{self, CellContent, CellKind};
 use crate::loss::FreecadLossCode;
 use crate::native::{ObjectRecord, PropertyRecord};
@@ -109,7 +111,7 @@ pub(super) fn project(
             },
         )
         .collect::<BTreeMap<_, _>>();
-    let kinds = cell_kinds(&by_id, &formulas, &catalog, &is_cell);
+    let (values, assumed) = cell_values(&by_id, &formulas, &catalog, &is_cell);
     let mut projected = Vec::new();
     for parameter in all() {
         let Some(owner) = owners.get(&parameter.id) else {
@@ -125,7 +127,8 @@ pub(super) fn project(
         let sheet = carrier == Some(SHEET);
         let context = Context {
             catalog: &catalog,
-            kinds: &kinds,
+            values: &values,
+            assumed: &assumed,
             minted: &minted,
         };
         let (kind, value, parameter_definition) = if sheet {
@@ -209,9 +212,11 @@ struct Catalog<'a> {
 
 /// What a path names.
 enum Target<'a> {
-    Parameter(&'a ParameterId),
-    /// A property that is no parameter, with the kind of its value.
-    Property(Kind),
+    /// A parameter, with the Python type of its property where the property
+    /// has a stated type.
+    Parameter(&'a ParameterId, Option<Python>),
+    /// A property that is no parameter, with its value.
+    Property(Value),
     /// A property of another document or of a sub-object.
     Outside,
     Unresolved,
@@ -357,15 +362,24 @@ impl<'a> Catalog<'a> {
             .chain(rest[1..].iter().cloned())
             .collect::<Vec<_>>()
             .join(".");
+        let typed = self.types.get(&(object.id().as_str(), property.as_str()));
         if let Some(Some(id)) = self.named.get(&(feature.clone(), key)) {
-            return Target::Parameter(id);
+            return Target::Parameter(
+                id,
+                typed.map(|type_name| property_python(type_name, &rest[1..])),
+            );
         }
-        let key = (object.id().as_str(), property.as_str());
-        if self.subnamed.contains(&key) {
-            return Target::Property(Kind::Unknown);
+        if self
+            .subnamed
+            .contains(&(object.id().as_str(), property.as_str()))
+        {
+            return Target::Property(Value::new(Kind::Unknown, Python::Refused));
         }
-        match self.types.get(&key) {
-            Some(type_name) => Target::Property(property_kind(type_name, &rest[1..])),
+        match typed {
+            Some(type_name) => Target::Property(Value::new(
+                property_kind(type_name, &rest[1..]),
+                property_python(type_name, &rest[1..]),
+            )),
             None => Target::Unresolved,
         }
     }
@@ -432,6 +446,29 @@ fn property_kind(type_name: &str, sub: &[String]) -> Kind {
     Kind::Quantity(quantity)
 }
 
+/// The Python type of the value of a property of type `type_name`, or of its
+/// component `sub` (`getPyObject`, `getPyPathValue`): a link with sub-names
+/// and a color are tuples.
+fn property_python(type_name: &str, sub: &[String]) -> Python {
+    let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
+    match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
+        (Some("Integer" | "IntegerConstraint" | "Percent" | "Bool"), []) => Python::Int,
+        (Some("Float" | "FloatConstraint" | "Precision"), [])
+        | (
+            Some("Placement"),
+            ["Rotation", "Axis", "x" | "y" | "z"] | ["Rotation", "Yaw" | "Pitch" | "Roll"],
+        ) => Python::Float,
+        (
+            Some(
+                "LinkSub" | "LinkSubChild" | "LinkSubGlobal" | "LinkSubHidden" | "XLinkSub"
+                | "XLinkSubHidden" | "Color",
+            ),
+            [],
+        ) => Python::Refused,
+        _ => Python::Object,
+    }
+}
+
 /// The quantity of a quantity property `App::Property<name>`.
 fn property_quantity(name: &str) -> Option<Quantity> {
     Some(match name {
@@ -470,28 +507,37 @@ fn property_quantity(name: &str) -> Option<Quantity> {
     })
 }
 
-/// The kinds of the cells of each sheet, each formula after the cells it
-/// references. A formula in a cycle has no kind the file determines.
-fn cell_kinds<'a>(
+/// The values of the cells of each sheet, each formula after the cells it
+/// references, and the formula cells whose kind takes a plain number of
+/// unstated value as an `int`. A value cell's number is an `int` where it is
+/// whole. A formula in a cycle has no kind the file determines.
+fn cell_values<'a>(
     parameters: &BTreeMap<&'a ParameterId, &'a LegacyParameter>,
     formulas: &BTreeMap<&'a ParameterId, Result<formula::Node<'a>, Unparsed>>,
     catalog: &Catalog<'a>,
     is_cell: &dyn Fn(&LegacyParameter) -> bool,
-) -> HashMap<&'a ParameterId, Kind> {
-    let mut kinds = HashMap::new();
+) -> (HashMap<&'a ParameterId, Value>, BTreeSet<&'a ParameterId>) {
+    let text = Value::new(Kind::Text, Python::Object);
+    let mut values = HashMap::new();
+    let mut assumed = BTreeSet::new();
     for parameter in parameters.values().filter(|parameter| is_cell(parameter)) {
-        let kind = match cell_content::read(&parameter.expression) {
-            CellContent::Text(_) => Kind::Text,
+        let value = match cell_content::read(&parameter.expression) {
+            CellContent::Text(_) => text,
             CellContent::Value(value) => match value.kind {
-                CellKind::Quantity(quantity) => Kind::Quantity(quantity),
-                CellKind::Native(_) => Kind::Unknown,
+                CellKind::Quantity(Quantity::REAL) => {
+                    Value::new(Kind::Quantity(Quantity::REAL), Python::of(value.number))
+                }
+                CellKind::Quantity(quantity) => {
+                    Value::new(Kind::Quantity(quantity), Python::Object)
+                }
+                CellKind::Native(_) => Value::new(Kind::Unknown, Python::Object),
             },
             CellContent::Formula(_) => match formulas.get(&parameter.id) {
-                Some(Err(Unparsed::Syntax)) => Kind::Text,
+                Some(Err(Unparsed::Syntax)) => text,
                 Some(Ok(_) | Err(Unparsed::Limit)) | None => continue,
             },
         };
-        kinds.insert(&parameter.id, kind);
+        values.insert(&parameter.id, value);
     }
     let pending = formulas
         .iter()
@@ -507,7 +553,7 @@ fn cell_kinds<'a>(
         for reference in node.references() {
             match reference {
                 Reference::Path(path) => {
-                    if let Target::Parameter(target) = catalog.resolve(owner, path) {
+                    if let Target::Parameter(target, _) = catalog.resolve(owner, path) {
                         sources.insert(target);
                     }
                 }
@@ -531,13 +577,18 @@ fn cell_kinds<'a>(
         let owner = parameters
             .get(id)
             .and_then(|parameter| parameter.owner.as_ref());
-        let kind = pending[id].kind(&mut Lookup {
+        let mut lookup = Lookup {
             catalog,
-            kinds: &kinds,
+            values: &values,
             owner,
             projected: false,
-        });
-        kinds.insert(id, kind);
+            assumed: false,
+        };
+        let value = pending[id].value(&mut lookup);
+        if lookup.assumed {
+            assumed.insert(id);
+        }
+        values.insert(id, Value::new(value.kind, pending[id].stored(value)));
         for dependent in dependents.get(id).into_iter().flatten() {
             if let Some(count) = waiting.get_mut(dependent) {
                 *count -= 1;
@@ -548,63 +599,81 @@ fn cell_kinds<'a>(
         }
     }
     for id in formulas.keys() {
-        kinds.entry(*id).or_insert(Kind::Unknown);
+        values
+            .entry(*id)
+            .or_insert(Value::new(Kind::Unknown, Python::Unsettled));
     }
-    kinds
+    (values, assumed)
 }
 
-/// The kinds a formula's paths take: a parameter's from its cell's kind or
-/// its stored value, and a property's from its type.
+/// The values a formula's paths take: a parameter's from its cell's value
+/// or its stored value, and a property's from its type.
 struct Lookup<'c, 'a> {
     catalog: &'c Catalog<'a>,
-    kinds: &'c HashMap<&'a ParameterId, Kind>,
+    values: &'c HashMap<&'a ParameterId, Value>,
     owner: Option<&'c FeatureId>,
     /// A cell of no kind the file determines is the real it is projected
     /// as.
     projected: bool,
+    /// The formula's kind takes a plain number of unstated value as an
+    /// `int`.
+    assumed: bool,
 }
 
 impl Lookup<'_, '_> {
-    fn parameter(&self, id: &ParameterId) -> Kind {
-        if let Some(kind) = self.kinds.get(id) {
-            return match kind {
-                Kind::Unknown if self.projected => Kind::Quantity(Quantity::REAL),
-                kind => *kind,
+    /// The value of parameter `id`, whose property has Python type `typed`
+    /// where the property has a stated type.
+    fn parameter(&self, id: &ParameterId, typed: Option<Python>) -> Value {
+        if let Some(value) = self.values.get(id) {
+            return match value.kind {
+                Kind::Unknown if self.projected => {
+                    Value::new(Kind::Quantity(Quantity::REAL), value.python)
+                }
+                _ => *value,
             };
         }
         let Some(parameter) = self.catalog.parameters.get(id) else {
-            return Kind::Unknown;
+            return Value::new(Kind::Unknown, Python::Object);
         };
-        match &parameter.value {
-            Some(LegacyValue::Length(_)) => Kind::Quantity(Quantity::LENGTH),
-            Some(LegacyValue::Angle(_)) => Kind::Quantity(Quantity::ANGLE),
-            Some(LegacyValue::Real(_) | LegacyValue::Integer(_)) => Kind::Quantity(Quantity::REAL),
-            Some(LegacyValue::Boolean(_)) => Kind::Boolean,
-            Some(LegacyValue::String(_)) => Kind::Text,
-            None => Kind::Unknown,
-        }
+        let (kind, python) = match &parameter.value {
+            Some(LegacyValue::Length(_)) => (Kind::Quantity(Quantity::LENGTH), Python::Object),
+            Some(LegacyValue::Angle(_)) => (Kind::Quantity(Quantity::ANGLE), Python::Object),
+            Some(LegacyValue::Real(_)) => (Kind::Quantity(Quantity::REAL), Python::Unsettled),
+            Some(LegacyValue::Integer(_)) => (Kind::Quantity(Quantity::REAL), Python::Int),
+            Some(LegacyValue::Boolean(_)) => (Kind::Boolean, Python::Int),
+            Some(LegacyValue::String(_)) => (Kind::Text, Python::Object),
+            None => (Kind::Unknown, Python::Object),
+        };
+        Value::new(kind, typed.unwrap_or(python))
     }
 }
 
 impl Scope for Lookup<'_, '_> {
-    fn path(&mut self, path: &Path) -> Kind {
+    fn path(&mut self, path: &Path) -> Value {
         match self.catalog.resolve(self.owner, path) {
-            Target::Parameter(id) => self.parameter(id),
-            Target::Property(kind) => kind,
-            Target::Outside | Target::Unresolved => Kind::Unknown,
+            Target::Parameter(id, typed) => self.parameter(id, typed),
+            Target::Property(value) => value,
+            Target::Outside | Target::Unresolved => Value::new(Kind::Unknown, Python::Object),
         }
     }
 
-    fn range(&mut self, from: &str, to: &str) -> Option<Vec<Kind>> {
+    fn range(&mut self, from: &str, to: &str) -> Option<Vec<Value>> {
         let ids = self.catalog.range(self.owner, from, to)?;
-        Some(ids.into_iter().map(|id| self.parameter(id)).collect())
+        Some(ids.into_iter().map(|id| self.parameter(id, None)).collect())
+    }
+
+    fn assume_integer(&mut self) {
+        self.assumed = true;
     }
 }
 
 /// What the projection of a parameter's expression reads.
 struct Context<'c, 'a> {
     catalog: &'c Catalog<'a>,
-    kinds: &'c HashMap<&'a ParameterId, Kind>,
+    values: &'c HashMap<&'a ParameterId, Value>,
+    /// The formula cells whose kind takes a plain number of unstated value
+    /// as an `int`.
+    assumed: &'c BTreeSet<&'a ParameterId>,
     /// The parameters that have no model record, and so no stored
     /// dependencies: their references, and each reference to them, bind.
     minted: &'c BTreeSet<&'a ParameterId>,
@@ -680,10 +749,12 @@ fn cell(
         Some(Err(Unparsed::Syntax)) | None => return text_cell(content),
     };
     let kind = context
-        .kinds
+        .values
         .get(&parameter.id)
-        .copied()
-        .unwrap_or(Kind::Unknown);
+        .map_or(Kind::Unknown, |value| value.kind);
+    if kind != Kind::Unknown && context.assumed.contains(&parameter.id) {
+        integer_assumed(parameter, losses);
+    }
     let expression = translated(parameter, text, node, context, kind, None, losses);
     match kind {
         Kind::Quantity(quantity) => {
@@ -717,6 +788,14 @@ fn assumed(parameter: &LegacyParameter, losses: &mut Vec<LossNote>) {
     losses.push(FreecadLossCode::ParameterQuantityAssumed.note(format!(
         "FCStd cell {} has a formula whose kind the file does not determine; its kind is \
          a dimensionless real",
+        parameter.id.as_str()
+    )));
+}
+
+fn integer_assumed(parameter: &LegacyParameter, losses: &mut Vec<LossNote>) {
+    losses.push(FreecadLossCode::ParameterIntegerAssumed.note(format!(
+        "FCStd parameter {} repeats a string by a plain number whose value the file does not \
+         store; its kind takes that number as an integer",
         parameter.id.as_str()
     )));
 }
@@ -807,12 +886,17 @@ fn expression(
     let Ok(node) = formula::parse(text) else {
         return source(text, Vec::new());
     };
-    let stated = node.kind(&mut Lookup {
+    let mut lookup = Lookup {
         catalog: context.catalog,
-        kinds: context.kinds,
+        values: context.values,
         owner: parameter.owner.as_ref(),
         projected: true,
-    });
+        assumed: false,
+    };
+    let stated = node.kind(&mut lookup);
+    if stated != Kind::Unknown && lookup.assumed {
+        integer_assumed(parameter, losses);
+    }
     translated(parameter, text, &node, context, stated, Some(kind), losses)
 }
 
@@ -960,7 +1044,7 @@ fn translated(
             continue;
         };
         match context.catalog.resolve(parameter.owner.as_ref(), path) {
-            Target::Parameter(id)
+            Target::Parameter(id, _)
                 if context.minted.contains(&parameter.id)
                     || context.minted.contains(id)
                     || parameter
@@ -977,7 +1061,7 @@ fn translated(
             Target::Property(_) | Target::Outside => {
                 dropped.push(text.get(path.span.clone()).unwrap_or(text));
             }
-            Target::Parameter(_) | Target::Unresolved => {}
+            Target::Parameter(..) | Target::Unresolved => {}
         }
     }
     if !dropped.is_empty() {

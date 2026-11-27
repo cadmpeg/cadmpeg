@@ -66,11 +66,12 @@ struct Decoded {
 }
 
 fn decode(first: &str, second: &str, distance: f64) -> Decoded {
+    decode_archive(distance_joint(first, second, distance))
+}
+
+fn decode_archive(archive: Vec<u8>) -> Decoded {
     let decoded = FcstdCodec
-        .decode(
-            &mut Cursor::new(distance_joint(first, second, distance)),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
     assert_valid_document(decoded.ir());
     let joint = decoded
@@ -326,5 +327,60 @@ fn an_element_of_another_document_stays_native() {
     assert!(charged(
         &decoded,
         FreecadLossCode::FeatureJointDistanceUnresolved
+    ));
+}
+
+#[test]
+fn a_driven_distance_that_stays_native_is_its_parameter() {
+    let archive = distance_joint(
+        "<XLink file=\"Other.FCStd\" name=\"Part\" sub=\"Face1\"/>",
+        &link("PinOccurrence", "Face2"),
+        3.0,
+    );
+    let archive = rewrite_entry(&archive, "Document.xml", |data| {
+        let text = std::str::from_utf8(data).expect("Document.xml is UTF-8");
+        let start = text
+            .find("<Object name=\"RevoluteJoint\">")
+            .expect("joint record");
+        let open = start
+            + text[start..]
+                .find("<ExpressionEngine count=\"0\">")
+                .expect("expression engine");
+        let close = open
+            + text[open..]
+                .find("</ExpressionEngine>")
+                .expect("expression engine end");
+        format!(
+            "{}<ExpressionEngine count=\"1\"><Expression path=\"Distance\" \
+             expression=\"1 mm + 2 mm\"/>{}",
+            &text[..open],
+            &text[close..]
+        )
+        .into_bytes()
+    });
+    let decoded = decode_archive(archive);
+    assert_eq!(
+        decoded.joint.kind,
+        JointKind::Distance {
+            distance: None,
+            limits: None
+        }
+    );
+    assert!(
+        matches!(
+            native(&decoded.joint, "Distance"),
+            Some(NativeOption::Length(Dimension::Parameter(id)))
+                if id.as_str() == "fcstd:design:parameter#RevoluteJoint:Distance"
+        ),
+        "{:?}",
+        decoded.joint.native_options
+    );
+    assert!(charged(
+        &decoded,
+        FreecadLossCode::FeatureJointDistanceUnresolved
+    ));
+    assert!(!charged(
+        &decoded,
+        FreecadLossCode::FeatureJointValueUnbound
     ));
 }

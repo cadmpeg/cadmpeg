@@ -1743,7 +1743,7 @@ fn joint_values_follow_what_the_joint_type_uses() {
 }
 
 const JOINT_EXPRESSIONS: &str = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="10">
+<Objects Count="13">
  <Object type="Assembly::AssemblyObject" name="Assembly" id="1"/>
  <Object type="Part::Feature" name="BracketShape" id="2"/>
  <Object type="Part::Feature" name="PinShape" id="3"/>
@@ -1754,14 +1754,17 @@ const JOINT_EXPRESSIONS: &str = r#"<Document SchemaVersion="4" FileVersion="1">
  <Object type="App::FeaturePython" name="Turn" id="8"/>
  <Object type="App::FeaturePython" name="Wrapped" id="9"/>
  <Object type="App::FeaturePython" name="Held" id="10"/>
+ <Object type="App::FeaturePython" name="Limited" id="11"/>
+ <Object type="App::FeaturePython" name="Geared" id="12"/>
+ <Object type="App::FeaturePython" name="Spring" id="13"/>
 </Objects>
-<ObjectData Count="10">
- <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="6"><Link value="Bracket"/><Link value="Pin"/><Link value="Gap"/><Link value="Turn"/><Link value="Wrapped"/><Link value="Held"/></LinkList></Property></Properties></Object>
+<ObjectData Count="13">
+ <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="9"><Link value="Bracket"/><Link value="Pin"/><Link value="Gap"/><Link value="Turn"/><Link value="Wrapped"/><Link value="Held"/><Link value="Limited"/><Link value="Geared"/><Link value="Spring"/></LinkList></Property></Properties></Object>
  <Object name="BracketShape"><Properties Count="0"/></Object>
  <Object name="PinShape"><Properties Count="0"/></Object>
  <Object name="Bracket"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="BracketShape"/></Property></Properties></Object>
  <Object name="Pin"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="PinShape"/></Property></Properties></Object>
- <Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2"><Cell address="A1" alias="w" content="12"/><Cell address="A2" alias="a" content="30"/></Cells></Property></Properties></Object>
+ <Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="3"><Cell address="A1" alias="w" content="12"/><Cell address="A2" alias="a" content="30"/><Cell address="A3" alias="twice" content="=Gap.Distance * 2"/></Cells></Property></Properties></Object>
  <Object name="Gap"><Properties Count="5">
   <Property name="JointType" type="App::PropertyEnumeration"><Integer value="2" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
   <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
@@ -1783,20 +1786,44 @@ const JOINT_EXPRESSIONS: &str = r#"<Document SchemaVersion="4" FileVersion="1">
   <Property name="Angle" type="App::PropertyAngle"><Float value="-330"/></Property>
   <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Angle" expression="Sheet.a - 360"/></ExpressionEngine></Property>
  </Properties></Object>
- <Object name="Held"><Properties Count="6">
+ <Object name="Held"><Properties Count="7">
   <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
   <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
   <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
   <Property name="Offset1" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="12" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="Detach1" type="App::PropertyBool"><Bool value="false"/></Property>
-  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="2"><Expression path=".Offset1.Base.z" expression="Sheet.w"/><Expression path="Detach1" expression="Sheet.w &gt; 20"/></ExpressionEngine></Property>
+  <Property name="Visibility" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="3"><Expression path=".Offset1.Base.z" expression="Sheet.w"/><Expression path="Detach1" expression="Sheet.w &gt; 20"/><Expression path="Visibility" expression="Sheet.w &gt; 10"/></ExpressionEngine></Property>
+ </Properties></Object>
+ <Object name="Limited"><Properties Count="6">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
+  <Property name="AngleMax" type="App::PropertyAngle"><Float value="45"/></Property>
+  <Property name="EnableAngleMax" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="AngleMax" expression="Sheet.a + 15"/></ExpressionEngine></Property>
+ </Properties></Object>
+ <Object name="Geared"><Properties Count="6">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Gears"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
+  <Property name="Distance" type="App::PropertyLength"><Float value="10"/></Property>
+  <Property name="Distance2" type="App::PropertyLength"><Float value="12"/></Property>
+  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Distance2" expression="Sheet.w"/></ExpressionEngine></Property>
+ </Properties></Object>
+ <Object name="Spring"><Properties Count="5">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Spring"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
+  <Property name="Distance" type="App::PropertyLength"><Float value="12"/></Property>
+  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Distance" expression="Sheet.w"/></ExpressionEngine></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
 
 #[test]
 fn a_driven_joint_value_binds_a_parameter_of_the_joint() {
     use cadmpeg_ir::design::dimension::Dimension;
-    use cadmpeg_ir::design::ops::shared::JointKind;
+    use cadmpeg_ir::design::ops::shared::{AxisLimits, Bounds, Coupling, JointKind};
     use cadmpeg_ir::design::options::NativeOption;
 
     let decoded = FcstdCodec
@@ -1846,15 +1873,17 @@ fn a_driven_joint_value_binds_a_parameter_of_the_joint() {
             refs,
         )
     };
-    let unbound = |name: &str| {
+    let unbound_all = |name: &str| {
         let code = crate::loss::FreecadLossCode::FeatureJointValueUnbound.note("");
         decoded
             .report()
             .losses
             .iter()
-            .find(|loss| loss.code == code.code && loss.message.contains(&format!("#{name} ")))
+            .filter(|loss| loss.code == code.code && loss.message.contains(&format!("#{name} ")))
             .map(|loss| loss.message.clone())
+            .collect::<Vec<_>>()
     };
+    let unbound = |name: &str| unbound_all(name).into_iter().next();
     let owned_by = |id: &str, joint: &cadmpeg_ir::design::feature::Feature| {
         assert_eq!(
             parameter(id).owner,
@@ -1924,12 +1953,86 @@ fn a_driven_joint_value_binds_a_parameter_of_the_joint() {
         decoded.report().losses
     );
 
-    // A driven placement and flag keep their stored values and are a loss.
-    let message = unbound("Held").unwrap_or_else(|| panic!("{:?}", decoded.report().losses));
-    assert!(message.contains("Detach1, Offset1"), "{message}");
+    // A driven placement and flag keep their stored values and are a loss;
+    // a driven property the joint does not state is a loss that says so.
+    let messages = unbound_all("Held");
+    let [stated, unstated] = messages.as_slice() else {
+        panic!("{:?}", decoded.report().losses);
+    };
+    assert!(stated.contains("states Detach1, Offset1 "), "{stated}");
+    assert!(
+        unstated.contains("entries on Visibility, which the joint does not state"),
+        "{unstated}"
+    );
     assert!(ir
         .design
         .parameters
         .iter()
         .all(|parameter| !parameter.id.as_str().contains("Held")));
+
+    // A driven enabled limit is its parameter.
+    let (_, limited) = joint_feature(ir, "Limited");
+    let limited_id = "fcstd:design:parameter#Limited:AngleMax";
+    let JointKind::Motion { limits, .. } = &limited.kind else {
+        panic!("{:?}", limited.kind);
+    };
+    assert!(
+        matches!(
+            limits.as_slice(),
+            [AxisLimits::Rotation {
+                limits: Some(Bounds {
+                    min: None,
+                    max: Some(Dimension::Parameter(id)),
+                }),
+                ..
+            }] if id.as_str() == limited_id
+        ),
+        "{limits:?}"
+    );
+    assert_eq!(unbound("Limited"), None);
+
+    // A driven second gear radius is its parameter.
+    let (_, geared) = joint_feature(ir, "Geared");
+    let geared_id = "fcstd:design:parameter#Geared:Distance2";
+    assert!(
+        matches!(
+            &geared.kind,
+            JointKind::Coupling {
+                coupling: Coupling::Gear {
+                    radii: [Some(Dimension::Literal(_)), Some(Dimension::Parameter(id))],
+                    ..
+                },
+                ..
+            } if id.as_str() == geared_id
+        ),
+        "{:?}",
+        geared.kind
+    );
+    assert_eq!(unbound("Geared"), None);
+
+    // A native family keeps a driven value as a native option bound to its
+    // parameter.
+    let (_, spring) = joint_feature(ir, "Spring");
+    let spring_id = "fcstd:design:parameter#Spring:Distance";
+    assert!(
+        matches!(
+            option(&spring.native_options, "Distance"),
+            Some(NativeOption::Length(Dimension::Parameter(id))) if id.as_str() == spring_id
+        ),
+        "{:?}",
+        spring.native_options
+    );
+    assert_eq!(unbound("Spring"), None);
+
+    // A cell that references a joint value references the joint's
+    // parameter.
+    let twice = cell("twice");
+    assert_eq!(
+        parameter(&twice).kind,
+        cadmpeg_ir::design::units::ValueKind::Quantity(cadmpeg_ir::design::units::Quantity::LENGTH)
+    );
+    assert_eq!(
+        neutral(&twice),
+        ("$0 * 2".to_owned(), vec![gap_id.to_owned()])
+    );
 }

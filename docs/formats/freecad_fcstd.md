@@ -638,15 +638,27 @@ formula cell stores no value. Its value kind is the kind of its result under `Fr
 rules, with the cells it references read first in dependency order:
 
 - A `<<…>>` string, `str()`, `address()`, the sum of two strings, a string `%` a value, and the
-  product of a string and a Python `int` or `bool`, which repeats the string, are text. A number
-  with no unit is an `int` where it is integral; a sign, a sum, a difference, a product, or a
-  remainder of `int` values, a comparison, `count`, `and`, `or`, and `href` of an `int` are `int`
-  values.
+  product of a string and a Python `int` or `bool`, which repeats the string, are text.
+- A dimensionless number that `FreeCAD` hands to an operator is a Python `int` where its value is
+  whole and a `float` otherwise: a number with no unit, a unitless value cell, a dimensionless
+  `sum`, `min`, `max`, `average`, `stddev`, `count`, `and`, or `or`, and a formula cell whose result
+  is a dimensionless number. A Boolean, an `App::PropertyInteger`, `IntegerConstraint`, or
+  `Percent` property, a sum, a difference, a product, or a remainder of `int` values, `x ^ n` of
+  `int` values with a constant `n` of zero or more, and `href` of an `int` are `int` values. An
+  `App::PropertyFloat`, `FloatConstraint`, or `Precision` property, a placement's axis component,
+  yaw, pitch, or roll, `pi`, `e`, a quotient, and a sum, a difference, or a product with a `float`
+  are `float` values. Every other function returns a quantity object. Where the product of a
+  string and a dimensionless number has a number of unstated value, such as a formula cell whose
+  result is not a constant or an aggregate of numbers that are not all `int` values, the number is
+  an `int`, the result is text, and the parameter emits
+  `parameter.integer-assumed`.
 - `True`, `False`, a comparison, and a reference to an `App::PropertyBool` property or to a
-  Boolean cell are Boolean. `==` and `!=` compare any two values. `<`, `<=`, `>`, and `>=` compare
-  two strings, two values of one quantity, a Boolean and a number, and a quantity and a dimensionless
-  literal, cell, number property, or aggregate. In arithmetic and in a function
-  argument, a Boolean is a dimensionless number.
+  Boolean cell are Boolean. `==` and `!=` compare any two values that `FreeCAD` evaluates and
+  admits as operands; `None`, a tuple (an `App::PropertyLinkSub` value, a link that stores a
+  sub-name, a color), and an operand that raises are refused. `<`, `<=`, `>`, and `>=` compare
+  two strings, two values of one quantity, a Boolean and a number, and a quantity and a
+  dimensionless `int` or `float`. In arithmetic and in a function argument, a Boolean is a
+  dimensionless number.
 - A reference to a cell, by alias, address, or `.address`, takes that cell's kind. A reference to a
   typed property of an object, or a placement or vector component, takes the property's quantity;
   a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
@@ -664,10 +676,9 @@ rules, with the cells it references read first in dependency order:
 
 Where the file does not determine the result's kind, as for a reference to another document, to a
 property with no stated quantity, or to a cell of a reference cycle, the product of a string and
-another number, `Label` of a link that stores a sub-name, an ordering of a string and a number,
-of two different quantities, or of a quantity and a function result, and a comparison with an
-operand of such a kind, the cell's kind is a real
-number, it emits `parameter.quantity-assumed`, and an expression that references it takes it as a
+a `float` or a quantity, `Label` of a link that stores a sub-name, an ordering of a string and a
+number, of two different quantities, or of a quantity and a function result, and a comparison with
+a refused operand, the cell's kind is a real number, it emits `parameter.quantity-assumed`, and an expression that references it takes it as a
 real number. A display unit whose quantity is the cell's and whose words each have a symbol is
 the parameter's `unit`. Another display unit of a quantity cell is the native option
 `fcstd:displayUnit` (Text, Rule N case (a)). Alignment, style, foreground and background colors, and the display unit of a
@@ -881,7 +892,9 @@ parallel, perpendicular, angle, rack-pinion, screw, gears, belt, and grounded fa
 an unfamiliar future family remains explicitly native. Connector frames, connector attachment
 offset frames, suppression and detach flags, linear offsets, and enabled limit intervals are
 independent fields.
-Persisted degree values convert to radians for neutral angles and angular limits. Validation checks
+Persisted degree values convert to radians for neutral angles and angular limits. A joint angle is
+the magnitude of the stored angle reflected into a half turn, the angle that the solver holds by
+its cosine. Validation checks
 operand/frame cardinality, component references, finite values, and ordered intervals.
 
 Each paired joint is a v11 `Joint` feature whose identity is the assembly joint's identity. The
@@ -927,7 +940,8 @@ that the joint derives from the stored one is a literal, and the stored value is
 setting under its property name, stated as the parameter: the reflected angle of an angle joint,
 a parallel joint, and a distance joint value other than `d`. Where an entry drives a joint
 property that states no parameter, as a derived value, a flag, a placement, an offset, a
-reference, or a float `Distance`, the joint emits `feature.joint-value-unbound`. A
+reference, or a float `Distance`, and where an entry drives a property that the joint does not
+state, such as `Label` or `Visibility`, the joint emits `feature.joint-value-unbound`. A
 `JointGroup` is an unordered `Group` of its joints; the document's `Group` holds each other joint.
 A grounded object is grounded occurrence state. A joint that names no object for a connector, that
 stores a blank joint type, that has an object name that is no feature id, or that grounds an

@@ -583,13 +583,15 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
 <Object name="Steel"><Properties Count="1">
 <Property name="Label" type="App::PropertyString"><String value="S235"/></Property>
 </Properties></Object>
-<Object name="Vars"><Properties Count="4">
+<Object name="Vars"><Properties Count="6">
+<Property name="Count" type="App::PropertyInteger" status="1"><Integer value="3"/></Property>
+<Property name="Ratio" type="App::PropertyFloat" status="1"><Float value="2"/></Property>
 <Property name="Flag" type="App::PropertyBool" status="1"><Bool value="true"/></Property>
 <Property name="Material" type="App::PropertyLink" status="1"><Link value="Steel"/></Property>
 <Property name="Other" type="App::PropertyXLink" status="1"><XLink file="" name="Steel"/></Property>
 <Property name="Part" type="App::PropertyXLink" status="1"><XLink file="" name="Steel" sub=""/></Property>
 </Properties></Object>
-<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="23">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="32">
 <Cell address="A1" content="5 mm"/>
 <Cell address="B1" content="=str(A1) * Vars.Flag + &lt;&lt;-&gt;&gt; * (1 - Vars.Flag)"/>
 <Cell address="B2" content="=Vars.Material.Label"/>
@@ -613,6 +615,15 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
 <Cell address="E6" content="=&lt;&lt;a&gt;&gt; &lt; 1"/>
 <Cell address="E7" content="=Vars.Material.Shape == 1"/>
 <Cell address="E8" content="=A1 &gt; cos(0)"/>
+<Cell address="G1" content="=str(A1) * Vars.Count"/>
+<Cell address="G2" content="=str(A1) * F1"/>
+<Cell address="G3" content="=str(A1) * F2"/>
+<Cell address="G4" content="=str(A1) * Vars.Ratio"/>
+<Cell address="G5" content="=Vars.Part == 1"/>
+<Cell address="G6" content="=F3 == 1"/>
+<Cell address="F1" content="3"/>
+<Cell address="F2" content="=F1 / 3"/>
+<Cell address="F3" content="=None"/>
 </Cells></Property></Properties></Object>
 </ObjectData></Document>"#;
     let (ir, losses) = decode_with_losses(document);
@@ -626,15 +637,32 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
         )
     };
 
+    let integer = |address: &str| {
+        charged(
+            &losses,
+            crate::loss::FreecadLossCode::ParameterIntegerAssumed,
+            &id(address),
+        )
+    };
+
     // Python repeats text by an integer or a bool, and a link property's
-    // label is the named object's label.
-    for address in ["B1", "B2", "B3", "B4", "B5"] {
+    // label is the named object's label. An integer property and a whole
+    // value cell are integers.
+    for address in ["B1", "B2", "B3", "B4", "B5", "G1", "G2"] {
         assert_eq!(cell(address).kind, ValueKind::Text, "{address}");
         assert!(!assumed(address), "{address}: {losses:?}");
+        assert!(!integer(address), "{address}: {losses:?}");
     }
 
-    // A comparison, a truth constant, and a Bool property are bools.
-    for address in ["B6", "B7", "E1", "E2", "E3"] {
+    // A formula cell holds an integer where its value is whole; the file
+    // does not store that value.
+    assert_eq!(cell("G3").kind, ValueKind::Text);
+    assert!(!assumed("G3"), "{losses:?}");
+    assert!(integer("G3"), "{losses:?}");
+
+    // A comparison, a truth constant, and a Bool property are bools. `==`
+    // compares any two values `FreeCAD` evaluates.
+    for address in ["B6", "B7", "E1", "E2", "E3", "E7"] {
         assert_eq!(cell(address).kind, ValueKind::Boolean, "{address}");
         assert!(!assumed(address), "{address}: {losses:?}");
     }
@@ -651,10 +679,10 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
 
     // FreeCAD raises on a range with a text cell, text times a length or a
     // float, the label of a link with sub-names, text ordered against a
-    // number, and a length ordered against a dimensionless function result.
-    // It reads another property of a linked object at run time, and a
-    // comparison with that operand is undetermined.
-    for address in ["B9", "D1", "D2", "E4", "E5", "E6", "E7", "E8"] {
+    // number, a length ordered against a dimensionless function result, and
+    // a comparison with a tuple or `None`. It reads another property of a
+    // linked object at run time.
+    for address in ["B9", "D1", "D2", "E4", "E5", "E6", "E8", "G4", "G5", "G6"] {
         assert_eq!(
             cell(address).kind,
             ValueKind::Quantity(Quantity::REAL),

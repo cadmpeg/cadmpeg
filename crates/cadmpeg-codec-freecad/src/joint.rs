@@ -2,6 +2,7 @@
 //! Assembly joints recovered without executing Python proxy payloads.
 
 use std::collections::{BTreeMap, HashMap};
+use std::f64::consts::{PI, TAU};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
@@ -226,14 +227,13 @@ pub(crate) fn transfer_neutral(
         let distance = scalar("Distance");
         let distance2 = scalar("Distance2");
         let angle = scalar("Angle")
-            .map(|value| value.get().abs())
             .or_else(|| match &record.body {
                 JointBody::Pair { kind, .. } if kind.as_str().eq_ignore_ascii_case("angle") => {
-                    distance.map(|value| value.get().abs())
+                    distance
                 }
                 _ => None,
             })
-            .map(f64::to_radians);
+            .map(|value| solved_angle(value.get()));
         let angular_limits = enabled_limits(
             "AngleMin",
             "AngleMax",
@@ -316,6 +316,18 @@ pub(crate) fn transfer_neutral(
         output.push(joint);
     }
     Ok(output)
+}
+
+/// The angle, in radians, that `FreeCAD`'s solver holds for an angle stored
+/// as `degrees`: the solver holds the cosine of its magnitude, so the angle
+/// is that magnitude reflected into a half turn.
+pub(crate) fn solved_angle(degrees: f64) -> f64 {
+    let turn = degrees.abs().to_radians() % TAU;
+    if turn > PI {
+        TAU - turn
+    } else {
+        turn
+    }
 }
 
 fn joint_kind(
@@ -775,6 +787,43 @@ pub(crate) mod tests {
             }
         }
         assert_valid_document(decoded.ir());
+    }
+
+    #[test]
+    fn a_joint_angle_outside_a_half_turn_is_its_reflection() {
+        for (stored, solved) in [(-330.0_f64, 30.0_f64), (200.0, 160.0), (-90.0, 90.0)] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Inclination"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object>
+<Object name="Inclination"><Properties Count="4">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Angle"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Angle" type="App::PropertyAngle"><Float value="{stored}"/></Property>
+</Properties></Object></ObjectData></Document>"#
+            );
+            let decoded = FcstdCodec
+                .decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                )
+                .expect("angle joint");
+            let [joint] = decoded.ir().model.assembly_joints.as_slice() else {
+                panic!("{:?}", decoded.ir().model.assembly_joints)
+            };
+            let cadmpeg_ir::products::JointOperands::Pair {
+                kind: PairedJointKind::Angle { angle },
+                ..
+            } = wire::field(joint, "operands")
+            else {
+                panic!("angle joint")
+            };
+            assert!(
+                (angle.expect("angle").get() - solved.to_radians()).abs() < EPS_JOINT_SCALAR,
+                "{stored}: {angle:?}"
+            );
+        }
     }
 
     #[test]

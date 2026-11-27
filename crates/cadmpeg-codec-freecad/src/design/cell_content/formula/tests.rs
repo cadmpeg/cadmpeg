@@ -3,31 +3,50 @@ use std::collections::HashMap;
 
 use cadmpeg_ir::design::units::Quantity;
 
-use super::{parse, Kind, Node, Operator, Origin, Path, Reference, Scope, Unparsed};
+use super::{parse, Kind, Node, Operator, Origin, Path, Python, Reference, Scope, Unparsed, Value};
 
 const REAL: Kind = Kind::Quantity(Quantity::REAL);
 const LENGTH: Kind = Kind::Quantity(Quantity::LENGTH);
 const ANGLE: Kind = Kind::Quantity(Quantity::ANGLE);
 const AREA: Kind = Kind::Quantity(Quantity::AREA);
 
-/// Properties by their components joined with `.`, and one range.
+/// Properties by their components joined with `.`, one range, and whether a
+/// formula took a number of unstated value as an `int`.
 #[derive(Default)]
 struct Names {
-    paths: HashMap<String, Kind>,
-    range: Option<Vec<Kind>>,
+    paths: HashMap<String, Value>,
+    range: Option<Vec<Value>>,
+    assumed: bool,
+}
+
+impl Names {
+    fn insert(&mut self, name: &str, kind: Kind, python: Python) {
+        self.paths.insert(name.to_owned(), Value::new(kind, python));
+    }
 }
 
 impl Scope for Names {
-    fn path(&mut self, path: &Path) -> Kind {
+    fn path(&mut self, path: &Path) -> Value {
         self.paths
             .get(&path.components.join("."))
             .copied()
-            .unwrap_or(Kind::Unknown)
+            .unwrap_or(Value::new(Kind::Unknown, Python::Object))
     }
 
-    fn range(&mut self, _from: &str, _to: &str) -> Option<Vec<Kind>> {
+    fn range(&mut self, _from: &str, _to: &str) -> Option<Vec<Value>> {
         self.range.clone()
     }
+
+    fn assume_integer(&mut self) {
+        self.assumed = true;
+    }
+}
+
+fn quantities(kinds: &[Kind]) -> Vec<Value> {
+    kinds
+        .iter()
+        .map(|kind| Value::new(*kind, Python::Object))
+        .collect()
 }
 
 fn kind_in(text: &str, scope: &mut Names) -> Kind {
@@ -83,9 +102,10 @@ fn operators_follow_the_unit_rules() {
 #[test]
 fn a_comparison_and_a_truth_value_are_bools() {
     let mut scope = Names::default();
-    scope.paths.insert("Flag".to_owned(), Kind::Boolean);
-    scope.paths.insert("A1".to_owned(), LENGTH);
-    scope.paths.insert("Ratio".to_owned(), REAL);
+    scope.insert("Flag", Kind::Boolean, Python::Int);
+    scope.insert("A1", LENGTH, Python::Object);
+    scope.insert("Ratio", REAL, Python::Float);
+    scope.insert("Part", Kind::Unknown, Python::Refused);
     for text in [
         "True",
         "False",
@@ -98,6 +118,9 @@ fn a_comparison_and_a_truth_value_are_bools() {
         "A1 > Ratio",
         "A1 <= sum(2; 3)",
         "Flag ? True : 1 > 2",
+        "B9 == 1",
+        "A1 == <<a>>",
+        "cos(0) != Ratio",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Boolean, "{text:?}");
     }
@@ -105,14 +128,16 @@ fn a_comparison_and_a_truth_value_are_bools() {
     assert_eq!(kind_in("Flag + 1", &mut scope), REAL);
     assert_eq!(kind_in("-True", &mut scope), REAL);
     assert_eq!(kind_in("Flag * 2 mm", &mut scope), LENGTH);
-    // Python raises where the operands do not compare, and an operand of no
-    // known kind leaves the result undetermined.
+    // Python raises where the operands do not compare, and `FreeCAD` refuses
+    // `None`, a tuple, and an operand that raises.
     for text in [
         "<<a>> < 1",
         "1 mm < 2 °",
         "A1 > cos(0)",
-        "B9 == 1",
         "None == 1",
+        "Part != 1",
+        "(1 mm + 2 °) == 1",
+        "-<<a>> == 1",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
     }
@@ -121,11 +146,14 @@ fn a_comparison_and_a_truth_value_are_bools() {
 #[test]
 fn text_times_a_number_repeats_only_for_an_int() {
     let mut scope = Names::default();
-    scope.paths.insert("Flag".to_owned(), Kind::Boolean);
-    scope.paths.insert("Ratio".to_owned(), REAL);
+    scope.insert("Flag", Kind::Boolean, Python::Int);
+    scope.insert("Ratio", REAL, Python::Float);
+    scope.insert("Count", REAL, Python::Int);
+    scope.insert("Whole", REAL, Python::Int);
     for text in [
         "<<a>> * 2",
         "3 * <<a>>",
+        "<<a>> * 2.0",
         "<<a>> * (1 + 2) % 2",
         "<<a>> * -2",
         "<<a>> * True",
@@ -133,18 +161,42 @@ fn text_times_a_number_repeats_only_for_an_int() {
         "<<a>> * (1 > 2)",
         "<<a>> * count(1; 2)",
         "<<a>> * href(2)",
+        "<<a>> * Count",
+        "Whole * <<a>>",
+        "<<a>> * sum(2; 3; <<b>>)",
+        "<<a>> * 2^3",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
+        assert!(!scope.assumed, "{text:?}");
     }
     for text in [
         "<<a>> * 1.5",
         "<<a>> * pi",
         "<<a>> * (4 / 2)",
         "<<a>> * Ratio",
+        "<<a>> * (Count + Ratio)",
         "<<a>> * abs(2)",
         "<<a>> * 2 mm",
+        "<<a>> * 2^-1",
     ] {
         assert_eq!(kind_in(text, &mut scope), Kind::Unknown, "{text:?}");
+    }
+    assert!(!scope.assumed);
+}
+
+#[test]
+fn text_times_a_number_of_unstated_value_takes_it_as_an_int() {
+    for text in [
+        "<<a>> * Cell",
+        "<<a>> * average(2; 3)",
+        "<<a>> * max(Cell; 2)",
+        "<<a>> * 2^Cell",
+        "<<a>> * (Cell > 1 ? 2 : Cell)",
+    ] {
+        let mut scope = Names::default();
+        scope.insert("Cell", REAL, Python::Unsettled);
+        assert_eq!(kind_in(text, &mut scope), Kind::Text, "{text:?}");
+        assert!(scope.assumed, "{text:?}");
     }
 }
 
@@ -193,8 +245,8 @@ fn functions_follow_the_unit_rules() {
 #[test]
 fn a_reference_takes_the_kind_of_what_it_names() {
     let mut scope = Names::default();
-    scope.paths.insert("A1".to_owned(), LENGTH);
-    scope.paths.insert("Box.Length".to_owned(), LENGTH);
+    scope.insert("A1", LENGTH, Python::Object);
+    scope.insert("Box.Length", LENGTH, Python::Object);
     assert_eq!(kind_in("abs(A1)", &mut scope), LENGTH);
     assert_eq!(kind_in("A1^2", &mut scope), AREA);
     assert_eq!(kind_in("str(A1)", &mut scope), Kind::Text);
@@ -206,14 +258,14 @@ fn a_reference_takes_the_kind_of_what_it_names() {
 #[test]
 fn a_range_takes_the_quantity_its_cells_share() {
     let mut scope = Names {
-        range: Some(vec![LENGTH, LENGTH]),
+        range: Some(quantities(&[LENGTH, LENGTH])),
         ..Names::default()
     };
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), LENGTH);
     // An aggregate stops at a text cell of a range.
-    scope.range = Some(vec![LENGTH, Kind::Text, LENGTH]);
+    scope.range = Some(quantities(&[LENGTH, Kind::Text, LENGTH]));
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), Kind::Unknown);
-    scope.range = Some(vec![LENGTH, AREA]);
+    scope.range = Some(quantities(&[LENGTH, AREA]));
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), Kind::Unknown);
     let node = parse("sum(A1:A3) + B1").unwrap();
     let references = node.references();

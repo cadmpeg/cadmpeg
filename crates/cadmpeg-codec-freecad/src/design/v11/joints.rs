@@ -5,7 +5,7 @@
 //! `Group` of its joints.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::f64::consts::{PI, TAU};
+use std::f64::consts::TAU;
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
@@ -213,18 +213,32 @@ pub(super) fn project(
                     )));
                     continue;
                 };
-                let unbound = driven
+                let (stated, unstated) = driven
                     .iter()
                     .filter(|name| !bound.contains(*name))
                     .map(String::as_str)
-                    .collect::<Vec<_>>();
-                if !unbound.is_empty() {
+                    .partition::<Vec<_>, _>(|name| {
+                        CONNECTOR_PROPERTIES.contains(name)
+                            || record
+                                .parameters()
+                                .iter()
+                                .any(|(stored, _)| stored == *name)
+                    });
+                if !stated.is_empty() {
                     losses.push(FreecadLossCode::FeatureJointValueUnbound.note(format!(
                         "joint {} states {} with values that bind no parameter, although an \
                          ExpressionEngine entry drives them; each states its stored value or one \
                          derived from it",
                         record.object(),
-                        unbound.join(", ")
+                        stated.join(", ")
+                    )));
+                }
+                if !unstated.is_empty() {
+                    losses.push(FreecadLossCode::FeatureJointValueUnbound.note(format!(
+                        "joint {} has ExpressionEngine entries on {}, which the joint does not \
+                         state; they stay in the joint's native ExpressionEngine record",
+                        record.object(),
+                        unstated.join(", ")
                     )));
                 }
                 joints.parameters.extend(minted);
@@ -482,6 +496,17 @@ fn joint(
     ))
 }
 
+/// The properties from which a joint states its connectors.
+const CONNECTOR_PROPERTIES: [&str; 7] = [
+    "JointType",
+    "Reference1",
+    "Reference2",
+    "Placement1",
+    "Placement2",
+    "Offset1",
+    "Offset2",
+];
+
 /// The names of the properties that the `ExpressionEngine` of `held`, the
 /// properties of one object, drives: the first component of each entry's
 /// path.
@@ -571,12 +596,6 @@ struct Read<'a> {
 }
 
 impl Read<'_> {
-    fn scalar(&mut self, name: &'static str) -> Option<f64> {
-        let value = self.parameters.scalar_value(name)?.get();
-        self.used.insert(name);
-        Some(value)
-    }
-
     /// Value `value` of `name`, bound to the parameter of `name` where it
     /// has one.
     fn bind<T>(&mut self, name: &str, value: T) -> Dimension<T> {
@@ -596,14 +615,12 @@ impl Read<'_> {
         Some(self.bind(name, value))
     }
 
-    /// The angle `FreeCAD` solves for from angle `name`, stored in degrees:
-    /// the solver holds the cosine of its magnitude, so the angle is that
-    /// magnitude reflected into a half turn. A stored value outside a half
-    /// turn stays a parameter the joint does not hold.
+    /// The angle `FreeCAD` solves for from angle `name`, stored in degrees
+    /// ([`crate::joint::solved_angle`]). A stored value outside a half turn
+    /// stays a parameter the joint does not hold.
     fn magnitude(&mut self, name: &'static str) -> Option<Dimension<Angle>> {
         let stored = self.parameters.scalar_value(name)?.get();
-        let turn = stored.abs().to_radians() % TAU;
-        let value = Angle::new(if turn > PI { TAU - turn } else { turn })?;
+        let value = Angle::new(crate::joint::solved_angle(stored))?;
         if (0.0..=180.0).contains(&stored) {
             self.used.insert(name);
             return Some(self.bind(name, value));
@@ -617,8 +634,8 @@ impl Read<'_> {
         if self.parameters.bool_value(enable) != Some(true) {
             return None;
         }
-        let value = self.scalar(name)?;
-        self.used.insert(enable);
+        let value = self.parameters.scalar_value(name)?.get();
+        self.used.extend([name, enable]);
         Some(value)
     }
 
