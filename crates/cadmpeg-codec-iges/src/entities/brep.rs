@@ -19,7 +19,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
     CurveGeometry,
 };
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, SurfaceId, VertexId};
+use cadmpeg_ir::ids::{CoedgeId, EdgeId, Identity, SurfaceId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{
     AnchoredVertexUse, Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundary, PcurveUse, Point,
@@ -1203,6 +1203,11 @@ pub(super) fn project(
         let stem = crate::ids::Stem::directory(entry.sequence);
         let body_id = crate::ids::body(&stem);
         sequences.record_body(&body_id, entry.sequence, &stem);
+        let projected: Identity = if entry.entity_type == 186 {
+            body_id.clone().into()
+        } else {
+            crate::ids::shell(&stem).into()
+        };
         let region_id = crate::ids::region(&stem);
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
@@ -1340,12 +1345,16 @@ pub(super) fn project(
                                 }
                             }) else {
                                 needs = missing_pcurve(ir, pcurves);
-                                super::push_geometry_loss_needing(
+                                super::give_up_needing(
                                     &mut losses,
                                     entry,
+                                    Some(projected.clone()),
                                     needs,
-                                    format_args!(
-                                        "loop vertex-use pcurves disagree with the pole vertex"
+                                    super::geometry_note(
+                                        entry,
+                                        format_args!(
+                                            "loop vertex-use pcurves disagree with the pole vertex"
+                                        ),
                                     ),
                                 );
                                 valid = false;
@@ -1447,12 +1456,16 @@ pub(super) fn project(
                             }
                         }) else {
                             needs = missing_pcurve(ir, pcurves);
-                            super::push_geometry_loss_needing(
+                            super::give_up_needing(
                                 &mut losses,
                                 entry,
+                                Some(projected.clone()),
                                 needs,
-                                format_args!(
-                                    "loop edge-use pcurves disagree with the edge vertices"
+                                super::geometry_note(
+                                    entry,
+                                    format_args!(
+                                        "loop edge-use pcurves disagree with the edge vertices"
+                                    ),
                                 ),
                             );
                             valid = false;
@@ -1719,11 +1732,15 @@ pub(super) fn project(
             consumed.insert(shell_sequence);
         }
         if !valid {
-            super::push_geometry_loss_needing(
+            super::give_up_needing(
                 &mut losses,
                 entry,
+                Some(projected),
                 needs,
-                format_args!("shell topology references missing geometry"),
+                super::geometry_note(
+                    entry,
+                    format_args!("shell topology references missing geometry"),
+                ),
             );
             continue;
         }

@@ -874,12 +874,35 @@ that it needs. After all passes, the projection examines each such entity:
    `record.dropped-with` against the `entity` part id of the needed entity or
    against the stub of the quarantine part.
 2. When the needed entity is itself a dependent of this type, the projection
-   records the dependent against the `entity` part id of the needed entity, and
-   step 1 or step 3 applies to the needed entity.
+   records the dependent against the record that names the needed entity, and
+   step 1 or step 3 applies to the needed entity. That record is the neutral
+   record that the projection mints for the needed entity. A needed entity
+   that mints no single neutral record is replaced by the entity that it needs,
+   in the same way.
 3. When no give-up reaches the needed entity, for example because no pass
    projects its type, the dependent charges its own `record.unreadable`. Of
    dependents that need each other in a cycle, one charges its own
    `record.unreadable` and the others are recorded against it.
+
+The projection records a dependent by the neutral record that it mints for
+that entity:
+
+| Types                                                           | Recorded neutral record   |
+| --------------------------------------------------------------- | ------------------------- |
+| 100, 102, 104, 110, 112, 126, 130                               | `iges:model:curve#D<n>`   |
+| 116, 125                                                        | `iges:model:point#D<n>`   |
+| 108, 114, 118, 120, 122, 128, 140, 190, 192, 194, 196, 198      | `iges:model:surface#D<n>` |
+| 143, 144                                                        | `iges:model:face#D<n>`    |
+| 186                                                             | `iges:model:body#D<n>`    |
+| 514 Form 2, and 514 Form 1 that is the shell of no Type 186     | `iges:model:shell#D<n>`   |
+| 106 that projects a path                                        | `iges:model:curve#D<n>`   |
+| 106 that projects one point                                     | `iges:model:point#D<n>-1` |
+
+`<n>` is the Directory Entry sequence number of the entity. A dependent of
+another type mints no single neutral record, so the projection records none for
+it. Each of its own dependents is recorded against the entity that it needs.
+The native `iges:entity:directory#<n>` record of a dependent stays in the
+document.
 
 An entity that a pass also drops for its own content keeps its own
 `record.unreadable`. The decode names each recorded dependent in the `dropped`
@@ -887,7 +910,22 @@ list of the `record.unreadable` that gives up the part it needs, directly or
 through the dependents between them. For example, an edge list whose Parameter
 Data is quarantined drops the loops that use it, the faces that bound those
 loops, and the shells and solids that use those faces. The give-up of the edge
-list's `parameter-data` part names all of them.
+list's `parameter-data` part names the recorded neutral record of each of them
+that has one, such as the `iges:model:body#D<n>` record of a Type 186 solid.
+
+The structure pass builds a face for a Type 108 Form 1 bounded plane and for
+the parent of a Type 402 Form 9 legacy single-parent associativity. When the
+pass drops a Type 108 Form 1 face, it gives up the face record
+`iges:model:face#bounded-plane-D<n>`, where `<n>` is the sequence of the
+Type 108. When the face needs a boundary curve or plane that the projection
+gives up, the projection records the face against that entity, as for a
+dependent above. When the pass cannot build the holes of a Type 402 Form 9
+parent, it builds the Type 108 face of the parent without them and records an
+`iges/entity.not-projected` note. When the pass drops a legacy single-parent
+face that it built, it gives up the face record
+`iges:model:face#legacy-single-parent-D<n>`, where `<n>` is the sequence of the
+Type 402. A Type 108 Form -1 bounded plane projects no face of its own. A
+finding on it is an `iges/entity.not-projected` note.
 
 A container inspection has no loss channel, because a container summary carries
 notes only. The inspection therefore reports each loss it resolves as one
