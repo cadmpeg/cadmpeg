@@ -5294,6 +5294,210 @@ source = "spec"
 anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
 
 [[record]]
+name = "pm_dc_parametric_surface_form_29"
+kind = "byte"
+section = "13"
+anchor = "116 bytes for form 29"
+size = 137
+note = "Offsets start after the versioned content header and stamps. Segment major versions 15 through 21."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "references"
+offset = 0
+type = "u32[3]"
+source = "spec"
+anchor = "three null references"
+
+[[record.field]]
+name = "state"
+offset = 12
+type = "u8"
+source = "spec"
+anchor = "state 1"
+value = 1
+
+[[record.field]]
+name = "form"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "Form 29 and form 73 are parametric surfaces"
+value = 29
+
+[[record.field]]
+name = "value"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "`value` 1"
+value = 1
+
+[[record.field]]
+name = "class_parameters"
+offset = 21
+type = "u8[116]"
+source = "spec"
+anchor = "116 bytes for form 29"
+
+[[record]]
+name = "pm_dc_parametric_surface_form_29_extended"
+kind = "byte"
+section = "13"
+anchor = "116 bytes for form 29"
+size = 141
+note = "Offsets start after the versioned content header and stamps. Segment major version 22 and later."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "references"
+offset = 0
+type = "u32[3]"
+source = "spec"
+anchor = "three null references"
+
+[[record.field]]
+name = "extension"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "zero extension from version 22"
+value = 0
+
+[[record.field]]
+name = "state"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "state 1"
+value = 1
+
+[[record.field]]
+name = "form"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "Form 29 and form 73 are parametric surfaces"
+value = 29
+
+[[record.field]]
+name = "value"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "`value` 1"
+value = 1
+
+[[record.field]]
+name = "class_parameters"
+offset = 25
+type = "u8[116]"
+source = "spec"
+anchor = "116 bytes for form 29"
+
+[[record]]
+name = "pm_dc_parametric_surface_form_73"
+kind = "byte"
+section = "13"
+anchor = "156 bytes for form 73"
+size = 177
+note = "Offsets start after the versioned content header and stamps. Segment major versions 15 through 21."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "references"
+offset = 0
+type = "u32[3]"
+source = "spec"
+anchor = "three null references"
+
+[[record.field]]
+name = "state"
+offset = 12
+type = "u8"
+source = "spec"
+anchor = "state 1"
+value = 1
+
+[[record.field]]
+name = "form"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "Form 29 and form 73 are parametric surfaces"
+value = 73
+
+[[record.field]]
+name = "value"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "`value` 1"
+value = 1
+
+[[record.field]]
+name = "class_parameters"
+offset = 21
+type = "u8[156]"
+source = "spec"
+anchor = "156 bytes for form 73"
+
+[[record]]
+name = "pm_dc_parametric_surface_form_73_extended"
+kind = "byte"
+section = "13"
+anchor = "156 bytes for form 73"
+size = 181
+note = "Offsets start after the versioned content header and stamps. Segment major version 22 and later."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "references"
+offset = 0
+type = "u32[3]"
+source = "spec"
+anchor = "three null references"
+
+[[record.field]]
+name = "extension"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "zero extension from version 22"
+value = 0
+
+[[record.field]]
+name = "state"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "state 1"
+value = 1
+
+[[record.field]]
+name = "form"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "Form 29 and form 73 are parametric surfaces"
+value = 73
+
+[[record.field]]
+name = "value"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "`value` 1"
+value = 1
+
+[[record.field]]
+name = "class_parameters"
+offset = 25
+type = "u8[156]"
+source = "spec"
+anchor = "156 bytes for form 73"
+
+[[record]]
 name = "pm_dc_thread_definition_prefix"
 kind = "byte"
 section = "13"
