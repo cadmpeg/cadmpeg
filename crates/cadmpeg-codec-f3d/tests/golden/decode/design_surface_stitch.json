@@ -1627,18 +1627,6 @@
           "kind": "namespaced",
           "value": {
             "namespace": "f3d",
-            "code": "settings.up-axis-record-unreadable",
-            "kind": "record_not_typed"
-          }
-        },
-        "severity": "warning",
-        "message": "record 0 is not a whole AssetSettings record of the 494-byte form with the AssetSettings key, so the document states no up axis"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "namespace": "f3d",
             "code": "sketch.curve-record-undecoded",
             "kind": "geometry_not_transferred"
           }
