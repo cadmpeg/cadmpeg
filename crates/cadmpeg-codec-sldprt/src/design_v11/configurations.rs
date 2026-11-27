@@ -13,7 +13,7 @@
 //! Interim: the decoder reads a feature's suppression from the history,
 //! which every configuration shares, so no configuration states a
 //! suppression of its own, and a loss names each configuration whose own
-//! suppression is unread (DI-96). The configuration's own definition of a feature
+//! suppression is unread (DI-97). The configuration's own definition of a feature
 //! (§5.11 `definition`) is deferred: the decoder's per-configuration
 //! definitions differ from the active one's also where only a dimension
 //! differs, and no reading yet separates a structural difference from that,
