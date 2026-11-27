@@ -6,8 +6,8 @@
 //! so hosts cannot disagree about the identity of the same declaration.
 //! [`records`] reads the neutral-binary node sequence through the base and
 //! embedded schema field lists, [`deltas`] owns the Deltas-stream grammar,
-//! [`topology`] classifies topology node fields, and [`xmt`] carries
-//! stream-local node identity.
+//! [`topology`] classifies topology node fields, [`precision`] states a part's
+//! modeller tolerances, and [`xmt`] carries stream-local node identity.
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
@@ -22,6 +22,8 @@ include!("registry_ids.rs");
 
 pub mod deltas;
 pub mod geometry;
+pub mod native;
+pub mod precision;
 pub mod records;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
@@ -307,22 +309,13 @@ pub fn push_extras(
     let mut collisions = Vec::new();
     for layer in extras {
         let ClassifiedLayer { matched, carrier } = layer;
-        match layers.insert(matched) {
-            Ok(()) => {}
-            Err(cadmpeg_core::dialect::DialectLayerError::Duplicate(rejected)) => {
-                collisions.push(format!(
-                    "the container produced a duplicate {} dialect layer at carrier {carrier}; \
-                     the later classification was omitted",
-                    rejected.format()
-                ));
-            }
-            Err(cadmpeg_core::dialect::DialectLayerError::MissingInstance(rejected)) => {
-                collisions.push(format!(
-                    "the container produced an untagged {} dialect layer at carrier {carrier}; \
-                     the later classification was omitted",
-                    rejected.format()
-                ));
-            }
+        if let Err(cadmpeg_core::dialect::DuplicateDialectLayer(rejected)) = layers.insert(matched)
+        {
+            collisions.push(format!(
+                "the container produced a duplicate {} dialect layer at carrier {carrier}; \
+                 the later classification was omitted",
+                rejected.format()
+            ));
         }
     }
     collisions

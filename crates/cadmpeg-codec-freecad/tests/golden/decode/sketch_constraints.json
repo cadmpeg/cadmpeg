@@ -3,14 +3,488 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "unordered",
+          "value": {
+            "id": "fcstd:design:container#document:group",
+            "kind": "group",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#DimensionalRelations"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#GeometricRelations"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#InactiveRelation"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#InternalAlignmentRelations"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#OpticalRelation"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#SplineWeightRelation"
+              },
+              {
+                "kind": "feature",
+                "value": "fcstd:design:feature#SymmetryRelation"
+              }
+            ]
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#DimensionalRelations",
+          "name": "DimensionalRelations",
+          "native_ref": "fcstd:native:object#DimensionalRelations"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#GeometricRelations",
+          "name": "GeometricRelations",
+          "native_ref": "fcstd:native:object#GeometricRelations"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#InactiveRelation",
+          "name": "InactiveRelation",
+          "native_ref": "fcstd:native:object#InactiveRelation"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#InternalAlignmentRelations",
+          "name": "InternalAlignmentRelations",
+          "native_ref": "fcstd:native:object#InternalAlignmentRelations"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#OpticalRelation",
+          "name": "OpticalRelation",
+          "native_ref": "fcstd:native:object#OpticalRelation"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#SplineWeightRelation",
+          "name": "SplineWeightRelation",
+          "native_ref": "fcstd:native:object#SplineWeightRelation"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "fcstd:design:feature#SymmetryRelation",
+          "name": "SymmetryRelation",
+          "native_ref": "fcstd:native:object#SymmetryRelation"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "9[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DimensionalRelations"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 9.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "11[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:2",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint2",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DimensionalRelations"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 11.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "8[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:3",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint3",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DimensionalRelations"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 8.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "4[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:4",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint4",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DimensionalRelations"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 4.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "0.785398163397448[rad]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:5",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint5",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DimensionalRelations"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 0.7853981633974483
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "4[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:6",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint6",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DimensionalRelations"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 4.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "8[mm]"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#DimensionalRelations:constraint:7",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint7",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#DimensionalRelations:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#DimensionalRelations"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 8.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "1.25"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#OpticalRelation:constraint:1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#OpticalRelation:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#OpticalRelation"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.25
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "1"
+              }
+            }
+          },
+          "id": "fcstd:design:parameter#SplineWeightRelation:constraint:2",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "Constraint2",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#SplineWeightRelation:Constraints",
+          "owner": {
+            "kind": "feature",
+            "value": "fcstd:design:feature#SplineWeightRelation"
+          },
+          "scope": "fcstd:model:product_definition#document:root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.0
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [],
+          "definition": "fcstd:model:product_definition#document:root",
+          "occurrences": {},
+          "roots": [
+            "fcstd:design:container#document:group"
+          ],
+          "unproduced": [
+            "fcstd:model:body#DimensionalRelations:Shape:DimensionalRelations.Shape.brp:33%40location1",
+            "fcstd:model:body#GeometricRelations:Shape:GeometricRelations.Shape.brp:55%40location1",
+            "fcstd:model:body#InactiveRelation:Shape:InactiveRelation.Shape.brp:4%40location1",
+            "fcstd:model:body#InternalAlignmentRelations:Shape:InternalAlignmentRelations.Shape.brp:3%40location1",
+            "fcstd:model:body#OpticalRelation:Shape:OpticalRelation.Shape.brp:13%40location1",
+            "fcstd:model:body#SplineWeightRelation:Shape:SplineWeightRelation.Shape.brp:4%40location1",
+            "fcstd:model:body#SymmetryRelation:Shape:SymmetryRelation.Shape.brp:13%40location1"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],

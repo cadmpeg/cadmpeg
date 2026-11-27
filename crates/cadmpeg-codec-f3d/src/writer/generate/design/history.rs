@@ -2,8 +2,9 @@
 //! The ASM history that installs the current bodies (f3d.md §3.1, "History
 //! of a Base Feature" and "History states"; asm.md §3): a root state and one
 //! state for each item that commits a state, whose one bulletin board inserts
-//! the entity slots of the item's result body. A Base Feature commits one
-//! state that inserts every entity slot of the solved model except slot `0`.
+//! the entity slots of the item's result body that no earlier state holds. A
+//! Base Feature commits one state that inserts every entity slot of the
+//! solved model except slot `0`.
 
 use cadmpeg_asm::sab::{Record, Token};
 use cadmpeg_core::CodecError;
@@ -62,20 +63,9 @@ pub(in crate::writer::generate) fn with_insertion_history(
     let count = i64::try_from(boards.len())
         .map_err(|_| CodecError::NotImplemented("history state count exceeds i64".into()))?;
     let head = root + count;
-    for part in ["Begin", "of", "ASM", "History"] {
-        native_subident(&mut bytes, part)?;
-    }
-    native_ident(&mut bytes, "Data")?;
-    native_ident(&mut bytes, "history_stream")?;
-    for value in [head, head, 0, HISTORY_ENTRY_COUNT] {
-        native_i64(&mut bytes, value);
-    }
-    for reference in [-1, 0, 1, -1] {
-        native_ref(&mut bytes, reference);
-    }
-    bytes.push(0x11);
     // Node `n` is the state `head - n / 2` for even `n` and `root + n / 2`
-    // for odd `n`; the records stand in node order.
+    // for odd `n`; the records stand in node order (f3d.md §3.1, "History
+    // chain").
     let order = node_order(root, head);
     let node = |state: i64| -> i64 {
         order
@@ -84,6 +74,18 @@ pub(in crate::writer::generate) fn with_insertion_history(
             .and_then(|at| i64::try_from(at).ok())
             .unwrap_or(-1)
     };
+    for part in ["Begin", "of", "ASM", "History"] {
+        native_subident(&mut bytes, part)?;
+    }
+    native_ident(&mut bytes, "Data")?;
+    native_ident(&mut bytes, "history_stream")?;
+    for value in [head, head, 0, HISTORY_ENTRY_COUNT] {
+        native_i64(&mut bytes, value);
+    }
+    for reference in [-1, 0, node(root), -1] {
+        native_ref(&mut bytes, reference);
+    }
+    bytes.push(0x11);
     for &state in &order {
         delta_state(
             &mut bytes,
@@ -136,9 +138,10 @@ fn node_order(root: i64, head: i64) -> Vec<i64> {
 
 /// The slots each state after the root state inserts, in state order and
 /// ascending: every slot but `0` in one state where `states` holds at most
-/// one body, else the slots the `body` record `states[k]` of `records`
-/// reaches by its references in state `k`, and the slots no body reaches in
-/// the first state. Also returns the slots no body reaches.
+/// one body, else in state `k` the slots that the `body` record `states[k]`
+/// of `records` reaches by its references and no earlier state's body
+/// reaches, and the slots no body reaches in the first state. Also returns
+/// the slots no body reaches.
 fn boards(records: &[Record], states: &[usize]) -> Result<(Vec<Vec<i64>>, Vec<usize>), CodecError> {
     let slots = records.len();
     let slot = |index: usize| {
@@ -158,22 +161,25 @@ fn boards(records: &[Record], states: &[usize]) -> Result<(Vec<Vec<i64>>, Vec<us
         .collect::<Vec<_>>();
     let mut owner = vec![None::<usize>; records.len()];
     for (state, &body) in states.iter().enumerate() {
-        let start = *bodies
-            .get(body)
-            .ok_or_else(|| CodecError::malformed(format_args!("no ASM body {body}")))?;
+        let start = bodies.get(body).copied();
+        debug_assert!(
+            start.is_some(),
+            "the B-rep stream writes one body record for each body of the design, in the design's body order, and each state names one of those bodies"
+        );
+        let start =
+            start.ok_or_else(|| CodecError::malformed(format_args!("no ASM body {body}")))?;
         let mut stack = vec![start];
         while let Some(index) = stack.pop() {
-            match owner.get(index).copied().flatten() {
-                Some(earlier) if earlier == state => continue,
-                Some(_) => {
-                    return Err(CodecError::NotImplemented(
-                        "an ASM record that the bodies of two history states share".into(),
-                    ))
-                }
-                None => {}
+            // A record that an earlier body reaches is in that body's state.
+            if owner.get(index).copied().flatten().is_some() {
+                continue;
             }
-            let record = records
-                .get(index)
+            let record = records.get(index);
+            debug_assert!(
+                record.is_some(),
+                "each reference of the B-rep stream names one of its records"
+            );
+            let record = record
                 .ok_or_else(|| CodecError::malformed(format_args!("ASM reference {index}")))?;
             owner[index] = Some(state);
             for token in record.tokens.iter() {

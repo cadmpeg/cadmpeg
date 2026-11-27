@@ -37,6 +37,15 @@ pub enum CanonicalJsonError {
     /// The value does not serialize as canonical JSON.
     #[error("canonical JSON serialization: {0}")]
     Serialize(serde_json::Error),
+    /// The document nests past a depth bound of a CADIR document (§2.5).
+    #[error("the document {} {at}", .bound.describe())]
+    PastBound {
+        /// The bound the document passes.
+        bound: crate::bounds::Bound,
+        /// Where the document passes it: the record, or the field outside
+        /// every record.
+        at: String,
+    },
 }
 
 impl From<FiniteJsonError> for CanonicalJsonError {
@@ -75,17 +84,17 @@ pub(crate) fn write_canonical_json_erased(
     write_json_erased(admission, JsonFloats::Canonical, None, writer, write)
 }
 
-/// Renders an already-erased value as canonical pretty JSON text without
-/// adding a second erasure layer.
-pub(crate) fn to_canonical_json_string_erased(
+/// Writes an already-erased value as pretty JSON with `serde_json` float
+/// semantics (negative zero normalized to zero, non-finite floats written as
+/// `null`) without adding a second erasure layer.
+pub(crate) fn write_serde_json_erased(
+    admission: CanonicalAdmission<'_, '_>,
+    writer: &mut dyn std::io::Write,
     write: &dyn Fn(
         cadmpeg_core::serde_erase::SerAdapter<'_>,
     ) -> Result<(), cadmpeg_core::serde_erase::SerError>,
-) -> Result<String, CanonicalJsonError> {
-    let mut bytes = Vec::new();
-    write_canonical_json_erased(CanonicalAdmission::unlimited(), &mut bytes, write)?;
-    String::from_utf8(bytes)
-        .map_err(|error| CanonicalJsonError::Serialize(serde_json::Error::custom(error)))
+) -> Result<(), CanonicalJsonError> {
+    write_json_erased(admission, JsonFloats::SerdeJson, None, writer, write)
 }
 
 /// Receives the structs and maps a [`write_serde_json`] walk writes, in
@@ -177,6 +186,53 @@ pub fn to_canonical_json_string<T: Serialize + ?Sized>(
     write_canonical_json(CanonicalAdmission::unlimited(), &mut bytes, value)?;
     String::from_utf8(bytes)
         .map_err(|error| CanonicalJsonError::Serialize(serde_json::Error::custom(error)))
+}
+
+/// Renders `value` as canonical JSON text with no whitespace between tokens:
+/// the text `serde_json::to_string` writes, with canonical floats. A
+/// non-finite float is refused.
+pub(crate) fn to_compact_canonical_json_string<T: Serialize + ?Sized>(
+    value: &T,
+) -> Result<String, CanonicalJsonError> {
+    let mut compact = Compact::default();
+    write_canonical_json(CanonicalAdmission::unlimited(), &mut compact, value)?;
+    String::from_utf8(compact.bytes)
+        .map_err(|error| CanonicalJsonError::Serialize(serde_json::Error::custom(error)))
+}
+
+/// Keeps the pretty JSON written to it without the spaces and line breaks
+/// between tokens.
+#[derive(Default)]
+struct Compact {
+    bytes: Vec<u8>,
+    in_string: bool,
+    escaped: bool,
+}
+
+impl std::io::Write for Compact {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        for &byte in buf {
+            if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if byte == b'\\' {
+                    self.escaped = true;
+                } else if byte == b'"' {
+                    self.in_string = false;
+                }
+            } else if byte == b' ' || byte == b'\n' {
+                continue;
+            } else if byte == b'"' {
+                self.in_string = true;
+            }
+            self.bytes.push(byte);
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Returns the `serde_json::Value` that `serde_json::to_value` returns for

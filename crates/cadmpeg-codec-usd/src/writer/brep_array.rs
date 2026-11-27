@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::topology::Body;
 
+use super::brep::FaceMeshes;
 use super::text::{quoted, real, tuple};
 use super::{records, Placement, Writer};
 use crate::brep::solid::{
@@ -76,11 +77,22 @@ fn outward(value: f64, upper: bool) -> f32 {
 
 impl Writer<'_> {
     /// The `BrepArray` arrays of `body`, in metres, or `None` when a face or
-    /// edge of the body has no NURBS form.
-    pub(super) fn brep_packed(&mut self, body: &Body) -> Option<Box<BrepPrim>> {
+    /// edge of the body has no NURBS form, and the tessellation of each face
+    /// meshed on the way.
+    pub(super) fn brep_packed(&mut self, body: &Body) -> (Option<Box<BrepPrim>>, FaceMeshes) {
         self.tessellator
             .set_options(super::brep::mesh_options(&self.index, body));
-        let exported = records::export(self.ir, &self.index, body, &mut self.tessellator, false)?;
+        let Some(mut exported) =
+            records::export(self.ir, &self.index, body, &mut self.tessellator, false)
+        else {
+            return (None, FaceMeshes::new());
+        };
+        let meshes = std::mem::take(&mut exported.meshes);
+        (self.packed(body, exported), meshes)
+    }
+
+    /// The `BrepArray` arrays of the exported B-rep of `body`.
+    fn packed(&mut self, body: &Body, exported: records::Exported) -> Option<Box<BrepPrim>> {
         let name = body.name.clone().unwrap_or_else(|| body.id.to_string());
         if exported.unwritten.faces > 0 || exported.unwritten.edges > 0 {
             self.unwritten.breps.push(format!(

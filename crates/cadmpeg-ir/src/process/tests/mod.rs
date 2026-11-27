@@ -7,12 +7,11 @@ mod nesting;
 mod root;
 mod root_fixtures;
 mod round_trip;
-#[cfg(feature = "schema")]
-mod schema;
 mod state_chains;
 mod unit_variants;
 mod wire_forms;
 
+use cadmpeg_core::serde_erase::json;
 use std::fmt::Debug;
 
 use cadmpeg_core::decode::ResourceLimits;
@@ -25,10 +24,10 @@ use crate::design::read;
 /// Writes `value`, reads it back strictly under the desktop ceilings, writes
 /// it again, and requires the same bytes.
 fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> Result<(), String> {
-    let first = serde_json::to_string(value).map_err(|error| error.to_string())?;
+    let first = json::to_string(value).map_err(|error| error.to_string())?;
     let back: T = read::from_str(&first, &ResourceLimits::desktop())
         .map_err(|error| format!("{first}: {error}"))?;
-    let second = serde_json::to_string(&back).map_err(|error| error.to_string())?;
+    let second = json::to_string(&back).map_err(|error| error.to_string())?;
     if first == second {
         Ok(())
     } else {
@@ -37,7 +36,7 @@ fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> Result<(), String> 
 }
 
 fn to_value<T: Serialize>(value: &T) -> serde_json::Value {
-    serde_json::to_value(value).unwrap()
+    json::to_value(value).unwrap()
 }
 
 fn read_desktop<T: DeserializeOwned>(text: &str) -> Result<T, CodecError> {

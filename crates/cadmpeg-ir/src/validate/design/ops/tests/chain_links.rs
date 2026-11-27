@@ -15,29 +15,38 @@ use crate::design::names::NameKind;
 use crate::design::ops::assembly::ComponentPattern;
 use crate::design::ops::shared::{ChainLayout, ChainLink, ChainLinks, PatternLayout};
 use crate::design::selection::{
-    OccurrencePath, PathStep, PickContext, PickTarget, Picked, StepRef,
+    DefinitionRef, OccurrencePath, PathStep, PickContext, PickTarget, Picked, StepRef,
 };
 
-/// `picked` inside the occurrences `path` steps through.
-fn under(mut picked: Picked, path: &[&str]) -> Picked {
-    let steps = path
+/// The path through the occurrences `keys` name.
+fn path(keys: &[&str]) -> OccurrencePath {
+    let steps = keys
         .iter()
         .map(|key| PathStep {
             occurrence: StepRef::Occurrence(id("occurrence", key)),
             configuration: None,
         })
         .collect();
-    picked.context = Some(PickContext::Occurrence(OccurrencePath(steps)));
+    OccurrencePath(steps)
+}
+
+/// `picked` inside the occurrences `keys` step through.
+fn under(mut picked: Picked, keys: &[&str]) -> Picked {
+    picked.context = Some(PickContext::Occurrence(path(keys)));
     picked
 }
 
 /// An axis through what the pick inside `path` picks.
 fn pin(path: &[&str]) -> Construction<kinds::Axis> {
-    let target = entity(NameKind::Edge, 1);
+    through(under(entity(NameKind::Edge, 1), path))
+}
+
+/// An axis through what `picked` picks.
+fn through(picked: Picked) -> Construction<kinds::Axis> {
     Construction {
         inputs: vec![ConstructionInput {
             role: None,
-            reference: Some(InputReference::Picks(named(vec![under(target, path)]))),
+            reference: Some(InputReference::Picks(named(vec![picked]))),
             value: None,
             reversed: None,
         }],
@@ -75,4 +84,36 @@ fn chain_pins_are_two_axes_of_a_seed() {
     let off = "ChainLinks::Native picks geometry of no seed";
     assert_no_finding_containing(&with(chain(native(&["a", "c"]))), off);
     assert_finding(&with(chain(native(&["b"]))), off);
+}
+
+/// §5.8: an `InContext` target runs from the assembly, and `own` is the
+/// owner's place in it, so a seed's path from the owner lies under `own`.
+#[test]
+fn an_in_context_pin_is_judged_through_its_own_place_in_the_assembly() {
+    let off = "picks geometry of no seed";
+    let in_context = |own: Option<&[&str]>, keys: &[&str]| {
+        let mut picked = entity(NameKind::Edge, 1);
+        picked.context = Some(PickContext::InContext {
+            assembly: DefinitionRef {
+                definition: id("definition", "assembly"),
+                configuration: None,
+            },
+            own: own.map(path),
+            target: Some(path(keys)),
+        });
+        through(picked)
+    };
+    let links = |second| {
+        ChainLinks::Connected(vec![ChainLink {
+            pins: [pin(&["a"]), second],
+        }])
+    };
+    let placed: Option<&[&str]> = Some(&["p"]);
+    assert_no_finding_containing(
+        &with(chain(links(in_context(placed, &["p", "a", "c"])))),
+        off,
+    );
+    assert_finding(&with(chain(links(in_context(placed, &["p", "b"])))), off);
+    assert_finding(&with(chain(links(in_context(placed, &["a", "c"])))), off);
+    assert_no_finding_containing(&with(chain(links(in_context(None, &["b"])))), off);
 }

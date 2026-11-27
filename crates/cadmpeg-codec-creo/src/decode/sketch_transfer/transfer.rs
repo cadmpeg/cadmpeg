@@ -71,7 +71,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn expected_segment_rows(
+pub(in crate::decode) fn expected_segment_rows(
     definition_id: u32,
     table: &crate::feature::definitions::FeatureSegmentTable,
 ) -> Result<usize, CodecError> {
@@ -521,7 +521,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                id.as_str(),
+                &id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(offset),
                 "solver_only_section_entity",
@@ -725,7 +725,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(offset),
                 "section_dimension_constraint",
@@ -741,7 +741,7 @@ pub(in super::super) fn transfer_sketches(
         )? {
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(offset),
                 "section_segment_radius_constraint",
@@ -819,7 +819,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(
                     definition.body_position(offset)?.source()?.get(),
@@ -839,7 +839,7 @@ pub(in super::super) fn transfer_sketches(
         {
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(
                     definition.body_position(offset)?.source()?.get(),
@@ -864,7 +864,7 @@ pub(in super::super) fn transfer_sketches(
             }
             annotate(
                 annotations,
-                constraint.id.as_str(),
+                &constraint.id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(offset),
                 "section_solver_constraint",
@@ -877,7 +877,7 @@ pub(in super::super) fn transfer_sketches(
         let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
         annotate(
             annotations,
-            sketch_id.as_str(),
+            &sketch_id,
             "FeatDefs",
             cadmpeg_core::decode::u64_from_index(source_offset),
             if transform.is_some() {
@@ -906,7 +906,7 @@ pub(in super::super) fn transfer_sketches(
             };
             annotate(
                 annotations,
-                feature_id.as_str(),
+                &feature_id,
                 "FeatDefs",
                 cadmpeg_core::decode::u64_from_index(source_offset),
                 "section_sketch_feature",
@@ -989,7 +989,7 @@ fn emit_verhor_constraint(
     };
     annotate(
         annotations,
-        id.as_str(),
+        &id,
         "FeatDefs",
         cadmpeg_core::decode::u64_from_index(offset),
         "section_verhor_constraint",

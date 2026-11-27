@@ -28,9 +28,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::design::container::{Container, OrderedKind};
-use cadmpeg_ir::design::evaluation::{
-    Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
-};
+use cadmpeg_ir::design::evaluation::{Evaluation, StateBase, StateContent, StateDelta};
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ids::EvaluationId;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position, RecordRef};
@@ -287,7 +285,7 @@ pub(crate) fn state(
                     scope: design.scope.clone(),
                     configuration: None,
                     of,
-                    status: status(&source, payload.owner),
+                    status: source.status(payload.owner),
                     content: Some(StateContent {
                         base: base
                             .as_ref()
@@ -325,7 +323,7 @@ pub(crate) fn state(
                 scope: design.scope.clone(),
                 configuration: None,
                 of,
-                status: status(&source, payload.owner),
+                status: source.status(payload.owner),
                 content: Some(StateContent {
                     base: StateBase::Empty,
                     delta: StateDelta {
@@ -403,16 +401,6 @@ fn home(
             Home::Tool(feature.clone())
         }
         _ => Home::Native,
-    }
-}
-
-/// The status of a state an object stores: `Stale` where `FreeCAD` marks the
-/// object `Touched` (§5.4).
-fn status(source: &Source<'_>, object: &str) -> EvaluationStatus {
-    if source.touched.contains(object) {
-        EvaluationStatus::Stale
-    } else {
-        EvaluationStatus::Current
     }
 }
 
@@ -617,7 +605,8 @@ type Records = Vec<(String, Value)>;
 /// The records of `topology` by arena, each as its id and its wire value
 /// without the `id` field.
 fn arenas(topology: &Topology) -> Result<Vec<(&'static str, Records)>, CodecError> {
-    let Value::Object(mut wire) = serde_json::to_value(topology).map_err(CodecError::malformed)?
+    let Value::Object(mut wire) =
+        cadmpeg_core::serde_erase::to_json_value(topology).map_err(CodecError::malformed)?
     else {
         return Err(CodecError::malformed("topology is not a JSON object"));
     };
@@ -674,7 +663,7 @@ fn content(
         })
         .collect::<Vec<_>>();
     constructions.sort_unstable();
-    serde_json::json!([compared(&mapped(value, map)), constructions]).to_string()
+    cadmpeg_core::json!([compared(&mapped(value, map)), constructions]).to_string()
 }
 
 /// `value` with every string that `map` maps replaced by its image.
@@ -1034,7 +1023,7 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
         for id in base_rows(arena).into_iter().flatten().map(|(id, _)| id) {
             if !state.contains_key(id) {
                 removed.push(
-                    serde_json::from_value::<RecordRef>(serde_json::json!({
+                    cadmpeg_core::serde_erase::from_json_value::<RecordRef>(&cadmpeg_core::json!({
                         "kind": kind,
                         "value": id,
                     }))
@@ -1044,7 +1033,8 @@ fn snapshot(topology: &Topology, base: Option<&Base>) -> Result<Snapshot, CodecE
         }
     }
     Ok(Snapshot {
-        records: serde_json::from_value(Value::Object(delta)).map_err(CodecError::malformed)?,
+        records: cadmpeg_core::serde_erase::from_json_value(&Value::Object(delta))
+            .map_err(CodecError::malformed)?,
         removed,
         renamed,
         resolved,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 
 fn sampled(target: [f64; 3], source: [f64; 3]) -> Class25SourceRelation {
@@ -11,7 +12,7 @@ fn sampled(target: [f64; 3], source: [f64; 3]) -> Class25SourceRelation {
         ])
         .expect("finite fixture interval"),
         samples: Box::new(
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "target": target,
                 "source": source,
             }))

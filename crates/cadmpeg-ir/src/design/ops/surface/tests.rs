@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::*;
 use crate::design::ops::shared::tests::fixtures::*;
@@ -1076,60 +1076,4 @@ fn every_surface_operation_is_a_feature_operation_arm() {
     ]
     .concat();
     assert!(failures.is_empty(), "{failures:#?}");
-}
-
-#[cfg(feature = "schema")]
-mod schema {
-    use schemars::{JsonSchema, SchemaGenerator};
-
-    use super::super::*;
-
-    fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
-        let schema = T::json_schema(generator);
-        assert!(schema.as_object().is_some(), "{}", T::schema_name());
-    }
-
-    #[test]
-    fn every_surface_type_has_a_schema() {
-        let mut generator = SchemaGenerator::default();
-        generates::<Patch>(&mut generator);
-        generates::<PatchBounds>(&mut generator);
-        generates::<PatchEdge>(&mut generator);
-        generates::<Knit>(&mut generator);
-        generates::<Healing>(&mut generator);
-        generates::<Unsew>(&mut generator);
-        generates::<UnsewFaces>(&mut generator);
-        generates::<Extend>(&mut generator);
-        generates::<ExtendLimit>(&mut generator);
-        generates::<ExtendMethod>(&mut generator);
-        generates::<ImplicitSweep>(&mut generator);
-        generates::<ImplicitSection>(&mut generator);
-        generates::<LineMode>(&mut generator);
-        generates::<FaceReference>(&mut generator);
-        generates::<SurfaceRelation>(&mut generator);
-        generates::<DirectionRelation>(&mut generator);
-        generates::<CurveRelation>(&mut generator);
-        generates::<LineLength>(&mut generator);
-        generates::<CircleMode>(&mut generator);
-        generates::<BoundaryFill>(&mut generator);
-        generates::<RegionKind>(&mut generator);
-        generates::<CurveFeature>(&mut generator);
-        generates::<CurveDefinition>(&mut generator);
-        generates::<EquationCoordinates>(&mut generator);
-        generates::<SplineCurve>(&mut generator);
-        generates::<SplinePoint>(&mut generator);
-        generates::<BridgeEnd>(&mut generator);
-        generates::<TextCurve>(&mut generator);
-        generates::<TextPlacement>(&mut generator);
-        generates::<CombineOperand>(&mut generator);
-        generates::<CurveOffset>(&mut generator);
-        generates::<OffsetMeasure>(&mut generator);
-        generates::<Form>(&mut generator);
-        generates::<MeshFeature>(&mut generator);
-        generates::<MeshKind>(&mut generator);
-        generates::<MeshCut>(&mut generator);
-        generates::<MeshFill>(&mut generator);
-        generates::<ReduceTarget>(&mut generator);
-        generates::<MeshConversion>(&mut generator);
-    }
 }

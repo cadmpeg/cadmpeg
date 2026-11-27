@@ -106,6 +106,7 @@ impl TryFrom<HandlesWire> for ExtrefHandles {
 #[cfg(test)]
 mod tests {
     use super::{ExtrefHandles, HANDLES_INTO_WIRE_COUNT};
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn wire_preserves_handle_occurrences_and_derived_fields() {
@@ -118,18 +119,15 @@ mod tests {
         ] {
             let value = ExtrefHandles::new(tokens.clone()).unwrap();
             assert_eq!(value.serialized(), tokens);
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "handles": handles, "closing_duplicate": closing, "prefix_byte_len": length,
             });
-            assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+            assert_eq!(json::to_value(&value).unwrap(), wire);
             assert_eq!(
-                serde_json::to_vec(&value).unwrap(),
-                serde_json::to_vec(&super::HandlesWire::from(value.clone())).unwrap()
+                json::to_vec(&value).unwrap(),
+                json::to_vec(&super::HandlesWire::from(value.clone())).unwrap()
             );
-            assert_eq!(
-                serde_json::from_value::<ExtrefHandles>(wire).unwrap(),
-                value
-            );
+            assert_eq!(json::from_value::<ExtrefHandles>(wire).unwrap(), value);
         }
     }
 
@@ -147,7 +145,7 @@ mod tests {
             id: "nx:extref:handles#0",
             handles: &value,
         };
-        let expected = serde_json::json!({
+        let expected = cadmpeg_core::json!({
             "id": "nx:extref:handles#0",
             "handles": [7, 7, 9],
             "closing_duplicate": false,
@@ -169,7 +167,7 @@ mod tests {
             (vec![7], false, 36, "prefix_byte_len"),
             (vec![7; 254], true, 1301, "handles"),
         ] {
-            let error = serde_json::from_value::<ExtrefHandles>(serde_json::json!({
+            let error = json::from_value::<ExtrefHandles>(cadmpeg_core::json!({
                 "handles": handles, "closing_duplicate": closing, "prefix_byte_len": length,
             }))
             .unwrap_err();

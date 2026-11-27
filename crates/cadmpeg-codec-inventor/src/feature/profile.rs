@@ -46,7 +46,7 @@ const BLOCK_INSTANCE_LINK_ENTITY_TYPE: u32 = 0x0800_0000;
 const BLOCK_CURVE_FIRST_ID_OFFSET: i64 = 2;
 /// Largest distance, in millimetres, between a profile wire vertex and the
 /// sketch-curve end or plane it lies on: one kernel linear tolerance.
-const EPS_PROFILE_WIRE_POINT_MM: f64 = 1.0e-5;
+pub(crate) const EPS_PROFILE_WIRE_POINT_MM: f64 = 1.0e-5;
 
 /// The sketch curve that a profile wire edge is generated from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -158,7 +158,12 @@ fn decode_profile_body(
         version,
     )?;
     let header = carrier.header.as_deref().map_err(CodecError::malformed)?;
-    let decoded = crate::kernel::decode_kernel_carrier(ctx, &carrier, header)?;
+    let decoded = crate::kernel::decode_kernel_carrier(
+        ctx,
+        &carrier,
+        header,
+        cadmpeg_asm::brep::DecodePurpose::Inspect,
+    )?;
     Ok(ProfileBody {
         segment_token: segment_token.clone(),
         record_ordinal,

@@ -67,13 +67,25 @@ pub(super) fn matches<T: Serialize + ?Sized>(
     actual: &NativeRecord,
     expected: &T,
 ) -> Result<bool, NativeConvertError> {
-    expected
-        .serialize(Matcher {
+    matches_erased(ctx, actual, &|adapter| expected.serialize(adapter))
+}
+
+fn matches_erased(
+    ctx: &DecodeContext<'_>,
+    actual: &NativeRecord,
+    write: &dyn Fn(
+        cadmpeg_core::serde_erase::SerAdapter<'_>,
+    ) -> Result<(), cadmpeg_core::serde_erase::SerError>,
+) -> Result<bool, NativeConvertError> {
+    cadmpeg_core::serde_erase::serialize_with(
+        Matcher {
             ctx,
             actual: Some(&actual.json),
             remaining: MAX_NATIVE_NESTING_DEPTH + 1,
-        })
-        .map_err(|error| error.into_native(ctx))
+        },
+        write,
+    )
+    .map_err(|error| error.into_native(ctx))
 }
 
 #[derive(Clone, Copy)]

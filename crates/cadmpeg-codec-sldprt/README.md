@@ -87,7 +87,7 @@ ambiguity.
 use std::fs::File;
 
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -98,10 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut output = File::create("part-edited.sldprt")?;
     SldprtCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )?
+        .plan(EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())))?
         .write_to(&mut output)?;
     Ok(())
 }
@@ -220,7 +217,8 @@ history baseline, a `writer.features-omitted` loss names it; otherwise an
 An edited part that the patch path cannot write, or that it writes on another
 dialect than the source's, is synthesized without its SolidWorks history:
 `export:native.records-omitted` names each native record that the synthesis
-does not write. Where the synthesis also refuses the part, or lands on another
+does not write, outside the `unknowns` arena, and the degraded reason of the
+synthesized write path states why the patch declined. Where the synthesis also refuses the part, or lands on another
 dialect than the source's, the output is the stored part. One
 `export:edit.dropped` loss (severity error) per arena names each record that
 the document adds, removes or edits against the decoded source; where no

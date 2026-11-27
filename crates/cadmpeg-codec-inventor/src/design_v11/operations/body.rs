@@ -26,6 +26,7 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
             | LegacyOperation::DeleteFace { .. }
             | LegacyOperation::MirrorShape { .. }
             | LegacyOperation::Pattern { .. }
+            | LegacyOperation::SewBodies { .. }
     ) {
         return None;
     }
@@ -158,13 +159,8 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                 rotation,
                 copies,
             } => {
-                if rotation.is_some()
-                    && *translation != cadmpeg_ir::features::geometry::FiniteVector3::ZERO
-                {
-                    return Err("the body move has no stated order for translation and rotation");
-                }
                 let delta = translation.get();
-                let mut steps = vec![new::TransformStep::Components {
+                let components = new::TransformStep::Components {
                     frame: None,
                     delta: [delta.x, delta.y, delta.z]
                         .map(|value| {
@@ -176,13 +172,28 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                         .collect::<Projected<Vec<_>>>()?
                         .try_into()
                         .map_err(|_| "the translation has invalid arity")?,
-                }];
-                if let Some(rotation) = rotation {
-                    steps.push(new::TransformStep::Rotate {
-                        axis: swept::axis(rotation.origin, rotation.direction)?,
-                        angle: Dimension::Literal(rotation.angle),
-                    });
-                }
+                };
+                let rotate = rotation
+                    .as_ref()
+                    .map(|rotation| {
+                        Ok::<_, &'static str>(new::TransformStep::Rotate {
+                            axis: swept::axis(rotation.origin, rotation.direction)?,
+                            angle: Dimension::Literal(rotation.angle),
+                        })
+                    })
+                    .transpose()?;
+                // The stored matrix maps `p` to `R*p + t`: the rotation applies
+                // first, then the translation. A zero translation leaves the
+                // order free, and keeps the translation step first.
+                let steps = match rotate {
+                    Some(rotate)
+                        if *translation != cadmpeg_ir::features::geometry::FiniteVector3::ZERO =>
+                    {
+                        vec![rotate, components]
+                    }
+                    Some(rotate) => vec![components, rotate],
+                    None => vec![components],
+                };
                 FeatureOperation::TransformBodies(Box::new(new::TransformBodies {
                     bodies: selections::set(selections::bodies(bodies)?)?,
                     transformation: new::Transformation {
@@ -264,6 +275,24 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
             LegacyOperation::MirrorShape { .. } => {
                 return Err("the mirror source has no v11 copy or replacement disposition")
             }
+            LegacyOperation::SewBodies {
+                bodies,
+                gap_tolerance,
+            } => FeatureOperation::Knit(Box::new(cadmpeg_ir::design::ops::surface::Knit {
+                elements: selections::bodies(bodies)?,
+                tolerance: gap_tolerance.as_ref().map(|gap| {
+                    Dimension::Literal(cadmpeg_ir::scalar::NonNegativeLength::from(*gap))
+                }),
+                simplify: None,
+                healing: None,
+                federation: None,
+                output: cadmpeg_ir::design::options::SheetOutput {
+                    solid: None,
+                    boolean: None,
+                },
+                native_options: BTreeMap::default(),
+                source_settings: BTreeMap::default(),
+            })),
             LegacyOperation::Pattern { seeds, pattern } => {
                 FeatureOperation::Pattern(Box::new(patterns::project(seeds, pattern)?))
             }

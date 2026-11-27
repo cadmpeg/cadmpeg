@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::indexing_slicing))]
-//! Decode offline Onshape Part Studio bundles into CADIR.
+//! Decode offline Onshape bundles into CADIR.
 //!
 //! <!-- generated: capability onshape -->
-//! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#onshape-bundle)).
+//! Support: L4 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#onshape-bundle)).
 //! <!-- /generated: capability onshape -->
 mod archive;
 mod detect;

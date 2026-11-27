@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
 
@@ -46,7 +47,7 @@ fn unread_operation(scope: &mut DesignParameterScope) {
 fn unread_operation_keeps_the_profile_and_owned_rule_thickness() {
     let (mut scope, groups, placements) = fixture();
     let operation = scope.base_flange_operation().unwrap().clone();
-    let settings: DesignSheetMetalSettings = serde_json::from_value(serde_json::json!({
+    let settings: DesignSheetMetalSettings = json::from_value(cadmpeg_core::json!({
         "id": format!("{}:design-sheet-metal-settings#300", native_stream(&scope.id).unwrap()),
         "record_index": operation.settings_record_index, "byte_offset": 300, "paired_byte_offset": 400, "mask": 0,
         "inputs": {"version": "v2", "slots": [null, null, null, null, null, null, null]},

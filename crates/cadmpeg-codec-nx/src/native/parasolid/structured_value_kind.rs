@@ -32,6 +32,7 @@ impl From<StructuredValueKind> for ParasolidAttributeFieldValueKind {
 #[cfg(test)]
 mod tests {
     use super::StructuredValueKind;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn structured_kinds_preserve_wire_and_reject_numeric_or_string_families() {
@@ -43,7 +44,7 @@ mod tests {
             (StructuredValueKind::Tags, "\"tags\""),
             (StructuredValueKind::Unicode, "\"unicode\""),
         ] {
-            assert_eq!(serde_json::to_string(&kind).unwrap(), wire);
+            assert_eq!(json::to_string(&kind).unwrap(), wire);
             assert_eq!(
                 serde_json::from_str::<StructuredValueKind>(wire).unwrap(),
                 kind

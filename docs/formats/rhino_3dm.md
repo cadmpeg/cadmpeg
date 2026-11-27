@@ -3016,22 +3016,26 @@ decision, not a claim that the OpenNURBS reader rejects the bytes.
 
 CADIR emits one composite curve for the polycurve and one neutral carrier
 curve for each child. The composite's parameter range is `[t[0], t[n]]`. Each
-segment keeps the direction of its child, and the segments state no
-continuity. Each child carrier takes its polycurve interval as its parameter
-domain: a NURBS child by an affine map of its knots, and a child of another
-form by its exact NURBS form. A child whose domain equals its interval keeps
-its form. Child geometry is converted to millimetres; child and
-polycurve parameters, the reserved values, and the reserved bounds are not
-scaled. The parent retains the source object record. A bounded child gap is
-represented by the midpoint join repair and emits its geometry warning; a
-malformed child or parameter array does not enter the typed composite curve.
+segment keeps the direction of its child. Each child carrier takes its
+polycurve interval as its parameter domain: a NURBS child by an affine map of
+its knots, and a child of another form by its exact NURBS form. A child whose
+domain equals its interval keeps its form. Child geometry is converted to
+millimetres; child and polycurve parameters, the reserved values, and the
+reserved bounds are not scaled. A segment after the first states the
+`continuous` transition where the end point of the previous child and the
+start point of its own child are coincident (point coincidence of §16, on the
+coordinates in file units); the first segment, and a segment after a gap, state
+`discontinuous`. The composite keeps each child as stored, gaps included. The
+parent retains the source object record. A malformed child or parameter array
+does not enter the typed composite curve.
 
 Conversion of a polycurve to one NURBS curve first maps each segment to its
 polycurve parameter interval. Each segment is endpoint-clamped. Segments of
 lower degree are elevated to the maximum segment degree. At each join, the last
 control point of the accumulated curve and the first control point of the next
-segment move to their midpoint. The first control point of the next segment is
-then omitted. The appended knots are translated by the difference between the
+segment move to their midpoint, and a join of two distinct points emits the
+`curve.polycurve-join-gap` warning. The first control point of the next segment
+is then omitted. The appended knots are translated by the difference between the
 accumulated end parameter and the next segment start parameter. The internal
 join has `degree` equal knots. The result has this identity:
 
@@ -7135,3 +7139,44 @@ grammar, but it does not by itself admit the object. All positional slots,
 cross-record references, finite-value gates, and topology invariants required
 by that grammar must pass. If one required invariant fails, the complete
 object record remains opaque and no partial typed topology is committed.
+
+## 21. Strict floors
+
+No Rhino loss code carries a strict floor. The decoder gives up a framed
+record as a part (CADIR §3.3) when its framing does not decode, its payload
+does not parse, its reading fails the model-class rules of the document, its
+unit system does not bind, its variant has no typed reading, or its list count
+is above its bound. The part kind identifies the record:
+
+| Part kind | Record |
+|---|---|
+| `object-record` | A record of the object table. |
+| `table-record` | A record of a presentation, settings, or instance-definition table, or a complete named-view, active-view, or named-construction-plane list. |
+| `view-record` | One view record of a named-view or active-view list. |
+| `v1-record` | One record of the version 1 flat stream. |
+
+The part keeps the bytes of the record. Where the bytes pass the caller's
+retained-bytes ceiling (`max_retained_bytes`), the part keeps their length and
+digest, and its charge names that ceiling. The record also stays as a source
+record: an object record as the object record `rhino:object:record#NNNNNN` of
+the document, a table record or a view list as its opaque record in the source
+fidelity, and a version 1 record as its legacy record in the source fidelity.
+The `unknowns` stub of an `object-record` part links to its object record. The
+stubs of the other part kinds have no links.
+
+An instance expansion that a member stops is rejected as a whole, and the
+reference stays as its product occurrence. A definition member that does not
+decode is given up once as an `object-record` part when no expansion that the
+document keeps decodes it. A member that the instance entity bound refuses
+stays as its object record.
+
+The `record.unreadable` charge of the part sets the floor that refuses a
+pinned decode (CADIR §3.2). The codec loss of the record stays in the report
+beside the charge. `rhino/object.framing-undecodable` counts the given-up
+object records of each class. When the decoder gives up a view or a view list,
+the source fidelity keeps the complete list as an opaque record.
+
+A view record of a counted view list whose frame does not read has no byte
+extent. Its `record.unreadable` charge names the id
+`rhino:document:view#<kind>-<index>` that the view takes when it decodes, at
+the offset of the view header. The decoder reads no later view of that list.

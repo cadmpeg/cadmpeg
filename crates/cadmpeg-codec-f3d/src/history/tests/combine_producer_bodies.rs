@@ -18,17 +18,22 @@ const SECOND: &str = "f3d:test:feature#second";
 const COMBINE: &str = "f3d:test:feature#combine";
 const TARGET_NATIVE: &str = "f3d:Design/BulkStream.dat:design-record#488";
 const TOOL_NATIVE: &str = "f3d:Design/BulkStream.dat:design-record#481";
+const SECOND_TOOL_NATIVE: &str = "f3d:Design/BulkStream.dat:design-record#482";
+const ONE_TOOL: &[(i64, &str)] = &[(2, TOOL_NATIVE)];
 
 /// History `HISTORY`, of BREP source `root.smbh`: feature `FIRST` (state 23
-/// from 2) inserts slot 1, feature `SECOND` (state 27 from 23) inserts slot
-/// 2, and the Combine (state 30 from 27) selects target slot 1 and tool slot
-/// 2 in its input state 27 and keeps the bodies `after_combine`. With
+/// from 2) inserts slot 1, feature `SECOND` (state 27 from 23) inserts the
+/// slots of `tools`, and the Combine (state 30 from 27) selects target slot 1
+/// and the `tools` slots, each with its native member, in its input state 27
+/// and keeps the bodies `after_combine`. One tool slot gives a historical
+/// selection with one native expression. With
 /// `second_updates_target`, the transition into state 27 also updates slot 1.
 /// With `unscoped_update`, a state 25 from 23 that no scope names updates
 /// slot 1. With `later_update`, a later transition (state 31 from 30) updates
 /// slot 1.
 fn combine_case(
     model_bodies: &[&str],
+    tools: &[(i64, &str)],
     after_combine: Vec<i64>,
     second_updates_target: bool,
     unscoped_update: bool,
@@ -83,12 +88,30 @@ fn combine_case(
         TARGET_NATIVE.to_owned(),
     )
     .unwrap();
-    let tools = BodySelection::historical(
-        input_state,
-        vec![crate::ids::history_input_body_id(&prefix, 2)],
-        TOOL_NATIVE.to_owned(),
-    )
-    .unwrap();
+    let tool_slots = tools.iter().map(|(slot, _)| *slot).collect::<Vec<_>>();
+    let tools = match tools {
+        [(slot, native)] => BodySelection::historical(
+            input_state,
+            vec![crate::ids::history_input_body_id(&prefix, *slot)],
+            (*native).to_owned(),
+        )
+        .unwrap(),
+        _ => BodySelection::HistoricalSet {
+            state: input_state,
+            members: cadmpeg_ir::features::selections::BodyMembers::try_from_rows(
+                tools
+                    .iter()
+                    .map(|(slot, native)| {
+                        cadmpeg_ir::features::selections::BodyMember::new(
+                            crate::ids::history_input_body_id(&prefix, *slot),
+                            cadmpeg_core::text::NonBlankString::new((*native).to_owned()).unwrap(),
+                        )
+                    })
+                    .collect(),
+            )
+            .unwrap(),
+        },
+    };
     let mut features = vec![
         feature(FIRST, 0, &scopes[0].id, native()),
         feature(SECOND, 1, &scopes[1].id, native()),
@@ -145,7 +168,15 @@ fn combine_case(
     };
     let mut states = vec![
         state(30, after_combine.clone(), vec![30; after_combine.len()]),
-        state(27, vec![1, 2], vec![slot_one_at_27, 27]),
+        state(
+            27,
+            std::iter::once(1)
+                .chain(tool_slots.iter().copied())
+                .collect(),
+            std::iter::once(slot_one_at_27)
+                .chain(tool_slots.iter().map(|_| 27))
+                .collect(),
+        ),
         state(23, vec![1], vec![23]),
         state(2, Vec::new(), Vec::new()),
     ];
@@ -182,6 +213,7 @@ fn combine_case(
         construction_recipes: &[],
         persistent_design_links: &[],
         histories: &histories,
+        scope_histories: &std::collections::HashMap::new(),
         bodies: &bodies,
         regions: &[],
         shells: &[],
@@ -236,7 +268,7 @@ fn producer_unresolved(losses: &[LossNote]) -> usize {
 
 #[test]
 fn combine_operands_the_final_model_omits_are_generated_by_their_producers() {
-    let (combine, results, losses) = combine_case(&[], vec![1], false, false, false);
+    let (combine, results, losses) = combine_case(&[], ONE_TOOL, vec![1], false, false, false);
     assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
     assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
     assert!(depends_on(&combine, FIRST) && depends_on(&combine, SECOND));
@@ -252,6 +284,7 @@ fn combine_operands_the_final_model_omits_are_generated_by_their_producers() {
 fn a_live_target_names_its_model_body_beside_a_generated_tool() {
     let (combine, _, losses) = combine_case(
         &["f3d:brep/root.smbh/brep:entity#1"],
+        ONE_TOOL,
         vec![1],
         false,
         false,
@@ -277,6 +310,7 @@ fn a_live_target_names_its_model_body_beside_a_generated_tool() {
 fn a_live_target_that_a_later_transition_updates_names_the_feature_that_inserted_it() {
     let (combine, results, losses) = combine_case(
         &["f3d:brep/root.smbh/brep:entity#1"],
+        ONE_TOOL,
         vec![1],
         false,
         false,
@@ -293,7 +327,7 @@ fn a_live_target_that_a_later_transition_updates_names_the_feature_that_inserted
 
 #[test]
 fn a_deleted_target_names_the_feature_that_inserted_it() {
-    let (combine, _, losses) = combine_case(&[], vec![1], false, false, true);
+    let (combine, _, losses) = combine_case(&[], ONE_TOOL, vec![1], false, false, true);
     assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
     assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
     assert_eq!(producer_unresolved(&losses), 0);
@@ -303,6 +337,7 @@ fn a_deleted_target_names_the_feature_that_inserted_it() {
 fn a_target_that_an_earlier_feature_updates_names_that_feature() {
     let (combine, results, losses) = combine_case(
         &["f3d:brep/root.smbh/brep:entity#1"],
+        ONE_TOOL,
         vec![1],
         true,
         false,
@@ -324,7 +359,7 @@ fn a_target_that_an_earlier_feature_updates_names_that_feature() {
 
 #[test]
 fn a_slot_whose_last_update_has_no_scope_names_its_inserting_feature() {
-    let (combine, _, losses) = combine_case(&[], vec![1], false, true, false);
+    let (combine, _, losses) = combine_case(&[], ONE_TOOL, vec![1], false, true, false);
     assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
     assert_eq!(generated(operands(&combine).tools()), [(SECOND, "2")]);
     assert_eq!(producer_unresolved(&losses), 0);
@@ -337,4 +372,52 @@ fn a_slot_whose_last_update_has_no_scope_names_its_inserting_feature() {
             .count(),
         1
     );
+}
+
+#[test]
+fn generated_tools_with_distinct_native_members_keep_one_native_per_body() {
+    let (combine, results, losses) = combine_case(
+        &[],
+        &[(2, TOOL_NATIVE), (3, SECOND_TOOL_NATIVE)],
+        vec![1],
+        false,
+        false,
+        false,
+    );
+    assert_eq!(generated(operands(&combine).target()), [(FIRST, "1")]);
+    let BodySelection::GeneratedSet { members } = operands(&combine).tools() else {
+        panic!("generated tool set: {:?}", operands(&combine).tools());
+    };
+    let rows = members
+        .iter()
+        .map(|row| {
+            let (body, native) = row.clone().into_parts();
+            (
+                body.feature.as_str().to_owned(),
+                body.local_id.as_str().to_owned(),
+                native,
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        rows,
+        [
+            (SECOND.to_owned(), "2".to_owned(), TOOL_NATIVE.to_owned()),
+            (
+                SECOND.to_owned(),
+                "3".to_owned(),
+                SECOND_TOOL_NATIVE.to_owned()
+            ),
+        ]
+    );
+    assert!(depends_on(&combine, FIRST) && depends_on(&combine, SECOND));
+    assert!(results.iter().any(|result| {
+        result.output_of.as_str() == SECOND
+            && result
+                .bodies()
+                .iter()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                .eq(["2", "3"])
+    }));
+    assert_eq!(producer_unresolved(&losses), 0);
 }

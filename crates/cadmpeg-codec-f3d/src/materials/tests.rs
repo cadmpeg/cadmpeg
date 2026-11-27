@@ -11,7 +11,6 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::{Cursor, Write};
 
@@ -120,7 +119,7 @@ fn three_record_instance() -> Vec<u8> {
 }
 
 #[test]
-fn protein_rejections_preserve_valid_records_and_report_notes() {
+fn protein_rejections_preserve_valid_records_and_give_up_the_rejected_record() {
     let instance = three_record_instance();
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -140,7 +139,13 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
         .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
         .collect();
     let mut notes = Vec::new();
-    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes).unwrap();
+    let (patched, guids) = super::patch_protein_appearances(
+        &protein,
+        &edits,
+        &mut notes,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .unwrap();
     assert_eq!(
         guids.into_iter().collect::<Vec<_>>(),
         ["first-guid", "third-guid"]
@@ -169,7 +174,7 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
     archive.write_all(&protein).unwrap();
     let bytes = archive.finish().unwrap().into_inner();
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
         decoded
@@ -181,9 +186,23 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
             .collect::<Vec<_>>(),
         [Some("first-guid"), Some("third-guid")]
     );
-    assert!(decoded.report().notes.iter().any(|note| note
-        .contains("ProteinAsset.0.protein record 1 rejected")
-        && note.contains("MissingSchema")));
+    // The rejected record is given up over its bytes in the dechunked
+    // instance stream; no decoded record needs it.
+    let head = "part protein-record stream=\"FusionAssetName[Active]/ProteinAssets.BlobParts/\
+        ProteinAsset.0.protein/AssetData/InstanceProperties.bin\" offset=";
+    let charge =
+        crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    assert!(
+        charge.message.contains("MissingSchema"),
+        "{}",
+        charge.message
+    );
+    assert!(!decoded
+        .report()
+        .notes
+        .iter()
+        .any(|note| note.contains("rejected")));
+    crate::test_support::assert_pinned_refusal(bytes, head);
 }
 
 /// A Protein ZIP whose members are Zstandard (method 93) is decoded and patched.
@@ -214,8 +233,13 @@ fn a_zstandard_protein_archive_decodes_and_patches() {
         .map(|guid| (guid.to_owned(), super::ProteinAppearanceEdit::default()))
         .collect();
     let mut notes = Vec::new();
-    let (patched, guids) = super::patch_protein_appearances(&protein, &edits, &mut notes)
-        .expect("patch a Zstandard Protein archive");
+    let (patched, guids) = super::patch_protein_appearances(
+        &protein,
+        &edits,
+        &mut notes,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .expect("patch a Zstandard Protein archive");
     assert_eq!(
         guids.into_iter().collect::<Vec<_>>(),
         ["first-guid", "third-guid"]
@@ -1081,20 +1105,59 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
 
 mod generated_appearance;
 
+/// The head of the `record.unreadable` loss that gives up the first Protein
+/// asset entry of a generated archive.
+const PROTEIN_ENTRY_HEAD: &str =
+    "part archive-entry \"FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein\" ";
+
 #[test]
-fn decode_rejects_invalid_instance_property_page_framing() {
+fn invalid_instance_property_page_framing_gives_up_the_protein_entry() {
     let mut properties = generated_instance_properties_for("11111111-2222-3333-4444-555555555555");
     properties[STREAM_HEADER_LEN + 4] ^= 1;
     let f3d = f3d_with_smbh_and_instance_properties(&synthetic_geometry_smbh(), &[properties]);
 
-    let error = F3dCodec
-        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
-        .expect_err("invalid Protein page framing must reject material decode");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(f3d.clone()), &DecodeOptions::default())
+        .expect("a permissive decode gives the Protein entry up");
+    crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        PROTEIN_ENTRY_HEAD,
+        "",
+    );
+    // A Design assignment still names its appearance; none of the entry's
+    // content reaches it.
+    assert!(decoded.ir().model.appearances.iter().all(|appearance| {
+        appearance.base_color.is_none()
+            && appearance.properties.is_empty()
+            && appearance.textures.is_empty()
+    }));
+    crate::test_support::assert_pinned_refusal(f3d, PROTEIN_ENTRY_HEAD);
+}
 
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::Malformed(_))
-    ));
+#[test]
+fn a_protein_entry_that_is_no_archive_is_given_up() {
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut archive, stored);
+    archive
+        .start_file(
+            "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+            stored,
+        )
+        .unwrap();
+    archive.write_all(b"these bytes open no archive").unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("a permissive decode gives the Protein entry up");
+    crate::test_support::charged_part(
+        decoded.ir(),
+        &decoded.report().losses,
+        PROTEIN_ENTRY_HEAD,
+        "",
+    );
 }
 
 #[test]
@@ -1242,7 +1305,7 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
 
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less tolerant vertex encode");
     let round_trip = F3dCodec
@@ -1725,8 +1788,13 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
             properties: std::collections::BTreeMap::new(),
         },
     )]);
-    let error = crate::materials::patch_protein_appearances(&protein, &edits, &mut Vec::new())
-        .expect_err("a record that ends at its GUID places no colour carrier");
+    let error = crate::materials::patch_protein_appearances(
+        &protein,
+        &edits,
+        &mut Vec::new(),
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+    .expect_err("a record that ends at its GUID places no colour carrier");
     assert!(
         error
             .to_string()

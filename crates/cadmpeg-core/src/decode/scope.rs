@@ -46,7 +46,7 @@ impl ArenaClass {
 /// requires `design`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields, try_from = "ContentScopeWire")]
+#[serde(deny_unknown_fields)]
 pub struct ContentScope {
     /// Model arenas are meaningful, including when empty.
     pub model: bool,
@@ -54,34 +54,6 @@ pub struct ContentScope {
     pub design: bool,
     /// Process arenas are meaningful, including when empty.
     pub process: bool,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-struct ContentScopeWire {
-    /// Model arenas are meaningful, including when empty.
-    model: bool,
-    /// Design arenas are meaningful, including when empty.
-    design: bool,
-    /// Process arenas are meaningful, including when empty.
-    process: bool,
-}
-
-impl TryFrom<ContentScopeWire> for ContentScope {
-    type Error = ScopeDependency;
-
-    fn try_from(wire: ContentScopeWire) -> Result<Self, Self::Error> {
-        let scope = Self {
-            model: wire.model,
-            design: wire.design,
-            process: wire.process,
-        };
-        match scope.unmet_requirement() {
-            Some(error) => Err(error),
-            None => Ok(scope),
-        }
-    }
 }
 
 /// A held class whose required class the scope excludes.
@@ -315,10 +287,11 @@ mod tests {
 
     #[test]
     fn scope_is_three_required_wire_booleans() {
-        let full = serde_json::to_value(ContentScope::full()).expect("scope serializes");
+        let full =
+            crate::serde_erase::json::to_value(ContentScope::full()).expect("scope serializes");
         assert_eq!(
             full,
-            serde_json::json!({"model": true, "design": true, "process": true})
+            crate::json!({"model": true, "design": true, "process": true})
         );
         assert!(serde_json::from_str::<ContentScope>(r#"{"model":true,"design":true}"#).is_err());
         assert!(serde_json::from_str::<ContentScope>(
@@ -347,14 +320,19 @@ mod tests {
                 required: ArenaClass::Design,
             })
         );
-        assert!(serde_json::from_str::<ContentScope>(
-            r#"{"model":false,"design":true,"process":false}"#
-        )
-        .is_err());
-        assert!(serde_json::from_str::<ContentScope>(
-            r#"{"model":true,"design":false,"process":true}"#
-        )
-        .is_err());
+    }
+
+    #[test]
+    fn a_scope_that_breaks_a_requirement_reads_as_written() {
+        for scope in [
+            ContentScope::container().with(ArenaClass::Design, true),
+            ContentScope::geometry().with(ArenaClass::Process, true),
+        ] {
+            let wire = serde_json::to_string(&scope).expect("scope serializes");
+            let read = serde_json::from_str::<ContentScope>(&wire).expect("scope parses");
+            assert_eq!(read, scope);
+            assert!(read.unmet_requirement().is_some());
+        }
     }
 
     #[test]
@@ -387,10 +365,10 @@ mod tests {
     #[test]
     fn class_sets_have_a_sorted_array_wire_shape() {
         let classes = ArenaClasses::from([ArenaClass::Process, ArenaClass::Model]);
-        let wire = serde_json::to_value(&classes).expect("class set serializes");
-        assert_eq!(wire, serde_json::json!(["model", "process"]));
+        let wire = crate::serde_erase::json::to_value(&classes).expect("class set serializes");
+        assert_eq!(wire, crate::json!(["model", "process"]));
         assert_eq!(
-            serde_json::from_value::<ArenaClasses>(wire).expect("class set parses"),
+            crate::serde_erase::json::from_value::<ArenaClasses>(wire).expect("class set parses"),
             classes
         );
     }

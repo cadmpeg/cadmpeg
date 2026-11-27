@@ -366,7 +366,11 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             while self.input.get(self.at).is_some_and(u8::is_ascii_control) {
                 self.at += 1;
             }
-            if let Some(end) = self.print_control_end(self.at) {
+            let byte = self.input.get(self.at).copied();
+            if let Some(end) = (byte == Some(b'\\'))
+                .then(|| self.print_control_end(self.at))
+                .flatten()
+            {
                 if !self.allow_print_controls {
                     return Err(Self::error(
                         self.at,
@@ -376,7 +380,7 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
                 self.at = end;
                 continue;
             }
-            if self.input.get(self.at) == Some(&b' ') {
+            if byte == Some(b' ') {
                 self.at += 1;
                 continue;
             }

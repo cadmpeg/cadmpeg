@@ -5443,20 +5443,7 @@ fn retain_record(
     bytes: &[u8],
     format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let end = r.offset.checked_add(r.len).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "record {} at byte {} declares a length of {} bytes, which leaves the address space",
-            r.index, r.offset, r.len
-        ))
-    })?;
-    let retained = bytes.get(r.offset..end).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "record {} declares bytes {}..{end}, but the stream holds {} bytes",
-            r.index,
-            r.offset,
-            bytes.len()
-        ))
-    })?;
+    let retained = r.bytes_in(bytes)?;
     ctx.retain_bytes(
         cadmpeg_core::decode::u64_from_index(retained.len()),
         "retain ASM unknown record",
@@ -5558,7 +5545,8 @@ pub(super) fn count_other_records(
 
 /// A tolerant-coedge interval whose ends lie outside the knot domain of its
 /// embedded curve only by floating-point noise, moved onto that domain.
-fn clamp_to_knot_domain(
+#[must_use]
+pub fn clamp_to_knot_domain(
     interval: cadmpeg_ir::topology::ParameterInterval,
     curve: &NurbsCurve,
 ) -> cadmpeg_ir::topology::ParameterInterval {

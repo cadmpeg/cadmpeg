@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata};
@@ -36,12 +36,14 @@ pub(super) struct ConvertedScope {
 }
 
 /// Each face the writer leaves out of a Brep scope with the reason, each edge
-/// it writes as one edge for each use, and each edge whose curve pieces it
-/// joins across a gap, with the widest gap.
+/// it writes as one edge for each use, each edge whose curve pieces it
+/// joins across a gap, with the widest gap, and each edge it writes as
+/// several edges.
 pub(super) struct ScopeFindings {
     pub(super) dropped: Vec<(String, String)>,
-    pub(super) unjoined: Vec<String>,
+    pub(super) unjoined: Vec<(Unjoin, String)>,
     pub(super) rejoined: Vec<(String, f64)>,
+    pub(super) split: Vec<EdgeSplit>,
 }
 
 /// The solved form of `geometry`: its solved carrier, or the cache of its
@@ -400,6 +402,42 @@ impl<'a> CompoundIndex<'a> {
         let _nested = ctx
             .enter_nested("Rhino writer compound curve")
             .map_err(|error| error.to_string())?;
+        let pieces = self.pieces(ctx, curve, joint, range, gap_limit)?;
+        let mut widest = pieces.widest;
+        for pair in pieces.curves.windows(2) {
+            let gap = meeting_gap(&pair[0].0, &pair[1].0)?;
+            if gap.closed {
+                continue;
+            }
+            if gap.distance <= gap_limit {
+                widest = widest.max(gap.distance);
+                continue;
+            }
+            return Err(format!(
+                "the components are {} apart where they meet",
+                gap.distance
+            ));
+        }
+        crate::curves::join_nurbs_segments(
+            ctx,
+            pieces.curves.into_iter().map(|(curve, _)| curve).collect(),
+            0,
+        )
+        .map(|join| (join.curve, widest))
+        .map_err(|error| format!("the components do not join into one NURBS curve: {error}"))
+    }
+
+    /// Each component of `curve`, joined by `joint`, as a NURBS curve over
+    /// its part of `range`, with that part, in order along `curve`, and the
+    /// widest gap past `JOIN_GAP` that the joins of nested components close.
+    fn pieces(
+        &self,
+        ctx: &DecodeContext<'_>,
+        curve: &Curve,
+        joint: &Joint<'_>,
+        range: [f64; 2],
+        gap_limit: f64,
+    ) -> Result<Pieces, String> {
         let parameters = self.breaks(ctx, curve, joint)?;
         let components = joint.components();
         if parameters.len() != components.len() + 1 {
@@ -481,40 +519,66 @@ impl<'a> CompoundIndex<'a> {
                 .collect::<Option<Vec<_>>>()
                 .and_then(|target| <[FiniteReal; 2]>::try_from(target).ok())
                 .ok_or("a component interval leaves the finite range")?;
-            pieces.push(
+            pieces.push((
                 crate::curves::remap_nurbs_domain(piece, target, 0)
                     .map_err(|error| format!("component {id}: {error}"))?,
-            );
+                span,
+            ));
         }
-        for pair in pieces.windows(2) {
-            let end = pair[0]
-                .pole_rows()
-                .point_at(pair[0].pole_count() - 1)
-                .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
-            let start = pair[1]
-                .pole_rows()
-                .point_at(0)
-                .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
-            let (Some(end), Some(start)) = (end, start) else {
-                return Err("a component has no control point".into());
-            };
-            let scale = [end.x, end.y, end.z]
-                .iter()
-                .fold(1.0_f64, |scale, lane| scale.max(lane.abs()));
-            let gap = end.distance(start);
-            if gap <= exact::JOIN_GAP * scale {
-                continue;
-            }
-            if gap <= gap_limit {
-                widest = widest.max(gap);
-                continue;
-            }
-            return Err(format!("the components are {gap} apart where they meet"));
-        }
-        crate::curves::join_nurbs_segments(ctx, pieces, 0)
-            .map(|join| (join.curve, widest))
-            .map_err(|error| format!("the components do not join into one NURBS curve: {error}"))
+        Ok(Pieces {
+            curves: pieces,
+            widest,
+        })
     }
+}
+
+/// The components of a joined curve over a range, each with its interval
+/// of the joined curve's parameter, and the widest gap that the joins of
+/// nested components close.
+struct Pieces {
+    curves: Vec<(NurbsCurve, [f64; 2])>,
+    widest: f64,
+}
+
+/// Where the end of one curve piece meets the start of the next.
+struct MeetingGap {
+    /// The distance between the two ends.
+    distance: f64,
+    /// The two ends lie within `JOIN_GAP`, relative to their size.
+    closed: bool,
+    /// The midpoint of the two ends.
+    midpoint: Point3,
+    /// The farther of the two ends from the midpoint.
+    reach: f64,
+}
+
+fn meeting_gap(before: &NurbsCurve, after: &NurbsCurve) -> Result<MeetingGap, String> {
+    let end = before
+        .pole_rows()
+        .point_at(before.pole_count() - 1)
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
+    let start = after
+        .pole_rows()
+        .point_at(0)
+        .map(cadmpeg_ir::features::geometry::FinitePoint3::get);
+    let (Some(end), Some(start)) = (end, start) else {
+        return Err("a component has no control point".into());
+    };
+    let scale = [end.x, end.y, end.z]
+        .iter()
+        .fold(1.0_f64, |scale, lane| scale.max(lane.abs()));
+    let distance = end.distance(start);
+    let midpoint = Point3::new(
+        f64::midpoint(end.x, start.x),
+        f64::midpoint(end.y, start.y),
+        f64::midpoint(end.z, start.z),
+    );
+    Ok(MeetingGap {
+        distance,
+        closed: distance <= exact::JOIN_GAP * scale,
+        midpoint,
+        reach: midpoint.distance(end).max(midpoint.distance(start)),
+    })
 }
 
 /// Relative distance within which a composite break laid by component
@@ -545,6 +609,7 @@ fn edge_curve(
     if let Some(joint) = compounds.joint(curve) {
         return compounds
             .nurbs(ctx, curve, &joint, range, tolerance)
+            .and_then(|(nurbs, gap)| Ok((over_range(nurbs, range)?, gap)))
             .map(|(nurbs, gap)| Some((SolvedCurveGeometry::Nurbs(nurbs), gap)))
             .map_err(|reason| format!("curve {}: {reason}", curve.id.as_str()));
     }
@@ -564,6 +629,19 @@ fn edge_curve(
     curve_nurbs(solved, range)
         .map(|nurbs| Some((SolvedCurveGeometry::Nurbs(nurbs), 0.0)))
         .map_err(|reason| format!("curve {}: {reason}", curve.id.as_str()))
+}
+
+/// `nurbs` with its knot domain mapped onto `range`: a joined curve takes
+/// the stored breaks of its components at ends within `BREAK_SLACK` of the
+/// range, and a 3DM edge curve spans its edge's range.
+fn over_range(nurbs: NurbsCurve, range: [f64; 2]) -> Result<NurbsCurve, String> {
+    if knot_domain(&nurbs) == Some(range) {
+        return Ok(nurbs);
+    }
+    let [Some(start), Some(end)] = range.map(FiniteReal::new) else {
+        return Err("the edge range is not finite".to_owned());
+    };
+    crate::curves::remap_nurbs_domain(nurbs, [start, end], 0).map_err(|error| error.to_string())
 }
 
 /// The pcurve uses of `coedge` that lie on `surface`: each use whose pcurve
@@ -636,7 +714,7 @@ fn written_as_is(
     pcurve: &Pcurve,
     edge_range: Option<[f64; 2]>,
 ) -> bool {
-    if pcurve.wrapper_reversed() == Some(true) || pcurve.native_tail_flags().is_some() {
+    if pcurve.native_tail_flags().is_some() {
         return false;
     }
     let stated = pcurve
@@ -812,6 +890,7 @@ enum PcurveRule {
 /// The pcurve of `coedge` on `face`, `None` where the trim is the projection
 /// of the edge onto the face's plane.
 fn coedge_pcurve(
+    ctx: &DecodeContext<'_>,
     coedge: &Coedge,
     surface: &str,
     edge_range: Option<[f64; 2]>,
@@ -865,7 +944,7 @@ fn coedge_pcurve(
     }
     let mut joined: Option<Spline> = None;
     for (interval, pcurve) in intervals {
-        let spline = exact::pcurve_spline(&pcurve.geometry, interval)
+        let spline = exact::pcurve_spline(ctx, &pcurve.geometry, interval)
             .map_err(|reason| format!("pcurve {}: {reason}", pcurve.id.as_str()))?;
         joined = Some(match joined {
             None => spline,
@@ -891,11 +970,34 @@ struct FacePlan {
     pcurves: Vec<(String, Option<CoedgePcurve>)>,
 }
 
-/// Gives each use of an edge whose two uses run the same way its own edge: a
-/// 3DM Brep joins two faces at an edge where their trims run opposite ways.
-/// The second use takes a copy of the edge, with the key of the use appended
-/// to its id. Returns the id of each edge it splits.
-fn unjoin_equal_uses(ir: &mut CadIr) -> Vec<String> {
+/// Why an edge is written as one edge for each of its uses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Unjoin {
+    /// Its two uses run the same way.
+    EqualSenses,
+    /// Its two uses are not each other's radial next.
+    UnpairedRing,
+    /// It has three or more uses.
+    ManyUses,
+}
+
+impl Unjoin {
+    /// The reason clause of the writer's loss.
+    pub(super) fn reason(self) -> &'static str {
+        match self {
+            Self::EqualSenses => "their two uses run the same way",
+            Self::UnpairedRing => "their two uses are not each other's radial next",
+            Self::ManyUses => "each has three or more uses, and a written edge joins two",
+        }
+    }
+}
+
+/// Gives each use of an edge its own edge unless the edge has one use, or two
+/// uses that run opposite ways and are each other's radial next: a 3DM Brep
+/// joins two faces at an edge where their trims run opposite ways. Each use
+/// after the first takes a copy of the edge, with the key of the use appended
+/// to its id. Returns the id of each edge it splits, with the reason.
+fn unjoin_unpaired_uses(ir: &mut CadIr) -> Vec<(Unjoin, String)> {
     let geometry = &mut ir.geometry;
     let mut uses = BTreeMap::<String, Vec<usize>>::new();
     for (index, coedge) in geometry.coedges.iter().enumerate() {
@@ -906,36 +1008,53 @@ fn unjoin_equal_uses(ir: &mut CadIr) -> Vec<String> {
     let mut unjoined = Vec::new();
     let mut copies = Vec::new();
     for (edge, uses) in uses {
-        let [first, second] = uses[..] else {
+        let reason = match uses[..] {
+            [] | [_] => continue,
+            [first, second] => {
+                let (one, other) = (&geometry.coedges[first], &geometry.coedges[second]);
+                if one.radial_next != other.id || other.radial_next != one.id {
+                    Unjoin::UnpairedRing
+                } else if one.sense == other.sense {
+                    Unjoin::EqualSenses
+                } else {
+                    continue;
+                }
+            }
+            _ => Unjoin::ManyUses,
+        };
+        let Some(source) = geometry
+            .edges
+            .iter()
+            .find(|source| source.id.as_str() == edge)
+        else {
             continue;
         };
-        let (one, other) = (&geometry.coedges[first], &geometry.coedges[second]);
-        if one.sense != other.sense || one.radial_next != other.id || other.radial_next != one.id {
+        let Some(ids) = uses[1..]
+            .iter()
+            .map(|&index| {
+                geometry.coedges[index]
+                    .id
+                    .as_str()
+                    .split_once('#')
+                    .and_then(|(_, key)| {
+                        cadmpeg_ir::ids::EdgeId::mint(format!("{edge}.on-{key}")).ok()
+                    })
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
             continue;
+        };
+        for (&index, id) in uses[1..].iter().zip(ids) {
+            let mut copy = source.clone();
+            copy.id = id.clone();
+            copies.push(copy);
+            geometry.coedges[index].edge = id;
         }
-        let copy = other
-            .id
-            .as_str()
-            .split_once('#')
-            .and_then(|(_, key)| cadmpeg_ir::ids::EdgeId::mint(format!("{edge}.on-{key}")).ok())
-            .zip(
-                geometry
-                    .edges
-                    .iter()
-                    .find(|source| source.id.as_str() == edge),
-            );
-        let Some((id, source)) = copy else {
-            continue;
-        };
-        let mut copy = source.clone();
-        copy.id = id.clone();
-        copies.push(copy);
-        let other = &mut geometry.coedges[second];
-        other.edge = id;
-        other.radial_next = other.id.clone();
-        let one = &mut geometry.coedges[first];
-        one.radial_next = one.id.clone();
-        unjoined.push(edge);
+        for &index in &uses {
+            let coedge = &mut geometry.coedges[index];
+            coedge.radial_next = coedge.id.clone();
+        }
+        unjoined.push((reason, edge));
     }
     geometry.edges.extend(copies);
     unjoined
@@ -996,15 +1115,569 @@ fn unshare_carriers(ir: &mut CadIr) -> HashMap<String, String> {
     origins
 }
 
+/// An edge written as several edges: its id, the ids of the edges it
+/// becomes, the widest gap between their curves, and the widest tolerance
+/// an edge takes at a gap.
+pub(super) struct EdgeSplit {
+    pub(super) edge: String,
+    pub(super) pieces: Vec<String>,
+    pub(super) gap: f64,
+    pub(super) tolerance: f64,
+}
+
+/// Where the joined curve of an edge is cut.
+struct EdgeCuts {
+    /// The edge parameter range.
+    range: [f64; 2],
+    /// The edge parameters that bound each run of pieces, increasing.
+    bounds: Vec<f64>,
+    /// The gap at each cut, in the order the edge runs.
+    gaps: Vec<MeetingGap>,
+}
+
+/// Where the pcurve uses of an edge are cut.
+struct TrimCuts {
+    /// For each coedge id and pcurve use index, the use's parameters in the
+    /// order the edge runs: its start, each cut, and its end.
+    parameters: BTreeMap<(String, usize), Vec<f64>>,
+    /// For each cut, the farthest a piece end or a trim end at the cut can
+    /// lie from a piece curve end there: the gap's reach plus the farthest a
+    /// trim end lies from the vertex.
+    reach: Vec<f64>,
+}
+
+/// The records that replace one edge.
+struct SplitPlan {
+    split: EdgeSplit,
+    edge: String,
+    edges: Vec<Edge>,
+    curves: Vec<Curve>,
+    points: Vec<cadmpeg_ir::topology::Point>,
+    vertices: Vec<cadmpeg_ir::topology::Vertex>,
+    /// The coedges that replace each coedge of the edge, by its id.
+    coedges: BTreeMap<String, Vec<Coedge>>,
+    pcurves: Vec<Pcurve>,
+    loops: Vec<cadmpeg_ir::topology::Loop>,
+}
+
+/// `id` with its kind replaced by `kind` and `suffix` appended to its key.
+fn derived_id(id: &str, kind: &str, suffix: &str) -> Option<String> {
+    let (head, key) = id.split_once('#')?;
+    let (scope, _) = head.rsplit_once(':')?;
+    Some(format!("{scope}:{kind}#{key}.{suffix}"))
+}
+
+/// Writes each edge whose joined curve has pieces that meet farther apart
+/// than the edge tolerance as one edge for each run of pieces that meet
+/// within it. Each gap gets a vertex at the midpoint of its two ends, with a
+/// tolerance that reaches both. Each trim of the edge breaks where its image
+/// comes closest to that vertex, and the edges at the gap take a tolerance
+/// that reaches the vertex and each trim end. Returns each edge it splits.
+fn split_gapped_edges(
+    ctx: &DecodeContext<'_>,
+    compounds: &CompoundIndex<'_>,
+    ir: &mut CadIr,
+) -> Result<Vec<EdgeSplit>, ResourceLimit> {
+    let edges = ir
+        .geometry
+        .edges
+        .iter()
+        .map(|edge| edge.id.as_str().to_owned())
+        .collect::<Vec<_>>();
+    let mut splits = Vec::new();
+    for edge in edges {
+        let Some(cuts) = edge_cuts(ctx, compounds, ir, &edge) else {
+            continue;
+        };
+        let Some(trims) = trim_cuts(ctx, ir, &edge, &cuts)? else {
+            continue;
+        };
+        let Some(plan) = plan_split(ir, &edge, &cuts, &trims) else {
+            continue;
+        };
+        let geometry = &mut ir.geometry;
+        for loop_ in plan.loops {
+            if let Some(slot) = geometry.loops.iter_mut().find(|slot| slot.id == loop_.id) {
+                *slot = loop_;
+            }
+        }
+        let mut pieces = plan.coedges;
+        geometry.coedges = std::mem::take(&mut geometry.coedges)
+            .into_iter()
+            .flat_map(|coedge| {
+                pieces
+                    .remove(coedge.id.as_str())
+                    .unwrap_or_else(|| vec![coedge])
+            })
+            .collect();
+        let Some(position) = geometry
+            .edges
+            .iter()
+            .position(|source| source.id.as_str() == plan.edge)
+        else {
+            continue;
+        };
+        let curve = geometry.edges[position].curve().cloned();
+        geometry.edges.splice(position..=position, plan.edges);
+        if let Some(curve) = curve {
+            if !geometry
+                .edges
+                .iter()
+                .any(|source| source.curve() == Some(&curve))
+            {
+                geometry.curves.retain(|source| source.id != curve);
+            }
+        }
+        geometry.curves.extend(plan.curves);
+        geometry.points.extend(plan.points);
+        geometry.vertices.extend(plan.vertices);
+        geometry.pcurves.extend(plan.pcurves);
+        splits.push(plan.split);
+    }
+    Ok(splits)
+}
+
+/// Where the joined curve of `edge` has pieces that meet farther apart than
+/// the edge tolerance, `None` where the edge stays as it is.
+fn edge_cuts(
+    ctx: &DecodeContext<'_>,
+    compounds: &CompoundIndex<'_>,
+    ir: &CadIr,
+    edge: &str,
+) -> Option<EdgeCuts> {
+    let geometry = &ir.geometry;
+    let source = geometry
+        .edges
+        .iter()
+        .find(|source| source.id.as_str() == edge)?;
+    let curve = geometry
+        .curves
+        .iter()
+        .find(|curve| Some(&curve.id) == source.curve())?;
+    let joint = compounds.joint(curve)?;
+    let range = source.param_range()?.get();
+    let tolerance = super::stated_write_tolerance(source.tolerance, ir);
+    let pieces = compounds
+        .pieces(ctx, curve, &joint, range, tolerance)
+        .ok()?
+        .curves;
+    let mut bounds = vec![pieces.first()?.1[0]];
+    let mut gaps = Vec::new();
+    for pair in pieces.windows(2) {
+        let gap = meeting_gap(&pair[0].0, &pair[1].0).ok()?;
+        if !gap.closed && gap.distance > tolerance {
+            bounds.push(pair[0].1[1]);
+            gaps.push(gap);
+        }
+    }
+    if gaps.is_empty() {
+        return None;
+    }
+    bounds.push(pieces.last()?.1[1]);
+    Some(EdgeCuts {
+        range,
+        bounds,
+        gaps,
+    })
+}
+
+/// Where each pcurve use of `edge` is cut: at each gap of `cuts`, the
+/// parameter after the previous cut where the image of the pcurve through
+/// its surface comes closest to the gap's vertex. `None` where a pcurve or
+/// its surface is missing or has no finite image there.
+fn trim_cuts(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    edge: &str,
+    cuts: &EdgeCuts,
+) -> Result<Option<TrimCuts>, ResourceLimit> {
+    use cadmpeg_ir::topology::Sense;
+
+    let geometry = &ir.geometry;
+    let mut parameters = BTreeMap::new();
+    let mut apart = vec![0.0_f64; cuts.gaps.len()];
+    for coedge in geometry
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge.as_str() == edge)
+    {
+        let Some(face_surface) = geometry
+            .loops
+            .iter()
+            .find(|loop_| loop_.id == coedge.owner_loop)
+            .and_then(|loop_| geometry.faces.iter().find(|face| face.id == loop_.face))
+            .map(|face| &face.surface)
+        else {
+            return Ok(None);
+        };
+        for (index, use_) in coedge.pcurves.iter().enumerate() {
+            let Some(pcurve) = geometry
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == use_.pcurve)
+            else {
+                return Ok(None);
+            };
+            let support = match &pcurve.metadata {
+                PcurveMetadata::General { form } => {
+                    form.support_surface.as_ref().unwrap_or(face_surface)
+                }
+                PcurveMetadata::AsmInline { .. } => face_surface,
+            };
+            let Some(surface) = geometry
+                .surfaces
+                .iter()
+                .find(|surface| &surface.id == support)
+            else {
+                return Ok(None);
+            };
+            let Ok(interval) = use_interval(use_, pcurve, Some(cuts.range)) else {
+                return Ok(None);
+            };
+            let along = if coedge.sense == Sense::Forward {
+                interval
+            } else {
+                [interval[1], interval[0]]
+            };
+            let knots = match &pcurve.geometry {
+                PcurveGeometry::Nurbs { nurbs } => nurbs.knots().to_vec(),
+                _ => Vec::new(),
+            };
+            let mut cut = vec![along[0]];
+            for (number, gap) in cuts.gaps.iter().enumerate() {
+                let from = cut[cut.len() - 1];
+                let samples = super::span_samples(increasing([from, along[1]]), knots.clone());
+                let distance = |parameter: f64| {
+                    image_distance(
+                        ctx,
+                        &pcurve.geometry,
+                        &surface.geometry,
+                        gap.midpoint,
+                        parameter,
+                    )
+                };
+                let distances = samples
+                    .iter()
+                    .map(|parameter| distance(*parameter))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let Some((parameter, distance)) =
+                    super::refine_closest(&samples, &distances, distance)?
+                else {
+                    return Ok(None);
+                };
+                if !distance.is_finite() {
+                    return Ok(None);
+                }
+                apart[number] = apart[number].max(distance);
+                cut.push(parameter);
+            }
+            cut.push(along[1]);
+            parameters.insert((coedge.id.as_str().to_owned(), index), cut);
+        }
+    }
+    let reach = cuts
+        .gaps
+        .iter()
+        .zip(apart)
+        .map(|(gap, apart)| gap.reach + apart)
+        .collect();
+    Ok(Some(TrimCuts { parameters, reach }))
+}
+
+/// The distance from `target` to the image of `pcurve` at `parameter`
+/// through `surface`, infinite where the image has no finite point.
+fn image_distance(
+    ctx: &DecodeContext<'_>,
+    pcurve: &PcurveGeometry,
+    surface: &cadmpeg_ir::geometry::SurfaceGeometry,
+    target: Point3,
+    parameter: f64,
+) -> Result<f64, ResourceLimit> {
+    use cadmpeg_ir::eval::EvaluationFailure;
+
+    let uv = match cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter) {
+        Ok(uv) => uv.get(),
+        Err(EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+        Err(
+            EvaluationFailure::NoValue
+            | EvaluationFailure::NonFinite(_)
+            | EvaluationFailure::WorkExhausted,
+        ) => return Ok(f64::INFINITY),
+    };
+    match cadmpeg_ir::eval::decode::surface_point(ctx, surface, uv.u, uv.v) {
+        Ok(point) => Ok(point.get().distance(target)),
+        Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit),
+        Err(
+            EvaluationFailure::NoValue
+            | EvaluationFailure::NonFinite(_)
+            | EvaluationFailure::WorkExhausted,
+        ) => Ok(f64::INFINITY),
+    }
+}
+
+/// The records that replace `edge`, cut at `cuts` with its trims cut at
+/// `trims`, `None` where the edge stays as it is.
+fn plan_split(ir: &CadIr, edge: &str, cuts: &EdgeCuts, trims: &TrimCuts) -> Option<SplitPlan> {
+    use cadmpeg_ir::geometry::procedural_curves::DirectedParameterRange;
+    use cadmpeg_ir::ids::{CoedgeId, EdgeId, PcurveId, PointId, VertexId};
+    use cadmpeg_ir::scalar::PositiveLength;
+    use cadmpeg_ir::topology::{EdgeEnds, Point, Sense, Vertex};
+
+    let geometry = &ir.geometry;
+    let source = geometry
+        .edges
+        .iter()
+        .find(|source| source.id.as_str() == edge)?;
+    let curve = geometry
+        .curves
+        .iter()
+        .find(|curve| Some(&curve.id) == source.curve())?;
+    let ends = source.ends.as_ref()?;
+    let tolerance = super::stated_write_tolerance(source.tolerance, ir);
+    let bounds = &cuts.bounds;
+    let count = bounds.len() - 1;
+
+    let piece_ids = (0..count)
+        .map(|run| EdgeId::mint(format!("{edge}.piece-{run}")).ok())
+        .collect::<Option<Vec<_>>>()?;
+    let mut points = Vec::new();
+    let mut vertices = Vec::new();
+    let mut chain = vec![ends.start.clone()];
+    for (number, gap) in cuts.gaps.iter().enumerate() {
+        let suffix = format!("break-{number}");
+        let point = PointId::mint(derived_id(edge, "point", &suffix)?).ok()?;
+        let vertex = VertexId::mint(derived_id(edge, "vertex", &suffix)?).ok()?;
+        let reach = PositiveLength::new(gap.reach.next_up())?;
+        points.push(Point::new(
+            point.clone(),
+            cadmpeg_ir::features::geometry::FinitePoint3::new(gap.midpoint)?,
+            None,
+        ));
+        vertices.push(Vertex {
+            id: vertex.clone(),
+            point,
+            tolerance: Some(reach),
+            native_ref: None,
+        });
+        chain.push(vertex);
+    }
+    chain.push(ends.end.clone());
+
+    let mut curves = Vec::new();
+    let mut edges = Vec::new();
+    for (run, id) in piece_ids.iter().enumerate() {
+        let mut copy = curve.clone();
+        copy.id = CurveId::mint(format!("{}.piece-{run}", curve.id.as_str())).ok()?;
+        let mut piece = source.clone();
+        piece.id = id.clone();
+        piece.carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+            Some(copy.id.clone()),
+            Some([bounds[run], bounds[run + 1]]),
+        )
+        .ok()?;
+        piece.ends = Some(EdgeEnds::new(chain[run].clone(), chain[run + 1].clone()));
+        let widest = [run.checked_sub(1), (run + 1 < count).then_some(run)]
+            .into_iter()
+            .flatten()
+            .map(|cut| trims.reach[cut])
+            .fold(tolerance, f64::max);
+        if widest > tolerance {
+            piece.tolerance = Some(PositiveLength::new(widest.next_up())?);
+        }
+        piece.native_ref = None;
+        curves.push(copy);
+        edges.push(piece);
+    }
+
+    let used = geometry
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge.as_str() == edge)
+        .collect::<Vec<_>>();
+    let piece_coedge =
+        |id: &CoedgeId, run: usize| CoedgeId::mint(format!("{}.piece-{run}", id.as_str())).ok();
+    let mut coedges = BTreeMap::new();
+    let mut pcurves = Vec::new();
+    let mut rings = BTreeMap::<&str, Vec<CoedgeId>>::new();
+    for coedge in &used {
+        if !used.iter().any(|other| other.id == coedge.radial_next) {
+            return None;
+        }
+        let forward = coedge.sense == Sense::Forward;
+        let mut uses = vec![Vec::new(); piece_ids.len()];
+        for (index, use_) in coedge.pcurves.iter().enumerate() {
+            let pcurve = geometry
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == use_.pcurve)?;
+            let parameters = trims
+                .parameters
+                .get(&(coedge.id.as_str().to_owned(), index))?;
+            let along = [parameters[0], parameters[parameters.len() - 1]];
+            for run in 0..count {
+                let [start, end] = [parameters[run], parameters[run + 1]];
+                if (end - start) * (along[1] - along[0]) <= 0.0 {
+                    return None;
+                }
+                let directed = if forward { [start, end] } else { [end, start] };
+                let id = PcurveId::mint(format!("{}.piece-{run}", pcurve.id.as_str())).ok()?;
+                let mut copy = pcurve.clone();
+                copy.id = id.clone();
+                copy.native_ref = None;
+                if let PcurveMetadata::General { form } = &pcurve.metadata {
+                    let mut metadata = PcurveMetadata::general(
+                        form.wrapper_reversed,
+                        cadmpeg_ir::units::FiniteVector::new(increasing(directed)),
+                        form.fit_tolerance(),
+                    );
+                    if let PcurveMetadata::General { form: written } = &mut metadata {
+                        written.support_surface.clone_from(&form.support_surface);
+                        written.uv_offset = form.uv_offset;
+                    }
+                    copy.metadata = metadata;
+                }
+                pcurves.push(copy);
+                uses[run].push(cadmpeg_ir::topology::PcurveUse {
+                    pcurve: id,
+                    isoparametric: use_.isoparametric,
+                    parameter_range: Some(DirectedParameterRange::new(directed).ok()?),
+                });
+            }
+        }
+        let mut order = (0..count).collect::<Vec<_>>();
+        if !forward {
+            order.reverse();
+        }
+        let mut ring = Vec::new();
+        let mut written = Vec::new();
+        for run in order {
+            let id = piece_coedge(&coedge.id, run)?;
+            written.push(Coedge {
+                id: id.clone(),
+                owner_loop: coedge.owner_loop.clone(),
+                edge: piece_ids[run].clone(),
+                radial_next: piece_coedge(&coedge.radial_next, run)?,
+                sense: coedge.sense,
+                pcurves: std::mem::take(&mut uses[run]),
+                use_curve: None,
+                native_ref: None,
+            });
+            ring.push(id);
+        }
+        coedges.insert(coedge.id.as_str().to_owned(), written);
+        rings.insert(coedge.id.as_str(), ring);
+    }
+
+    let mut loops = Vec::new();
+    for loop_ in &geometry.loops {
+        if !loop_
+            .coedges()
+            .iter()
+            .any(|id| rings.contains_key(id.as_str()))
+        {
+            continue;
+        }
+        let mut coedge_ids = Vec::new();
+        for id in loop_.coedges() {
+            match rings.get(id.as_str()) {
+                Some(ring) => coedge_ids.extend(ring.iter().cloned()),
+                None => coedge_ids.push(id.clone()),
+            }
+        }
+        let vertex_uses = loop_
+            .anchored_vertex_uses()
+            .iter()
+            .cloned()
+            .map(|mut vertex_use| {
+                if let Some(last) = rings
+                    .get(vertex_use.after.as_str())
+                    .and_then(|ring| ring.last())
+                {
+                    vertex_use.after = last.clone();
+                }
+                vertex_use
+            })
+            .collect();
+        let mut copy = loop_.clone();
+        copy.replace_ring(coedge_ids, vertex_uses).ok()?;
+        loops.push(copy);
+    }
+
+    let taken = |id: &str| {
+        geometry.edges.iter().any(|record| record.id.as_str() == id)
+            || geometry
+                .curves
+                .iter()
+                .any(|record| record.id.as_str() == id)
+            || geometry
+                .points
+                .iter()
+                .any(|record| record.id.as_str() == id)
+            || geometry
+                .vertices
+                .iter()
+                .any(|record| record.id.as_str() == id)
+            || geometry
+                .coedges
+                .iter()
+                .any(|record| record.id.as_str() == id)
+            || geometry
+                .pcurves
+                .iter()
+                .any(|record| record.id.as_str() == id)
+    };
+    let minted = edges
+        .iter()
+        .map(|record| record.id.as_str())
+        .chain(curves.iter().map(|record| record.id.as_str()))
+        .chain(points.iter().map(|record| record.id.as_str()))
+        .chain(vertices.iter().map(|record| record.id.as_str()))
+        .chain(coedges.values().flatten().map(|record| record.id.as_str()))
+        .chain(pcurves.iter().map(|record| record.id.as_str()));
+    let mut seen = BTreeSet::new();
+    for id in minted {
+        if taken(id) || !seen.insert(id) {
+            return None;
+        }
+    }
+    let gap = cuts
+        .gaps
+        .iter()
+        .map(|gap| gap.distance)
+        .fold(0.0_f64, f64::max);
+    let widest = edges
+        .iter()
+        .filter_map(|piece| piece.tolerance)
+        .map(PositiveLength::get)
+        .fold(tolerance, f64::max);
+    Some(SplitPlan {
+        split: EdgeSplit {
+            edge: edge.to_owned(),
+            pieces: piece_ids.iter().map(|id| id.as_str().to_owned()).collect(),
+            gap,
+            tolerance: widest,
+        },
+        edge: edge.to_owned(),
+        edges,
+        curves,
+        points,
+        vertices,
+        coedges,
+        pcurves,
+        loops,
+    })
+}
+
 /// Converts the carriers of the Brep scope `ir`.
 pub(super) fn convert_scope(
     ctx: &DecodeContext<'_>,
     compounds: &CompoundIndex<'_>,
     ir: &CadIr,
-) -> ConvertedScope {
+) -> Result<ConvertedScope, ResourceLimit> {
     let mut unshared = ir.clone();
-    let unjoined = unjoin_equal_uses(&mut unshared);
+    let unjoined = unjoin_unpaired_uses(&mut unshared);
     let origins = unshare_carriers(&mut unshared);
+    let split = split_gapped_edges(ctx, compounds, &mut unshared)?;
     let ir = &unshared;
     let geometry = &ir.geometry;
     let curves = geometry
@@ -1150,7 +1823,7 @@ pub(super) fn convert_scope(
                 } else {
                     rule
                 };
-                let pcurve = coedge_pcurve(coedge, origin, edge_range, &pcurves, rule)?;
+                let pcurve = coedge_pcurve(ctx, coedge, origin, edge_range, &pcurves, rule)?;
                 if singular && pcurve.is_none() {
                     return Err(format!(
                         "coedge {} runs along singular edge {} and has no pcurve",
@@ -1330,14 +2003,15 @@ pub(super) fn convert_scope(
         .collect::<BTreeSet<_>>();
     out.pcurves
         .retain(|pcurve| used.contains(pcurve.id.as_str()));
-    ConvertedScope {
+    Ok(ConvertedScope {
         ir: converted,
         findings: ScopeFindings {
             dropped,
             unjoined,
             rejoined,
+            split,
         },
-    }
+    })
 }
 
 #[cfg(test)]

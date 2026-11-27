@@ -27,6 +27,7 @@ use crate::variant::Variant;
 use crate::CatiaCodec;
 
 mod chart_domains;
+mod give_ups;
 mod owned_sheet;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
@@ -238,6 +239,39 @@ fn fbb_only_mesh_incidence_stays_within_every_topology_allowance() {
     assert!(limit > 0);
     assert_eq!(smallest.ir(), production.ir());
     assert_valid(&smallest);
+}
+
+/// A topology search cut short at its allowance drops the population's faces,
+/// so a pinned decode refuses through `record.unreadable` naming a face.
+#[test]
+fn a_pinned_decode_refuses_faces_dropped_at_the_topology_allowance() {
+    let bytes = fbb_only_quad_unmatched_edge_catpart();
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = crate::test_support::with_standard_topology_limit(0, || {
+        CatiaCodec.decode(&mut Cursor::new(bytes), &options)
+    })
+    .expect_err("a pinned decode refuses the dropped faces");
+    let cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    let loss = rejection.loss();
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        loss.message
+            .split_whitespace()
+            .any(|token| token.starts_with("catia:standard:face#")),
+        "{}",
+        loss.message
+    );
+    assert!(
+        loss.message.contains("exhausted its operation"),
+        "{}",
+        loss.message
+    );
 }
 
 #[test]

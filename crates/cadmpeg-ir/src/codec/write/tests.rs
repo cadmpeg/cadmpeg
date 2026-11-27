@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+mod encode_sets;
+
 use crate::test_support::wire;
+use cadmpeg_core::serde_erase::json;
 
 use super::{
     target::{Catalog, DialectFree, ResolvedWrite, TargetRequest},
     ArenaCoverage, ArenaDisposition, ArenaDispositions, CadirEncoder, Consumption, EncodeError,
-    EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
+    EncodeInput, Encoder, EncoderBackend, ExportBody, NativeDispositions, PatchConsumption,
+    WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::codec::FormatId;
@@ -19,15 +23,18 @@ use crate::schema::{EntityKind, EntitySchema};
 use crate::source_fidelity::SourceFidelity;
 use crate::validate::validate_neutral;
 use crate::CadIr;
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
+
+mod dropped_records;
+mod restated_records;
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
     let ir = unit_cube().expect("valid unit cube fixture");
     let mut encoded = Vec::new();
     let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .expect("empty-catalog inheritance resolves to CADIR identity");
     assert_eq!(
         wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
@@ -44,7 +51,8 @@ fn cadir_encoder_streams_the_canonical_json_shape() {
 }
 
 /// The CADIR writer drops a record nested past the document bound and
-/// removes the stub link that names it; the record at the bound stays.
+/// removes the stub link that names it; the record at the bound stays. The
+/// dropped native record is charged only as an omitted native record.
 #[test]
 fn cadir_encoder_drops_a_record_past_the_document_bound() {
     const WITHIN: &str = "test:native:within#1";
@@ -77,22 +85,24 @@ fn cadir_encoder_drops_a_record_past_the_document_bound() {
         .unwrap();
 
     let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .expect("a record past the bound does not refuse the write");
-    let unwritable = plan
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code.local_code() == "value.unwritable")
-        .collect::<Vec<_>>();
-    let [loss] = unwritable.as_slice() else {
-        panic!("one loss for the one record: {unwritable:?}");
+    let messages = |code: &str| {
+        plan.report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == code)
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>()
     };
-    assert!(
-        loss.message.contains(PAST) && loss.message.contains("native.test.deep"),
-        "{}",
-        loss.message
+    assert_eq!(
+        messages("native.records-omitted"),
+        [format!(
+            "the CADIR write omits 1 native record(s) of `test` arena `deep` which {}: {PAST}",
+            crate::bounds::Bound::Document.describe()
+        )]
     );
+    assert_eq!(messages("value.unwritable"), Vec::<&str>::new());
     let mut encoded = Vec::new();
     plan.write_to(&mut encoded).unwrap();
     let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
@@ -114,6 +124,257 @@ fn cadir_encoder_drops_a_record_past_the_document_bound() {
     assert_eq!(written.geometry.points.len(), ir.geometry.points.len());
 }
 
+/// A document whose scope excludes a class it holds records of writes
+/// without those records. Where the scope excludes design, a model record's
+/// reference into design is absent and an attribute whose target is a
+/// design record is left out (§2.1). Each loss names what the write leaves
+/// out, and the strict reader reads the output.
+#[test]
+fn cadir_encoder_drops_the_records_its_scope_excludes() {
+    use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    const PARAMETER: &str = "synthetic:test:parameter#depth";
+    const NAMES_PARAMETER: &str = "synthetic:test:attribute#depth-value";
+    const ON_CONFIGURATION: &str = "synthetic:test:attribute#large";
+    const ON_DOCUMENT: &str = "synthetic:test:attribute#part-number";
+    let attribute = |id: &str, entity: AttributeTarget, values| SourceAttribute {
+        id: crate::ids::AttributeId::mint(id).unwrap(),
+        target: entity.into(),
+        name: "Part Number".into(),
+        values,
+        native_ref: None,
+    };
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.design
+        .parameters
+        .push(crate::design::parameter::DesignParameter {
+            id: crate::features::ParameterId::mint(PARAMETER).unwrap(),
+            scope: crate::ids::ProductDefinitionId::mint("synthetic:test:product-definition#root")
+                .unwrap(),
+            owner: None,
+            name: None,
+            kind: crate::design::units::ValueKind::Text,
+            unit: None,
+            definition: crate::design::parameter::ParameterDefinition::Driven,
+            value: None,
+            display: None,
+            tolerance: None,
+            decimals: None,
+            comment: None,
+            native_options: std::collections::BTreeMap::new(),
+            source_settings: std::collections::BTreeMap::new(),
+            native_ref: None,
+        });
+    ir.model.attributes.extend([
+        attribute(
+            NAMES_PARAMETER,
+            AttributeTarget::Document,
+            vec![Some(AttributeValue::Parameter(
+                crate::features::ParameterId::mint(PARAMETER).unwrap(),
+            ))],
+        ),
+        attribute(
+            ON_CONFIGURATION,
+            AttributeTarget::Configuration(
+                crate::features::ConfigurationId::mint("synthetic:test:configuration#large")
+                    .unwrap(),
+            ),
+            Vec::new(),
+        ),
+        attribute(ON_DOCUMENT, AttributeTarget::Document, Vec::new()),
+    ]);
+    let mut value = json::to_value(&ir).unwrap();
+    value["scope"] = cadmpeg_core::json!({"model": true, "design": false, "process": false});
+    let (read, _, _) = CadIr::read(
+        value.to_string().as_bytes(),
+        &crate::document::read::ReadOptions::default(),
+    )
+    .expect("the read keeps the scope as written")
+    .without_sidecar();
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&read, None))
+        .expect("a scope breach does not refuse the write");
+    let messages = |code: &str| {
+        plan.report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == code)
+            .map(|loss| loss.message.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        messages("arena.omitted"),
+        [
+            format!(
+                "the cadir write drops the records of arena `attributes` that the document's \
+                 scope excludes or that need one: 1 record(s) omitted: {ON_CONFIGURATION}"
+            ),
+            format!(
+                "the cadir write drops the records of arena `design.parameters` that the \
+                 document's scope excludes or that need one: 1 record(s) omitted: {PARAMETER}"
+            ),
+        ]
+    );
+    let unwritable = messages("value.unwritable");
+    let [unwritable] = unwritable.as_slice() else {
+        panic!("one value.unwritable: {unwritable:?}");
+    };
+    assert!(unwritable.contains(NAMES_PARAMETER), "{unwritable}");
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    assert_eq!(
+        written.scope(),
+        cadmpeg_core::decode::ContentScope::geometry()
+    );
+    assert!(written.design.parameters.is_empty());
+    let attributes = written
+        .model
+        .attributes
+        .iter()
+        .map(|attribute| attribute.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(attributes, [NAMES_PARAMETER, ON_DOCUMENT]);
+    assert_eq!(written.model.attributes[0].values, [None]);
+    assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
+    assert_eq!(written.geometry.points.len(), ir.geometry.points.len());
+}
+
+/// A CADIR write states each id of an arena once: equal copies write once
+/// with no loss, and of copies that differ the first in arena order is
+/// written, with an `export:record.invalid` naming the id. The strict reader
+/// reads the output.
+#[test]
+fn cadir_encoder_writes_a_repeated_id_once() {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let equal = ir.geometry.points[0].clone();
+    let original = ir.geometry.points[1].clone();
+    let differing =
+        crate::topology::Point::new(original.id.clone(), ir.geometry.points[2].position(), None);
+    ir.geometry.points.extend([equal.clone(), differing]);
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None))
+        .expect("a repeated id does not refuse the write");
+    let invalid = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.invalid")
+        .collect::<Vec<_>>();
+    let [loss] = invalid.as_slice() else {
+        panic!("one loss for the id whose copies differ: {invalid:?}");
+    };
+    assert!(
+        loss.message.contains(original.id.as_str()) && !loss.message.contains(equal.id.as_str()),
+        "{}",
+        loss.message
+    );
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    assert_eq!(written.geometry.points.len(), ir.geometry.points.len() - 2);
+    let kept = written
+        .geometry
+        .points
+        .iter()
+        .find(|point| point.id == original.id)
+        .unwrap();
+    assert_eq!(kept, &original);
+}
+
+/// A native-record link to a record of an arena the CADIR wire omits names
+/// no written record: the write states the native record without that link,
+/// keeps its other links, and names the cleared link. The output checks with
+/// the Errors of the fixture it extends only.
+#[test]
+fn cadir_encoder_clears_a_native_link_to_an_omitted_record() {
+    use crate::features::{
+        Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+        SketchFeatureBinding,
+    };
+
+    const FEATURE: &str = "synthetic:test:feature#detail-view";
+    const ANNOTATION: &str = "test:native:annotation#1";
+    const NOTE: &str = "test:native:annotation#2";
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint(FEATURE).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: crate::features::selections::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: crate::features::evaluation::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Unresolved,
+            }),
+        ),
+        native_ref: None,
+    });
+    let links = |record: &crate::native::NativeRecord| record.field("links");
+    let record = |id: &str, fields: serde_json::Value| {
+        crate::native::NativeRecord::new(
+            crate::ids::Identity::new(id).unwrap(),
+            fields.as_object().cloned().unwrap(),
+        )
+        .unwrap()
+    };
+    let annotation = record(ANNOTATION, cadmpeg_core::json!({"links": [FEATURE, NOTE]}));
+    let note = record(NOTE, cadmpeg_core::json!({}));
+    ir.native
+        .namespace_mut(crate::codec_id!("test"))
+        .arenas_mut()
+        .insert(
+            cadmpeg_core::nonblank_literal!("annotations"),
+            vec![annotation, note],
+        );
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None))
+        .expect("plan CADIR export");
+    let unwritable = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "value.unwritable")
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        unwritable,
+        [format!(
+            "the cadir write writes each native record without its link to a record of an \
+             arena the CADIR wire omits (1): {ANNOTATION} -> {FEATURE}"
+        )]
+    );
+    let mut encoded = Vec::new();
+    plan.write_to(&mut encoded).unwrap();
+    let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+    let records = &written.native.namespace("test").unwrap().arenas()["annotations"];
+    assert_eq!(links(&records[0]), Some(cadmpeg_core::json!([NOTE])));
+    let errors = |ir: &CadIr| {
+        validate_neutral(ir, Vec::new())
+            .unwrap()
+            .findings
+            .into_iter()
+            .filter(|finding| finding.severity == Severity::Error)
+            .collect::<Vec<_>>()
+    };
+    let found = errors(&written);
+    assert!(
+        found
+            .iter()
+            .all(|finding| finding.check != Check::NativeLinks),
+        "{found:?}"
+    );
+    assert_eq!(found, errors(&unit_cube().unwrap()));
+}
+
 #[test]
 fn cadir_encoder_census_matches_validation_counts() {
     let ir = directed_subd_sum().unwrap();
@@ -121,7 +382,7 @@ fn cadir_encoder_census_matches_validation_counts() {
         .expect("validate the neutral model")
         .entity_counts;
     let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .expect("plan CADIR export");
 
     assert_eq!(plan.report().census.counts, validation_counts);
@@ -131,17 +392,25 @@ struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
         // The body carries no identity: whatever the backend does, the
         // wrapper stamps FORMAT.
         Ok(ExportBody::synthesized(
             Vec::new(),
             input.ir,
             ArenaCoverage::Complete,
+            NativeDispositions::written(),
         ))
     }
 }
@@ -149,9 +418,7 @@ impl EncoderBackend for NeutralEncoder {
 #[test]
 fn the_wrapper_stamps_cadir_on_a_dialect_free_plan() {
     let ir = CadIr::empty();
-    let plan = NeutralEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = NeutralEncoder.plan(EncodeInput::new(&ir, None)).unwrap();
     assert_eq!(plan.report().format(), "cadir");
     assert_eq!(
         wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
@@ -174,13 +441,13 @@ fn the_wrapper_stamps_cadir_on_a_dialect_free_plan() {
 fn a_dialect_free_encoder_refuses_an_explicit_target() {
     let ir = CadIr::empty();
     let error = NeutralEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("any"))
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("any")))
         .unwrap_err();
     let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("a dialect-free encoder has no explicit targets")
     };
     assert_eq!(
-        serde_json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
+        json::to_value(&refusal).expect("serialize refusal")["refusal"]["kind"],
         "unknown_explicit"
     );
     assert!(refusal.available().is_empty());
@@ -190,16 +457,24 @@ struct CatalogEncoder;
 
 impl EncoderBackend for CatalogEncoder {
     const FORMAT: FormatId = FormatId::new("test");
+    const NAME: &'static str = "test";
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REUSES_SOURCE: bool = false;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(CATALOG_WRITE_TARGETS, Some(1));
 
     fn plan_resolved(
         &self,
+        _: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+        let mut body = ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            NativeDispositions::written(),
+        );
         body.notes
             .push(format!("resolved {}", target.target_id().as_str()));
         body.write_path = WritePath::Synthesized {
@@ -215,7 +490,7 @@ impl EncoderBackend for CatalogEncoder {
 fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
     let ir = CadIr::empty();
     let plan = CatalogEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("new")))
         .unwrap();
     assert_eq!(plan.report().format(), "test");
     assert_eq!(
@@ -229,10 +504,38 @@ fn the_wrapper_stamps_the_resolved_target_on_a_catalog_plan() {
     assert_eq!(plan.report().notes, vec!["resolved test:new".to_owned()]);
 }
 
+/// A displaced write is written and reported under a pinned strictness:
+/// §3.2 gives the `target.*` codes no strict floor.
+#[test]
+fn a_pinned_strictness_writes_a_displaced_target() {
+    let mut ir = CadIr::empty();
+    ir.source = Some(
+        json::from_value(cadmpeg_core::json!({
+            "identity": {"kind": "unclassified", "format": "test"},
+            "attributes": {},
+        }))
+        .unwrap(),
+    );
+    let pinned = Strictness {
+        pinned: true,
+        ..Strictness::default()
+    };
+    let plan = CatalogEncoder
+        .plan(EncodeInput::new(&ir, None).with_strictness(&pinned))
+        .expect("a pinned strictness writes a displaced target");
+    let codes = plan
+        .report()
+        .losses
+        .iter()
+        .map(|loss| code_name(&loss.code))
+        .filter(|code| code.starts_with("target."))
+        .collect::<Vec<_>>();
+    assert_eq!(codes, ["target.source-dialect-displaced"]);
+}
+
 fn recorded_at(depth: DecodeDepth) -> CadIr {
     let mut ir = CadIr::empty();
-    ir.set_scope(depth.scope())
-        .expect("an empty document admits every scope");
+    ir.set_scope(depth.scope());
     ir
 }
 
@@ -253,7 +556,7 @@ fn plan_never_refuses_on_scope_and_notes_a_shortfall() {
     ] {
         let ir = recorded_at(recorded);
         let plan = F3dCoverageEncoder(ArenaCoverage::Complete)
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&ir, None))
             .unwrap();
         assert_eq!(
             depth_notes(&plan),
@@ -265,7 +568,7 @@ fn plan_never_refuses_on_scope_and_notes_a_shortfall() {
     }
     let full = recorded_at(DecodeDepth::Full);
     let plan = F3dCoverageEncoder(ArenaCoverage::Complete)
-        .plan(EncodeInput::new(&full, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&full, None))
         .unwrap();
     assert!(depth_notes(&plan).is_empty());
 }
@@ -274,18 +577,12 @@ fn plan_never_refuses_on_scope_and_notes_a_shortfall() {
 fn a_geometry_request_encoder_plans_a_container_document_with_a_note() {
     let geometry = recorded_at(DecodeDepth::Geometry);
     let plan = CatalogEncoder
-        .plan(
-            EncodeInput::new(&geometry, None),
-            TargetRequest::Explicit("new"),
-        )
+        .plan(EncodeInput::new(&geometry, None).with_target(TargetRequest::Explicit("new")))
         .unwrap();
     assert!(depth_notes(&plan).is_empty());
     let container = recorded_at(DecodeDepth::Container);
     let plan = CatalogEncoder
-        .plan(
-            EncodeInput::new(&container, None),
-            TargetRequest::Explicit("new"),
-        )
+        .plan(EncodeInput::new(&container, None).with_target(TargetRequest::Explicit("new")))
         .unwrap();
     assert_eq!(depth_notes(&plan).len(), 1);
 }
@@ -300,16 +597,11 @@ fn the_cadir_encoder_writes_the_depth_a_document_records() {
         DecodeDepth::Full,
     ] {
         let ir = recorded_at(depth);
-        let plan = CadirEncoder
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-            .unwrap();
+        let plan = CadirEncoder.plan(EncodeInput::new(&ir, None)).unwrap();
         let mut encoded = Vec::new();
         plan.write_to(&mut encoded).unwrap();
-        let written: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
-        assert_eq!(
-            written["scope"],
-            serde_json::to_value(depth.scope()).unwrap()
-        );
+        let written: serde_json::Value = json::from_slice(&encoded).unwrap();
+        assert_eq!(written["scope"], json::to_value(depth.scope()).unwrap());
     }
 }
 
@@ -317,7 +609,7 @@ fn the_cadir_encoder_writes_the_depth_a_document_records() {
 fn fidelity_resolution_is_not_provided_whenever_the_input_carries_none() {
     let ir = CadIr::empty();
     let plan = CatalogEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("new"))
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("new")))
         .unwrap();
     assert_eq!(
         wire::field::<crate::report::export::FidelityResolution>(
@@ -333,10 +625,7 @@ fn fidelity_resolution_follows_the_backend_consumption_when_provided() {
     let ir = CadIr::empty();
     let fidelity = SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
     let plan = CatalogEncoder
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Explicit("new"),
-        )
+        .plan(EncodeInput::new(&ir, Some(&fidelity)).with_target(TargetRequest::Explicit("new")))
         .unwrap();
     assert_eq!(
         wire::field::<crate::report::export::FidelityResolution>(
@@ -406,18 +695,30 @@ struct CoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for CoverageEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            self.0,
+            NativeDispositions::written(),
+        ))
     }
 }
 
 fn coverage_losses(ir: &CadIr, coverage: ArenaCoverage) -> Vec<crate::report::loss::LossNote> {
     CoverageEncoder(coverage)
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None))
         .unwrap()
         .report()
         .losses
@@ -437,8 +738,12 @@ fn design_sheet(key: &str) -> crate::design::spreadsheet::Spreadsheet {
 }
 
 fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
+    model_sheet("v10")
+}
+
+fn model_sheet(key: &str) -> crate::spreadsheets::Spreadsheet {
     crate::spreadsheets::Spreadsheet::new(
-        crate::spreadsheets::SpreadsheetId::mint("test:design:spreadsheet#v10").unwrap(),
+        crate::spreadsheets::SpreadsheetId::mint(format!("test:design:spreadsheet#{key}")).unwrap(),
         crate::features::FeatureId::mint("test:design:feature#v10").unwrap(),
         Vec::new(),
         Vec::new(),
@@ -447,23 +752,6 @@ fn v10_sheet() -> crate::spreadsheets::Spreadsheet {
         None,
     )
     .unwrap()
-}
-
-/// A CADIR write charges a record of an arena the wire omits only where no
-/// `design` record it writes restates the record under its id; a write that
-/// omits the design record too charges the omitted record.
-#[test]
-fn a_cadir_write_charges_only_omitted_records_no_written_design_record_restates() {
-    let mut ir = CadIr::empty();
-    ir.model.spreadsheets.push(v10_sheet());
-    let cadir = super::coverage::cadir_dispositions();
-    assert_eq!(cadir.omitted(&ir), ["spreadsheets"]);
-    ir.design.spreadsheets.push(design_sheet("v10"));
-    assert!(cadir.omitted(&ir).is_empty());
-    assert_eq!(
-        uniform_dispositions(ArenaDisposition::Omitted).omitted(&ir),
-        ["spreadsheets"]
-    );
 }
 
 /// `omitted` names the arenas the `arena.omitted` losses name: an omitted
@@ -768,12 +1056,24 @@ struct F3dCoverageEncoder(ArenaCoverage);
 
 impl EncoderBackend for F3dCoverageEncoder {
     const FORMAT: FormatId = FormatId::new("f3d");
+    const NAME: &'static str = "F3D";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            self.0,
+            NativeDispositions::written(),
+        ))
     }
 }
 
@@ -802,7 +1102,7 @@ fn carried_errors_exclude_warnings_and_include_unlocated_errors() {
     let plan = CoverageEncoder(ArenaCoverage::Declared(uniform_dispositions(
         ArenaDisposition::Dropped,
     )))
-    .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+    .plan(EncodeInput::new(&ir, None))
     .unwrap();
     let mut report = validation_report(vec![finding(None, "warning", Severity::Warning)]);
     assert!(plan.carried_errors(&ir, &report).is_empty());
@@ -845,7 +1145,7 @@ fn carried_errors_follow_model_coverage_and_related_locations() {
         let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
         dispositions.faces = disposition;
         let plan = CoverageEncoder(ArenaCoverage::Declared(dispositions))
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&ir, None))
             .unwrap();
         let expected = if carries_face {
             vec![&report.findings[0], &report.findings[1]]
@@ -886,14 +1186,14 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
     ]);
     let declared = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written));
     let f3d = F3dCoverageEncoder(declared)
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap();
     assert_eq!(f3d.carried_errors(&ir, &report), vec![&report.findings[0]]);
     let cadir = CoverageEncoder(declared)
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap();
     let complete = CoverageEncoder(ArenaCoverage::Complete)
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .unwrap();
     for plan in [cadir, complete] {
         assert_eq!(
@@ -906,25 +1206,25 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
 #[test]
 fn cadir_encoder_writes_a_name_past_the_document_bound_by_its_native_name() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.set_scope(cadmpeg_core::decode::ContentScope::full())
-        .unwrap();
+    ir.set_scope(cadmpeg_core::decode::ContentScope::full());
     let face = |at: usize| ir.geometry.faces[at].id.as_str().to_owned();
     let (named, unnamed) = (face(0), face(1));
     let deep = (0..crate::bounds::MAX_DOCUMENT_DEPTH / 2).fold(
-        serde_json::json!({"kind": "generated", "value": {"kind": "face", "feature": "test:design:feature#f"}}),
+        cadmpeg_core::json!({"kind": "generated", "value": {"kind": "face", "feature": "test:design:feature#f"}}),
         |from, _| {
-            serde_json::json!({"kind": "modified", "value": {"feature": "test:design:feature#f", "from": from}})
+            cadmpeg_core::json!({"kind": "modified", "value": {"feature": "test:design:feature#f", "from": from}})
         },
     );
-    let native = serde_json::json!({"codec": "test", "value": {"kind": "text", "value": "Face1"}});
-    ir.design.names = serde_json::from_value(serde_json::json!([
+    let native =
+        cadmpeg_core::json!({"codec": "test", "value": {"kind": "text", "value": "Face1"}});
+    ir.design.names = json::from_value(cadmpeg_core::json!([
         [{"kind": "face", "value": named}, {"name": deep, "native": native}],
         [{"kind": "face", "value": unnamed}, {"name": deep}]
     ]))
     .unwrap();
 
     let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .expect("a name past the bound does not refuse the write");
     let unwritable = plan
         .report()
@@ -941,7 +1241,7 @@ fn cadir_encoder_writes_a_name_past_the_document_bound_by_its_native_name() {
     let written = CadIr::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
     assert_eq!(
         crate::hash::finite_json::to_json_value(&written.design.names).unwrap(),
-        serde_json::json!([[{"kind": "face", "value": named}, {"native": native}]])
+        cadmpeg_core::json!([[{"kind": "face", "value": named}, {"native": native}]])
     );
     assert_eq!(written.geometry.faces.len(), ir.geometry.faces.len());
 }
@@ -964,7 +1264,7 @@ fn cadir_encoder_writes_the_empty_document_when_every_record_is_dropped() {
         .unwrap();
 
     let plan = CadirEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None))
         .expect("a document past the bound does not refuse the write");
     assert!(
         plan.report()
@@ -984,12 +1284,24 @@ struct LossyEncoder(Vec<crate::report::loss::LossNote>);
 
 impl EncoderBackend for LossyEncoder {
     const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
-        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        let mut body = ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            NativeDispositions::written(),
+        );
         body.losses.clone_from(&self.0);
         Ok(body)
     }
@@ -1009,9 +1321,7 @@ fn refused_write(error: EncodeError) -> super::StrictWriteRejection {
 #[test]
 fn the_default_strictness_writes_a_report_with_losses() {
     let ir = CadIr::empty();
-    let plan = empty_output()
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = empty_output().plan(EncodeInput::new(&ir, None)).unwrap();
     assert!(plan
         .report()
         .losses
@@ -1029,10 +1339,7 @@ fn a_severity_floor_refuses_the_write_before_any_byte() {
     };
     let rejection = refused_write(
         empty_output()
-            .plan(
-                EncodeInput::new(&ir, None).with_strictness(&strictness),
-                TargetRequest::Inherit,
-            )
+            .plan(EncodeInput::new(&ir, None).with_strictness(&strictness))
             .unwrap_err(),
     );
     assert_eq!(code_name(&rejection.loss().code), "export:output.empty");
@@ -1052,10 +1359,7 @@ fn a_severity_floor_above_every_loss_admits_the_write() {
         ..Strictness::default()
     };
     encoder
-        .plan(
-            EncodeInput::new(&ir, None).with_strictness(&strictness),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, None).with_strictness(&strictness))
         .unwrap();
 }
 
@@ -1065,29 +1369,27 @@ fn a_refused_code_refuses_the_write_and_another_code_admits_it() {
     let refusing = Strictness::default().with_code("export:output.empty");
     let rejection = refused_write(
         empty_output()
-            .plan(
-                EncodeInput::new(&ir, None).with_strictness(&refusing),
-                TargetRequest::Inherit,
-            )
+            .plan(EncodeInput::new(&ir, None).with_strictness(&refusing))
             .unwrap_err(),
     );
     assert_eq!(code_name(&rejection.loss().code), "export:output.empty");
 
     let other = Strictness::default().with_code("export:record.invalid");
     empty_output()
-        .plan(
-            EncodeInput::new(&ir, None).with_strictness(&other),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, None).with_strictness(&other))
         .unwrap();
 }
 
 #[test]
 fn a_pinned_strictness_refuses_a_loss_that_reaches_its_strict_floor() {
     let ir = CadIr::empty();
-    let kind = crate::report::loss::LossKind::shared(
+    let kind: crate::report::loss::LossKind = crate::report::loss::NamespacedLossKind::new(
+        crate::loss_namespace!("test"),
+        "synthetic.reject-floor",
         crate::report::loss::LossTaxonomy::TopologyNotTransferred,
-    );
+    )
+    .with_strict_floor(Some(crate::report::Severity::Warning))
+    .into();
     let encoder = LossyEncoder(vec![crate::report::loss::LossNote::new(
         kind.clone(),
         "synthetic reject floor",
@@ -1098,10 +1400,7 @@ fn a_pinned_strictness_refuses_a_loss_that_reaches_its_strict_floor() {
     };
     let rejection = refused_write(
         encoder
-            .plan(
-                EncodeInput::new(&ir, None).with_strictness(&pinned),
-                TargetRequest::Inherit,
-            )
+            .plan(EncodeInput::new(&ir, None).with_strictness(&pinned))
             .unwrap_err(),
     );
     assert_eq!(rejection.loss().code, kind);
@@ -1114,10 +1413,7 @@ fn a_pinned_strictness_refuses_a_loss_that_reaches_its_strict_floor() {
         unpinned,
         "a loss with no strict floor",
     )])
-    .plan(
-        EncodeInput::new(&ir, None).with_strictness(&pinned),
-        TargetRequest::Inherit,
-    )
+    .plan(EncodeInput::new(&ir, None).with_strictness(&pinned))
     .unwrap();
 }
 
@@ -1129,10 +1425,7 @@ fn the_wrapper_charges_each_carried_error_of_the_validation() {
         finding(None, "error", Severity::Error),
     ]);
     let plan = LossyEncoder(Vec::new())
-        .plan(
-            EncodeInput::new(&ir, None).with_validation(&validation),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(&ir, None).with_validation(&validation))
         .unwrap();
     let charged = plan
         .report()
@@ -1149,9 +1442,440 @@ fn the_wrapper_charges_each_carried_error_of_the_validation() {
                 EncodeInput::new(&ir, None)
                     .with_validation(&validation)
                     .with_strictness(&refusing),
-                TargetRequest::Inherit,
             )
             .unwrap_err(),
     );
     assert!(rejection.loss().message.contains("error"));
+}
+
+#[derive(Default)]
+struct LimitsEncoder(std::cell::Cell<Option<cadmpeg_core::decode::ResourceLimits>>);
+
+impl EncoderBackend for LimitsEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        self.0.set(Some(ctx.policy().limits));
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            NativeDispositions::written(),
+        ))
+    }
+}
+
+#[test]
+fn a_writer_plans_under_the_callers_session_ceilings() {
+    let ir = CadIr::empty();
+    let encoder = LimitsEncoder::default();
+    let limits = cadmpeg_core::decode::ResourceLimits::service();
+    encoder
+        .plan(EncodeInput::new(&ir, None).with_limits(limits))
+        .unwrap();
+    assert_eq!(encoder.0.get(), Some(limits));
+}
+
+/// A writer that enters one nesting level.
+struct NestingEncoder;
+
+impl EncoderBackend for NestingEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        let _level = ctx.enter_nested("test nesting")?;
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            NativeDispositions::written(),
+        ))
+    }
+}
+
+/// The depth ceiling bounds one part of a decode, but a write gives up no
+/// part: its refusal has session scope (§2.5).
+#[test]
+fn a_write_refusal_has_session_scope() {
+    let ir = CadIr::empty();
+    let mut limits = cadmpeg_core::decode::ResourceLimits::desktop();
+    limits.max_recursion_depth = 0;
+    let Err(EncodeError::ResourceLimit(limit)) =
+        NestingEncoder.plan(EncodeInput::new(&ir, None).with_limits(limits))
+    else {
+        panic!("the depth ceiling refuses the write");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RecursionDepth
+    );
+    assert_eq!(limit.scope, cadmpeg_core::decode::LimitScope::Session);
+}
+
+/// A writer with a patch path: it patches where `patch` holds and
+/// otherwise synthesizes, stating `cause` where it is given one.
+struct ReusingEncoder {
+    patch: bool,
+    cause: Option<crate::report::export::SynthesisCause>,
+}
+
+impl EncoderBackend for ReusingEncoder {
+    const FORMAT: FormatId = FormatId::new("test");
+    const NAME: &'static str = "test";
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        let mut body = ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            NativeDispositions::written(),
+        );
+        if self.patch {
+            body.write_path = WritePath::Patched {
+                consumption: PatchConsumption::Replayed,
+            };
+        }
+        body.synthesis_cause.clone_from(&self.cause);
+        Ok(body)
+    }
+}
+
+fn test_format_source() -> CadIr {
+    let mut ir = CadIr::empty();
+    ir.source = Some(
+        json::from_value(cadmpeg_core::json!({
+            "identity": {"kind": "unclassified", "format": "test"},
+            "attributes": {},
+        }))
+        .unwrap(),
+    );
+    ir
+}
+
+fn declined(reason: &str) -> crate::report::export::SynthesisCause {
+    crate::report::export::SynthesisCause::PatchDeclined {
+        reason: reason.to_owned(),
+    }
+}
+
+#[test]
+fn a_source_reusing_writer_records_why_it_synthesized_a_same_format_file() {
+    let ir = test_format_source();
+    let encoder = ReusingEncoder {
+        patch: false,
+        cause: Some(declined("the edit has no patch")),
+    };
+    let plan = encoder.plan(EncodeInput::new(&ir, None)).unwrap();
+    assert_eq!(
+        plan.report().synthesis_cause(),
+        Some(&declined("the edit has no patch"))
+    );
+}
+
+#[test]
+fn a_same_format_synthesis_with_no_stated_cause_records_the_fidelity_reason() {
+    let ir = test_format_source();
+    let encoder = ReusingEncoder {
+        patch: false,
+        cause: None,
+    };
+    let plan = encoder.plan(EncodeInput::new(&ir, None)).unwrap();
+    assert_eq!(
+        plan.report().synthesis_cause(),
+        Some(&declined("the encode holds no source fidelity"))
+    );
+}
+
+/// A catalog writer with a patch path that synthesizes every file and states
+/// no cause.
+struct ReusingCatalogEncoder;
+
+impl EncoderBackend for ReusingCatalogEncoder {
+    const FORMAT: FormatId = FormatId::new("test");
+    const NAME: &'static str = "test";
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
+    type Target = Catalog;
+    const TARGET: Catalog = Catalog::new(CATALOG_WRITE_TARGETS, Some(1));
+
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        input: EncodeInput<'_>,
+        _: ResolvedWrite<'_>,
+    ) -> Result<ExportBody, CodecError> {
+        Ok(ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            ArenaCoverage::Complete,
+            NativeDispositions::written(),
+        ))
+    }
+}
+
+#[test]
+fn a_synthesis_that_displaces_the_source_dialect_records_the_displacement() {
+    let ir = test_format_source();
+    let plan = ReusingCatalogEncoder
+        .plan(EncodeInput::new(&ir, None))
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| code_name(&loss.code) == "target.source-dialect-displaced"));
+    assert_eq!(
+        plan.report().synthesis_cause(),
+        Some(&declined("the write target displaces the source dialect"))
+    );
+}
+
+#[test]
+fn a_patched_file_or_a_file_of_another_format_records_no_synthesis_cause() {
+    let patched = ReusingEncoder {
+        patch: true,
+        cause: Some(declined("unused")),
+    };
+    let plan = patched
+        .plan(EncodeInput::new(&test_format_source(), None))
+        .unwrap();
+    assert_eq!(plan.report().synthesis_cause(), None);
+
+    let synthesized = ReusingEncoder {
+        patch: false,
+        cause: Some(declined("unused")),
+    };
+    let plan = synthesized
+        .plan(EncodeInput::new(&CadIr::empty(), None))
+        .unwrap();
+    assert_eq!(plan.report().synthesis_cause(), None);
+}
+
+#[test]
+fn a_writer_with_no_patch_or_replay_path_records_no_synthesis_cause() {
+    let mut ir = test_format_source();
+    ir.source = Some(
+        json::from_value(cadmpeg_core::json!({
+            "identity": {"kind": "unclassified", "format": "cadir"},
+            "attributes": {},
+        }))
+        .unwrap(),
+    );
+    let plan = NeutralEncoder.plan(EncodeInput::new(&ir, None)).unwrap();
+    assert_eq!(plan.report().synthesis_cause(), None);
+}
+
+struct ScratchFailureEncoder;
+
+impl EncoderBackend for ScratchFailureEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const NAME: &'static str = "CADIR";
+    const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = false;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(
+        &self,
+        _: &DecodeContext<'_>,
+        _: EncodeInput<'_>,
+        (): (),
+    ) -> Result<ExportBody, CodecError> {
+        Err(CodecError::Io(std::io::Error::other("scratch file")))
+    }
+}
+
+#[test]
+fn an_io_failure_before_the_destination_is_written_is_no_destination_io() {
+    let ir = CadIr::empty();
+    let error = ScratchFailureEncoder
+        .plan(EncodeInput::new(&ir, None))
+        .unwrap_err();
+    assert!(!matches!(error, EncodeError::Io(_)), "got {error:?}");
+}
+
+#[test]
+fn a_failed_write_to_the_destination_is_io() {
+    struct Refusing;
+    impl std::io::Write for Refusing {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("destination"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let ir = unit_cube().unwrap();
+    let plan = CadirEncoder.plan(EncodeInput::new(&ir, None)).unwrap();
+    assert!(matches!(
+        plan.write_to(&mut Refusing),
+        Err(EncodeError::Io(_))
+    ));
+}
+
+/// A Boolean parameter whose expression is `depth - 1` negations of `true`:
+/// a tree `depth` levels deep.
+fn negated_parameter(key: &str, depth: usize) -> crate::design::parameter::DesignParameter {
+    use crate::design::expr::{Expression, Neutral, Node, UnaryOp};
+    crate::design::parameter::DesignParameter {
+        id: format!("test:design:parameter#{key}").try_into().unwrap(),
+        scope: "test:design:definition#part".to_owned().try_into().unwrap(),
+        owner: None,
+        name: Some(cadmpeg_core::text::NonBlankString::new(key).unwrap()),
+        kind: crate::design::units::ValueKind::Boolean,
+        unit: None,
+        definition: crate::design::parameter::ParameterDefinition::Expression(Expression::Neutral(
+            Neutral(
+                (1..depth).fold(Node::Boolean(true), |operand, _| Node::Unary {
+                    op: UnaryOp::Not,
+                    operand: Box::new(operand),
+                }),
+            ),
+        )),
+        value: None,
+        display: None,
+        tolerance: None,
+        decimals: None,
+        comment: None,
+        native_options: std::collections::BTreeMap::default(),
+        source_settings: std::collections::BTreeMap::default(),
+        native_ref: None,
+    }
+}
+
+/// An expression past the bound of §2.5 is content CADIR cannot hold (§3.4):
+/// the writer states it `Source` with no tokens, the partial form of §3.3,
+/// and the bytes it writes read back.
+#[test]
+fn the_cadir_writer_restates_an_expression_past_its_bound() {
+    let mut ir = unit_cube().unwrap();
+    ir.design.parameters.push(negated_parameter(
+        "within",
+        crate::bounds::MAX_EXPRESSION_DEPTH,
+    ));
+    ir.design.parameters.push(negated_parameter(
+        "past",
+        crate::bounds::MAX_EXPRESSION_DEPTH + 1,
+    ));
+    assert!(matches!(
+        ir.to_canonical_json(),
+        Err(crate::hash::finite_json::CanonicalJsonError::PastBound {
+            bound: crate::bounds::Bound::Expression,
+            ..
+        })
+    ));
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None))
+        .expect("a record past a bound does not refuse the write");
+    let unwritable = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "value.unwritable")
+        .collect::<Vec<_>>();
+    let [loss] = unwritable.as_slice() else {
+        panic!("one loss for the one record: {unwritable:?}");
+    };
+    assert!(
+        loss.message.contains("test:design:parameter#past")
+            && loss.message.contains("design.parameters")
+            && !loss.message.contains("#within"),
+        "{}",
+        loss.message
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let read = CadIr::from_json(std::str::from_utf8(&written).unwrap())
+        .expect("the written bytes read back");
+    let definition = |key: &str| {
+        read.design
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id.as_str() == format!("test:design:parameter#{key}"))
+            .map(|parameter| parameter.definition.clone())
+            .unwrap()
+    };
+    assert_eq!(
+        definition("within"),
+        negated_parameter("within", crate::bounds::MAX_EXPRESSION_DEPTH).definition
+    );
+    assert!(matches!(
+        definition("past"),
+        crate::design::parameter::ParameterDefinition::Expression(
+            crate::design::expr::Expression::Source { tokens, .. }
+        ) if tokens.is_empty()
+    ));
+}
+
+/// `repro` outside every record is written unstated where it passes the
+/// document bound.
+#[test]
+fn the_cadir_writer_writes_repro_past_the_document_bound_unstated() {
+    let mut ir = unit_cube().unwrap();
+    let finding = Finding {
+        rule: crate::rule_name!("test.unresolved-link"),
+        check: Check::NativeLinks,
+        severity: Severity::Error,
+        entity: None,
+        related: Vec::new(),
+        message: "unresolved link".into(),
+    };
+    ir.repro = Some(Box::new(crate::repro::BundleMetadata {
+        signature: crate::repro::Signature::new(
+            &finding,
+            crate::codec_id!("cadir"),
+            crate::repro::Stage::Check,
+        ),
+        roots: Vec::new(),
+        context: (0..crate::bounds::MAX_DOCUMENT_DEPTH)
+            .fold(crate::attributes::AttributeJson::Null, |inner, _| {
+                crate::attributes::AttributeJson::Array(vec![inner])
+            }),
+        manifest: Vec::new(),
+        incomplete_reason: None,
+    }));
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(&ir, None))
+        .expect("repro past the bound does not refuse the write");
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "value.unwritable"
+                && loss.message.contains("repro"))
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let read = CadIr::from_json(std::str::from_utf8(&written).unwrap())
+        .expect("the written bytes read back");
+    assert!(read.repro.is_none());
 }

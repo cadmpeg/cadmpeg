@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
+
 const FRAMES: [&str; 5] = [
     include_str!("placement_construction/extra-scalar-v14.json"),
     include_str!("placement_construction/unmarked-v4.json"),
@@ -69,10 +71,9 @@ pub(crate) fn metadata(
 pub(crate) fn modern_frame(version: u32, identity: bool) -> Vec<u8> {
     use cadmpeg_ir::native::bytes::NativeBytes;
     let fixture: serde_json::Value = serde_json::from_str(FRAMES[0]).unwrap();
-    let raw: NativeBytes<Vec<u8>> =
-        serde_json::from_value(fixture["source_bytes"].clone()).unwrap();
+    let raw: NativeBytes<Vec<u8>> = json::from_value(fixture["source_bytes"].clone()).unwrap();
     let native: crate::records::placement_construction::DesignPlacementConstruction =
-        serde_json::from_value(fixture["native"].clone()).unwrap();
+        json::from_value(fixture["native"].clone()).unwrap();
     let relative = |offset: u64| usize::try_from(offset - native.byte_offset).unwrap();
     let mut bytes = raw.into_inner();
     let arc = relative(

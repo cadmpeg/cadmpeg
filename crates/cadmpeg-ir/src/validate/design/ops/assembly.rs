@@ -53,7 +53,7 @@ fn owner<'a>(index: &DesignRecords<'a>, occurrence: &str) -> Option<&'a str> {
 /// feature's scope spans.
 fn check_owned(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     occurrence: &str,
     findings: &mut Vec<Finding>,
@@ -94,7 +94,7 @@ fn check_owned(
 
 pub(super) fn check_place(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     place: &Place,
     findings: &mut Vec<Finding>,
 ) {
@@ -151,7 +151,7 @@ pub(super) fn check_place(
 
 pub(super) fn check_place_set(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     set: &PlaceSet,
     findings: &mut Vec<Finding>,
 ) {
@@ -202,7 +202,7 @@ fn free_axes(motion: &JointMotion) -> Option<BTreeSet<(bool, FrameAxis)>> {
 }
 
 fn check_bounds<Q: Bound + Clone>(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     bounds: &Bounds<Q>,
     value: impl Fn(Q) -> f64,
     findings: &mut Vec<Finding>,
@@ -225,7 +225,7 @@ fn check_bounds<Q: Bound + Clone>(
 /// A joint's connectors fit its kind; its motion's limits name free axes.
 pub(super) fn check_joint(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     joint: &Joint,
     findings: &mut Vec<Finding>,
 ) {
@@ -364,7 +364,7 @@ pub(super) fn check_joint(
 /// resolved value. A connector with no inputs and a step is placed by its
 /// steps and is not taken for a world connector.
 pub(super) fn check_connectors(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     connectors: &[JointConnector; 2],
     kind: &JointKind,
     findings: &mut Vec<Finding>,
@@ -428,7 +428,7 @@ pub(super) fn check_connectors(
 
 pub(super) fn check_rigid_group(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     group: &RigidGroup,
     findings: &mut Vec<Finding>,
 ) {
@@ -464,7 +464,7 @@ pub(super) fn check_rigid_group(
 }
 
 fn check_component_seeds(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     seeds: &crate::design::selection::OrderedSelection,
     findings: &mut Vec<Finding>,
@@ -484,7 +484,7 @@ fn check_component_seeds(
 
 pub(super) fn check_component_pattern(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     pattern: &ComponentPattern,
     findings: &mut Vec<Finding>,
 ) {
@@ -565,21 +565,92 @@ fn path_occurrences(path: &OccurrencePath) -> Option<Vec<&str>> {
         .collect()
 }
 
+/// The definition that owns the selections of a site's feature: its
+/// `component` where stated, else its scope's definition (§5.8).
+fn owner_definition<'a>(site: Site<'_, 'a>) -> Option<&'a str> {
+    site.index
+        .and_then(|index| index.features.get(site.feature))
+        .and_then(|feature| feature.component.as_ref())
+        .map(crate::ids::ProductDefinitionId::as_str)
+        .or(site.scope)
+}
+
+/// A pick's occurrences from the definition it starts at: the owner's
+/// definition for an `Occurrence` context, the assembly for `InContext`,
+/// with `own`, the owner's own place in that assembly (§5.8). A step's
+/// configuration selects a variant of its occurrence, and the occurrence
+/// alone places the pick.
+struct Rooted<'a> {
+    root: &'a str,
+    own: Option<Vec<&'a str>>,
+    steps: Vec<&'a str>,
+}
+
+impl<'a> Rooted<'a> {
+    /// `None` where the pick has no occurrence path from a definition, or a
+    /// step is `Native`.
+    fn of(pick: &'a Picked, owner: Option<&'a str>) -> Option<Self> {
+        match pick.context.as_ref()? {
+            PickContext::Occurrence(path) => Some(Self {
+                root: owner?,
+                own: None,
+                steps: path_occurrences(path)?,
+            }),
+            PickContext::InContext {
+                assembly,
+                own,
+                target: Some(target),
+            } => Some(Self {
+                root: assembly.definition.as_str(),
+                own: match own {
+                    Some(own) => Some(path_occurrences(own)?),
+                    None => None,
+                },
+                steps: path_occurrences(target)?,
+            }),
+            _ => None,
+        }
+    }
+
+    /// The steps of `self` from the root of `frame`, where `self` starts at
+    /// that root or at the owner's definition that `frame` places by `own`.
+    fn steps_from_root_of(&self, frame: &Self, owner: Option<&str>) -> Option<Vec<&'a str>> {
+        if self.root == frame.root {
+            return Some(self.steps.clone());
+        }
+        if self.own.is_some() || Some(self.root) != owner {
+            return None;
+        }
+        let mut steps = frame.own.clone()?;
+        steps.extend_from_slice(&self.steps);
+        Some(steps)
+    }
+
+    /// Whether `self` lies under `seed`; `None` where their paths start at
+    /// definitions neither places in the other.
+    fn under(&self, seed: &Self, owner: Option<&str>) -> Option<bool> {
+        if let Some(seed_steps) = seed.steps_from_root_of(self, owner) {
+            return Some(self.steps.starts_with(&seed_steps));
+        }
+        self.steps_from_root_of(seed, owner)
+            .map(|steps| steps.starts_with(&seed.steps))
+    }
+}
+
 /// A chain's pins are two distinct axes, and its pins and native picks pick
 /// the geometry of the pattern's seeds (§6.7). A pick is judged where it and
-/// every seed name their occurrences by paths of occurrence steps.
+/// every seed name their occurrences by paths of occurrence steps from one
+/// definition, or from an assembly and the owner's definition the
+/// `InContext` pick places in it by `own`.
 fn check_chain_seeds(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     seeds: &OrderedSelection,
     links: &ChainLinks,
     findings: &mut Vec<Finding>,
 ) {
-    let seeds: Option<Vec<Vec<&str>>> = picks::named(seeds).and_then(|seeds| {
-        seeds
-            .iter()
-            .map(|seed| path_occurrences(pick_path(seed)?))
-            .collect()
-    });
+    let owner = owner_definition(site);
+    let seeds: Option<Vec<_>> = picks::named(seeds)
+        .and_then(|seeds| seeds.iter().map(|seed| Rooted::of(seed, owner)).collect());
     let off_seeds = |selection: &OrderedSelection| {
         let Some(seeds) = seeds.as_ref().filter(|seeds| !seeds.is_empty()) else {
             return false;
@@ -587,12 +658,11 @@ fn check_chain_seeds(
         picks::named(selection)
             .unwrap_or_default()
             .iter()
+            .filter_map(|pick| Rooted::of(pick, owner))
             .any(|pick| {
-                let Some(PickContext::Occurrence(path)) = &pick.context else {
-                    return false;
-                };
-                path_occurrences(path)
-                    .is_some_and(|steps| !seeds.iter().any(|seed| steps.starts_with(seed)))
+                seeds
+                    .iter()
+                    .all(|seed| pick.under(seed, owner) == Some(false))
             })
     };
     match links {
@@ -644,7 +714,7 @@ fn check_chain_seeds(
 
 pub(super) fn check_mirror(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     mirror: &MirrorComponents,
     findings: &mut Vec<Finding>,
 ) {
@@ -681,7 +751,7 @@ pub(super) fn check_mirror(
 /// participants.
 pub(super) fn check_assembly_feature(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     operation: &FeatureOperation,
     context: &AssemblyContext,
     findings: &mut Vec<Finding>,
@@ -726,7 +796,7 @@ pub(super) fn check_assembly_feature(
 /// is stated, it holds no participant another entry of the context states."
 /// The seeds, propagation, and placement of an `Affected` term are checked
 /// with every selection's rules.
-fn check_participants(site: Site<'_>, context: &AssemblyContext, findings: &mut Vec<Finding>) {
+fn check_participants(site: Site<'_, '_>, context: &AssemblyContext, findings: &mut Vec<Finding>) {
     let selections: Vec<&SetSelection> = context.participants.values().collect();
     let mut record = |message: Ruled<'_>| error(findings, site.entity, message);
     if selections
@@ -1081,7 +1151,7 @@ pub(super) fn check_occurrence_creators(index: &DesignRecords<'_>, findings: &mu
 /// of the prototype, owned by a definition the scope spans.
 fn check_own_occurrence(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     place: &Place,
     findings: &mut Vec<Finding>,
 ) {
@@ -1112,14 +1182,11 @@ fn check_own_occurrence(
 /// The containers above a feature, innermost first, each with the index of
 /// the member on the way down. `None` where the feature is in no container
 /// or the parents do not end.
-fn container_chain<'a>(
-    index: &DesignRecords<'a>,
-    feature: &'a str,
-) -> Option<Vec<(&'a str, usize)>> {
+fn container_chain<'a>(index: &DesignRecords<'a>, feature: &str) -> Option<Vec<(&'a str, usize)>> {
     let mut chain = Vec::new();
     let mut member = MemberKey::Feature(feature);
     for _ in 0..=index.containers.len() {
-        let Some(&parent) = index.parents.get(&member) else {
+        let Some(parent) = index.parent_of(member) else {
             return (!chain.is_empty()).then_some(chain);
         };
         let container = index.containers.get(parent)?;
@@ -1171,7 +1238,7 @@ fn precedes(index: &DesignRecords<'_>, first: &str, second: &str) -> Option<bool
 
 /// Part 10 (§6.7): "A `Coupling` whose `joints` is absent has connectors that
 /// each pick a member it couples." A connector with no input picks nothing.
-fn check_coupling_connectors(site: Site<'_>, joint: &Joint, findings: &mut Vec<Finding>) {
+fn check_coupling_connectors(site: Site<'_, '_>, joint: &Joint, findings: &mut Vec<Finding>) {
     if !matches!(joint.kind, JointKind::Coupling { joints: None, .. }) {
         return;
     }
@@ -1251,7 +1318,7 @@ fn path_prototype<'a>(index: &DesignRecords<'a>, path: &OccurrencePath) -> Optio
 /// do not list their participants is not checked.
 fn check_participant_operands(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     operation: &FeatureOperation,
     context: &AssemblyContext,
     findings: &mut Vec<Finding>,
@@ -1328,13 +1395,26 @@ fn check_participant_operands(
             else {
                 return;
             };
+            let owner = owner_definition(site);
+            let participants: Option<Vec<_>> = context
+                .participants
+                .values()
+                .filter_map(listed_participants)
+                .flatten()
+                .map(|pick| Rooted::of(pick, owner))
+                .collect();
+            let Some(participants) = participants else {
+                return;
+            };
             for list in [keep, remove].into_iter().flatten() {
                 let Some(pieces) = picks::named(list) else {
                     continue;
                 };
-                for path in pieces.iter().filter_map(pick_path) {
-                    let of_participant = members.iter().any(|member| path.0.starts_with(&member.0));
-                    if !of_participant {
+                for piece in pieces.iter().filter_map(|pick| Rooted::of(pick, owner)) {
+                    let off = participants
+                        .iter()
+                        .all(|member| piece.under(member, owner) == Some(false));
+                    if off {
                         error(
                             findings,
                             site.entity,
@@ -1429,7 +1509,7 @@ pub(super) fn check_spans(index: &DesignRecords<'_>, findings: &mut Vec<Finding>
     let mut spanned_by: BTreeMap<&str, &str> = BTreeMap::new();
     for scope in &index.ir.design.scopes {
         let own = scope.definition.as_str();
-        for definition in index.spanned_definitions(own) {
+        for definition in index.spanned_definitions(own).iter().copied() {
             if let Some(first) = spanned_by.insert(definition, own) {
                 if first != own {
                     error(

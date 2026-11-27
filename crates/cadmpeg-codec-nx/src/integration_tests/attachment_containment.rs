@@ -8,6 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::{assert_valid, decode};
@@ -63,14 +64,31 @@ fn attachment_failures(result: &EditableDecodeResult) -> Vec<&LossNote> {
         .collect()
 }
 
-fn assert_one_error_loss(result: &EditableDecodeResult) {
+fn charges_the_object_model(loss: &LossNote) -> bool {
+    loss.code == record_unreadable_kind()
+        && loss.severity == Severity::Error
+        && loss
+            .message
+            .starts_with("part object-model stream=\"nx:container\" offset=0 length=")
+}
+
+/// The stub id of the part that a charge gives up.
+fn charged_record(loss: &LossNote) -> &str {
+    loss.message
+        .split_once(" record=")
+        .and_then(|(_, rest)| rest.split_once(": "))
+        .map(|(id, _)| id)
+        .expect("the charge names its record")
+}
+
+fn assert_attachment_given_up(result: &EditableDecodeResult) {
     let errors = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.severity == Severity::Error)
         .collect::<Vec<_>>();
-    assert_eq!(errors.len(), 1, "{errors:#?}");
+    assert_eq!(errors.len(), 2, "{errors:#?}");
     assert_eq!(attachment_failures(result).len(), 1);
     assert_eq!(errors[0].code.namespace(), "nx");
     assert_eq!(errors[0].code.local_code(), "native.attachment-failed");
@@ -79,10 +97,11 @@ fn assert_one_error_loss(result: &EditableDecodeResult) {
         "{}",
         errors[0].message
     );
+    assert!(charges_the_object_model(errors[1]), "{:#?}", errors[1]);
 }
 
 #[test]
-fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
+fn attachment_failure_keeps_geometry_and_gives_up_the_attachment() {
     let complete = decode(prt_with_arrangements());
     assert!(attachment_failures(&complete).is_empty());
     assert!(!complete.ir().model.configurations.is_empty());
@@ -107,19 +126,80 @@ fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
     assert!(model.configurations.is_empty());
     assert!(model.attributes.is_empty());
     assert!(model.features.is_empty());
-    assert_one_error_loss(&contained);
+    assert_attachment_given_up(&contained);
     assert_valid(&contained);
 }
 
+/// The ids that the charge on the container names as dropped with it.
+fn dropped_with_the_container(loss: &LossNote) -> Vec<&str> {
+    loss.message
+        .split_once("dropped=[")
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .map(|(ids, _)| ids.split(", ").filter(|id| !id.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// A failure after every write keeps the document of a failure before any
+/// write. The charge on the container names each record the attachment wrote
+/// before it failed, and only those.
 #[test]
 fn attachment_failure_after_every_write_equals_failure_before_any_write() {
     for fixture in [prt_with_arrangements, composed_feature_history_prt] {
         let before = decode_failing_at(fixture(), Point::Entry);
         let after = decode_failing_at(fixture(), Point::Exit);
         assert_eq!(after.ir(), before.ir());
-        assert_eq!(after.report(), before.report());
         assert_eq!(after.source_fidelity(), before.source_fidelity());
+        let (mut after_report, mut before_report) =
+            (after.report().clone(), before.report().clone());
+        let take_charge = |report: &mut cadmpeg_ir::report::decode::DecodeReport| {
+            let index = report
+                .losses
+                .iter()
+                .position(charges_the_object_model)
+                .expect("the container is charged");
+            report.losses.remove(index)
+        };
+        let (after_charge, before_charge) = (
+            take_charge(&mut after_report),
+            take_charge(&mut before_report),
+        );
+        assert_eq!(after_report, before_report);
+        assert!(dropped_with_the_container(&before_charge).is_empty());
+        let dropped = dropped_with_the_container(&after_charge);
+        assert!(!dropped.is_empty(), "{after_charge:#?}");
+        let unknowns = after.ir().native_unknowns("nx").expect("unknowns read");
+        for id in dropped {
+            assert!(
+                unknowns.iter().all(|unknown| unknown.id.as_str() != id),
+                "{id} is held"
+            );
+        }
     }
+}
+
+#[test]
+fn the_attachment_charge_gives_up_the_container_bytes_as_a_part() {
+    let bytes = prt_with_arrangements();
+    let length = bytes.len();
+    let contained = decode_failing_at(bytes, Point::Exit);
+    let losses = &contained.report().losses;
+    let charge = losses
+        .iter()
+        .find(|loss| charges_the_object_model(loss))
+        .unwrap_or_else(|| panic!("the container is given up as a part: {losses:#?}"));
+    assert!(
+        charge.message.starts_with(&format!(
+            "part object-model stream=\"nx:container\" offset=0 length={length} record="
+        )),
+        "{charge:#?}"
+    );
+    let stub = charged_record(charge);
+    let unknowns = contained.ir().native_unknowns("nx").expect("unknowns read");
+    assert!(unknowns.iter().any(|unknown| unknown.id.as_str() == stub));
+    assert!(contained.source_fidelity().retained_record(stub).is_some());
+    assert!(losses
+        .iter()
+        .all(|loss| !loss.message.contains("nx:container:object-model#0")));
 }
 
 #[test]
@@ -130,7 +210,7 @@ fn attachment_failure_without_geometry_keeps_the_container_decode() {
     let contained = decode_failing_at(composed_feature_history_prt(), Point::Exit);
     assert!(contained.ir().model.features.is_empty());
     assert!(contained.ir().geometry.faces.is_empty());
-    assert_one_error_loss(&contained);
+    assert_attachment_given_up(&contained);
 }
 
 /// A topology part whose Parasolid prologue states no schema token, so no
@@ -152,16 +232,28 @@ fn strict_decode_refuses_a_contained_attachment_failure() {
     NxCodec
         .decode(&mut Cursor::new(schemaless_topology_prt()), &strict)
         .expect("strict decode admits the fixture without an attachment failure");
-    try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, false)
+    let salvaged = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, false)
         .expect("salvage decode keeps the geometry");
+    let salvaged = &salvaged.report().losses;
+    assert!(salvaged
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.attachment-failed"));
+    assert!(salvaged.iter().any(charges_the_object_model));
     let error = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, true)
         .expect_err("strict decode refuses the attachment failure");
     match error {
         DecodeFailure::StrictRejected { rejection } => {
-            assert_eq!(
-                rejection.loss().code.local_code(),
-                "native.attachment-failed"
+            assert!(
+                charges_the_object_model(rejection.loss()),
+                "{:#?}",
+                rejection.loss()
             );
+            assert!(rejection
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "native.attachment-failed"
+                    && loss.code.strict_floor().is_none()));
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }

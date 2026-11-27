@@ -20,7 +20,7 @@ pub(crate) mod shell_slots;
 
 use std::io::Write;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 use crate::F3dCodec;
@@ -36,6 +36,17 @@ pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
 pub(crate) mod split_face;
 pub(crate) mod verification;
+
+/// The report codes of one record given up under `code`: its own loss, then
+/// `record.unreadable`.
+pub(crate) fn given_up_codes(
+    code: crate::loss::F3dLossCode,
+) -> [cadmpeg_ir::report::loss::LossKind; 2] {
+    [
+        code.kind(),
+        cadmpeg_ir::unknown::part::record_unreadable_kind(),
+    ]
+}
 
 /// A face of `shell` with no loop, on a surface id the fixture need not hold.
 pub(crate) fn bare_face(id: &str, shell: &str) -> cadmpeg_ir::topology::Face {
@@ -69,17 +80,19 @@ pub(crate) fn with_decode_policy<T>(
     f(&ctx)
 }
 
-/// Plans an inherited write through the sealed encoder and writes its bytes.
+/// Plans a write that names no target, which inherits the dialect of a
+/// same-format source, through the sealed encoder and writes its bytes.
 pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
 ) -> Result<WritePath, cadmpeg_ir::codec::write::EncodeError> {
-    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)))?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Write `ir` under an inherited target, with `fidelity` or source-less, and
+/// Write `ir` under a request that names no target, with `fidelity` or
+/// source-less, and
 /// assert that the file is written, decodes again, and charges a loss whose
 /// code is `code` (`namespace/code`) and whose message holds `fragment`.
 pub(crate) fn assert_written_with_loss(
@@ -88,16 +101,7 @@ pub(crate) fn assert_written_with_loss(
     code: &str,
     fragment: &str,
 ) -> cadmpeg_ir::report::export::ExportReport {
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
-    let mut bytes = Vec::new();
-    let report = F3dCodec
-        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut bytes))
-        .expect("the writer writes what it can encode");
-    let decoded = F3dCodec
-        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
-        .expect("the written file decodes");
-    assert_decodes_back(&report, decoded.report());
+    let report = written_and_decoded(ir, fidelity);
     assert!(
         report
             .losses
@@ -106,6 +110,46 @@ pub(crate) fn assert_written_with_loss(
         "expected a {code} loss naming {fragment:?}: {:#?}",
         report.losses
     );
+    report
+}
+
+/// Writes `ir` with `fidelity` as a synthesis whose cause states that the
+/// patch declined for a reason that contains `fragment`, and decodes the
+/// file back.
+pub(crate) fn assert_patch_declined(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    fragment: &str,
+) -> cadmpeg_ir::report::export::ExportReport {
+    let report = written_and_decoded(ir, fidelity);
+    let Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason }) =
+        report.synthesis_cause()
+    else {
+        panic!(
+            "the write states no synthesis cause: {:#?}",
+            report.write_path()
+        );
+    };
+    assert!(reason.contains(fragment), "{reason:?} names {fragment:?}");
+    report
+}
+
+/// The report of writing `ir` with `fidelity`, where the written file
+/// decodes back ([`assert_decodes_back`]).
+fn written_and_decoded(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+) -> cadmpeg_ir::report::export::ExportReport {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity))
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the writer writes what it can encode");
+    let decoded = F3dCodec
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the written file decodes");
+    assert_decodes_back(&report, decoded.report());
     report
 }
 
@@ -387,3 +431,60 @@ pub(crate) fn loss_codes(
 pub(crate) mod move_face;
 
 pub(crate) mod typed_reference_scopes;
+
+/// The one `record.unreadable` loss of `losses` whose message starts with
+/// `head`, after checking that it names a stub of the F3D `unknowns` arena of
+/// `ir` and that its dropped list is `dropped`.
+pub(crate) fn charged_part<'a>(
+    ir: &CadIr,
+    losses: &'a [cadmpeg_ir::report::loss::LossNote],
+    head: &str,
+    dropped: &str,
+) -> &'a cadmpeg_ir::report::loss::LossNote {
+    let charges = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(head)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{head}: {losses:#?}");
+    let charge = charges[0];
+    assert!(
+        charge.message.contains(&format!("; dropped=[{dropped}]")),
+        "{}",
+        charge.message
+    );
+    let stubs = ir.native_unknowns("f3d").expect("the F3D unknowns arena");
+    assert!(
+        stubs
+            .iter()
+            .any(|stub| charge.message.contains(&format!("record={}:", stub.id))),
+        "the charge names no stub: {}",
+        charge.message
+    );
+    charge
+}
+
+/// Asserts that a pinned decode of `bytes` refuses through a
+/// `record.unreadable` loss whose message starts with `head`.
+pub(crate) fn assert_pinned_refusal(bytes: Vec<u8>, head: &str) {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = F3dCodec
+        .decode(&mut std::io::Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses the given-up record");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        rejection.loss().message.starts_with(head),
+        "{}",
+        rejection.loss().message
+    );
+}

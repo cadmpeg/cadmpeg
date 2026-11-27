@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_asm::asm_header;
+use cadmpeg_core::serde_erase::json;
 
 use crate::test_support::smbh_blocks_test::{
     generated_curve_block, generated_pcurve_block, generated_surface_block,
@@ -82,7 +83,7 @@ pub(crate) fn synthetic_revision_surface_smbh(
 pub(super) fn scrubbed_definition(
     definition: &cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition,
 ) -> String {
-    let text = serde_json::to_string(definition).expect("definition JSON");
+    let text = json::to_string(definition).expect("definition JSON");
     let mut out = String::with_capacity(text.len());
     let mut in_index = false;
     for c in text.chars() {

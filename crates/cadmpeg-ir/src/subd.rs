@@ -162,6 +162,18 @@ impl SubdCage {
         Ok(())
     }
 
+    /// Control vertices in cage order.
+    #[must_use]
+    pub fn vertices(&self) -> &[SubdVertex] {
+        &self.vertices
+    }
+
+    /// Symmetries of the cage.
+    #[must_use]
+    pub fn symmetries(&self) -> &[SubdSymmetry] {
+        &self.symmetries
+    }
+
     /// Control edges in cage order.
     #[must_use]
     pub fn edges(&self) -> &[SubdEdge] {
@@ -426,6 +438,24 @@ impl SubdPlaneFrame {
             second_axis,
         })
     }
+
+    /// A point on the plane in document length units.
+    #[must_use]
+    pub const fn origin(&self) -> FinitePoint3 {
+        self.origin
+    }
+
+    /// The first unit in-plane axis.
+    #[must_use]
+    pub const fn first_axis(&self) -> UnitVector3 {
+        self.first_axis
+    }
+
+    /// The second unit in-plane axis.
+    #[must_use]
+    pub const fn second_axis(&self) -> UnitVector3 {
+        self.second_axis
+    }
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
@@ -446,97 +476,17 @@ pub enum SubdSymmetryKind {
     Radial(SubdRadialSymmetry),
 }
 
-/// Admitted radial controls and selector-preserving maps.
+/// Radial controls and the native radial maps that the source stores.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "SubdRadialSymmetryWire")]
-pub struct SubdRadialSymmetry {
-    segments: std::num::NonZeroU32,
-    sweep: crate::scalar::FiniteReal,
-    radial_maps: Vec<SubdRadialSymmetryMap>,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-struct SubdRadialSymmetryWire {
+pub struct SubdRadialSymmetry {
     /// Number of radial segments.
-    segments: std::num::NonZeroU32,
-    /// Finite native radial sweep.
-    sweep: f64,
-    /// Native maps with distinct selectors and distinct sources within each map.
-    radial_maps: Vec<SubdRadialSymmetryMap>,
-}
-
-impl TryFrom<SubdRadialSymmetryWire> for SubdRadialSymmetry {
-    type Error = SubdError;
-
-    fn try_from(wire: SubdRadialSymmetryWire) -> Result<Self, Self::Error> {
-        Self::new(wire.segments, wire.sweep, wire.radial_maps)
-    }
-}
-
-impl SubdRadialSymmetry {
-    fn new(
-        segments: std::num::NonZeroU32,
-        sweep: f64,
-        radial_maps: Vec<SubdRadialSymmetryMap>,
-    ) -> Result<Self, SubdError> {
-        let Some(sweep) = FiniteReal::new(sweep) else {
-            return Err(SubdError::Admission(
-                "kind.radial.sweep must be finite".to_owned(),
-            ));
-        };
-        Self::from_parts(segments, sweep, radial_maps)
-    }
-
-    fn from_parts(
-        segments: std::num::NonZeroU32,
-        sweep: FiniteReal,
-        radial_maps: Vec<SubdRadialSymmetryMap>,
-    ) -> Result<Self, SubdError> {
-        let mut selectors = std::collections::BTreeSet::new();
-        for map in &radial_maps {
-            if !selectors.insert(map.selector) {
-                return Err(SubdError::Admission(
-                    "radial_maps repeats a selector".to_owned(),
-                ));
-            }
-            let mut sources = std::collections::BTreeSet::new();
-            for [source, _] in &map.pairs {
-                if !sources.insert(*source) {
-                    return Err(SubdError::Admission(
-                        "radial_maps.pairs repeats a source".to_owned(),
-                    ));
-                }
-            }
-        }
-        Ok(Self {
-            segments,
-            sweep,
-            radial_maps,
-        })
-    }
-}
-
-impl SubdSymmetryKind {
-    /// Admit radial controls with finite sweep and distinct map selectors and sources.
-    pub fn radial(
-        segments: std::num::NonZeroU32,
-        sweep: f64,
-        radial_maps: Vec<SubdRadialSymmetryMap>,
-    ) -> Result<Self, SubdError> {
-        SubdRadialSymmetry::new(segments, sweep, radial_maps).map(Self::Radial)
-    }
-
-    /// Admit radial maps with a sweep that the reader already checked.
-    pub fn radial_from_parts(
-        segments: std::num::NonZeroU32,
-        sweep: FiniteReal,
-        radial_maps: Vec<SubdRadialSymmetryMap>,
-    ) -> Result<Self, SubdError> {
-        SubdRadialSymmetry::from_parts(segments, sweep, radial_maps).map(Self::Radial)
-    }
+    pub segments: std::num::NonZeroU32,
+    /// Native radial sweep.
+    pub sweep: crate::scalar::FiniteReal,
+    /// Native maps in source order.
+    pub radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
 /// Selector of one native radial-symmetry map.
@@ -647,6 +597,30 @@ impl SubdSymmetry {
             vertex_pairs,
         })
     }
+
+    /// The symmetry mode and its radial controls.
+    #[must_use]
+    pub const fn kind(&self) -> &SubdSymmetryKind {
+        &self.kind
+    }
+
+    /// The forward face correspondences.
+    #[must_use]
+    pub fn face_pairs(&self) -> &[[u32; 2]] {
+        &self.face_pairs
+    }
+
+    /// The forward edge correspondences.
+    #[must_use]
+    pub fn edge_pairs(&self) -> &[[u32; 2]] {
+        &self.edge_pairs
+    }
+
+    /// The forward vertex correspondences.
+    #[must_use]
+    pub fn vertex_pairs(&self) -> &[[u32; 2]] {
+        &self.vertex_pairs
+    }
 }
 
 impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
@@ -728,7 +702,8 @@ impl SubdVertex {
         Ok(Self::from_parts(point, tag, secondary_grips))
     }
 
-    /// Construct a control vertex from its admitted finite position.
+    /// Construct a control vertex from its admitted finite position. A layout
+    /// with no wedges is stored as absent.
     #[must_use]
     pub fn from_parts(
         point: FinitePoint3,
@@ -738,7 +713,7 @@ impl SubdVertex {
         Self {
             point,
             tag,
-            secondary_grips,
+            secondary_grips: secondary_grips.filter(|layout| !layout.wedges.is_empty()),
         }
     }
 
@@ -750,6 +725,12 @@ impl SubdVertex {
     /// Replace the vertex position.
     pub fn set_point(&mut self, point: FinitePoint3) {
         self.point = point;
+    }
+
+    /// Secondary-grip topology owned by this vertex.
+    #[must_use]
+    pub const fn secondary_grips(&self) -> Option<&SubdVertexGripLayout> {
+        self.secondary_grips.as_ref()
     }
 }
 
@@ -801,16 +782,11 @@ impl TryFrom<SubdVertexGripLayoutWire> for SubdVertexGripLayout {
 }
 
 impl SubdVertexGripLayout {
-    /// Admit a nonempty cyclic fan with sector arity equal to adjacent spoke products.
+    /// Admit a cyclic fan with sector arity equal to adjacent spoke products.
     pub fn new(
         direction: SubdGripDirection,
         wedges: Vec<SubdGripWedge>,
     ) -> Result<Self, SubdError> {
-        if wedges.is_empty() {
-            return Err(SubdError::Admission(
-                "secondary_grips.wedges is empty".to_owned(),
-            ));
-        }
         let spoke_count = |wedge: &SubdGripWedge| match wedge {
             SubdGripWedge::Phantom {} => 0,
             SubdGripWedge::Slot { spokes, .. } => spokes.len(),
@@ -1011,6 +987,24 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
 }
 
 impl SubdEdge {
+    /// Start and end vertex indices into the cage's vertices.
+    #[must_use]
+    pub const fn vertices(&self) -> [u32; 2] {
+        self.vertices
+    }
+
+    /// Crease sharpness at the start and at the end vertex.
+    #[must_use]
+    pub const fn sharpness(&self) -> [NonNegativeReal; 2] {
+        self.sharpness
+    }
+
+    /// Sector coefficients at the start and at the end vertex.
+    #[must_use]
+    pub const fn sector_coefficients(&self) -> [FiniteReal; 2] {
+        self.sector_coefficients
+    }
+
     /// The knot interval the edge states, before any user value.
     #[must_use]
     pub const fn knot_interval(&self) -> Option<PositiveReal> {

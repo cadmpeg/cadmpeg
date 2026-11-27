@@ -169,6 +169,39 @@ fn geometry_pipeline_composes_mesh_subd_extrusion_and_connected_brep_objects() {
 }
 
 #[test]
+fn a_rotated_extrusion_cap_pcurve_is_the_planar_projection_the_writer_checks() {
+    // A rotated cap frame whose projections differ in the last bits when the
+    // decoder and the writer compute them with different arithmetic.
+    let length = 29.0_f64.sqrt();
+    let objects = vec![support::object_record(
+        0x10,
+        support::EXTRUSION_CLASS,
+        &crate::extrusion::tests::capped_payload_with_up([2.0 / length, 5.0 / length, 0.0]),
+    )];
+    let result = decode(support::archive_writer("80", 202_608_010, &objects));
+    assert_valid(&result);
+    let caps = result
+        .ir()
+        .geometry
+        .pcurves
+        .iter()
+        .filter(|pcurve| pcurve.id.as_str().contains(".cap-"))
+        .count();
+    assert_eq!(caps, 2);
+    let mut bytes = Vec::new();
+    let report = crate::test_support::plan_at(crate::RhinoArchiveVersion::V8, result.ir())
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the writer writes the extrusion");
+    let mismatches = report
+        .losses
+        .iter()
+        .filter(|loss| loss.message.contains("planar C3 projection"))
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    assert!(mismatches.is_empty(), "{mismatches:?}");
+}
+
+#[test]
 fn instance_pipeline_composes_nested_transforms_membership_and_analytic_conversion() {
     crate::instances::tests::static_instance_suppresses_member_and_two_references_expand_with_distinct_ids();
     crate::instances::tests::nested_instance_composes_parent_child_and_records_outer_to_inner_path(
@@ -1558,7 +1591,7 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
         .ir()
         .native_unknowns("rhino")
         .expect("required invariant")[0];
-    assert_eq!(annotation.object, record.id.to_string());
+    assert_eq!(annotation.object.as_str(), record.id.to_string());
     assert_eq!(annotation.native_ref, record.id.to_string());
     assert!(record
         .links

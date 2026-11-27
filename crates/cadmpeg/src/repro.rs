@@ -5,6 +5,7 @@ use crate::application::{
     refusal::{ApplicationError, ConversionRefusal},
 };
 use anyhow::{bail, Context, Result};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::report::check::Finding;
 use cadmpeg_registry::{
     repro::{check, cut, Bundle, CutOptions},
@@ -37,7 +38,7 @@ pub(crate) fn run(inputs: &InputCatalog, args: &ReproArgs) -> Result<()> {
     let text =
         crate::application::artifact_store::read_bounded_text(&args.from, MAX_REPRO_INPUT_BYTES)?;
     let report: serde_json::Value = serde_json::from_str(&text)?;
-    let finding: Finding = serde_json::from_value(
+    let finding: Finding = json::from_value(
         report["check_report"]["findings"]
             .get(args.finding)
             .context("finding index is outside the report")?
@@ -85,7 +86,7 @@ pub(crate) fn check_fragment(
         findings,
         losses: Vec::new(),
     };
-    let body = serde_json::json!({"check_report": report});
+    let body = cadmpeg_core::json!({"check_report": report});
     let refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
         decode_report: None,
         validation: report.clone(),

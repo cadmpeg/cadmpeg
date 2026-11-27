@@ -8,6 +8,7 @@
 
 use crate::report::check::Ruled;
 use std::collections::BTreeSet;
+use std::rc::Rc;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -15,12 +16,11 @@ use cadmpeg_core::CodecError;
 use crate::design::feature::FeatureOperation;
 use crate::design::names::NameKind;
 use crate::design::ops::datum::DatumElement;
-use crate::design::refs::{EntityRef, Evaluated, Member, Position};
+use crate::design::refs::{EntityRef, Member, Position};
 use crate::design::selection::{
     Anchor, DatumPart, DefinitionRef, OccurrencePath, PickContext, PickDomain, PickTarget, Picked,
     SelectionRule, StepRef,
 };
-use crate::document::CadIr;
 use crate::features::ConfigurationId;
 use crate::ids::ProductDefinitionId;
 use crate::native::view::NativeView;
@@ -69,18 +69,18 @@ pub(super) fn check<'a>(
     ctx: &DecodeContext<'_>,
     index: &DesignIndex<'a>,
     matchers: &Matchers<'a>,
-    held: &'a [Held<'a>],
+    held: &[Held<'a>],
     document: NativeView<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let moved = moved_occurrences(index.records.ir);
+    let moved = index.records.moved_occurrences();
     for record in held {
         for selection in &record.selections {
             let site = Site::of(index, record, selection.at);
             check_anchor(index, site, selection, findings);
             check_rules(selection, site, findings);
             for pick in selection.picks() {
-                check_pick(index, matchers, site, pick, &moved, findings);
+                check_pick(index, matchers, site, pick, moved, findings);
                 check_witness_body(ctx, document, site.holder.record(), pick, findings)?;
             }
         }
@@ -94,7 +94,7 @@ pub(super) fn check<'a>(
             anchor: &Anchor::Current,
             owner: Some(&publication.scope),
         };
-        check_pick(index, matchers, site, &publication.target, &moved, findings);
+        check_pick(index, matchers, site, &publication.target, moved, findings);
         check_witness_body(
             ctx,
             document,
@@ -115,7 +115,7 @@ pub(super) fn check<'a>(
                 &index.records,
                 Some(evaluation.scope.as_str()),
                 path,
-                &moved,
+                moved,
                 at,
                 findings,
             );
@@ -348,8 +348,14 @@ fn check_witness_body(
     else {
         return Ok(());
     };
-    let nested =
-        crate::validate::nested_topology_findings(ctx, document, body.clone(), true, true)?;
+    let file_keys = crate::validate::products::decode_set::file_keys(document.ir);
+    let nested = crate::validate::topology::nested::check(
+        ctx,
+        document,
+        body.clone(),
+        Some(&file_keys),
+        crate::validate::topology::nested::NestRules::All { caches: true },
+    )?;
     for finding in nested {
         findings.push(crate::validate::nested_finding(
             finding,
@@ -370,7 +376,6 @@ fn check_pick<'a>(
     moved: &BTreeSet<&str>,
     findings: &mut Vec<Finding>,
 ) {
-    let states = matchers.states();
     let at = site.holder.record();
     if !target_exists(index, &pick.target) {
         super::error(
@@ -450,20 +455,64 @@ fn check_pick<'a>(
         }
     }
     if pick.context.is_none() {
-        let stored = anchored_states(index, states, site);
-        if stored.is_empty() && pick.resolved.is_some() && names_unstored_state(index, site) {
-            super::error(
-                findings,
-                at,
-                crate::rule!(
-                    "design.resolved-without-stored-state",
-                    "a pick states `resolved`, but the document stores no state at its anchor"
-                ),
-            );
-        }
-        for state in stored {
-            check_in_state(states, matchers, &state, pick, at, findings);
-        }
+        check_anchored(index, matchers, site, pick, findings);
+    }
+}
+
+/// A pick of a process record with no context, which resolves in its
+/// setup's scope (§5.8, part 7).
+pub(in crate::validate) struct ProcessPick<'a> {
+    pub(in crate::validate) record: &'a str,
+    pub(in crate::validate) scope: &'a ProductDefinitionId,
+    pub(in crate::validate) anchor: &'a Anchor,
+    pub(in crate::validate) pick: &'a Picked,
+}
+
+/// Each process pick resolves in its anchored state by the matching rule
+/// of §5.7, as a design pick does: a `Current` pick in the current geometry
+/// of its setup's scope (§5.8).
+pub(in crate::validate) fn check_process_picks<'a>(
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
+    picks: &[ProcessPick<'_>],
+    findings: &mut Vec<Finding>,
+) {
+    for pick in picks {
+        let site = Site {
+            holder: Holder::Record {
+                record: pick.record,
+                scope: Some(pick.scope),
+            },
+            anchor: pick.anchor,
+            owner: Some(pick.scope),
+        };
+        check_anchored(index, matchers, site, pick.pick, findings);
+    }
+}
+
+/// A pick with no context resolves in each stored state its anchor names.
+fn check_anchored<'a>(
+    index: &DesignIndex<'a>,
+    matchers: &Matchers<'a>,
+    site: Site<'_>,
+    pick: &Picked,
+    findings: &mut Vec<Finding>,
+) {
+    let states = matchers.states();
+    let at = site.holder.record();
+    let stored = anchored_states(index, states, site);
+    if stored.is_empty() && pick.resolved.is_some() && names_unstored_state(index, site) {
+        super::error(
+            findings,
+            at,
+            crate::rule!(
+                "design.resolved-without-stored-state",
+                "a pick states `resolved`, but the document stores no state at its anchor"
+            ),
+        );
+    }
+    for state in stored {
+        check_in_state(states, matchers, &state, pick, at, findings);
     }
 }
 
@@ -497,7 +546,7 @@ fn names_unstored_state(index: &DesignIndex<'_>, site: Site<'_>) -> bool {
 /// A stored state a pick resolves in.
 pub(super) enum Stored<'a> {
     /// The extents of current states.
-    Extents(Vec<&'a Extent<'a>>),
+    Extents(Vec<Rc<Extent<'a>>>),
     /// A stored evaluation, by id.
     Evaluation(&'a str),
 }
@@ -515,14 +564,9 @@ impl<'a> Stored<'a> {
                     .active_configuration
                     .as_ref()
             }),
-            Self::Evaluation(evaluation) => records
-                .ir
-                .design
-                .evaluations
-                .iter()
-                .find(|record| record.id.as_str() == *evaluation)?
-                .configuration
-                .as_ref(),
+            Self::Evaluation(evaluation) => {
+                records.evaluations.get(*evaluation)?.configuration.as_ref()
+            }
         };
         configuration.map(ConfigurationId::as_str)
     }
@@ -535,19 +579,15 @@ impl<'a> Stored<'a> {
 /// names no stored state, or is `Native`.
 pub(super) fn anchored_states<'a>(
     index: &DesignIndex<'a>,
-    states: &'a States<'a>,
-    site: Site<'a>,
+    states: &States<'a>,
+    site: Site<'_>,
 ) -> Vec<Stored<'a>> {
     let Some(scope) = site.owner.map(ProductDefinitionId::as_str) else {
         return Vec::new();
     };
     let position = match site.anchor {
         Anchor::Current => {
-            let extents: Vec<&Extent<'a>> = states
-                .extents
-                .iter()
-                .filter(|extent| extent.scope == scope)
-                .collect();
+            let extents = states.extents_for_scope(scope);
             return if extents.is_empty() {
                 Vec::new()
             } else {
@@ -573,16 +613,10 @@ pub(super) fn anchored_states<'a>(
     }
     index
         .records
-        .ir
-        .design
-        .evaluations
+        .state_evaluations(scope, position)
         .iter()
-        .filter(|evaluation| {
-            evaluation.scope.as_str() == scope
-                && evaluation.content.is_some()
-                && matches!(&evaluation.of, Evaluated::State(of) if PositionKey::of(of) == position)
-        })
-        .map(|evaluation| Stored::Evaluation(evaluation.id.as_str()))
+        .copied()
+        .map(Stored::Evaluation)
         .collect()
 }
 
@@ -660,7 +694,9 @@ fn target_exists(index: &DesignIndex<'_>, target: &PickTarget) -> bool {
     match target {
         PickTarget::Sketch(sketch)
         | PickTarget::SketchRegion { sketch, .. }
-        | PickTarget::SketchFrame { sketch, .. } => index.sketches.contains_key(sketch.as_str()),
+        | PickTarget::SketchFrame { sketch, .. } => {
+            index.records.sketches.contains_key(sketch.as_str())
+        }
         PickTarget::SketchEntity(entity) => index.sketch_entities.contains_key(entity.as_str()),
         PickTarget::SpatialSketchEntity(entity) => {
             index.spatial_sketch_entities.contains_key(entity.as_str())
@@ -674,9 +710,11 @@ fn target_exists(index: &DesignIndex<'_>, target: &PickTarget) -> bool {
         PickTarget::Publication(publication) => index.publications.contains(publication.as_str()),
         PickTarget::Native { within } => match within {
             None => true,
-            Some(NativeOwner::Sketch(sketch)) => index.sketches.contains_key(sketch.as_str()),
+            Some(NativeOwner::Sketch(sketch)) => {
+                index.records.sketches.contains_key(sketch.as_str())
+            }
             Some(NativeOwner::SpatialSketch(sketch)) => {
-                index.spatial_sketches.contains_key(sketch.as_str())
+                index.records.spatial_sketches.contains_key(sketch.as_str())
             }
             Some(NativeOwner::Feature(feature)) => {
                 index.records.features.contains_key(feature.as_str())
@@ -835,18 +873,6 @@ fn check_definition(
             ),
         );
     }
-}
-
-/// The occurrences whose owner some state restates, whose membership the
-/// current listing does not decide.
-pub(in crate::validate) fn moved_occurrences(ir: &CadIr) -> BTreeSet<&str> {
-    ir.design
-        .evaluations
-        .iter()
-        .flat_map(|evaluation| evaluation.content.iter())
-        .flat_map(|content| content.delta.members.keys())
-        .map(crate::ids::OccurrenceId::as_str)
-        .collect()
 }
 
 /// A path that states no step configuration: a nested override's, an

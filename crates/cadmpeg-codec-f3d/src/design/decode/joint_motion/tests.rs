@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use std::collections::HashMap;
 
 use super::{
@@ -11,7 +12,8 @@ fn decode_stream(
     stream: &str,
     scopes: &HashMap<u32, bool>,
 ) -> Vec<super::DesignJointMotion> {
-    super::decode_stream(bytes, stream, scopes, &AsBuiltJoints::default())
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
+    super::decode_stream(bytes, stream, &records, scopes, &AsBuiltJoints::default())
 }
 
 fn header(out: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
@@ -112,8 +114,9 @@ fn as_built_motion_binds_the_registered_joint_after_occurrence_parents() {
         joints: [10].into(),
     };
     let scopes = HashMap::from([(11, true)]);
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
     let read = |as_built: &AsBuiltJoints<'_>| {
-        super::decode_stream(&bytes, "Design/BulkStream.dat", &scopes, as_built)
+        super::decode_stream(&bytes, "Design/BulkStream.dat", &records, &scopes, as_built)
     };
     let [motion]: [_; 1] = read(&as_built).try_into().unwrap();
     assert_eq!(motion.joint_record_index, 10);
@@ -317,7 +320,7 @@ fn malformed_rest_lanes_keep_limits() {
     let end = bytes.len();
     let valid = super::joint_limits(&bytes, 0, end, 10).unwrap();
     assert!(!valid.rest_malformed);
-    assert!(serde_json::to_value(&valid)
+    assert!(json::to_value(&valid)
         .unwrap()
         .get("rest_malformed")
         .is_none());
@@ -340,10 +343,10 @@ fn malformed_rest_lanes_keep_limits() {
         assert_eq!(lanes.values_offset, valid.values_offset);
         assert!(lanes.rest.is_none());
         assert!(lanes.rest_malformed);
-        let stored = serde_json::to_value(&lanes).unwrap();
+        let stored = json::to_value(&lanes).unwrap();
         assert_eq!(stored["rest_malformed"], true);
         assert_eq!(
-            serde_json::from_value::<crate::records::feature::joint_motion::DesignJointLimitLanes>(
+            json::from_value::<crate::records::feature::joint_motion::DesignJointLimitLanes>(
                 stored
             )
             .unwrap(),
@@ -404,7 +407,7 @@ fn malformed_rest_lanes_keep_limits() {
                 &[motion],
             );
             assert_eq!(projection.joints.len(), 1);
-            let joint = serde_json::to_value(&projection.joints[0]).unwrap();
+            let joint = json::to_value(&projection.joints[0]).unwrap();
             let limits = &joint["operands"]["value"]["kind"][limits_key];
             assert_eq!(limits["minimum"], -1.5 * scale);
             assert_eq!(limits["maximum"], 1.5 * scale);

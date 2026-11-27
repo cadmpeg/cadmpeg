@@ -2,10 +2,11 @@
 //! NIST CTC-01 dimension and hole-note expectations from the CTC definitions
 //! workbook.
 
+use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 use std::path::Path;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance};
 use cadmpeg_ir::pmi::{
     GeometricToleranceKind, PmiDefinition, PmiDimensionKind as DimensionKind, PmiTarget,
@@ -62,15 +63,23 @@ fn target_radius(topology: &Value, target: &PmiTarget) -> Option<f64> {
     geometry["value"]["radius"].as_f64()
 }
 
+/// Workbook dimensions, their tolerances and targets, frames and datums, and
+/// the same annotations at geometry depth, from one full decode.
 #[test]
-fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
+fn nist_ctc_01_transfers_its_annotations() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/inventor/INV_nist_ctc_01_asme1_2021.ipt");
     let bytes = std::fs::read(path).expect("read Inventor specimen");
     let result = InventorCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .expect("decode Inventor specimen");
-    let topology = serde_json::to_value(&result.ir().geometry).expect("serialize geometry");
+    transfers_dimension_tolerances_and_targets(&result);
+    transfers_feature_control_frames_and_datums(&result);
+    states_its_annotations_at_geometry_depth(&bytes, &result);
+}
+
+fn transfers_dimension_tolerances_and_targets(result: &DecodeResult) {
+    let topology = json::to_value(&result.ir().geometry).expect("serialize geometry");
     let half_degree = 0.5_f64.to_radians();
     let expected = [
         (
@@ -178,14 +187,7 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
     }
 }
 
-#[test]
-fn nist_ctc_01_transfers_feature_control_frames_and_datums() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/inventor/INV_nist_ctc_01_asme1_2021.ipt");
-    let bytes = std::fs::read(path).expect("read Inventor specimen");
-    let result = InventorCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode Inventor specimen");
+fn transfers_feature_control_frames_and_datums(result: &DecodeResult) {
     let pmi = &result.ir().model.pmi;
     let mut datums: Vec<_> = pmi
         .iter()
@@ -278,28 +280,15 @@ fn nist_ctc_01_transfers_feature_control_frames_and_datums() {
 
 /// The annotations are model records: a geometry-depth decode states the same
 /// PMI as the full decode.
-#[test]
-fn nist_ctc_01_states_its_annotations_at_geometry_depth() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/inventor/INV_nist_ctc_01_asme1_2021.ipt");
-    let bytes = std::fs::read(path).expect("read Inventor specimen");
-    let geometry = InventorCodec
-        .decode(
-            &mut Cursor::new(&bytes),
-            &DecodeOptions {
-                depth: cadmpeg_core::decode::DecodeDepth::Geometry,
-                ..DecodeOptions::default()
-            },
-        )
-        .expect("decode Inventor specimen at geometry depth");
+fn states_its_annotations_at_geometry_depth(bytes: &[u8], full: &DecodeResult) {
+    let geometry = cadmpeg_test_support::depth::assert_geometry_agrees_with_decoded(
+        &InventorCodec,
+        bytes,
+        full,
+    );
     assert_eq!(
         geometry.report().depth(),
         cadmpeg_core::decode::DecodeDepth::Geometry
     );
     assert_eq!(geometry.ir().model.pmi.len(), 24);
-    let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
-        &InventorCodec,
-        &[("nist_ctc_01", bytes)],
-    );
-    assert_eq!(summary.cut, 1, "{summary:?}");
 }

@@ -32,6 +32,7 @@ type CompoundScanProbe = fn(
     feature = "pvz",
     feature = "usd",
     feature = "solidedge",
+    feature = "ironcad",
     feature = "edrawings",
     feature = "onshape"
 ))]
@@ -65,6 +66,7 @@ macro_rules! scan_backend {
     feature = "pvz",
     feature = "usd",
     feature = "solidedge",
+    feature = "ironcad",
     feature = "edrawings",
     feature = "onshape"
 ))]
@@ -95,6 +97,7 @@ macro_rules! compound_scan_probe {
     feature = "pvz",
     feature = "usd",
     feature = "solidedge",
+    feature = "ironcad",
     feature = "edrawings",
     feature = "onshape"
 ))]
@@ -170,6 +173,7 @@ pub(crate) enum FormatKind {
         feature = "fcstd",
         feature = "f3d",
         feature = "solidedge",
+        feature = "ironcad",
         feature = "inventor",
         feature = "sldprt",
         feature = "catia",
@@ -181,6 +185,7 @@ pub(crate) enum FormatKind {
         feature = "sat",
         feature = "pvz",
         feature = "edrawings",
+        feature = "alibre",
         feature = "usd",
         feature = "onshape"
     ))]
@@ -243,6 +248,7 @@ impl FormatDescriptor {
                 feature = "fcstd",
                 feature = "f3d",
                 feature = "solidedge",
+                feature = "ironcad",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -254,6 +260,7 @@ impl FormatDescriptor {
                 feature = "sat",
                 feature = "pvz",
                 feature = "edrawings",
+                feature = "alibre",
                 feature = "usd",
                 feature = "onshape"
             ))]
@@ -271,6 +278,7 @@ impl FormatDescriptor {
                 feature = "fcstd",
                 feature = "f3d",
                 feature = "solidedge",
+                feature = "ironcad",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -282,6 +290,7 @@ impl FormatDescriptor {
                 feature = "sat",
                 feature = "pvz",
                 feature = "edrawings",
+                feature = "alibre",
                 feature = "usd",
                 feature = "onshape"
             ))]
@@ -296,6 +305,7 @@ impl FormatDescriptor {
                 feature = "fcstd",
                 feature = "f3d",
                 feature = "solidedge",
+                feature = "ironcad",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -307,6 +317,7 @@ impl FormatDescriptor {
                 feature = "sat",
                 feature = "pvz",
                 feature = "edrawings",
+                feature = "alibre",
                 feature = "usd",
                 feature = "onshape"
             ))]
@@ -317,6 +328,7 @@ impl FormatDescriptor {
 
 #[cfg(any(
     feature = "solidedge",
+    feature = "ironcad",
     feature = "inventor",
     feature = "catia",
     feature = "creo",
@@ -324,6 +336,7 @@ impl FormatDescriptor {
     feature = "sat",
     feature = "pvz",
     feature = "edrawings",
+    feature = "alibre",
     feature = "onshape"
 ))]
 macro_rules! reader {
@@ -413,6 +426,10 @@ reader!(
     &["par", "psm", "asm"],
     || Box::new(cadmpeg_codec_solidedge::SolidEdgeCodec)
 );
+#[cfg(feature = "ironcad")]
+reader!(IRONCAD, FormatId::new("ironcad"), &["ics"], || {
+    Box::new(cadmpeg_codec_ironcad::IronCadCodec)
+});
 #[cfg(feature = "inventor")]
 reader!(INVENTOR, FormatId::new("inventor"), &["ipt", "iam"], || {
     Box::new(cadmpeg_codec_inventor::InventorCodec)
@@ -484,6 +501,10 @@ reader!(
 reader!(PVZ, FormatId::new("pvz"), &["pvz"], || Box::new(
     cadmpeg_codec_pvz::PvzCodec
 ));
+#[cfg(feature = "alibre")]
+reader!(ALIBRE, FormatId::new("alibre"), &["ad_prt"], || Box::new(
+    cadmpeg_codec_alibre::AlibreCodec
+));
 #[cfg(feature = "edrawings")]
 reader!(
     EDRAWINGS,
@@ -537,6 +558,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &INVENTOR,
     #[cfg(feature = "solidedge")]
     &SOLIDEDGE,
+    #[cfg(feature = "ironcad")]
+    &IRONCAD,
     #[cfg(feature = "sldprt")]
     &SLDPRT,
     #[cfg(feature = "catia")]
@@ -557,6 +580,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &PVZ,
     #[cfg(feature = "edrawings")]
     &EDRAWINGS,
+    #[cfg(feature = "alibre")]
+    &ALIBRE,
     #[cfg(feature = "usd")]
     &USD,
     #[cfg(feature = "onshape")]

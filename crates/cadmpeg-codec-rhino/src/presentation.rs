@@ -12,6 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteBinary32, FiniteReal};
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::SourceProvenance;
 use serde::Serialize;
 
@@ -19,7 +20,7 @@ use crate::chunks::{
     checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum_ranges, ArchiveVersion,
     BoundedReader, ChecksumStatus, FramingError,
 };
-use crate::container::{NativeInstall, OpaqueRecord, Record, Scan};
+use crate::container::{give_up_table_record, NativeInstall, OpaqueRecord, Record, Scan};
 use crate::instances::hex;
 use crate::loss::RhinoLossCode;
 use crate::objects::{
@@ -51,7 +52,7 @@ const MATERIAL: Uuid = Uuid::from_canonical([
 const PHYSICALLY_BASED_MATERIAL_USERDATA: Uuid = Uuid::from_canonical([
     0x56, 0x94, 0xe1, 0xac, 0x40, 0xe6, 0x44, 0xf4, 0x9c, 0xa9, 0x3b, 0x6d, 0x0e, 0x8c, 0x44, 0x40,
 ]);
-const OPENNURBS6_APPLICATION: Uuid = Uuid::from_canonical([
+pub(crate) const OPENNURBS6_APPLICATION: Uuid = Uuid::from_canonical([
     0x7b, 0x0b, 0x58, 0x5d, 0x7a, 0x31, 0x45, 0xd0, 0x92, 0x5e, 0xbd, 0xd7, 0xdd, 0xf3, 0xe4, 0xe3,
 ]);
 const RDK_CLASS: Uuid = Uuid::from_canonical([
@@ -3168,7 +3169,7 @@ fn named_child(
         ));
     }
     reader.skip(chunk.next_offset() - offset)?;
-    Ok(serde_json::json!({
+    Ok(cadmpeg_core::json!({
         "offset": offset,
         "byte_len": chunk.next_offset() - offset,
         "sha256": hex(&cadmpeg_ir::hash::sha256(&data[offset..chunk.next_offset()])),
@@ -3185,7 +3186,7 @@ fn dimension_style_controls(
     let mut values = DimensionControlEntries::default();
     macro_rules! put {
         ($name:literal, $value:expr) => {{
-            values.insert_with($name, || Ok(serde_json::json!($value)))?;
+            values.insert_with($name, || Ok(cadmpeg_core::json!($value)))?;
         }};
     }
     put!("legacy_override_parent_count", reader.u32()?);
@@ -3342,7 +3343,7 @@ fn dimension_style_controls(
             "dimension_text_angle_style",
             "radial_text_angle_style",
         ] {
-            values.insert_with(name, || Ok(serde_json::json!(reader.u32()?)))?;
+            values.insert_with(name, || Ok(cadmpeg_core::json!(reader.u32()?)))?;
         }
         put!("text_underlined", reader.bool()?);
     }
@@ -3483,10 +3484,12 @@ fn parse_v5_dimension_style(
     };
     let mut controls = DimensionControlEntries::default();
     controls.insert_with("v5_version", || {
-        Ok(serde_json::json!({ "major": major, "minor": minor }))
+        Ok(cadmpeg_core::json!({ "major": major, "minor": minor }))
     })?;
-    controls.insert_with("v5_arrow_type", || Ok(serde_json::json!(arrow_type)))?;
-    controls.insert_with("v5_angular_units", || Ok(serde_json::json!(angular_units)))?;
+    controls.insert_with("v5_arrow_type", || Ok(cadmpeg_core::json!(arrow_type)))?;
+    controls.insert_with("v5_angular_units", || {
+        Ok(cadmpeg_core::json!(angular_units))
+    })?;
     let (
         length_factor,
         alternate_enabled,
@@ -3520,14 +3523,16 @@ fn parse_v5_dimension_style(
             "Rhino V5 dimension alternate suffix",
         )?;
         let unused = reader.u32()?;
-        controls.insert_with("v5_length_factor", || Ok(serde_json::json!(length_factor)))?;
+        controls.insert_with("v5_length_factor", || {
+            Ok(cadmpeg_core::json!(length_factor))
+        })?;
         controls.insert_with("v5_alternate_angle_format", || {
-            Ok(serde_json::json!(alternate_angle_format))
+            Ok(cadmpeg_core::json!(alternate_angle_format))
         })?;
         controls.insert_with("v5_alternate_angle_resolution", || {
-            Ok(serde_json::json!(alternate_angle_resolution))
+            Ok(cadmpeg_core::json!(alternate_angle_resolution))
         })?;
-        controls.insert_with("v5_unused", || Ok(serde_json::json!(unused)))?;
+        controls.insert_with("v5_unused", || Ok(cadmpeg_core::json!(unused)))?;
         (
             length_factor,
             alternate_enabled,
@@ -3579,7 +3584,7 @@ fn parse_v5_dimension_style(
     };
     reader.skip_remaining()?;
     controls.insert_with("v5_leader_arrow_type", || {
-        Ok(serde_json::json!(leader_arrow_type))
+        Ok(cadmpeg_core::json!(leader_arrow_type))
     })?;
     Ok(DimensionStyleRecord {
         id: if id.is_nil() {
@@ -4504,21 +4509,14 @@ fn parse_text_style(
     })
 }
 
-/// Results of transferring table-owned presentation records.
-fn retain_unbound_presentation_record(
-    losses: &mut Vec<LossNote>,
-    opaque_records: &mut Vec<OpaqueRecord>,
-    table_typecode: u32,
-    record: &Record,
-    binding: UnitBinding,
-    kind: &str,
-) {
-    push_presentation_loss( losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+/// The codec loss of the presentation record `record` of `kind`, which the
+/// decoder retains because the document has no physical unit `binding`.
+fn unbound_presentation_loss(record: &Record, binding: UnitBinding, kind: &str) -> LossNote {
+    RhinoLossCode::PresentationRecordDropped.note(format_args!(
         "{kind} record at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
         record.range.start,
         binding.label()
-    ));
-    push_opaque_record(opaque_records, table_typecode, record);
+    ))
 }
 
 /// The key of a layer's native record: its UUID where no other layer holds
@@ -4555,6 +4553,7 @@ pub(crate) fn install(
 
     let mut losses = Vec::new();
     let mut opaque_records = Vec::new();
+    let mut given_up = Vec::new();
     for object in &scan.objects {
         if let Some(identity) = object.identity() {
             if let Some(count) = object_id_counts.get_mut(&identity.object_id) {
@@ -4671,14 +4670,10 @@ pub(crate) fn install(
                 }
             } else if table_type == LIGHT_TABLE {
                 let Some(scale) = physical_scale else {
-                    retain_unbound_presentation_record(
-                        &mut losses,
-                        &mut opaque_records,
-                        table.typecode,
-                        record,
-                        binding,
-                        "light",
-                    );
+                    let loss = unbound_presentation_loss(record, binding, "light");
+                    given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                    losses.push(loss);
+                    push_opaque_record(&mut opaque_records, table.typecode, record);
                     continue;
                 };
                 if let Some(range) =
@@ -4746,10 +4741,12 @@ pub(crate) fn install(
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                            let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
                                 "linetype record at offset {} was retained as complete source: {error}",
                                 record.range.start,
                             ));
+                            given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                            losses.push(loss);
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
@@ -4774,10 +4771,12 @@ pub(crate) fn install(
                             return Err(CodecError::ResourceLimit(limit));
                         }
                         Err(error) => {
-                            push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
+                            let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
                                 "hatch pattern record at offset {} was retained as complete source: {error}",
                                 record.range.start,
                             ));
+                            given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                            losses.push(loss);
                             push_opaque_record(&mut opaque_records, table.typecode, record);
                         }
                     }
@@ -4785,14 +4784,10 @@ pub(crate) fn install(
                 }
             } else if table_type == DIMSTYLE_TABLE {
                 let Some(scale) = physical_scale else {
-                    retain_unbound_presentation_record(
-                        &mut losses,
-                        &mut opaque_records,
-                        table.typecode,
-                        record,
-                        binding,
-                        "dimension style",
-                    );
+                    let loss = unbound_presentation_loss(record, binding, "dimension style");
+                    given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                    losses.push(loss);
+                    push_opaque_record(&mut opaque_records, table.typecode, record);
                     continue;
                 };
                 if scan.archive.value() < 60 {
@@ -4974,14 +4969,12 @@ pub(crate) fn install(
                 }
             }
             if recognized && !parsed {
-                push_presentation_loss(
-                    &mut losses,
-                    RhinoLossCode::PresentationRecordDropped,
-                    format_args!(
-                        "record at offset {} in table {table_type:#x} could not be transferred",
-                        record.range.start
-                    ),
-                );
+                let loss = RhinoLossCode::PresentationRecordDropped.note(format_args!(
+                    "record at offset {} in table {table_type:#x} could not be transferred",
+                    record.range.start
+                ));
+                given_up.push(give_up_table_record(ctx, scan.data, record, &loss)?);
+                losses.push(loss);
                 push_opaque_record(&mut opaque_records, table.typecode, record);
             }
         }
@@ -5014,22 +5007,34 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit));
                     }
                     Err(error) => {
-                        push_presentation_loss(
-                            &mut losses,
-                            RhinoLossCode::PresentationRecordDropped,
+                        let (loss, part) = light_object_given_up(
+                            ctx,
+                            scan.data,
+                            source_order,
+                            &object.range,
                             format_args!(
                                 "light object at offset {} could not be transferred: {error}",
                                 object.range.start
                             ),
-                        );
+                        )?;
+                        losses.push(loss);
+                        given_up.push(part);
                     }
                 }
             } else {
-                push_presentation_loss( &mut losses, RhinoLossCode::PresentationRecordDropped, format_args!(
-                    "light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
-                    object.range.start,
-                    binding.label()
-                ));
+                let (loss, part) = light_object_given_up(
+                    ctx,
+                    scan.data,
+                    source_order,
+                    &object.range,
+                    format_args!(
+                        "light object at offset {} was retained as complete source because the document has no physical millimetre binding ({})",
+                        object.range.start,
+                        binding.label()
+                    ),
+                )?;
+                losses.push(loss);
+                given_up.push(part);
             }
         }
         if let Some(attributes) = object.attributes.parsed() {
@@ -5193,7 +5198,28 @@ pub(crate) fn install(
     Ok(NativeInstall {
         losses,
         opaque_records,
+        given_up,
     })
+}
+
+/// Gives up the light object at `source_order`, spanning `range`, for the
+/// codec loss with `message`: its codec loss and its given-up part.
+fn light_object_given_up(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    source_order: usize,
+    range: &std::ops::Range<usize>,
+    message: std::fmt::Arguments<'_>,
+) -> Result<(LossNote, GivenUpPart), CodecError> {
+    let loss = RhinoLossCode::PresentationRecordDropped
+        .note(message)
+        .with_provenance(SourceProvenance::root(
+            "rhino",
+            cadmpeg_core::decode::u64_from_index(range.start),
+        ));
+    let part =
+        crate::container::give_up_object_record(ctx, data, source_order, range.clone(), &loss)?;
+    Ok((loss, part))
 }
 
 #[cfg(test)]
