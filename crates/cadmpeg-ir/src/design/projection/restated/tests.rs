@@ -449,9 +449,9 @@ fn parameter_ir(models: Vec<ModelParameter>, designs: Vec<DesignParameter>) -> C
     ir
 }
 
-/// Only a spreadsheet orders design parameters: two parameters of one owner
-/// that no sheet lists name their ordinals, whichever order their ids take,
-/// and a parameter with no other of its owner keeps its ordinal.
+/// Two parameters of one owner that state no position and that no sheet
+/// lists name their ordinals, whichever order their ids take, and a
+/// parameter with no other of its owner keeps its ordinal.
 #[test]
 fn a_parameter_ordinal_is_carried_only_where_the_design_orders_it() {
     let designs = || {
@@ -477,6 +477,45 @@ fn a_parameter_ordinal_is_carried_only_where_the_design_orders_it() {
         designs(),
     ));
     assert_eq!(lone[parameter_id("sketch:7").as_str()], fields([]));
+}
+
+/// Parameters of one owner whose positions follow their ordinals keep the
+/// ordinals; those whose positions do not, or of which one states none, name
+/// them.
+#[test]
+fn a_parameter_ordinal_follows_the_positions_of_its_owner() {
+    let models = || {
+        vec![
+            model_parameter("sketch:7", 0),
+            model_parameter("sketch:10", 1),
+        ]
+    };
+    let placed = |first: Option<u32>, second: Option<u32>| {
+        let mut designs = vec![
+            design_parameter("sketch:7", "sketch:7"),
+            design_parameter("sketch:10", "sketch:10"),
+        ];
+        designs[0].position = first;
+        designs[1].position = second;
+        cuts(&parameter_ir(models(), designs))
+    };
+    let ordered = placed(Some(4), Some(9));
+    assert_eq!(ordered[parameter_id("sketch:7").as_str()], fields([]));
+    assert_eq!(ordered[parameter_id("sketch:10").as_str()], fields([]));
+    let reversed = placed(Some(1), Some(0));
+    assert_eq!(
+        reversed[parameter_id("sketch:7").as_str()],
+        fields(["ordinal"])
+    );
+    assert_eq!(
+        reversed[parameter_id("sketch:10").as_str()],
+        fields(["ordinal"])
+    );
+    let partial = placed(Some(0), None);
+    assert_eq!(
+        partial[parameter_id("sketch:7").as_str()],
+        fields(["ordinal"])
+    );
 }
 
 /// A design parameter named by the stored name the model keeps in

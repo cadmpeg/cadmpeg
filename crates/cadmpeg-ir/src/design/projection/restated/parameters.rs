@@ -53,19 +53,18 @@ pub(super) fn parameter_cuts<'ir>(
         .filter(|model| compared(model.id.as_str()))
         .filter_map(|model| Some((model, *design.get(model.id.as_str())?)))
         .collect::<Vec<_>>();
-    let cells = ir
-        .design
-        .spreadsheets
+    let mut places = design
         .iter()
-        .flat_map(|sheet| {
-            sheet
-                .cells()
-                .iter()
-                .enumerate()
-                .map(move |(at, cell)| (cell.parameter.as_str(), (sheet.id.as_str(), at)))
-        })
+        .filter_map(|(id, parameter)| Some((*id, Place::Position(parameter.position?))))
         .collect::<HashMap<_, _>>();
-    let misplaced = misplaced(&ir.model.parameters, &cells);
+    places.extend(ir.design.spreadsheets.iter().flat_map(|sheet| {
+        sheet
+            .cells()
+            .iter()
+            .enumerate()
+            .map(move |(at, cell)| (cell.parameter.as_str(), Place::Cell(sheet.id.as_str(), at)))
+    }));
+    let misplaced = misplaced(&ir.model.parameters, &places);
     pairs
         .into_iter()
         .map(|(model, design)| {
@@ -88,15 +87,23 @@ pub(super) fn parameter_cuts<'ir>(
         .collect()
 }
 
+/// Where the design orders a parameter (§2.2): a cell of a spreadsheet, by
+/// the sheet and the cell's place among its cells, or a stated `position`.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Place<'ir> {
+    Cell(&'ir str, usize),
+    Position(u32),
+}
+
 /// The parameters of `models` whose position by `ordinal` among the
-/// parameters of their definition and owner the design does not hold. Only
-/// a spreadsheet orders design parameters (§2.2): `cells` holds the sheet
-/// and the position among its cells of each cell parameter. A group of one
-/// parameter holds its position; a larger group holds it where each member
-/// is a cell, and its order by `ordinal` is its order by cell.
+/// parameters of their definition and owner the design does not hold.
+/// `places` holds the place of each design parameter the design orders. A
+/// group of one parameter holds its position; a larger group holds it where
+/// each member has a place of one kind, and its order by `ordinal` is its
+/// order by place.
 fn misplaced<'ir>(
     models: &'ir [ModelParameter],
-    cells: &HashMap<&str, (&str, usize)>,
+    places: &HashMap<&str, Place<'_>>,
 ) -> HashSet<&'ir str> {
     let mut groups = BTreeMap::<_, Vec<&ModelParameter>>::new();
     for model in models {
@@ -113,8 +120,17 @@ fn misplaced<'ir>(
     for members in groups.into_values().filter(|members| members.len() > 1) {
         let Some(placed) = members
             .iter()
-            .map(|model| Some((*model, *cells.get(model.id.as_str())?)))
+            .map(|model| Some((*model, *places.get(model.id.as_str())?)))
             .collect::<Option<Vec<_>>>()
+            .filter(|placed| {
+                placed.iter().all(|(_, place)| {
+                    matches!(
+                        (place, placed[0].1),
+                        (Place::Cell(..), Place::Cell(..))
+                            | (Place::Position(_), Place::Position(_))
+                    )
+                })
+            })
         else {
             misplaced.extend(members.iter().map(|model| model.id.as_str()));
             continue;
