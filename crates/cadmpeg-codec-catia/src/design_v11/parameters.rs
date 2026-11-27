@@ -37,7 +37,9 @@ const STORED_VALUE_AGREEMENT: f64 = 1e-9;
 /// Restate every user parameter the decoder transferred as a parameter of
 /// `scope`, and add to `losses` the note naming those that drop an input.
 /// The decoder files no CATIA parameter under a feature; one it did would
-/// need its owner stated, and is left out.
+/// need its owner stated, and is left out. Each takes its rank in the
+/// stored order of the user parameters as its position, where those ranks
+/// are distinct.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -51,6 +53,12 @@ pub(super) fn project(
         .filter(|parameter| parameter.owner.is_none())
         .map(|parameter| (&parameter.id, parameter))
         .collect::<BTreeMap<_, _>>();
+    let ranked = user
+        .values()
+        .map(|parameter| parameter.ordinal)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        == user.len();
     let mut projected = Vec::with_capacity(user.len());
     let mut dropped = Vec::new();
     for parameter in user.values() {
@@ -72,7 +80,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: scope.clone(),
             owner: None,
-            position: None,
+            position: ranked.then_some(parameter.ordinal),
             name: NonBlankString::new(parameter.name.clone()),
             value: value(parameter.value.as_ref(), &kind),
             definition: ParameterDefinition::Expression(expression),
