@@ -218,12 +218,12 @@ mod surface {
         let earlier = test_feature(10, 14, &[(3, 5)]);
         let later = test_feature(30, 14, &[(3, 5)]);
         let features = [source.clone(), earlier.clone(), later.clone()];
-        let key = |feature: &PmDcFeature| {
+        fn key(feature: &PmDcFeature) -> (&str, u32) {
             (
                 feature.identity.segment_token.as_str(),
                 feature.identity.record_ordinal,
             )
-        };
+        }
         let positions: std::collections::HashMap<_, u64> = features
             .iter()
             .map(|feature| (key(feature), u64::from(feature.identity.record_ordinal)))
