@@ -10,12 +10,12 @@ use crate::design::construction::ScalarDimension;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::ids::SpatialSketchConstraintId;
-use crate::design::names::CodecName;
 use crate::design::ops::sketch::{
     BoundedCurve, DistanceAxis, EntityDefinition, EntityForm, Operand, SketchConstraint,
     SketchEntity, SketchRelation, SketchSolve, Spatial, SpatialCurve, SpatialSketch,
 };
-use crate::design::options::{NativeOption, NativeOptions};
+use crate::design::options::NativeOptions;
+use crate::design::selection::{Anchor, Picks, Selection};
 use crate::design::units::Quantity;
 use crate::document::Model;
 use crate::features::geometry::FiniteVector3;
@@ -30,7 +30,7 @@ use crate::topology::IncreasingParameterInterval;
 use crate::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_core::text::NonBlankString;
 
-use super::sketch::{qualified, stored_quantity, stored_value, DimensionValue};
+use super::sketch::{native_integer, qualified, stored_quantity, stored_value, DimensionValue};
 
 /// A spatial sketch restated as the sketch of its owner, with the facts the
 /// restatement states only by their native kind.
@@ -316,14 +316,7 @@ fn native_state(codec: &NonBlankString, kind: &SpatialKind) -> NativeOptions {
     else {
         return options;
     };
-    let name = cadmpeg_core::text::CodecId::new(codec.as_str())
-        .and_then(|codec| CodecName::new(&codec, "native_state"));
-    let value = match i64::try_from(*state) {
-        Ok(state) => Some(NativeOption::Integer(Dimension::Literal(state))),
-        Err(_) => NonBlankString::new(state.to_string())
-            .map(|state| NativeOption::Text(Dimension::Literal(state))),
-    };
-    if let (Some(name), Some(value)) = (name, value) {
+    if let Some((name, value)) = native_integer(codec, "native_state", *state) {
         options.insert(name, value);
     }
     options
@@ -333,7 +326,8 @@ fn native_state(codec: &NonBlankString, kind: &SpatialKind) -> NativeOptions {
 /// `<codec>:<native class>` for a native relation and `<codec>:<decoded
 /// kind>` otherwise, on the entities it names and with the value of its
 /// `dimension` and the values it stores. A native relation's operand is the
-/// entity of `entities` whose record it names.
+/// entity of `entities` whose record it names, and an unread selection where
+/// no one entity has that record.
 fn native(
     codec: &NonBlankString,
     kind: &SpatialKind,
@@ -349,22 +343,16 @@ fn native(
             native_kind,
             operands,
             ..
-        } => (
-            native_kind.as_str(),
-            operands
-                .iter()
-                .filter_map(|operand| {
-                    let native = operand.native_ref.as_deref()?;
-                    let mut named = entities
-                        .iter()
-                        .filter(|entity| entity.native_ref.as_deref() == Some(native));
-                    match (named.next(), named.next()) {
-                        (Some(entity), None) => Some(entity.id()),
-                        _ => None,
-                    }
-                })
-                .collect(),
-        ),
+        } => {
+            return SketchRelation::Native {
+                kind: qualified(codec, native_kind.as_str()),
+                operands: operands
+                    .iter()
+                    .map(|operand| native_operand(operand.native_ref.as_deref(), entities))
+                    .collect(),
+                values,
+            }
+        }
         Kind::Coincident { first, second } => ("coincident", vec![first, second]),
         Kind::Symmetric {
             first,
@@ -426,6 +414,25 @@ fn native(
         kind: qualified(codec, name),
         operands,
         values,
+    }
+}
+
+/// The entity of `entities` whose record is `native`, else an unread
+/// selection.
+fn native_operand(
+    native: Option<&str>,
+    entities: &[&crate::sketches::SpatialSketchEntity],
+) -> Operand<Spatial> {
+    let mut named = entities
+        .iter()
+        .filter(|entity| native.is_some() && entity.native_ref.as_deref() == native);
+    match (named.next(), named.next()) {
+        (Some(entity), None) => Operand::Entity(entity.id().clone()),
+        _ => Operand::Model(Box::new(Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            native: None,
+        })),
     }
 }
 

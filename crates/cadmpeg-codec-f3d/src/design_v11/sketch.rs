@@ -6,10 +6,12 @@
 //! scope (§5.2), and so is each construction plane, axis, and point of a
 //! document whose streams list no timeline item.
 //!
-//! A point entity that a curve's record names as its start, end, or center,
-//! and that lies there, holds that role on the curve. A relation on such a
-//! point of a curve names that point entity, else a point entity minted
-//! there. A dimension that binds no parameter of its scope states the value
+//! A point entity that lies at the start, end, or center of a curve holds
+//! that role on the curve when its record names the curve's record, or, where
+//! no such point lies there, when its record names no curve record; a loss
+//! names each point of a curve where two such point entities tie. A relation
+//! on such a point of a curve names that point entity, else a point entity
+//! minted there. A dimension that binds no parameter of its scope states the value
 //! that its parameter record stores, and a reference dimension binds a
 //! `Driven` parameter minted for it. An entity with no curve states its
 //! native kind; a loss names each.
@@ -304,79 +306,58 @@ pub(super) struct Scope<'a> {
     pub(super) parameters: &'a [&'a DesignParameter],
 }
 
-/// The identity and record index of a sketch curve record.
-#[derive(serde::Deserialize)]
-pub(super) struct CurveRecord {
-    id: String,
-    record_index: u32,
-}
-
-/// A sketch point record and the curve records that name it.
-#[derive(serde::Deserialize)]
-pub(super) struct PointRecord {
-    id: String,
-    #[serde(default)]
-    companion: PointCompanion,
-}
-
-#[derive(Default, serde::Deserialize)]
-struct PointCompanion {
-    #[serde(default)]
-    incident_curves: Vec<u32>,
-}
-
-/// The point records that each curve record names as its start, end, or
-/// center, read from the reverse incidence each point record stores.
+/// The curve records that each point record names as curves it stands on,
+/// read from the reverse incidence each point record stores.
 #[derive(Default)]
 pub(super) struct Incidence {
-    points: HashMap<String, Vec<String>>,
+    curves: HashMap<String, Vec<String>>,
 }
 
 impl Incidence {
-    pub(super) fn new(curves: &[CurveRecord], points: &[PointRecord]) -> Self {
+    /// The incidence of the point records `points` (identity and the record
+    /// indexes of its incident curves) over the curve records `curves`
+    /// (identity and record index).
+    pub(super) fn new<'r>(
+        curves: impl IntoIterator<Item = (&'r str, u32)>,
+        points: impl IntoIterator<Item = (&'r str, &'r [u32])>,
+    ) -> Self {
         let curve_ids = curves
-            .iter()
-            .filter_map(|curve| {
-                Some((
-                    (crate::ids::native_stream(&curve.id)?, curve.record_index),
-                    curve.id.as_str(),
-                ))
-            })
+            .into_iter()
+            .filter_map(|(id, index)| Some(((crate::ids::native_stream(id)?, index), id)))
             .collect::<HashMap<_, _>>();
         let mut out = Self::default();
-        for point in points {
-            let Some(stream) = crate::ids::native_stream(&point.id) else {
+        for (point, incident) in points {
+            let Some(stream) = crate::ids::native_stream(point) else {
                 continue;
             };
-            for record in &point.companion.incident_curves {
-                if let Some(curve) = curve_ids.get(&(stream, *record)) {
-                    out.points
-                        .entry((*curve).to_owned())
-                        .or_default()
-                        .push(point.id.clone());
-                }
+            let named = incident
+                .iter()
+                .filter_map(|record| curve_ids.get(&(stream, *record)))
+                .map(|curve| (*curve).to_owned())
+                .collect::<Vec<_>>();
+            if !named.is_empty() {
+                out.curves.insert(point.to_owned(), named);
             }
         }
         out
     }
 
-    /// Whether `curve` names `point`: the curve's record names the point's
-    /// record, or no point record names the curve's record.
-    fn names(
+    /// The standing of `point` as a point of `curve`: first where the
+    /// point's record names the curve's record, second where it names no
+    /// curve record, and none where it names other curve records only.
+    fn standing(
         &self,
         curve: &cadmpeg_ir::sketches::SketchEntity,
         point: &cadmpeg_ir::sketches::SketchEntity,
-    ) -> bool {
-        match curve
-            .native_ref
-            .as_deref()
-            .and_then(|curve| self.points.get(curve))
-        {
-            Some(points) => point
+    ) -> Option<u8> {
+        let point = point.native_ref.as_deref()?;
+        match self.curves.get(point) {
+            None => Some(1),
+            Some(curves) => curve
                 .native_ref
                 .as_ref()
-                .is_some_and(|point| points.contains(point)),
-            None => true,
+                .is_some_and(|curve| curves.contains(curve))
+                .then_some(0),
         }
     }
 }
@@ -506,9 +487,19 @@ fn restate(
     let stored = StoredPoints::new(
         scope.ctx,
         &entities,
-        |curve, _, point| scope.incidence.names(curve, point),
+        |curve, _, point| scope.incidence.standing(curve, point),
         |a, b| (a[0] - b[0]).hypot(a[1] - b[1]) <= scope.linear,
     )?;
+    for (curve, point, candidates) in stored.ambiguous() {
+        losses.push(F3dLossCode::DesignSketchLocusAmbiguous.note(format!(
+            "the {point} of sketch curve {curve} holds the point entities {}, which the source names alike; no point entity holds the role, and a relation on the point names a point minted there",
+            candidates
+                .iter()
+                .map(cadmpeg_ir::sketches::SketchEntityId::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
     for entity in &entities {
         let definition = match planar_curve(&entity.geometry) {
             Some(form) => EntityDefinition::Free(form),
@@ -560,8 +551,24 @@ fn restate(
     for constraint in constraints {
         let kind = constraint.definition.kind();
         let (relation, unbound) = relation_of(constraint, owner, scope, &points, out);
-        if matches!(&relation, SketchRelation::Coincident { a, b } if a == b) {
-            continue;
+        if let SketchRelation::Coincident {
+            a: Operand::Entity(a),
+            b: Operand::Entity(b),
+        } = &relation
+        {
+            if a == b {
+                losses.push(F3dLossCode::DesignSketchRelationSinglePoint.note(format!(
+                    "sketch relation {} names the point entity {a} for both operands; the point states the coincidence, and the relation is not restated",
+                    constraint.id
+                )));
+                continue;
+            }
+        }
+        if matches!(relation, SketchRelation::Native { .. }) {
+            losses.push(F3dLossCode::DesignSketchRelationNative.note(format!(
+                "sketch relation {} has no typed relation of its operands and value; it states its native kind",
+                constraint.id
+            )));
         }
         if unbound {
             losses.push(F3dLossCode::DesignSketchDimensionUnbound.note(format!(
@@ -571,7 +578,7 @@ fn restate(
         }
         if loci.unplaced(kind) {
             losses.push(F3dLossCode::DesignSketchLocusUnplaced.note(format!(
-                "sketch relation {} names an end of a closed curve, the center of a curve that has none, or a point whose minted id another entity holds; it states the curve",
+                "sketch relation {} names an end of a closed or unbounded curve, the center of a curve that has none, or a point whose minted id another entity holds; it states the curve",
                 constraint.id
             )));
         }
@@ -581,7 +588,7 @@ fn restate(
             relation,
             name: constraint.name.clone(),
             active: constraint.active.map(Dimension::Literal),
-            native_options: NativeOptions::new(),
+            native_options: relation::native_options(&cadmpeg_core::nonblank_literal!("f3d"), kind),
             source_settings: NativeOptions::new(),
             native_ref: constraint.native_ref.clone(),
         });

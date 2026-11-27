@@ -26,6 +26,21 @@ pub(super) fn project(
     histories: &[crate::records::FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
 ) -> Vec<LossNote> {
+    project_with(
+        ir,
+        histories,
+        lanes,
+        super::super::EquationManagers::default(),
+    )
+}
+
+/// [`project`] with the equation managers `equations`.
+pub(in crate::design_v11) fn project_with(
+    ir: &mut CadIr,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    equations: super::super::EquationManagers,
+) -> Vec<LossNote> {
     ir.design = cadmpeg_ir::document::Design::default();
     ir.model
         .product_definitions
@@ -54,7 +69,7 @@ pub(super) fn project(
                 bodies: &[],
             },
             length: None,
-            equations: super::super::EquationManagers::default(),
+            equations,
             length_places: None,
             rollback: crate::rollback::Reading::End {
                 last: "Boss".to_owned(),

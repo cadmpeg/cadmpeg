@@ -8,11 +8,12 @@ use cadmpeg_core::text::NonBlankString;
 
 use crate::design::construction::{FrameValue, ScalarDimension};
 use crate::design::dimension::Dimension;
+use crate::design::names::CodecName;
 use crate::design::ops::sketch::{
     AngleOperands, DefiningRole, DistanceAxis, EntityDefinition, EntityRole, Operand, Planar,
     PlanarCurve, RadialMeasure, SketchEntity, SketchRelation,
 };
-use crate::design::options::NativeOptions;
+use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::units::Quantity;
 use crate::features::parameters::ParameterValue as StoredValue;
 use crate::features::ParameterId;
@@ -530,6 +531,59 @@ pub fn native_relation(
     }
 }
 
+/// The native options of the relation that states `kind` by its native
+/// kind: the state, the flags, and the properties a native relation stores,
+/// as `<codec>:native_state`, `<codec>:native_flags`, and
+/// `<codec>:<property>`.
+#[must_use]
+pub fn native_options(codec: &NonBlankString, kind: &Kind) -> NativeOptions {
+    let mut options = NativeOptions::new();
+    let Kind::Native {
+        native_state,
+        native_flags,
+        native_properties,
+        ..
+    } = kind
+    else {
+        return options;
+    };
+    for (name, value) in native_properties {
+        if let (Some(name), Some(value)) =
+            (native_name(codec, name), NonBlankString::new(value.clone()))
+        {
+            options.insert(name, NativeOption::Text(Dimension::Literal(value)));
+        }
+    }
+    for (name, value) in [
+        ("native_state", native_state),
+        ("native_flags", native_flags),
+    ] {
+        if let Some((name, value)) = value.and_then(|value| native_integer(codec, name, value)) {
+            options.insert(name, value);
+        }
+    }
+    options
+}
+
+/// `value` as the native option `<codec>:<name>`: an integer where it fits
+/// one, else its decimal text.
+pub(crate) fn native_integer(
+    codec: &NonBlankString,
+    name: &str,
+    value: u64,
+) -> Option<(CodecName, NativeOption)> {
+    let value = match i64::try_from(value) {
+        Ok(value) => NativeOption::Integer(Dimension::Literal(value)),
+        Err(_) => NativeOption::Text(Dimension::Literal(NonBlankString::new(value.to_string())?)),
+    };
+    Some((native_name(codec, name)?, value))
+}
+
+/// The native option name `<codec>:<name>`.
+fn native_name(codec: &NonBlankString, name: &str) -> Option<CodecName> {
+    cadmpeg_core::text::CodecId::new(codec.as_str()).and_then(|codec| CodecName::new(&codec, name))
+}
+
 /// The kind of an entity with no planar curve, named `<codec>:<native
 /// class>` for a native geometry and `<codec>:<decoded kind>` otherwise.
 #[must_use]
@@ -665,12 +719,63 @@ fn named(kind: &Kind) -> Vec<Named<'_>> {
     }
 }
 
-/// The loci at a curve's start, end, or center that `kind` names.
-fn point_loci(kind: &Kind) -> impl Iterator<Item = &SketchLocus> {
+/// The loci at a curve's start, end, or center that `kind` names, with the
+/// point of the curve each names.
+fn point_loci(kind: &Kind) -> impl Iterator<Item = (&SketchLocus, CurvePoint)> {
     named(kind).into_iter().filter_map(|named| match named {
-        Named::Locus(locus) if !matches!(locus, SketchLocus::Entity(_)) => Some(locus),
-        _ => None,
+        Named::Locus(locus) => Some((locus, CurvePoint::of(locus)?)),
+        Named::Entity(_) => None,
     })
+}
+
+/// A point of a curve that a locus names, in the order of its roles on the
+/// curve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CurvePoint {
+    Start,
+    End,
+    Center,
+}
+
+impl CurvePoint {
+    const ALL: [Self; 3] = [Self::Start, Self::End, Self::Center];
+
+    /// The point of a curve that `locus` names.
+    fn of(locus: &SketchLocus) -> Option<Self> {
+        match locus {
+            SketchLocus::Start(_) => Some(Self::Start),
+            SketchLocus::End(_) => Some(Self::End),
+            SketchLocus::Center(_) => Some(Self::Center),
+            SketchLocus::Entity(_) => None,
+        }
+    }
+
+    /// The locus of this point of `curve`.
+    fn locus(self, curve: &SketchEntityId) -> SketchLocus {
+        match self {
+            Self::Start => SketchLocus::Start(curve.clone()),
+            Self::End => SketchLocus::End(curve.clone()),
+            Self::Center => SketchLocus::Center(curve.clone()),
+        }
+    }
+
+    /// The role on its curve of the point entity at this point.
+    fn role(self) -> DefiningRole {
+        match self {
+            Self::Start => DefiningRole::Start,
+            Self::End => DefiningRole::End,
+            Self::Center => DefiningRole::Center,
+        }
+    }
+
+    /// The name of this point.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::End => "end",
+            Self::Center => "center",
+        }
+    }
 }
 
 /// The entity a locus lies on.
@@ -685,26 +790,28 @@ fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
 
 /// The point entities of one sketch that stand at the start, end, or center
 /// of its curves (§6.1, Points are entities): for each such point of a
-/// curve, the one point entity whose record the source names as that point
-/// of the curve and whose position is the point's.
+/// curve, the one point entity that lies there and that the source names as
+/// that point of the curve before every other point entity there.
 #[derive(Debug, Default)]
 pub struct StoredPoints {
-    at: Vec<(SketchLocus, SketchEntityId)>,
+    at: Vec<(SketchEntityId, CurvePoint, SketchEntityId)>,
+    ambiguous: Vec<(SketchEntityId, CurvePoint, Vec<SketchEntityId>)>,
 }
 
 impl StoredPoints {
-    /// The stored points of the curves of `entities`. `names` says whether
-    /// the source names a point entity as a point of a curve, and `same`
-    /// whether two positions are one. The decode session's resource refusal
-    /// ends the search.
+    /// The stored points of the curves of `entities`. `standing` gives the
+    /// standing of a point entity as the point a locus names on a curve,
+    /// `0` the first, or none where the source names it as no point of that
+    /// curve; `same` says whether two positions are one. The decode
+    /// session's resource refusal ends the search.
     pub fn new(
         ctx: &DecodeContext<'_>,
         entities: &[&crate::sketches::SketchEntity],
-        names: impl Fn(
+        standing: impl Fn(
             &crate::sketches::SketchEntity,
             &SketchLocus,
             &crate::sketches::SketchEntity,
-        ) -> bool,
+        ) -> Option<u8>,
         same: impl Fn([f64; 2], [f64; 2]) -> bool,
     ) -> Result<Self, ResourceLimit> {
         let points = entities
@@ -716,7 +823,7 @@ impl StoredPoints {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        let mut at = Vec::new();
+        let mut out = Self::default();
         for curve in entities {
             if matches!(
                 curve.geometry.definition(),
@@ -724,32 +831,44 @@ impl StoredPoints {
             ) {
                 continue;
             }
-            for locus in [
-                SketchLocus::Start(curve.id().clone()),
-                SketchLocus::End(curve.id().clone()),
-                SketchLocus::Center(curve.id().clone()),
-            ] {
+            for point in CurvePoint::ALL {
+                let locus = point.locus(curve.id());
                 let Some(position) = locus_position(ctx, &curve.geometry, &locus)? else {
                     continue;
                 };
-                let mut hits = points.iter().filter(|(point, stored)| {
-                    same(*stored, [position.u, position.v]) && names(curve, &locus, point)
-                });
-                if let (Some((point, _)), None) = (hits.next(), hits.next()) {
-                    at.push((locus, point.id().clone()));
+                let ranked = points
+                    .iter()
+                    .filter(|(_, stored)| same(*stored, [position.u, position.v]))
+                    .filter_map(|(candidate, _)| {
+                        Some((standing(curve, &locus, candidate)?, *candidate))
+                    })
+                    .collect::<Vec<_>>();
+                let Some(first) = ranked.iter().map(|(standing, _)| *standing).min() else {
+                    continue;
+                };
+                let hits = ranked
+                    .into_iter()
+                    .filter(|(standing, _)| *standing == first)
+                    .map(|(_, candidate)| candidate.id().clone())
+                    .collect::<Vec<_>>();
+                match <[SketchEntityId; 1]>::try_from(hits) {
+                    Ok([hit]) => out.at.push((curve.id().clone(), point, hit)),
+                    Err(hits) => out.ambiguous.push((curve.id().clone(), point, hits)),
                 }
             }
         }
-        Ok(Self { at })
+        Ok(out)
     }
 
     /// The point entity at the point of a curve that `locus` names.
     #[must_use]
     pub fn at(&self, locus: &SketchLocus) -> Option<&SketchEntityId> {
+        let at = CurvePoint::of(locus)?;
+        let curve = locus_entity(locus);
         self.at
             .iter()
-            .find(|(at, _)| at == locus)
-            .map(|(_, point)| point)
+            .find(|(of, point, _)| of == curve && *point == at)
+            .map(|(_, _, point)| point)
     }
 
     /// The roles of the point entity `point` on the curves it stands on.
@@ -758,35 +877,29 @@ impl StoredPoints {
         let mut roles = self
             .at
             .iter()
-            .filter(|(_, at)| at == point)
-            .map(|(locus, _)| {
-                let (of, role) = defining_role(locus);
-                EntityRole {
-                    of: of.clone(),
-                    role,
-                }
-            })
-            .collect::<Vec<EntityRole<Planar>>>();
-        roles.sort_by(|a, b| (a.of.as_str(), rank(&a.role)).cmp(&(b.of.as_str(), rank(&b.role))));
+            .filter(|(_, _, at)| at == point)
+            .map(|(of, at, _)| (of, *at))
+            .collect::<Vec<_>>();
+        roles.sort_by(|a, b| (a.0.as_str(), a.1).cmp(&(b.0.as_str(), b.1)));
         roles
+            .into_iter()
+            .map(|(of, at)| EntityRole {
+                of: of.clone(),
+                role: at.role(),
+            })
+            .collect()
     }
-}
 
-/// The curve and the role on it of the point `locus` names.
-fn defining_role(locus: &SketchLocus) -> (&SketchEntityId, DefiningRole) {
-    match locus {
-        SketchLocus::Start(of) => (of, DefiningRole::Start),
-        SketchLocus::End(of) => (of, DefiningRole::End),
-        SketchLocus::Center(of) | SketchLocus::Entity(of) => (of, DefiningRole::Center),
-    }
-}
-
-/// The order of the roles of one point on one curve.
-fn rank(role: &DefiningRole) -> u8 {
-    match role {
-        DefiningRole::Start => 0,
-        DefiningRole::End => 1,
-        _ => 2,
+    /// The points of curves where two or more point entities lie that the
+    /// source names alike: the curve, the name of its point (`start`,
+    /// `end`, or `center`), and those point entities. No point entity holds
+    /// the role there, and a relation on it names a point minted there.
+    pub fn ambiguous(
+        &self,
+    ) -> impl Iterator<Item = (&SketchEntityId, &'static str, &[SketchEntityId])> {
+        self.ambiguous
+            .iter()
+            .map(|(curve, point, candidates)| (curve, point.name(), candidates.as_slice()))
     }
 }
 
@@ -803,6 +916,7 @@ pub struct LocusPoints {
 #[derive(Debug)]
 struct LocusPoint {
     locus: SketchLocus,
+    point: CurvePoint,
     entity: SketchEntityId,
     position: FinitePoint2,
     minted: bool,
@@ -820,7 +934,10 @@ impl LocusPoints {
     ) -> Result<Self, ResourceLimit> {
         Self::of_loci(
             ctx,
-            kinds.into_iter().flat_map(point_loci),
+            kinds
+                .into_iter()
+                .flat_map(point_loci)
+                .map(|(locus, _)| locus),
             entities,
             stored,
         )
@@ -847,9 +964,9 @@ impl LocusPoints {
                     _ => None,
                 })
         };
-        for locus in loci
+        for (locus, at) in loci
             .into_iter()
-            .filter(|locus| !matches!(locus, SketchLocus::Entity(_)))
+            .filter_map(|locus| Some((locus, CurvePoint::of(locus)?)))
         {
             if out.points.iter().any(|point| &point.locus == locus) || out.unplaced.contains(locus)
             {
@@ -858,11 +975,12 @@ impl LocusPoints {
             let point = match stored.at(locus) {
                 Some(entity) => position(entity).map(|position| LocusPoint {
                     locus: locus.clone(),
+                    point: at,
                     entity: entity.clone(),
                     position,
                     minted: false,
                 }),
-                None => Self::unstored(ctx, locus, entities)?,
+                None => Self::unstored(ctx, locus, at, entities)?,
             };
             match point {
                 Some(point) => out.points.push(point),
@@ -879,6 +997,7 @@ impl LocusPoints {
     fn unstored(
         ctx: &DecodeContext<'_>,
         locus: &SketchLocus,
+        at: CurvePoint,
         entities: &[&crate::sketches::SketchEntity],
     ) -> Result<Option<LocusPoint>, ResourceLimit> {
         let curve = locus_entity(locus);
@@ -889,6 +1008,7 @@ impl LocusPoints {
         if let SketchGeometryDefinition::Point { position } = geometry.definition() {
             return Ok(Some(LocusPoint {
                 locus: locus.clone(),
+                point: at,
                 entity: curve.clone(),
                 position: *position,
                 minted: false,
@@ -897,19 +1017,12 @@ impl LocusPoints {
         let Some(position) = locus_position(ctx, geometry, locus)? else {
             return Ok(None);
         };
-        let entity = SketchEntityId::mint(format!(
-            "{}:{}",
-            curve.as_str(),
-            match locus {
-                SketchLocus::Start(_) => "start",
-                SketchLocus::End(_) => "end",
-                _ => "center",
-            }
-        ))
-        .ok()
-        .filter(|id| entities.iter().all(|entity| entity.id() != id));
+        let entity = SketchEntityId::mint(format!("{}:{}", curve.as_str(), at.name()))
+            .ok()
+            .filter(|id| entities.iter().all(|entity| entity.id() != id));
         Ok(entity.map(|entity| LocusPoint {
             locus: locus.clone(),
+            point: at,
             entity,
             position,
             minted: true,
@@ -935,7 +1048,7 @@ impl LocusPoints {
     /// minted id another entity holds; such a point is stated as its curve.
     #[must_use]
     pub fn unplaced(&self, kind: &Kind) -> bool {
-        point_loci(kind).any(|locus| self.unplaced.contains(locus))
+        point_loci(kind).any(|(locus, _)| self.unplaced.contains(locus))
     }
 
     /// The minted point entities of the sketch `sketch`.
@@ -944,23 +1057,20 @@ impl LocusPoints {
         self.points
             .iter()
             .filter(|point| point.minted)
-            .map(|point| {
-                let (of, role) = defining_role(&point.locus);
-                SketchEntity {
-                    id: point.entity.clone(),
-                    sketch: sketch.clone(),
-                    definition: EntityDefinition::Free(PlanarCurve::Point(point.position)),
-                    roles: vec![EntityRole {
-                        of: of.clone(),
-                        role,
-                    }],
-                    construction: None,
-                    centerline: None,
-                    native: None,
-                    native_options: NativeOptions::new(),
-                    source_settings: NativeOptions::new(),
-                    native_ref: None,
-                }
+            .map(|point| SketchEntity {
+                id: point.entity.clone(),
+                sketch: sketch.clone(),
+                definition: EntityDefinition::Free(PlanarCurve::Point(point.position)),
+                roles: vec![EntityRole {
+                    of: locus_entity(&point.locus).clone(),
+                    role: point.point.role(),
+                }],
+                construction: None,
+                centerline: None,
+                native: None,
+                native_options: NativeOptions::new(),
+                source_settings: NativeOptions::new(),
+                native_ref: None,
             })
             .collect()
     }
@@ -973,7 +1083,7 @@ impl LocusPoints {
 /// The position of the point `locus` names on the curve `geometry`: the
 /// ends of a line, an arc, a bounded ellipse, parabola, or hyperbola, and a
 /// NURBS curve (its points at the ends of its knot domain), and the center
-/// of a circle, an arc, or an ellipse.
+/// of a circle, an arc, an ellipse, or a hyperbola.
 fn locus_position(
     ctx: &DecodeContext<'_>,
     geometry: &SketchGeometry,
@@ -1030,7 +1140,8 @@ fn closed_form_position(geometry: &SketchGeometry, locus: &SketchLocus) -> Optio
         (
             SketchGeometryDefinition::Circle { center, .. }
             | SketchGeometryDefinition::Arc { center, .. }
-            | SketchGeometryDefinition::Ellipse { center, .. },
+            | SketchGeometryDefinition::Ellipse { center, .. }
+            | SketchGeometryDefinition::Hyperbola { center, .. },
             SketchLocus::Center(_),
         ) => Some(*center),
         (

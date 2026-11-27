@@ -192,8 +192,11 @@ fn a_native_spatial_relation_keeps_its_operands_and_state() {
         panic!("a native relation: {:?}", bend.relation);
     };
     assert_eq!(kind.as_str(), "test:Bend");
-    assert!(matches!(&operands[..], [Operand::Entity(l)]
-        if l.as_str() == "test:model:spatial-sketch-entity#l"));
+    assert!(
+        matches!(&operands[..], [Operand::Entity(l), Operand::Model(unread)]
+        if l.as_str() == "test:model:spatial-sketch-entity#l"
+            && matches!(unread.picks, crate::design::selection::Picks::Unread))
+    );
     assert_eq!(
         bend.native_options
             .iter()

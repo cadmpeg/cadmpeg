@@ -631,7 +631,7 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
 /// A part with the three built-in planes, a sketch on the Top plane, and an
 /// extrude of it, whose v10 records state a rectangle sketch with a
 /// horizontal and a vertical dimension and a blind extrusion.
-fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
+pub(super) fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
     sketch_and_extrude_from(
         br#"<Keywords Name="Block">
             <Feature Name="Front" id="2"/>
@@ -1713,7 +1713,7 @@ fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
 mod configuration_states;
 mod datum;
 mod dimension_curves;
-mod outside_history;
+pub(super) mod outside_history;
 mod parameters;
 mod pattern;
 mod revolve;

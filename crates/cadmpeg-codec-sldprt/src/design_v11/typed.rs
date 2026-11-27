@@ -222,9 +222,10 @@ pub(super) fn project(
     })
 }
 
-/// One note naming the sketches outside the timeline, one naming the
-/// entities stated by their native kind, and one naming the dimensions that
-/// bind no parameter of the design.
+/// One note for each kind of sketch fact the design restates with a loss:
+/// entities and relations stated by their native kind, dimensions that bind
+/// no parameter of the design, unplaced and ambiguous points of curves, and
+/// coincidences of one point.
 fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
     let spatial = |field: fn(&spatial_sketch::Restated) -> &Vec<String>| {
         sketches
@@ -246,7 +247,17 @@ fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
         .map(|constraint| constraint.as_str().to_owned())
         .chain(spatial(|restated| &restated.unbound))
         .collect::<Vec<_>>();
-    let native_relations = spatial(|restated| &restated.native_relations);
+    let native_relations = sketches
+        .native_relations
+        .iter()
+        .map(|constraint| constraint.as_str().to_owned())
+        .chain(spatial(|restated| &restated.native_relations))
+        .collect::<Vec<_>>();
+    let single_point = sketches
+        .single_point
+        .iter()
+        .map(|constraint| constraint.as_str().to_owned())
+        .collect::<Vec<_>>();
     let unplaced = sketches
         .unplaced
         .iter()
@@ -271,19 +282,39 @@ fn sketch_notes(sketches: &Sketches) -> Vec<LossNote> {
     }
     if !unplaced.is_empty() {
         notes.push(SldprtLossCode::DesignSketchLocusUnplaced.note(format!(
-            "{} sketch relations name an end of a closed curve, the center of a curve that \
-             has none, or a point whose minted id another entity holds, and state the curve: {}",
+            "{} sketch relations name an end of a closed or unbounded curve, the center of a \
+             curve that has none, or a point whose minted id another entity holds, and state \
+             the curve: {}",
             unplaced.len(),
             listed(unplaced.into_iter()),
         )));
     }
     if !native_relations.is_empty() {
         notes.push(SldprtLossCode::DesignSketchRelationNative.note(format!(
-            "{} spatial sketch relations have no typed relation of their operands and \
-             value, and state their native kind: {}",
+            "{} sketch relations have no typed relation of their operands and value, and \
+             state their native kind: {}",
             native_relations.len(),
             listed(native_relations.into_iter()),
         )));
+    }
+    if !sketches.ambiguous.is_empty() {
+        notes.push(SldprtLossCode::DesignSketchLocusAmbiguous.note(format!(
+            "{} points of sketch curves hold two or more point entities that the curve \
+             records name alike; no point entity holds the role there, and a relation on \
+             such a point names a point minted there: {}",
+            sketches.ambiguous.len(),
+            listed(sketches.ambiguous.iter().cloned()),
+        )));
+    }
+    if !single_point.is_empty() {
+        notes.push(
+            SldprtLossCode::DesignSketchRelationSinglePoint.note(format!(
+                "{} sketch relations name one point entity for both operands of a coincidence; \
+             the point states the coincidence, and the relations are not restated: {}",
+                single_point.len(),
+                listed(single_point.into_iter()),
+            )),
+        );
     }
     notes
 }

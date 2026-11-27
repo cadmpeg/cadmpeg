@@ -4,8 +4,8 @@ use cadmpeg_core::serde_erase::json;
 use serde_json::json;
 
 use super::{
-    dimension, dimension_parameter, is_dimension, native_entity_kind, native_relation,
-    planar_curve, stored_frame, DimensionValue, Loci, LocusPoints, StoredPoints,
+    dimension, dimension_parameter, is_dimension, native_entity_kind, native_options,
+    native_relation, planar_curve, stored_frame, DimensionValue, Loci, LocusPoints, StoredPoints,
 };
 use crate::design::construction::ScalarDimension;
 use crate::design::dimension::Dimension;
@@ -234,6 +234,39 @@ fn a_native_relation_that_names_a_parameter_is_a_dimension_of_its_quantity() {
     assert!(!is_dimension(&unnamed));
 }
 
+#[test]
+fn a_native_relation_states_its_state_flags_and_properties_as_native_options() {
+    let native = kind(json!({"kind": "native", "native_kind": "test:Span",
+        "native_state": 4, "native_flags": u64::MAX,
+        "native_properties": {"operand.0.class-tag": "line", "blank": " "},
+        "entities": [], "operands": []}));
+    let options = native_options(&cadmpeg_core::nonblank_literal!("test"), &native)
+        .iter()
+        .map(|(name, value)| (name.as_str().to_owned(), value.clone()))
+        .collect::<Vec<_>>();
+    let text = |value: &str| {
+        crate::design::options::NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::text::NonBlankString::new(value.to_owned()).unwrap(),
+        ))
+    };
+    assert_eq!(
+        options,
+        [
+            ("test:native_flags".to_owned(), text(&u64::MAX.to_string())),
+            (
+                "test:native_state".to_owned(),
+                crate::design::options::NativeOption::Integer(Dimension::Literal(4)),
+            ),
+            ("test:operand.0.class-tag".to_owned(), text("line")),
+        ]
+    );
+    assert!(native_options(
+        &cadmpeg_core::nonblank_literal!("test"),
+        &kind(json!({"kind": "horizontal", "entity": "test:model:sketch-entity#l"}))
+    )
+    .is_empty());
+}
+
 fn kind_without_parameter() -> Kind {
     kind(json!({"kind": "native", "native_kind": "test:Span",
         "native_properties": {}, "entities": [], "operands": []}))
@@ -257,7 +290,7 @@ fn a_relation_on_a_line_end_names_a_point_minted_there_with_its_role() {
         {"kind": "end", "value": "test:model:sketch-entity#l"},
         {"kind": "entity", "value": "test:model:sketch-entity#p"}]}));
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    let stored = StoredPoints::new(&ctx, &[&line, &point], |_, _, _| false, |a, b| a == b)
+    let stored = StoredPoints::new(&ctx, &[&line, &point], |_, _, _| None, |a, b| a == b)
         .expect("the session admits the evaluation");
     let points = LocusPoints::new(&ctx, [&on], &[&line, &point], &stored)
         .expect("the session admits the evaluation");
@@ -339,7 +372,7 @@ fn a_relation_on_a_stored_end_or_center_names_the_stored_point_with_its_roles() 
         json!({"kind": "point", "position": {"u": 2.0, "v": 0.0}}),
     );
     let entities = [&line, &arc, &origin, &shared];
-    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| true, |a, b| a == b)
+    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| Some(0), |a, b| a == b)
         .expect("the session admits the evaluation");
     let relations = [
         kind(json!({"kind": "coincident_loci", "loci": [
@@ -388,7 +421,7 @@ fn a_relation_on_a_stored_end_or_center_names_the_stored_point_with_its_roles() 
 }
 
 #[test]
-fn two_stored_points_at_one_end_leave_the_end_to_a_minted_point() {
+fn two_stored_points_at_one_end_leave_the_end_ambiguous_and_to_a_minted_point() {
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let line = entity(
         "l",
@@ -403,10 +436,115 @@ fn two_stored_points_at_one_end_leave_the_end_to_a_minted_point() {
         json!({"kind": "point", "position": {"u": 2.0, "v": 0.0}}),
     );
     let entities = [&line, &first, &second];
-    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| true, |a, b| a == b)
+    let stored = StoredPoints::new(&ctx, &entities, |_, _, _| Some(0), |a, b| a == b)
         .expect("the session admits the evaluation");
     assert!(stored.at(&SketchLocus::End(line.id().clone())).is_none());
     assert!(stored.roles(first.id()).is_empty());
+    assert_eq!(
+        stored.ambiguous().collect::<Vec<_>>(),
+        [(
+            line.id(),
+            "end",
+            &[first.id().clone(), second.id().clone()][..]
+        )]
+    );
+    let on = kind(json!({"kind": "point_on_object",
+        "point": {"kind": "end", "value": "test:model:sketch-entity#l"},
+        "entity": "test:model:sketch-entity#l"}));
+    let points = LocusPoints::new(&ctx, [&on], &entities, &stored)
+        .expect("the session admits the evaluation");
+    let minted = SketchEntityId::mint("test:model:sketch-entity#l:end").unwrap();
+    assert_eq!(
+        points.operand(&SketchLocus::End(line.id().clone())),
+        Some(Operand::Entity(minted))
+    );
+}
+
+#[test]
+fn a_point_of_a_first_standing_holds_the_end_before_a_point_of_a_later_one() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let line = entity(
+        "l",
+        json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 2.0, "v": 0.0}}),
+    );
+    let named = entity(
+        "p",
+        json!({"kind": "point", "position": {"u": 2.0, "v": 0.0}}),
+    );
+    let loose = entity(
+        "q",
+        json!({"kind": "point", "position": {"u": 2.0, "v": 0.0}}),
+    );
+    let elsewhere = entity(
+        "r",
+        json!({"kind": "point", "position": {"u": 0.0, "v": 0.0}}),
+    );
+    let entities = [&line, &named, &loose, &elsewhere];
+    let stored = StoredPoints::new(
+        &ctx,
+        &entities,
+        |_, _, point| match point.id().as_str() {
+            "test:model:sketch-entity#p" => Some(0),
+            "test:model:sketch-entity#q" => Some(1),
+            _ => None,
+        },
+        |a, b| a == b,
+    )
+    .expect("the session admits the evaluation");
+    assert_eq!(
+        stored.at(&SketchLocus::End(line.id().clone())),
+        Some(named.id())
+    );
+    assert!(stored.at(&SketchLocus::Start(line.id().clone())).is_none());
+    assert!(stored.roles(loose.id()).is_empty());
+    assert_eq!(stored.ambiguous().count(), 0);
+}
+
+#[test]
+fn a_hyperbola_and_a_parabola_place_their_ends_and_a_hyperbola_its_center() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let hyperbola = entity(
+        "h",
+        json!({"kind": "hyperbola", "center": {"u": 1.0, "v": 2.0},
+            "major_angle": std::f64::consts::FRAC_PI_2, "major_radius": 2.0,
+            "minor_radius": 3.0, "bounds": [0.0, 1.0]}),
+    );
+    let parabola = entity(
+        "b",
+        json!({"kind": "parabola", "vertex": {"u": 0.0, "v": 0.0}, "axis_angle": 0.0,
+            "focal_length": 0.5, "bounds": [-1.0, 2.0]}),
+    );
+    let on = kind(json!({"kind": "coincident_loci", "loci": [
+        {"kind": "start", "value": "test:model:sketch-entity#h"},
+        {"kind": "end", "value": "test:model:sketch-entity#h"},
+        {"kind": "center", "value": "test:model:sketch-entity#h"},
+        {"kind": "start", "value": "test:model:sketch-entity#b"},
+        {"kind": "end", "value": "test:model:sketch-entity#b"}]}));
+    let points = LocusPoints::new(
+        &ctx,
+        [&on],
+        &[&hyperbola, &parabola],
+        &StoredPoints::default(),
+    )
+    .expect("the session admits the evaluation");
+    assert!(!points.unplaced(&on));
+    let close = |locus, [u, v]: [f64; 2]| {
+        let [pu, pv] = points.position(&locus).expect("a position");
+        assert!(
+            (pu - u).abs() < 1e-12 && (pv - v).abs() < 1e-12,
+            "{pu} {pv}"
+        );
+    };
+    let h = || hyperbola.id().clone();
+    let b = || parabola.id().clone();
+    close(SketchLocus::Center(h()), [1.0, 2.0]);
+    close(SketchLocus::Start(h()), [1.0, 4.0]);
+    close(
+        SketchLocus::End(h()),
+        [1.0 - 3.0 * 1.0_f64.sinh(), 2.0 + 2.0 * 1.0_f64.cosh()],
+    );
+    close(SketchLocus::Start(b()), [0.5, -1.0]);
+    close(SketchLocus::End(b()), [2.0, 2.0]);
 }
 
 #[test]
