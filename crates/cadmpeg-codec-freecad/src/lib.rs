@@ -1178,6 +1178,7 @@ impl CodecBackend for FcstdCodec {
                     product::document_definition_id()?,
                     &graph.objects,
                     &graph.properties,
+                    &product_nodes,
                     &mut transfer_losses,
                 );
             }
