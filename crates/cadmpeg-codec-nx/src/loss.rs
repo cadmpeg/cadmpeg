@@ -195,6 +195,9 @@ loss_codes! {
     /// The feature recognisers compare evaluated geometry at a floor coarser
     /// than the document tolerances.
     FeatureRecognitionToleranceFloor => ("feature.recognition-tolerance-floor", Warning, DecodeDiagnostic),
+    /// A current entity is a member of the result GROUPs of several
+    /// features, and its name is the merge of their generated names.
+    NameMergedFromGroups => ("history.name-merged-from-groups", Warning, FeatureHistoryRetained),
 }
 
 impl NxLossCode {
@@ -297,6 +300,7 @@ mod tests {
                 "body.resolution-invalid",
                 "body.resolution-unread",
                 "feature.recognition-tolerance-floor",
+                "history.name-merged-from-groups",
             ]
         );
     }

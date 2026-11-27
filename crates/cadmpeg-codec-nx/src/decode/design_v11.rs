@@ -40,6 +40,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::NxLossCode;
 
 mod parameters;
+mod results;
 mod sketches;
 
 /// The root definition of an NX part that states no assembly root.
@@ -128,6 +129,7 @@ pub(super) fn project(
     design.containers.sort_by(|a, b| a.id().cmp(b.id()));
     design.features.sort_by(|a, b| a.id.cmp(&b.id));
     design.arrangements.sort_by(|a, b| a.id.cmp(&b.id));
+    results::project(ir, losses);
     Ok(())
 }
 
