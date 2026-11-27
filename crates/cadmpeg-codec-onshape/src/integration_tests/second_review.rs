@@ -129,8 +129,12 @@ fn final_thin_scope_follows_the_complete_source_timeline() {
             wire["model"]["product_definitions"][0]["bodies"]
         );
         assert_eq!(
-            wire["design"]["features"][2]["definition"]["operation"]["kind"],
-            "native"
+            wire["design"]["features"][2]["definition"]["operation"],
+            crate::test_support::review::unresolved(if later == "new-body" {
+                "extrude"
+            } else {
+                "fillet"
+            })
         );
         validate(result);
         let bytes = edit(&thin_then(later), |path, response| {
@@ -149,7 +153,10 @@ fn final_thin_scope_follows_the_complete_source_timeline() {
             }
         });
         let result = decode(&bytes);
-        assert!(result.ir().design.scopes.is_empty());
+        assert_eq!(
+            crate::test_support::review::design_operation(result.ir(), "Plate"),
+            crate::test_support::review::unresolved("extrude")
+        );
         loss(&result, "onshape/extrude.thin-not-supported");
         validate(result);
     }

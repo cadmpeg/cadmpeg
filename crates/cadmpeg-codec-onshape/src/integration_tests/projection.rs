@@ -77,15 +77,20 @@ pub(super) fn kinds(wire: &Value) -> Vec<&str> {
 fn real_shaped_synthetic_bundle_resolves_plane_and_selected_region() {
     let (wire, report) = read(&base_fixture());
     assert_eq!(kinds(&wire), ["sketch", "extrude"], "{:?}", report.losses());
-    assert!(
-        report.losses().iter().all(|loss| !loss
-            .code
-            .as_deref()
-            .unwrap_or("")
-            .starts_with("onshape/")),
-        "{:?}",
-        report.losses()
+    let onshape: Vec<_> = report
+        .losses()
+        .iter()
+        .filter(|loss| loss.code.as_deref().unwrap_or("").starts_with("onshape/"))
+        .collect();
+    let [region] = onshape.as_slice() else {
+        panic!("one loss names the region profile the design does not state: {onshape:?}");
+    };
+    assert_eq!(
+        region.code.as_deref(),
+        Some("onshape/history.design-operation-unresolved")
     );
+    assert!(region.detail.contains("the profile is no whole sketch"));
+    assert!(region.detail.ends_with("subject: raised-plate"));
     assert_eq!(
         wire["sketches"][0]["placement"]["frame"]["normal"],
         json!({"x":0.0,"y":0.0,"z":1.0})
@@ -1815,9 +1820,10 @@ fn absent_stored_thin_domain_refuses_the_scoped_construction() {
             }
         });
     let result = crate::test_support::review::decode(&bytes);
-    assert!(result.ir().design.features.is_empty());
-    assert!(result.ir().design.containers.is_empty());
-    assert!(result.ir().design.scopes.is_empty());
+    assert_eq!(
+        crate::test_support::review::design_operation(result.ir(), "Plate"),
+        crate::test_support::review::unresolved("extrude")
+    );
     assert!(result
         .report()
         .losses
@@ -1989,7 +1995,10 @@ fn absent_stored_thin_side_or_direction_refuses_the_wall() {
             },
         );
         let result = crate::test_support::review::decode(&bytes);
-        assert!(result.ir().design.features.is_empty());
+        assert_eq!(
+            crate::test_support::review::design_operation(result.ir(), "Plate"),
+            crate::test_support::review::unresolved("extrude")
+        );
         assert!(result
             .report()
             .losses

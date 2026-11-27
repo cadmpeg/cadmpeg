@@ -71,30 +71,29 @@ fn history_admission_reserves_each_midpoint_output_arena() {
 #[test]
 fn midpoint_expansion_refuses_the_history_budget_before_emission() {
     let bytes = midpoint_sketch();
-    for ceiling in [15, 16, 17, 18, 20, 21, 22] {
+    // History admits 17 entities, the design timeline 3 (one feature and its
+    // container and scope), the design sketch 7 (the sketch and its six
+    // entities), the stated root definition 1, and the member assets 3.
+    for ceiling in [15, 17, 18, 20, 21, 27, 28, 29, 31, 32] {
         let mut policy = DecodePolicy::default();
         policy.limits.max_entities = ceiling;
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let result = codec().decode_impl(&ctx, root);
-        if ceiling < 18 {
+        let refused = match ceiling {
+            ..=17 => Some("Onshape history admission"),
+            18..=20 => Some("Onshape design timeline"),
+            21..=27 => Some("Onshape design sketch"),
+            28 => Some("root product definition"),
+            29..=31 => Some("Onshape asset"),
+            _ => None,
+        };
+        if let Some(operation) = refused {
             let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
-                panic!("history admission must return the caller resource refusal")
+                panic!("every admission must return the caller resource refusal")
             };
             assert_eq!(limit.dimension, ResourceDimension::Entities);
-            assert_eq!(limit.operation, "Onshape history admission");
-        } else if ceiling < 21 {
-            let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
-                panic!("member assets must share the caller entity budget")
-            };
-            assert_eq!(limit.dimension, ResourceDimension::Entities);
-            assert_eq!(limit.operation, "Onshape asset");
-        } else if ceiling < 22 {
-            let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
-                panic!("the root definition must share the caller entity budget")
-            };
-            assert_eq!(limit.dimension, ResourceDimension::Entities);
-            assert_eq!(limit.operation, "root product definition");
+            assert_eq!(limit.operation, operation, "{ceiling}");
         } else {
             let decoded = result.unwrap();
             assert_eq!(decoded.ir.model.sketch_entities.len(), 6);

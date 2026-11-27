@@ -313,7 +313,10 @@ fn thin_open_curves_refuse_unresolved_sides_for_both_directions_and_flips() {
             });
             let result = decode(&bytes);
             assert_eq!(kind(&wire(&result), 1), "native");
-            assert!(result.ir().design.features.is_empty());
+            assert_eq!(
+                crate::test_support::review::design_operation(result.ir(), "Plate"),
+                crate::test_support::review::unresolved("extrude")
+            );
             assert!(loss(&result, "onshape/extrude.thin-not-supported"));
             validate(result);
         }

@@ -7,6 +7,7 @@ mod assembly_review;
 mod bundle;
 mod custom_features;
 mod derived;
+mod design_layer;
 mod face_frames;
 mod face_sketch;
 mod member_isolation;

@@ -5,6 +5,7 @@ use crate::archive;
 use cadmpeg_core::serde_erase::json;
 mod assembly;
 mod derived;
+mod design;
 pub(super) mod expression;
 mod features;
 mod intersection;
@@ -739,25 +740,12 @@ fn studio_in(
     } else {
         std::collections::BTreeMap::new()
     };
-    let original_design = model.ir.design.clone();
-    let original_design_features = original_design.features.len();
-    if features
-        .iter()
-        .any(|feature| features::value(feature, "bodyType") == Some("THIN"))
-    {
-        ctx.charge_entities(
-            cadmpeg_core::decode::u64_from_index(features.len()) + 2,
-            "Onshape thin timeline admission",
-        )?;
-        reserve_history(&mut model.ir.design.features, features.len())?;
-        reserve_history(&mut model.ir.design.containers, 1)?;
-        reserve_history(&mut model.ir.design.scopes, 1)?;
-    }
+    let mut sources = design::Sources::new();
     let mut seen = std::collections::BTreeMap::<&str, &Value>::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
     let mut assumed_sides = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
-        let design_length = model.ir.design.features.len();
+        let mut thin_design = None;
         let note_start = report.notes.len();
         let native = match text(feature, "featureId") {
             Ok(native) => match seen.entry(native) {
@@ -827,7 +815,6 @@ fn studio_in(
             model.ir.model.sketch_constraints.len(),
             model.ir.model.parameters.len(),
             model.ir.model.feature_input_topologies.len(),
-            model.ir.design.features.len(),
             model.ir.model.feature_result_topologies.len(),
         );
         let mut reference = None;
@@ -876,7 +863,6 @@ fn studio_in(
                 if features::value(feature, "bodyType") == Some("THIN")
                     && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
                 {
-                    thin::owner(&model.ir)?;
                     let (design, assumed) = thin::feature(
                         feature,
                         &definition,
@@ -885,7 +871,7 @@ fn studio_in(
                         ordinal,
                         &unresolved_variables,
                     )?;
-                    push(&mut model.ir.design.features, design)?;
+                    thin_design = Some(design);
                     if let Some(assumed) = assumed {
                         assumed_sides.insert(feature_id.clone());
                         report.push_coded(name, OnshapeLossCode::ThinNotSupported, assumed);
@@ -926,8 +912,8 @@ fn studio_in(
                 model.ir.model.sketch_constraints.truncate(sizes.2);
                 model.ir.model.parameters.truncate(sizes.3);
                 model.ir.model.feature_input_topologies.truncate(sizes.4);
-                model.ir.design.features.truncate(sizes.5);
-                model.ir.model.feature_result_topologies.truncate(sizes.6);
+                model.ir.model.feature_result_topologies.truncate(sizes.5);
+                thin_design = None;
                 if suppressed != Ok(true) {
                     let region_budget_exhausted = inputs
                         .regions
@@ -1096,13 +1082,7 @@ fn studio_in(
             .iter()
             .chain(part_bodies.get(&ordinal))
             .filter(|_| {
-                (model
-                    .ir
-                    .design
-                    .features
-                    .iter()
-                    .any(|design| design.id.as_str() == feature_id)
-                    && features::value(feature, "operationType") == Some("NEW"))
+                (thin_design.is_some() && features::value(feature, "operationType") == Some("NEW"))
                     || definition
                         .pointer("/value/value/shape/op")
                         .and_then(Value::as_str)
@@ -1126,8 +1106,7 @@ fn studio_in(
             row["suppressed"] = json!(suppressed);
         }
         if let Err(reason) = push(&mut model.ir.model.features, row) {
-            model.ir.design.features.truncate(design_length);
-            model.ir.model.feature_result_topologies.truncate(sizes.6);
+            model.ir.model.feature_result_topologies.truncate(sizes.5);
             let mut tail = report.notes.split_off(note_start);
             tail.retain(|note| {
                 !OnshapeLossCode::SketchPlaneAssumed.matches(note)
@@ -1141,11 +1120,21 @@ fn studio_in(
                 OnshapeLossCode::RecordMalformed,
                 format!("{reason}; omitted the feature"),
             );
+        } else {
+            sources.insert(
+                feature_id,
+                design::Source {
+                    feature_type: feature
+                        .get("featureType")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    next: features::value(feature, "endBound") == Some("UP_TO_NEXT"),
+                    thin: thin_design,
+                },
+            );
         }
     }
-    if model.ir.design.features.len() > original_design_features {
-        install_thin_scope(ctx, &mut model.ir, report, original_design, &bar)?;
-    }
+    project_design(ctx, &mut model.ir, report, &bar, &sources)?;
     report
         .notes
         .extend(inputs.sampling_report.into_inner().notes);
@@ -1156,32 +1145,44 @@ fn studio_in(
     Ok(model)
 }
 
-fn install_thin_scope(
+/// Project the design layer of the Part Studio `ir` as one part. A thin
+/// extrude whose design feature the projection refuses keeps its family, and
+/// its note names the refusal.
+fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     report: &mut Report,
-    original: cadmpeg_ir::document::Design,
     bar: &RollbackBar,
+    sources: &design::Sources,
 ) -> Result<(), Error> {
-    let notes = report.notes.len();
-    let result = thin::sketches::project(ctx, ir)
-        .and_then(|()| thin::install_scope(ir, report, bar).map_err(Error::Decode));
-    if let Err(reason) = result {
-        ir.design = original;
-        report.notes.truncate(notes);
-        if matches!(
-            &reason,
-            Error::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.scope == cadmpeg_core::decode::LimitScope::Session
-        ) {
-            return Err(reason);
+    let mut refused = Vec::new();
+    cadmpeg_ir::design::projection::project_layer(
+        ctx,
+        "Onshape",
+        ir,
+        &mut report.notes,
+        |ir, notes| {
+            refused = design::project(ctx, ir, notes, bar, sources)?.thin_refused;
+            Ok(())
+        },
+    )?;
+    let stated = !ir.design.features.is_empty();
+    for note in &mut report.notes {
+        if !OnshapeLossCode::ThinModelNotSupported.matches(note) {
+            continue;
         }
-        for note in &mut report.notes {
-            if OnshapeLossCode::ThinModelNotSupported.matches(note) {
-                *note = OnshapeLossCode::ThinNotSupported.note(format!(
-                    "{reason}; thin construction retains its native model operation"
-                ));
-            }
+        let reason = if stated {
+            refused
+                .iter()
+                .find(|(name, _)| note.message.ends_with(&format!("; subject: {name}")))
+                .map(|(_, reason)| reason.as_str())
+        } else {
+            Some("the design layer is not stated")
+        };
+        if let Some(reason) = reason {
+            *note = OnshapeLossCode::ThinNotSupported.note(format!(
+                "{reason}; thin construction retains its native model operation"
+            ));
         }
     }
     Ok(())
