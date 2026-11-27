@@ -405,3 +405,47 @@ fn a_parameter_definition_is_carried_by_its_owner_feature_component() {
     ir.design.features[0] = feature(None);
     assert_eq!(cuts(&ir)[&id], fields(["product_definition"]));
 }
+
+/// A spreadsheet cell's position is its position among the cells of its
+/// design sheet: cells the sheet lists in their stored order keep their
+/// ordinals, where the numbers of their ids order them otherwise.
+#[test]
+fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
+    use crate::spreadsheets::{CellAddress, SpreadsheetCell, SpreadsheetId};
+    let models = || {
+        vec![
+            model_parameter("sheet:cell:B1", 0),
+            model_parameter("sheet:cell:A2", 1),
+        ]
+    };
+    let designs = || {
+        vec![
+            design_parameter("sheet:cell:A2", "sheet:cell:A2"),
+            design_parameter("sheet:cell:B1", "sheet:cell:B1"),
+        ]
+    };
+    let unlisted = cuts(&parameter_ir(models(), designs()));
+    assert_eq!(
+        unlisted[parameter_id("sheet:cell:B1").as_str()],
+        fields(["ordinal"])
+    );
+    let mut listed = parameter_ir(models(), designs());
+    let cell = |row, col, key| SpreadsheetCell {
+        address: CellAddress::new(row, col).unwrap(),
+        parameter: parameter_id(key),
+    };
+    listed.design.spreadsheets.push(
+        crate::design::spreadsheet::Spreadsheet::new(
+            SpreadsheetId::mint("test:design:spreadsheet#sheet").unwrap(),
+            vec![cell(1, 2, "sheet:cell:B1"), cell(2, 1, "sheet:cell:A2")],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .unwrap(),
+    );
+    let listed = cuts(&listed);
+    assert_eq!(listed[parameter_id("sheet:cell:B1").as_str()], fields([]));
+    assert_eq!(listed[parameter_id("sheet:cell:A2").as_str()], fields([]));
+}

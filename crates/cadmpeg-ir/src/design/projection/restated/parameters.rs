@@ -53,7 +53,19 @@ pub(super) fn parameter_cuts<'ir>(
         .filter(|model| compared(model.id.as_str()))
         .filter_map(|model| Some((model, *design.get(model.id.as_str())?)))
         .collect::<Vec<_>>();
-    let misplaced = misplaced(pairs.iter().map(|(model, _)| *model));
+    let cells = ir
+        .design
+        .spreadsheets
+        .iter()
+        .flat_map(|sheet| {
+            sheet
+                .cells()
+                .iter()
+                .enumerate()
+                .map(move |(at, cell)| (cell.parameter.as_str(), (sheet.id.as_str(), at)))
+        })
+        .collect::<HashMap<_, _>>();
+    let misplaced = misplaced(pairs.iter().map(|(model, _)| *model), &cells);
     pairs
         .into_iter()
         .map(|(model, design)| {
@@ -78,10 +90,14 @@ pub(super) fn parameter_cuts<'ir>(
 
 /// The parameters of `models` whose position by `ordinal` among the
 /// parameters of their definition and owner differs from their position in
-/// the numbered order of their identities. The design parameter arena holds
-/// no order but its identities', and an identity carries the source
-/// position as a number.
-fn misplaced<'ir>(models: impl Iterator<Item = &'ir ModelParameter>) -> HashSet<&'ir str> {
+/// the design: a spreadsheet cell's position among the cells of its sheet,
+/// which `cells` holds by parameter, and otherwise the numbered order of
+/// their identities. The design parameter arena holds no order but its
+/// identities', and an identity carries the source position as a number.
+fn misplaced<'ir>(
+    models: impl Iterator<Item = &'ir ModelParameter>,
+    cells: &HashMap<&str, (&str, usize)>,
+) -> HashSet<&'ir str> {
     let mut groups = BTreeMap::<_, Vec<&ModelParameter>>::new();
     for model in models {
         let key = (
@@ -95,24 +111,20 @@ fn misplaced<'ir>(models: impl Iterator<Item = &'ir ModelParameter>) -> HashSet<
     }
     let mut misplaced = HashSet::new();
     for members in groups.into_values() {
-        let mut by_id = members
-            .iter()
-            .map(|model| (numbered(model.id.as_str()), model.id.as_str()))
-            .collect::<Vec<_>>();
-        by_id.sort_unstable();
+        let position = |model: &'ir ModelParameter| {
+            let id = model.id.as_str();
+            (cells.get(id).copied(), numbered(id), id)
+        };
+        let mut in_design = members.iter().copied().map(position).collect::<Vec<_>>();
+        in_design.sort_unstable();
         let mut by_ordinal = members
             .iter()
-            .map(|model| {
-                (
-                    model.ordinal,
-                    numbered(model.id.as_str()),
-                    model.id.as_str(),
-                )
-            })
+            .copied()
+            .map(|model| (model.ordinal, position(model)))
             .collect::<Vec<_>>();
         by_ordinal.sort_unstable();
-        for ((_, _, at_ordinal), (_, at_id)) in by_ordinal.iter().zip(&by_id) {
-            if at_ordinal != at_id {
+        for ((_, (_, _, at_ordinal)), (_, _, at_design)) in by_ordinal.iter().zip(&in_design) {
+            if at_ordinal != at_design {
                 misplaced.insert(*at_ordinal);
             }
         }
