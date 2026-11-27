@@ -777,9 +777,7 @@ pub(in super::super) fn build_ir(
         &mut transfer_losses,
         &mut source_carriers,
     )?;
-    let mut given_up = super::super::assembly::give_up_unread_rows(ctx, scan)?
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut given_up = super::super::assembly::give_up_unread_tables(ctx, scan)?;
     let geometry_generator_feature_count =
         emit_model_features(ctx, scan, &mut ir, &mut annotations, &source_carriers)?;
     let dimension_targets = super::super::pmi::transfer(

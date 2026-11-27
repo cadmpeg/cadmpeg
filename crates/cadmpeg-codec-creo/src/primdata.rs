@@ -235,20 +235,12 @@ pub(crate) fn triangle_strips(data: &[u8]) -> PrimitiveTriangleStripScan {
     const ACCUM: &[u8] = b"\xe0\x01p_accum_set_size\0";
     let mut strips = Vec::new();
     let mut conflicting_representation_count = 0usize;
-    for (offset, _) in data
-        .windows(RECORD.len())
-        .enumerate()
-        .filter(|(_, window)| *window == RECORD)
-    {
-        let end = data[offset + RECORD.len()..]
-            .windows(b"\xe0\x00value(".len())
-            .position(|window| window == b"\xe0\x00value(")
-            .map_or(data.len(), |relative| offset + RECORD.len() + relative);
+    for offset in cadmpeg_core::bytes::find_iter(data, RECORD) {
+        let end = cadmpeg_core::bytes::find_from(data, b"\xe0\x00value(", offset + RECORD.len())
+            .unwrap_or(data.len());
         let record = &data[offset..end];
-        let Some(accum) = record
-            .windows(ACCUM.len())
-            .position(|window| window == ACCUM)
-            .map(|relative| relative + ACCUM.len())
+        let Some(accum) =
+            cadmpeg_core::bytes::find(record, ACCUM).map(|relative| relative + ACCUM.len())
         else {
             continue;
         };
@@ -325,12 +317,12 @@ pub(crate) fn scalar_arrays(data: &[u8]) -> Vec<PrimitiveScalarArray> {
     for field in FIELDS {
         let name = field.as_str().as_bytes();
         let marker_len = name.len() + 3;
-        for (offset, _) in data.windows(marker_len).enumerate().filter(|(_, window)| {
-            window[0] == psb::token::NAMED_RECORD
-                && window[1] == 0x06
-                && window[2..2 + name.len()] == *name
-                && window[marker_len - 1] == 0
-        }) {
+        let mut marker = [0u8; 40];
+        marker[0] = psb::token::NAMED_RECORD;
+        marker[1] = 0x06;
+        marker[2..2 + name.len()].copy_from_slice(name);
+        marker[marker_len - 1] = 0;
+        for offset in cadmpeg_core::bytes::find_iter(data, &marker[..marker_len]) {
             let opener = offset + marker_len;
             if data.get(opener) != Some(&psb::token::ARRAY_OPEN) {
                 continue;

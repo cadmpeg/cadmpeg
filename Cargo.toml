@@ -30,6 +30,7 @@ members = [
   "crates/cadmpeg-codec-sat",
   "crates/cadmpeg-codec-pvz",
   "crates/cadmpeg-codec-edrawings",
+  "crates/cadmpeg-codec-alibre",
   "crates/cadmpeg-codec-usd",
   "crates/cadmpeg-codec-onshape",
 ]
@@ -74,6 +75,7 @@ cadmpeg-codec-step = { path = "crates/cadmpeg-codec-step", version = "0.6.12" }
 cadmpeg-codec-sat = { path = "crates/cadmpeg-codec-sat", version = "0.6.12" }
 cadmpeg-codec-pvz = { path = "crates/cadmpeg-codec-pvz", version = "0.6.12" }
 cadmpeg-codec-edrawings = { path = "crates/cadmpeg-codec-edrawings", version = "0.6.12" }
+cadmpeg-codec-alibre = { path = "crates/cadmpeg-codec-alibre", version = "0.6.12" }
 cadmpeg-codec-onshape = { path = "crates/cadmpeg-codec-onshape", version = "0.6.12" }
 cadmpeg-codec-usd = { path = "crates/cadmpeg-codec-usd", version = "0.6.12" }
 

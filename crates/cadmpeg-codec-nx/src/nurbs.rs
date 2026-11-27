@@ -701,6 +701,21 @@ pub(crate) fn counted_lane_extents(bytes: &[u8]) -> Vec<Range<usize>> {
         .collect()
 }
 
+/// The span of each NURBS array, control-value, and descriptor record that
+/// starts at or past `from`.
+pub(crate) fn record_extents(bytes: &[u8], from: usize) -> Vec<Range<usize>> {
+    (from..bytes.len())
+        .filter_map(|pos| {
+            array_record_at(bytes, pos)
+                .map(|record| record.extent)
+                .or_else(|| surface_payload_at(bytes, pos).map(|(_, _, lanes)| pos..lanes.end))
+                .or_else(|| curve_payload_at(bytes, pos).map(|(_, _, lanes)| pos..lanes.end))
+                .or_else(|| surface_descriptor_at(bytes, pos).map(|(_, _, end)| pos..end))
+                .or_else(|| curve_descriptor_at(bytes, pos, true).map(|(_, _, end)| pos..end))
+        })
+        .collect()
+}
+
 fn surface_payloads(bytes: &[u8]) -> RecordIndex<Payload<'_>> {
     let records = bytes
         .len()

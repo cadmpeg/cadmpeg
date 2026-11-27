@@ -145,6 +145,7 @@ fn fixtures() -> (SyntheticRecords, BaseEnvelopeRecords) {
                 link,
             )],
             pairs,
+            pair_count: None,
             revisions,
             references,
         },
