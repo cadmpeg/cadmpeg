@@ -631,16 +631,13 @@ fn decode_sketch_visibilities_in_stream_with_scan(
     }
     let mut listed = std::collections::HashSet::new();
     let mut invalid = std::collections::BTreeMap::<u64, u64>::new();
-    for (&container, members) in &collections {
-        for target in members
-            .chunks_exact(crate::layout::sketch_geometry_ordinal_collection_reference::LEN)
-            .filter_map(|reference| {
-                View::u64_le_at(
-                    reference,
-                    crate::layout::sketch_geometry_ordinal_collection_reference::TARGET,
-                )
-            })
-        {
+    for (&container, &(members, reference_len)) in &collections {
+        for target in members.chunks_exact(reference_len).filter_map(|reference| {
+            View::u64_le_at(
+                reference,
+                crate::layout::sketch_geometry_ordinal_collection_reference::TARGET,
+            )
+        }) {
             let valid = visibilities.get(&target).is_some_and(|visibility| {
                 visibility.ordinal_collection.map(std::num::NonZeroU64::get) == Some(container)
             }) || folders
@@ -766,9 +763,11 @@ fn parse_sketch_folder(bytes: &[u8]) -> Option<SketchFolder> {
     })
 }
 
-fn ordinal_collection_members(bytes: &[u8], version: u32) -> Option<&[u8]> {
+/// The member run of an ordinal collection and the byte length of each of its references.
+fn ordinal_collection_members(bytes: &[u8], version: u32) -> Option<(&[u8], usize)> {
     use crate::layout::sketch_geometry_ordinal_collection_reference as reference;
     use crate::layout::sketch_ordinal_collection_prefix as collection;
+    use crate::layout::sketch_owner_typed_reference as typed_reference;
     if bytes.get(collection::ZERO_RUN..collection::LEN)? != [0; 9] {
         return None;
     }
@@ -784,21 +783,38 @@ fn ordinal_collection_members(bytes: &[u8], version: u32) -> Option<&[u8]> {
     }
     let count = View::u32_le_at(bytes, cursor)?;
     cursor += 4;
+    let mut first_end = 0;
+    let typed = version == 3
+        && count != 0
+        && matches!(
+            take_reference(bytes.get(cursor..)?, &mut first_end)?.local(),
+            Some((_, Some(_)))
+        );
+    let reference_len = if typed {
+        typed_reference::LEN
+    } else {
+        reference::LEN
+    };
     let count = cadmpeg_core::decode::bounded_len(
         u64::from(count),
-        reference::LEN,
+        reference_len,
         bytes.len().checked_sub(cursor)?,
     )?;
-    let end = cursor.checked_add(count.checked_mul(reference::LEN)?)?;
+    let end = cursor.checked_add(count.checked_mul(reference_len)?)?;
     let run = bytes.get(cursor..end)?;
-    for member in run.chunks_exact(reference::LEN) {
+    for member in run.chunks_exact(reference_len) {
         let mut at = 0;
-        if !matches!(take_reference(member, &mut at)?.local(), Some((target, None)) if target != 0)
-        {
+        let parsed = take_reference(member, &mut at)?;
+        let (target, inline_type) = parsed.local()?;
+        let form_matches = match inline_type {
+            None => !typed,
+            Some(guid) => typed && guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID),
+        };
+        if target == 0 || !form_matches || at != reference_len {
             return None;
         }
     }
-    Some(run)
+    Some((run, reference_len))
 }
 
 fn decode_sketch_visibility_member(
