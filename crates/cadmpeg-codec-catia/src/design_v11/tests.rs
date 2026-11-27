@@ -247,14 +247,20 @@ fn cadir_round_trip(ir: &CadIr) -> (CadIr, Vec<String>) {
     (read, omitted)
 }
 
-fn assert_design_survives_cadir(ir: &CadIr) {
+/// The design records read back from CADIR unchanged; the write's losses
+/// that name a design record.
+fn design_read_back(ir: &CadIr) -> Vec<String> {
     let (read, omitted) = cadir_round_trip(ir);
-    assert_eq!(omitted, Vec::<String>::new());
     assert_eq!(read.design.scopes, ir.design.scopes);
     assert_eq!(read.design.containers, ir.design.containers);
     assert_eq!(read.design.features, ir.design.features);
     assert_eq!(read.design.sketches, ir.design.sketches);
     assert_eq!(read.design.sketch_constraints, ir.design.sketch_constraints);
+    omitted
+}
+
+fn assert_design_survives_cadir(ir: &CadIr) {
+    assert_eq!(design_read_back(ir), Vec::<String>::new());
 }
 
 /// The part root lists a plane, the body `MainTool` selects, and an empty
@@ -966,7 +972,9 @@ fn a_decoded_sketch_keeps_its_resolved_frame() {
 
 /// A native constraint of a decoded sketch is a `Native` relation written
 /// `catia:<kind>`, whose native properties and operands are text options
-/// (§6.1, Rule N).
+/// (§6.1, Rule N). A CADIR write states the legacy constraint in part
+/// without its `definition`, which the relation holds under no field of
+/// that name (§3.2).
 #[test]
 fn a_native_sketch_constraint_is_a_native_relation_of_its_sketch() {
     use cadmpeg_ir::design::dimension::Dimension;
@@ -1058,7 +1066,14 @@ fn a_native_sketch_constraint_is_a_native_relation_of_its_sketch() {
         serde_json::from_str::<Vec<SketchNativeOperand>>(&text("operands")).unwrap(),
         [operand]
     );
-    assert_design_survives_cadir(&ir);
+    assert_eq!(
+        design_read_back(&ir),
+        [format!(
+            "the cadir write does not represent model arena `sketch_constraints`: \
+             1 record(s) stated in part: {} (definition)",
+            constraint.id.as_str()
+        )]
+    );
 }
 
 /// A constraint of a decoded sketch whose kind the projection does not
