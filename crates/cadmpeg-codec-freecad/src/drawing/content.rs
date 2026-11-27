@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: A.filter(|p| p.owner == drawing.object.as_str())ache-2.0
+// SPDX-License-Identifier: Apache-2.0
 //! Neutral sheet and persisted view geometry transfer.
 
 use std::collections::BTreeMap;

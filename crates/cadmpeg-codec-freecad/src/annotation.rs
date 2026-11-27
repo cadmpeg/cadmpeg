@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: A.filter(|p| p.owner == annotation.object.as_str())ache-2.0
+// SPDX-License-Identifier: Apache-2.0
 //! Semantic annotation graph recovery.
 
 use std::collections::{BTreeMap, HashMap};
