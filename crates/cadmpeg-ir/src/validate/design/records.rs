@@ -823,8 +823,8 @@ impl CadIr {
                 let definition = scope.definition.as_str();
                 let span = records
                     .spanned_definitions(definition)
-                    .into_iter()
-                    .map(str::to_owned)
+                    .iter()
+                    .map(|spanned| (*spanned).to_owned())
                     .collect();
                 (definition.to_owned(), span)
             })
