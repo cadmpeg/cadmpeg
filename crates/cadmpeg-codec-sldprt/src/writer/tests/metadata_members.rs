@@ -192,6 +192,7 @@ fn a_real_feature_rename_replaces_a_patched_member_and_charges_its_metadata() {
         lane,
         &native.feature_histories,
         &renames,
+        cadmpeg_core::decode::ResourceLimits::service(),
         cadmpeg_ir::units::Tolerances::default().linear,
     )
     .unwrap();
@@ -333,7 +334,7 @@ fn the_actual_owned_stream_is_unavailable_even_if_a_lookalike_member_exists() {
     lookalike_annotations.provenance.remove(owner.id.as_str());
     crate::annotations::note(
         &mut lookalike_annotations,
-        owner.id.as_str(),
+        &owner.id,
         &cadmpeg_ir::stream_name!("Other/Config-0-ResolvedFeatures"),
         0,
         "unknown",
@@ -366,7 +367,16 @@ fn unsupported_manager_fields_keep_a_retained_member() {
     let attribute_id =
         cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:configuration_manager#999_999:0")
             .unwrap();
-    for (id, offset) in [(record_id.as_str(), 999_999), (attribute_id.as_str(), 0)] {
+    for (id, offset) in [
+        (
+            cadmpeg_ir::annotations::AnnotationKey::from(&record_id),
+            999_999,
+        ),
+        (
+            cadmpeg_ir::annotations::AnnotationKey::from(&attribute_id),
+            0,
+        ),
+    ] {
         crate::annotations::note(
             &mut annotations,
             id,
@@ -470,7 +480,7 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
     };
     crate::annotations::note(
         &mut annotations,
-        duplicate.id.as_str(),
+        &duplicate.id,
         &cadmpeg_ir::stream_name!("Contents/Config-0-ResolvedFeatures"),
         999_999,
         "unknown",
@@ -485,6 +495,13 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
         owners.unpatched(MEMBER),
         Some((Unwritten::OwnerCarried, crate::writer::Held::Source))
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &policy,
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
     let opaque = crate::writer::opaque_blocks(
         decoded.ir(),
         &records,
@@ -497,6 +514,7 @@ fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
             edited_parameters: &HashSet::new(),
             native: None,
             stale: &std::collections::BTreeSet::new(),
+            ctx: &ctx,
         },
     )
     .unwrap();
@@ -536,7 +554,7 @@ fn source_unit_code_uses_its_separate_units_route() {
             .unwrap();
     crate::annotations::note(
         &mut annotations,
-        id.as_str(),
+        &id,
         &cadmpeg_ir::stream_name!("Units"),
         0,
         "SW_UnitsLinear",
@@ -581,6 +599,7 @@ fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
                 lane,
                 &native.feature_histories,
                 &[],
+                cadmpeg_core::decode::ResourceLimits::service(),
                 cadmpeg_ir::units::Tolerances::default().linear
             )
             .unwrap(),
@@ -648,6 +667,7 @@ fn marker_replay_requires_reparsed_membership_identity_and_values() {
                 &changed,
                 &native.feature_histories,
                 &[],
+                cadmpeg_core::decode::ResourceLimits::service(),
                 cadmpeg_ir::units::Tolerances::default().linear
             )
             .is_err(),
@@ -745,6 +765,7 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
         )],
         &[],
         &mut losses,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
     )
     .unwrap()
     .unwrap();
@@ -982,9 +1003,12 @@ fn metadata_edits_preserve_configuration_xml_and_explicit_renames_update_it() {
                 .iter()
                 .find(|block| block.section.name() == Some("swXmlContents/Features"))
                 .unwrap();
-            let envelope =
-                crate::container::first_solidworks_envelope([changed_xml.payload.as_slice()])
-                    .unwrap();
+            let envelope = crate::container::first_solidworks_envelope(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                [changed_xml.payload.as_slice()],
+            )
+            .unwrap()
+            .unwrap();
             assert_eq!(envelope.configuration_name.as_deref(), Some("RenamedSaved"));
             let changed_history = scan
                 .blocks
@@ -1091,13 +1115,10 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
     crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
     crate::test_support::make_retained_record_unavailable(decoded.source_fidelity_mut(), &block);
     let plan = SldprtCodec
-        .plan(
-            cadmpeg_ir::codec::write::EncodeInput::new(
-                decoded.ir(),
-                Some(decoded.source_fidelity()),
-            ),
-            cadmpeg_ir::codec::write::target::TargetRequest::Unnamed,
-        )
+        .plan(cadmpeg_ir::codec::write::EncodeInput::new(
+            decoded.ir(),
+            Some(decoded.source_fidelity()),
+        ))
         .unwrap();
     let losses: Vec<String> = plan
         .report()
@@ -1125,7 +1146,7 @@ fn digest_only_owner_beside_a_patchable_owner_is_named_without_an_edit() {
         members.iter().all(|member| member != EXTRA),
         "EXTRA was written"
     );
-    let omitted = format!("{EXTRA} ({block})");
+    let omitted = format!("{block} ({EXTRA})");
     assert!(
         losses.iter().any(
             |loss| loss.starts_with("export:native.records-omitted") && loss.contains(&omitted)

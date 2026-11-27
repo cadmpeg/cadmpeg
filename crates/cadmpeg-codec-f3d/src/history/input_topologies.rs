@@ -136,9 +136,7 @@ fn project_feature_input_topologies_inner(
             ),
         ));
     }
-    let workers = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .min(6);
+    let workers = cadmpeg_core::parallelism().min(6);
     let keep_materialized = histories
         .iter()
         .all(|history| history.states().len() <= super::KEEP_MATERIALIZED_MAX_STATES);
@@ -205,6 +203,16 @@ fn project_feature_input_topologies_inner(
     }
 }
 
+#[cfg(test)]
+pub(super) fn project_input_topology(
+    feature: &cadmpeg_ir::features::Feature,
+    history: &AsmHistory,
+    state: &AsmDeltaState,
+    previous_state_id: i64,
+) -> Option<cadmpeg_ir::features::evaluation::FeatureInputTopology> {
+    project_input_topology_with_geometry(feature, history, state, previous_state_id, true)
+}
+
 pub(super) fn project_input_topology_with_geometry(
     feature: &cadmpeg_ir::features::Feature,
     history: &AsmHistory,
@@ -255,6 +263,7 @@ pub(super) fn project_input_topology_with_geometry(
         edge_geometry,
         face_owners,
         face_geometry,
+        body_writers: Vec::new(),
         native_ref: Some(native_ref),
     })
 }

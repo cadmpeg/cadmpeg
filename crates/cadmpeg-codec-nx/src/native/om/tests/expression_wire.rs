@@ -19,8 +19,8 @@ fn expression_names_preserve_spelling_and_wire_field_order() {
 #[test]
 fn expression_names_reject_conflicting_derived_wire_fields() {
     for (field, value) in [
-        ("parameter_index", serde_json::json!(9)),
-        ("qualifier", serde_json::json!("diameter")),
+        ("parameter_index", cadmpeg_core::json!(9)),
+        ("qualifier", cadmpeg_core::json!("diameter")),
     ] {
         for wire in [DECLARATION, EXPRESSION] {
             let mut wire: serde_json::Value = serde_json::from_str(wire).unwrap();
@@ -91,5 +91,5 @@ fn expression_wire_rejects_nonfinite_rust_values() {
     );
     expression.value = Some(cadmpeg_ir::scalar::FiniteReal::try_from(-1.0).unwrap());
     let wire = json::to_value(expression).unwrap();
-    assert_eq!(wire["value"], serde_json::json!(-1.0));
+    assert_eq!(wire["value"], cadmpeg_core::json!(-1.0));
 }

@@ -89,7 +89,7 @@ pub(crate) fn try_encode(
     ir: &cadmpeg_ir::CadIr,
     request: TargetRequest<'_>,
 ) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
-    let plan = UsdCodec.plan(EncodeInput::new(ir, None), request)?;
+    let plan = UsdCodec.plan(EncodeInput::new(ir, None).with_target(request))?;
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes)?;
     if bytes.starts_with(b"PXR-USDC") {
@@ -119,8 +119,9 @@ pub(crate) fn encode_with(
 ) -> Written {
     let plan = UsdCodec
         .plan(
-            EncodeInput::new(ir, None).with_scene(scene),
-            TargetRequest::Explicit("usda-1.0"),
+            EncodeInput::new(ir, None)
+                .with_scene(scene)
+                .with_target(TargetRequest::Explicit("usda-1.0")),
         )
         .expect("plan the write");
     let mut bytes = Vec::new();
@@ -134,7 +135,7 @@ pub(crate) fn encode_with(
 /// The bytes that `ir` writes as for the target `request` resolves.
 pub(crate) fn encode_bytes(ir: &cadmpeg_ir::CadIr, request: TargetRequest<'_>) -> Vec<u8> {
     let plan = UsdCodec
-        .plan(EncodeInput::new(ir, None), request)
+        .plan(EncodeInput::new(ir, None).with_target(request))
         .expect("plan the write");
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write");

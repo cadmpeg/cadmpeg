@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn payload_names_reject_inconsistent_compact_type_codes() {
         for (value, raw) in [(0, vec![0]), (131, vec![128, 131]), (1, vec![128, 1])] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "id": "name", "operation_label": "operation", "construction_payload": "payload",
                 "ordinal": 0, "type_code": value, "raw_type_code": cadmpeg_ir::native::bytes::NativeBytes::from(raw),
                 "type_code_payload_offset": 11, "payload_leading": false,
@@ -187,7 +187,7 @@ mod tests {
             for invalid_raw in [vec![], vec![255], vec![128], vec![0, 0], vec![127]] {
                 let mut invalid = wire.clone();
                 invalid["raw_type_code"] =
-                    serde_json::json!(cadmpeg_ir::native::bytes::NativeBytes::from(invalid_raw));
+                    cadmpeg_core::json!(cadmpeg_ir::native::bytes::NativeBytes::from(invalid_raw));
                 let name = json::from_value::<FeaturePayloadName>(invalid).unwrap_err();
                 assert!(name.to_string().contains("type_code/raw_type_code"));
             }
@@ -208,16 +208,16 @@ mod tests {
             );
             let wire: serde_json::Value = serde_json::from_str(json).unwrap();
             for (field, replacement) in [
-                ("payload_offset", serde_json::json!(1)),
-                ("type_code_payload_offset", serde_json::json!(12)),
-                ("value", serde_json::json!("A B")),
+                ("payload_offset", cadmpeg_core::json!(1)),
+                ("type_code_payload_offset", cadmpeg_core::json!(12)),
+                ("value", cadmpeg_core::json!("A B")),
             ] {
                 let mut invalid = wire.clone();
                 invalid[field] = replacement;
                 assert!(json::from_value::<FeaturePayloadName>(invalid).is_err());
             }
         }
-        let overflowing = serde_json::json!({
+        let overflowing = cadmpeg_core::json!({
             "id": "name", "operation_label": "operation", "construction_payload": "payload",
             "ordinal": 0, "type_code": 1, "raw_type_code": "01",
             "type_code_payload_offset": u64::MAX, "payload_leading": false,
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn payload_name_native_limit_refuses_before_type_token_copy() {
-        let wire = serde_json::json!({
+        let wire = cadmpeg_core::json!({
             "id": "nx:feature:payload-name#0",
             "operation_label": "operation", "construction_payload": "payload",
             "ordinal": 0, "type_code": 131, "raw_type_code": "8083",

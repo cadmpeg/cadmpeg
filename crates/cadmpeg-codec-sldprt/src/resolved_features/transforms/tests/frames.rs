@@ -1474,13 +1474,13 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
     let mut builder = AnnotationBuilder::new();
     let stream =
         cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:support"));
-    builder.note(sketch_id.as_str(), &stream, 200, Some("support"));
+    builder.note(&sketch_id, &stream, 200, Some("support"));
     let mut annotations = builder.build();
     let mut builder = AnnotationBuilder::resume(annotations);
     for id in [
-        sketch_id.as_str(),
-        entity_id.as_str(),
-        constraint_id.as_str(),
+        cadmpeg_ir::annotations::AnnotationKey::from(&sketch_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&entity_id),
+        cadmpeg_ir::annotations::AnnotationKey::from(&constraint_id),
     ] {
         builder.exactness(id, cadmpeg_ir::Exactness::Derived);
     }

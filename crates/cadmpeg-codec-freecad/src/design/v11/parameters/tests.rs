@@ -3,14 +3,14 @@
 use cadmpeg_core::serde_erase::json;
 use std::io::Cursor;
 
-use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral};
-use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
+use cadmpeg_ir::design::expr::{Expression, Neutral};
+use cadmpeg_ir::design::parameter::{DesignParameter, ParameterOwner};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::features::parameters::ParameterValue as LegacyValue;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
-use crate::test_support::test_archive::assert_valid_document;
+use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
 
 const CONSTRAINT_BOUND: &[u8] = include_bytes!(concat!(
@@ -78,24 +78,98 @@ fn a_property_bound_to_a_named_constraint_is_a_neutral_expression() {
 }
 
 #[test]
-fn a_reference_outside_every_body_stays_source_text() {
+fn a_reference_to_a_sheet_alias_names_the_cell_parameter() {
     let ir = decode(SHEET_BOUND);
-    let ParameterDefinition::Expression(Expression::Source { dialect, tokens }) =
-        &parameter(&ir, "fcstd:design:parameter#Pad:Length").definition
-    else {
-        panic!();
-    };
-    assert_eq!(*dialect, ExpressionDialect::FreeCad);
-    assert_eq!(
-        tokens.as_slice(),
-        [ExpressionToken::Text("Parameters.plate_w / 2".to_owned())]
-    );
-    assert!(ir
+    let sheet = cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Parameters").unwrap();
+    let cell = ir
         .design
         .parameters
         .iter()
-        .all(|parameter| !parameter.id.as_str().contains("Parameters:cell")));
-    assert!(ir.design.spreadsheets.is_empty());
+        .find(|parameter| {
+            parameter.owner == Some(ParameterOwner::Feature(sheet.clone()))
+                && parameter
+                    .name
+                    .as_ref()
+                    .is_some_and(|name| name.as_str() == "plate_w")
+        })
+        .unwrap_or_else(|| panic!("{:?}", ir.design.parameters));
+    assert!(
+        cell.id.as_str().contains("Parameters:cell:"),
+        "{}",
+        cell.id.as_str()
+    );
+    assert_eq!(
+        neutral(parameter(&ir, "fcstd:design:parameter#Pad:Length")),
+        ("$0 / 2".to_owned(), vec![cell.id.as_str().to_owned()])
+    );
+}
+
+#[test]
+fn a_dimensionless_reference_bound_to_a_length_is_in_millimetres() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sketch" type="Sketcher::SketchObject"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="2">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="1"><Cell address="A1" alias="w" content="12"/></Cells></Property></Properties></Object>
+<Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="12" EndY="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Name="width" Type="6" First="0" FirstPos="1" Second="0" SecondPos="2" Value="12"/>
+</ConstraintList></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path=".Constraints.width" expression="Sheet.w"/></ExpressionEngine></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let ir = decode(&archive(document));
+    let distance = parameter(&ir, "fcstd:design:parameter#Sketch:constraint:1");
+    assert_eq!(distance.kind, ValueKind::Quantity(Quantity::LENGTH));
+    let (text, refs) = neutral(distance);
+    assert_eq!(text, "$0 * 1[mm]");
+    assert_eq!(refs.len(), 1);
+}
+
+#[test]
+fn a_dimensionless_reference_bound_to_an_angle_is_in_degrees() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sketch" type="Sketcher::SketchObject"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="2">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="1"><Cell address="A1" alias="tilt" content="30"/></Cells></Property></Properties></Object>
+<Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="12" EndY="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Name="tilt" Type="9" First="0" FirstPos="0" Value="0.5235987755982988"/>
+</ConstraintList></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path=".Constraints.tilt" expression="Sheet.tilt"/></ExpressionEngine></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let ir = decode(&archive(document));
+    let angle = parameter(&ir, "fcstd:design:parameter#Sketch:constraint:1");
+    assert_eq!(angle.kind, ValueKind::Quantity(Quantity::ANGLE));
+    let (text, refs) = neutral(angle);
+    assert_eq!(text, "$0 * 1[deg]");
+    assert_eq!(refs.len(), 1);
+}
+
+#[test]
+fn a_lone_reference_to_a_cell_with_no_value_stays_source_text() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sketch" type="Sketcher::SketchObject"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="2">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="1"><Cell address="A1" alias="w" content="=width0 * 2"/></Cells></Property></Properties></Object>
+<Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="12" EndY="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Name="width" Type="6" First="0" FirstPos="1" Second="0" SecondPos="2" Value="12"/>
+</ConstraintList></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path=".Constraints.width" expression="Sheet.w"/></ExpressionEngine></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let ir = decode(&archive(document));
+    let distance = parameter(&ir, "fcstd:design:parameter#Sketch:constraint:1");
+    assert_eq!(
+        distance.definition,
+        cadmpeg_ir::design::parameter::ParameterDefinition::Expression(Expression::Source {
+            dialect: cadmpeg_ir::design::expr::ExpressionDialect::FreeCad,
+            tokens: vec![cadmpeg_ir::design::expr::ExpressionToken::Text(
+                "Sheet.w".to_owned()
+            )],
+        })
+    );
 }
 
 #[test]

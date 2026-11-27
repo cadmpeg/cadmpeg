@@ -62,6 +62,16 @@ pub(crate) enum ActiveCarrierState<'a> {
     NotApplicable,
     Selected(ActiveCarrier<'a>),
     Unavailable(String),
+    /// The one typed kernel-carrier record, whose envelope does not parse:
+    /// the record `record_ordinal` of the segment `segment_token`, whose
+    /// `payload` starts at `payload_offset` in the expanded bulk stream.
+    Unreadable {
+        segment_token: String,
+        record_ordinal: u32,
+        payload_offset: u64,
+        payload: View<'a>,
+        detail: String,
+    },
 }
 
 pub(crate) struct DecodedKernelCarrier {
@@ -197,7 +207,13 @@ pub(crate) fn select_active_carrier<'a>(
         version,
     ) {
         Ok(carrier) => ActiveCarrierState::Selected(carrier),
-        Err(error) => ActiveCarrierState::Unavailable(error.to_string()),
+        Err(error) => ActiveCarrierState::Unreadable {
+            segment_token: segment.pair.token.as_str().to_owned(),
+            record_ordinal: record.ordinal,
+            payload_offset: record.payload_offset,
+            payload: record.payload,
+            detail: error.to_string(),
+        },
     }
 }
 

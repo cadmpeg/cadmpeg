@@ -164,6 +164,6 @@ fn source_pair_cadir_round_trip_checks_byte_locations() {
     let restored: DesignParameterScope = json::from_value(wire.clone()).unwrap();
     assert_eq!(restored.derived_base_source, scope.derived_base_source);
     let mut displaced = wire;
-    displaced["derived_base_source"]["source_body"]["offset"] = serde_json::json!(1076);
+    displaced["derived_base_source"]["source_body"]["offset"] = cadmpeg_core::json!(1076);
     assert!(json::from_value::<DesignParameterScope>(displaced).is_err());
 }

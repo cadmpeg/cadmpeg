@@ -288,11 +288,11 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
         };
         assert_eq!(
             json::to_value(plane_origin).unwrap(),
-            serde_json::json!({"x": 50.0, "y": 0.0, "z": 0.0})
+            cadmpeg_core::json!({"x": 50.0, "y": 0.0, "z": 0.0})
         );
         assert_eq!(
             json::to_value(plane_normal).unwrap(),
-            serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0})
+            cadmpeg_core::json!({"x": 1.0, "y": 0.0, "z": 0.0})
         );
         if mode == Mode::Assumed {
             assert_eq!(losses.len(), 1);
@@ -387,11 +387,11 @@ fn mirror_compact_seed_fallback_keeps_work_plane_and_records_loss() {
         };
         assert_eq!(
             json::to_value(plane_origin).unwrap(),
-            serde_json::json!({"x": 50.0, "y": 20.0, "z": 30.0})
+            cadmpeg_core::json!({"x": 50.0, "y": 20.0, "z": 30.0})
         );
         assert_eq!(
             json::to_value(plane_normal).unwrap(),
-            serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0})
+            cadmpeg_core::json!({"x": 1.0, "y": 0.0, "z": 0.0})
         );
         if substituted {
             assert_eq!(

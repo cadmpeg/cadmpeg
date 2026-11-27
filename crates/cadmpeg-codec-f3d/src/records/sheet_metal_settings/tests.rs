@@ -10,7 +10,7 @@ fn settings_wire_couples_version_arity_and_source_identity() {
         ("v3", 9, Some("0000")),
         ("v3", 9, Some("010000")),
     ] {
-        let mut wire = serde_json::json!({
+        let mut wire = cadmpeg_core::json!({
             "id": "f3d:Design1/BulkStream.dat:design-sheet-metal-settings#20",
             "record_index": 50, "byte_offset": 20, "paired_byte_offset": 100,
             "mask": 240, "inputs": {"version": version, "slots": vec![None::<u64>; count]},
@@ -18,12 +18,12 @@ fn settings_wire_couples_version_arity_and_source_identity() {
             "owner_record_index": 53, "context_record_index": 54,
         });
         if let Some(tail) = tail {
-            wire["inputs"]["rule_reference_tail"] = serde_json::json!(tail);
+            wire["inputs"]["rule_reference_tail"] = cadmpeg_core::json!(tail);
         }
         let record: DesignSheetMetalSettings = json::from_value(wire.clone()).unwrap();
         assert_eq!(json::to_value(record).unwrap(), wire);
         let mut invalid = wire.clone();
-        invalid["inputs"]["rule_reference_tail"] = serde_json::json!("000000");
+        invalid["inputs"]["rule_reference_tail"] = cadmpeg_core::json!("000000");
         assert!(json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
         if tail.is_some() {
             let mut invalid = wire.clone();
@@ -34,9 +34,9 @@ fn settings_wire_couples_version_arity_and_source_identity() {
             assert!(json::from_value::<DesignSheetMetalSettings>(invalid).is_err());
         }
         for (field, value) in [
-            ("byte_offset", serde_json::json!(21)),
-            ("paired_byte_offset", serde_json::json!(20)),
-            ("unexpected", serde_json::json!(0)),
+            ("byte_offset", cadmpeg_core::json!(21)),
+            ("paired_byte_offset", cadmpeg_core::json!(20)),
+            ("unexpected", cadmpeg_core::json!(0)),
         ] {
             let mut invalid = wire.clone();
             invalid[field] = value;
@@ -54,7 +54,7 @@ fn settings_wire_couples_version_arity_and_source_identity() {
 #[test]
 fn leading_reference_form_has_no_mask() {
     use super::DesignSheetMetalSettings;
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "f3d:Design1/BulkStream.dat:design-sheet-metal-settings#20",
         "record_index": 50, "byte_offset": 20, "paired_byte_offset": 100,
         "inputs": {"version": "v3_leading_reference", "first": 55, "rule_reference_tail": "0000"},
@@ -69,10 +69,10 @@ fn leading_reference_form_has_no_mask() {
         [50, 55, 51, 52, 53, 54]
     );
     let mut with_mask = wire.clone();
-    with_mask["mask"] = serde_json::json!(0);
+    with_mask["mask"] = cadmpeg_core::json!(0);
     assert!(json::from_value::<DesignSheetMetalSettings>(with_mask).is_err());
     let mut slots = wire;
-    slots["inputs"] = serde_json::json!({
+    slots["inputs"] = cadmpeg_core::json!({
         "version": "v3", "slots": vec![None::<u64>; 9], "rule_reference_tail": "0000",
     });
     assert!(json::from_value::<DesignSheetMetalSettings>(slots).is_err());

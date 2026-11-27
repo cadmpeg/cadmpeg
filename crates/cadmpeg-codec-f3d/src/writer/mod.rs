@@ -23,8 +23,14 @@ use cadmpeg_ir::codec::{CodecBackend, DecodeFailure, DecodeOptions, DecodeResult
 
 /// Decode a retained source archive for a writer that reads only its IR and
 /// losses, so the decode records no content digests.
-pub(crate) fn decode_retained_source(image: &[u8]) -> Result<DecodeResult, DecodeFailure> {
-    let options = DecodeOptions::default();
+pub(crate) fn decode_retained_source(
+    image: &[u8],
+    policy: cadmpeg_core::decode::DecodePolicy,
+) -> Result<DecodeResult, DecodeFailure> {
+    let options = DecodeOptions {
+        policy,
+        ..DecodeOptions::default()
+    };
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::read_root(
         &mut std::io::Cursor::new(image),

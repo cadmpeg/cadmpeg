@@ -139,9 +139,7 @@ pub(crate) fn bind_with_cache_and_preframed(
     let mut binder = Binder::new(&archive, saved_limit, work);
     binder.source_subtypes = Some(&source_subtypes);
     binder.header = parsed_header.as_ref();
-    let workers = std::thread::available_parallelism()
-        .map_or(1, std::num::NonZeroUsize::get)
-        .min(6);
+    let workers = cadmpeg_core::parallelism().min(6);
     if workers > 1 && states.len() >= 8 {
         if let Some(parallel_stats) = try_bind_parallel(
             ctx,

@@ -654,7 +654,7 @@ pub(super) fn transfer_curve_expression_features(
             )?;
             annotate(
                 annotations,
-                parameter_id.as_str(),
+                &parameter_id,
                 &source_section,
                 cadmpeg_core::decode::u64_from_index(assignment.offset),
                 "curve_expression_assignment",
@@ -752,7 +752,7 @@ pub(super) fn transfer_curve_expression_features(
             )?;
             annotate(
                 annotations,
-                curve_id.as_str(),
+                &curve_id,
                 &source_section,
                 cadmpeg_core::decode::u64_from_index(record.offset),
                 "curve_expression_carrier",
@@ -760,7 +760,7 @@ pub(super) fn transfer_curve_expression_features(
             )?;
             annotate(
                 annotations,
-                procedural_id.as_str(),
+                &procedural_id,
                 &source_section,
                 cadmpeg_core::decode::u64_from_index(record.offset),
                 "curve_expression_helix",
@@ -810,7 +810,7 @@ pub(super) fn transfer_curve_expression_features(
         };
         annotate(
             annotations,
-            feature_id.as_str(),
+            &feature_id,
             &source_section,
             cadmpeg_core::decode::u64_from_index(record.expression_offset),
             "curve_expression_feature",

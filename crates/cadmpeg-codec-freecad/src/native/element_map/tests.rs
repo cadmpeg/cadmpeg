@@ -44,7 +44,7 @@ fn child_map_reference_is_rejected_by_complete_cadir_admission() {
                         continue;
                     }
                     fields[4] = "-1".to_owned();
-                    *child = serde_json::json!(fields.join(" "));
+                    *child = cadmpeg_core::json!(fields.join(" "));
                     changed = true;
                     break 'maps;
                 }
@@ -86,7 +86,7 @@ fn element_map_nodes_require_root_on_wire() {
         .unwrap_err()
         .to_string()
         .contains("maps"));
-    let wire = serde_json::json!([{"index": 1, "map_id": 0, "groups": []}]);
+    let wire = cadmpeg_core::json!([{"index": 1, "map_id": 0, "groups": []}]);
     let nodes: super::ElementMapNodes = json::from_value(wire.clone()).unwrap();
     assert_eq!(json::to_value(nodes).unwrap(), wire);
 }
@@ -96,14 +96,14 @@ fn element_map_nodes_admit_only_contiguous_one_based_wire_indices() {
     for indices in [vec![0], vec![2], vec![1, 1], vec![1, 3]] {
         let wire = indices
             .into_iter()
-            .map(|index| serde_json::json!({"index": index, "map_id": 0, "groups": []}))
+            .map(|index| cadmpeg_core::json!({"index": index, "map_id": 0, "groups": []}))
             .collect::<Vec<_>>();
         let error =
             json::from_value::<super::ElementMapNodes>(serde_json::Value::Array(wire.clone()))
                 .unwrap_err();
         assert!(error.to_string().contains("maps[") || error.to_string().contains("maps"));
 
-        let record = serde_json::json!({
+        let record = cadmpeg_core::json!({
             "id": "fcstd:native:element-map#test",
             "property": "fcstd:native:property#Shape",
             "version": "1.0",
@@ -137,7 +137,7 @@ fn element_map_nodes_admit_only_contiguous_one_based_wire_indices() {
 #[test]
 fn element_map_wire_rejects_forward_and_negative_child_map_indices() {
     let child = |descriptor: &str| {
-        serde_json::json!([{
+        cadmpeg_core::json!([{
             "index": 1,
             "map_id": 0,
             "groups": [{
@@ -152,7 +152,7 @@ fn element_map_wire_rejects_forward_and_negative_child_map_indices() {
         assert!(error.to_string().contains("mapIndex"), "{error}");
     }
 
-    let valid = serde_json::json!([
+    let valid = cadmpeg_core::json!([
         {"index": 1, "map_id": 0, "groups": []},
         {"index": 2, "map_id": 1, "groups": [{
             "indexed_name": "Face",
@@ -196,7 +196,7 @@ fn element_map_child_admission_checks_constructors_and_wire_fields() {
             super::ElementMapNodes::try_from(vec![node(descriptor)]).is_err(),
             "constructor admitted {descriptor:?}",
         );
-        let wire = serde_json::json!([{
+        let wire = cadmpeg_core::json!([{
             "index": 1,
             "map_id": 0,
             "groups": node(descriptor).groups,
@@ -221,7 +221,7 @@ fn element_map_child_admission_checks_constructors_and_wire_fields() {
 
 #[test]
 fn element_map_declared_count_is_independent_xml_metadata() {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "fcstd:native:element-map#test",
         "property": "fcstd:native:property#Shape",
         "version": "1.0",

@@ -30,6 +30,9 @@ pub(crate) struct MemberTable {
 pub(crate) struct MemberTableStop {
     pub(crate) offset: usize,
     pub(crate) reason: &'static str,
+    /// A row starts at `offset` that the grammar does not admit, rather than
+    /// the table closing with a row count other than the declared one.
+    pub(crate) row_unread: bool,
 }
 
 /// One component placed by the assembly.
@@ -124,6 +127,7 @@ pub(crate) fn member_table(payload: &[u8]) -> Option<MemberTable> {
             table.stop = Some(MemberTableStop {
                 offset: row_start,
                 reason: "the named first row does not match the component row grammar",
+                row_unread: true,
             });
             return Some(table);
         }
@@ -142,6 +146,7 @@ pub(crate) fn member_table(payload: &[u8]) -> Option<MemberTable> {
                 table.stop = Some(MemberTableStop {
                     offset: row_start,
                     reason: "a positional row does not match the component row grammar",
+                    row_unread: true,
                 });
                 return Some(table);
             }
@@ -151,6 +156,7 @@ pub(crate) fn member_table(payload: &[u8]) -> Option<MemberTable> {
         table.stop = Some(MemberTableStop {
             offset: view.position(),
             reason: "the table ends with a row count that differs from its declared count",
+            row_unread: false,
         });
     }
     Some(table)

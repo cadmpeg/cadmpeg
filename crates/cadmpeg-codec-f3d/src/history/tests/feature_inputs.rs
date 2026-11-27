@@ -333,6 +333,7 @@ fn input_edge_geometry_keeps_only_selected_edges() {
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
         face_owners: Vec::new(),
         face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: Default::default(),
@@ -403,6 +404,7 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
     let mut topologies = vec![cadmpeg_ir::features::evaluation::FeatureInputTopology {
         face_owners: Vec::new(),
         face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: Default::default(),
@@ -539,6 +541,7 @@ fn input_face_owners_keep_only_the_faces_a_feature_selects() {
     let mut topologies = vec![FeatureInputTopology {
         face_owners: vec![owner(2, 1), owner(6, 5)],
         face_geometry: Vec::new(),
+        body_writers: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: DistinctMembers::try_from(vec![body(1), body(5)]).unwrap(),
@@ -663,6 +666,7 @@ fn input_face_geometry_keeps_only_the_faces_a_feature_selects() {
     let mut topologies = vec![FeatureInputTopology {
         face_owners: Vec::new(),
         face_geometry: vec![geometry(2, plane), geometry(3, cylinder.clone())],
+        body_writers: Vec::new(),
         id: crate::ids::history_input_state_id(&prefix),
         input_of: feature.id.clone(),
         bodies: Default::default(),

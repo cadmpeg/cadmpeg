@@ -4,8 +4,8 @@ use crate::geometry::blends::{
 };
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use crate::math::{Point3, Vector3};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
-use serde_json::json;
 
 fn station(knot: f64, multiplicity: u32) -> RollingBallJetStation {
     let derivative = RollingBallJetDerivative {

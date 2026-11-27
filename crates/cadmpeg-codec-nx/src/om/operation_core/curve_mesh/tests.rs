@@ -32,7 +32,7 @@ fn core() -> Vec<u8> {
     b
 }
 fn wire(bytes: Vec<u8>) -> serde_json::Value {
-    serde_json::json!({"kind":"curve_mesh", "bytes":NativeBytes::from(bytes)})
+    cadmpeg_core::json!({"kind":"curve_mesh", "bytes":NativeBytes::from(bytes)})
 }
 #[test]
 fn curve_mesh_requires_two_nonempty_groups_and_exact_complete_wire() {

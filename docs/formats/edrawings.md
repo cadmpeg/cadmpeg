@@ -277,7 +277,21 @@ The stream holds display meshes and no exact surfaces. The decoder builds a face
 5. The names of the occurrences are the display names. An occurrence that the current display state hides has `visible` set to false. In `edrawings:hsf-18-00` and `edrawings:hsf-19-00` the `visible` value of an unlisted part follows the reading of EDR-14.
 6. In `edrawings:hsf-18-00` the colour of a body is its body material. The colours of sub-segments that differ from it, the colour and transparency overrides of parts, and those of display states are reported and not transferred.
 
-Body ids come from the scope `body<k>`, with k the order of first use.
+Body ids come from the scope `body<k>`, with k the order of first use. An occurrence id comes from the index of its tree node in stream order, so an instance that has no occurrence keeps the id that it would have.
+
+### 4.1 Parts
+
+The decoder gives up these units of the package as parts. The part kind names the unit in a `record.unreadable` loss. The offset of a part in the model stream is an offset in the inflated stream, which the loss names `eModel`.
+
+| Part kind | Unit | Framing |
+| --- | --- | --- |
+| `archive-entry` | The `eModel` member, when its zlib stream does not open or its model stream breaks a record rule | The ZIP entry (§1.2) |
+| `model-object` | One shell, shell instance, or text object record that the decoder does not transfer | The record (§3.6, §3.7, §3.9) |
+| `tree-node` | One instance node whose includes name no library body | The node segment, from its open record to its close record (§3.5) |
+
+The decoder gives up a `model-object` part for a shell or shell instance that does not decode, for the object of a shell slot outside every library body, and for each later object whose id an earlier object has. The object of a shell slot outside every library body is not given up when a shell instance names it as its source.
+
+A record that the decoder drops only because it needs a given-up record is not given up by itself. The loss of the given-up record lists it as dropped. A body whose shells all fail to decode is dropped with the first of those shells. An instance whose bodies were all not built is dropped with the first body of its body set.
 
 ## 5. Detection
 
