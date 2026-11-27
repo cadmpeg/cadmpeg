@@ -622,6 +622,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                             operand_record_index + 1
                         },
                         external_identity: None,
+                        legacy_external_identity: None,
                         body_node: None,
                     },
                     additional: vec![],

@@ -248,6 +248,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 first: crate::records::feature::combine::DesignCombineBodySelection {
                     record_index: record.record_index,
                     external_identity: None,
+                    legacy_external_identity: None,
                     body_node: None,
                 },
                 additional: Vec::new(),
