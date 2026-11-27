@@ -72,6 +72,8 @@ const UNIT_TYPES: [u16; 3] = [1, 16, 58];
 const METHOD_CODE_MAX: i32 = 255;
 /// The bend-method codes of §10.1.
 const METHOD_NEUTRAL_FACTOR: f64 = 0.0;
+const METHOD_BEND_DEDUCTION: f64 = 1.0;
+const METHOD_BEND_ALLOWANCE: f64 = 2.0;
 
 /// The stored value of each variable index.
 type Variables = [Option<f64>; SLOTS];
@@ -196,9 +198,21 @@ fn rule(
             ));
             None
         }
+        (Some(code), _) if is(code, METHOD_BEND_DEDUCTION) || is(code, METHOD_BEND_ALLOWANCE) => {
+            let (method, option) = if is(code, METHOD_BEND_DEDUCTION) {
+                ("bend deduction", "bend_deduction")
+            } else {
+                ("bend allowance", "bend_allowance")
+            };
+            losses.push(SolidEdgeLossCode::SheetMetalBendValueUnstated.note(format!(
+                "the bend method is the {method}, which the rule states only as the native option \
+                 {option}; the rule states no bend allowance"
+            )));
+            None
+        }
         (Some(code), _) => {
             losses.push(SolidEdgeLossCode::SheetMetalBendMethodUnread.note(format!(
-                "the bend method {code} is not the neutral factor; the rule states no bend \
+                "the bend method {code} is not a method of §10.1; the rule states no bend \
                  allowance"
             )));
             None

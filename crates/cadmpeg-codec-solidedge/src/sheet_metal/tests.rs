@@ -148,7 +148,38 @@ fn bend_deduction_states_no_allowance() {
     let result = base_tab(0.002, 2.0, Some(variable_table(12, &records(1.0))));
     let rule = &result.ir().design.sheet_metal_rules[0];
     assert!(rule.allowance.is_none());
-    assert!(codes(&result).contains(&"sheet-metal.bend-method-unread".to_owned()));
+    assert!((length_option(&rule.native_options, "bend_deduction") - 6.0).abs() <= EPS_VALUE);
+    let codes = codes(&result);
+    assert!(codes.contains(&"sheet-metal.bend-value-unstated".to_owned()));
+    assert!(!codes.contains(&"sheet-metal.bend-method-unread".to_owned()));
+}
+
+#[test]
+fn bend_allowance_method_states_no_allowance() {
+    let result = base_tab(0.002, 2.0, Some(variable_table(12, &records(2.0))));
+    let rule = &result.ir().design.sheet_metal_rules[0];
+    assert!(rule.allowance.is_none());
+    assert!((length_option(&rule.native_options, "bend_allowance") - 7.0).abs() <= EPS_VALUE);
+    let method = rule
+        .source_settings
+        .iter()
+        .find(|(key, _)| key.as_str() == "solidedge:bend_method")
+        .unwrap()
+        .1;
+    assert_eq!(method, &NativeOption::Integer(Dimension::Literal(2)));
+    let codes = codes(&result);
+    assert!(codes.contains(&"sheet-metal.bend-value-unstated".to_owned()));
+    assert!(!codes.contains(&"sheet-metal.bend-method-unread".to_owned()));
+}
+
+#[test]
+fn bend_method_outside_the_table_is_unread() {
+    let result = base_tab(0.002, 2.0, Some(variable_table(12, &records(3.0))));
+    let rule = &result.ir().design.sheet_metal_rules[0];
+    assert!(rule.allowance.is_none());
+    let codes = codes(&result);
+    assert!(codes.contains(&"sheet-metal.bend-method-unread".to_owned()));
+    assert!(!codes.contains(&"sheet-metal.bend-value-unstated".to_owned()));
 }
 
 #[test]

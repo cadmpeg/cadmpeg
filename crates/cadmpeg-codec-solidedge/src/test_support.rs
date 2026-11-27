@@ -850,6 +850,31 @@ pub(crate) fn sweep_document(
     feature_with_groups(body, extra, &SKETCH_CLASSES)
 }
 
+/// The first profile set of [`loft_document`]: section `k` is the group
+/// `LOFT_SET + 10 * k`.
+pub(crate) const LOFT_SET: u32 = 100;
+
+/// A document with one `JMLoftedProtrusionFunction` feature, object 10, whose
+/// section profiles are the groups given, in loft order. Section `k` is
+/// stored 72 + 20 `k` bytes after the name; the list ends with a word that
+/// names no profile.
+pub(crate) fn loft_document(sections: &[(ProfileFrame, Vec<Member2d>)]) -> Vec<u8> {
+    let mut body = part_body("JMLoftedProtrusionFunction");
+    let end = body.len();
+    body.resize(end + 72 + 20 * sections.len() + 4, 0);
+    let mut extra = Vec::new();
+    for (index, (frame, members)) in sections.iter().enumerate() {
+        let step = u32::try_from(index).unwrap();
+        let set = LOFT_SET + 10 * step;
+        let at = end + 72 + 20 * index;
+        body[at..at + 4].copy_from_slice(&(set + 1).to_le_bytes());
+        extra.extend(profile_group(set, frame, 1, 500 + 10 * step, members));
+    }
+    let after = end + 72 + 20 * sections.len();
+    body[after..after + 4].copy_from_slice(&0x8000_0010_u32.to_le_bytes());
+    feature_with_groups(body, extra, &SKETCH_CLASSES)
+}
+
 /// The class names of [`extent_document`], by form.
 pub(crate) const EXTENT_CLASSES: [&str; 17] = [
     "ReferencePlaneObject",
@@ -1046,13 +1071,26 @@ pub(crate) struct HoleProps {
 pub(crate) enum Dress {
     /// A slot object of [`Slot`].
     Value(Slot),
-    /// A `CLSID_JMTopologyProxy` that stores no straight edge.
+    /// A `CLSID_JMTopologyProxy` without a geometry record.
     Proxy,
-    /// A 559-byte `CLSID_JMTopologyProxy` that stores a straight edge by its
-    /// start, unit direction and length, in metres (§7.6).
-    EdgeProxy([f64; 3], [f64; 3], f64),
+    /// A `CLSID_JMTopologyProxy` that holds a straight edge, in metres.
+    Edge {
+        start: [f64; 3],
+        direction: [f64; 3],
+        length: f64,
+    },
+    /// A `CLSID_JMTopologyProxy` that holds a vertex, in metres.
+    Vertex([f64; 3]),
     /// A `CLSID_JMHolePropData`.
     Props(HoleProps),
+}
+
+/// The body of a synthetic topology proxy up to its geometry record: leading
+/// bytes and the end of the geometry class identifier.
+fn proxy_geometry_prefix() -> Vec<u8> {
+    let mut bytes = vec![0_u8; 16];
+    bytes.extend_from_slice(&[0xce, 0x11, 0x9a, 0x5e, 0x08, 0x00, 0x36, 0x9b, 0x41, 0x02]);
+    bytes
 }
 
 /// Bytes after the function name that every synthetic hole, round or chamfer
@@ -1086,11 +1124,31 @@ pub(crate) fn dressup_document(
                 flags: 0,
                 body: vec![0; 8],
             }),
-            Dress::EdgeProxy(start, direction, length) => {
-                let mut bytes = vec![0_u8; 559 - 8];
-                put_reals(&mut bytes, 121, start);
-                put_reals(&mut bytes, 145, direction);
-                put_reals(&mut bytes, 177, &[*length]);
+            Dress::Edge {
+                start,
+                direction,
+                length,
+            } => {
+                let mut bytes = proxy_geometry_prefix();
+                bytes.push(3);
+                for value in start.iter().chain(direction.iter()) {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+                for value in [0.0, *length, 0.0] {
+                    bytes.extend_from_slice(&f64::to_le_bytes(value));
+                }
+                Some(Object {
+                    id,
+                    form: 19,
+                    flags: 0,
+                    body: bytes,
+                })
+            }
+            Dress::Vertex(point) => {
+                let mut bytes = proxy_geometry_prefix();
+                for value in point {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
                 Some(Object {
                     id,
                     form: 19,
@@ -1134,7 +1192,10 @@ mod patterns;
 pub(crate) use patterns::{mirror_document, pattern_document, MirrorSpec, PatternSpec};
 
 mod assembly;
-pub(crate) use assembly::{assembly_document, OccurrenceSpec, SiteSpec};
+pub(crate) use assembly::{
+    assembly_document, assembly_document_with_table, assembly_document_with_visibility,
+    visibility_stream, OccurrenceSpec, SiteSpec,
+};
 
 mod flange;
 pub(crate) use flange::{flange_document, FlangeSpec};
