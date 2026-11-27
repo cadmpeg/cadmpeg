@@ -5,14 +5,20 @@
 //! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#ironcad-ics)).
 //! <!-- /generated: capability ironcad -->
 
+mod acis;
 mod container;
 mod decode;
 mod dialect;
 mod frame;
+#[doc(hidden)]
+pub mod fuzz;
 mod kernel;
 mod layout;
 mod loss;
+mod parasolid;
+mod placement;
 mod tree;
+mod units;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;

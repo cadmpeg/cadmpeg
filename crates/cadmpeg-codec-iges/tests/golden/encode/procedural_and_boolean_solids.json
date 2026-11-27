@@ -14,18 +14,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "source.preserved-image-unavailable",
-            "kind": "preserved_source_unavailable",
-            "namespace": "iges"
-          }
-        },
-        "message": "preserved IGES source image is unavailable; semantic regeneration is required",
-        "severity": "blocking"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "writer.support-geometry-not-represented",
             "kind": "geometry_not_transferred",
             "namespace": "iges"
@@ -127,7 +115,7 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 9 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
+        "message": "the IGES write omits 9 native record(s) of `iges` arena `display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9; whose entity the semantic writer does not encode: iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9; whose neutral curve the semantic writer withholds: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
         "severity": "warning"
       },
       {
@@ -194,6 +182,10 @@
     "notes": [
       "IGES Fixed ASCII container regenerated from supported neutral geometry"
     ],
+    "synthesis_cause": {
+      "kind": "patch_declined",
+      "reason": "the encode holds no source fidelity"
+    },
     "write_path": {
       "fidelity": {
         "kind": "not_provided"

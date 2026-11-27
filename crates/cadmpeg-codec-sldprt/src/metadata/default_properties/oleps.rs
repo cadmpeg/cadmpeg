@@ -27,7 +27,7 @@ pub(super) fn configuration_table(
     payload: &[u8],
 ) -> Result<Table, CodecError> {
     if u32_at(View::over_retained(payload), header::SECTION_COUNT)? != 2 {
-        return Err(unsupported("configuration-property two-section form"));
+        return Err(form("configuration-property two-section form"));
     }
     table(ctx, payload)
 }
@@ -38,11 +38,11 @@ pub(super) fn table(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Table, Co
     if u16_at(root, header::BYTE_ORDER)? != header::BYTE_ORDER_VALUE
         || !matches!(u16_at(root, header::VERSION)?, 0 | 1)
     {
-        return Err(unsupported("default-property stream header"));
+        return Err(form("default-property stream header"));
     }
     let count = index_from_u32(u32_at(root, header::SECTION_COUNT)?);
     if !(1..=2).contains(&count) {
-        return Err(unsupported("default-property section count"));
+        return Err(form("default-property section count"));
     }
     let descriptors_end = header::LEN + count * descriptor::LEN;
     field(root, header::LEN, count * descriptor::LEN)?;
@@ -59,7 +59,7 @@ pub(super) fn table(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Table, Co
                     USER_DEFINED
                 }
         {
-            return Err(unsupported("default-property two-section FMTID order"));
+            return Err(form("default-property two-section FMTID order"));
         }
         let start = index_from_u32(u32_at(record, descriptor::SECTION_OFFSET)?);
         if start < descriptors_end || !start.is_multiple_of(4) {
@@ -80,7 +80,7 @@ pub(super) fn table(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Table, Co
     }
     parse_set(
         ctx,
-        selected.ok_or_else(|| unsupported("default-property missing UserDefined set"))?,
+        selected.ok_or_else(|| form("default-property missing UserDefined set"))?,
     )
 }
 
@@ -124,7 +124,7 @@ fn parse_set(ctx: &DecodeContext<'_>, section: View<'_>) -> Result<Table, CodecE
     if u16_at(control, typed::TYPE)? != 2
         || u16_at(control, typed::PADDING)? != typed::PADDING_VALUE
     {
-        return Err(unsupported("default-property CodePage type"));
+        return Err(form("default-property CodePage type"));
     }
     let codepage = u16_at(control, typed::LEN)?;
     if !matches!(codepage, 65001 | 1200) {
@@ -336,7 +336,7 @@ fn text(ctx: &DecodeContext<'_>, bytes: &[u8], codepage: u16) -> Result<String, 
                 "decode saved default-property UTF16",
             )
         }
-        _ => Err(unsupported("default-property text codepage")),
+        _ => Err(form("default-property text codepage")),
     }
 }
 
@@ -362,4 +362,9 @@ fn u32_at(view: View<'_>, relative: usize) -> Result<u32, CodecError> {
 
 fn unsupported(what: &str) -> CodecError {
     CodecError::malformed(what)
+}
+
+/// A stored form the decoder does not read, as opposed to malformed content.
+fn form(what: &str) -> CodecError {
+    CodecError::NotImplemented(format!("{what} is not read"))
 }

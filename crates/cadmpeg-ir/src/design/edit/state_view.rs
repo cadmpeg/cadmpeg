@@ -140,6 +140,20 @@ pub enum StateResolutionError {
     Composition(#[from] EditError),
 }
 
+impl StateResolutionError {
+    /// The §2.5 refusal a chain past the ceiling is, and no refusal for any
+    /// other failure.
+    #[must_use]
+    pub fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
+        match self {
+            Self::ChainDepthExceeded { limit } => {
+                crate::validate::state_chain_refusal(*limit, limit.checked_add(1)?)
+            }
+            _ => None,
+        }
+    }
+}
+
 impl CadIr {
     /// Resolves the extent of the scope's current state at `at` (§5.5).
     ///

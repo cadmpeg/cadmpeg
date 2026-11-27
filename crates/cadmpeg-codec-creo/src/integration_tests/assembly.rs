@@ -2,8 +2,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::products::Storage;
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::loss::CreoLossCode;
@@ -16,6 +17,17 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("synthesized Creo assembly should decode"),
     )
+}
+
+/// The record each `record.unreadable` names, as its message's second token.
+fn unreadable_records(result: &EditableDecodeResult) -> Vec<String> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter_map(|loss| loss.message.split_whitespace().nth(1).map(str::to_owned))
+        .collect()
 }
 
 fn loss_messages(result: &EditableDecodeResult, code: CreoLossCode) -> Vec<String> {
@@ -185,6 +197,93 @@ fn a_frame_that_is_not_rigid_drops_its_occurrence() {
             "1 component row(s) store a frame that is not a proper rigid placement; \
           those occurrences did not transfer"
         ]
+    );
+    let dropped = "creo:model:occurrence#member-1";
+    assert_eq!(unreadable_records(&result), [dropped.to_owned()]);
+    assert!(result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .all(|occurrence| occurrence.id.as_str() != dropped));
+}
+
+#[test]
+fn a_pinned_decode_refuses_a_frame_that_is_not_rigid() {
+    let mut table = members_table();
+    replace_once(&mut table, b"\x18\x10\x18\x2d", b"\x18\x0f\x18\x2d");
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = CreoCodec
+        .decode(&mut Cursor::new(build_asm_with(table)), &options)
+        .expect_err("a pinned decode refuses a dropped component row");
+    let DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().code, record_unreadable_kind());
+    assert!(rejection
+        .loss()
+        .message
+        .split_whitespace()
+        .any(|token| token == "creo:model:occurrence#member-1"));
+}
+
+#[test]
+fn an_unread_component_row_is_given_up_with_the_rows_after_it() {
+    let mut table = members_table();
+    replace_once(
+        &mut table,
+        b"\x8a\x0f\x02BRACKET\0BRACKET\0\xe1",
+        b"\x8a\x0f\x02BRACKET\0BRACKET\0\xe2",
+    );
+    let bytes = build_asm_with(table);
+    let row = bytes
+        .windows(3)
+        .position(|window| window == b"\x8a\x0f\x02")
+        .expect("the unread row");
+    let end = crate::container::scan_bytes_ok(bytes.clone())
+        .framing
+        .sections
+        .iter()
+        .find(|section| section.name() == "NeuAsmSld")
+        .expect("the component section")
+        .end();
+    let result = decode(bytes.clone());
+    assert_eq!(result.ir().model.occurrences.len(), 1);
+    assert_eq!(
+        loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).len(),
+        1
+    );
+    let charges = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert!(
+        charges[0].starts_with(&format!(
+            "part component-rows stream=\"\" offset={row} length={} record=creo:source:part#",
+            end - row
+        )),
+        "{}",
+        charges[0]
+    );
+    let stub = result
+        .ir()
+        .native_unknowns("creo")
+        .expect("native unknowns")
+        .into_iter()
+        .find(|record| charges[0].contains(&format!(" record={}: ", record.id)))
+        .expect("the charge names its part stub");
+    assert!(stub.links.is_empty());
+    assert_eq!(
+        result
+            .source_fidelity()
+            .retained_record(stub.id.as_str())
+            .and_then(|record| record.data()),
+        Some(&bytes[row..end])
     );
 }
 

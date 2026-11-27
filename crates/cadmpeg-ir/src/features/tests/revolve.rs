@@ -7,11 +7,11 @@ use cadmpeg_core::serde_erase::json;
 fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
     use crate::features::revolve::{RevolutionAxis, RevolveConstruction};
 
-    let axis = serde_json::json!({
+    let axis = cadmpeg_core::json!({
         "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
     });
-    let mut construction: RevolveConstruction = json::from_value(serde_json::json!({
+    let mut construction: RevolveConstruction = json::from_value(cadmpeg_core::json!({
         "kind": "unresolved",
         "value": {
             "kind": "axis",
@@ -27,7 +27,7 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
     ));
     assert_eq!(
         json::to_value(construction).unwrap(),
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": "resolved",
             "value": {
                 "profile": {"kind": "native", "value": "test:profile"},
@@ -43,7 +43,7 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
 #[test]
 fn revolve_fixed_angles_have_positive_sign_and_one_turn_limit() {
     use crate::features::revolve::RevolveExtent;
-    use serde_json::json;
+    use cadmpeg_core::json;
     use std::f64::consts::{PI, TAU};
 
     for kind in ["one_sided", "symmetric"] {

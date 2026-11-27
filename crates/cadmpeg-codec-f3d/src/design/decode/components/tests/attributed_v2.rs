@@ -132,7 +132,7 @@ fn empty_attributes_retain_the_identity_namespace_and_closing_pose() {
     assert_eq!(occurrence.occurrence_ordinal(), 1);
     assert_eq!(occurrence.transform().unwrap().value.rows()[0][3], 2.0);
     let wire = json::to_value(&occurrence).unwrap();
-    assert_eq!(wire["attributed"]["attributes"], serde_json::json!([]));
+    assert_eq!(wire["attributed"]["attributes"], cadmpeg_core::json!([]));
     assert_eq!(wire["attributed"]["key_record_index"], 139);
     assert_eq!(wire["attributed"]["key_segment_index"], 1);
 }
@@ -246,7 +246,7 @@ fn property_prelude_retains_names_key_and_equal_component_references() {
     let wire = json::to_value(&occurrence).unwrap();
     assert_eq!(
         wire["attributed"]["property_names"],
-        serde_json::json!(names)
+        cadmpeg_core::json!(names)
     );
     assert_eq!(wire["attributed"]["persistent_key"], "1_20");
     assert_eq!(occurrence.occurrence_ordinal(), 1);

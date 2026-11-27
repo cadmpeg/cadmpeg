@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::sketch_plane;
-use serde_json::json;
+use cadmpeg_core::json;
 
 #[test]
 fn sketch_matrix_retains_translation_and_rotation() {

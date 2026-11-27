@@ -357,8 +357,8 @@ mod tests {
         let value = [0.0, 0.0, (1.0_f64 + 5.0e-10).sqrt()];
         assert!(RelaxedUnitVector3::new(value).is_some());
         assert!(ExactUnitVector3::new(value).is_none());
-        assert!(json::from_value::<ExactUnitVector3>(serde_json::json!(value)).is_err());
-        assert!(json::from_value::<RelaxedUnitVector3>(serde_json::json!(value)).is_ok());
+        assert!(json::from_value::<ExactUnitVector3>(cadmpeg_core::json!(value)).is_err());
+        assert!(json::from_value::<RelaxedUnitVector3>(cadmpeg_core::json!(value)).is_ok());
     }
 
     #[test]

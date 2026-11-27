@@ -5,10 +5,10 @@ use crate::design::profile_select::{
     bind_extrude_profile_selections, SketchCurveSelectionResolution,
 };
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
-use serde_json::json;
 
 /// The profile that an Extrude with a native profile on the fixture group
 /// binds from `selections`, and its count of

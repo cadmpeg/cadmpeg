@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::geometry::legacy_cache::{CacheContractError, FitTolerance};
 use crate::geometry::revision_forms::{RevisionSurfaceParameterization, VariableBlendCache};
+use cadmpeg_core::json;
 use cadmpeg_core::serde_erase::json;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::num::NonZeroI64;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

@@ -308,6 +308,7 @@ fn projection_emits_the_first_refused_sweep_check() {
         &label,
         &index,
         crate::feature::FeatureFamily::Sweep,
+        |_| None,
         &mut losses
     )
     .is_none());
@@ -318,7 +319,7 @@ fn projection_emits_the_first_refused_sweep_check() {
 fn validator_refuses_unrepresented_sweep_controls() {
     for field in ["path_tangent", "linearize"] {
         let mut value = json::to_value(definition()).expect("definition");
-        value["value"]["value"][field] = serde_json::json!(true);
+        value["value"]["value"][field] = cadmpeg_core::json!(true);
         let value = json::from_value(value).expect("changed definition");
         assert!(!Fixture::new().validates(&value));
     }

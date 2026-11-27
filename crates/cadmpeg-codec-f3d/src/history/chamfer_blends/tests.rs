@@ -271,7 +271,7 @@ fn scope() -> DesignParameterScope {
 }
 
 fn group() -> DesignConstructionOperandGroup {
-    json::from_value(serde_json::json!({
+    json::from_value(cadmpeg_core::json!({
         "id": GROUP_ID,
         "byte_offset": 0,
         "class_tag": "325",

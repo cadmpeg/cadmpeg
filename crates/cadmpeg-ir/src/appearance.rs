@@ -216,11 +216,11 @@ pub enum AppearanceTarget {
     /// Standalone point geometry appearance.
     Point(crate::ids::PointId),
     /// Tessellated geometry appearance.
-    Tessellation(String),
+    Tessellation(crate::tessellation::TessellationId),
     /// Appearance of one triangle group of a tessellation.
     TriangleGroup {
         /// The tessellation.
-        tessellation: String,
+        tessellation: crate::tessellation::TessellationId,
         /// The `source_id` of the group.
         group: String,
     },
@@ -231,7 +231,7 @@ pub enum AppearanceTarget {
         /// The arena's field name.
         arena: NonBlankString,
         /// The record's id.
-        id: String,
+        id: crate::ids::Identity,
     },
     /// An object the source assigns the appearance to that the decoder did
     /// not join to a record of the document. The binding's

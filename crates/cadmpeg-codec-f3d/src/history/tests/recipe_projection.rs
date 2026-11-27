@@ -83,7 +83,11 @@ fn projection_caches_end_after_history_consumers() {
             &mut namespace,
         )
         .expect("store native history");
-    native = crate::native::F3dNative::load(&namespace).expect("load native history");
+    native = crate::native::F3dNative::load_inner(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &namespace,
+    )
+    .expect("load native history");
     assert!(crate::history::projection_was_finalized(
         &native.asm_histories
     ));
@@ -267,7 +271,7 @@ fn side_one_common_edge_requires_one_shared_candidate_without_incidence_fallback
 
 #[test]
 fn a_history_with_no_states_has_released_nothing_and_is_not_finalized() {
-    let document = serde_json::json!({
+    let document = cadmpeg_core::json!({
         "id": "history",
         "byte_offset": 0,
         "states": []

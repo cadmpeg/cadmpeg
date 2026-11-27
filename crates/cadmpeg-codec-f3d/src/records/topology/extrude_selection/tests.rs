@@ -13,7 +13,7 @@ fn selection_group() -> super::DesignExtrudeSelectionGroup {
 }
 
 fn selection_member() -> super::DesignExtrudeSelectionMember {
-    let wire = serde_json::json!({
+    let wire = cadmpeg_core::json!({
         "id": "member", "group_record_index": 9, "group_member_ordinal": 0,
         "record_index": 10, "byte_offset": 0, "class_tag": "277",
         "local_id": 12, "local_id_offset": 21,
@@ -105,7 +105,7 @@ fn extrude_selection_group_members_preserve_wire_and_reject_unequal_offsets() {
 
 #[test]
 fn extrude_group_rejects_invalid_run_and_scalar_admission() {
-    let wire = serde_json::json!({"id": "group", "scope_record_index": 7, "scope_reference_ordinal": 0,
+    let wire = cadmpeg_core::json!({"id": "group", "scope_record_index": 7, "scope_reference_ordinal": 0,
         "record_index": 9, "byte_offset": 0, "class_tag": "277", "member_count_offset": 32,
         "members": [10, 11], "member_offsets": [37, 48], "opaque_index": 1,
         "opaque_index_offset": 58, "opaque_scalar": -1.0, "opaque_scalar_offset": 62,
@@ -113,14 +113,14 @@ fn extrude_group_rejects_invalid_run_and_scalar_admission() {
     let group: super::DesignExtrudeSelectionGroup = json::from_value(wire.clone()).unwrap();
     assert_eq!(json::to_value(&group).unwrap(), wire);
     for (field, value) in [
-        ("members", serde_json::json!([10, 10])),
-        ("member_offsets", serde_json::json!([37, 49])),
-        ("opaque_index", serde_json::json!(0)),
-        ("member_count_offset", serde_json::json!(33)),
-        ("opaque_index_offset", serde_json::json!(59)),
-        ("opaque_scalar_offset", serde_json::json!(63)),
-        ("paired_byte_offset", serde_json::json!(112)),
-        ("byte_offset", serde_json::json!(u64::MAX)),
+        ("members", cadmpeg_core::json!([10, 10])),
+        ("member_offsets", cadmpeg_core::json!([37, 49])),
+        ("opaque_index", cadmpeg_core::json!(0)),
+        ("member_count_offset", cadmpeg_core::json!(33)),
+        ("opaque_index_offset", cadmpeg_core::json!(59)),
+        ("opaque_scalar_offset", cadmpeg_core::json!(63)),
+        ("paired_byte_offset", cadmpeg_core::json!(112)),
+        ("byte_offset", cadmpeg_core::json!(u64::MAX)),
     ] {
         let mut invalid = wire.clone();
         invalid[field] = value;

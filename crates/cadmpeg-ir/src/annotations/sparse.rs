@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transactions that copy only the identities selected for editing.
 
-use super::{AnnotationBuilder, Annotations};
+use super::{AnnotationBuilder, AnnotationKey, Annotations};
 use crate::provenance::Exactness;
 use std::collections::BTreeSet;
 
@@ -73,23 +73,31 @@ impl<'base> SparseAnnotationTransaction<'base> {
     /// Set a field override without copying other entity annotations.
     pub fn field_exactness(
         &mut self,
-        id: &str,
+        key: impl Into<AnnotationKey>,
         field: &str,
         exactness: Exactness,
     ) -> Result<(), super::AnnotationFieldError> {
-        self.edit(id, |annotations| {
+        let key = key.into();
+        self.edit(key.as_str(), |annotations| {
             let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-            let result = builder.field_exactness(id, field, exactness).map(|_| ());
+            let result = builder.field_exactness(&key, field, exactness).map(|_| ());
             *annotations = builder.build();
             result
         })
     }
 
     /// Replace provenance for one selected identity.
-    pub fn note(&mut self, id: &str, stream: &super::StreamHandle, offset: u64, tag: Option<&str>) {
-        self.edit(id, |annotations| {
+    pub fn note(
+        &mut self,
+        key: impl Into<AnnotationKey>,
+        stream: &super::StreamHandle,
+        offset: u64,
+        tag: Option<&str>,
+    ) {
+        let key = key.into();
+        self.edit(key.as_str(), |annotations| {
             let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-            builder.note(id, stream, offset, tag);
+            builder.note(&key, stream, offset, tag);
             *annotations = builder.build();
         });
     }
@@ -103,10 +111,11 @@ impl<'base> SparseAnnotationTransaction<'base> {
     }
 
     /// Set exactness while preserving existing field overrides at the selected identity.
-    pub fn exactness(&mut self, id: &str, exactness: Exactness) {
-        self.edit(id, |annotations| {
+    pub fn exactness(&mut self, key: impl Into<AnnotationKey>, exactness: Exactness) {
+        let key = key.into();
+        self.edit(key.as_str(), |annotations| {
             let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
-            builder.exactness(id, exactness);
+            builder.exactness(&key, exactness);
             *annotations = builder.build();
         });
     }

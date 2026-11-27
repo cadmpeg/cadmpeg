@@ -1406,7 +1406,7 @@ fn a_restated_join_map_names_no_wire_key() {
         let serde_json::Value::Object(mut fields) = value.clone() else {
             panic!("AsmBrep serializes as a map");
         };
-        fields.insert(restated.to_string(), serde_json::json!({}));
+        fields.insert(restated.to_string(), cadmpeg_core::json!({}));
         let Err(error) = cadmpeg_core::serde_erase::from_json_value::<AsmBrep>(
             &serde_json::Value::Object(fields),
         ) else {
