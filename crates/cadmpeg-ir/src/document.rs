@@ -47,6 +47,7 @@ use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 use crate::unknown::NativeUnknownRecord;
+use crate::up_axis::UpAxis;
 use cadmpeg_core::text::NonBlankString;
 
 pub(crate) mod census;
@@ -2874,6 +2875,8 @@ pub struct CadIr {
     pub source: Option<SourceMeta>,
     /// Document-wide tolerances.
     pub tolerances: Tolerances,
+    /// The axis that points up in the source document, when the source states one.
+    pub up_axis: Option<UpAxis>,
     /// The current geometry.
     pub geometry: Topology,
     /// Product structure, presentation, physics, assets, drawings, PMI, and
@@ -2948,6 +2951,8 @@ struct CadIrWriteWire<'a> {
     source: Option<&'a SourceMeta>,
     units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    up_axis: Option<UpAxis>,
     #[serde(serialize_with = "Topology::serialize_direct")]
     geometry: &'a Topology,
     #[serde(serialize_with = "Model::serialize_direct")]
@@ -3037,6 +3042,8 @@ struct CadIrReadWire {
     #[serde(rename = "units")]
     _units: CanonicalUnitsWire,
     tolerances: Tolerances,
+    #[serde(default, deserialize_with = "deserialize_up_axis")]
+    up_axis: Option<UpAxis>,
     #[serde(deserialize_with = "Topology::deserialize_direct")]
     geometry: Topology,
     #[serde(deserialize_with = "Model::deserialize_direct")]
@@ -3078,6 +3085,7 @@ impl CadIr {
             source: self.source.as_ref(),
             units: CanonicalUnitsWire::default(),
             tolerances: &self.tolerances,
+            up_axis: self.up_axis,
             geometry: &self.geometry,
             model: &self.model,
             design: if self.design.is_finalized() {
@@ -3117,6 +3125,7 @@ impl CadIr {
             source: self.source.as_ref(),
             units: CanonicalUnitsWire::default(),
             tolerances: &self.tolerances,
+            up_axis: self.up_axis,
             geometry: &self.geometry,
             model: &self.model,
             design: if self.design.is_finalized() {
@@ -3229,6 +3238,7 @@ impl From<CadIrReadWire> for CadIr {
             scope: wire.scope,
             source: wire.source,
             tolerances: wire.tolerances,
+            up_axis: wire.up_axis,
             geometry: wire.geometry,
             model: wire.model,
             design: wire.design,
@@ -3426,6 +3436,7 @@ impl CadIr {
             scope: ContentScope::full(),
             source: None,
             tolerances: Tolerances::default(),
+            up_axis: None,
             geometry: Topology::default(),
             model: Model::default(),
             design: Design::default(),
@@ -3824,6 +3835,7 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_ir_version, serde_json::Value, "ir_version");
 cadmpeg_core::named_optional_field!(deserialize_source, SourceMeta, "source");
+cadmpeg_core::named_optional_field!(deserialize_up_axis, UpAxis, "up_axis");
 
 mod identity_rewrite;
 

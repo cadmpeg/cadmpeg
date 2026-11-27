@@ -1111,7 +1111,7 @@ option `2`, and side extents `[1, 0]`.
 
 **Question.** What rule gives the view extents `w0`, `w1` of the `HOME` camera and the scene radius at offset 426 of the `AssetSettings` record, and what centre does the camera use in a design with more than one result body?
 
-**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)`, the up direction, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
+**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)` in a Z-up document and `(1, 1, 1)` in a Y-up document, the up direction `(0, 0, 1)` or `(0, 1, 0)` respectively, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
 
 **Need.** A writer must store the extents, the radius, and the target. The displayed tessellation of the body, projected on the view plane, against the extents would settle the rule.
 
@@ -1195,6 +1195,16 @@ In a design with three solid bodies, records 193 to 200 are the further design b
 **Need.** Allocate the profile group of a written `Extrude` as the groups of a `Revolve` are allocated: the record-timestamp table at `G + 1` and the item-tail companion at `G + 2`. Then state the relation in `f3d.md` §3.1 "**Profile group.**", and compare the records of each written `Extrude` before and after the change. The same comparison of the `Extrude` start record against stored `Extrude` start records would show whether its record-timestamp table and item-tail companion also belong at the next two records.
 
 ## 2. External references
+
+### DR-1077. Closing bytes of a legacy typed occurrence placement
+
+**Question.** Do the closing bytes `00 01 04 00 00 00 00 00 00 00 00 00` of a legacy typed occurrence placement name a local owner record, and is the record the legacy typed placement or the compact legacy external placement?
+
+**Known.** `f3d.md` §1.4 "A legacy typed occurrence placement uses" gives the typed envelope and its closing bytes `u8 0`, `u8 1`, `u8 4`, `u8[9] zero`. These bytes have the form of a zero byte and an eleven-byte untyped local reference to record `4`. `f3d.md` §1.4 "A compact legacy external placement uses" closes with a zero byte and an untyped local owner reference with a nonzero target. With root-component targets, the typed fields `u32 1`, `u8 0`, `u32 1` after the path discriminator have the form of the compact present-empty property block and a member ordinal of `1`. Both grammars then close the same record, at 403 bytes for identity and 531 bytes for a matrix. Record `4` of the Design stream can be a component naming space of type `904F885E-D859-4755-A7EF-6EBED8732FAD`.
+
+**Need.** A legacy typed placement whose Design stream holds a record of another type at index `4`, or a legacy placement whose closing reference has a target other than `4`.
+
+**Note.** The decoder reads a record that closes both grammars as the legacy typed placement, with no owner and no source occurrence key.
 
 ### DR-111. Component-path poses of nested occurrences
 

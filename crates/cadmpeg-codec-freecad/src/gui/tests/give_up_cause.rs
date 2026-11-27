@@ -99,15 +99,16 @@ fn an_unverified_gui_schema_that_does_not_read_gives_up_as_undecoded() {
     );
 }
 
-/// A tag with more attributes than the XML reader admits passes a bound of
-/// the decoder: the GUI document gives up as one `record.undecoded`.
+/// The XML reader admits a wide tag within the session budget and retains
+/// its root attributes in the native GUI document.
 #[test]
-fn a_gui_document_past_the_xml_reader_bound_gives_up_as_undecoded() {
+fn a_gui_document_with_many_attributes_retains_them() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     let attributes = (0..300)
         .map(|index| [" a", &index.to_string(), "=\"0\""].concat())
         .collect::<String>();
-    let gui = format!(r#"<Document SchemaVersion="1"{attributes}/>"#);
+    let gui =
+        format!(r#"<Document SchemaVersion="1"{attributes}><Camera settings=""/></Document>"#);
     let mut options = DecodeOptions::default();
     options.strictness.pinned = true;
     let decoded = FcstdCodec
@@ -118,10 +119,14 @@ fn a_gui_document_past_the_xml_reader_bound_gives_up_as_undecoded() {
             ])),
             &options,
         )
-        .expect("a pinned decode accepts an undecoded GUI document");
-    let loss = assert_gui_metadata_recovery(&decoded);
-    assert_eq!(
-        loss.code,
-        cadmpeg_ir::unknown::part::record_undecoded_kind()
-    );
+        .expect("a pinned decode accepts a wide tag within the session budget");
+    assert!(gui_document_given_up(&decoded).is_none());
+    let native = decoded.ir().native.namespace("fcstd").expect("native");
+    let documents = native
+        .arena_as::<crate::native::GuiDocumentRecord>("gui_documents")
+        .expect("GUI documents");
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].attributes.len(), 301);
+    assert_eq!(documents[0].attributes["SchemaVersion"], "1");
+    assert_eq!(documents[0].attributes["a299"], "0");
 }
