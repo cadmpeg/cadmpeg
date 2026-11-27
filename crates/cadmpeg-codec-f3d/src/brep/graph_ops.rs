@@ -339,8 +339,8 @@ impl Brep {
     ///
     /// # Errors
     ///
-    /// [`CodecError::Malformed`] when a record's span leaves the entry or a
-    /// qualified id is no identity, or a refusal of the part helper.
+    /// [`CodecError::Malformed`] when a qualified id is no identity, or a
+    /// refusal of the part helper.
     pub(crate) fn give_up_withheld(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -367,12 +367,11 @@ impl Brep {
             map.finish()?;
             withheld = rewritten?;
         }
-        let bytes = scan.entry_bytes(entry)?;
         let stream = scan.entry_stream(entry)?;
         withheld
             .into_iter()
             .map(|record| {
-                let part = record.part("f3d", bytes)?.in_stream(stream.clone());
+                let part = record.part("f3d").in_stream(stream.clone());
                 ctx.give_up_part(part, record.cause, record.error())
             })
             .collect()

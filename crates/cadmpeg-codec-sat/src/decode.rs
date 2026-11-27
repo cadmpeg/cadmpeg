@@ -111,7 +111,6 @@ fn decode_asm_binary(
             (
                 brep,
                 Unprojected {
-                    stream: bytes,
                     whole_stream: false,
                     face_children,
                 },
@@ -200,7 +199,6 @@ fn decode_acis_binary(
             (
                 brep,
                 Unprojected {
-                    stream: bytes,
                     whole_stream: false,
                     face_children,
                 },
@@ -340,7 +338,6 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecEr
             (
                 brep,
                 Unprojected {
-                    stream: bytes,
                     whole_stream,
                     face_children,
                 },
@@ -500,7 +497,7 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
 fn build_result(
     ctx: &DecodeContext<'_>,
     decode_digest: Sha256Digest,
-    payload: Option<(AsmBrep, Unprojected<'_>)>,
+    payload: Option<(AsmBrep, Unprojected)>,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
     text_dialect: Option<sat::Terminator>,
@@ -703,16 +700,14 @@ fn build_result(
 }
 
 /// How a decode gives up the source records that no neutral topology holds.
-struct Unprojected<'a> {
-    /// The ASM bytes the decode read.
-    stream: &'a [u8],
+struct Unprojected {
     /// Whether a retained record holds the whole stream.
     whole_stream: bool,
     /// The loops and coedges of each standalone face, by the face's offset.
     face_children: BTreeMap<u64, Vec<Identity>>,
 }
 
-impl Unprojected<'_> {
+impl Unprojected {
     /// Gives up `record`, a source record of `kind` that no neutral topology
     /// holds, as a part over its bytes. The record conforms to the format,
     /// and the IR has no place for it.
@@ -750,7 +745,7 @@ impl Unprojected<'_> {
         ctx: &DecodeContext<'_>,
         record: &WithheldRecord,
     ) -> Result<GivenUpPart, CodecError> {
-        let mut part = record.part(FORMAT, self.stream)?;
+        let mut part = record.part(FORMAT);
         if self.whole_stream {
             part = part.digest_only();
         }

@@ -158,11 +158,11 @@ impl Inventory {
         } else {
             let part = crate::rse::bulk_record_part(
                 "rse-record",
-                (record.segment_token.as_str(), record.ordinal),
+                (&record.segment_token, record.ordinal),
                 offset,
                 &record.payload,
                 ArenaClass::Model,
-            )?
+            )
             .dropping([id]);
             self.given_up.push(ctx.give_up_part(
                 part,
@@ -379,11 +379,11 @@ pub(crate) fn inventory(
                     let token = segment.pair.token.as_str();
                     let part = crate::rse::bulk_record_part(
                         "rse-record",
-                        (token, frame.ordinal),
+                        (segment.pair.token.key(), frame.ordinal),
                         frame.payload_offset,
                         frame.payload.window(),
                         ArenaClass::Model,
-                    )?;
+                    );
                     let part = ctx.give_up_part(
                         part,
                         Cause::Undecoded,
