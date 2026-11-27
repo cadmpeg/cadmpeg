@@ -2127,6 +2127,7 @@ mod tests {
         };
         let native = json::from_value(json::to_value(native).unwrap()).unwrap();
         crate::writer::primitives::validate_assembly_projection(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &cadmpeg_ir::document::CadIr::empty(),
             Some(&native),
         )

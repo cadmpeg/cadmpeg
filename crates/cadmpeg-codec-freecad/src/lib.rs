@@ -1392,16 +1392,18 @@ impl EncoderBackend for FcstdCodec {
     /// Writes the feature tree and patches retained sources, so it plans from
     /// the design records.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog =
         Catalog::new(dialect::TARGETS, None).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

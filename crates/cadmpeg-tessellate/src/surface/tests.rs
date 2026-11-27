@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::compare::floats_agree;
+use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::math::portable::Portable;
 
 use super::circular_cone_normal_curvature;
@@ -58,7 +59,7 @@ fn a_cone_apex_has_no_normal_even_when_its_parameter_rounds() {
     let id = surface.id.clone();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(1000);
-    let carrier = super::Carrier::new(&index, &work, &id).unwrap();
+    let carrier = super::Carrier::new(&index, &work, EvaluationAdmission::Standard, &id).unwrap();
     assert!(carrier.normal([0.0, -30.0]).unwrap().is_none());
     assert!(carrier.normal([0.0, -29.0]).unwrap().is_some());
 }
@@ -136,7 +137,7 @@ fn a_linear_sweep_inverts_a_point_with_no_seed() {
     let (ir, id) = swept(false);
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(100_000);
-    let carrier = super::Carrier::new(&index, &work, &id).unwrap();
+    let carrier = super::Carrier::new(&index, &work, EvaluationAdmission::Standard, &id).unwrap();
     let uv = carrier
         .invert(Point3::new(2.0, 0.0, 3.0), None)
         .unwrap()
@@ -155,7 +156,7 @@ fn a_revolution_inverts_a_point_with_no_seed() {
     let (ir, id) = swept(true);
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(100_000);
-    let carrier = super::Carrier::new(&index, &work, &id).unwrap();
+    let carrier = super::Carrier::new(&index, &work, EvaluationAdmission::Standard, &id).unwrap();
     let uv = carrier
         .invert(Point3::new(0.0, 5.0, 1.0), None)
         .unwrap()
@@ -204,7 +205,8 @@ fn a_rectangular_trim_bounds_its_carrier_domain() {
     ));
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(1000);
-    let carrier = super::Carrier::new(&index, &work, &trimmed).unwrap();
+    let carrier =
+        super::Carrier::new(&index, &work, EvaluationAdmission::Standard, &trimmed).unwrap();
     assert_eq!(carrier.domain, Some([[0.0, 0.5], [0.0, 1.5]]));
 }
 
@@ -249,7 +251,7 @@ fn a_periodic_nurbs_inversion_continues_across_the_seam() {
     let id = surface.id.clone();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(10_000_000);
-    let carrier = super::Carrier::new(&index, &work, &id).unwrap();
+    let carrier = super::Carrier::new(&index, &work, EvaluationAdmission::Standard, &id).unwrap();
     assert_eq!(carrier.periods[0], Some(4.0));
     let point = carrier.point([0.3, 0.5]).unwrap().expect("a surface point");
     let uv = carrier
@@ -315,7 +317,7 @@ fn an_unseeded_inversion_finds_its_fold_of_an_accordion() {
     let (ir, id) = accordion();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(10_000_000);
-    let carrier = super::Carrier::new(&index, &work, &id).unwrap();
+    let carrier = super::Carrier::new(&index, &work, EvaluationAdmission::Standard, &id).unwrap();
     for u in [0.3137, 0.5068] {
         let point = carrier.point([u, 0.4]).unwrap().expect("a surface point");
         let uv = carrier
@@ -337,7 +339,7 @@ fn a_seeded_inversion_that_stops_short_starts_again() {
     let (ir, id) = accordion();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(10_000_000);
-    let carrier = super::Carrier::new(&index, &work, &id).unwrap();
+    let carrier = super::Carrier::new(&index, &work, EvaluationAdmission::Standard, &id).unwrap();
     let point = carrier
         .point([0.5068, 0.4])
         .unwrap()
@@ -360,7 +362,7 @@ fn a_repeated_evaluation_spends_no_work() {
     let (ir, id) = accordion();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(10_000_000);
-    let carrier = super::Carrier::new(&index, &work, &id).unwrap();
+    let carrier = super::Carrier::new(&index, &work, EvaluationAdmission::Standard, &id).unwrap();
     let uv = [0.3137, 0.4];
     let point = carrier.point(uv).unwrap();
     let partials = carrier.partials(uv).unwrap();
