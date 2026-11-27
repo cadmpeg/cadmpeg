@@ -36,6 +36,11 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) shells: &'a [cadmpeg_ir::topology::Shell],
     /// Neutral shell faces.
     pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
+    /// Whole-body reference tails that body groups name as members.
+    pub(crate) body_reference_tails:
+        &'a [crate::records::body_reference_tail::DesignBodyReferenceTail],
+    /// Design body-map pairs that resolve body entity suffixes.
+    pub(crate) body_bindings: &'a [crate::records::bodies::DesignBodyBinding],
 }
 
 /// Bind the body selections of `features`, and return the browser-node
@@ -119,7 +124,7 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
         pattern_body_slots.insert(feature_id, slots);
     }
 
-    for feature in features {
+    for feature in features.iter_mut() {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
         let dependencies = &feature.dependencies;
@@ -283,6 +288,13 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
                             groups,
                             body_recipe_operands,
                         );
+                        super::tail_bodies::bind_tail_history_bodies(
+                            bodies,
+                            feature_id,
+                            previous_state_id,
+                            scope,
+                            inputs,
+                        );
                     } else {
                         let native = bodies.clone();
                         bind_direct_body_recipe_body_selection(
@@ -293,6 +305,7 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
                         );
                         // The recipe identity of the operands outranks a face match.
                         super::generated_bodies::keep_recipe_body_slots(bodies, native, scope, inputs);
+                        super::tail_bodies::bind_tail_model_bodies(bodies, scope, inputs);
                     }
                     break 'feature_edit;
                 }
@@ -436,6 +449,7 @@ pub(crate) fn bind_feature_body_selections_with_refusals(
         });
     }
 
+    losses.extend(super::tail_bodies::unbound_tail_notes(features, inputs));
     (losses, operand_refusals)
 }
 

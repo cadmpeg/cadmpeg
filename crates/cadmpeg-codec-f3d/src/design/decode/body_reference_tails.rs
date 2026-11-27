@@ -12,6 +12,7 @@ use crate::metastream::{primary_record_frames, PrimaryRecordFrame};
 use crate::records::body_reference_tail::{
     BodyTailReference, DesignBodyReferenceTail, DesignBodyReferenceTailWire,
 };
+use crate::records::feature::combine::DesignCombineBodyNode;
 use crate::records::references::DesignClassTag;
 
 mod tail;
@@ -186,6 +187,9 @@ pub(crate) fn decode(
             continue;
         };
         let frames = primary_record_frames(&meta, root.remaining())?;
+        let nodes = super::body_consumers::entities_of(&meta, |guid| {
+            crate::design::presentation::BROWSER_NODE_TYPE_GUID.eq_ignore_ascii_case(guid)
+        });
         let by_entity: std::collections::HashMap<_, _> = frames
             .into_iter()
             .map(|frame| (frame.entity_id, frame))
@@ -209,6 +213,26 @@ pub(crate) fn decode(
                     result.unparsed += 1;
                     continue;
                 };
+                let second_body_nodes = local_targets(root, fields.second)
+                    .and_then(|targets| {
+                        targets
+                            .iter()
+                            .map(|target| {
+                                if !nodes.contains(target) {
+                                    return None;
+                                }
+                                let frame = by_entity.get(target).copied()?;
+                                let (body, creator) =
+                                    super::body_consumers::node_references(root.window(), frame)?;
+                                Some(DesignCombineBodyNode {
+                                    record_index: u32::try_from(*target).ok()?,
+                                    body_entity_suffix: u32::try_from(body).ok()?,
+                                    creating_scope_record_index: u32::try_from(creator).ok()?,
+                                })
+                            })
+                            .collect::<Option<Vec<_>>>()
+                    })
+                    .unwrap_or_default();
                 let record = DesignBodyReferenceTail::try_from(DesignBodyReferenceTailWire {
                     id: super::text::design_record_id(
                         &bulk_name,
@@ -222,6 +246,7 @@ pub(crate) fn decode(
                     first_references: references(ctx, root, fields.first)?,
                     second_count_offset: fields.second.count.offset,
                     second_references: references(ctx, root, fields.second)?,
+                    second_body_nodes,
                     extra_zero: fields.extra_zero,
                     trailing_form: fields.trailing,
                 })

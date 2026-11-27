@@ -77,6 +77,13 @@ pub(super) fn bind_pattern_body_selections<'a>(
                     groups,
                     body_recipe_operands,
                 );
+                super::tail_bodies::bind_tail_history_bodies(
+                    selection,
+                    feature_id,
+                    previous_state_id,
+                    scope,
+                    inputs,
+                );
             } else {
                 let native = selection.clone();
                 bind_direct_body_recipe_body_selection(selection, scope, inputs, body_candidates);
@@ -94,6 +101,13 @@ pub(super) fn bind_pattern_body_selections<'a>(
                         scope,
                         groups,
                         body_recipe_operands,
+                    );
+                    super::tail_bodies::bind_tail_history_bodies(
+                        selection,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        inputs,
                     );
                 }
             }

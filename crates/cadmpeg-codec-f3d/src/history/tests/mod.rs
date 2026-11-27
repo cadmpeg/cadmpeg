@@ -7,6 +7,7 @@ mod body_incidence;
 mod body_recipe;
 mod body_recipe_selections;
 mod body_selection;
+mod body_tail_selections;
 mod budgets;
 mod combine_producer_bodies;
 mod component_spaces;

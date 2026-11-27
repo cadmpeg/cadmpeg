@@ -145,6 +145,8 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         regions: &regions,
         shells: &shells,
         faces: &faces,
+        body_reference_tails: &[],
+        body_bindings: &[],
     };
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     bind_direct_body_recipe_body_selection(

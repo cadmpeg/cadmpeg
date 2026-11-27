@@ -23,6 +23,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
+        body_reference_tails: &[],
+        body_bindings: &[],
     };
     let mut selection = BodySelection::Native(group_id.into());
     crate::history::body_selections::bind_direct_body_recipe_body_selection(
@@ -174,6 +176,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
+        body_reference_tails: &[],
+        body_bindings: &[],
     };
     let native = format!(
         "{}:design-record#21",
@@ -234,6 +238,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
+        body_reference_tails: &[],
+        body_bindings: &[],
     };
     let mut feature = Feature {
         product_definition: None,
@@ -296,6 +302,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
+        body_reference_tails: &[],
+        body_bindings: &[],
     };
     let mut move_feature = Feature {
         product_definition: None,
@@ -416,6 +424,8 @@ fn direct_remove_case(slot: Option<i64>) -> cadmpeg_ir::features::selections::Bo
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
+        body_reference_tails: &[],
+        body_bindings: &[],
     };
     crate::history::tests::bind_feature_body_selections(
         std::slice::from_mut(&mut feature),
@@ -488,6 +498,8 @@ fn direct_pattern_seed_case(slot: Option<i64>) -> cadmpeg_ir::features::selectio
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
         faces: std::slice::from_ref(&face),
+        body_reference_tails: &[],
+        body_bindings: &[],
     };
     crate::history::pattern_bodies::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
@@ -604,6 +616,8 @@ fn a_combine_keeps_its_direct_binding_where_its_header_predecessor_binds_no_body
             regions: std::slice::from_ref(&region),
             shells: std::slice::from_ref(&shell),
             faces: std::slice::from_ref(&face),
+            body_reference_tails: &[],
+            body_bindings: &[],
         };
         let mut feature = Feature {
             product_definition: None,

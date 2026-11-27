@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{BodyTailReference, DesignBodyReferenceTail, DesignBodyReferenceTailWire};
+use crate::records::feature::combine::DesignCombineBodyNode;
 use crate::records::identity::Located;
 use cadmpeg_core::serde_erase::json;
 
@@ -19,6 +20,7 @@ fn wire(trailer: u32) -> DesignBodyReferenceTailWire {
         first_references: Vec::new(),
         second_count_offset: 38,
         second_references: vec![BodyTailReference::new(42, reference).expect("local reference")],
+        second_body_nodes: Vec::new(),
         extra_zero: None,
         trailing_form: Located {
             value: trailer,
@@ -70,4 +72,24 @@ fn extra_zero_remains_a_separate_admitted_lane() {
     assert_eq!(value.extra_zero.expect("extra lane").offset, 53);
     extended.trailing_form.value = 8;
     assert!(DesignBodyReferenceTail::try_from(extended).is_err());
+}
+
+#[test]
+fn body_entities_pair_with_the_second_reference_run() {
+    let mut paired = wire(8);
+    let node = |record_index| DesignCombineBodyNode {
+        record_index,
+        body_entity_suffix: 9,
+        creating_scope_record_index: 3,
+    };
+    paired.second_body_nodes = vec![node(4)];
+    let value = DesignBodyReferenceTail::try_from(paired).expect("paired tail");
+    assert_eq!(value.second_body_nodes, [node(4)]);
+    let encoded = json::to_string(&value).expect("native JSON");
+    let decoded: DesignBodyReferenceTail = serde_json::from_str(&encoded).expect("native read");
+    assert_eq!(decoded, value);
+
+    let mut unpaired = wire(8);
+    unpaired.second_body_nodes = vec![node(4), node(5)];
+    assert!(DesignBodyReferenceTail::try_from(unpaired).is_err());
 }

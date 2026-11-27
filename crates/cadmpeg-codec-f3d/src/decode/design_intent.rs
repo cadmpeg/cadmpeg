@@ -1035,6 +1035,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         regions: geometry.regions,
         shells: geometry.shells,
         faces: geometry.faces,
+        body_reference_tails: &design.design_body_reference_tails,
+        body_bindings: &prereqs.design_body_bindings,
     };
     let (selection_losses, operand_refusals) =
         crate::history::body_selections::bind_feature_body_selections_with_refusals(

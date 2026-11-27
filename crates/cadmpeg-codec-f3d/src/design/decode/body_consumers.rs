@@ -57,7 +57,7 @@ pub(super) fn consumed_body_entities(
     Ok(consumed)
 }
 
-fn entities_of(meta: &MetaStream, selected: impl Fn(&str) -> bool) -> HashSet<u64> {
+pub(super) fn entities_of(meta: &MetaStream, selected: impl Fn(&str) -> bool) -> HashSet<u64> {
     meta.types
         .iter()
         .filter(|kind| selected(kind.type_guid.as_str()))
@@ -83,6 +83,20 @@ fn hidden_node_entity(bytes: &[u8], frame: PrimaryRecordFrame) -> Option<u64> {
         return None;
     }
     Some(take_reference(record, &mut cursor)?.into_local()?.0)
+}
+
+/// The Design entity suffix of the body that a body browser node names, and
+/// the record index of the scope that creates it.
+pub(super) fn node_references(bytes: &[u8], frame: PrimaryRecordFrame) -> Option<(u64, u64)> {
+    let record = bytes.get(frame.start..frame.member_end)?;
+    let guid_end = fixed_guid_end(record, node_prefix::GUID_CODE_UNIT_COUNT)?;
+    let mut cursor = guid_end.checked_add(2)?;
+    if !matches!(record.get(guid_end..cursor)?, [1, 0 | 1]) {
+        return None;
+    }
+    let body = take_reference(record, &mut cursor)?.into_local()?.0;
+    let creator = take_reference(record, &mut cursor)?.into_local()?.0;
+    Some((body, creator))
 }
 
 #[cfg(test)]
