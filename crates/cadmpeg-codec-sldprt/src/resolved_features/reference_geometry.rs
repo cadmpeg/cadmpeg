@@ -12,7 +12,7 @@ use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
 use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
-use crate::records::{FeatureInputLane, FeatureInputName};
+use crate::records::{FeatureInputLane, FeatureInputName, LEGACY_FACE_ALIAS_NATIVE};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
@@ -199,7 +199,7 @@ pub(crate) fn enrich_history_reference_planes(
             }
             if let Some((relative_offset, owner)) = legacy_offset_plane_face_alias(bytes) {
                 let native = format!(
-                    "sldprt:feature-input:legacy-face-alias#{}:{}:{}",
+                    "{LEGACY_FACE_ALIAS_NATIVE}{}:{}:{}",
                     lane.id,
                     start + relative_offset,
                     owner,

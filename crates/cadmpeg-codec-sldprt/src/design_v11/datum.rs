@@ -6,7 +6,6 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
     kinds, AnyConstruction, AxisValue, Construction, ConstructionInput, ConstructionKind,
     FrameValue, InputReference, InputRole, PlaneValue, Relation, ScalarDimension, Subject,
@@ -22,7 +21,6 @@ use cadmpeg_ir::design::selection::{
 use cadmpeg_ir::features as v10;
 use cadmpeg_ir::features::datums::DatumPlaneReference;
 use cadmpeg_ir::features::geometry::{FeatureDatumPlaneFrame, FeatureDirection3};
-use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId};
 use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::Vector3;
@@ -33,7 +31,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::history::literals::parse_angle_rad;
 use crate::records::{
     FeatureHistory, FeatureInputLane, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
-    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+    LEGACY_FACE_ALIAS_NATIVE, REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
 };
 use crate::resolved_features::scalars::FeatureObjectNames;
 
@@ -98,7 +96,8 @@ pub(super) fn project(
             .native_ref
             .as_deref()
             .is_some_and(|native| reading.fixed.contains(native));
-        let Some(element) = element(definition, fixed, &reading) else {
+        let alias = legacy_face_alias_owner(source);
+        let Some(element) = element(definition, fixed, alias, &reading) else {
             projected.unresolved.push(named);
             return;
         };
@@ -120,7 +119,8 @@ pub(super) fn project(
                     .feature_states
                     .get(&feature.id)
                     .is_some_and(|state| {
-                        self::element(&state.definition, fixed, &reading).as_ref() != Some(&element)
+                        self::element(&state.definition, fixed, alias, &reading).as_ref()
+                            != Some(&element)
                     })
         }) {
             projected.configured.push(named);
@@ -195,10 +195,17 @@ fn fixed_reference_planes(
 }
 
 /// The datum element of a decoded definition that states its geometry or its
-/// offset from a reference plane. A plane whose plane data is `fixed` states
-/// its frame as its definition; every other element states its geometry as
-/// the cache of the references it follows, which the decoder does not read.
-fn element(definition: &FeatureDefinition, fixed: bool, reading: &Reading) -> Option<DatumElement> {
+/// offset from a reference plane or face. A plane whose plane data is `fixed`
+/// states its frame as its definition; every other element states its
+/// geometry as the cache of the references it follows, which the decoder does
+/// not read. `alias` is the owner identifier of the plane's legacy face-alias
+/// reference.
+fn element(
+    definition: &FeatureDefinition,
+    fixed: bool,
+    alias: Option<u32>,
+    reading: &Reading,
+) -> Option<DatumElement> {
     let FeatureDefinition::Operation(operation) = definition else {
         return None;
     };
@@ -219,7 +226,7 @@ fn element(definition: &FeatureDefinition, fixed: bool, reading: &Reading) -> Op
                     subject: Subject::Whole,
                     relation: Relation::Offset,
                 }),
-                reference: Some(plane_reference(reference)?),
+                reference: Some(plane_reference(reference, alias)?),
                 value: Some(ScalarDimension::Length(Dimension::Literal(*distance))),
                 reversed: None,
             }],
@@ -249,9 +256,9 @@ fn element(definition: &FeatureDefinition, fixed: bool, reading: &Reading) -> Op
 }
 
 /// The input reference of an offset plane's reference: the datum feature it
-/// names, the plane the decoder resolved for it, or the face it names by its
-/// native selection.
-fn plane_reference(reference: &DatumPlaneReference) -> Option<InputReference> {
+/// names, the plane the decoder resolved for it, or the face of the legacy
+/// face alias whose owner identifier is `alias`.
+fn plane_reference(reference: &DatumPlaneReference, alias: Option<u32>) -> Option<InputReference> {
     Some(match reference {
         DatumPlaneReference::Feature { feature } => {
             let pick = Picked {
@@ -278,25 +285,29 @@ fn plane_reference(reference: &DatumPlaneReference) -> Option<InputReference> {
                 x_axis: unit(frame.u_axis())?,
             }))))
         }
-        DatumPlaneReference::Face { face } => InputReference::Picks(native_face(face)?),
+        DatumPlaneReference::Face { .. } => InputReference::Picks(face_alias(alias?)?),
     })
 }
 
-/// The `Native` pick of a face selection by its native selection.
-fn native_face(face: &FaceSelection) -> Option<OrderedSelection> {
-    let native = match face {
-        FaceSelection::Native(native) | FaceSelection::Resolved { native, .. } => native.as_str(),
-        FaceSelection::Historical { native, .. }
-        | FaceSelection::HistoricalPartial { native, .. } => native.as_str(),
-        FaceSelection::Generated { native, .. } => native.as_str(),
-        FaceSelection::Unresolved | FaceSelection::Faces(_) => return None,
-    };
+/// The owner identifier of the legacy face alias that `source`'s record
+/// references.
+fn legacy_face_alias_owner(source: &v10::Feature) -> Option<u32> {
+    let native = source.source_properties.get("ReferenceFaceNative")?;
+    let (_, owner) = native
+        .strip_prefix(LEGACY_FACE_ALIAS_NATIVE)?
+        .rsplit_once(':')?;
+    owner.parse().ok()
+}
+
+/// The `Native` pick of the face of a legacy face alias, named by the
+/// alias's owner identifier (`sldprt.md` §2).
+fn face_alias(owner: u32) -> Option<OrderedSelection> {
     let pick = Picked {
         target: PickTarget::Native { within: None },
         context: None,
         native: Some(NativeName {
             codec: cadmpeg_ir::codec_id!("sldprt"),
-            value: NativeNameValue::Text(NonBlankString::new(native)?),
+            value: NativeNameValue::Integers(vec![i64::from(owner)]),
         }),
         domain: None,
         witness: None,

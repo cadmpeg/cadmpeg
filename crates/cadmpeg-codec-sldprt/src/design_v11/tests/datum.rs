@@ -537,31 +537,33 @@ fn a_plane_or_frame_off_square_beyond_the_angular_tolerance_stays_unresolved() {
     }
 }
 
-/// `part` with `Plane2` decoded as offset by 7 mm from the face `face`.
-fn part_with_face_offset(
-    face: cadmpeg_ir::features::selections::FaceSelection,
-) -> (CadIr, SldprtNative) {
-    let (mut ir, native) = part();
+/// `part` with `Plane2` decoded as offset by 7 mm from the face whose
+/// selection, and whose record's `ReferenceFaceNative`, is `native`.
+fn part_with_face_offset(native: &str) -> (CadIr, SldprtNative) {
+    let (mut ir, decoded) = part();
     let definition = FeatureDefinition::Operation(V10Operation::DatumOffsetPlane {
-        reference: Some(DatumPlaneReference::Face { face }),
+        reference: Some(DatumPlaneReference::Face {
+            face: cadmpeg_ir::features::selections::FaceSelection::Native(native.to_owned()),
+        }),
         distance: Length::new(7.0).unwrap(),
     });
-    ir.model
+    let plane2 = ir
+        .model
         .features
         .iter_mut()
         .find(|feature| feature.name.as_deref() == Some("Plane2"))
-        .unwrap()
-        .evaluation
-        .edit(|current, _| *current = definition);
-    (ir, native)
+        .unwrap();
+    plane2.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceNative"),
+        native.to_owned(),
+    );
+    plane2.evaluation.edit(|current, _| *current = definition);
+    (ir, decoded)
 }
 
 #[test]
-fn an_offset_plane_from_a_native_face_picks_the_face_by_its_native_selection() {
-    let face = "sldprt:feature-input:legacy-face-alias#7:120:31";
-    let (ir, native) = part_with_face_offset(
-        cadmpeg_ir::features::selections::FaceSelection::Native(face.to_owned()),
-    );
+fn an_offset_plane_from_a_legacy_face_alias_picks_the_face_by_the_alias_owner() {
+    let (ir, native) = part_with_face_offset("sldprt:feature-input:legacy-face-alias#7:120:31");
     let (timeline, _, typed) = typed_timeline(&ir, &native);
     let DatumElement::Plane(plane) = element(&timeline, "Plane2") else {
         panic!("a plane datum");
@@ -588,9 +590,9 @@ fn an_offset_plane_from_a_native_face_picks_the_face_by_its_native_selection() {
     assert_eq!(pick.target, PickTarget::Native { within: None });
     let native_name = pick.native.as_ref().unwrap();
     assert_eq!(native_name.codec, cadmpeg_ir::codec_id!("sldprt"));
-    assert!(
-        matches!(&native_name.value, cadmpeg_ir::design::names::NativeNameValue::Text(text) if text.as_str() == face),
-        "{native_name:?}"
+    assert_eq!(
+        native_name.value,
+        cadmpeg_ir::design::names::NativeNameValue::Integers(vec![31])
     );
     let plane2 = &timeline_feature(&timeline, "Plane2").id;
     assert!(
@@ -604,9 +606,8 @@ fn an_offset_plane_from_a_native_face_picks_the_face_by_its_native_selection() {
 }
 
 #[test]
-fn an_offset_plane_from_an_unnamed_face_stays_unresolved() {
-    let (ir, native) =
-        part_with_face_offset(cadmpeg_ir::features::selections::FaceSelection::Unresolved);
+fn an_offset_plane_from_a_surface_component_face_stays_unresolved() {
+    let (ir, native) = part_with_face_offset("sldprt:feature-input:surface-component-ids#7:120:5");
     let (timeline, _, typed) = typed_timeline(&ir, &native);
     let plane2 = timeline_feature(&timeline, "Plane2");
     assert_eq!(
