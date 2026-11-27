@@ -657,7 +657,7 @@ object without attempting to open the document. Missing local targets, invalid a
 non-finite transforms, and container cycles are validation errors; external targets remain
 intentionally unresolved. The native graph retains every direct container membership. FreeCAD holds
 an object in one container: a member that a later container in document order also lists stays in
-the first, and the decoder gives up the later container's list property as `record.unreadable`.
+the first, and the later container's list property is given up as `record.unreadable`.
 Product record identities are unique by object identity; duplicate records are invalid.
 
 Product metadata uses exact `App::PropertyString` properties. Each selected property has exactly one
@@ -699,8 +699,8 @@ carrier is an `App::PropertyEnumeration` with one selected `Integer` value; its 
 retained when it has no neutral policy name. An `ElementCount` that is negative or above 1000000 is
 malformed.
 
-The decoder gives up each malformed named carrier as a `record.unreadable` that names the property
-and keeps the rest of the document. A malformed `Group`, `ElementList`, `LinkedObject`,
+Each malformed named carrier is given up as a `record.unreadable` that names the property, and the
+rest of the document is kept. A malformed `Group`, `ElementList`, `LinkedObject`,
 `LinkCopyOnChangeSource`, or `LinkCopyOnChangeGroup` states the membership or prototype of its
 object, so the object's product record is dropped with it. A malformed placement, `Scale`,
 `ScaleVector`, `PlacementList`, or `ScaleList` leaves each occurrence of the object, and each link
@@ -710,7 +710,7 @@ element objects, which FreeCAD keeps only while it shows them, and as false othe
 copy-on-change payload with no readable `LinkCopyOnChange` policy is given up with it. An object
 whose `Placement` is malformed and whose shape root location is rigid takes that location as its
 placement. The attachment record of an object omits a malformed `Placement`, and omits a malformed
-`AttachmentOffset`, which the decoder gives up as `record.unreadable`.
+`AttachmentOffset`, which is given up as `record.unreadable`.
 
 The exact source attribute distinguishes an external file path from a document identity. Neutral
 references keep that path or identity separately from the target object and mark resolution as
@@ -725,8 +725,8 @@ list by source order. When both `LinkPlacement` and `Placement` are present, `Li
 selects `LinkPlacement` and `LinkTransform=false` selects `Placement`; when only one carrier is
 present, that carrier supplies the local placement. FreeCAD holds one value in both carriers, so
 where one is malformed the other supplies the placement. Where both carry different values and
-`LinkTransform` is absent or malformed, the decoder applies `Placement`, which FreeCAD selects at
-its default `LinkTransform` of false, and emits `assembly.link-transform-assumed`. Each named
+`LinkTransform` is absent or malformed, `Placement` applies, which FreeCAD selects at its default
+`LinkTransform` of false; this reading emits `assembly.link-transform-assumed`. Each named
 `LinkedObject`, `LinkPlacement`, `Placement`, and `LinkTransform` carrier occurs at most once in a product record. Each placement carrier has at most
 one `App::PropertyPlacement` property with at most one `PropertyPlacement` value. A value carries finite
 `Px`, `Py`, and `Pz`. When `A` is present, finite axis-angle components `Ox`, `Oy`, `Oz`, and
