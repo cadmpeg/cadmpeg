@@ -210,6 +210,7 @@ dependencies = [
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-registry",
@@ -248,6 +249,7 @@ name = "cadmpeg-codec-catia"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-test-support",
@@ -288,6 +290,7 @@ dependencies = [
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-protein",
@@ -308,6 +311,7 @@ dependencies = [
  "cadmpeg-codec-step",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-test-support",
@@ -339,6 +343,7 @@ dependencies = [
  "cadmpeg-asm",
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-protein",
  "cadmpeg-test-support",
@@ -368,6 +373,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-parasolid",
  "cadmpeg-test-support",
@@ -445,6 +451,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-measure",
  "cadmpeg-parasolid",
@@ -588,6 +595,7 @@ name = "cadmpeg-parasolid"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-test-support",
  "serde",
@@ -600,6 +608,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "cadmpeg-test-support",
  "flate2",
