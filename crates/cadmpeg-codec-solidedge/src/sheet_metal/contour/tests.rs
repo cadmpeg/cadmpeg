@@ -57,6 +57,8 @@ fn codes(result: &DecodeResult) -> Vec<String> {
 
 fn full_slots() -> Vec<(usize, Slot)> {
     vec![
+        (124, Slot::Double(1.0)),
+        (180, Slot::Double(1.0)),
         (152, Slot::Double(13.0)),
         (208, Slot::Dim(0.04)),
         (236, Slot::Double(0.001)),
@@ -111,6 +113,8 @@ fn an_unfinite_extent_kind_states_no_extent_distance() {
     let result = decode(
         &open_profile(),
         &[
+            (124, Slot::Double(1.0)),
+            (180, Slot::Double(1.0)),
             (152, Slot::Double(16.0)),
             (208, Slot::Dim(0.04)),
             (236, Slot::Double(0.001)),
@@ -124,10 +128,74 @@ fn an_unfinite_extent_kind_states_no_extent_distance() {
 fn a_missing_radius_is_unread_and_the_extent_is_still_stated() {
     let result = decode(
         &open_profile(),
-        &[(152, Slot::Double(13.0)), (208, Slot::Dim(0.04))],
+        &[
+            (124, Slot::Double(1.0)),
+            (180, Slot::Double(1.0)),
+            (152, Slot::Double(13.0)),
+            (208, Slot::Dim(0.04)),
+        ],
     );
     let options = options(&result);
     assert!(length(options, "inside_bend_radius").is_none());
     assert!(length(options, "extent_distance").is_some());
     assert_eq!(codes(&result).len(), 2);
+}
+
+fn integer(options: &NativeOptions, name: &str) -> Option<i64> {
+    let key = format!("solidedge:{name}");
+    let (_, option) = options.iter().find(|(k, _)| k.as_str() == key)?;
+    let NativeOption::Integer(Dimension::Literal(value)) = option else {
+        panic!("expected a literal integer");
+    };
+    Some(*value)
+}
+
+fn slots_with_sides(thickness: f64, projection: f64) -> Vec<(usize, Slot)> {
+    let mut slots = full_slots();
+    slots[0] = (124, Slot::Double(thickness));
+    slots[1] = (180, Slot::Double(projection));
+    slots
+}
+
+#[test]
+fn the_thickness_side_and_the_projection_side_are_stated_independently() {
+    for (thickness, projection) in [(1, 1), (1, 2), (2, 1), (2, 2), (1, 3), (2, 3)] {
+        let result = decode(
+            &open_profile(),
+            &slots_with_sides(f64::from(thickness), f64::from(projection)),
+        );
+        let options = options(&result);
+        assert_eq!(
+            integer(options, "thickness_side"),
+            Some(i64::from(thickness))
+        );
+        assert_eq!(
+            integer(options, "projection_side"),
+            Some(i64::from(projection))
+        );
+        assert_eq!(codes(&result), ["sheet-metal.contour-flange-unread"]);
+    }
+}
+
+#[test]
+fn the_symmetric_extent_distance_is_the_stated_distance() {
+    let result = decode(&open_profile(), &slots_with_sides(1.0, 3.0));
+    assert!((length(options(&result), "extent_distance").unwrap() - 40.0).abs() <= EPS_VALUE);
+}
+
+#[test]
+fn a_side_outside_its_values_is_unread_and_unstated() {
+    for (thickness, projection) in [(3.0, 1.0), (1.0, 4.0), (0.0, 1.0)] {
+        let result = decode(&open_profile(), &slots_with_sides(thickness, projection));
+        let options = options(&result);
+        assert_eq!(
+            integer(options, "thickness_side").is_some(),
+            thickness == 1.0
+        );
+        assert_eq!(
+            integer(options, "projection_side").is_some(),
+            projection == 1.0
+        );
+        assert_eq!(codes(&result).len(), 2);
+    }
 }

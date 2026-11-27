@@ -136,21 +136,21 @@
 
 **Need.** A hem of each of the two forms.
 
-### DR-1056. Base contour flange extent direction and fields
+### DR-1056. Base contour flange corner relief
 
-**Question.** Which of the slots at offsets 124 and 180 of §10.5 states the side of the extent, what do the remaining slots of the feature state, and where is the thickness side stored?
+**Question.** Which slot of §10.5 states the corner relief of a base contour flange?
 
-**Known.** The extent kind at offset 152 is 13. The slots at offsets 124 and 180 both hold 1. The slots from offset 292 on hold relief and corner codes, among them 57, 44, 76, 5, 79 and 80.
+**Known.** The slots from offset 292 on hold relief and corner codes, among them 57, 44, 76, 5, 79 and 80, and are the same in every stored base contour flange.
 
-**Need.** Base contour flanges with the side reversed, the symmetric extent, each corner relief option, and the thickness side reversed.
+**Need.** A base contour flange with a different corner relief. The interface that creates a base contour flange has no relief argument.
 
-### DR-1057. Unfold and refold operands
+### DR-1057. Bend proxies and the unfold of three bends about one stationary flange
 
-**Question.** Which `CLSID_JMTopologyProxy` of an unfold selects the stationary face and which selects the bends, and how does a proxy of a face or a bend store its selected entity?
+**Question.** What do the bend proxies of an unfold and of a refold store for the selected bends, and do the proxies of a three-bend unfold change when the stationary face is the flange of the second bend?
 
-**Known.** An unfold stores two face proxies of 1232 and 1410 bytes. A refold stores one proxy of 1232 bytes when it follows the unfold of the same bend, and one of 2046 bytes after a cut made in the flat state.
+**Known.** The unfold proxy of the bends has 1410 bytes and the refold proxy of the bends has 1232 bytes.
 
-**Need.** Unfolds and refolds of several bends with the stationary face moved, and a topology proxy parser that reads a face selection.
+**Need.** Unfolds and refolds of three bends with the flange of the second bend stationary, and a parser of the bend proxy records.
 
 ### DR-1058. Close corners between flanges at other angles
 

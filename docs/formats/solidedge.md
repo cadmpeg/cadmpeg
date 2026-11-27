@@ -778,16 +778,24 @@ these object identifiers after the end of its function name:
 | Bytes after the name | Object |
 | ---: | --- |
 | 68 | the `CLSID_JProfile` open profile (§5.3) |
-| 124 | `Double Value Object`, `1` |
+| 124 | `Double Value Object` thickness side |
 | 152 | `Double Value Object` extent kind, `13` for a finite extent (§6.2) |
-| 180 | `Double Value Object`, `1` |
+| 180 | `Double Value Object` projection side |
 | 208 | `CLSID_JDim` extent distance along the profile normal |
 | 236 | `Double Value Object` inside bend radius |
 | 264 | `Double Value Object` neutral factor |
 
-The extent distance is the distance from the profile plane. The slots at
-offsets 124 and 180 each hold the side value of §6.2 or a value that no stored
-feature separates from it.
+The projection side at offset 180 is the side value of §6.2: `1` extends the
+flange against the profile normal, `2` along it, and `3` to both sides of the
+profile plane. The extent distance is the distance from the profile plane for
+a one-sided extent and the total extent for the symmetric extent `3`.
+
+The thickness side at offset 124 is `1` or `2`. It selects the side of the
+open profile on which the sheet thickness lies: value `2` places the
+thickness on the other side of the profile from value `1`. The thickness side
+and the projection side are independent: each of the four combinations of
+thickness side `1` or `2` with projection side `1` or `2` is stored, and
+projection side `3` is stored with either thickness side.
 
 ### 10.6 Unfold and refold
 
@@ -795,8 +803,27 @@ A `CLSID_JMPart` feature with function `JMUnfoldFunction` stores a
 `CLSID_JMTopologyProxy` face selection at 68 bytes after the end of its
 function name and a second one at 96 bytes. A feature with function
 `JMRefoldFunction` stores one `CLSID_JMTopologyProxy` at 68 bytes. The
-selections are not edge selections: they are larger than 559 bytes and store
-no edge line.
+selections are not the 559-byte edge selections of §7.6.
+
+The name list of each proxy holds the name of the function that produced the
+selection:
+
+| Feature | Offset | Name | Selection |
+| --- | ---: | --- | --- |
+| unfold | 68 | `JMGetSMFaceLayerFaces` | the stationary face |
+| unfold | 96 | `JMGetSMBendLayerFaces` | the bends |
+| refold | 68 | `JMGetSMBendLayerFaces` | the bends |
+
+The stationary face proxy of an unfold stores the straight boundary edges of
+the two layer faces of the selected sheet face, one on each side of the
+sheet, as two groups of edge records. A record has 65 bytes. Its first
+three `f64` are the edge start point in metres, the next three `f64` at 24
+bytes from the record start are the unit edge direction, and the `f64` at 56
+bytes is the edge length. The first group starts at proxy offset 224. With `k`
+the number of edges of one layer face, the groups have `k` consecutive records
+each, the second group starts at offset 224 + 65 `k` + 109, and the proxy has
+`712` + 130 `k` bytes. A proxy of 1232 bytes has `k` = 4 and a proxy of
+2012 bytes has `k` = 10.
 
 ### 10.7 Close corner
 

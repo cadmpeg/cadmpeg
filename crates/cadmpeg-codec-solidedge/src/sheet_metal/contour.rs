@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Base contour flanges (`docs/formats/solidedge.md` §10.5): a
 //! `JMBaseContourFlangeFunction` feature states its open profile, its inside
-//! bend radius and its extent distance as native options. The extent side is
-//! not separated from a second slot that holds the same value, so no typed
-//! extent is stated.
+//! bend radius, its thickness side, its projection side and its extent
+//! distance as native options.
 //!
 //! A feature whose profile is not a stated sketch stays unresolved and adds
 //! `sheet-metal.contour-flange-unread`. Stored lengths are metres; the design
@@ -25,12 +24,18 @@ use crate::psm::{Cluster, TypeTable};
 const FUNCTION: &str = "JMBaseContourFlangeFunction";
 
 /// Bytes after the function name of each slot (§10.5).
+const THICKNESS_SIDE_AFTER_NAME: usize = 124;
 const KIND_AFTER_NAME: usize = 152;
+const PROJECTION_SIDE_AFTER_NAME: usize = 180;
 const WIDTH_AFTER_NAME: usize = 208;
 const RADIUS_AFTER_NAME: usize = 236;
 
 /// The extent kind of a finite extent.
 const KIND_FINITE: f64 = 13.0;
+/// The side values of the thickness side slot.
+const THICKNESS_SIDES: [(f64, i64); 2] = [(1.0, 1), (2.0, 2)];
+/// The side values of the projection side slot (§6.2).
+const PROJECTION_SIDES: [(f64, i64); 3] = [(1.0, 1), (2.0, 2), (3.0, 3)];
 
 fn unread(losses: &mut Vec<LossNote>, object: u32, reason: &str) {
     losses.push(
@@ -86,6 +91,33 @@ pub(crate) fn project(
             },
             Err(reason) => unread(losses, entry, &reason),
         }
+        for (name, after, what, allowed) in [
+            (
+                "thickness_side",
+                THICKNESS_SIDE_AFTER_NAME,
+                "thickness side",
+                &THICKNESS_SIDES[..],
+            ),
+            (
+                "projection_side",
+                PROJECTION_SIDE_AFTER_NAME,
+                "projection side",
+                &PROJECTION_SIDES[..],
+            ),
+        ] {
+            match double_slot(cluster, types, &object, end, after, what) {
+                Ok(side) => match allowed.iter().find(|(stored, _)| is(side, *stored)) {
+                    Some((_, code)) => {
+                        if let Some(key) = option_key(name) {
+                            native_options
+                                .insert(key, NativeOption::Integer(Dimension::Literal(*code)));
+                        }
+                    }
+                    None => unread(losses, entry, &format!("the {what} {side} is not stated")),
+                },
+                Err(reason) => unread(losses, entry, &reason),
+            }
+        }
         match double_slot(cluster, types, &object, end, KIND_AFTER_NAME, "extent kind") {
             Ok(kind) if is(kind, KIND_FINITE) => {
                 match measure_slot(cluster, types, &object, end, WIDTH_AFTER_NAME, "extent")
@@ -112,9 +144,8 @@ pub(crate) fn project(
         }
         losses.push(
             SolidEdgeLossCode::SheetMetalContourFlangeUnread.note(format!(
-                "the contour flange of feature object {entry:#x} states its profile, bend radius \
-                 and extent distance natively; its extent side, thickness side, reliefs and \
-                 width are not stated"
+                "the contour flange of feature object {entry:#x} states its profile, bend radius, \
+                 sides and extent distance natively; its reliefs and width are not stated"
             )),
         );
         if let Some(feature) = ir.design.features.iter_mut().find(|f| f.id == id) {

@@ -2,8 +2,9 @@
 //! Unfold and refold (`docs/formats/solidedge.md` §10.6): a
 //! `JMUnfoldFunction` feature states an unfold and a `JMRefoldFunction`
 //! feature a refold. The bends and the fixed face are `CLSID_JMTopologyProxy`
-//! face selections that the decoder does not read, so the operands are
-//! unstated and each feature adds `sheet-metal.bend-operand-unread`.
+//! face selections whose roles §10.6 states by function name. The decoder does
+//! not resolve them to faces, so the operands are unstated and each
+//! feature adds `sheet-metal.bend-operand-unread`.
 
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sheet_metal::{SheetMetal, SheetMetalKind};
