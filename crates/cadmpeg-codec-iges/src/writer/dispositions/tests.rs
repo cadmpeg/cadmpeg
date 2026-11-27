@@ -1019,13 +1019,10 @@ fn a_binding_that_states_its_source_object_is_written_with_its_target_and_colour
             "0123".to_owned(),
         )]);
     }
-    let (synthesis, _) = crate::test_support::with_policy_context(
-        &[],
-        &cadmpeg_core::decode::DecodePolicy::default(),
-        |ctx| crate::writer::target::synthesis_and_dispositions(ctx, &ir, crate::IgesVersion::V5_3),
-    )
-    .ok()
-    .unwrap();
+    let (synthesis, _) =
+        crate::writer::tests::synthesis_and_dispositions(&ir, crate::IgesVersion::V5_3)
+            .ok()
+            .unwrap();
     let drops = appearances::AppearanceDrops::of(&ir, &synthesis);
     assert!(
         drops.appearances.is_empty() && drops.bindings.is_empty(),

@@ -69,3 +69,53 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
         .expect("read extension removal");
     assert_eq!(round_trip.ir().geometry.subds, removed.geometry.subds);
 }
+
+/// The patch reads the retained archive in the write's one session, so the
+/// caller's input ceiling counts it with what the session read before: a
+/// session that has read one archive length under a ceiling of one archive
+/// length refuses the patch, and a session with room for it writes.
+#[test]
+fn the_patch_reads_the_archive_in_the_write_session() {
+    use cadmpeg_core::decode::{
+        u64_from_index, DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceDimension,
+    };
+    use cadmpeg_core::CodecError;
+
+    let source = crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_form(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    );
+    let (mut edited, _, _) = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("source decode")
+        .into_parts();
+    edited.geometry.subds[0]
+        .cage
+        .edit_edges(|edges| {
+            edges[0].user_knot = Some(SubdUserKnot::Override(
+                NonNegativeReal::new(0.0).expect("zero"),
+            ));
+            Ok(())
+        })
+        .expect("user-knot edit");
+    let length = u64_from_index(source.len());
+    let patch = |ceiling: u64| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_input_bytes = ceiling;
+        let ctx = DecodeContext::for_loaded_input(&arena, &policy, length).expect("admitted");
+        crate::writer::patch::write_semantic(
+            &ctx,
+            &edited,
+            &source,
+            &mut Vec::new(),
+            &mut Vec::new(),
+        )
+    };
+    let Err(CodecError::ResourceLimit(limit)) = patch(length) else {
+        panic!("the session's input ceiling refuses the archive");
+    };
+    assert_eq!(limit.scope, LimitScope::Session);
+    assert_eq!(limit.dimension, ResourceDimension::InputBytes);
+    assert_eq!(limit.operation, "F3D patch source archive");
+    patch(2 * length).expect("a session with room for the archive patches it");
+}

@@ -828,8 +828,9 @@ pub(crate) fn write_semantic_with_records_cached(
     unwritten_edits.extend(opaque.kept_edits);
     let mut marked = opaque.marked;
     let document_envelope = crate::container::first_solidworks_envelope(
+        ctx,
         opaque.blocks.iter().map(|(_, payload)| payload.as_slice()),
-    );
+    )?;
     let skeleton = retained_records.is_empty() && {
         let kept = ir
             .model

@@ -262,7 +262,9 @@ fn three_millimetres() -> ParameterValue {
 
 /// A saved design whose retained archive does not decode is written from its
 /// `design` records, and the restore charges the failure once, where the
-/// target patches the archive and on a catalog row.
+/// target patches the archive and on a catalog row. Where the target patches
+/// the archive, the synthesis cause states why the patch did not run, the
+/// arenas the document lacks, and not the decode failure the loss states.
 #[test]
 fn a_retained_archive_that_does_not_decode_is_charged_once() {
     let decoded = decode(SOURCE);
@@ -271,17 +273,22 @@ fn a_retained_archive_that_does_not_decode_is_charged_once() {
         &undecodable(&decoded),
         TargetRequest::Unnamed,
     );
-    assert!(
-        report.synthesis_cause().is_some(),
-        "{:#?}",
-        report.write_path()
-    );
-    assert_eq!(
-        charged(&report, F3dLossCode::WriterHistoryUnrestored).len(),
-        1,
-        "{:#?}",
-        report.losses
-    );
+    let Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason: declined }) =
+        report.synthesis_cause()
+    else {
+        panic!("a synthesis cause: {:#?}", report.write_path());
+    };
+    let unrestored = charged(&report, F3dLossCode::WriterHistoryUnrestored);
+    let [unrestored] = unrestored.as_slice() else {
+        panic!("one unrestored charge: {:#?}", report.losses);
+    };
+    let failure = unrestored
+        .split_once("archive (")
+        .and_then(|(_, rest)| rest.rsplit_once("); the file"))
+        .map(|(failure, _)| failure)
+        .expect("the charge states the decode failure");
+    assert!(!declined.contains(failure), "{declined}");
+    assert!(declined.contains("read from CADIR"), "{declined}");
     assert_eq!(d1(&bytes), Some(three_millimetres()));
 
     let decoded = decode(&off_catalog_source());

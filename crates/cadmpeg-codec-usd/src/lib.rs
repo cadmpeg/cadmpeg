@@ -138,7 +138,7 @@ impl EncoderBackend for UsdCodec {
         let binary = target
             .synthesized_row()
             .is_some_and(|(_, entry)| entry.id == dialect::USD_USDC_0_8_0);
-        let (mut body, members) = writer::plan(input, &target, packaged);
+        let (mut body, members) = writer::plan(ctx, input, &target, packaged)?;
         if binary {
             let (bytes, left_out) = crate_layer(ctx, &body.bytes)?;
             body.bytes = bytes;

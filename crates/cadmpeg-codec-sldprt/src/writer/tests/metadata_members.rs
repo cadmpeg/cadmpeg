@@ -1003,9 +1003,12 @@ fn metadata_edits_preserve_configuration_xml_and_explicit_renames_update_it() {
                 .iter()
                 .find(|block| block.section.name() == Some("swXmlContents/Features"))
                 .unwrap();
-            let envelope =
-                crate::container::first_solidworks_envelope([changed_xml.payload.as_slice()])
-                    .unwrap();
+            let envelope = crate::container::first_solidworks_envelope(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                [changed_xml.payload.as_slice()],
+            )
+            .unwrap()
+            .unwrap();
             assert_eq!(envelope.configuration_name.as_deref(), Some("RenamedSaved"));
             let changed_history = scan
                 .blocks

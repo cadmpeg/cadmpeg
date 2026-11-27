@@ -353,12 +353,15 @@ fn plan_output<E: EncoderBackend>(
             None
         }
     };
+    // The synthesis cause states why the source was not used, so the
+    // degradation states only what the write did.
     let write_path = match write_path {
         WritePath::Synthesized {
             consumption: Consumption::Degraded { .. },
         } if synthesis_cause.is_some() => WritePath::Synthesized {
             consumption: Consumption::Degraded {
-                reason: "the synthesis cause states the reason".to_owned(),
+                reason: "the writer wrote the file from the document, not from its source"
+                    .to_owned(),
             },
         },
         write_path => write_path,
@@ -614,9 +617,11 @@ pub enum EncodeError {
 
 impl EncodeError {
     /// A planning failure. Planning writes into memory and touches no
-    /// destination, so an I/O failure it meets is no [`Self::Io`]. A write
-    /// gives up no part, so each of its resource refusals has
-    /// [`LimitScope::Session`] (§2.5).
+    /// destination, so it meets no failure of the destination's I/O, which
+    /// is [`Self::Io`] (§3.4). A backend that meets an I/O failure reading
+    /// its retained source data passes it up as [`CodecError::Io`], and it
+    /// is [`Self::Backend`]. A write gives up no part, so each of its
+    /// resource refusals has [`LimitScope::Session`] (§2.5).
     fn from_backend(error: CodecError) -> Self {
         match error {
             CodecError::UnsupportedTarget(refusal) => Self::UnsupportedTarget(refusal),

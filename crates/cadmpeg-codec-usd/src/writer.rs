@@ -32,6 +32,8 @@ mod trims;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
@@ -195,13 +197,19 @@ fn design_losses(ir: &CadIr) -> Option<LossNote> {
 /// A package member: its name and its content.
 pub(crate) type Member = (String, Vec<u8>);
 
-/// Plans a USDA write, and returns the members a package holds beside the
-/// layer when `packaged`.
+/// Plans a USDA write in the encode session `ctx`, and returns the members a
+/// package holds beside the layer when `packaged`.
+///
+/// # Errors
+///
+/// Returns [`CodecError::ResourceLimit`] where the session refuses during
+/// the write, the tessellation of a face included.
 pub(crate) fn plan(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
-) -> (ExportBody, Vec<Member>) {
+) -> Result<(ExportBody, Vec<Member>), CodecError> {
     let version = target
         .synthesized_row()
         .and_then(|(index, _)| crate::TARGET_VERSIONS.get(index).copied());
@@ -218,12 +226,17 @@ pub(crate) fn plan(
     // `subds` coverage charges the cage.
     let cageless = cadmpeg_ir::codec::write::without_cage_bodies(input.ir);
     let written = cageless.as_ref().unwrap_or(input.ir);
-    let mut writer = Writer::new(written, version, input.scene, metres);
+    let mut writer = Writer::new(ctx, written, version, input.scene, metres);
     if packaged {
         writer.package = Some(Vec::new());
         writer.assets = input.assets;
     }
     let (text, holds_prims) = writer.layer();
+    // A face the session refused is no unmeshed face but the session's
+    // refusal (§2.5).
+    if let Some(limit) = ctx.resource_refusal() {
+        return Err(CodecError::ResourceLimit(limit));
+    }
     let mut losses = writer.losses();
     if !holds_prims {
         losses.push(cadmpeg_ir::codec::write::output_empty(
@@ -250,7 +263,7 @@ pub(crate) fn plan(
         written_row: None,
         annotations: None,
     };
-    (body, members)
+    Ok((body, members))
 }
 
 /// The note text of a layer of `metres` metres per unit.
@@ -460,6 +473,7 @@ struct Writer<'ir> {
 
 impl<'ir> Writer<'ir> {
     fn new(
+        ctx: &'ir DecodeContext<'ir>,
         ir: &'ir CadIr,
         version: &'static str,
         scene: cadmpeg_ir::codec::write::SceneOptions,
@@ -595,7 +609,8 @@ impl<'ir> Writer<'ir> {
             tessellator: cadmpeg_tessellate::Tessellator::new(
                 ir,
                 cadmpeg_tessellate::Options::default(),
-            ),
+            )
+            .within(cadmpeg_ir::eval::admission::EvaluationAdmission::Write(ctx)),
             above_parts,
             package: None,
             assets: None,

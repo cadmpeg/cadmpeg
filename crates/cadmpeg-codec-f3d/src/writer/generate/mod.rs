@@ -65,7 +65,7 @@ pub(super) fn write_new(
     // The history-true form writes the state at its timeline marker, which
     // an evaluation can hold in place of the current state.
     let staged = match missing_states {
-        MissingStateForm::HistoryTrue => design::state_at_marker(target, &ctx.policy().limits),
+        MissingStateForm::HistoryTrue => design::state_at_marker(target, &ctx.policy().limits)?,
         MissingStateForm::GeometryTrue => None,
     };
     let (target, staged_loss) = match &staged {

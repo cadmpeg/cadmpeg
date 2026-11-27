@@ -78,11 +78,14 @@ pub(crate) fn write_semantic(
                 .into(),
         ));
     }
+    // The archive is input of the write's one session, so the caller's
+    // ceilings bound every read of it (cadir-v11.md §2.5).
+    ctx.charge_input(
+        cadmpeg_core::decode::u64_from_index(source_image.len()),
+        "F3D patch source archive",
+    )?;
     let policy = *ctx.policy();
     let limits = policy.limits;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (encode_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(source_image, &arena, &policy)?;
     let target_native = f3d_native(ctx, target)?;
     if let Some(native) = target_native.as_ref() {
         validate_configuration_projection(target, native)?;
@@ -461,7 +464,7 @@ pub(crate) fn write_semantic(
             .wire_topologies
             .clone_from(&target_native.wire_topologies);
         supported.store(
-            &encode_ctx,
+            ctx,
             supported_target
                 .native
                 .namespace_mut(cadmpeg_ir::codec_id!("f3d")),
@@ -706,7 +709,7 @@ pub(crate) fn write_semantic(
         };
         let expanded = zstd.then(|| bytes.clone());
         if let Some(cage) = user_knot_edits.remove(&name) {
-            bytes = crate::tsm::user_knots::rewrite(&encode_ctx, &name, &bytes, &cage)?;
+            bytes = crate::tsm::user_knots::rewrite(ctx, &name, &bytes, &cage)?;
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
