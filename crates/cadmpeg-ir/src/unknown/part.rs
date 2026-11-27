@@ -58,11 +58,14 @@ pub enum Cause {
 
 impl Cause {
     /// The cause of a give-up that `error` ends: [`Cause::Undecoded`] for a
-    /// resource refusal, which is a bound, and `self` otherwise.
+    /// form the decoder has no reading for, a dialect it does not decode, or
+    /// a resource refusal, which is a bound, and `self` otherwise.
     #[must_use]
     pub const fn of(self, error: &CodecError) -> Self {
         match error {
-            CodecError::ResourceLimit(_) => Self::Undecoded,
+            CodecError::NotImplemented(_)
+            | CodecError::UnsupportedDialect { .. }
+            | CodecError::ResourceLimit(_) => Self::Undecoded,
             _ => self,
         }
     }

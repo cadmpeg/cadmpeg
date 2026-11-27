@@ -604,6 +604,18 @@ fn a_part_cut_by_its_resource_ceiling_is_undecoded() {
     assert_eq!(given_up.loss().severity, Severity::Warning);
 }
 
+/// A form the decoder has no reading for is a bound of the decoder, so its
+/// give-up is `record.undecoded` whatever cause its decoder states; a broken
+/// frame keeps the stated cause.
+#[test]
+fn a_form_without_a_reading_is_undecoded_and_a_broken_frame_keeps_its_cause() {
+    let unread = CodecError::NotImplemented("a later generation".into());
+    assert_eq!(Cause::Unreadable.of(&unread), Cause::Undecoded);
+    let broken = CodecError::Malformed("a frame".into());
+    assert_eq!(Cause::Unreadable.of(&broken), Cause::Unreadable);
+    assert_eq!(Cause::Undecoded.of(&broken), Cause::Undecoded);
+}
+
 #[test]
 fn a_record_given_up_names_its_span_and_the_sorted_records_dropped_with_it() {
     use crate::provenance::{SourceProvenance, StreamName};
