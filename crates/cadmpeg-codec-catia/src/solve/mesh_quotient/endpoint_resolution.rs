@@ -680,6 +680,93 @@ pub(super) fn resolve_singleton_mesh_endpoint_candidates(
     )
 }
 
+/// Fast `O(F + E)` singleton endpoint resolution validated directly against
+/// `quotient`, avoiding `O(E^2)` per-step quotient cloning in
+/// `assignment_has_option` and pair-support pruning when every edge already has
+/// a unique endpoint pair and every face has a unique closing coordinate cycle.
+fn try_fast_singleton_mesh_endpoint_resolution(
+    ctx: &DecodeContext<'_>,
+    inputs: ResolveSingletonMeshEndpointCandidatesInputs<'_, '_, '_, '_, '_, '_, '_, '_>,
+) -> Result<Option<MeshEndpointResolve>, CodecError> {
+    let ResolveSingletonMeshEndpointCandidatesInputs {
+        edge_rows,
+        vertex_points,
+        edge_candidates,
+        assignments,
+        port_identities,
+        edge_direction_evidence,
+        ..
+    } = inputs;
+
+    if edge_candidates.len() != edge_rows.len()
+        || port_identities.len() != edge_rows.len()
+        || edge_direction_evidence.is_some_and(|evidence| evidence.len() != edge_rows.len())
+        || edge_candidates
+            .iter()
+            .any(|candidates| candidates.len() != 1)
+    {
+        return Ok(None);
+    }
+
+    let mut selected = Vec::with_capacity(assignments.len());
+    let mut endpoint_labelled_directions = Vec::with_capacity(assignments.len());
+
+    for face in assignments {
+        let mut seen = HashSet::new();
+        let mut first = None;
+        for assignment in face {
+            let mut directions = Vec::with_capacity(assignment.boundaries.len());
+            let mut valid = true;
+            for boundary in &assignment.boundaries {
+                let Some(row) = singleton_mesh_boundary_directions(
+                    boundary,
+                    edge_candidates,
+                    edge_direction_evidence,
+                ) else {
+                    valid = false;
+                    break;
+                };
+                directions.push(row);
+            }
+            if !valid {
+                continue;
+            }
+            let Some(signature) =
+                canonical_singleton_coordinate_cycles(assignment, &directions, edge_candidates)
+            else {
+                continue;
+            };
+            if seen.contains(&signature) {
+                continue;
+            }
+            seen.insert(signature);
+            if first.is_some() {
+                return Ok(None);
+            }
+            first = Some((assignment.clone(), directions));
+        }
+        let Some((assignment, directions)) = first else {
+            return Ok(None);
+        };
+        selected.push(assignment);
+        endpoint_labelled_directions.push(directions);
+    }
+
+    let Some(topology) = reconstruct_singleton_coordinate_topology(
+        ctx,
+        edge_rows,
+        vertex_points,
+        edge_candidates,
+        &selected,
+        &endpoint_labelled_directions,
+    )?
+    else {
+        return Ok(None);
+    };
+    let point_assignment = (0..vertex_points.len()).collect();
+    Ok(Some(MeshSolve::Solved((topology, point_assignment))))
+}
+
 // Endpoint materialization receives independent evidence, budgets, predicates,
 // and gauge state so each fallback remains separately bounded and auditable.
 pub(super) struct ResolveStandardMeshEndpointCandidatesInputs<
@@ -747,6 +834,34 @@ pub(super) fn resolve_standard_mesh_endpoint_candidates(
     } = inputs;
 
     let mut edge_candidates = edge_candidates.to_vec();
+    if edge_candidates
+        .iter()
+        .all(|candidates| candidates.len() == 1)
+    {
+        let quotient = if let Some(prepared) = prepared_quotient {
+            Some(prepared.clone())
+        } else {
+            initial_mesh_quotient(&edge_candidates, vertex_points.len(), port_identities)?
+        };
+        if quotient.is_none() {
+            return Ok(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
+        }
+        if let Some(resolved) = try_fast_singleton_mesh_endpoint_resolution(
+            ctx,
+            ResolveSingletonMeshEndpointCandidatesInputs {
+                edge_rows,
+                vertex_points,
+                edge_candidates: &edge_candidates,
+                assignments: &assignments,
+                port_identities,
+                edge_direction_evidence,
+                budget,
+                candidate_gauge,
+            },
+        )? {
+            return Ok(resolved);
+        }
+    }
     if !prune_mesh_endpoint_pair_support(
         &mut assignments,
         &mut edge_candidates,
