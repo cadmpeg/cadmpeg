@@ -39,6 +39,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
@@ -195,18 +196,10 @@ pub(crate) fn project(
         } = spans.remove(&prefix).unwrap_or_default();
         if spanned.len() > 1 {
             for feature in &mut projected.features {
-                // The span above counts the definitions each document hosts,
-                // which does not match the span of a member's own scope, so a
-                // feature of an archive member names no component.
-                let member = feature
-                    .native_ref
-                    .as_deref()
-                    .and_then(crate::ids::native_stream)
-                    .is_some_and(|stream| !timeline::document_prefix(stream).is_empty());
                 feature.component = owners
                     .get(&feature.id)
-                    .filter(|owner| !member && spanned.contains(**owner))
-                    .map(|owner| (*owner).clone());
+                    .filter(|owner| spanned.contains(**owner))
+                    .and_then(|owner| member_component(feature, owner));
             }
         }
         let Some(Container::Ordered {
@@ -258,6 +251,20 @@ pub(crate) fn project(
     sheet_metal::project(ctx, ir, &definitions, losses)?;
     thread::project(ctx, ir, losses)?;
     Ok(())
+}
+
+/// The component a feature names: `owner`, where it stands in the document
+/// that holds the feature. The span above counts the definitions each
+/// document hosts, which does not match the span of an archive member's own
+/// scope, so the owner a member's feature shares with no definition of its
+/// document is not named.
+fn member_component(feature: &Feature, owner: &ProductDefinitionId) -> Option<ProductDefinitionId> {
+    let stream = feature
+        .native_ref
+        .as_deref()
+        .and_then(crate::ids::native_stream)?;
+    (timeline::document_prefix(owner.as_str()) == timeline::document_prefix(stream))
+        .then(|| owner.clone())
 }
 
 /// The position of the rollback marker of the timeline `id`: after its last

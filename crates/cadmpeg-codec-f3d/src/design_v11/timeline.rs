@@ -2,13 +2,11 @@
 //! The timelines of a Fusion design as ordered containers (§5.2), and one
 //! feature per timeline item.
 //!
-//! The v10 projection orders the features of one Design stream by the item
-//! runs of its timeline records, in their `MetaStream` order, so the feature
-//! at an item's position in that run is the item's feature. The features of
-//! an archive member are renumbered by the merge, so an item of a member is
-//! matched to the feature whose key ends in the item's record. An item the v10
-//! projection did not resolve is a feature of the family its record type
-//! establishes, or a native feature named by that type.
+//! The v10 feature of an item is the one of the item's Design stream whose key
+//! ends in the item's scope record. The archive merge renumbers feature
+//! ordinals, so an ordinal never states a position. A feature goes to one
+//! item. An item with no feature of its record is a feature of the family its
+//! record type establishes, or a native feature named by that type.
 //!
 //! The rolled-back flags of the items' scope tails place the rollback marker
 //! of a timeline before its first rolled-back item. A timeline whose items
@@ -98,19 +96,10 @@ pub(super) fn project(
             streams.entry(stream).or_default().push(timeline);
         }
     }
-    let mut positioned = HashMap::<(&str, u64), Vec<&LegacyFeature>>::new();
-    for feature in features {
-        if let Some(stream) = feature.native_ref.as_deref().and_then(native_stream) {
-            positioned
-                .entry((stream, feature.ordinal))
-                .or_default()
-                .push(feature);
-        }
-    }
-    // The v10 features by the record that ends their key. The merge of an
-    // archive member renumbers its features after those already merged, so a
-    // member's features are matched to its items by record and not by
-    // position.
+    // The v10 features by the stream and the record that ends their key. The
+    // merge renumbers the ordinals of the features it places after those
+    // already merged, so a feature is matched to its item by record and never
+    // by position.
     let mut by_record = HashMap::<(&str, u64), Vec<&LegacyFeature>>::new();
     for feature in features {
         let Some(stream) = feature.native_ref.as_deref().and_then(native_stream) else {
@@ -125,11 +114,11 @@ pub(super) fn project(
             by_record.entry((stream, record)).or_default().push(feature);
         }
     }
+    let mut consumed = BTreeSet::<&str>::new();
     let mut documents = BTreeMap::<String, Projected>::new();
     for (stream, mut records) in streams {
         records.sort_by_key(|timeline| timeline.source_ordinal);
         let item_types = ItemTypes::new(types, stream);
-        let mut ordinal = 0_u64;
         for timeline in records {
             let items = timeline.frame().items();
             if items.is_empty() {
@@ -144,35 +133,28 @@ pub(super) fn project(
                 ctx.charge_entities(1, "project F3D v11 timeline item")?;
                 let flags = tail_flags.get(&(stream, item.value)).copied();
                 rolled_back.push(flags.map(|flags| flags.rolled_back));
-                let by_position = if document_prefix(stream).is_empty() {
-                    positioned
-                        .get(&(stream, ordinal))
-                        .and_then(|candidates| item_feature(candidates, item.value))
-                } else {
-                    None
-                };
-                let matched = by_position.or_else(|| {
-                    by_record
-                        .get(&(stream, item.value))
-                        .and_then(|candidates| item_feature(candidates, item.value))
-                });
+                let companion = companion_suppressed.get(&(stream, item.value)).copied();
+                let matched = by_record
+                    .get(&(stream, item.value))
+                    .and_then(|candidates| item_feature(candidates, &consumed));
                 let feature = match matched {
-                    Some(feature) => resolved_item(feature, bodies, &scopes, losses),
+                    Some(feature) => {
+                        // discarded-value: a feature id is listed once however often it is taken.
+                        let _ = consumed.insert(feature.id.as_str());
+                        resolved_item(feature, bodies, &scopes, flags, companion, losses)
+                    }
                     None => unprojected_item(
                         stream,
                         timeline,
                         item.value,
                         &item_types,
                         flags,
-                        companion_suppressed.get(&(stream, item.value)).copied(),
+                        companion,
                         losses,
                     )?,
                 };
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
-                ordinal = ordinal
-                    .checked_add(1)
-                    .ok_or_else(|| CodecError::malformed("F3D timeline ordinal exceeds u64"))?;
             }
             ctx.charge_entities(1, "project F3D v11 timeline")?;
             let id = container_id(timeline.id())?;
@@ -249,15 +231,17 @@ pub(super) fn document_prefix(stream: &str) -> &str {
         .map_or("", |(key, _)| &local[..=key.len()])
 }
 
-/// The v10 feature of the item whose record is `record`, among the features
-/// the v10 projection placed at the item's position: the one keyed by that
-/// record, else the first by id.
-fn item_feature<'a>(candidates: &[&'a LegacyFeature], record: u64) -> Option<&'a LegacyFeature> {
-    let suffix = format!(":{record}");
+/// The v10 feature of an item among the `candidates` whose key ends in the
+/// item's record: the first by id that no earlier item took, so that two
+/// features of one record never give two items one id.
+fn item_feature<'a>(
+    candidates: &[&'a LegacyFeature],
+    consumed: &BTreeSet<&str>,
+) -> Option<&'a LegacyFeature> {
     candidates
         .iter()
-        .find(|feature| feature.id.as_str().ends_with(&suffix))
-        .or_else(|| candidates.iter().min_by_key(|feature| feature.id.as_str()))
+        .filter(|feature| !consumed.contains(feature.id.as_str()))
+        .min_by_key(|feature| feature.id.as_str())
         .copied()
 }
 
@@ -265,8 +249,16 @@ fn resolved_item(
     feature: &LegacyFeature,
     bodies: &BTreeSet<&str>,
     scopes: &HashMap<&str, &crate::records::feature::scope::DesignParameterScope>,
+    flags: Option<DesignScopeTailFlags>,
+    companion: Option<bool>,
     losses: &mut Vec<LossNote>,
 ) -> Feature {
+    let suppressed = feature.suppressed.or_else(|| {
+        if let Some(flags) = flags {
+            losses.extend(flags.assumption_notes(&format!("feature {}", feature.id)));
+        }
+        flags.map(|flags| flags.suppressed()).or(companion)
+    });
     let operation = feature.evaluation.definition().operation();
     let typed_pattern = |losses: &mut Vec<LossNote>| {
         let scope = scopes.get(feature.native_ref.as_deref()?)?;
@@ -290,7 +282,7 @@ fn resolved_item(
     Feature {
         id: feature.id.clone(),
         name: feature.name.clone(),
-        suppressed: feature.suppressed.map(Dimension::Literal),
+        suppressed: suppressed.map(Dimension::Literal),
         definition: FeatureDefinition {
             operation,
             assembly: None,

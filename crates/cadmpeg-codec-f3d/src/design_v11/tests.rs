@@ -1812,48 +1812,185 @@ fn part_number_and_description_cells_of_other_rows_override_the_scope_definition
     }
 }
 
-/// The merge of an archive member renumbers its features after those of the
-/// document that holds it, so a member's item is matched to its feature by the
-/// record that ends the feature's key.
-#[test]
-fn a_member_items_feature_is_matched_by_record_not_by_position() {
-    let member = "f3d:0574d3e0-934b-4a4e-a78b-7f54f53c2287.f3d@FusionAssetName[Active]/Design1/BulkStream.dat";
+const MEMBER: &str =
+    "f3d:0574d3e0-934b-4a4e-a78b-7f54f53c2287.f3d@FusionAssetName[Active]/Design1/BulkStream.dat";
+
+/// An unresolved extrude of `stream` stored at scope record `record`, keyed as
+/// the v10 projection keys it, with ordinal `ordinal`.
+fn keyed(stream: &str, kind: &str, record: u32, ordinal: u64) -> LegacyFeature {
     let mut feature = legacy(
-        "extrude:20",
-        41,
+        "unused:0",
+        ordinal,
         Some(false),
         LegacyOperation::Unresolved {
             family: UnresolvedFamily::Extrude,
         },
     );
-    feature.native_ref = Some(format!("{member}:design-parameter-scope#900"));
+    feature.id = crate::ids::neutral_feature_id_parts(stream, kind, 1, record);
+    feature.native_ref = Some(format!("{stream}:design-parameter-scope#{record}"));
+    feature
+}
+
+/// The features of the document `stream` holds, projected from `features` and
+/// one timeline of `items`.
+fn items_of(
+    stream: &str,
+    features: &[LegacyFeature],
+    items: &[u64],
+    flags: &super::timeline::TailFlags<'_>,
+) -> Vec<cadmpeg_ir::design::feature::Feature> {
     let documents = crate::test_support::with_decode_context(|ctx| {
         super::timeline::project(
             ctx,
-            std::slice::from_ref(&feature),
-            &[timeline(member, 0, &[10, 20])],
+            features,
+            &[timeline(stream, 0, items)],
             &[],
             &super::timeline::ScopeInputs {
                 records: &[],
-                tail_flags: &super::timeline::TailFlags::new(),
+                tail_flags: flags,
             },
             &BTreeSet::new(),
             &mut Vec::new(),
         )
     })
     .unwrap();
-    let [unmatched, matched] = documents.values().next().unwrap().features.as_slice() else {
+    documents.into_values().next().unwrap().features
+}
+
+fn is_timeline_item(feature: &cadmpeg_ir::design::feature::Feature) -> bool {
+    matches!(
+        &feature.definition.operation,
+        FeatureOperation::Native { kind, .. } if kind.as_str() == "f3d:timeline-item"
+    )
+}
+
+/// The merge renumbers the ordinals of the features it places, so an item is
+/// matched to its feature by record in a member and in the root alike.
+#[test]
+fn an_item_is_matched_to_the_feature_of_its_record_whatever_its_ordinal() {
+    for stream in [MEMBER, STREAM] {
+        let features = [
+            keyed(stream, "Extrude", 10, 41),
+            keyed(stream, "Extrude", 20, 7),
+        ];
+        let got = items_of(
+            stream,
+            &features,
+            &[10, 20],
+            &super::timeline::TailFlags::new(),
+        );
+        let ids = got.iter().map(|feature| &feature.id).collect::<Vec<_>>();
+        assert_eq!(ids, [&features[0].id, &features[1].id], "{stream}");
+        assert!(got.iter().all(|feature| !is_timeline_item(feature)));
+    }
+}
+
+#[test]
+fn a_feature_of_another_record_at_the_items_position_does_not_match() {
+    for stream in [MEMBER, STREAM] {
+        let decoy = keyed(stream, "Extrude", 10, 0);
+        let got = items_of(
+            stream,
+            std::slice::from_ref(&decoy),
+            &[20],
+            &super::timeline::TailFlags::new(),
+        );
+        let [item] = got.as_slice() else {
+            panic!("one feature")
+        };
+        assert!(is_timeline_item(item), "{stream}");
+        assert_ne!(item.id, decoy.id);
+    }
+}
+
+#[test]
+fn an_item_with_no_feature_of_its_record_is_a_timeline_item() {
+    let got = items_of(STREAM, &[], &[10], &super::timeline::TailFlags::new());
+    assert!(got.iter().all(is_timeline_item));
+}
+
+#[test]
+fn a_record_is_matched_whole_and_not_by_its_suffix() {
+    let features = [keyed(MEMBER, "Extrude", 202, 0)];
+    let got = items_of(
+        MEMBER,
+        &features,
+        &[20, 202],
+        &super::timeline::TailFlags::new(),
+    );
+    let [short, whole] = got.as_slice() else {
         panic!("two features")
     };
-    assert!(matches!(
-        &unmatched.definition.operation,
-        FeatureOperation::Native { kind, .. } if kind.as_str() == "f3d:timeline-item"
-    ));
-    assert_eq!(matched.id, feature.id);
-    assert_eq!(
-        matched.definition.operation,
-        FeatureOperation::Unresolved {
-            family: OperationFamily::Extrude
-        }
-    );
+    assert!(is_timeline_item(short));
+    assert_eq!(whole.id, features[0].id);
+}
+
+#[test]
+fn features_of_one_record_go_to_items_in_id_order_and_none_twice() {
+    let a = keyed(MEMBER, "Extrude", 10, 0);
+    let b = keyed(MEMBER, "Fillet", 10, 1);
+    let (first, second) = if a.id.as_str() < b.id.as_str() {
+        (a.id.clone(), b.id.clone())
+    } else {
+        (b.id.clone(), a.id.clone())
+    };
+    for features in [[a.clone(), b.clone()], [b.clone(), a.clone()]] {
+        let one = items_of(MEMBER, &features, &[10], &super::timeline::TailFlags::new());
+        assert_eq!(one[0].id, first);
+        let two = items_of(
+            MEMBER,
+            &features,
+            &[10, 10],
+            &super::timeline::TailFlags::new(),
+        );
+        assert_eq!([&two[0].id, &two[1].id], [&first, &second]);
+        let three = items_of(
+            MEMBER,
+            &features,
+            &[10, 10, 10],
+            &super::timeline::TailFlags::new(),
+        );
+        assert!(is_timeline_item(&three[2]));
+        let ids = three
+            .iter()
+            .map(|feature| &feature.id)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(ids.len(), 3);
+    }
+}
+
+#[test]
+fn a_matched_feature_with_no_stored_suppression_takes_the_items_state() {
+    let mut feature = keyed(MEMBER, "Extrude", 10, 0);
+    feature.suppressed = None;
+    let flags: super::timeline::TailFlags<'_> =
+        [((MEMBER, 10), tail_flags([true, false], true, false))]
+            .into_iter()
+            .collect();
+    let got = items_of(MEMBER, std::slice::from_ref(&feature), &[10], &flags);
+    assert_eq!(got[0].id, feature.id);
+    assert_eq!(got[0].suppressed, Some(Dimension::Literal(true)));
+    let mut stored = feature.clone();
+    stored.suppressed = Some(false);
+    let got = items_of(MEMBER, std::slice::from_ref(&stored), &[10], &flags);
+    assert_eq!(got[0].suppressed, Some(Dimension::Literal(false)));
+}
+
+#[test]
+fn a_feature_names_its_owner_as_component_only_within_its_own_document() {
+    let own =
+        ProductDefinitionId::mint("f3d:0574d3e0-934b-4a4e-a78b-7f54f53c2287.f3d@model:component#c")
+            .unwrap();
+    let placed = ProductDefinitionId::mint(
+        "f3d:outer.f3d@xref:product-definition#0574d3e0-934b-4a4e-a78b-7f54f53c2287.f3d",
+    )
+    .unwrap();
+    let flags = super::timeline::TailFlags::new();
+    let hosted = items_of(MEMBER, &[keyed(MEMBER, "Extrude", 10, 0)], &[10], &flags).remove(0);
+    assert_eq!(super::member_component(&hosted, &own), Some(own.clone()));
+    assert_eq!(super::member_component(&hosted, &placed), None);
+    let root = ProductDefinitionId::mint("f3d:model:component#a").unwrap();
+    let hosted = items_of(STREAM, &[keyed(STREAM, "Extrude", 10, 0)], &[10], &flags).remove(0);
+    assert_eq!(super::member_component(&hosted, &root), Some(root.clone()));
+    assert_eq!(super::member_component(&hosted, &own), None);
 }
