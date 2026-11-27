@@ -31,7 +31,7 @@ use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::FreecadLossCode;
@@ -100,11 +100,39 @@ pub(super) fn project(
                 }
             }
             JointBody::Pair { kind, connectors } => {
+                let owned = |name: &str| {
+                    properties
+                        .iter()
+                        .find(|property| property.owner == record.object() && property.name == name)
+                };
                 let [first, second] = connectors.as_ref();
-                let connectors = [first, second].map(|connector| {
+                let mut native_options = NativeOptions::new();
+                let connectors = [("1", first), ("2", second)].map(|(index, connector)| {
                     let reference = connector.reference.as_ref()?;
-                    products.connector(definition, reference, connector.placement, connector.offset)
+                    if record.parameters().bool_value(&format!("Detach{index}")) != Some(true) {
+                        return products.connector(
+                            definition,
+                            reference,
+                            connector.placement,
+                            connector.offset,
+                        );
+                    }
+                    let offset = (connector.offset.transform() != Transform::identity())
+                        .then(|| owned(&format!("Offset{index}")))
+                        .flatten()
+                        .and_then(crate::placement::placement_values);
+                    let (connector, options) = products.detached(
+                        definition,
+                        reference,
+                        connector.placement,
+                        index,
+                        offset,
+                    )?;
+                    native_options.extend(options);
+                    Some(connector)
                 });
+                let float_distance = owned("Distance")
+                    .is_some_and(|property| property.type_name == "App::PropertyFloat");
                 let [Some(first), Some(second)] = connectors else {
                     losses.push(FreecadLossCode::FeatureJointUnresolved.note(format!(
                         "joint {} names no object for a connector; the joint stays in its \
@@ -113,7 +141,13 @@ pub(super) fn project(
                     )));
                     continue;
                 };
-                let Some(joint) = joint(kind.as_str(), record.parameters(), [first, second]) else {
+                let Some(joint) = joint(
+                    kind.as_str(),
+                    record.parameters(),
+                    [first, second],
+                    native_options,
+                    float_distance,
+                ) else {
                     losses.push(FreecadLossCode::FeatureJointUnresolved.note(format!(
                         "joint {} stores a blank joint type; the joint stays in its native \
                          record",
@@ -179,19 +213,25 @@ pub(super) fn project(
 }
 
 /// The joint of family `label` with parameters `parameters` between
-/// connectors `connectors`. Each parameter the joint does not hold is a native
-/// option under its own name.
-/// `None` where the family is blank.
+/// connectors `connectors`, whose detached connectors keep `native_options`.
+/// `float_distance` states that the joint stores `Distance` as a float, the
+/// form in which an Angle joint stores its angle there in degrees. Each
+/// parameter the joint does not hold is a source setting under its own name,
+/// and a native option of a family the decoder does not read. `None` where
+/// the family is blank.
 fn joint(
     label: &str,
     parameters: &JointParameters,
     connectors: [JointConnector; 2],
+    mut native_options: NativeOptions,
+    float_distance: bool,
 ) -> Option<Joint> {
     let family = label.to_ascii_lowercase();
+    let old_angle = family == "angle" && float_distance;
     let mut read = Read {
         parameters,
-        used: BTreeSet::from(["Suppressed", "Detach1", "Detach2"]),
-        degrees: if family == "angle" {
+        used: BTreeSet::from(["Suppressed"]),
+        degrees: if old_angle {
             &["Angle", "AngleMin", "AngleMax", "Distance"]
         } else {
             &["Angle", "AngleMin", "AngleMax"]
@@ -226,24 +266,33 @@ fn joint(
                 .chain(read.translation())
                 .collect(),
         ),
-        "slider" | "prismatic" => motion(
+        "slider" => motion(
             JointMotion::Slider { axis: FrameAxis::Z },
             read.translation().into_iter().collect(),
         ),
-        "ball" | "spherical" => motion(JointMotion::Ball, Vec::new()),
+        "ball" => motion(JointMotion::Ball, Vec::new()),
         "distance" => JointKind::Distance {
-            distance: read.length("Distance"),
+            distance: read.length("Distance").filter(|distance| {
+                let Dimension::Literal(length) = distance else {
+                    return true;
+                };
+                let unsigned = length.get() >= 0.0;
+                if !unsigned {
+                    native_options.extend(
+                        key("Distance").map(|key| (key, NativeOption::Length(distance.clone()))),
+                    );
+                }
+                unsigned
+            }),
             limits: None,
         },
         "parallel" => JointKind::Parallel,
         "perpendicular" => JointKind::Perpendicular,
         "angle" => JointKind::Angle {
-            angle: read
-                .angle("Angle")
-                .or_else(|| read.unsigned_angle("Distance")),
+            angle: read.magnitude(if old_angle { "Distance" } else { "Angle" }),
             limits: None,
         },
-        "rackpinion" | "rack_pinion" => coupling(Coupling::RackPinion {
+        "rackpinion" => coupling(Coupling::RackPinion {
             ratio: None,
             pitch_radius: read.length("Distance"),
         }),
@@ -260,17 +309,19 @@ fn joint(
         }),
         _ => JointKind::Native(NonBlankString::new(label.to_owned())?),
     };
-    let detach = ["Detach1", "Detach2"]
-        .into_iter()
-        .filter(|name| parameters.bool_value(name) == Some(true))
-        .filter_map(|name| Some((key(name)?, NativeOption::Bool(Dimension::Literal(true)))))
-        .collect();
+    let rest = read.rest();
+    let source_settings = if matches!(kind, JointKind::Native(_)) {
+        native_options.extend(rest);
+        NativeOptions::new()
+    } else {
+        rest
+    };
     Some(Joint {
         connectors,
         kind,
         alignment: None,
-        native_options: read.rest(),
-        source_settings: detach,
+        native_options,
+        source_settings,
     })
 }
 
@@ -301,17 +352,15 @@ impl Read<'_> {
         Some(Dimension::Literal(value))
     }
 
-    /// Angle `name`, stored in degrees.
-    fn angle(&mut self, name: &'static str) -> Option<Dimension<Angle>> {
-        let value = Angle::new(self.parameters.scalar_value(name)?.get().to_radians())?;
-        self.used.insert(name);
-        Some(Dimension::Literal(value))
-    }
-
-    /// The magnitude of angle `name`, stored in degrees.
-    fn unsigned_angle(&mut self, name: &'static str) -> Option<Dimension<Angle>> {
-        let value = Angle::new(self.parameters.scalar_value(name)?.get().abs().to_radians())?;
-        self.used.insert(name);
+    /// The magnitude of angle `name`, stored in degrees, which is the angle
+    /// `FreeCAD` solves for. A negative stored value stays a parameter the
+    /// joint does not hold, since its sign has no effect.
+    fn magnitude(&mut self, name: &'static str) -> Option<Dimension<Angle>> {
+        let stored = self.parameters.scalar_value(name)?.get();
+        let value = Angle::new(stored.abs().to_radians())?;
+        if stored >= 0.0 {
+            self.used.insert(name);
+        }
         Some(Dimension::Literal(value))
     }
 
@@ -349,7 +398,7 @@ impl Read<'_> {
         })
     }
 
-    /// Each parameter no typed field holds, as a native option: an angle in
+    /// Each parameter no typed field holds, as an option: an angle in
     /// radians, a length in millimetres, a flag, or the stored text.
     fn rest(self) -> NativeOptions {
         self.parameters
@@ -593,69 +642,135 @@ impl<'a> Products<'a> {
                 }
                 None => self.resolve(root, object, sub),
             };
-            let context = (!path.is_empty()).then(|| {
-                PickContext::Occurrence(OccurrencePath(
-                    path.into_iter()
-                        .map(|occurrence| PathStep {
-                            occurrence: StepRef::Occurrence(occurrence),
-                            configuration: None,
-                        })
-                        .collect(),
-                ))
-            });
-            let pick = match NonBlankString::new(element) {
-                None => Picked {
-                    target: PickTarget::Component,
-                    context,
-                    native: None,
-                    domain: None,
-                    witness: None,
-                    resolved: None,
-                },
-                Some(element) => Picked {
-                    target: PickTarget::Native { within: None },
-                    context,
-                    native: Some(NativeName {
-                        codec: cadmpeg_ir::codec_id!("fcstd"),
-                        value: NativeNameValue::Text(element),
-                    }),
-                    domain: None,
-                    witness: None,
-                    resolved: None,
-                },
-            };
+            let pick = pick(path, element);
             if !picks.contains(&pick) {
                 picks.push(pick);
             }
         }
-        let role = picks
-            .iter()
-            .all(|pick| matches!(pick.target, PickTarget::Component))
-            .then_some(InputRole {
-                subject: Subject::Whole,
-                relation: Relation::Coincident,
-            });
-        let selection = Members::new(picks).ok().map(|members| Selection {
-            at: Anchor::Current,
-            picks: Picks::Named(members),
-            native: None,
-        });
-        let offset = offset.transform();
-        Some(JointConnector::Frame(Construction {
-            inputs: vec![ConstructionInput {
-                role,
-                reference: selection.map(InputReference::Picks),
-                value: None,
-                reversed: None,
-            }],
-            after: (offset != Transform::identity())
-                .then_some(PostStep::Fixed(offset))
-                .into_iter()
-                .collect(),
-            solution: None,
-            mode: None,
-            resolved: super::frame_value(placement),
-            resolved_in: BTreeMap::new(),
-        }))
+        Some(frame(picks, offset.transform(), placement))
     }
+
+    /// The connector of reference `reference` that the source detaches from
+    /// it (`DetachN`): a pick of the occurrence the reference names, moved by
+    /// its stored frame `placement` (§6.7, Frames). Each element the
+    /// reference names is the native option `fcstd:Reference<index>.sub<i>`,
+    /// and each of the components `offset` of its inert offset the native
+    /// option `fcstd:Offset<index>.<component>`. `None` where the reference
+    /// names no object.
+    fn detached(
+        &self,
+        root: &ProductDefinitionId,
+        reference: &LinkTarget,
+        placement: FiniteFrame,
+        index: &str,
+        offset: Option<[FiniteReal; 7]>,
+    ) -> Option<(JointConnector, NativeOptions)> {
+        let object = reference.object()?;
+        let subs = reference
+            .subelements()
+            .iter()
+            .map(String::as_str)
+            .filter(|sub| !sub.is_empty())
+            .collect::<Vec<_>>();
+        let (path, element) = match reference.document() {
+            Some(document) => (Vec::new(), format!("{}#{object}", document.as_str())),
+            None => {
+                let (path, _) =
+                    self.resolve(root, object, subs.first().copied().unwrap_or_default());
+                if path.is_empty() {
+                    self.resolve(root, object, "")
+                } else {
+                    (path, String::new())
+                }
+            }
+        };
+        let mut options = NativeOptions::new();
+        for (position, sub) in subs.into_iter().enumerate() {
+            if let (Some(key), Some(text)) = (
+                key(&format!("Reference{index}.sub{position}")),
+                NonBlankString::new(sub.to_owned()),
+            ) {
+                options.insert(key, NativeOption::Text(Dimension::Literal(text)));
+            }
+        }
+        let components = ["px", "py", "pz", "qx", "qy", "qz", "qw"];
+        for (component, value) in components.into_iter().zip(offset.into_iter().flatten()) {
+            if let Some(key) = key(&format!("Offset{index}.{component}")) {
+                options.insert(key, NativeOption::Real(Dimension::Literal(value)));
+            }
+        }
+        Some((
+            frame(vec![pick(path, element)], placement.transform(), placement),
+            options,
+        ))
+    }
+}
+
+/// The pick of element `element` in the occurrence at `path`, which picks the
+/// whole occurrence where `element` is empty.
+fn pick(path: Vec<OccurrenceId>, element: String) -> Picked {
+    let context = (!path.is_empty()).then(|| {
+        PickContext::Occurrence(OccurrencePath(
+            path.into_iter()
+                .map(|occurrence| PathStep {
+                    occurrence: StepRef::Occurrence(occurrence),
+                    configuration: None,
+                })
+                .collect(),
+        ))
+    });
+    match NonBlankString::new(element) {
+        None => Picked {
+            target: PickTarget::Component,
+            context,
+            native: None,
+            domain: None,
+            witness: None,
+            resolved: None,
+        },
+        Some(element) => Picked {
+            target: PickTarget::Native { within: None },
+            context,
+            native: Some(NativeName {
+                codec: cadmpeg_ir::codec_id!("fcstd"),
+                value: NativeNameValue::Text(element),
+            }),
+            domain: None,
+            witness: None,
+            resolved: None,
+        },
+    }
+}
+
+/// The frame connector on `picks`, moved by `step`, whose frame is
+/// `placement`.
+fn frame(picks: Vec<Picked>, step: Transform, placement: FiniteFrame) -> JointConnector {
+    let role = picks
+        .iter()
+        .all(|pick| matches!(pick.target, PickTarget::Component))
+        .then_some(InputRole {
+            subject: Subject::Whole,
+            relation: Relation::Coincident,
+        });
+    let selection = Members::new(picks).ok().map(|members| Selection {
+        at: Anchor::Current,
+        picks: Picks::Named(members),
+        native: None,
+    });
+    JointConnector::Frame(Construction {
+        inputs: vec![ConstructionInput {
+            role,
+            reference: selection.map(InputReference::Picks),
+            value: None,
+            reversed: None,
+        }],
+        after: (step != Transform::identity())
+            .then_some(PostStep::Fixed(step))
+            .into_iter()
+            .collect(),
+        solution: None,
+        mode: None,
+        resolved: super::frame_value(placement),
+        resolved_in: BTreeMap::new(),
+    })
 }

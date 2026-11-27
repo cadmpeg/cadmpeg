@@ -86,6 +86,9 @@ pub(crate) enum FreecadLossCode {
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.
     ParameterExpressionEmpty,
+    /// A spreadsheet formula's quantity is not found; its parameter is a
+    /// dimensionless real.
+    ParameterQuantityAssumed,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// A sketch B-spline has no admitted finite neutral representation.
@@ -174,6 +177,7 @@ impl FreecadLossCode {
         Self::FeatureLinkPlacementUnresolved,
         Self::FeatureJointUnresolved,
         Self::ParameterExpressionEmpty,
+        Self::ParameterQuantityAssumed,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
@@ -238,6 +242,7 @@ impl FreecadLossCode {
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::ParameterExpressionEmpty => "parameter.expression-empty",
+            Self::ParameterQuantityAssumed => "parameter.quantity-assumed",
             Self::FeatureRemovalWithoutBase => "feature.removal-without-base",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
@@ -312,6 +317,7 @@ impl FreecadLossCode {
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
+            | Self::ParameterQuantityAssumed
             | Self::FeatureLinkPlacementUnresolved
             | Self::FeatureJointUnresolved
             | Self::PersistencePayloadUnresolved
@@ -375,6 +381,7 @@ impl FreecadLossCode {
             | Self::SketchConstraintBindingConflict
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
+            | Self::ParameterQuantityAssumed
             | Self::SourceGuiPropertyKeyBlank
             | Self::SourceGuiMetadataUnresolved
             | Self::ElementMapMetadataUnresolved
@@ -455,6 +462,7 @@ mod tests {
                 "feature.link-placement-unresolved",
                 "feature.joint-unresolved",
                 "parameter.expression-empty",
+                "parameter.quantity-assumed",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
                 "sketch.native-constraint",

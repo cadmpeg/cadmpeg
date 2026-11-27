@@ -16,7 +16,7 @@ use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
 };
-use cadmpeg_ir::design::units::{Quantity, ValueKind};
+use cadmpeg_ir::design::units::{Quantity, Unit, ValueKind};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{
     DesignParameter as LegacyParameter, ParameterValue as LegacyValue,
@@ -26,6 +26,7 @@ use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 
+use crate::design::cell_content::{self, CellContent, CellKind};
 use crate::loss::FreecadLossCode;
 
 /// The property type of a sketch's constraints, whose values `FreeCAD` stores
@@ -36,13 +37,11 @@ const CONSTRAINT_LIST: &str = "Sketcher::PropertyConstraintList";
 const SHEET: &str = "Spreadsheet::PropertySheet";
 
 /// The display attributes of a cell, each kept as `fcstd:<attribute>`.
-const CELL_DISPLAY: [&str; 5] = [
-    "alignment",
-    "style",
-    "foregroundColor",
-    "backgroundColor",
-    "displayUnit",
-];
+const CELL_DISPLAY: [&str; 4] = ["alignment", "style", "foregroundColor", "backgroundColor"];
+
+/// A cell's display unit, kept as `fcstd:displayUnit` where it is no `unit`
+/// of the cell's parameter.
+const DISPLAY_UNIT: &str = "displayUnit";
 
 /// Each parameter the decoder read that one of `features` or a Body owns, in
 /// the scope of `definition`. `containers` maps a Body's feature to its
@@ -100,7 +99,7 @@ pub(super) fn project(
             .as_deref()
             .and_then(|property| carriers.get(property).copied());
         let (kind, value, parameter_definition) = if carrier == Some(SHEET) {
-            let (kind, value, expression) = cell(parameter, &by_id, &known, carriers, losses);
+            let (kind, value, expression) = cell(parameter, &by_id, &known, losses);
             (kind, value, ParameterDefinition::Expression(expression))
         } else {
             let (kind, value) = kind_and_value(parameter.value.as_ref());
@@ -114,23 +113,20 @@ pub(super) fn project(
             (kind, value, parameter_definition)
         };
         if let ValueKind::Quantity(quantity) = kind {
-            let found = carrier == Some(SHEET)
-                && matches!(
-                    parameter_definition,
-                    ParameterDefinition::Expression(Expression::Neutral(_))
-                );
-            if value.is_some() || found {
+            if value.is_some() || carrier == Some(SHEET) {
                 known.insert(&parameter.id, quantity);
             }
         }
-        let (name, source_settings) = if carrier == Some(SHEET) {
+        let (name, unit, source_settings) = if carrier == Some(SHEET) {
+            let unit = display_unit(parameter, &kind);
             (
                 property(parameter, "alias")
                     .and_then(|alias| NonBlankString::new(alias.to_owned())),
-                cell_settings(parameter),
+                unit.clone(),
+                cell_settings(parameter, unit.is_none()),
             )
         } else {
-            (name(parameter), BTreeMap::default())
+            (name(parameter), None, BTreeMap::default())
         };
         parameters.push(DesignParameter {
             id: parameter.id.clone(),
@@ -138,7 +134,7 @@ pub(super) fn project(
             owner: Some(owner.clone()),
             name,
             kind,
-            unit: None,
+            unit,
             definition: parameter_definition,
             value,
             display: None,
@@ -169,40 +165,45 @@ fn name(parameter: &LegacyParameter) -> Option<NonBlankString> {
     NonBlankString::new(name.to_owned())
 }
 
-/// A cell's kind, value, and expression (§5.12). `FreeCAD` reads an `=`
-/// content as a formula, a `'` content as the text after the mark, a
-/// content that starts with a number as a number or a quantity, and any
-/// other content as text. A formula with no stored value has the quantity
-/// of its neutral tree.
+/// A cell's kind, value, and expression (§5.12), read as `FreeCAD` reads
+/// its content (`cell_content`). A value of a quantity whose units have
+/// symbols is a neutral literal; another value is the source's text. A
+/// formula with no stored value has the quantity of its neutral tree, and
+/// where that is unknown it is a real, with a loss.
 fn cell(
     parameter: &LegacyParameter,
     parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
     known: &BTreeMap<&ParameterId, Quantity>,
-    carriers: &HashMap<&str, &str>,
     losses: &mut Vec<LossNote>,
 ) -> (ValueKind, Option<ParameterValue>, Expression) {
     let content = parameter.expression.as_str();
-    let text = |text: &str| {
-        (
-            ValueKind::Text,
-            Some(ParameterValue::Text(text.to_owned())),
-            Expression::Neutral(Neutral(Node::Text(text.to_owned()))),
-        )
-    };
-    if let Some(quoted) = content.strip_prefix('\'') {
-        return text(quoted);
-    }
-    let formula = match content.strip_prefix('=') {
-        Some(formula) => formula,
-        None if parameter.value.is_some() => {
-            let (kind, value) = kind_and_value(parameter.value.as_ref());
-            let expression = expression(parameter, parameters, known, &kind, carriers, losses);
-            return (kind, value, expression);
+    let formula = match cell_content::read(content) {
+        CellContent::Formula(formula) => formula,
+        CellContent::Text(text) => {
+            return (
+                ValueKind::Text,
+                Some(ParameterValue::Text(text.to_owned())),
+                Expression::Neutral(Neutral(Node::Text(text.to_owned()))),
+            )
         }
-        None if content.starts_with(|ch: char| ch.is_ascii_digit() || ".+-".contains(ch)) => {
-            content
+        CellContent::Value(value) => {
+            let kind = match value.kind {
+                CellKind::Quantity(quantity) => ValueKind::Quantity(quantity),
+                CellKind::Native(unit) => ValueKind::Native(unit),
+            };
+            let expression = value
+                .neutral
+                .and_then(|text| expr::parse(&text, &[], &[]).ok())
+                .map_or_else(
+                    || source(content, Vec::new()),
+                    |tree| Expression::Neutral(Neutral(tree)),
+                );
+            return (
+                kind,
+                FiniteReal::new(value.number).map(ParameterValue::Number),
+                expression,
+            );
         }
-        None => return text(content),
     };
     if parameter.value.is_some() {
         let (kind, value) = kind_and_value(parameter.value.as_ref());
@@ -210,19 +211,37 @@ fn cell(
         return (kind, value, expression);
     }
     let expression = translated(parameter, formula, parameters, known, None);
-    let kind = match &expression {
+    let stated = match &expression {
         Expression::Neutral(Neutral(tree)) => quantity(tree, parameters, known),
         Expression::Source { .. } => None,
-    }
-    .map_or(ValueKind::Quantity(Quantity::REAL), ValueKind::Quantity);
-    (kind, None, expression)
+    };
+    let quantity = stated.unwrap_or_else(|| {
+        losses.push(FreecadLossCode::ParameterQuantityAssumed.note(format!(
+            "FCStd cell {} has a formula whose quantity the decoder does not find; its \
+             kind is a dimensionless real",
+            parameter.id.as_str()
+        )));
+        Quantity::REAL
+    });
+    (ValueKind::Quantity(quantity), None, expression)
+}
+
+/// The unit of a cell's display unit, where it has the cell's quantity and
+/// each of its words has a symbol (§5.12, Unit).
+fn display_unit(parameter: &LegacyParameter, kind: &ValueKind) -> Option<Unit> {
+    let ValueKind::Quantity(quantity) = kind else {
+        return None;
+    };
+    let (found, unit) = cell_content::neutral_unit(property(parameter, DISPLAY_UNIT)?)?;
+    (found == *quantity).then_some(unit)
 }
 
 /// A cell's display attributes, which only a `FreeCAD` writer writes (Rule N
-/// case (b)).
-fn cell_settings(parameter: &LegacyParameter) -> NativeOptions {
+/// case (b)), with its display unit where `display_unit` is true.
+fn cell_settings(parameter: &LegacyParameter, display_unit: bool) -> NativeOptions {
     CELL_DISPLAY
         .iter()
+        .chain(display_unit.then_some(&DISPLAY_UNIT))
         .filter_map(|attribute| {
             let value = NonBlankString::new(property(parameter, attribute)?.to_owned())?;
             let key = CodecName::new(&cadmpeg_ir::codec_id!("fcstd"), attribute)?;

@@ -7,7 +7,7 @@ use cadmpeg_ir::design::expr::{Expression, Neutral};
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterOwner};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::features::parameters::ParameterValue as LegacyValue;
-use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
@@ -147,7 +147,7 @@ fn a_dimensionless_reference_bound_to_an_angle_is_in_degrees() {
 }
 
 #[test]
-fn a_lone_reference_to_a_cell_with_no_value_stays_source_text() {
+fn a_cell_of_unknown_quantity_is_an_assumed_real_that_a_lone_reference_keeps() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object name="Sketch" type="Sketcher::SketchObject"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
 <ObjectData Count="2">
@@ -159,16 +159,129 @@ fn a_lone_reference_to_a_cell_with_no_value_stays_source_text() {
 </ConstraintList></Property>
 <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path=".Constraints.width" expression="Sheet.w"/></ExpressionEngine></Property>
 </Properties></Object></ObjectData></Document>"#;
-    let ir = decode(&archive(document));
-    let distance = parameter(&ir, "fcstd:design:parameter#Sketch:constraint:1");
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ir = decoded.ir();
+    assert_valid_document(ir);
+    let cell = parameter(ir, "fcstd:design:parameter#Sheet:cell:A1");
+    assert_eq!(cell.kind, ValueKind::Quantity(Quantity::REAL));
+    let assumed = crate::loss::FreecadLossCode::ParameterQuantityAssumed.note("");
+    assert_eq!(assumed.code.to_string(), "fcstd/parameter.quantity-assumed");
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == assumed.code && loss.message.contains("Sheet:cell:A1")),
+        "{:?}",
+        decoded.report().losses
+    );
+    // The constraint bound to the cell keeps its dependency as a reference.
+    let distance = parameter(ir, "fcstd:design:parameter#Sketch:constraint:1");
     assert_eq!(
-        distance.definition,
+        neutral(distance),
+        (
+            "$0 * 1[mm]".to_owned(),
+            vec!["fcstd:design:parameter#Sheet:cell:A1".to_owned()]
+        )
+    );
+}
+
+#[test]
+fn a_cell_reads_its_content_as_freecad_does() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="1">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="10">
+<Cell address="A1" content="3 bolts"/>
+<Cell address="A2" content="-abc"/>
+<Cell address="A3" content="2*3"/>
+<Cell address="A4" content="=2*3"/>
+<Cell address="A5" content="-5 mm"/>
+<Cell address="A6" content="1/2"/>
+<Cell address="A7" content="2 in" displayUnit="in"/>
+<Cell address="A8" content="3 dm" displayUnit="kg"/>
+<Cell address="A9" content="5 mA"/>
+<Cell address="A10" content="'note" displayUnit="mm"/>
+</Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let ir = decode(&archive(document));
+    let cell =
+        |address: &str| parameter(&ir, &format!("fcstd:design:parameter#Sheet:cell:{address}"));
+    let text = |address: &str, text: &str| {
+        assert_eq!(cell(address).kind, ValueKind::Text, "{address}");
+        assert_eq!(
+            cell(address).value,
+            Some(cadmpeg_ir::design::parameter::ParameterValue::Text(
+                text.to_owned()
+            )),
+            "{address}"
+        );
+    };
+    text("A1", "3 bolts");
+    text("A2", "-abc");
+    text("A3", "2*3");
+    text("A5", "-5 mm");
+    text("A10", "note");
+
+    assert_eq!(cell("A4").kind, ValueKind::Quantity(Quantity::REAL));
+    assert_eq!(neutral(cell("A4")), ("2 * 3".to_owned(), Vec::new()));
+
+    assert_eq!(cell("A6").kind, ValueKind::Quantity(Quantity::REAL));
+    assert_eq!(neutral(cell("A6")), ("1 / 2".to_owned(), Vec::new()));
+    assert_eq!(
+        cell("A6").value,
+        FiniteReal::new(0.5).map(cadmpeg_ir::design::parameter::ParameterValue::Number)
+    );
+
+    // A display unit of the cell's quantity is the parameter's unit.
+    assert_eq!(cell("A7").kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert_eq!(neutral(cell("A7")), ("2[in]".to_owned(), Vec::new()));
+    assert_eq!(
+        cell("A7").unit,
+        Some(cadmpeg_ir::design::units::Unit(vec![
+            cadmpeg_ir::design::units::UnitFactor {
+                symbol: cadmpeg_ir::design::units::UnitSymbol::In,
+                power: std::num::NonZeroI8::new(1).unwrap(),
+            }
+        ]))
+    );
+    assert!(cell("A7").source_settings.is_empty());
+
+    // A unit with no symbol keeps the source's text; a display unit of
+    // another quantity, or of a text cell, stays a source setting.
+    assert_eq!(cell("A8").kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert_eq!(
+        cell("A8").value,
+        FiniteReal::new(300.0).map(cadmpeg_ir::design::parameter::ParameterValue::Number)
+    );
+    assert_eq!(
+        cell("A8").definition,
         cadmpeg_ir::design::parameter::ParameterDefinition::Expression(Expression::Source {
             dialect: cadmpeg_ir::design::expr::ExpressionDialect::FreeCad,
             tokens: vec![cadmpeg_ir::design::expr::ExpressionToken::Text(
-                "Sheet.w".to_owned()
+                "3 dm".to_owned()
             )],
         })
+    );
+    assert_eq!(cell("A8").unit, None);
+    for address in ["A8", "A10"] {
+        let settings = json::to_value(&cell(address).source_settings).unwrap();
+        assert!(settings.get("fcstd:displayUnit").is_some(), "{settings}");
+    }
+
+    // A unit of a dimension the vocabulary does not type is a native kind.
+    assert_eq!(
+        cell("A9").kind,
+        ValueKind::Native(cadmpeg_core::text::NonBlankString::new("mA".to_owned()).unwrap())
+    );
+    assert_eq!(
+        cell("A9").value,
+        FiniteReal::new(5.0).map(cadmpeg_ir::design::parameter::ParameterValue::Number)
     );
 }
 

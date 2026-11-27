@@ -62,6 +62,7 @@ use crate::layout::fillet_edge_item;
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
+mod cell_content;
 mod first_feature;
 pub(crate) mod primitive_placement;
 mod sketch_cache;
@@ -1081,23 +1082,35 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
         })
 }
 
-/// The value a spreadsheet cell states by itself: a `'`-quoted string, or a
-/// number with an optional length or angle unit, written directly or as the
-/// whole `=` expression. A cell computed from other cells or functions has no
-/// stated value.
+/// The value a spreadsheet cell states by itself: the text of a text cell,
+/// the length, angle, or real of a value cell (`cell_content`), or a number
+/// with an optional length or angle unit written as the whole `=` formula. A
+/// cell computed from other cells or functions, and a value of another
+/// quantity, has no stated value.
 const MILLIMETRES_PER_NANOMETRE: f64 = 1.0e-6;
 const MILLIMETRES_PER_MICROMETRE: f64 = 1.0e-3;
 
 fn spreadsheet_cell_value(content: &str) -> Option<ParameterValue> {
-    let (expression, text) = match content.strip_prefix('=') {
-        Some(text) => (true, text),
-        None => (false, content),
-    };
-    if !expression {
-        if let Some(text) = text.strip_prefix('\'') {
-            return Some(ParameterValue::String(text.to_owned()));
+    use cadmpeg_ir::design::units::Quantity;
+    use cell_content::{CellContent, CellKind};
+    let text = match cell_content::read(content) {
+        CellContent::Formula(formula) => formula,
+        CellContent::Text(text) => return Some(ParameterValue::String(text.to_owned())),
+        CellContent::Value(value) => {
+            return match value.kind {
+                CellKind::Quantity(Quantity::LENGTH) => {
+                    Length::new(value.number).map(ParameterValue::Length)
+                }
+                CellKind::Quantity(Quantity::ANGLE) => {
+                    cadmpeg_ir::scalar::Angle::new(value.number).map(ParameterValue::Angle)
+                }
+                CellKind::Quantity(Quantity::REAL) => {
+                    cadmpeg_ir::scalar::FiniteReal::new(value.number).map(ParameterValue::Real)
+                }
+                CellKind::Quantity(_) | CellKind::Native(_) => None,
+            }
         }
-    }
+    };
     let text = text.trim();
     let number_end = text
         .find(|character: char| !(character.is_ascii_digit() || "+-.eE".contains(character)))

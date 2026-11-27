@@ -569,9 +569,7 @@ fn connector(
     name: &str,
 ) -> Result<Option<crate::native::LinkTarget>, CodecError> {
     let Some(property) = sole_named_property("joint", properties, name)? else {
-        return Err(CodecError::malformed(format_args!(
-            "joint connector {name} is missing"
-        )));
+        return Ok(None);
     };
     if !matches!(
         property.type_name.as_str(),
@@ -1032,7 +1030,6 @@ pub(crate) mod tests {
 <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
             r#"<Property name="Reference1" type="App::PropertyXLinkSubList"><XLinkSubList count="2"><XLink file="" name="Base"/><XLink file="" name="Other"/></XLinkSubList></Property>
 <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
-            r#"<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
         ] {
             let property_count = properties.lines().count() + 1;
             let document = format!(

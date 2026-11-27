@@ -602,12 +602,20 @@ object-name reference `object.Placement.Base.<axis>` identifies the named object
 
 Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an ordered design
 parameter whose identity includes its sheet and address. Address and alias remain separate;
-content, display unit, alignment, style, colors, and spans are retained independently. A cell's
-content states its own value when it is a `'`-quoted string, or a number with an optional length
-unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or angle
-unit (`deg`, `°`, `rad`), written directly or as the whole `=` formula: a number alone is
-dimensionless, a length becomes millimetres and an angle radians. Other formula content remains an
-expression without a value. Content without a leading `=` is a literal and references nothing.
+content, display unit, alignment, style, colors, and spans are retained independently. Cell content
+that starts with `=` is a formula, and content that starts with `'` is the text after the mark.
+Other content is a value where, after its surrounding white space, it is a number, a number with a
+unit, or a division whose numerator is a number or a number with a unit and whose denominator is a
+number, a number with a unit, or a unit. A number is unsigned and takes a `.` or `,` decimal mark
+and an exponent, and content that is one signed number in the C library's form is also a value. A
+unit is a word of `FreeCAD`'s unit vocabulary, a parenthesized product or quotient of units, or a
+unit with an integer power. Every other content is text, including content that starts with a
+digit or a sign (`3 bolts`, `2*3`, `-5 mm`). A text cell's value is its text. A value cell's value
+is a length in millimetres, an angle in radians, or a dimensionless real; a value of another
+quantity has no legacy value. A formula states its own value where it is a number with an optional
+length unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or
+angle unit (`deg`, `°`, `rad`). Other formula content remains an expression without a value.
+Content without a leading `=` references nothing.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
 match their declared framing. Parameter ordinals use stable dependency order and persisted cell
@@ -615,13 +623,20 @@ order as the tie-break rule. A neutral sheet record binds those cell identities 
 feature and retains ordered non-default column widths, row heights, and inclusive merged ranges.
 The sheet object is a `Spreadsheet` design feature that names this record. The feature owns each
 cell parameter. A cell alias names its parameter; a cell without an alias has an unnamed parameter.
-The parameter expression is the cell content: `'`-quoted content and other content that does not
-start with a number are text literals, and an `=` formula or content that starts with a number is a
-neutral expression. An expression names a cell by its alias or its address, unqualified within
-its sheet and as `Sheet.name` elsewhere. A formula cell stores no value; its value kind is the
-quantity that its expression gives from the kinds of its references, and a real number when those
-kinds are unknown. Alignment, style, foreground and background colors, and display unit are source
-settings of the cell parameter.
+A text cell is a `Text` parameter whose value and neutral expression are its text. A value cell's
+kind is its quantity and its value is in canonical units. Its expression is the neutral literal
+where each unit word has a symbol (`12[mm]`, `1 / 2`, `1[m] / 1[s]`), and the source's text where
+a word has none (`3 dm`). A value whose unit has a dimension other than length, mass, angle, and
+time (`5 mA`) has the `Native` kind named by its unit as written, its number as written as its
+value, and the source's text as its expression. A formula is a neutral expression where it
+translates. An expression names a cell by its alias or its address, unqualified within its sheet
+and as `Sheet.name` elsewhere. A formula cell stores no value; its value kind is the quantity that
+its expression gives from the kinds of its references. Where those kinds are unknown, its kind is
+a real number, it emits `parameter.quantity-assumed`, and an expression that references it takes it
+as a real number. A display unit whose quantity is the cell's and whose words each have a symbol is
+the parameter's `unit`. Alignment, style, foreground and background colors, and every other display
+unit are source settings of the cell parameter: `fcstd:alignment`, `fcstd:style`,
+`fcstd:foregroundColor`, `fcstd:backgroundColor`, and `fcstd:displayUnit`, each as Text.
 Only positive row and column spans define a neutral merged range. Nonpositive span attributes remain
 native cell metadata and do not create a neutral range.
 Dimension counts must match their records; names, addresses, ownership, merged anchors, duplicate
@@ -807,13 +822,15 @@ Without that marker, `CustomEnumList` is absent. The zero-based index selects th
 property has exactly one direct `XLink` target. That target may have zero, one, or multiple ordered
 direct `Sub` values; a zero-sub target has neither `sub` nor `count`, one sub uses `sub`, and
 multiple subs use `count` with exactly that many direct leaf `Sub` elements. An empty `name` is an
-explicit null target occupying the connector slot. Nested or extra value roots, a link-list carrier,
+explicit null target occupying the connector slot, and a missing connector property is a null
+target. Nested or extra value roots, a link-list carrier,
 or multiple targets are malformed. `Angle`, `AngleMin`, and `AngleMax` are
 `App::PropertyAngle` or `App::PropertyFloat` properties with one `Float` value in degrees.
 `Distance`, `Distance2`, `LengthMin`, and `LengthMax` are `App::PropertyLength` or
-`App::PropertyFloat` properties with one `Float` value. Their values are in millimetres,
-except that an `Angle` joint's `Distance` value is in degrees. Its absolute value supplies
-the joint angle when no `Angle` property is present. `EnableAngleMin`,
+`App::PropertyFloat` properties with one `Float` value. Their values are in millimetres, except
+that an `Angle` joint's `Distance` of type `App::PropertyFloat` is the joint angle in degrees: that
+is the form that precedes the `Angle` property, which `FreeCAD` migrates by the property type.
+`EnableAngleMin`,
 `EnableAngleMax`, `EnableLengthMin`, `EnableLengthMax`, `Detach1`, `Detach2`, and `Suppressed`
 are `App::PropertyBool` properties with one `Bool` value. Wrong runtime types, root value tags,
 missing values, and duplicate values are malformed.
@@ -837,17 +854,30 @@ connector paths start at its definition. A connector is a frame construction on 
 object placed in the prototype reached give the occurrence path, and the rest of the sub-name is the
 element's native name. A reference with no element names the whole occurrence.
 `Offset1` or `Offset2` is the construction's fixed step where it is not the identity, and
-`Placement1` or `Placement2` is its resolved frame. Fixed, revolute, cylindrical, slider, and ball
-joints are motions about the connector frame's z axis, with their enabled limits. Distance,
-parallel, perpendicular, and angle joints are relations of those kinds. Rack-pinion, screw, gears,
-and belt joints are couplings whose pitch radius, pitch, or radii are `Distance` and `Distance2`.
-Another family is a native kind with its source label. `Suppressed` is the feature's suppression.
-A true `Detach1` or `Detach2` is a source setting, and each other stored value that the kind does
-not use is a native option under its property name. A `JointGroup` is an unordered `Group` of its
-joints; the document's `Group` holds each other joint. A grounded object is grounded occurrence
-state. A joint that names no object for a connector, that stores a blank joint type, or that
-grounds an object with no occurrence in the scope emits `feature.joint-unresolved` and stays in its
-native record.
+`Placement1` or `Placement2` is its resolved frame. A connector whose `Detach1` or `Detach2` is true
+is detached: `FreeCAD` holds its placement fixed in the referenced part and applies no offset. It
+is a `Component` pick of the occurrence that the reference object and its first sub-name reach,
+with `Placement1` or `Placement2` as its fixed step and its resolved frame. Each of its stored
+sub-names is the native option `fcstd:Reference1.sub<i>` or `fcstd:Reference2.sub<i>` (Text, `i`
+counting from zero in stored order), and an offset that is not the identity is the native options
+`fcstd:Offset1.<c>` or `fcstd:Offset2.<c>` (Real) for `c` in `px`, `py`, `pz`, `qx`, `qy`, `qz`,
+and `qw`, the stored position and quaternion. Fixed, revolute, cylindrical, slider, and ball joints
+are motions about the connector frame's z axis, with their enabled limits: angle limits on
+revolute and cylindrical joints, and length limits on cylindrical and slider joints. Distance,
+parallel, perpendicular, and angle joints are relations of those kinds. An angle joint's angle is
+the magnitude of `Angle`, or of a float `Distance`. A distance joint's distance is a nonnegative
+`Distance`; a negative `Distance` is the native option `fcstd:Distance` (Length), and the joint
+states no distance. Rack-pinion, screw, gears, and belt joints are couplings whose pitch radius,
+pitch, or radii are `Distance` and `Distance2`. Another family is a native kind with its source
+label. `Suppressed` is the feature's suppression. Each other stored joint value is a source setting
+under its property name, `fcstd:<name>` (Rule N case (b)): a value the kind does not use, a limit
+whose enable flag is false and that flag, a negative angle whose magnitude is the joint angle, and
+`Detach1` and `Detach2`. An angle is an `Angle` option in radians, a length a `Length` option in
+millimetres, and a flag a `Bool` option. A native kind keeps these values as native options. A
+`JointGroup` is an unordered `Group` of its joints; the document's `Group` holds each other joint.
+A grounded object is grounded occurrence state. A joint that names no object for a connector, that
+stores a blank joint type, or that grounds an object with no occurrence in the scope emits
+`feature.joint-unresolved` and stays in its native record.
 
 ## 10. Drawing graph
 

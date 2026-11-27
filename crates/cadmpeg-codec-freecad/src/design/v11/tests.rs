@@ -1145,7 +1145,7 @@ const ASSEMBLY: &str = r#"<Document SchemaVersion="4" FileVersion="1">
   <Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="EnableAngleMax" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="LengthMin" type="App::PropertyLength"><Float value="1"/></Property>
-  <Property name="Detach1" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Detach1" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
  <Object name="Ground"><Properties Count="2">
   <Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="Bracket"/></Property>
@@ -1175,6 +1175,17 @@ fn joint_feature<'ir>(
         panic!("{:?}", feature.definition.operation);
     };
     (feature, joint)
+}
+
+/// The option `fcstd:<name>` of `options`.
+fn option(
+    options: &cadmpeg_ir::design::options::NativeOptions,
+    name: &str,
+) -> Option<cadmpeg_ir::design::options::NativeOption> {
+    options
+        .iter()
+        .find(|(key, _)| key.as_str() == format!("fcstd:{name}"))
+        .map(|(_, option)| option.clone())
 }
 
 /// The construction of frame connector `connector`.
@@ -1327,38 +1338,31 @@ fn an_assembly_joint_is_a_joint_feature_of_its_joint_group() {
     assert!(second.after.is_empty());
     assert_eq!(second.resolved.as_ref().unwrap().origin.get().x, 2.0);
 
-    // A value the joint does not hold is a native option; a detached
-    // connector is a source setting.
-    let option = |options: &cadmpeg_ir::design::options::NativeOptions, name: &str| {
-        options
-            .iter()
-            .find(|(key, _)| key.as_str() == format!("fcstd:{name}"))
-            .map(|(_, option)| option.clone())
-    };
+    // A value the joint type does not use is a source setting (Rule N case
+    // (b)).
+    assert!(
+        hinge.native_options.is_empty(),
+        "{:?}",
+        hinge.native_options
+    );
     let Some(NativeOption::Angle(Dimension::Literal(angle))) =
-        option(&hinge.native_options, "Angle")
+        option(&hinge.source_settings, "Angle")
     else {
-        panic!("{:?}", hinge.native_options);
+        panic!("{:?}", hinge.source_settings);
     };
     assert!((angle.get().to_degrees() - 15.0).abs() < 1e-9);
     let Some(NativeOption::Length(Dimension::Literal(length))) =
-        option(&hinge.native_options, "LengthMin")
+        option(&hinge.source_settings, "LengthMin")
     else {
-        panic!("{:?}", hinge.native_options);
+        panic!("{:?}", hinge.source_settings);
     };
     assert_eq!(length.get(), 1.0);
-    for used in [
-        "AngleMin",
-        "AngleMax",
-        "EnableAngleMin",
-        "Suppressed",
-        "Detach1",
-    ] {
-        assert_eq!(option(&hinge.native_options, used), None, "{used}");
+    for used in ["AngleMin", "AngleMax", "EnableAngleMin", "Suppressed"] {
+        assert_eq!(option(&hinge.source_settings, used), None, "{used}");
     }
     assert_eq!(
         option(&hinge.source_settings, "Detach1"),
-        Some(NativeOption::Bool(Dimension::Literal(true)))
+        Some(NativeOption::Bool(Dimension::Literal(false)))
     );
 
     // An unknown family is a native kind; a reference with no element picks
@@ -1427,4 +1431,245 @@ fn an_assembly_joint_is_a_joint_feature_of_its_joint_group() {
     assert_eq!(written.design.features, ir.design.features);
     assert_eq!(written.design.containers, ir.design.containers);
     assert_eq!(written.design.scopes, ir.design.scopes);
+}
+
+const JOINT_VALUES: &str = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="11">
+ <Object type="Assembly::AssemblyObject" name="Assembly" id="1"/>
+ <Object type="Part::Feature" name="BracketShape" id="2"/>
+ <Object type="Part::Feature" name="PinShape" id="3"/>
+ <Object type="App::Link" name="Bracket" id="4"/>
+ <Object type="App::Link" name="Pin" id="5"/>
+ <Object type="App::FeaturePython" name="Turn" id="6"/>
+ <Object type="App::FeaturePython" name="OldTurn" id="7"/>
+ <Object type="App::FeaturePython" name="Gap" id="8"/>
+ <Object type="App::FeaturePython" name="Slide" id="9"/>
+ <Object type="App::FeaturePython" name="Held" id="10"/>
+ <Object type="App::FeaturePython" name="Loose" id="11"/>
+</Objects>
+<ObjectData Count="11">
+ <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="8"><Link value="Bracket"/><Link value="Pin"/><Link value="Turn"/><Link value="OldTurn"/><Link value="Gap"/><Link value="Slide"/><Link value="Held"/><Link value="Loose"/></LinkList></Property></Properties></Object>
+ <Object name="BracketShape"><Properties Count="0"/></Object>
+ <Object name="PinShape"><Properties Count="0"/></Object>
+ <Object name="Bracket"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="BracketShape"/></Property></Properties></Object>
+ <Object name="Pin"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="PinShape"/></Property></Properties></Object>
+ <Object name="Turn"><Properties Count="5">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="-30"/></Property>
+  <Property name="Distance" type="App::PropertyLength"><Float value="5"/></Property>
+ </Properties></Object>
+ <Object name="OldTurn"><Properties Count="4">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
+  <Property name="Distance" type="App::PropertyFloat"><Float value="40"/></Property>
+ </Properties></Object>
+ <Object name="Gap"><Properties Count="4">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="2" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
+  <Property name="Distance" type="App::PropertyLength"><Float value="-2"/></Property>
+ </Properties></Object>
+ <Object name="Slide"><Properties Count="9">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="3" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
+  <Property name="LengthMin" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="EnableLengthMin" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="LengthMax" type="App::PropertyLength"><Float value="9"/></Property>
+  <Property name="EnableLengthMax" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AngleMin" type="App::PropertyAngle"><Float value="5"/></Property>
+  <Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Held"><Properties Count="6">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="2"><Sub value="Bracket.Face1"/><Sub value="Bracket.Edge2"/></XLink></Property>
+  <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Edge3"/></Property>
+  <Property name="Placement1" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Offset1" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0.5" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Detach1" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Loose"><Properties Count="2">
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
+  <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+
+#[test]
+fn joint_values_follow_what_the_joint_type_uses() {
+    use cadmpeg_ir::design::construction::{FrameAxis, PostStep};
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::ops::shared::{AxisLimits, JointKind, JointMotion};
+    use cadmpeg_ir::design::options::NativeOption;
+
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(JOINT_VALUES)),
+            &DecodeOptions {
+                depth: DecodeDepth::Design,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    let ir = decoded.ir();
+    assert_valid_document(ir);
+    let degrees = |angle: &Option<Dimension<cadmpeg_ir::scalar::Angle>>| match angle {
+        Some(Dimension::Literal(angle)) => angle.get().to_degrees(),
+        other => panic!("{other:?}"),
+    };
+
+    // FreeCAD solves an Angle joint for the magnitude of its angle; the
+    // stored sign and the unused distance are source settings.
+    let (_, turn) = joint_feature(ir, "Turn");
+    let JointKind::Angle { angle, .. } = &turn.kind else {
+        panic!("{:?}", turn.kind);
+    };
+    assert!((degrees(angle) - 30.0).abs() < 1e-9);
+    let Some(NativeOption::Angle(Dimension::Literal(signed))) =
+        option(&turn.source_settings, "Angle")
+    else {
+        panic!("{:?}", turn.source_settings);
+    };
+    assert!((signed.get().to_degrees() + 30.0).abs() < 1e-9);
+    assert!(matches!(
+        option(&turn.source_settings, "Distance"),
+        Some(NativeOption::Length(Dimension::Literal(length))) if length.get() == 5.0
+    ));
+    assert!(turn.native_options.is_empty(), "{:?}", turn.native_options);
+
+    // A float Distance is the old form, which stores an Angle joint's angle
+    // in degrees.
+    let (_, old) = joint_feature(ir, "OldTurn");
+    let JointKind::Angle { angle, .. } = &old.kind else {
+        panic!("{:?}", old.kind);
+    };
+    assert!((degrees(angle) - 40.0).abs() < 1e-9);
+    assert!(old.source_settings.is_empty(), "{:?}", old.source_settings);
+
+    // A signed distance has no typed field and stays native.
+    let (_, gap) = joint_feature(ir, "Gap");
+    assert_eq!(
+        gap.kind,
+        JointKind::Distance {
+            distance: None,
+            limits: None
+        }
+    );
+    assert!(matches!(
+        option(&gap.native_options, "Distance"),
+        Some(NativeOption::Length(Dimension::Literal(length))) if length.get() == -2.0
+    ));
+
+    // A limit whose flag is off, and a limit the joint type does not use, is
+    // a source setting.
+    let (_, slide) = joint_feature(ir, "Slide");
+    let JointKind::Motion {
+        motion: JointMotion::Slider { axis: FrameAxis::Z },
+        limits,
+        ..
+    } = &slide.kind
+    else {
+        panic!("{:?}", slide.kind);
+    };
+    let [AxisLimits::Translation {
+        limits: Some(bounds),
+        ..
+    }] = limits.as_slice()
+    else {
+        panic!("{limits:?}");
+    };
+    assert_eq!(bounds.min, None);
+    assert!(matches!(bounds.max, Some(Dimension::Literal(length)) if length.get() == 9.0));
+    for name in ["LengthMin", "EnableLengthMin", "AngleMin", "EnableAngleMin"] {
+        assert!(option(&slide.source_settings, name).is_some(), "{name}");
+    }
+    for name in ["LengthMax", "EnableLengthMax"] {
+        assert_eq!(option(&slide.source_settings, name), None, "{name}");
+    }
+    assert!(
+        slide.native_options.is_empty(),
+        "{:?}",
+        slide.native_options
+    );
+
+    // A detached connector picks the referenced occurrence, moved by its
+    // stored frame; its elements and inert offset stay native.
+    let (_, held) = joint_feature(ir, "Held");
+    let bracket = ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            occurrence.native_ref.as_deref() == Some("fcstd:native:object#Bracket")
+                && !occurrence.id.as_str().ends_with(":container")
+        })
+        .unwrap()
+        .id
+        .clone();
+    assert_eq!(
+        frame_picks(&held.connectors[0]),
+        [(None, vec![bracket.as_str().to_owned()])]
+    );
+    let first = frame(&held.connectors[0]);
+    let [PostStep::Fixed(step)] = first.after.as_slice() else {
+        panic!("{:?}", first.after);
+    };
+    assert_eq!(step.affine_rows()[0][3], 3.0);
+    assert_eq!(first.resolved.as_ref().unwrap().origin.get().x, 3.0);
+    let text = |name: &str| match option(&held.native_options, name) {
+        Some(NativeOption::Text(Dimension::Literal(text))) => text.as_str().to_owned(),
+        other => panic!("{name}: {other:?}"),
+    };
+    assert_eq!(text("Reference1.sub0"), "Bracket.Face1");
+    assert_eq!(text("Reference1.sub1"), "Bracket.Edge2");
+    let real = |name: &str| match option(&held.native_options, name) {
+        Some(NativeOption::Real(Dimension::Literal(value))) => value.get(),
+        other => panic!("{name}: {other:?}"),
+    };
+    assert_eq!(
+        ["px", "py", "pz", "qx", "qy", "qz", "qw"]
+            .map(|component| real(&format!("Offset1.{component}"))),
+        [0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 1.0]
+    );
+    assert_eq!(
+        option(&held.source_settings, "Detach1"),
+        Some(NativeOption::Bool(Dimension::Literal(true)))
+    );
+    assert_eq!(
+        frame_picks(&held.connectors[1]),
+        [(
+            Some("Edge3".to_owned()),
+            vec![ir
+                .model
+                .occurrences
+                .iter()
+                .find(|occurrence| {
+                    occurrence.native_ref.as_deref() == Some("fcstd:native:object#Pin")
+                        && !occurrence.id.as_str().ends_with(":container")
+                })
+                .unwrap()
+                .id
+                .as_str()
+                .to_owned()]
+        )]
+    );
+
+    // A joint that stores no second reference is a loss, not a refusal.
+    assert!(ir
+        .design
+        .features
+        .iter()
+        .all(|feature| feature.name.as_deref() != Some("Loose")));
+    let unresolved = crate::loss::FreecadLossCode::FeatureJointUnresolved.note("");
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == unresolved.code && loss.message.contains("Loose")),
+        "{:?}",
+        decoded.report().losses
+    );
 }
