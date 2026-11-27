@@ -30,8 +30,7 @@ pub(super) struct Tree<'a> {
     pub(super) unstated: Vec<Unstated>,
     /// The sets among `sets` that no read list holds.
     pub(super) unlisted: Vec<String>,
-    /// The one root set each Boolean feature's `_FtrList` lists, its tool,
-    /// by the Boolean's entity.
+    /// The root body in each Boolean feature's tool slot, by Boolean entity.
     pub(super) tools: HashMap<u32, &'a CatiaFeatureContainer>,
 }
 
@@ -149,12 +148,12 @@ pub(super) fn read<'a>(
                 && classes::family(&container.class.name) == Some(OperationFamily::Combine)
         })
         .filter_map(|boolean| {
-            let listed = member_list(boolean)?
-                .into_iter()
-                .filter_map(|member| containers.get(member.target.as_ref()?.object_record.as_str()))
-                .copied()
-                .collect::<Vec<_>>();
-            Some((boolean, listed))
+            let members = member_list(boolean)?;
+            let [_, tool] = members.as_slice() else {
+                return None;
+            };
+            let record = tool.target.as_ref()?.object_record.as_str();
+            Some((boolean, *containers.get(record)?))
         })
         .collect::<Vec<_>>();
     let listed_anywhere = containers
@@ -179,11 +178,7 @@ pub(super) fn read<'a>(
             Some(set) => {
                 let holders = booleans
                     .iter()
-                    .filter(|(_, tools)| {
-                        tools
-                            .iter()
-                            .any(|tool| tool.entity_id == container.entity_id)
-                    })
+                    .filter(|(_, tool)| tool.entity_id == container.entity_id)
                     .map(|(boolean, _)| {
                         format!(
                             ", the tool of {} ({})",
@@ -213,16 +208,15 @@ pub(super) fn read<'a>(
         }
     }
     walk.unstated.sort_by(|a, b| a.record.cmp(&b.record));
-    let roots = sets
+    let root_bodies = sets
         .iter()
+        .filter(|set| set.kind == SetKind::Body)
         .map(|set| set.container.entity_id)
         .collect::<BTreeSet<_>>();
     let tools = booleans
         .into_iter()
-        .filter_map(|(boolean, tools)| match tools.as_slice() {
-            [tool] if roots.contains(&tool.entity_id) => Some((boolean.entity_id, *tool)),
-            _ => None,
-        })
+        .filter(|(_, tool)| root_bodies.contains(&tool.entity_id))
+        .map(|(boolean, tool)| (boolean.entity_id, tool))
         .collect();
     Ok(Some(Tree {
         graph_offset,

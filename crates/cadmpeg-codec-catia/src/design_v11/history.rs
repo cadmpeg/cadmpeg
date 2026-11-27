@@ -308,7 +308,7 @@ impl Statements<'_, '_> {
             .as_ref()
             .map(|target| target.object_record.clone());
         let operation = match class.map(|class| (class, classes::family(class))) {
-            Some((class, Some(OperationFamily::Combine))) => {
+            Some((class, Some(OperationFamily::Combine))) if at == Anchor::Input => {
                 match self.tools.and_then(|tools| tools.get(&member.entity_id)) {
                     Some(tool) => combine(class, tool)?,
                     None => FeatureOperation::Unresolved {

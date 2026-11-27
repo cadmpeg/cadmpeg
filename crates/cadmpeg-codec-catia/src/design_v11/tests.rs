@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::construction::{InputReference, Relation, Subject};
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
-use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::datum::DatumElement;
 use cadmpeg_ir::design::ops::shared::ToolDisposition;
 use cadmpeg_ir::design::ops::sketch::{SketchPlane, SketchRelation};
@@ -401,6 +401,34 @@ fn the_in_work_object_is_the_rollback_of_the_body_that_lists_it() {
     assert_eq!(rollbacks(0x85), [(3, None), (7, None)]);
 }
 
+#[test]
+fn an_in_work_body_keeps_its_end_rollback_when_a_wide_field_follows_its_list() {
+    let mut records = part();
+    assert_eq!(records[0].2[19], 0x86);
+    records[0].2[19] = 0x84;
+    let body = &mut records[1].2;
+    assert_eq!(body.pop(), Some(0xfe));
+    body.push(0x32);
+    body.extend(9_u32.to_le_bytes());
+    body.extend([0x81, 0xfe]);
+    let result = decode(
+        outer_container_catpart(&stream(&records)).0,
+        &DecodeOptions::default(),
+    );
+    let Container::Ordered {
+        members, rollback, ..
+    } = container(result.ir(), "catia:outer:feature-container", 3)
+    else {
+        panic!("the in-work body is ordered");
+    };
+    assert_eq!(
+        members.iter().map(member).collect::<Vec<_>>(),
+        [("feature", 5), ("feature", 6)]
+    );
+    assert_eq!(*rollback, Some(Rollback::End));
+    assert!(!has_loss(&result, CatiaLossCode::DesignRollbackUnread, ""));
+}
+
 fn has_loss(result: &EditableDecodeResult, code: CatiaLossCode, text: &str) -> bool {
     result
         .report()
@@ -697,8 +725,9 @@ fn a_root_record_of_a_class_with_no_family_is_a_native_feature() {
 #[test]
 fn a_boolean_absorbs_the_body_its_feature_list_holds() {
     let mut catalog = crate::test_support::test_feature_tree::CATALOG.to_vec();
-    catalog.push("Assemble");
+    catalog.extend(["Assemble", "Solid"]);
     let assemble = 0x43;
+    let solid = 0x44;
     let mut records = part();
     let mut body = vec![FTR_LIST, 0x84, 0x81, 0x86];
     body.extend(escaped(0x2000));
@@ -708,15 +737,14 @@ fn a_boolean_absorbs_the_body_its_feature_list_holds() {
     body.extend(escaped(0x2002));
     body.push(0xfe);
     records[1].2 = body;
-    let mut boolean = vec![FTR_LIST, 0x82, 0x81, 0x8a];
-    boolean.extend(escaped(0x3000));
-    boolean.push(0xfe);
+    let boolean = vec![FTR_LIST, 0x83, 0x81, 0x8c, 0x81, 0x8a, 0x81, 0xfe];
     let mut tool = vec![FTR_LIST, 0x82, 0x81, 0x8b];
     tool.extend(escaped(0x3001));
     tool.push(0xfe);
     records.push((8, compact(0x08, assemble), boolean));
     records.push((9, compact(0x08, HYBRID_BODY), tool));
     records.push((10, compact(0x08, PAD), vec![0xfe]));
+    records.push((11, compact(0x08, solid), vec![0xfe]));
     let result = decode(
         outer_container_catpart(&stream_with_catalog(&records, &catalog)).0,
         &DecodeOptions::default(),
@@ -783,6 +811,30 @@ fn a_boolean_absorbs_the_body_its_feature_list_holds() {
     ));
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);
+
+    records[6].2.swap(3, 5);
+    let reversed = decode(
+        outer_container_catpart(&stream_with_catalog(&records, &catalog)).0,
+        &DecodeOptions::default(),
+    );
+    let feature = reversed
+        .ir()
+        .design
+        .features
+        .iter()
+        .find(|feature| entity(feature.id.as_str()) == 8)
+        .unwrap();
+    assert!(matches!(
+        feature.definition.operation,
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Combine,
+        }
+    ));
+    assert!(!has_loss(
+        &reversed,
+        CatiaLossCode::DesignSetsUnlisted,
+        "(HybridBody, the tool of "
+    ));
 }
 
 /// Feature-tree records with no part root leave the tree unread, and a loss
