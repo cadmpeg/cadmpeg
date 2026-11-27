@@ -4245,7 +4245,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The mesh graph requires a Scene node in that slot; such a design reports `mesh.container-undecoded`.
 
-### DR-1081. Pose of an external occurrence below a local owner
+### DR-1083. Pose of an external occurrence below a local owner
 
 **Question.** Which pose does an external occurrence below a local owner take when its typed placement carrier and its component-path carrier state different poses?
 
