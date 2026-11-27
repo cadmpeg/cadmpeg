@@ -158,3 +158,13 @@ fn a_record_is_selected_by_a_nonzero_marker_of_any_value() {
     assert_eq!(bodies, [b"older".as_slice(), b"result".as_slice()]);
     assert!(records.iter().all(|record| record.canonical_header));
 }
+
+#[test]
+fn a_marker_with_another_low_byte_is_read_and_marked_noncanonical() {
+    let mut odd = record(PARASOLID, b"odd");
+    odd[4..8].copy_from_slice(&0x0009_b402_u32.to_le_bytes());
+    let payload = node(&[odd]);
+    let records = read(View::over_retained(&payload)).unwrap().records;
+    assert_eq!(records[0].bytes.window(), b"odd");
+    assert!(!records[0].canonical_header);
+}

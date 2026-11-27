@@ -7,8 +7,8 @@
 Source of truth: [`docs/formats/ironcad.md`](../../docs/formats/ironcad.md).
 Table source: `docs/layouts/ironcad.toml`.
 
-Framed compound streams carry a fixed 20-byte header and one zlib stream
-(§2). The `Brep Data` payload is a tree of u64-length nodes and u32-length
+Framed compound streams carry a fixed 20-byte header and one or more zlib
+blocks (§2). The `Brep Data` payload is a tree of u64-length nodes and u32-length
 kernel records; only the record header has fixed offsets (§3).
 
 ## Tag inventory
