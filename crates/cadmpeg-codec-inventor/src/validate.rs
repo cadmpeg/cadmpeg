@@ -1422,6 +1422,10 @@ fn validate_features(
             PmDcFeaturePropertyKind::PlaneSurface {
                 references: surface,
                 ..
+            }
+            | PmDcFeaturePropertyKind::ParametricSurface {
+                references: surface,
+                ..
             } => {
                 references.extend(surface.iter().map(|reference| reference.index()));
             }

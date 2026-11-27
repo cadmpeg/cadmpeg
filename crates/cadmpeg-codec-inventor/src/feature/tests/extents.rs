@@ -1945,6 +1945,7 @@ fn parses_work_point_across_header_and_value_count_forms() {
     }
 }
 
+mod parametric_face;
 mod plane_controls;
 mod surface;
 mod work_point;
