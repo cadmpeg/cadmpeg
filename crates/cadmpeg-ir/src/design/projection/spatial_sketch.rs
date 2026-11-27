@@ -15,7 +15,7 @@ use crate::design::ops::sketch::{
     SketchEntity, SketchRelation, SketchSolve, Spatial, SpatialCurve, SpatialSketch,
 };
 use crate::design::options::NativeOptions;
-use crate::design::selection::{Anchor, Picks, Selection};
+use crate::design::selection::Anchor;
 use crate::design::units::Quantity;
 use crate::document::Model;
 use crate::features::geometry::FiniteVector3;
@@ -30,7 +30,10 @@ use crate::topology::IncreasingParameterInterval;
 use crate::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_core::text::NonBlankString;
 
-use super::sketch::{native_integer, qualified, stored_quantity, stored_value, DimensionValue};
+use super::sketch::{
+    native_integer, native_operands, operand_options, qualified, stored_quantity, stored_value,
+    DimensionValue,
+};
 
 /// A spatial sketch restated as the sketch of its owner, with the facts the
 /// restatement states only by their native kind.
@@ -53,13 +56,15 @@ pub struct Restated {
 }
 
 /// Restate `record` of `model`, written by `codec`, as the spatial sketch of
-/// the feature `owner`. A dimension binds its parameter where `bound` says
-/// the design states it with the dimension's quantity.
+/// the feature `owner`, whose selections anchor at `at`. A dimension binds
+/// its parameter where `bound` says the design states it with the
+/// dimension's quantity.
 pub fn restate(
     codec: &NonBlankString,
     owner: &FeatureId,
     record: &crate::sketches::SpatialSketch,
     model: &Model,
+    at: &Anchor,
     bound: impl Fn(&ParameterId, Quantity) -> bool,
 ) -> Restated {
     let mut out = Restated {
@@ -138,7 +143,7 @@ pub fn restate(
             Some(relation) => relation,
             None => {
                 out.native_relations.push(name.to_owned());
-                native(codec, kind, dimension, &entities)
+                native(codec, kind, dimension, &entities, at)
             }
         };
         out.constraints.push(SketchConstraint {
@@ -147,7 +152,7 @@ pub fn restate(
             relation,
             name: None,
             active: None,
-            native_options: native_state(codec, kind),
+            native_options: native_options(codec, kind),
             source_settings: NativeOptions::new(),
             native_ref: constraint.native_ref.clone(),
         });
@@ -306,33 +311,38 @@ fn relation(
 }
 
 /// The state a native relation `kind` stores, as the native option
-/// `<codec>:native_state`.
-fn native_state(codec: &NonBlankString, kind: &SpatialKind) -> NativeOptions {
+/// `<codec>:native_state`, and what the decoder read of its operands.
+fn native_options(codec: &NonBlankString, kind: &SpatialKind) -> NativeOptions {
     let mut options = NativeOptions::new();
     let Kind::Native {
-        native_state: Some(state),
+        native_state,
+        operands,
         ..
     } = kind
     else {
         return options;
     };
-    if let Some((name, value)) = native_integer(codec, "native_state", *state) {
+    if let Some((name, value)) =
+        native_state.and_then(|state| native_integer(codec, "native_state", state))
+    {
         options.insert(name, value);
     }
+    operand_options(codec, operands, &mut options);
     options
 }
 
 /// The relation that states `kind` by its native kind, named
 /// `<codec>:<native class>` for a native relation and `<codec>:<decoded
 /// kind>` otherwise, on the entities it names and with the value of its
-/// `dimension` and the values it stores. A native relation's operand is the
-/// entity of `entities` whose record it names, and an unread selection where
-/// no one entity has that record.
+/// `dimension` and the values it stores. A native relation's operands are
+/// those [`native_operands`] states anchored at `at`: the entity of `entities`
+/// whose record an operand names, where one entity has it.
 fn native(
     codec: &NonBlankString,
     kind: &SpatialKind,
     dimension: Option<(Quantity, Option<DimensionValue>)>,
     entities: &[&crate::sketches::SpatialSketchEntity],
+    at: &Anchor,
 ) -> SketchRelation<Spatial> {
     let mut values = dimension
         .and_then(|(quantity, value)| value?.scalar(quantity))
@@ -346,10 +356,9 @@ fn native(
         } => {
             return SketchRelation::Native {
                 kind: qualified(codec, native_kind.as_str()),
-                operands: operands
-                    .iter()
-                    .map(|operand| native_operand(operand.native_ref.as_deref(), entities))
-                    .collect(),
+                operands: native_operands(codec, operands, at, |operand| {
+                    record(operand.native_ref.as_deref()?, entities)
+                }),
                 values,
             }
         }
@@ -417,22 +426,17 @@ fn native(
     }
 }
 
-/// The entity of `entities` whose record is `native`, else an unread
-/// selection.
-fn native_operand(
-    native: Option<&str>,
+/// The one entity of `entities` whose record is `native`.
+fn record(
+    native: &str,
     entities: &[&crate::sketches::SpatialSketchEntity],
-) -> Operand<Spatial> {
+) -> Option<Operand<Spatial>> {
     let mut named = entities
         .iter()
-        .filter(|entity| native.is_some() && entity.native_ref.as_deref() == native);
+        .filter(|entity| entity.native_ref.as_deref() == Some(native));
     match (named.next(), named.next()) {
-        (Some(entity), None) => Operand::Entity(entity.id().clone()),
-        _ => Operand::Model(Box::new(Selection {
-            at: Anchor::Input,
-            picks: Picks::Unread,
-            native: None,
-        })),
+        (Some(entity), None) => Some(Operand::Entity(entity.id().clone())),
+        _ => None,
     }
 }
 

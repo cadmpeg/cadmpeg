@@ -320,6 +320,7 @@ impl Walk for NativeOption {
             Self::Length(f0) => f0.walk(into),
             Self::Angle(f0) => f0.walk(into),
             Self::Text(f0) => f0.walk(into),
+            Self::Blank(_) => Ok(()),
         }
     }
 }

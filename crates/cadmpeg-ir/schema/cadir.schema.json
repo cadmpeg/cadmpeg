@@ -3645,6 +3645,10 @@
         }
       ]
     },
+    "BlankText": {
+      "type": "string",
+      "pattern": "^\\s*$"
+    },
     "BlendControls": {
       "description": "The controls that a fillet's or a chamfer's sets share.",
       "type": "object",
@@ -33239,6 +33243,24 @@
             },
             "value": {
               "$ref": "#/$defs/Dimension7"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "A text the source stores with white space only, or empty.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "blank"
+            },
+            "value": {
+              "$ref": "#/$defs/BlankText"
             }
           },
           "required": [

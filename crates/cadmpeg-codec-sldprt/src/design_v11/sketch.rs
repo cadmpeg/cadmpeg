@@ -29,8 +29,9 @@
 //!
 //! A relation on the start, end, or center of a curve where no point record
 //! lies names a point entity minted there, with that role on the curve, and
-//! so does a relation on a center where two point records lie; a loss names
-//! each such center.
+//! so does a relation on a center where two point records lie and the curve
+//! names no center record; a loss names each such center. A native
+//! relation states each operand its record holds.
 //! A reference dimension whose parameter is no parameter of the design binds
 //! a `Driven` parameter minted for it, with the value its parameter record
 //! stores where the record stores one of its quantity.
@@ -75,7 +76,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput as Kind, SketchConstraintId, SketchEntityId,
-    SketchGeometryDefinition as Geometry, SketchLocus, SpatialSketchId,
+    SketchGeometryDefinition as Geometry, SketchLocus, SketchNativeOperand, SpatialSketchId,
 };
 
 use super::parameters::Entries;
@@ -296,7 +297,7 @@ pub(super) fn project(
                 .and_then(owned_spatial_sketch)
                 .and_then(|id| spatial_record(context.model, id))
             {
-                spatial(&feature.id, record, context, &mut out);
+                spatial(&feature.id, record, context, &Anchor::Input, &mut out);
                 feature.definition.operation = FeatureOperation::SpatialSketch(record.id.clone());
             }
         } else if sketch_feature {
@@ -404,7 +405,7 @@ fn outside(
                     record.id.as_str(),
                 )
             });
-        spatial(&id, record, context, out);
+        spatial(&id, record, context, &Anchor::Current, out);
         owners.push(Feature {
             name: source
                 .and_then(|feature| feature.name.clone())
@@ -428,12 +429,14 @@ fn outside(
     Ok(owners)
 }
 
-/// Restate the spatial sketch `record` as the sketch of `owner`. Its
-/// dimensions bind the parameters of the tree.
+/// Restate the spatial sketch `record` as the sketch of `owner`, a selection
+/// of its records anchored at `at`. Its dimensions bind the parameters of
+/// the tree.
 fn spatial(
     owner: &FeatureId,
     record: &cadmpeg_ir::sketches::SpatialSketch,
     context: &Context<'_>,
+    at: &Anchor,
     out: &mut Sketches,
 ) {
     let bound = RefCell::new(Vec::new());
@@ -442,6 +445,7 @@ fn spatial(
         owner,
         record,
         context.model,
+        at,
         |parameter, quantity| {
             let known = context.entries.contains(parameter);
             if known {
@@ -645,6 +649,10 @@ fn restate(
     let mut driven = Vec::new();
     let mut references = Vec::new();
     let mut bound = Vec::new();
+    let at = match holder {
+        Holder::Ordered(_) => Anchor::Input,
+        Holder::Unordered | Holder::Block => Anchor::Current,
+    };
     for constraint in model
         .sketch_constraints
         .iter()
@@ -655,6 +663,7 @@ fn restate(
             owner,
             points: &points,
             entities: &entities,
+            at: &at,
         };
         let (relation, binding, unbound) = relations.relation(constraint, &driven);
         if matches!(
@@ -856,17 +865,18 @@ pub(super) fn selection(picks: Vec<Picked>) -> Result<OrderedSelection, &'static
 }
 
 /// The standing of `point` as the point `locus` names on `curve`: first for
-/// the native record the curve names as that end and for any point at its
-/// center, which the decoded curve names by its position alone.
+/// the native record the curve names as that end or as its center, and for
+/// any point at the center of a curve that names no center record.
 fn standing(
     curve: &cadmpeg_ir::sketches::SketchEntity,
     locus: &SketchLocus,
     point: &cadmpeg_ir::sketches::SketchEntity,
 ) -> Option<u8> {
-    let named = match (locus, curve.endpoint_refs.as_slice()) {
-        (SketchLocus::Start(_), [first, _]) => first,
-        (SketchLocus::End(_), [_, second]) => second,
-        (SketchLocus::Center(_), _) => return Some(0),
+    let named = match (locus, curve.endpoint_refs.as_slice(), &curve.center_ref) {
+        (SketchLocus::Start(_), [first, _], _) => first,
+        (SketchLocus::End(_), [_, second], _) => second,
+        (SketchLocus::Center(_), _, Some(center)) => center,
+        (SketchLocus::Center(_), _, None) => return Some(0),
         _ => return None,
     };
     (point.native_ref.as_deref() == Some(named.as_str())).then_some(0)
@@ -1244,12 +1254,14 @@ fn needed_state_zero<'a>(
 /// for it where no tree node lists it.
 type Binding = (ParameterId, Quantity, Option<DesignParameter>);
 
-/// The relations of one sketch.
+/// The relations of one sketch, and the anchor of a native operand that
+/// names no entity of it.
 struct Relations<'a> {
     context: &'a Context<'a>,
     owner: &'a FeatureId,
     points: &'a LocusPoints,
     entities: &'a [&'a cadmpeg_ir::sketches::SketchEntity],
+    at: &'a Anchor,
 }
 
 impl Relations<'_> {
@@ -1268,11 +1280,19 @@ impl Relations<'_> {
             return (relation, None, false);
         }
         if !is_dimension(kind) {
-            return (native_relation(&codec, kind, Vec::new(), self), None, false);
+            return (
+                native_relation(&codec, kind, Vec::new(), self, self.at),
+                None,
+                false,
+            );
         }
         let Some((parameter, quantity)) = dimension_parameter(kind, &self.context.model.parameters)
         else {
-            return (native_relation(&codec, kind, Vec::new(), self), None, true);
+            return (
+                native_relation(&codec, kind, Vec::new(), self, self.at),
+                None,
+                true,
+            );
         };
         let binding = self.binding(parameter, quantity, constraint.driving, minted);
         let value = match &binding {
@@ -1291,6 +1311,7 @@ impl Relations<'_> {
                         .filter_map(|value| value.scalar(quantity))
                         .collect(),
                     self,
+                    self.at,
                 )
             });
         let unbound = binding.is_none();
@@ -1365,6 +1386,22 @@ impl Loci for Relations<'_> {
         let entity = self.entities.iter().find(|entity| entity.id() == id)?;
         match entity.geometry.definition() {
             Geometry::Point { position } => Some([position.u, position.v]),
+            _ => None,
+        }
+    }
+
+    /// The one entity that holds the marker a resolved operand names.
+    fn record(&self, operand: &SketchNativeOperand) -> Option<Operand<Planar>> {
+        if operand.native_kind.as_str().ends_with(":unresolved") {
+            return None;
+        }
+        let native = operand.native_ref.as_deref()?;
+        let mut named = self
+            .entities
+            .iter()
+            .filter(|entity| entity.native_ref.as_deref() == Some(native));
+        match (named.next(), named.next()) {
+            (Some(entity), None) => Some(Operand::Entity(entity.id().clone())),
             _ => None,
         }
     }

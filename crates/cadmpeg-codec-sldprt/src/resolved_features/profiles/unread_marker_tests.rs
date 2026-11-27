@@ -368,6 +368,7 @@ fn a_placeholder_with_held_record_geometry_charges_the_losses_held_with_it() {
             ListedEntity {
                 geometry: arc.clone(),
                 endpoints: None,
+                center: None,
                 construction: false,
                 outside_profile: false,
                 index_basis_loss: None,
@@ -407,6 +408,7 @@ fn a_placeholder_with_held_record_geometry_takes_it_without_a_loss() {
             ListedEntity {
                 geometry: line.clone(),
                 endpoints: None,
+                center: None,
                 construction: true,
                 outside_profile: false,
                 index_basis_loss: None,
@@ -444,6 +446,7 @@ fn a_placeholder_with_held_state_zero_record_geometry_is_outside_the_profile() {
             ListedEntity {
                 geometry: line,
                 endpoints: None,
+                center: None,
                 construction: false,
                 outside_profile: true,
                 index_basis_loss: None,
