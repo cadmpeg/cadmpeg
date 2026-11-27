@@ -33,7 +33,7 @@ fn three_reference_operand(record_index: u32, lanes: [&[i64]; 3]) -> DesignEdgeO
         .iter()
         .enumerate()
         .map(|(ordinal, edges)| {
-            json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "reference_ordinal": ordinal,
                 "result_faces": [],
                 "result_shared_edge_slots": [],
