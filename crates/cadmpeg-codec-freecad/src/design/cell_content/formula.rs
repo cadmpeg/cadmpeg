@@ -652,7 +652,7 @@ impl<'a> Parser<'a> {
         found
     }
 
-    fn expect(&mut self, expected: char) -> Result<(), Unparsed> {
+    fn require(&mut self, expected: char) -> Result<(), Unparsed> {
         if self.eat(expected) {
             Ok(())
         } else {
@@ -695,7 +695,7 @@ impl<'a> Parser<'a> {
             return Ok(condition);
         }
         let then = self.expression()?;
-        self.expect(':')?;
+        self.require(':')?;
         let otherwise = self.expression()?;
         Ok(Node::Conditional {
             condition: Box::new(condition),
@@ -778,7 +778,7 @@ impl<'a> Parser<'a> {
             Token::Symbol('(') => {
                 self.at += 1;
                 let inner = self.expression()?;
-                self.expect(')')?;
+                self.require(')')?;
                 Ok(Node::Group(Box::new(inner)))
             }
             _ => Err(Unparsed::Syntax),
@@ -887,7 +887,7 @@ impl<'a> Parser<'a> {
             if self.eat(',') || self.eat(';') {
                 continue;
             }
-            self.expect(')')?;
+            self.require(')')?;
             return Ok(Node::Call { name, args });
         }
     }
@@ -922,7 +922,7 @@ impl<'a> Parser<'a> {
                 Some(Token::Text(_) | Token::Identifier(_) | Token::Cell(_))
             );
             if label || path.origin == Origin::Outside || (self.symbol('.') && named) {
-                self.expect('.')?;
+                self.require('.')?;
                 self.sub_object(&mut path);
                 path.components.push(self.id_or_cell()?);
             }
