@@ -450,3 +450,47 @@ fn a_resolved_base_feature_with_an_unlinked_state_is_not_charged() {
         (Vec::new(), Vec::new())
     );
 }
+
+#[test]
+fn a_base_feature_with_an_owned_result_does_not_require_an_output_chain() {
+    use cadmpeg_ir::features::selections::{BodySelection, DistinctMembers, InsertedBodies};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let (mut feature, scope, history, body) = unstored_previous();
+    let abstaining = abstaining_tail();
+    let bound = HashMap::from([(scope.id.clone(), abstaining.id.clone())]);
+    let outputs = DistinctMembers::try_from(vec![body.id.clone()]).unwrap();
+    for (operation, initial_outputs) in [
+        (
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: outputs.clone(),
+                    native: scope.id.clone(),
+                },
+            },
+            Default::default(),
+        ),
+        (
+            FeatureOperation::InsertBodies {
+                bodies: InsertedBodies::Resolved {
+                    native: scope.id.clone(),
+                },
+            },
+            outputs,
+        ),
+    ] {
+        feature
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(operation));
+        feature.evaluation.set_outputs(initial_outputs);
+        assert_eq!(
+            bind(
+                &feature,
+                &scope,
+                &mut [history.clone(), abstaining.clone()],
+                &body,
+                &bound,
+            ),
+            (vec![body.id.clone()], Vec::new())
+        );
+    }
+}

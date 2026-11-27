@@ -1013,7 +1013,10 @@ pub(crate) fn bind_feature_outputs(
             }
             entry.extend(newly_absorbed);
         }
-        if state_id == previous_state_id {
+        if state_id == previous_state_id
+            || super::stored_bodies::bound_result_bodies(feature).is_some()
+            || super::stored_bodies::has_projection_bound_base_feature_outputs(feature, scopes)
+        {
             continue;
         }
         let chain_outputs = output_chains
@@ -1034,11 +1037,6 @@ pub(crate) fn bind_feature_outputs(
             &state_outputs,
             outputs,
         );
-        if super::stored_bodies::bound_result_bodies(feature).is_some()
-            || super::stored_bodies::has_projection_bound_base_feature_outputs(feature, scopes)
-        {
-            continue;
-        }
         let source = historical_brep_source(&histories[history_index].id);
         let mut resolved = Vec::new();
         let mut saved_edges = Vec::new();

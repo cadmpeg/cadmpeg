@@ -174,6 +174,48 @@ fn a_feature_at_the_head_state_retains_no_change_when_its_previous_state_is_unli
 }
 
 #[test]
+fn a_repeated_state_id_does_not_place_the_feature_at_the_history_head() {
+    let mut scope = scope(64);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = None;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut history = history();
+    history.states_mut()[1].state_id = 64;
+    history.states_mut()[0]
+        .transition
+        .as_mut()
+        .unwrap()
+        .previous_state_id = Some(64);
+    let mut model = Model::default();
+    model.features.push(feature(&scope, 1));
+    model.product_definitions.push(definition());
+    let found = collect(
+        &model.features,
+        &[scope],
+        &[history],
+        &Default::default(),
+        None,
+    );
+    let mut losses = Vec::new();
+    append(&mut model, &found, &mut losses).unwrap();
+    assert_eq!(
+        model.features[1].evaluation.outputs().as_slice(),
+        &[body(1)]
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureBodyHistoryIncomplete.kind()
+    );
+    assert!(losses[0]
+        .message
+        .contains("from an ambiguous occurrence of state 64 to 64"));
+}
+
+#[test]
 fn a_later_body_change_retains_a_native_operation_owned_by_the_target() {
     let scope = scope(59);
     let before = feature(&scope, 1);
