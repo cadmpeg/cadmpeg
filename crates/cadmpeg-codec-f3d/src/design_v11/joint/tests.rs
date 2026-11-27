@@ -895,7 +895,11 @@ fn a_cadir_write_carries_the_joints_their_features_restate() {
     };
     record(&mut ir.model, restated);
     ir.design.features.extend(features);
-    cadmpeg_ir::design::projection::restated::restate_features(&mut ir);
+    cadmpeg_ir::design::projection::restated::restate_features(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &mut ir,
+    )
+    .expect("restate");
 
     let plan = CadirEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)

@@ -297,11 +297,11 @@ fn each_arrangement_restates_its_configuration() {
         .restated()
         .get("nx:arrangements:configuration#0")
         .expect("restated");
+    let by = Restater::Record("nx:arrangements:arrangement#0".to_owned());
     assert_eq!(
-        restating.by(),
-        &Restater::Record("nx:arrangements:arrangement#0".to_owned())
+        restating.cut_by(|restater| restater == &by),
+        Some(BTreeSet::new())
     );
-    assert!(restating.cut().is_empty());
     assert_eq!(
         ir.model.restated().get("nx:arrangements:configuration#1"),
         None
