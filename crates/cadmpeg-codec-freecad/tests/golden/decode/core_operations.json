@@ -9572,10 +9572,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "sketch"
-              }
+              "kind": "sketch",
+              "value": "fcstd:design:sketch#HoleProfile"
             }
           },
           "id": "fcstd:design:feature#HoleProfile",
@@ -9743,10 +9741,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "sketch"
-              }
+              "kind": "sketch",
+              "value": "fcstd:design:sketch#RevolutionProfile"
             }
           },
           "id": "fcstd:design:feature#RevolutionProfile",
@@ -10823,8 +10819,141 @@
       ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
+      "sketch_entities": [
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "circle",
+              "value": {
+                "center": {
+                  "u": 12.0,
+                  "v": 9.0
+                },
+                "radius": 3.0
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#HoleProfile:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#HoleProfile:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#HoleProfile",
+          "source_settings": {}
+        },
+        {
+          "construction": false,
+          "definition": {
+            "kind": "free",
+            "value": {
+              "kind": "line",
+              "value": {
+                "end": {
+                  "u": 8.0,
+                  "v": 0.0
+                },
+                "start": {
+                  "u": 4.0,
+                  "v": 0.0
+                }
+              }
+            }
+          },
+          "id": "fcstd:design:sketch-entity#RevolutionProfile:1",
+          "native_options": {},
+          "native_ref": "fcstd:native:property#RevolutionProfile:Geometry",
+          "roles": [],
+          "sketch": "fcstd:design:sketch#RevolutionProfile",
+          "source_settings": {}
+        }
+      ],
+      "sketches": [
+        {
+          "id": "fcstd:design:sketch#HoleProfile",
+          "name": "HoleProfile",
+          "native_options": {},
+          "native_ref": "fcstd:native:object#HoleProfile",
+          "owner": "fcstd:design:feature#HoleProfile",
+          "plane": {
+            "after": [],
+            "inputs": [],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "state": {
+              "kind": "not_full"
+            },
+            "status": "current"
+          },
+          "source_settings": {}
+        },
+        {
+          "id": "fcstd:design:sketch#RevolutionProfile",
+          "name": "RevolutionProfile",
+          "native_options": {},
+          "native_ref": "fcstd:native:object#RevolutionProfile",
+          "owner": "fcstd:design:feature#RevolutionProfile",
+          "plane": {
+            "after": [],
+            "inputs": [],
+            "kind": "placed",
+            "resolved": {
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "x_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "y_axis": {
+                "x": 0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "z_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "resolved_in": {}
+          },
+          "solve": {
+            "state": {
+              "kind": "not_full"
+            },
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
