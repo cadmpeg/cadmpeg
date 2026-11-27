@@ -55,7 +55,7 @@ pub(super) fn resolve(
         resolution.ctx,
     )?
     else {
-        return Ok(None);
+        return later_curve_boundary(sketch, entities, curves, owner, &rings, resolution);
     };
     let crossing_runs_assumed = selected.crossing_runs_assumed();
     if !allow_assumptions
@@ -79,6 +79,68 @@ pub(super) fn resolve(
         if selected.joined_rings != 0 {
             resolution.profile_work.note_piece_partition_assumed();
         }
+    }
+    Ok(profile)
+}
+
+/// The face that every curve of a member list bounds, with boundary curves
+/// that the member list does not name and that the Sketch gained after every
+/// named curve. A curve is later when its persistent identity is above every
+/// named identity of the selection.
+fn later_curve_boundary(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    curves: &[SketchCurveIdentity],
+    owner: u32,
+    rings: &[Vec<(SketchEntityUse, [u32; 2])>],
+    resolution: ScopedExtrudeProfileResolution<'_>,
+) -> Result<Option<PlanarProfileRef>, CodecError> {
+    let named = rings
+        .iter()
+        .map(|ring| {
+            ring.iter()
+                .map(|(use_, _)| use_.entity.clone())
+                .collect::<std::collections::HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let by_native = |entity: &SketchEntity| {
+        let native = entity.native_ref.as_deref()?;
+        curves
+            .iter()
+            .find(|curve| curve.id == native && curve.owner_reference == Some(owner))
+    };
+    let Some(highest) = entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id)
+        .filter(|entity| named.iter().any(|ring| ring.contains(entity.id())))
+        .map(|entity| by_native(entity).map(|curve| curve.primary_id.get()))
+        .collect::<Option<Vec<_>>>()
+        .and_then(|ids| ids.into_iter().max())
+    else {
+        return Ok(None);
+    };
+    let later = entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id && !entity.construction)
+        .filter(|entity| !named.iter().any(|ring| ring.contains(entity.id())))
+        .filter(|entity| by_native(entity).is_some_and(|curve| curve.primary_id.get() > highest))
+        .map(|entity| entity.id().clone())
+        .collect::<std::collections::HashSet<_>>();
+    let Some(regions) = crate::design::geometry::arrangement_regions_holding_named_curves(
+        sketch,
+        entities,
+        &named,
+        &later,
+        resolution.linear_tolerance,
+        resolution.profile_work,
+        resolution.ctx,
+    )?
+    else {
+        return Ok(None);
+    };
+    let profile = PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok();
+    if profile.is_some() {
+        resolution.profile_work.note_later_curve_boundary_assumed();
     }
     Ok(profile)
 }

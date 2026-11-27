@@ -86,6 +86,8 @@ pub(crate) struct ProfileGeometryWork {
     island_absence_assumed_selections: Cell<usize>,
     piece_partition_assumed: Cell<bool>,
     piece_partition_assumed_selections: Cell<usize>,
+    later_curve_boundary_assumed: Cell<bool>,
+    later_curve_boundary_assumed_selections: Cell<usize>,
     polyline_side_assumed: Cell<bool>,
     polyline_side_assumed_selections: Cell<usize>,
     cap_outline_assumed: Cell<bool>,
@@ -186,6 +188,8 @@ impl ProfileGeometryWork {
             island_absence_assumed_selections: Cell::new(0),
             piece_partition_assumed: Cell::new(false),
             piece_partition_assumed_selections: Cell::new(0),
+            later_curve_boundary_assumed: Cell::new(false),
+            later_curve_boundary_assumed_selections: Cell::new(0),
             polyline_side_assumed: Cell::new(false),
             polyline_side_assumed_selections: Cell::new(0),
             cap_outline_assumed: Cell::new(false),
@@ -421,7 +425,7 @@ impl ProfileGeometryWork {
         self.region_hole_inferred_selections.set(counts.1);
     }
 
-    pub(crate) fn assumed_flags(&self) -> [bool; 11] {
+    pub(crate) fn assumed_flags(&self) -> [bool; 12] {
         [
             self.crossing_loop_assumed.get(),
             self.loop_flags_assumed.get(),
@@ -434,10 +438,11 @@ impl ProfileGeometryWork {
             self.cap_carrier_assumed.get(),
             self.crossing_runs_assumed.get(),
             self.piece_partition_assumed.get(),
+            self.later_curve_boundary_assumed.get(),
         ]
     }
 
-    pub(crate) fn set_assumed_flags(&self, flags: [bool; 11]) {
+    pub(crate) fn set_assumed_flags(&self, flags: [bool; 12]) {
         self.crossing_loop_assumed.set(flags[0]);
         self.loop_flags_assumed.set(flags[1]);
         self.coincident_direction_assumed.set(flags[2]);
@@ -449,6 +454,7 @@ impl ProfileGeometryWork {
         self.cap_carrier_assumed.set(flags[8]);
         self.crossing_runs_assumed.set(flags[9]);
         self.piece_partition_assumed.set(flags[10]);
+        self.later_curve_boundary_assumed.set(flags[11]);
     }
 
     /// Close one profile selection. Count it against each cap that skipped a
@@ -502,6 +508,10 @@ impl ProfileGeometryWork {
             (
                 &self.piece_partition_assumed,
                 &self.piece_partition_assumed_selections,
+            ),
+            (
+                &self.later_curve_boundary_assumed,
+                &self.later_curve_boundary_assumed_selections,
             ),
             (
                 &self.polyline_side_assumed,
@@ -571,6 +581,12 @@ impl ProfileGeometryWork {
     /// face ring through the member-list piece partition.
     pub(crate) fn note_piece_partition_assumed(&self) {
         self.piece_partition_assumed.set(true);
+    }
+
+    /// Record that the open selection took the one face that every named
+    /// curve bounds, with boundary curves that the member list does not name.
+    pub(crate) fn note_later_curve_boundary_assumed(&self) {
+        self.later_curve_boundary_assumed.set(true);
     }
 
     /// Record that the polyline side of a projected point decided the face
@@ -664,6 +680,12 @@ impl ProfileGeometryWork {
         if piece_partition != 0 {
             losses.push(F3dLossCode::FeatureProfilePiecePartitionAssumed.note(format!(
                 "{piece_partition} extrude profile selection(s) matched counted members to a face whose edges curves outside the member list split. The reading takes the participating curves of each member's piece words from its member list; whether the serialized tracking graph names other curves is open (DR-500)."
+            )));
+        }
+        let later_curve = self.later_curve_boundary_assumed_selections.get();
+        if later_curve != 0 {
+            losses.push(F3dLossCode::FeatureProfileLaterCurveBoundaryAssumed.note(format!(
+                "{later_curve} profile selection(s) took the one atomic face that every named curve bounds, although the face boundary also holds curves that the member list does not name and that the Sketch gained after the named curves. The reading assumes the selection did not change when the Sketch gained them."
             )));
         }
         let island_absence = self.island_absence_assumed_selections.get();
@@ -2162,6 +2184,69 @@ pub(super) fn atomic_sketch_regions(
             })
             .collect(),
     ))
+}
+
+/// The regions that counted member rings select when no face walk matches a
+/// ring because curves that the member lists do not name also bound the
+/// face. Each ring selects the one atomic face whose boundary holds every
+/// curve of the ring, where every other boundary curve is in `later`.
+/// `None` when a ring is empty, a ring has no such face or several, a face
+/// has an island or can hold an unlisted curve, two rings select one face,
+/// or the work budget runs out.
+pub(super) fn arrangement_regions_holding_named_curves(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    rings: &[HashSet<cadmpeg_ir::sketches::SketchEntityId>],
+    later: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<cadmpeg_ir::features::profiles::SketchProfileRegion>>, CodecError> {
+    use cadmpeg_ir::features::profiles::SketchProfileRegion;
+
+    if rings.is_empty() || later.is_empty() || rings.iter().any(HashSet::is_empty) {
+        return Ok(None);
+    }
+    let Some(faces) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
+        return Ok(None);
+    };
+    let mut selected = Vec::new();
+    for named in rings {
+        let mut holding = faces.iter().enumerate().filter(|(_, face)| {
+            let boundary = face
+                .boundary
+                .iter()
+                .map(|use_| &use_.entity)
+                .collect::<HashSet<_>>();
+            named.iter().all(|entity| boundary.contains(entity))
+                && boundary
+                    .iter()
+                    .any(|entity| !named.contains(*entity) && later.contains(*entity))
+                && boundary
+                    .iter()
+                    .all(|entity| named.contains(*entity) || later.contains(*entity))
+        });
+        let Some((index, face)) = holding.next() else {
+            return Ok(None);
+        };
+        if holding.next().is_some()
+            || face.encloses_island
+            || face.island_absence_assumed
+            || selected.contains(&index)
+        {
+            return Ok(None);
+        }
+        selected.push(index);
+    }
+    let mut regions = Vec::with_capacity(selected.len());
+    for index in selected {
+        let Ok(region) = SketchProfileRegion::trimmed(faces[index].boundary.clone(), Vec::new())
+        else {
+            return Ok(None);
+        };
+        regions.push(region);
+    }
+    Ok(Some(regions))
 }
 
 /// Most atomic regions whose boundaries lie in one stored loop that the

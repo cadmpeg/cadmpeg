@@ -6754,15 +6754,19 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                     .and_then(|indices| PlanarProfileRef::sketch_profiles(sketch, indices).ok())
                     {
                         Some(selected) => Some(selected),
-                        None => region_members::resolve(
-                            stream,
-                            &profile,
-                            source,
-                            resolution.curve_identities,
-                            resolution.sketch_entities,
-                            scoped,
-                            false,
-                        )?,
+                        None => {
+                            let resolved = region_members::resolve(
+                                stream,
+                                &profile,
+                                source,
+                                resolution.curve_identities,
+                                resolution.sketch_entities,
+                                scoped,
+                                false,
+                            )?;
+                            scoped.profile_work.finish_selection();
+                            resolved
+                        }
                     }
                 } else {
                     None
