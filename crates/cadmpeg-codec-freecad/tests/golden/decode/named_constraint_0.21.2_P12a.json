@@ -1444,6 +1444,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 8,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1480,6 +1481,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Pad"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1516,6 +1518,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Parameters"
           },
+          "position": 0,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1558,6 +1561,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Parameters"
           },
+          "position": 1,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1601,6 +1605,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 9,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
@@ -1637,6 +1642,7 @@
             "kind": "feature",
             "value": "fcstd:design:feature#Sketch"
           },
+          "position": 10,
           "scope": "fcstd:model:product_definition#document:root",
           "source_settings": {},
           "value": {
