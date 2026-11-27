@@ -902,6 +902,7 @@ impl CodecBackend for FcstdCodec {
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
+        let mut stored_sketches = design::v11::sketches::StoredSketches::default();
         let mut gui_losses = Vec::new();
         let mut transfer_losses = Vec::new();
         // One `classify` call feeds the report identity, loss, and notes. A
@@ -1067,7 +1068,7 @@ impl CodecBackend for FcstdCodec {
             let intermediate =
                 design::intermediate_payloads(&graph.objects, &graph.properties, &shape_payloads);
             if ctx.depth() >= DecodeDepth::Design {
-                let (cycle_affected, design_losses) = design::transfer(
+                let (cycle_affected, design_losses, sketches) = design::transfer(
                     ctx,
                     &mut ir,
                     design::DesignObjects {
@@ -1080,6 +1081,7 @@ impl CodecBackend for FcstdCodec {
                     document.program_version.as_deref(),
                 )?;
                 cycle_affected_design_objects = cycle_affected;
+                stored_sketches = sketches;
                 transfer_losses.extend(design_losses);
                 design::resolve_operation_selections(
                     ctx,
@@ -1179,6 +1181,7 @@ impl CodecBackend for FcstdCodec {
                     &graph.objects,
                     &graph.properties,
                     &product_nodes,
+                    &stored_sketches,
                     &mut transfer_losses,
                 );
             }

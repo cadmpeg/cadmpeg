@@ -57,6 +57,39 @@ fn an_ellipse_states_its_major_direction_from_its_angle() {
 }
 
 #[test]
+fn a_hyperbola_states_its_major_direction_and_radii() {
+    let curve = planar_curve(&geometry(json!({"kind": "hyperbola",
+        "center": {"u": 1.0, "v": 0.0}, "major_angle": std::f64::consts::FRAC_PI_2,
+        "major_radius": 3.0, "minor_radius": 2.0, "bounds": [-1.0, 1.0]})));
+    let Some(PlanarCurve::Hyperbola {
+        major,
+        radii,
+        range,
+        ..
+    }) = curve
+    else {
+        panic!("a hyperbola: {curve:?}");
+    };
+    let major = major.get();
+    assert!(major[0].abs() < 1e-12 && (major[1] - 1.0).abs() < 1e-12);
+    assert_eq!(radii.map(crate::scalar::PositiveLength::get), [3.0, 2.0]);
+    assert!(range.is_some());
+}
+
+#[test]
+fn a_parabola_states_its_axis_and_focal_length() {
+    let curve = planar_curve(&geometry(json!({"kind": "parabola",
+        "vertex": {"u": 0.0, "v": 0.0}, "axis_angle": std::f64::consts::PI,
+        "focal_length": 0.5, "bounds": [-2.0, 2.0]})));
+    let Some(PlanarCurve::Parabola { axis, focal, .. }) = curve else {
+        panic!("a parabola: {curve:?}");
+    };
+    let axis = axis.get();
+    assert!((axis[0] + 1.0).abs() < 1e-12 && axis[1].abs() < 1e-12);
+    assert_eq!(focal.get(), 0.5);
+}
+
+#[test]
 fn a_native_geometry_has_no_planar_curve() {
     assert_eq!(
         planar_curve(&geometry(

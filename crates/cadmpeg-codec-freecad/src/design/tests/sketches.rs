@@ -1243,21 +1243,23 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
         } if matches!(first, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":reference-root-point"))
             && matches!(second, cadmpeg_ir::sketches::SketchLocus::Entity(id) if id.as_str().ends_with(":4"))
     ));
-    let repeated_parameters = result
-        .ir()
-        .model
-        .parameters
-        .iter()
-        .filter(|parameter| {
-            parameter
-                .properties
-                .get("source_name")
-                .is_some_and(|name| name == "Repeated")
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(repeated_parameters.len(), 2);
-    assert_eq!(repeated_parameters[0].name, "Constraint14");
-    assert_eq!(repeated_parameters[1].name, "Constraint15");
+    let repeated = |key: &str| {
+        result
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .filter(|parameter| {
+                parameter
+                    .properties
+                    .get(key)
+                    .is_some_and(|name| name == "Repeated")
+            })
+            .map(|parameter| parameter.name.as_str())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(repeated("source_name"), ["Constraint14"]);
+    assert_eq!(repeated("shadowed_name"), ["Constraint15"]);
     assert!(matches!(
         constraint(16).definition.kind(),
         cadmpeg_ir::sketches::SketchConstraintDefinitionInput::AngleToAxis {
@@ -1328,13 +1330,11 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             ..
         }
     ));
-    assert_eq!(result.report().losses.len(), 1);
-    assert_eq!(
-        result.report().losses[0].code,
-        crate::loss::FreecadLossCode::SketchConstraintNameAmbiguous
-            .note("")
-            .code
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|note| !note.code.to_string().starts_with("fcstd/sketch.")));
 }
 
 #[test]

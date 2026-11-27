@@ -93,8 +93,6 @@ pub(crate) enum FreecadLossCode {
     SketchExternalCacheUnresolved,
     /// Sketch constraint retains a native relation kind without neutral semantics.
     SketchNativeConstraint,
-    /// More than one sketch constraint has the same nonempty name.
-    SketchConstraintNameAmbiguous,
     /// A sketch constraint has both index and name expression bindings.
     SketchConstraintBindingConflict,
     /// Sketch profiles are not chained because endpoint matching reached its work cap.
@@ -136,6 +134,22 @@ pub(crate) enum FreecadLossCode {
     FileVersionUnverified,
     /// Nonempty inline legacy map has no verified file-version interpretation.
     ElementMapVersionUnresolved,
+    /// A sketch's attachment support names an object no design record
+    /// restates; the plane's input is unread.
+    DesignSketchSupportUnread,
+    /// A sketch's attachment offset has no post steps; the resolved frame
+    /// holds it.
+    DesignSketchOffsetUnstated,
+    /// A sketch entity has no planar curve and states its native kind.
+    DesignSketchEntityNative,
+    /// A sketch constraint states its native kind where its kind has a typed
+    /// relation.
+    DesignSketchRelationNative,
+    /// A sketch relation states a curve for a point whose position the curve
+    /// does not store.
+    DesignSketchLocusUnplaced,
+    /// A sketch dimension binds no design parameter of its scope.
+    DesignSketchDimensionUnbound,
 }
 
 impl FreecadLossCode {
@@ -173,7 +187,6 @@ impl FreecadLossCode {
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
-        Self::SketchConstraintNameAmbiguous,
         Self::SketchConstraintBindingConflict,
         Self::SketchExternalReferenceUnresolved,
         Self::SketchExternalCacheUnresolved,
@@ -196,6 +209,12 @@ impl FreecadLossCode {
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
         Self::ElementMapVersionUnresolved,
+        Self::DesignSketchSupportUnread,
+        Self::DesignSketchOffsetUnstated,
+        Self::DesignSketchEntityNative,
+        Self::DesignSketchRelationNative,
+        Self::DesignSketchLocusUnplaced,
+        Self::DesignSketchDimensionUnbound,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -237,7 +256,6 @@ impl FreecadLossCode {
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchNurbsNative => "sketch.nurbs-native",
             Self::SketchNativeConstraint => "sketch.native-constraint",
-            Self::SketchConstraintNameAmbiguous => "sketch.constraint-name-ambiguous",
             Self::SketchConstraintBindingConflict => "sketch.constraint-binding-conflict",
             Self::SketchExternalReferenceUnresolved => "sketch.external-reference-unresolved",
             Self::SketchExternalCacheUnresolved => "sketch.external-cache-unresolved",
@@ -266,6 +284,12 @@ impl FreecadLossCode {
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
             Self::ElementMapVersionUnresolved => "element-map.version-unresolved",
+            Self::DesignSketchSupportUnread => "design.sketch-support-unread",
+            Self::DesignSketchOffsetUnstated => "design.sketch-offset-unstated",
+            Self::DesignSketchEntityNative => "design.sketch-entity-native",
+            Self::DesignSketchRelationNative => "design.sketch-relation-native",
+            Self::DesignSketchLocusUnplaced => "design.sketch-locus-unplaced",
+            Self::DesignSketchDimensionUnbound => "design.sketch-dimension-unbound",
         }
     }
 
@@ -283,7 +307,6 @@ impl FreecadLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
-            | Self::SketchConstraintNameAmbiguous
             | Self::SketchConstraintBindingConflict
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => Severity::Blocking,
@@ -326,7 +349,13 @@ impl FreecadLossCode {
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
-            | Self::ElementMapVersionUnresolved => Severity::Warning,
+            | Self::ElementMapVersionUnresolved
+            | Self::DesignSketchSupportUnread
+            | Self::DesignSketchOffsetUnstated
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchRelationNative
+            | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchDimensionUnbound => Severity::Warning,
         }
     }
 
@@ -364,7 +393,6 @@ impl FreecadLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchNurbsNative
             | Self::SketchNativeConstraint
-            | Self::SketchConstraintNameAmbiguous
             | Self::SketchConstraintBindingConflict
             | Self::SketchProfileMatchingBounded
             | Self::ParameterExpressionEmpty
@@ -385,6 +413,12 @@ impl FreecadLossCode {
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ElementMapVersionUnresolved => LossTaxonomy::RecordNotTyped,
+            Self::DesignSketchSupportUnread
+            | Self::DesignSketchOffsetUnstated
+            | Self::DesignSketchEntityNative
+            | Self::DesignSketchRelationNative
+            | Self::DesignSketchLocusUnplaced
+            | Self::DesignSketchDimensionUnbound => LossTaxonomy::FeatureHistoryRetained,
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceGuiSchemaUnverified => LossTaxonomy::SourceDialectUnverified,
         }
@@ -450,7 +484,6 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
                 "sketch.native-constraint",
-                "sketch.constraint-name-ambiguous",
                 "sketch.constraint-binding-conflict",
                 "sketch.external-reference-unresolved",
                 "sketch.external-cache-unresolved",
@@ -473,6 +506,12 @@ mod tests {
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",
                 "element-map.version-unresolved",
+                "design.sketch-support-unread",
+                "design.sketch-offset-unstated",
+                "design.sketch-entity-native",
+                "design.sketch-relation-native",
+                "design.sketch-locus-unplaced",
+                "design.sketch-dimension-unbound",
             ]
         );
     }

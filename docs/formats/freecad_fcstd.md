@@ -579,13 +579,12 @@ A sketch constraint expression target is the `Expression` attribute `path` in th
 decimal without leading zeros except for `0`. `.Constraints.name` selects the constraint whose
 nonempty `Name` equals `name`.
 The name form has exactly one leading dot; the index form has none. Path matching is exact and
-case-sensitive. An absent or empty `Name` supplies no name path. A repeated name has no unique
-target. An expression can refer to a named constraint with `object.Constraints.name`, where
-`object` is the sketch object's persisted name.
+case-sensitive. An absent or empty `Name` supplies no name path. A repeated name selects the
+first constraint in list order that stores it. An expression can refer to a named constraint with
+`object.Constraints.name`, where `object` is the sketch object's persisted name.
 
-CADIR decision: repeated names emit `sketch.constraint-name-ambiguous` and do not bind by name.
-Concurrent index and name bindings emit `sketch.constraint-binding-conflict`; neither binding
-enters the neutral parameter. Exact expression records remain native.
+CADIR decision: concurrent index and name bindings emit `sketch.constraint-binding-conflict`;
+neither binding enters the neutral parameter. Exact expression records remain native.
 
 An expression binding is retained independently from its target property's cached scalar. The
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property

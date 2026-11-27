@@ -5,12 +5,14 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
+use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
     self, Expression, ExpressionDialect, ExpressionToken, MulOp, Neutral, Node, UnaryOp,
 };
 use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::CodecName;
+use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
 };
@@ -72,6 +74,11 @@ pub(super) fn project(
     let mut parameters = Vec::new();
     for (id, owner) in &owners {
         let parameter = by_id[id];
+        let constraint = parameter
+            .native_ref
+            .as_deref()
+            .and_then(|property| carriers.get(property).copied())
+            == Some(CONSTRAINT_LIST);
         let (kind, value) = kind_and_value(parameter.value.as_ref());
         let parameter_definition = if property(parameter, "is_driving") == Some("0") {
             ParameterDefinition::Driven
@@ -82,7 +89,7 @@ pub(super) fn project(
             id: parameter.id.clone(),
             scope: definition.clone(),
             owner: Some(owner.clone()),
-            name: name(parameter),
+            name: name(parameter, constraint),
             kind,
             unit: None,
             definition: parameter_definition,
@@ -91,7 +98,7 @@ pub(super) fn project(
             tolerance: None,
             decimals: None,
             comment: None,
-            native_options: BTreeMap::default(),
+            native_options: shadowed_name(parameter),
             source_settings: BTreeMap::default(),
             native_ref: parameter.native_ref.clone(),
         });
@@ -108,11 +115,33 @@ fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-/// The source's name of the parameter: a named constraint's name, or the
-/// property's name.
-fn name(parameter: &LegacyParameter) -> Option<NonBlankString> {
-    let name = property(parameter, "source_name").unwrap_or(&parameter.name);
+/// The source's name of the parameter: the name of a sketch constraint
+/// (`constraint`) that `FreeCAD` resolves it by, or the property's name
+/// (§5.12).
+fn name(parameter: &LegacyParameter, constraint: bool) -> Option<NonBlankString> {
+    let name = property(parameter, "source_name");
+    let name = if constraint {
+        name?
+    } else {
+        name.unwrap_or(&parameter.name)
+    };
     NonBlankString::new(name.to_owned())
+}
+
+/// The `Name` of a sketch constraint that an earlier constraint of its
+/// sketch also stores, as the native option `fcstd:constraint_name`
+/// (§5.12).
+fn shadowed_name(parameter: &LegacyParameter) -> BTreeMap<CodecName, NativeOption> {
+    property(parameter, "shadowed_name")
+        .and_then(|name| NonBlankString::new(name.to_owned()))
+        .map(|name| {
+            (
+                cadmpeg_ir::codec_name!("fcstd:constraint_name"),
+                NativeOption::Text(Dimension::Literal(name)),
+            )
+        })
+        .into_iter()
+        .collect()
 }
 
 fn kind_and_value(value: Option<&LegacyValue>) -> (ValueKind, Option<ParameterValue>) {

@@ -1,0 +1,458 @@
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::BTreeSet;
+use std::f64::consts::FRAC_PI_2;
+use std::io::Cursor;
+
+use cadmpeg_ir::design::construction::{FrameAxis, PostStep};
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::evaluation::EvaluationStatus;
+use cadmpeg_ir::design::feature::{FeatureOperation, LinkState};
+use cadmpeg_ir::design::names::NativeNameValue;
+use cadmpeg_ir::design::ops::sketch::{
+    AngleOperands, AngleSector, Contact, DefiningRole, DistanceAxis, EntityDefinition, EntityForm,
+    Operand, Planar, RadialMeasure, SketchConstraint, SketchEntity, SketchPlane, SketchRelation,
+    SolveState,
+};
+use cadmpeg_ir::design::options::NativeOption;
+use cadmpeg_ir::design::parameter::DesignParameter;
+use cadmpeg_ir::design::selection::{PickTarget, Picks, PrincipalEntity};
+use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
+
+use super::offset_steps;
+use crate::test_support::test_archive::{archive, assert_valid_document};
+use crate::FcstdCodec;
+
+/// A Body whose sketch lies on the Body's XY plane, offset by 1 mm along X
+/// and flipped. Line 1 runs from (0, 0) to (10, 0), line 2 is a
+/// construction line from (10, 0) to (10, 5), and circle 3 has its center
+/// at (5, 5).
+const BODY_SKETCH: &str = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="PartDesign::Body" name="Body" id="1"/>
+ <Object type="App::Origin" name="Origin" id="2"/>
+ <Object type="App::Plane" name="XY_Plane" id="3"/>
+ <Object type="Sketcher::SketchObject" name="Sketch" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Body"><Properties Count="3">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Sketch"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="Sketch"/></Property>
+  <Property name="Origin" type="App::PropertyLink"><Link value="Origin"/></Property>
+ </Properties></Object>
+ <Object name="Origin"><Properties Count="1">
+  <Property name="OriginFeatures" type="App::PropertyLinkList"><LinkList count="1"><Link value="XY_Plane"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="XY_Plane"><Properties Count="1">
+  <Property name="Role" type="App::PropertyString"><String value="XY_Plane"/></Property>
+ </Properties></Object>
+ <Object name="Sketch"><Properties Count="7">
+  <Property name="AttachmentSupport" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="XY_Plane" sub=""/></LinkSubList></Property>
+  <Property name="MapMode" type="App::PropertyEnumeration"><Integer value="5"/></Property>
+  <Property name="MapReversed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AttachmentOffset" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="FullyConstrained" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
+   <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="10" EndY="0"/><Construction value="0"/></Geometry>
+   <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="0" EndX="10" EndY="5"/><Construction value="1"/></Geometry>
+   <Geometry type="Part::GeomCircle"><Circle CenterX="5" CenterY="5" CenterZ="0" NormalX="0" NormalY="0" NormalZ="1" Radius="2"/><Construction value="0"/></Geometry>
+  </GeometryList></Property>
+  <Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="7">
+   <Constrain Name="width" Type="6" First="0" FirstPos="0" Value="10"/>
+   <Constrain Name="" Type="7" First="0" FirstPos="2" Value="10"/>
+   <Constrain Name="width" Type="11" First="2" FirstPos="0" Value="2"/>
+   <Constrain Name="" Type="9" First="0" FirstPos="1" Second="1" SecondPos="2" Value="1.5707963267948966"/>
+   <Constrain Name="" Type="1" First="0" FirstPos="2" Second="1" SecondPos="1"/>
+   <Constrain Name="" Type="2" First="0" FirstPos="0"/>
+   <Constrain Name="" Type="5" First="0" FirstPos="2" Second="1" SecondPos="1" Value="0"/>
+  </ConstraintList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+
+fn decode(document: &str) -> CadIr {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_valid_document(decoded.ir());
+    decoded.ir().clone()
+}
+
+fn entity_id(suffix: &str) -> SketchEntityId {
+    SketchEntityId::mint(format!("fcstd:design:sketch-entity#Sketch:{suffix}")).unwrap()
+}
+
+fn entity<'a>(ir: &'a CadIr, suffix: &str) -> &'a SketchEntity<Planar> {
+    let id = entity_id(suffix);
+    ir.design
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id == id)
+        .unwrap_or_else(|| panic!("{suffix}: {:?}", ir.design.sketch_entities))
+}
+
+fn parameter(ir: &CadIr, index: usize) -> &DesignParameter {
+    let id = format!("fcstd:design:parameter#Sketch:constraint:{index}");
+    ir.design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id.as_str() == id)
+        .unwrap_or_else(|| panic!("{id}"))
+}
+
+fn bound(ir: &CadIr, index: usize) -> Dimension<cadmpeg_ir::scalar::Length> {
+    Dimension::Parameter(parameter(ir, index).id.clone())
+}
+
+fn point(suffix: &str) -> Operand<Planar> {
+    Operand::Entity(entity_id(suffix))
+}
+
+fn relations(ir: &CadIr) -> Vec<&SketchRelation<Planar>> {
+    ir.design
+        .sketch_constraints
+        .iter()
+        .map(|constraint| &constraint.relation)
+        .collect()
+}
+
+#[test]
+fn a_body_sketch_on_the_origin_plane_picks_the_body_principal_plane() {
+    let ir = decode(BODY_SKETCH);
+    let [sketch] = ir.design.sketches.as_slice() else {
+        panic!("{:?}", ir.design.sketches);
+    };
+    let owner = ir
+        .design
+        .features
+        .iter()
+        .find(|feature| feature.id == sketch.owner)
+        .unwrap();
+    assert_eq!(
+        owner.definition.operation,
+        FeatureOperation::Sketch(sketch.id.clone())
+    );
+    assert_eq!(sketch.solve.state, Some(SolveState::NotFull));
+    assert_eq!(sketch.solve.status, EvaluationStatus::Current);
+    let SketchPlane::Placed(plane) = &sketch.plane else {
+        panic!("{:?}", sketch.plane);
+    };
+    let [input] = plane.inputs.as_slice() else {
+        panic!("{:?}", plane.inputs);
+    };
+    let Some(cadmpeg_ir::design::construction::InputReference::Picks(selection)) = &input.reference
+    else {
+        panic!("{input:?}");
+    };
+    let Picks::Named(members) = &selection.picks else {
+        panic!("{selection:?}");
+    };
+    let [picked] = members.as_slice() else {
+        panic!("{members:?}");
+    };
+    let PickTarget::Principal { entity, container } = &picked.target else {
+        panic!("{picked:?}");
+    };
+    assert_eq!(*entity, PrincipalEntity::XyPlane);
+    assert_eq!(
+        container
+            .as_ref()
+            .map(cadmpeg_ir::design::ids::ContainerId::as_str),
+        Some("fcstd:design:container#Body")
+    );
+    assert_eq!(
+        plane.after,
+        [
+            PostStep::Flip(Dimension::Literal(true)),
+            PostStep::Translate {
+                axis: FrameAxis::X,
+                distance: Dimension::Literal(cadmpeg_ir::scalar::Length::new(1.0).unwrap()),
+            },
+        ]
+    );
+    let mode = plane.mode.as_ref().unwrap();
+    assert_eq!(
+        mode.method,
+        NativeNameValue::Text(cadmpeg_core::nonblank_literal!("FlatFace"))
+    );
+}
+
+#[test]
+fn sketch_entities_keep_construction_and_the_points_constraints_name() {
+    let ir = decode(BODY_SKETCH);
+    assert_eq!(entity(&ir, "1").construction, Some(false));
+    assert_eq!(entity(&ir, "2").construction, Some(true));
+    for (suffix, role) in [
+        ("1:start", DefiningRole::Start),
+        ("1:end", DefiningRole::End),
+        ("2:start", DefiningRole::Start),
+    ] {
+        let point = entity(&ir, suffix);
+        assert!(
+            point
+                .roles
+                .iter()
+                .any(|entity_role| entity_role.role == role),
+            "{suffix}: {point:?}"
+        );
+    }
+    assert!(ir
+        .design
+        .sketch_entities
+        .iter()
+        .all(|entity| !entity.id.as_str().contains(":reference-")));
+}
+
+#[test]
+fn constraints_state_the_stored_form_of_each_freecad_relation() {
+    let ir = decode(BODY_SKETCH);
+    let line = entity_id("1");
+    let [length, coordinate, radius, angle, coincident, horizontal, tangent] = relations(&ir)[..]
+    else {
+        panic!("{:?}", ir.design.sketch_constraints);
+    };
+    assert_eq!(
+        *length,
+        SketchRelation::Distance {
+            a: point("1:start"),
+            b: point("1:end"),
+            along: Some(DistanceAxis::Aligned),
+            doubled: None,
+            value: bound(&ir, 1),
+        }
+    );
+    assert_eq!(
+        *coordinate,
+        SketchRelation::Distance {
+            a: Operand::Frame(PrincipalEntity::Origin),
+            b: point("1:end"),
+            along: Some(DistanceAxis::Horizontal),
+            doubled: None,
+            value: bound(&ir, 2),
+        }
+    );
+    assert_eq!(
+        *radius,
+        SketchRelation::Radial {
+            of: entity_id("3"),
+            measure: RadialMeasure::Radius,
+            value: bound(&ir, 3),
+        }
+    );
+    let SketchRelation::Angle {
+        between: AngleOperands::Between([first, second]),
+        sector,
+        ..
+    } = angle
+    else {
+        panic!("{angle:?}");
+    };
+    assert_eq!(*first, Operand::Entity(line.clone()));
+    assert_eq!(*second, Operand::Entity(entity_id("2")));
+    assert_eq!(
+        *sector,
+        Some(AngleSector::Directed {
+            second_reversed: true,
+            clockwise: false,
+        })
+    );
+    assert_eq!(
+        *coincident,
+        SketchRelation::Coincident {
+            a: point("1:end"),
+            b: point("2:start"),
+        }
+    );
+    assert_eq!(
+        *horizontal,
+        SketchRelation::Horizontal {
+            a: Operand::Entity(line),
+            b: None,
+        }
+    );
+    assert_eq!(
+        *tangent,
+        SketchRelation::Tangent {
+            a: Operand::Entity(entity_id("1")),
+            b: Operand::Entity(entity_id("2")),
+            contact: Some(Contact::Ends([entity_id("1:end"), entity_id("2:start")])),
+        }
+    );
+}
+
+#[test]
+fn a_repeated_constraint_name_names_the_first_constraint_only() {
+    let ir = decode(BODY_SKETCH);
+    let name = |index| {
+        parameter(&ir, index)
+            .name
+            .as_ref()
+            .map(|name| name.as_str().to_owned())
+    };
+    assert_eq!(name(1).as_deref(), Some("width"));
+    assert_eq!(name(2), None);
+    assert_eq!(name(3), None);
+    let shadowed = &parameter(&ir, 3).native_options;
+    assert_eq!(
+        shadowed.get(&cadmpeg_ir::codec_name!("fcstd:constraint_name")),
+        Some(&NativeOption::Text(Dimension::Literal(
+            cadmpeg_core::nonblank_literal!("width")
+        )))
+    );
+    assert!(parameter(&ir, 1).native_options.is_empty());
+    assert!(ir
+        .design
+        .sketch_constraints
+        .iter()
+        .all(|constraint: &SketchConstraint<Planar>| constraint.name.is_none()));
+}
+
+#[test]
+fn a_cadir_write_carries_every_sketch_record() {
+    let ir = decode(BODY_SKETCH);
+    let (written, omitted) = super::super::tests::cadir_round_trip(&ir);
+    let carried = ir
+        .design
+        .sketches
+        .iter()
+        .map(|sketch| sketch.id.as_str().to_owned())
+        .chain(
+            ir.design
+                .sketch_entities
+                .iter()
+                .map(|entity| entity.id.as_str().to_owned()),
+        )
+        .chain(
+            ir.design
+                .sketch_constraints
+                .iter()
+                .map(|constraint| constraint.id.as_str().to_owned()),
+        )
+        .chain(
+            ir.design
+                .parameters
+                .iter()
+                .map(|parameter| parameter.id.as_str().to_owned()),
+        )
+        .collect::<BTreeSet<_>>();
+    assert_eq!(carried.intersection(&omitted).count(), 0, "{omitted:?}");
+    assert_eq!(written.design.sketches, ir.design.sketches);
+    assert_eq!(written.design.sketch_entities, ir.design.sketch_entities);
+    assert_eq!(
+        written.design.sketch_constraints,
+        ir.design.sketch_constraints
+    );
+}
+
+#[test]
+fn a_detached_sketch_has_no_input() {
+    let document = BODY_SKETCH.replace(r#"<Integer value="5"/>"#, r#"<Integer value="0"/>"#);
+    let ir = decode(&document);
+    let SketchPlane::Placed(plane) = &ir.design.sketches[0].plane else {
+        panic!("{:?}", ir.design.sketches);
+    };
+    assert!(plane.inputs.is_empty());
+    assert!(plane.after.is_empty());
+    assert!(plane.mode.is_none());
+}
+
+#[test]
+fn an_external_geometry_is_a_projection_of_its_linked_subelement() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch"/><Object type="Part::Feature" name="Source"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Source" sub="Edge1"/><Link obj="Source" sub="Edge2"/></LinkSubList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="5">
+<Geometry type="Part::GeomLineSegment" id="-1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="-2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="" Flags="0"/></GeoExtensions><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+<Geometry type="Part::GeomCircle" id="1" ref="Source.Edge2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Source.Edge2" Flags="0"/></GeoExtensions><Circle CenterX="2" CenterY="3" Radius="1"/></Geometry>
+<Geometry type="Part::GeomLineSegment" id="2" ref="Source.Edge2"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Source.Edge2" Flags="0"/></GeoExtensions><LineSegment StartX="2" StartY="3" EndX="4" EndY="3"/></Geometry>
+<Geometry type="Part::GeomPoint" id="3" ref="Source.Edge1"><GeoExtensions count="1"><GeoExtension type="Sketcher::ExternalGeometryExtension" Ref="Source.Edge1" Flags="3"/></GeoExtensions><GeomPoint X="5" Y="6" Z="0"/></Geometry>
+</GeometryList></Property>
+</Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let ir = decode(document);
+    let derived = |suffix: &str| {
+        let entity = ir
+            .design
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id.as_str().ends_with(suffix))
+            .unwrap_or_else(|| panic!("{suffix}: {:?}", ir.design.sketch_entities));
+        let EntityDefinition::Defined { form, solved } = &entity.definition else {
+            panic!("{entity:?}");
+        };
+        let EntityForm::Derived(derivation) = form.as_ref() else {
+            panic!("{entity:?}");
+        };
+        assert!(solved.is_some(), "{entity:?}");
+        let Picks::Named(members) = &derivation.source.picks else {
+            panic!("{derivation:?}");
+        };
+        let [picked] = members.as_slice() else {
+            panic!("{members:?}");
+        };
+        assert!(
+            matches!(picked.target, PickTarget::Native { within: Some(_) }),
+            "{picked:?}"
+        );
+        let Some(NativeNameValue::Text(sub)) = picked.native.as_ref().map(|name| &name.value)
+        else {
+            panic!("{picked:?}");
+        };
+        (
+            sub.as_str().to_owned(),
+            derivation.piece,
+            derivation.link,
+            entity.construction,
+        )
+    };
+    assert_eq!(
+        derived(":external:0"),
+        (
+            "Edge2".to_owned(),
+            Some(0),
+            Some(LinkState::Current),
+            Some(true)
+        )
+    );
+    assert_eq!(
+        derived(":external:1"),
+        (
+            "Edge2".to_owned(),
+            Some(1),
+            Some(LinkState::Current),
+            Some(true)
+        )
+    );
+    assert_eq!(
+        derived(":external:2"),
+        (
+            "Edge1".to_owned(),
+            None,
+            Some(LinkState::Locked),
+            Some(false)
+        )
+    );
+}
+
+#[test]
+fn an_offset_rotation_is_a_yaw_about_z() {
+    let rows = [
+        [0.0, -1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let [PostStep::Rotate {
+        axis: FrameAxis::Z,
+        angle: Dimension::Literal(angle),
+    }] = offset_steps(rows)[..]
+    else {
+        panic!("{:?}", offset_steps(rows));
+    };
+    assert!((angle.get() - FRAC_PI_2).abs() < 1e-12);
+}

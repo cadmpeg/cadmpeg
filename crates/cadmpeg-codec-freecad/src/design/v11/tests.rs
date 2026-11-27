@@ -69,7 +69,7 @@ const GROUP: &str = "fcstd:design:container#document:group";
 
 /// The CADIR write of `ir` read back, and each record id an `arena.omitted`
 /// loss of the write names.
-fn cadir_round_trip(ir: &CadIr) -> (CadIr, BTreeSet<String>) {
+pub(super) fn cadir_round_trip(ir: &CadIr) -> (CadIr, BTreeSet<String>) {
     use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
     let plan = CadirEncoder
         .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
@@ -172,12 +172,11 @@ fn a_partdesign_body_is_an_ordered_body_container_at_its_tip() {
         .iter()
         .find(|feature| feature.id.as_str() == "fcstd:design:feature#PadSketch")
         .unwrap();
-    assert_eq!(
-        sketch.definition.operation,
-        FeatureOperation::Unresolved {
-            family: OperationFamily::Sketch
-        }
-    );
+    let FeatureOperation::Sketch(sketch) = &sketch.definition.operation else {
+        panic!("{:?}", sketch.definition.operation);
+    };
+    assert_eq!(sketch.as_str(), "fcstd:design:sketch#PadSketch");
+    assert!(design.sketches.iter().any(|record| record.id == *sketch));
 }
 
 #[test]

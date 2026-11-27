@@ -24,8 +24,8 @@ use crate::sketches::{
 use crate::units::{FinitePoint2, UnitVector2, UnitVector3};
 
 /// The planar curve of a decoded sketch geometry, where the geometry is a
-/// point, a line, a circle, an arc, an ellipse, or a NURBS curve whose
-/// directions have a length.
+/// point, a line, a circle, an arc, an ellipse, a hyperbola, a parabola, or
+/// a NURBS curve whose directions have a length.
 #[must_use]
 pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
     Some(match geometry.definition() {
@@ -68,6 +68,35 @@ pub fn planar_curve(geometry: &SketchGeometry) -> Option<PlanarCurve> {
                 center: *center,
                 major: UnitVector2::new([cos, sin])?,
                 radii: [radii.major(), radii.minor()],
+                range: *bounds,
+            }
+        }
+        SketchGeometryDefinition::Hyperbola {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            bounds,
+        } => {
+            let (sin, cos) = major_angle.get().portable_sin_cos();
+            PlanarCurve::Hyperbola {
+                center: *center,
+                major: UnitVector2::new([cos, sin])?,
+                radii: [*major_radius, *minor_radius],
+                range: *bounds,
+            }
+        }
+        SketchGeometryDefinition::Parabola {
+            vertex,
+            axis_angle,
+            focal_length,
+            bounds,
+        } => {
+            let (sin, cos) = axis_angle.get().portable_sin_cos();
+            PlanarCurve::Parabola {
+                vertex: *vertex,
+                axis: UnitVector2::new([cos, sin])?,
+                focal: *focal_length,
                 range: *bounds,
             }
         }
@@ -680,8 +709,23 @@ impl LocusPoints {
         entities: &[&crate::sketches::SketchEntity],
         stated: impl Fn(&SketchLocus) -> bool,
     ) -> Self {
+        Self::of_loci(kinds.into_iter().flat_map(point_loci), entities, stated)
+    }
+
+    /// The points of `loci`, the start, end, and center loci that the
+    /// relations of a sketch whose entities are `entities` name, that
+    /// `stated` does not resolve. An `Entity` locus names its entity and
+    /// mints no point.
+    pub fn of_loci<'k>(
+        loci: impl IntoIterator<Item = &'k SketchLocus>,
+        entities: &[&crate::sketches::SketchEntity],
+        stated: impl Fn(&SketchLocus) -> bool,
+    ) -> Self {
         let mut out = Self::default();
-        for locus in kinds.into_iter().flat_map(point_loci) {
+        for locus in loci
+            .into_iter()
+            .filter(|locus| !matches!(locus, SketchLocus::Entity(_)))
+        {
             if stated(locus)
                 || out.points.iter().any(|point| &point.locus == locus)
                 || out.unplaced.contains(locus)

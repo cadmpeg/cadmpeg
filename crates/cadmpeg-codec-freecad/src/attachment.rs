@@ -218,6 +218,12 @@ fn support_links(property: &PropertyRecord) -> Result<Vec<Option<LinkTarget>>, C
     Ok(links)
 }
 
+/// The name of the attachment mode `property` stores.
+pub(crate) fn map_mode_name(property: &PropertyRecord) -> Option<&'static str> {
+    let mode = map_mode_value(property).ok()?;
+    MAP_MODE_NAMES.get(usize::from(mode.0)).copied()
+}
+
 fn map_mode_value(property: &PropertyRecord) -> Result<MapModeIndex, CodecError> {
     if property.type_name != "App::PropertyEnumeration" {
         return Err(CodecError::malformed(format_args!(

@@ -3144,6 +3144,14 @@ impl SketchSameCoordinate {
 #[serde(try_from = "f64")]
 pub struct SketchLabelValue(f64);
 
+impl SketchLabelValue {
+    /// The coordinate.
+    #[must_use]
+    pub const fn get(self) -> f64 {
+        self.0
+    }
+}
+
 impl TryFrom<f64> for SketchLabelValue {
     type Error = &'static str;
 
