@@ -379,9 +379,8 @@ feature, value `2` sweeps towards the profile normal and value `1` away
 from it.
 
 The second side word is a `Double Value Object`. The first feature of a
-document stores no object in this slot. A later extruded feature stores a
-value that does not depend on the side or on the boolean operation of the
-feature.
+document stores no object in this slot. A later extruded feature stores the
+object.
 
 ### 6.3 Depth
 
