@@ -48,6 +48,7 @@ use cadmpeg_ir::products::{ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
+use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 use crate::records::feature::scope::DesignScopeTailFlags;
 
@@ -195,11 +196,21 @@ pub(crate) fn project(
             bodies,
         } = spans.remove(&prefix).unwrap_or_default();
         if spanned.len() > 1 {
+            let mut withheld = BTreeMap::<&ProductDefinitionId, usize>::new();
             for feature in &mut projected.features {
-                feature.component = owners
+                let owner = owners
                     .get(&feature.id)
-                    .filter(|owner| spanned.contains(**owner))
-                    .and_then(|owner| member_component(feature, owner));
+                    .copied()
+                    .filter(|owner| spanned.contains(*owner));
+                feature.component = owner.and_then(|owner| member_component(feature, owner));
+                if let (Some(owner), None) = (owner, &feature.component) {
+                    *withheld.entry(owner).or_default() += 1;
+                }
+            }
+            for (owner, count) in withheld {
+                losses.push(F3dLossCode::HistoryMemberComponentUnstated.note(format!(
+                    "{count} features of the document {prefix:?} name no component: their owner {owner} stands in an archive member whose scope the checker reads as spanning the files its occurrences place"
+                )));
             }
         }
         let Some(Container::Ordered {
