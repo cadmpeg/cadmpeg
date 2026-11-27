@@ -33,10 +33,10 @@ fn native_a8_sampled_map_retains_exact_payload_and_checked_wire() {
         *map
     );
     let mut wrong = wire.clone();
-    wrong["data"]["reference_parameters"][0] = serde_json::json!(0.5);
+    wrong["data"]["reference_parameters"][0] = cadmpeg_core::json!(0.5);
     assert!(json::from_value::<CatiaSampledParameterMap>(wrong).is_err());
     let mut wrong = wire;
-    wrong["data"]["fit_tolerance"] = serde_json::json!(0.001);
+    wrong["data"]["fit_tolerance"] = cadmpeg_core::json!(0.001);
     assert!(json::from_value::<CatiaSampledParameterMap>(wrong).is_err());
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("borrowed store");
@@ -68,7 +68,7 @@ fn native_a8_sampled_map_reads_the_one_zero_written_for_a_negative_zero_fit_tole
         .expect("read the written map");
     assert_eq!(&*read.payload, &bytes[11..]);
     let mut moved = written;
-    moved["data"]["fit_tolerance"] = serde_json::json!(0.001);
+    moved["data"]["fit_tolerance"] = cadmpeg_core::json!(0.001);
     assert!(json::from_value::<CatiaSampledParameterMap>(moved).is_err());
 }
 

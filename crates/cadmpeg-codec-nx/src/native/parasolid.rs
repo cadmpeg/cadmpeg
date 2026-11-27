@@ -444,9 +444,9 @@ mod deltas_record_wire_tests {
                 serde_json::from_str::<serde_json::Value>(json).unwrap(),
             );
             for (field, invalid) in [
-                ("kind", serde_json::json!(12)),
-                ("xmt", serde_json::json!(1)),
-                ("references", serde_json::json!([0, 1, 1, 1, 1])),
+                ("kind", cadmpeg_core::json!(12)),
+                ("xmt", cadmpeg_core::json!(1)),
+                ("references", cadmpeg_core::json!([0, 1, 1, 1, 1])),
             ] {
                 let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
                 wire[field] = invalid;
@@ -1062,20 +1062,20 @@ mod term_use_wire_tests {
 
     #[test]
     fn term_use_wire_rejects_count_form_and_storage_disagreement() {
-        let valid = serde_json::json!({"id":"term", "stream_ordinal":0, "xmt":2,
+        let valid = cadmpeg_core::json!({"id":"term", "stream_ordinal":0, "xmt":2,
             "count":2,"form":"TF", "data":{"layout":"xyz3","hvecs":[[0.0,0.0,0.0],[1.0,0.0,0.0]]},
             "framing":"direct","inflated_offset":0});
         for (field, value) in [
-            ("count", serde_json::json!(1)),
-            ("form", serde_json::json!("L?")),
+            ("count", cadmpeg_core::json!(1)),
+            ("form", cadmpeg_core::json!("L?")),
             (
                 "data",
-                serde_json::json!({"layout":"xyz3","hvecs":[[0.0,0.0,0.0]]}),
+                cadmpeg_core::json!({"layout":"xyz3","hvecs":[[0.0,0.0,0.0]]}),
             ),
-            ("data", serde_json::json!({"layout":"xyz3","hvecs":[]})),
+            ("data", cadmpeg_core::json!({"layout":"xyz3","hvecs":[]})),
             (
                 "data",
-                serde_json::json!({"layout":"ext11","hvecs":[{"point":[0.0,0.0,0.0]}]}),
+                cadmpeg_core::json!({"layout":"ext11","hvecs":[{"point":[0.0,0.0,0.0]}]}),
             ),
         ] {
             let mut malformed = valid.clone();
@@ -1344,8 +1344,8 @@ mod blend_surface_wire_tests {
         let record: ParasolidBlendSurfaceRecord = serde_json::from_str(json).unwrap();
         assert_eq!(json::to_string(&record).unwrap(), json);
         for (field, value) in [
-            ("support_xmts", serde_json::json!([1, 7])),
-            ("offsets", serde_json::json!([3.0, 4.0])),
+            ("support_xmts", cadmpeg_core::json!([1, 7])),
+            ("offsets", cadmpeg_core::json!([3.0, 4.0])),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = value;

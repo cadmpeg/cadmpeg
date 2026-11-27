@@ -16,18 +16,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "source.preserved-image-unavailable",
-            "kind": "preserved_source_unavailable",
-            "namespace": "iges"
-          }
-        },
-        "message": "preserved IGES source image is unavailable; semantic regeneration is required",
-        "severity": "blocking"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "geometry.procedural-reduced",
             "kind": "procedural_reduced",
             "namespace": "iges"
@@ -93,18 +81,6 @@
             "namespace": "export"
           }
         },
-        "message": "the IGES write omits 1 native record(s) of `iges` arena `display_attributes` which the bounded semantic writer does not regenerate: iges:presentation:display-attributes#D1",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "native.records-omitted",
-            "kind": "passthrough_record_omitted",
-            "namespace": "export"
-          }
-        },
         "message": "the IGES write omits 1 native record(s) of `iges` arena `product_occurrence_expansion` which the bounded semantic writer does not regenerate: iges:product:occurrence-expansion#state",
         "severity": "warning"
       }
@@ -112,6 +88,10 @@
     "notes": [
       "IGES Fixed ASCII container regenerated from supported neutral geometry"
     ],
+    "synthesis_cause": {
+      "kind": "patch_declined",
+      "reason": "the encode holds no source fidelity"
+    },
     "write_path": {
       "fidelity": {
         "kind": "not_provided"

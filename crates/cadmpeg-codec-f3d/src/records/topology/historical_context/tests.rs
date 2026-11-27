@@ -8,7 +8,7 @@ use cadmpeg_core::serde_erase::json;
 fn historical_loop_wire_preserves_each_complete_binding_stage() {
     for count in [0_u32, 1, 3] {
         for stage in 0..4 {
-            let mut wire = serde_json::json!({
+            let mut wire = cadmpeg_core::json!({
                 "loop_slot": 10,
                 "coedge_slots": (0..count).map(|index| 20 + index).collect::<Vec<_>>(),
                 "edge_slots": (0..count).map(|index| 30 + index).collect::<Vec<_>>()
@@ -16,14 +16,14 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
             if count != 0 {
                 if stage >= 1 {
                     wire["vertex_slots"] =
-                        serde_json::json!((0..count).map(|index| 40 + index).collect::<Vec<_>>());
+                        cadmpeg_core::json!((0..count).map(|index| 40 + index).collect::<Vec<_>>());
                 }
                 if stage >= 2 {
                     wire["point_slots"] =
-                        serde_json::json!((0..count).map(|index| 50 + index).collect::<Vec<_>>());
+                        cadmpeg_core::json!((0..count).map(|index| 50 + index).collect::<Vec<_>>());
                 }
                 if stage >= 3 {
-                    wire["positions"] = serde_json::json!((0..count)
+                    wire["positions"] = cadmpeg_core::json!((0..count)
                         .map(|index| cadmpeg_ir::math::Point3::new(f64::from(index), 0.0, 0.0))
                         .collect::<Vec<_>>());
                 }
@@ -43,7 +43,7 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
                     values.push(if field == "positions" {
                         json::to_value(cadmpeg_ir::math::Point3::new(9.0, 0.0, 0.0)).unwrap()
                     } else {
-                        serde_json::json!(99)
+                        cadmpeg_core::json!(99)
                     });
                 }
                 invalid[field] = serde_json::Value::Array(values);
@@ -62,21 +62,21 @@ fn historical_loop_for_serialization(
     count: u32,
     stage: u32,
 ) -> super::DesignHistoricalFaceLoopContext {
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "loop_slot": 10,
         "coedge_slots": (0..count).map(|index| 20 + index).collect::<Vec<_>>(),
         "edge_slots": (0..count).map(|index| 30 + index).collect::<Vec<_>>()
     });
     if stage >= 1 {
         wire["vertex_slots"] =
-            serde_json::json!((0..count).map(|index| 40 + index).collect::<Vec<_>>());
+            cadmpeg_core::json!((0..count).map(|index| 40 + index).collect::<Vec<_>>());
     }
     if stage >= 2 {
         wire["point_slots"] =
-            serde_json::json!((0..count).map(|index| 50 + index).collect::<Vec<_>>());
+            cadmpeg_core::json!((0..count).map(|index| 50 + index).collect::<Vec<_>>());
     }
     if stage >= 3 {
-        wire["positions"] = serde_json::json!((0..count)
+        wire["positions"] = cadmpeg_core::json!((0..count)
             .map(|index| cadmpeg_ir::math::Point3::new(f64::from(index), 0.0, 0.0))
             .collect::<Vec<_>>());
     }

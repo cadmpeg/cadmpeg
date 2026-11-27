@@ -46,7 +46,7 @@ fn scope() -> DesignParameterScope {
         DesignFeatureKind::SpherePrimitive,
         1,
     );
-    let sphere = json::from_value(serde_json::json!({
+    let sphere = json::from_value(cadmpeg_core::json!({
         "placement_record_index": 255,
         "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
         "transform_offset": 20,

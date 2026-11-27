@@ -261,10 +261,44 @@ fn the_assembly_maps_to_products_placements_meshes_and_appearances() {
             PvzLossCode::TessellationPatchFields.kind(),
             PvzLossCode::TessellationEdgesNotTransferred.kind(),
             PvzLossCode::GeometryPreambleUndecoded.kind(),
+            cadmpeg_ir::unknown::part::record_unreadable_kind(),
         ]
     );
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     assert!(report.is_ok(), "{report:?}");
+}
+
+#[test]
+fn a_pinned_decode_refuses_an_exact_stream_that_does_not_decode() {
+    let bytes = assembly("PV-PVS0304");
+    let admitted = decode(&bytes);
+    let given_up = admitted
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == record_unreadable_kind())
+        .expect("the exact stream is given up");
+    assert!(
+        given_up
+            .message
+            .starts_with("part ol-stream stream=\"pvz:plate.ol\" offset="),
+        "{given_up:?}"
+    );
+    let stubs = admitted.ir().native_unknowns("pvz").unwrap();
+    let [stub] = stubs.as_slice() else {
+        panic!("one stub: {stubs:?}");
+    };
+    assert!(given_up.message.contains(&format!("record={}", stub.id)));
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = PvzCodec
+        .decode(&mut Cursor::new(bytes.as_slice()), &options)
+        .expect_err("a pinned decode refuses a given-up exact stream");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().message, given_up.message);
 }
 
 #[test]
@@ -307,13 +341,19 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         RawEntry::stored("plate.ol", &plate_member()),
     ]);
     let result = decode(&bytes);
-    let malformed: Vec<_> = result
+    let (malformed, exact): (Vec<_>, Vec<_>) = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == record_unreadable_kind())
-        .collect();
+        .partition(|loss| loss.message.starts_with("part archive-entry "));
     assert_eq!(malformed.len(), 1);
+    assert!(
+        exact.iter().all(|loss| loss
+            .message
+            .starts_with("part ol-stream stream=\"pvz:plate.ol\" offset=")),
+        "{exact:?}"
+    );
     assert!(malformed[0]
         .message
         .starts_with("part archive-entry \"bracket.ol\" stream=\"\" offset="));
@@ -322,9 +362,14 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
     // §8.1: the root definition owns the three placements.
     assert_eq!(result.ir().model.occurrences.len(), 3);
     let stubs = result.ir().native_unknowns("pvz").unwrap();
-    let [stub] = stubs.as_slice() else {
-        panic!("one stub: {stubs:?}");
-    };
+    let stub = stubs
+        .iter()
+        .find(|stub| {
+            malformed[0]
+                .message
+                .contains(&format!("record={}", stub.id))
+        })
+        .expect("the stub of the member");
     let [link] = stub.links.as_slice() else {
         panic!("the stub links the definition that names the member");
     };
@@ -334,9 +379,6 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         .product_definitions
         .iter()
         .any(|definition| cadmpeg_ir::ids::Identity::from(definition.id.clone()) == *link));
-    assert!(malformed[0]
-        .message
-        .contains(&format!("record={}", stub.id)));
     let (_, _, fidelity) = result.into_parts();
     let retained = fidelity.retained_record(stub.id.as_str()).unwrap();
     assert_eq!(retained.data(), Some(b"not a bzip2 stream".as_slice()));

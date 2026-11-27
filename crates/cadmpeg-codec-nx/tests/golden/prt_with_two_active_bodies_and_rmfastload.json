@@ -4811,8 +4811,8 @@
         }
       },
       "tolerances": {
-        "angular": 1e-10,
-        "linear": 1e-6
+        "angular": 1e-11,
+        "linear": 0.00001
       },
       "units": {
         "angle": "radian",
@@ -6096,6 +6096,30 @@
             }
           },
           "message": "parasolid#1 FACE 349 states no loop on a plane, which no face covers whole: face nx:s1:face#349 is stated partial",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "body.resolution-unread",
+              "kind": "decode_diagnostic",
+              "namespace": "nx"
+            }
+          },
+          "message": "body nx:s0:body#2 stores no res_linear value the decoder reads; the part's linear tolerance excludes it",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "kind": "namespaced",
+            "value": {
+              "code": "body.resolution-unread",
+              "kind": "decode_diagnostic",
+              "namespace": "nx"
+            }
+          },
+          "message": "body nx:s1:body#2 stores no res_linear value the decoder reads; the part's linear tolerance excludes it",
           "severity": "warning"
         }
       ],

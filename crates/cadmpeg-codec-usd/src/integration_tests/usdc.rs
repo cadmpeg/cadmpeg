@@ -17,7 +17,7 @@ fn model(bytes: &[u8], name: &str) -> serde_json::Value {
     let result = UsdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap_or_else(|error| panic!("{name}: {error}"));
-    serde_json::json!({ "geometry": &result.ir().geometry, "model": &result.ir().model })
+    cadmpeg_core::json!({ "geometry": &result.ir().geometry, "model": &result.ir().model })
 }
 
 /// The text fixture a binary fixture `<stem>_<major>_<minor>_<patch>` was
@@ -108,8 +108,9 @@ fn a_written_package_reads_back() {
         .unwrap();
     let plan = cadmpeg_ir::codec::write::Encoder::plan(
         &UsdCodec,
-        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), None),
-        cadmpeg_ir::codec::write::target::TargetRequest::Explicit("usdz"),
+        cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), None).with_target(
+            cadmpeg_ir::codec::write::target::TargetRequest::Explicit("usdz"),
+        ),
     )
     .unwrap();
     let mut bytes = Vec::new();
@@ -124,9 +125,7 @@ fn a_written_package_reads_back() {
 /// the written layer reads back as `usda-1.0`.
 #[test]
 fn inherit_writes_an_off_catalog_source_as_the_default() {
-    use cadmpeg_ir::codec::write::target::{
-        target_loss_kind, TargetRequest, SOURCE_DIALECT_DISPLACED,
-    };
+    use cadmpeg_ir::codec::write::target::{target_loss_kind, SOURCE_DIALECT_DISPLACED};
     let (_, text) = inputs("usda")
         .into_iter()
         .find(|(name, _)| name == "sdf_legacy")
@@ -144,7 +143,6 @@ fn inherit_writes_an_off_catalog_source_as_the_default() {
     let plan = cadmpeg_ir::codec::write::Encoder::plan(
         &UsdCodec,
         cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), None),
-        TargetRequest::Inherit,
     )
     .expect("the source is written as the catalog default");
     assert_eq!(

@@ -1073,7 +1073,8 @@ Co 1001000 +2 0 *
     let view = &result.ir().model.view_presentations[0];
     assert!(view
         .object
-        .as_deref()
+        .as_ref()
+        .map(cadmpeg_ir::ids::Identity::as_str)
         .is_some_and(|id| id.ends_with("Shape")));
     assert_eq!(view.order, 0);
     assert_eq!(view.expanded, Some(true));

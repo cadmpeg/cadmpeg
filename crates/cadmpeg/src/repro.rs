@@ -86,7 +86,7 @@ pub(crate) fn check_fragment(
         findings,
         losses: Vec::new(),
     };
-    let body = serde_json::json!({"check_report": report});
+    let body = cadmpeg_core::json!({"check_report": report});
     let refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
         decode_report: None,
         validation: report.clone(),

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face sketches keep their attachment native unless the stored frame proves it.
 #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::projection::{face_sketch_bundle, stored_attachment};
 use crate::test_support::review::{decode, edit, validate, wire};

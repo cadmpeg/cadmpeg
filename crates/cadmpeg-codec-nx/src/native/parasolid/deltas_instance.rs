@@ -495,10 +495,10 @@ mod tests {
             let round_trip: ParasolidDeltasInstance = json::from_value(wire.clone()).unwrap();
             assert_eq!(round_trip, instance);
             for (key, value) in [
-                ("schema", serde_json::json!("missing")),
-                ("identity_offset", serde_json::json!(0)),
-                ("byte_len", serde_json::json!(1)),
-                ("stream_ordinal", serde_json::json!(2)),
+                ("schema", cadmpeg_core::json!("missing")),
+                ("identity_offset", cadmpeg_core::json!(0)),
+                ("byte_len", cadmpeg_core::json!(1)),
+                ("stream_ordinal", cadmpeg_core::json!(2)),
             ] {
                 let mut bad = wire.clone();
                 bad[key] = value;
@@ -512,7 +512,7 @@ mod tests {
                 assert!(value.validate(&schema).is_err());
             }
             let mut bad = wire.clone();
-            bad["fields"][0]["values"] = serde_json::json!([]);
+            bad["fields"][0]["values"] = cadmpeg_core::json!([]);
             assert!(json::from_value::<ParasolidDeltasInstance>(bad)
                 .unwrap()
                 .validate(&schema)

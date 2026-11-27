@@ -2535,7 +2535,67 @@ fn validate_features_with_raw(
         if matches!(
             definition,
             cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Loft { .. }
+                cadmpeg_ir::features::FeatureOperation::Loft { solid: false, .. }
+            )
+        ) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let matches = labels
+                .get(&(token, raw_feature.identity.record_ordinal))
+                .is_some_and(|label| {
+                    !crate::feature::loft_sweep::controls::wrapper_used_earlier(
+                        raw_feature,
+                        &data.pm_dc_features,
+                        |other| {
+                            extrusion_positions
+                                .get(&(
+                                    other.identity.segment_token.as_str(),
+                                    other.identity.record_ordinal,
+                                ))
+                                .copied()
+                        },
+                    ) && loft_index.as_ref().is_some_and(|index| {
+                        index.surface_matches(
+                            raw_feature,
+                            label,
+                            definition,
+                            |reference| {
+                                feature_properties
+                                    .get(&(token, reference.record_ordinal()?))?
+                                    .as_ref()
+                                    .copied()
+                            },
+                            |reference| {
+                                let parameter = feature_parameters
+                                    .get(&(token, reference.record_ordinal()?))?
+                                    .as_ref()?;
+                                let value = parameter_values
+                                    .get(parameter.id().as_str())?
+                                    .as_ref()?
+                                    .value
+                                    .as_ref()?;
+                                Some((*parameter, value))
+                            },
+                            |ordinal| {
+                                thicken_record_types
+                                    .get(&(token, ordinal))?
+                                    .as_ref()
+                                    .copied()
+                            },
+                        )
+                    })
+                });
+            if !matches {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor surface loft does not match its positional operands".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
+        if matches!(
+            definition,
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Loft { solid: true, .. }
             )
         ) {
             let token = raw_feature.identity.segment_token.as_str();

@@ -751,7 +751,7 @@ mod tests {
 
     #[test]
     fn field_cell_escapes_tab_and_compacts_arrays() {
-        assert_eq!(field_cell(&serde_json::json!("a\tb")), "a\\tb".to_owned());
-        assert_eq!(field_cell(&serde_json::json!([1, 2])), "[1,2]".to_owned());
+        assert_eq!(field_cell(&cadmpeg_core::json!("a\tb")), "a\\tb".to_owned());
+        assert_eq!(field_cell(&cadmpeg_core::json!([1, 2])), "[1,2]".to_owned());
     }
 }

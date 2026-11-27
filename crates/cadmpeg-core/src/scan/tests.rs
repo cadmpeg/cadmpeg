@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{DesignScan, FeatureCensus, Readability, StopReason};
-use serde_json::json;
+use crate::json;
 
 #[test]
 fn scan_optional_fields_omit_absence_and_reject_null() {
     let scan = DesignScan::new(None);
-    let value = serde_json::to_value(&scan).expect("scan serialization");
+    let value = crate::serde_erase::json::to_value(&scan).expect("scan serialization");
     for field in [
         "format",
         "source_version",
@@ -26,7 +26,7 @@ fn scan_optional_fields_omit_absence_and_reject_null() {
         scan
     );
     let census = FeatureCensus::default();
-    let mut value = serde_json::to_value(&census).expect("census serialization");
+    let mut value = crate::serde_erase::json::to_value(&census).expect("census serialization");
     assert!(value.get("total").is_none());
     assert_eq!(
         crate::serde_erase::json::from_value::<FeatureCensus>(value.clone())
@@ -54,7 +54,7 @@ fn scan_payload_enums_use_adjacent_wire_forms() {
         ),
     ] {
         assert_eq!(
-            serde_json::to_value(&value).expect("enum serialization"),
+            crate::serde_erase::json::to_value(&value).expect("enum serialization"),
             expected
         );
         assert_eq!(
@@ -79,7 +79,7 @@ fn scan_payload_enums_use_adjacent_wire_forms() {
         ),
     ] {
         assert_eq!(
-            serde_json::to_value(&value).expect("enum serialization"),
+            crate::serde_erase::json::to_value(&value).expect("enum serialization"),
             expected
         );
         assert_eq!(
@@ -96,7 +96,7 @@ where
 {
     let tag = json!({"kind": kind});
     assert_eq!(
-        serde_json::to_value(expected).expect("unit serialization"),
+        crate::serde_erase::json::to_value(expected).expect("unit serialization"),
         tag
     );
     assert_eq!(

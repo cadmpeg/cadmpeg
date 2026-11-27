@@ -187,6 +187,26 @@ pub(super) fn body_selections_overlap(first: &BodySelection, second: &BodySelect
         ) => any_overlap(first.as_slice(), &second.iter(), |first, second| {
             first == second
         }),
+        (
+            BodySelection::Occurrence {
+                occurrence: first_occurrence,
+                occurrence_path: first_path,
+                bodies: first,
+                ..
+            },
+            BodySelection::Occurrence {
+                occurrence: second_occurrence,
+                occurrence_path: second_path,
+                bodies: second,
+                ..
+            },
+        ) => {
+            first_occurrence == second_occurrence
+                && first_path == second_path
+                && any_overlap(first.as_slice(), &second.iter(), |first, second| {
+                    first.as_str() == second.as_str()
+                })
+        }
         _ => false,
     }
 }

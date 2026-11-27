@@ -98,16 +98,16 @@ mod tests {
             json::to_vec(&super::TransmitWire::from(state.clone())).unwrap()
         );
         let mut plain = json::to_value(&state).unwrap();
-        plain["schema"] = serde_json::json!("SCH_3501171_13006");
+        plain["schema"] = cadmpeg_core::json!("SCH_3501171_13006");
         assert!(json::from_value::<TransmitState>(plain).is_ok());
         let valid = json::to_value(&state).unwrap();
         for (field, value) in [
-            ("description", serde_json::json!("Transmit")),
-            ("description", serde_json::json!("(deltas)\n")),
-            ("schema", serde_json::json!("SCH_")),
-            ("schema", serde_json::json!("SCH_1!")),
-            ("maximum_node_type", serde_json::json!(0)),
-            ("user_field_size", serde_json::json!(17)),
+            ("description", cadmpeg_core::json!("Transmit")),
+            ("description", cadmpeg_core::json!("(deltas)\n")),
+            ("schema", cadmpeg_core::json!("SCH_")),
+            ("schema", cadmpeg_core::json!("SCH_1!")),
+            ("maximum_node_type", cadmpeg_core::json!(0)),
+            ("user_field_size", cadmpeg_core::json!(17)),
         ] {
             let mut wire = valid.clone();
             wire[field] = value;
@@ -135,7 +135,7 @@ mod tests {
                 id: "nx:parasolid:transmit-state#0",
                 state: &state,
             },
-            serde_json::json!({"id": "nx:parasolid:transmit-state#0",
+            cadmpeg_core::json!({"id": "nx:parasolid:transmit-state#0",
                 "description": "Transmit (deltas)", "schema": "SCH_3501171_35102_13006",
                 "maximum_node_type": 231, "user_field_size": 0}),
         );

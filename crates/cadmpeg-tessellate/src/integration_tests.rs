@@ -1818,3 +1818,31 @@ fn a_partial_face_has_no_mesh() {
     let other = cube.geometry.faces[1].id.clone();
     assert!(tessellator.face(&other).is_ok());
 }
+
+/// A tessellator within a write session evaluates under its refusals: once
+/// a ceiling of the session refuses, a face it meshes next is refused for
+/// that limit, and the same face meshes under the standard admission.
+#[test]
+fn a_write_session_refusal_refuses_the_faces_meshed_after_it() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_ir::eval::admission::EvaluationAdmission;
+
+    let cube = cadmpeg_ir::examples::unit_cube().unwrap();
+    let face = &cube.geometry.faces[0].id;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    assert!(ctx.charge_entities(1, "a record past the ceiling").is_err());
+    let refusal = Tessellator::new(&cube, Options::default())
+        .within(EvaluationAdmission::Write(&ctx))
+        .face(face)
+        .expect_err("the refused session refuses the face");
+    assert!(
+        refusal.to_string().contains("a record past the ceiling"),
+        "{refusal}"
+    );
+    assert!(Tessellator::new(&cube, Options::default())
+        .face(face)
+        .is_ok());
+}

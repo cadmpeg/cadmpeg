@@ -28,7 +28,16 @@ class Phrases(unittest.TestCase):
                  (6, "The `decoder_flags` byte at offset 9 is zero."),
                  (7, "A scope whose operand paths do not read keeps its frames."),
                  (8, "The earliest definition record defines the component.")]
-        self.assertEqual([number for number, _, _ in check.flagged(lines)], [1, 2, 3, 7, 8])
+        self.assertEqual([number for number, _, _ in check.flagged(lines, check.PHRASES)],
+                         [1, 2, 3, 7, 8])
+
+    def test_pronouns_match_by_case(self) -> None:
+        lines = [(1, "We store the angle in degrees."),
+                 (2, "The flag marks our frame."),
+                 (3, "A US-customary unit keeps its name."),
+                 (4, "The energy is wE times the factor.")]
+        for phrases in (check.PHRASES, check.CADIR_PHRASES):
+            self.assertEqual([number for number, _, _ in check.flagged(lines, phrases)], [1, 2])
 
 
 class SpecWordingCheck(harness.FixtureCase):
@@ -68,6 +77,28 @@ class SpecWordingCheck(harness.FixtureCase):
     def test_open_items_are_not_specs(self) -> None:
         self.repo.commit({"docs/formats/f3d-open-items.md": "# Open\n\nThe decoder reads 0.\n"})
         self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["PASS"])
+
+    def test_cadir_specification_warns_on_provenance(self) -> None:
+        self.repo.commit({"docs/cadir-v11.md": "# CADIR\n\nIn the corpus every scope stores a sketch.\n"})
+        results = harness.run_check(check, self.repo.context())
+        self.assertEqual(harness.statuses(results), ["WARN"])
+        self.assertIn("docs/cadir-v11.md:3: [corpus]", results[0].details[0])
+
+    def test_cadir_specification_states_decoder_contract(self) -> None:
+        self.repo.commit({"docs/cad-ir.md": "# IR\n\nThe decoder states each pick it reads.\n"})
+        results = harness.run_check(check, self.repo.context())
+        self.assertEqual(harness.statuses(results), ["PASS"])
+        self.assertEqual(results[0].summary, "1 specification(s): no behaviour or provenance wording")
+
+    def test_cadir_specification_progress_wording_warns(self) -> None:
+        self.repo.commit({"docs/cadir-v11.md": "# CADIR\n\nThe writer currently skips it.\n"})
+        self.assertEqual(harness.statuses(harness.run_check(check, self.repo.context())), ["WARN"])
+
+    def test_other_docs_are_not_specs(self) -> None:
+        self.repo.commit({"docs/cadir-v11-migration.md": "# Migration\n\nIn the corpus, for now.\n"})
+        results = harness.run_check(check, self.repo.context())
+        self.assertEqual(harness.statuses(results), ["PASS"])
+        self.assertEqual(results[0].summary, "no specification text changed")
 
 
 if __name__ == "__main__":

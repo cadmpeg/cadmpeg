@@ -5,6 +5,7 @@
 //! Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#ironcad-ics)).
 //! <!-- /generated: capability ironcad -->
 
+mod acis;
 mod container;
 mod decode;
 mod dialect;

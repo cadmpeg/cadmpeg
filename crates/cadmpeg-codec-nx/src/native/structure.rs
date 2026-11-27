@@ -997,7 +997,7 @@ mod tests {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = invalid.into();
             assert!(
-                json::from_value::<FastLoadOccurrences>(serde_json::json!([wire]))
+                json::from_value::<FastLoadOccurrences>(cadmpeg_core::json!([wire]))
                     .unwrap_err()
                     .to_string()
                     .contains(field)
@@ -1013,7 +1013,7 @@ mod tests {
         let group: FastLoadComponentObjectGroup = serde_json::from_str(json).unwrap();
         assert_eq!(json::to_string(&group).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
-        wire["object_uuid_values"] = serde_json::json!([]);
+        wire["object_uuid_values"] = cadmpeg_core::json!([]);
         assert!(json::from_value::<FastLoadComponentObjectGroup>(wire)
             .unwrap_err()
             .to_string()
