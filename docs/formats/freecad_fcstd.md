@@ -926,7 +926,10 @@ order, and a line before a circle. Where it reverses the order, it swaps `Refere
 `Reference2` and `Placement1` with `Placement2`; `Offset1`, `Offset2`, `Detach1`, and `Detach2`
 stay with their connector slots, and each connector is built from its slot's swapped reference and
 placement. A swapped placement holds the offset of the other slot: an attached connector's resolved
-frame is that placement with the other slot's offset removed and its own offset applied.
+frame is that placement with the other slot's offset removed and its own offset applied. The
+solver applies this exchange at each solve, and the document does not store it. An exchange of all
+four slot values that moves an unconnected reference to the second slot is stored, and the stored
+slot values already hold it.
 With `d` the stored `Distance` (zero where it is absent), and `r1` and `r2` the radii of the first
 and second ordered elements (the radius of a cylinder, a sphere, or a circle, and zero for other
 types), the joint is:
