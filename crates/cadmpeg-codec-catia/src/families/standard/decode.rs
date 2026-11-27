@@ -1740,11 +1740,15 @@ pub(in crate::families) fn try_decode_standard(
     Ok(Some(output))
 }
 
+fn is_standard_population_owned_id(id: &str) -> bool {
+    id.starts_with("catia:standard:") || id.starts_with("catia:consolidated:weighted-")
+}
+
 fn retain_standard_population_model(ir: &mut CadIr) {
     macro_rules! retain_standard {
         ($home:ident: $($field:ident),+ $(,)?) => {
             $(ir.$home.$field.retain(|entity| {
-                entity.identity().starts_with("catia:standard:")
+                is_standard_population_owned_id(entity.identity())
             });)+
         };
     }
@@ -1817,9 +1821,12 @@ fn merge_population_give_ups(
 }
 
 fn rescope_standard_id(text: &str, scope: &str) -> String {
-    match text.strip_prefix("catia:standard:") {
-        Some(rest) => format!("catia:standard:{scope}/{rest}"),
-        None => text.to_owned(),
+    if let Some(rest) = text.strip_prefix("catia:standard:") {
+        format!("catia:standard:{scope}/{rest}")
+    } else if let Some(rest) = text.strip_prefix("catia:consolidated:weighted-") {
+        format!("catia:consolidated:{scope}/weighted-{rest}")
+    } else {
+        text.to_owned()
     }
 }
 
@@ -1848,15 +1855,12 @@ fn merge_standard_population_annotations(
 ) -> Result<Result<(), cadmpeg_ir::annotations::AnnotationIdentityCollision>, CodecError> {
     // Only standard-owned entities survive retain_standard_population_model.
     // The first population retains the shared payload and other carriers.
-    let mut keep = |id: &str| id.starts_with("catia:standard:");
+    let mut keep = is_standard_population_owned_id;
     source.retain_provenance(&mut keep);
     let mut annotations = AnnotationBuilder::resume(source);
     annotations.retain_exactness(keep);
     source = annotations.build();
-    if let Err(collision) = source.map_ids(|id| match id.strip_prefix("catia:standard:") {
-        Some(rest) => Ok(format!("catia:standard:{scope}/{rest}")),
-        None => Ok(id.to_owned()),
-    })? {
+    if let Err(collision) = source.map_ids(|id| Ok(rescope_standard_id(id, scope)))? {
         return Ok(Err(collision));
     }
     Ok(target.append(source))
@@ -5196,6 +5200,7 @@ fn attach_standard_topology_inner(
                 return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
             }
         }
+        let directed_native_edge_tags: HashSet<u32> = native_edges.keys().copied().collect();
         for (&edge, &vertices) in consolidated_edge_vertices {
             native_edges.entry(edge).or_insert(vertices);
         }
@@ -5262,7 +5267,12 @@ fn attach_standard_topology_inner(
                 .enumerate()
                 .filter_map(|(edge, pair)| pair.as_ref().copied().map(|pair| (edge, pair)))
             {
-                if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                let merged = if directed_native_edge_tags.contains(&supports[edge].tag) {
+                    merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair)
+                } else {
+                    merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair)
+                };
+                if !merged {
                     return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
                 }
             }
@@ -6082,27 +6092,6 @@ fn attach_standard_topology_inner(
     } else if let Some(topology) = native_fbb_topology {
         let point_assignment = (0..ir.geometry.points.len()).collect::<Vec<_>>();
         (topology, point_assignment)
-    } else if let Some(topology) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
-        if has_open_face_domains {
-            return Ok(None);
-        }
-        if let Some(pairs) = native_endpoint_pairs.as_ref() {
-            fbb::parse_standard_endpoints_with_edge_classes(
-                ctx,
-                work_budget,
-                spine,
-                &edge_faces,
-                pairs,
-                Some(&edge_classes),
-            )
-        } else {
-            Ok(None)
-        }
-    })()
-    .map_err(StandardTopologyError::Codec)?
-    {
-        let point_assignment = (0..ir.geometry.points.len()).collect::<Vec<_>>();
-        (topology, point_assignment)
     } else if let Some(bound) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
         let Some(options) = constrained_endpoint_options.as_ref() else {
             return Ok(None);
@@ -6122,7 +6111,13 @@ fn attach_standard_topology_inner(
             })
             .collect::<Vec<_>>();
         let edge_direction_evidence = match native_endpoint_evidence.as_ref() {
-            Some(pairs) => pairs.iter().map(Option::is_some).collect::<Vec<_>>(),
+            Some(pairs) => pairs
+                .iter()
+                .enumerate()
+                .map(|(edge, pair)| {
+                    pair.is_some() && directed_native_edge_tags.contains(&supports[edge].tag)
+                })
+                .collect::<Vec<_>>(),
             None => ctx.alloc_filled(
                 supports.len(),
                 false,
@@ -6382,6 +6377,19 @@ fn attach_standard_topology_inner(
     } else if let Some(topology) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
         if has_open_face_domains {
             return Ok(None);
+        }
+        if let Some(pairs) = native_endpoint_pairs.as_ref() {
+            let candidate = fbb::parse_standard_endpoints_with_edge_classes(
+                ctx,
+                work_budget,
+                spine,
+                &edge_faces,
+                pairs,
+                Some(&edge_classes),
+            )?;
+            if candidate.is_some() {
+                return Ok(candidate);
+            }
         }
         let Some(options) = constrained_endpoint_options.as_ref() else {
             return Ok(None);
@@ -9908,6 +9916,27 @@ mod circle_axis_tests {
             super::RELAXED_STANDARD_SURFACE_POINT_TOLERANCE,
         )
         .expect("relaxed plane check rejects points outside bounds"));
+    }
+
+    #[test]
+    fn population_scope_retains_and_rescopes_weighted_pcurve_ids() {
+        assert!(super::is_standard_population_owned_id(
+            "catia:standard:coedge#1:0:0"
+        ));
+        assert!(super::is_standard_population_owned_id(
+            "catia:consolidated:weighted-pcurve#372"
+        ));
+        assert!(!super::is_standard_population_owned_id(
+            "catia:payload:unknown#brep-stream"
+        ));
+        assert_eq!(
+            super::rescope_standard_id("catia:standard:coedge#1:0:0", "population-1"),
+            "catia:standard:population-1/coedge#1:0:0"
+        );
+        assert_eq!(
+            super::rescope_standard_id("catia:consolidated:weighted-pcurve#372", "population-1"),
+            "catia:consolidated:population-1/weighted-pcurve#372"
+        );
     }
 }
 
