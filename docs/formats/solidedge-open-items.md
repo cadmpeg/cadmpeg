@@ -36,6 +36,6 @@
 
 **Question.** Which length unit do the tenth, hundredth and thousandth options (length codes 68, 69 and 70) divide?
 
-**Known.** The three options are length unit options and store codes 68, 69 and 70 in `DefaultDistancePrimary`.
+**Known.** The three options are length unit options and store codes 68, 69 and 70 in `DefaultDistancePrimary`. The option selection changes no stored geometry. The dimension value is the same length in metres under every option.
 
-**Need.** A part with a known edge length saved under each option, with the displayed value of that length.
+**Need.** The text that Solid Edge displays for a known length under each option, or a dimension text that includes the unit.
