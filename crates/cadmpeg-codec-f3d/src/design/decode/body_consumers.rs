@@ -91,7 +91,7 @@ pub(super) fn node_references(bytes: &[u8], frame: PrimaryRecordFrame) -> Option
     let record = bytes.get(frame.start..frame.member_end)?;
     let guid_end = fixed_guid_end(record, node_prefix::GUID_CODE_UNIT_COUNT)?;
     let mut cursor = guid_end.checked_add(2)?;
-    if !matches!(record.get(guid_end..cursor)?, [1, 0 | 1]) {
+    if !matches!(record.get(guid_end..cursor)?, [0 | 1, 0 | 1]) {
         return None;
     }
     let body = take_reference(record, &mut cursor)?.into_local()?.0;
