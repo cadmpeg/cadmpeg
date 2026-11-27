@@ -83,7 +83,7 @@ pub(crate) fn qualify(
 }
 
 /// The identity that [`qualify`] gives `source` under `namespace`.
-pub(crate) fn qualified_id(namespace: &str, source: &str) -> String {
+fn qualified_id(namespace: &str, source: &str) -> String {
     let prefix = format!("{ID_FORMAT}:");
     let suffix = source.strip_prefix(prefix.as_str()).unwrap_or(source);
     format!("{ID_FORMAT}:brep/{namespace}/{suffix}")

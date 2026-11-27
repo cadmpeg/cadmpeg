@@ -108,7 +108,8 @@ fn malformed_redirections_shapes_are_not_admitted_as_leaf_tables() {
     }
 }
 
-/// A malformed `ComponentReferenceData.json` gives up that entry alone.
+/// A malformed `ComponentReferenceData.json` gives up that entry alone, and
+/// the Redirections table decodes.
 #[test]
 fn malformed_component_reference_data_gives_up_its_own_entry() {
     let part = [("part.f3d", "aaaabbbb-cccc-dddd-eeee-ffff00001111")];
@@ -135,8 +136,53 @@ fn malformed_component_reference_data_gives_up_its_own_entry() {
                 .any(|loss| loss.code == unreadable
                     && loss.message.contains("RedirectionsStream.dat"))
         );
+        assert!(losses
+            .iter()
+            .all(|loss| loss.code != F3dLossCode::XrefTableUndecoded.kind()));
+        if depth == DecodeDepth::Full {
+            let references = &f3d_native(decoded.ir()).xref_references;
+            assert_eq!(references.len(), 1);
+            assert_eq!(references[0].relative_path.as_str(), "part.f3d");
+        }
     }
     crate::test_support::assert_pinned_refusal(document, head);
+}
+
+/// A Design stream whose metastream does not read binds no occurrence: the
+/// table keeps its reference unbound, and the metastream entry alone is
+/// unread.
+#[test]
+fn an_unreadable_design_metastream_keeps_the_table_and_names_its_own_entry() {
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let placement = occurrence_record_with_serializer_magic(
+        role,
+        10,
+        &[1],
+        None,
+        Some(crate::metastream::MODERN_SERIALIZER_MAGIC),
+    );
+    let document = document_with_streams(role, b"no metastream", &placement);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&document, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut unread = Vec::new();
+    let table = super::decode(&ctx, &scan, &mut unread)
+        .expect("the table decodes")
+        .expect("the document stores a table");
+    assert_eq!(table.references.len(), 1);
+    assert!(table.references[0].placement_source.is_none());
+    let sources = unread
+        .iter()
+        .map(|failure| failure.source.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        sources,
+        [super::XrefSource::Entry(
+            "FusionAssetName[Active]/Design1/MetaStream.dat".to_owned()
+        )]
+    );
 }
 
 #[test]
@@ -452,6 +498,22 @@ fn document_with_placement(role: &str, mut placement: Vec<u8>) -> Vec<u8> {
     for record in &records {
         placement[record.offset + 4..record.offset + 7].copy_from_slice(b"256");
     }
+    let meta = design_metastream_with_records(
+        &[(
+            super::OCCURRENCE_PLACEMENT_TYPE_GUID,
+            "",
+            2,
+            "Component",
+            &entities,
+        )],
+        &offsets,
+    );
+    document_with_streams(role, &meta, &placement)
+}
+
+/// A document whose table names `role` and whose Design segment stores
+/// `meta` and `bulk`.
+fn document_with_streams(role: &str, meta: &[u8], bulk: &[u8]) -> Vec<u8> {
     let properties =
         br#"{"docstruct":{"version":"1.0.0","type":"assembly-design","subtype":"synthetic","attributes":{}}}"#;
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -468,20 +530,10 @@ fn document_with_placement(role: &str, mut placement: Vec<u8>) -> Vec<u8> {
         .unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
-    zip.write_all(&design_metastream_with_records(
-        &[(
-            super::OCCURRENCE_PLACEMENT_TYPE_GUID,
-            "",
-            2,
-            "Component",
-            &entities,
-        )],
-        &offsets,
-    ))
-    .unwrap();
+    zip.write_all(meta).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
-    zip.write_all(&placement).unwrap();
+    zip.write_all(bulk).unwrap();
     zip.finish().unwrap().into_inner()
 }
 

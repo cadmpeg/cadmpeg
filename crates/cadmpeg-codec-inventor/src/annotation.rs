@@ -98,7 +98,8 @@ struct Joins {
     failed_sources: HashSet<u32>,
     /// The records outside the grammar that only annotations read, with why.
     malformed: Vec<(u32, &'static str)>,
-    /// The records outside the grammar that feature selections also read.
+    /// The tolerance-feature face selectors outside the annotation grammar
+    /// that the feature-operand grammar reads.
     shared_malformed: usize,
 }
 
@@ -204,7 +205,17 @@ impl Joins {
                         .or_default()
                         .push(selector),
                     Err(_) => {
-                        self.shared_malformed += 1;
+                        if matches!(
+                            crate::feature::face_selection::parse(ctx, payload, segment.version),
+                            Ok(Some(_))
+                        ) {
+                            self.shared_malformed += 1;
+                        } else {
+                            self.malformed.push((
+                                record_ordinal,
+                                "tolerance-feature face selector is outside the established grammar",
+                            ));
+                        }
                         if let Some(source) = state_offset
                             .checked_sub(4)
                             .and_then(|offset| View::u32_le_at(payload.window(), offset))
@@ -234,7 +245,10 @@ impl Joins {
                 Ok(table) => {
                     self.tables.insert(record_ordinal, table);
                 }
-                Err(_) => self.shared_malformed += 1,
+                Err(_) => self.malformed.push((
+                    record_ordinal,
+                    "annotation naming table is outside the established grammar",
+                )),
             },
             _ => {}
         }
@@ -286,6 +300,16 @@ pub(crate) struct Malformed {
     pub(crate) annotation: Option<PmiId>,
 }
 
+/// A dimension whose nominal parameter record carries no decoded parameter.
+/// The dimension leaves the document with that record when the record is
+/// given up, and is given up itself otherwise.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UndecodedNominal {
+    pub(crate) segment_token: String,
+    pub(crate) parameter: u32,
+    pub(crate) annotation: PmiId,
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Outcome {
     dimensions: usize,
@@ -294,9 +318,10 @@ struct Outcome {
     datum_systems_unresolved: usize,
     unresolved_targets: usize,
     malformed: Vec<Malformed>,
-    /// Records outside the annotation grammar that feature selections also
-    /// read.
+    /// Tolerance-feature face selectors outside the annotation grammar that
+    /// the feature-operand grammar reads.
     shared_malformed: usize,
+    nominals: Vec<UndecodedNominal>,
     tolerance_unresolved: usize,
 }
 
@@ -319,13 +344,19 @@ impl Outcome {
     }
 }
 
-/// Projects the part annotations into `ir`. Returns the losses and the
-/// annotation records outside the established grammar.
+/// The losses of a projection, the annotation records outside the
+/// established grammar, and the dimensions whose nominal parameter is not
+/// decoded.
+pub(crate) type Projected = (Vec<LossNote>, Vec<Malformed>, Vec<UndecodedNominal>);
+
+/// Projects the part annotations into `ir`. Returns the losses, the
+/// annotation records outside the established grammar, and the dimensions
+/// whose nominal parameter is not decoded.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     inputs: &Inputs<'_>,
     ir: &mut cadmpeg_ir::CadIr,
-) -> Result<(Vec<LossNote>, Vec<Malformed>), CodecError> {
+) -> Result<Projected, CodecError> {
     let names = BodyNames::new(ir);
     let mut outcome = Outcome::default();
     let mut annotations = Vec::new();
@@ -438,7 +469,7 @@ pub(crate) fn project(
         .pmi
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     let losses = losses(&outcome);
-    Ok((losses, outcome.malformed))
+    Ok((losses, outcome.malformed, outcome.nominals))
 }
 
 fn project_segment(
@@ -564,18 +595,20 @@ fn dimension(
             "dimension value is outside the established grammar",
         );
     };
-    let Some(&model_value) = scope.parameters.get(&value.nominal_parameter) else {
-        return refuse(
-            owner.value,
-            "dimension value names no decoded nominal parameter",
-        );
-    };
     if value.measure != measure.code() {
         return refuse(
             owner.value,
             "dimension value stores a measure other than that of its owner",
         );
     }
+    let Some(&model_value) = scope.parameters.get(&value.nominal_parameter) else {
+        outcome.nominals.push(UndecodedNominal {
+            segment_token: segment.token.clone(),
+            parameter: value.nominal_parameter,
+            annotation: annotation_id(segment, owner_ordinal)?,
+        });
+        return Ok(None);
+    };
     let kind = match measure {
         Measure::Linear => DimensionKind::Location,
         Measure::Angular => DimensionKind::Angular,
@@ -917,6 +950,7 @@ fn datums(
     let segment = scope.segment;
     let mut annotations = Vec::new();
     let mut ids = HashMap::new();
+    let mut unlabelled = Vec::new();
     let mut features: Vec<_> = segment
         .records
         .iter()
@@ -936,12 +970,7 @@ fn datums(
         };
         let id = annotation_id(segment, owner)?;
         let Some(owner_payload) = segment.record(owner, DATUM_OWNER) else {
-            outcome.refuse(
-                segment,
-                feature,
-                "datum feature names no datum owner",
-                Some(id),
-            );
+            outcome.refuse(segment, feature, "datum feature names no datum owner", None);
             continue;
         };
         let Ok(intent) = tolerance_owner(segment, owner_payload) else {
@@ -954,12 +983,7 @@ fn datums(
             continue;
         };
         if label.is_empty() {
-            outcome.refuse(
-                segment,
-                feature,
-                "datum feature has an empty label",
-                Some(id),
-            );
+            unlabelled.push((feature, id));
             continue;
         }
         let targets = owner_targets(scope, owner, intent.as_slice(), outcome);
@@ -976,6 +1000,15 @@ fn datums(
             native_options: NativeOptions::new(),
             source_settings: NativeOptions::new(),
         });
+    }
+    for (feature, id) in unlabelled {
+        let kept = annotations.iter().any(|annotation| annotation.id == id);
+        outcome.refuse(
+            segment,
+            feature,
+            "datum feature has an empty label",
+            (!kept).then_some(id),
+        );
     }
     Ok((annotations, ids))
 }

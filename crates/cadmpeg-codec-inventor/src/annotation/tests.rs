@@ -20,7 +20,10 @@ use super::records::{
     FRAME_ROW, GEOMETRY, GEOMETRY_LINK, HOLE_NOTE_OWNER, HOLE_VALUE, INTENT, LINEAR_OWNER,
     NAMING_TABLE, PARAMETER, PLANE, SIZE_RELATION, STYLE, TOLERANCE_FEATURE, VALUE,
 };
-use super::{fit, losses, project_segment, tolerance, Label, Malformed, Outcome, Selections};
+use super::{
+    fit, losses, project_segment, tolerance, Label, Malformed, Outcome, Selections,
+    UndecodedNominal,
+};
 use crate::loss::InventorLossCode;
 
 const VALUE_TOLERANCE: f64 = 1.0e-12;
@@ -499,15 +502,34 @@ fn measure_of_another_owner_kind_stays_native() {
 }
 
 #[test]
-fn a_dimension_without_a_decoded_nominal_gives_up_its_value_record() {
+fn a_dimension_without_a_decoded_nominal_is_given_up_and_its_value_record_is_not() {
     let mut fixture = Fixture::dimension(6, 0, 0.015, -0.015);
     fixture.parameters.remove(&NOMINAL_AT);
     let (annotations, outcome) = run(&fixture, OWNER_AT);
     assert!(annotations.is_empty());
+    assert!(refused(&outcome).is_empty());
     assert_eq!(
-        refused(&outcome),
-        [(VALUE_AT, Some(pmi(OWNER_AT).as_str()))]
+        outcome.nominals,
+        [UndecodedNominal {
+            segment_token: "segment".to_owned(),
+            parameter: NOMINAL_AT,
+            annotation: cadmpeg_ir::ids::PmiId::try_from(pmi(OWNER_AT)).expect("annotation id"),
+        }]
     );
+}
+
+#[test]
+fn a_malformed_naming_table_is_charged_by_its_record() {
+    let mut fixture = Fixture::dimension(6, 0, 0.015, -0.015);
+    fixture.put(
+        TABLE_AT,
+        NAMING_TABLE,
+        naming_table_record(&[(KEY, NAME_AT), (KEY, SECOND_NAME_AT)]),
+    );
+    let (annotations, outcome) = run(&fixture, OWNER_AT);
+    assert!(annotations[0].targets.is_empty());
+    assert_eq!(refused(&outcome), [(TABLE_AT, None)]);
+    assert_eq!(outcome.shared_malformed, 0);
 }
 
 #[test]
@@ -994,6 +1016,36 @@ fn a_datum_feature_with_an_empty_label_gives_up_the_feature_with_its_datum() {
 }
 
 #[test]
+fn an_empty_label_charge_names_no_datum_that_another_feature_keeps() {
+    let mut fixture = frame_fixture(9, 0);
+    fixture.put(
+        SECOND_DATUM_FEATURE_AT,
+        DATUM_FEATURE,
+        datum_feature_record(DATUM_OWNER_AT, ""),
+    );
+    let (annotations, outcome) = run(&fixture, FRAME_OWNER_AT);
+    assert!(annotations
+        .iter()
+        .any(|annotation| annotation.id.as_str() == pmi(DATUM_OWNER_AT)));
+    assert_eq!(refused(&outcome), [(SECOND_DATUM_FEATURE_AT, None)]);
+}
+
+#[test]
+fn a_datum_feature_that_names_a_frame_owner_names_no_annotation() {
+    let mut fixture = frame_fixture(9, 0);
+    fixture.put(
+        SECOND_DATUM_FEATURE_AT,
+        DATUM_FEATURE,
+        datum_feature_record(FRAME_OWNER_AT, "B"),
+    );
+    let (annotations, outcome) = run(&fixture, FRAME_OWNER_AT);
+    assert!(annotations
+        .iter()
+        .any(|annotation| annotation.id.as_str() == pmi(FRAME_OWNER_AT)));
+    assert_eq!(refused(&outcome), [(SECOND_DATUM_FEATURE_AT, None)]);
+}
+
+#[test]
 fn frame_row_length_follows_its_version() {
     let fixture = frame_fixture(9, 0);
     let segment = fixture.segment();
@@ -1434,6 +1486,30 @@ fn owner_listed_by_two_tolerance_features_gives_no_target() {
         resolved_feature_outcome().unresolved_targets + 1
     );
     assert!(has_note(&outcome, InventorLossCode::PmiTargetUnresolved));
+}
+
+#[test]
+fn a_tolerance_feature_face_selector_outside_both_grammars_is_charged_by_its_record() {
+    let mut fixture = feature_fixture(&FeatureRecord::new(&[ATTACHMENT_AT], Some(COLLECTION_AT)));
+    let mut selector = face_selector(FEATURE_SOURCE, 1, KEY);
+    let item_at = selector.len() - 4;
+    selector[item_at..].copy_from_slice(&qref(FACE_ITEM_AT).to_le_bytes());
+    selector[SELECTOR_ENABLED_AT] = 0;
+    fixture.put(FEATURE_SELECTOR_AT, FEATURE_FACE_SELECTOR, selector);
+    let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
+    assert!(targets.is_empty());
+    assert_eq!(refused(&outcome), [(FEATURE_SELECTOR_AT, None)]);
+    assert_eq!(outcome.shared_malformed, 0);
+}
+
+#[test]
+fn a_feature_operand_face_selector_outside_the_annotation_grammar_is_counted() {
+    let mut fixture = feature_fixture(&FeatureRecord::new(&[ATTACHMENT_AT], Some(COLLECTION_AT)));
+    fixture.put(BODY_AT, BODY, state_header(78));
+    let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
+    assert!(targets.is_empty());
+    assert!(refused(&outcome).is_empty());
+    assert_eq!(outcome.shared_malformed, 1);
 }
 
 #[test]

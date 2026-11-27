@@ -778,8 +778,9 @@ fn decode_container<'a>(
         UnresolvedDesign::default()
     };
     let mut malformed_annotations = Vec::new();
+    let mut undecoded_nominals = Vec::new();
     if delivered >= DecodeDepth::Geometry {
-        let (annotation_losses, malformed) = crate::annotation::project(
+        let (annotation_losses, malformed, nominals) = crate::annotation::project(
             ctx,
             &crate::annotation::Inputs {
                 rse: &container.rse,
@@ -791,6 +792,7 @@ fn decode_container<'a>(
         )?;
         losses.extend(annotation_losses);
         malformed_annotations = malformed;
+        undecoded_nominals = nominals;
     }
     let mut stored_body_losses = Vec::new();
     if delivered >= DecodeDepth::Design && !body_keys.is_empty() {
@@ -1212,7 +1214,7 @@ fn decode_container<'a>(
         give_up_annotation_records(
             ctx,
             container,
-            &malformed_annotations,
+            (&malformed_annotations, &undecoded_nominals),
             (&mut issue_records, &mut given_up),
             &mut losses,
         )?;
@@ -2150,11 +2152,16 @@ fn give_up_issue_records<'a>(
 
 /// Gives up each annotation record outside the established grammar that
 /// `named` does not hold yet, and drops each annotation that a record takes
-/// out of the document with the give-up of that record.
+/// out of the document with the give-up of that record. A dimension whose
+/// nominal parameter record `named` holds is dropped with that record; any
+/// other dimension of `nominals` is given up.
 fn give_up_annotation_records(
     ctx: &DecodeContext<'_>,
     container: &InventorContainer<'_>,
-    malformed: &[crate::annotation::Malformed],
+    (malformed, nominals): (
+        &[crate::annotation::Malformed],
+        &[crate::annotation::UndecodedNominal],
+    ),
     (named, parts): (
         &mut std::collections::BTreeSet<(String, u32)>,
         &mut Vec<GivenUpPart>,
@@ -2173,6 +2180,24 @@ fn give_up_annotation_records(
                 part,
                 CodecError::malformed(format_args!("{code}: {}", record.detail)),
             )?);
+        }
+    }
+    for nominal in nominals {
+        let token = nominal.segment_token.as_str();
+        if named.contains(&(token.to_owned(), nominal.parameter)) {
+            let part = rse_record_part(container, (token, nominal.parameter), ArenaClass::Design)?;
+            losses.push(dropped_with(&nominal.annotation, part.id()?));
+        } else {
+            losses.push(
+                GivenUpRecord::new(
+                    &nominal.annotation,
+                    format_args!(
+                        "{code}: the nominal parameter record {token}-{} of the dimension value carries no decoded parameter",
+                        nominal.parameter
+                    ),
+                )
+                .loss(),
+            );
         }
     }
     Ok(())
@@ -2333,7 +2358,8 @@ fn withheld_part<'a>(
         span,
         ArenaClass::Model,
     )?
-    .dropping(record.dropped.iter().cloned()))
+    .dropping(record.dropped.iter().cloned())
+    .marking(record.marked.iter().cloned()))
 }
 
 fn carrier_unknown_id(carrier: &crate::kernel::ActiveCarrier<'_>) -> UnknownId {

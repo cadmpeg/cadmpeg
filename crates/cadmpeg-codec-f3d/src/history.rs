@@ -218,10 +218,7 @@ pub(crate) fn decode(
     binding_work: &cadmpeg_core::decode::WorkBudget,
 ) -> Result<Option<AsmHistory>, HistoryFailure> {
     let framing = HistoryFraming::scan(bytes, stream);
-    let start = framing
-        .preamble_offset
-        .or_else(|| framing.delta_offsets.first().copied())
-        .unwrap_or(0);
+    let start = framing.partition_start().unwrap_or(0);
     decode_framed(
         ctx,
         bytes,
@@ -234,12 +231,18 @@ pub(crate) fn decode(
     .map_err(|error| HistoryFailure { start, error })
 }
 
+/// Where the ASM history partition of the BREP stream `bytes` starts: at
+/// the history preamble, or at the first `delta_state` record of a stream
+/// without one. `None` when the stream stores neither.
+pub(crate) fn partition_start(bytes: &[u8]) -> Option<usize> {
+    HistoryFraming::scan(bytes, "").partition_start()
+}
+
 /// An ASM history whose states do not read.
 #[derive(Debug)]
 pub(crate) struct HistoryFailure {
-    /// Where the history partition starts in its stream: at the history
-    /// preamble, or at the first `delta_state` record of a stream without
-    /// one.
+    /// Where the history partition starts in its stream, as
+    /// [`partition_start`] finds it.
     pub(crate) start: usize,
     pub(crate) error: cadmpeg_core::CodecError,
 }
@@ -417,6 +420,11 @@ impl HistoryFraming {
             history_id,
             delta_offsets,
         }
+    }
+
+    fn partition_start(&self) -> Option<usize> {
+        self.preamble_offset
+            .or_else(|| self.delta_offsets.first().copied())
     }
 
     fn into_history(

@@ -12,7 +12,7 @@ use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::ids::{Identity, ProductDefinitionId, UnknownId};
+use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::ExternalDocument;
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
@@ -328,13 +328,13 @@ fn acis_body(
     }
     let stream = format!("{BREP_DATA}/record-{ordinal}");
     let namespace = format!("record-{ordinal}");
-    let decoded = acis::decode(ctx, record.bytes, header, &stream).and_then(|mut decoded| {
-        let withheld = std::mem::take(&mut decoded.brep.withheld);
-        let brep = if qualify {
+    let decoded = acis::decode(ctx, record.bytes, header, &stream).and_then(|decoded| {
+        let mut brep = if qualify {
             acis::qualify(ctx, decoded.brep, &namespace)?
         } else {
             decoded.brep
         };
+        let withheld = std::mem::take(&mut brep.withheld);
         Ok((brep, withheld, decoded.reduced_records, decoded.unread))
     });
     let (brep, withheld, reduced, unread) = match decoded {
@@ -363,14 +363,7 @@ fn acis_body(
     }
     let retains = unread.is_some() || reduced > 0;
     let source = cadmpeg_ir::stream_name!("ironcad:").with_suffix(&stream);
-    for mut withheld in withheld {
-        if qualify {
-            withheld.dropped = withheld
-                .dropped
-                .iter()
-                .map(|id| Identity::new(acis::qualified_id(&namespace, id.as_str())))
-                .collect::<Result<_, _>>()?;
-        }
+    for withheld in withheld {
         let mut part = withheld
             .part(dialect::FORMAT, record.bytes.window())?
             .in_stream(source.clone());

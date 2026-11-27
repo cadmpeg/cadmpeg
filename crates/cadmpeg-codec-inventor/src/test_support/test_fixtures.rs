@@ -258,7 +258,7 @@ pub(crate) fn primary_envelope_fixture_with_drawing(
 
 /// A drawing envelope whose drawing segment stores the segment-pair,
 /// revision, and external-reference tables of `tables` in metadata
-/// sections 6, 7, and 9.
+/// sections 7, 8, and 10.
 pub(crate) fn primary_envelope_fixture_with_drawing_tables(
     kernel: &[u8],
     drawing: &[([u8; 16], Vec<u8>)],

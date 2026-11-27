@@ -6,20 +6,25 @@
 //! withheld; the embedding codec gives it up as a part over its own framed
 //! bytes (CADIR §3.3). Each part's dropped
 //! list names the neutral id the record would carry, so the decode wrapper
-//! drops or marks every record that references it, and, for a face, the loops
-//! and coedges that need it and never reached the B-rep.
+//! drops or marks every record that references it, and, for a face, the
+//! records reached only through its loops that never reached the B-rep. The
+//! shell of a withheld face states unstated members, and the face's part
+//! lists it as marked.
 
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{u64_from_index, ArenaClass};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::ids::{Identity, ShellId};
+use cadmpeg_ir::topology::Unstated;
 use cadmpeg_ir::unknown::part::Part;
 
+use super::attributes::unknown_record_id;
 use super::geometry::{
-    collect_carrier, is_coedge_record, is_edge_record, is_vertex_record, vertex_point_ref,
+    coedge_pcurve_ref, collect_carrier, is_analytic_curve, is_coedge_record, is_edge_record,
+    is_vertex_record, vertex_point_ref,
 };
-use super::topology::owned_child;
+use super::topology::{owned_child, subshell_ancestor_shells};
 use super::{id, AsmBrep, Reachable};
 use crate::ids::IdFormat;
 use crate::sab::Record;
@@ -41,11 +46,14 @@ pub struct WithheldRecord {
     /// The neutral id the record would carry, then the ids of the records
     /// that need it and never reached the B-rep.
     pub dropped: Vec<Identity>,
+    /// The emitted records that state unstated members because the record
+    /// is left out: the shell of a face.
+    pub marked: Vec<Identity>,
 }
 
 impl WithheldRecord {
     /// The part of `codec` over this record's bytes in `stream`, the ASM
-    /// bytes the decode read, naming the records it drops.
+    /// bytes the decode read, naming the records it drops and marks.
     ///
     /// # Errors
     ///
@@ -71,7 +79,8 @@ impl WithheldRecord {
             span,
             [ArenaClass::Model],
         )
-        .dropping(self.dropped.iter().cloned()))
+        .dropping(self.dropped.iter().cloned())
+        .marking(self.marked.iter().cloned()))
     }
 
     /// The error the part's give-up states.
@@ -83,7 +92,8 @@ impl WithheldRecord {
 
 /// Lists in `out.withheld` each record of `records` that the walk reached
 /// and no emit pass emitted, and each face that names a shell but no surface
-/// record.
+/// record. A record that one part names is named by no other part. The
+/// emitted shell of each listed face states unstated members.
 ///
 /// # Errors
 ///
@@ -104,9 +114,12 @@ pub(super) fn list_withheld(
         .chain(out.edges.iter().map(|record| record.id.as_str()))
         .chain(out.vertices.iter().map(|record| record.id.as_str()))
         .chain(out.points.iter().map(|record| record.id.as_str()))
+        .chain(out.curves.iter().map(|record| record.id.as_str()))
+        .chain(out.pcurves.iter().map(|record| record.id.as_str()))
         .chain(out.regions.iter().map(|record| record.id.as_str()))
         .map(str::to_owned)
         .collect::<HashSet<_>>();
+    let mut withheld = Vec::new();
     for r in records {
         let i = i64::try_from(r.index)
             .map_err(|_| CodecError::malformed("ASM record index exceeds the i64 range"))?;
@@ -114,16 +127,48 @@ pub(super) fn list_withheld(
         if emitted.contains(own.as_str()) {
             continue;
         }
-        let Some((kind, cause)) = withheld_cause(r, i, by_index, reach) else {
-            continue;
-        };
+        if let Some((kind, cause)) = withheld_cause(r, i, by_index, reach) {
+            withheld.push((r, kind, cause, own));
+        }
+    }
+    let mut named = withheld
+        .iter()
+        .map(|(.., own)| own.as_str().to_owned())
+        .collect::<HashSet<_>>();
+    let (shells, retained) = if withheld.iter().any(|(_, kind, ..)| *kind == "face") {
+        (
+            subshell_ancestor_shells(records, by_index)?,
+            out.unknowns
+                .iter()
+                .map(|record| record.id().as_str().to_owned())
+                .collect::<HashSet<_>>(),
+        )
+    } else {
+        (HashMap::new(), HashSet::new())
+    };
+    for (r, kind, cause, own) in withheld {
         let mut dropped = vec![own];
+        let mut marked = Vec::new();
         if kind == "face" {
-            dropped.extend(
-                face_children(r, by_index, format)
-                    .into_iter()
-                    .filter(|child| !emitted.contains(child.as_str())),
-            );
+            for (index, child) in face_children(r, by_index) {
+                let child_id = id(format, index);
+                if emitted.contains(child_id.as_str())
+                    || retained.contains(unknown_record_id(child, format)?.as_str())
+                {
+                    continue;
+                }
+                if named.insert(child_id.as_str().to_owned()) {
+                    dropped.push(child_id);
+                }
+            }
+            if let Some(owner) = r.ref_at(5) {
+                let shell = id(format, shells.get(&owner).copied().unwrap_or(owner));
+                let shell_id = ShellId::from(shell.clone());
+                if let Some(record) = out.shells.iter_mut().find(|record| record.id == shell_id) {
+                    record.unstated = Some(Unstated::Members);
+                    marked.push(shell);
+                }
+            }
         }
         out.withheld.push(WithheldRecord {
             kind,
@@ -131,6 +176,7 @@ pub(super) fn list_withheld(
             len: r.len,
             cause,
             dropped,
+            marked,
         });
     }
     Ok(())
@@ -215,39 +261,86 @@ fn withheld_cause(
     }
 }
 
-/// The loops of `face`'s loop chain that it owns, and the coedges of each
-/// loop's ring that the loop owns: the records that need the face.
-fn face_children(
+/// The loops of `face`'s loop chain that it owns, the coedges of each
+/// loop's ring that the loop owns, and each coedge's pcurve, edge, the
+/// edge's curve and vertices, and each vertex's point: the records the face
+/// reaches, with their indices.
+fn face_children<'record>(
     face: &Record,
-    by_index: &HashMap<i64, &Record>,
-    format: IdFormat,
-) -> Vec<Identity> {
-    let mut children = Vec::new();
-    let mut seen = HashSet::new();
+    by_index: &HashMap<i64, &'record Record>,
+) -> Vec<(i64, &'record Record)> {
+    let mut children = Children {
+        by_index,
+        reached: Vec::new(),
+        seen: HashSet::new(),
+    };
     let mut next_loop = face.ref_at(4);
     while let Some(loop_index) = next_loop {
         let Some(lp) = owned_child(by_index, loop_index, &["loop"], 5, face) else {
             break;
         };
-        if !seen.insert(loop_index) {
+        if !children.first_reach(loop_index, lp) {
             break;
         }
-        children.push(id(format, loop_index));
         let mut next_coedge = lp.ref_at(4);
         while let Some(coedge_index) = next_coedge {
             let Some(coedge) = owned_child(by_index, coedge_index, &["coedge", "tcoedge"], 8, lp)
             else {
                 break;
             };
-            if !seen.insert(coedge_index) {
+            if !children.first_reach(coedge_index, coedge) {
                 break;
             }
-            children.push(id(format, coedge_index));
+            children.reach(coedge_pcurve_ref(coedge), |record| {
+                record.head() == "pcurve"
+            });
+            if let Some(edge) = children.reach(coedge.ref_at(6), is_edge_record) {
+                children.reach(edge.ref_at(8), |record| {
+                    is_analytic_curve(record.head()) || record.head() == "intcurve"
+                });
+                for slot in [3, 5] {
+                    if let Some(vertex) = children.reach(edge.ref_at(slot), is_vertex_record) {
+                        children.reach(vertex_point_ref(vertex), |record| record.head() == "point");
+                    }
+                }
+            }
             next_coedge = coedge.ref_at(3);
         }
         next_loop = lp.ref_at(3);
     }
-    children
+    children.reached
+}
+
+/// The records a face walk reaches, each once.
+struct Children<'a, 'record> {
+    by_index: &'a HashMap<i64, &'record Record>,
+    reached: Vec<(i64, &'record Record)>,
+    seen: HashSet<i64>,
+}
+
+impl<'record> Children<'_, 'record> {
+    /// Lists `record` at `index` and returns whether the walk had not
+    /// reached it before.
+    fn first_reach(&mut self, index: i64, record: &'record Record) -> bool {
+        let first = self.seen.insert(index);
+        if first {
+            self.reached.push((index, record));
+        }
+        first
+    }
+
+    /// Lists the record that `index` names where it is of the `kind` the
+    /// reference needs, and returns it.
+    fn reach(&mut self, index: Option<i64>, kind: fn(&Record) -> bool) -> Option<&'record Record> {
+        let index = index?;
+        let record = self
+            .by_index
+            .get(&index)
+            .copied()
+            .filter(|record| kind(record))?;
+        self.first_reach(index, record);
+        Some(record)
+    }
 }
 
 #[cfg(test)]

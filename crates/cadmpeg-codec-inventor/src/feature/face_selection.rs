@@ -163,7 +163,7 @@ const EPS_CONE_RATIO: f64 = 1e-9;
 
 /// Parses a feature-operand face selector, or `None` for another selector
 /// form.
-pub(super) fn parse(
+pub(crate) fn parse(
     ctx: &DecodeContext<'_>,
     payload: View<'_>,
     version: u8,

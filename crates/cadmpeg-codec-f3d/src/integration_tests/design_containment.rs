@@ -80,6 +80,36 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
     assert_valid(&contained);
 }
 
+/// A design-intent failure gives up the history partition from where the
+/// history decode starts, the history preamble, as a failed history decode
+/// gives it up.
+#[test]
+fn a_design_intent_failure_gives_up_the_history_partition_from_its_preamble() {
+    let smbh = synthetic_geometry_with_history_smbh();
+    let start = crate::history::partition_start(&smbh).expect("the stream stores a history");
+    assert_ne!(
+        Some(start),
+        cadmpeg_asm::asm_header::solved_record_limit(&smbh)
+    );
+    inject_failure(malformed_design);
+    let contained = decode(design_archive());
+    let unreadable = cadmpeg_ir::unknown::part::record_unreadable_kind();
+    let parts = contained
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == unreadable && loss.message.starts_with("part asm-history "))
+        .collect::<Vec<_>>();
+    assert_eq!(parts.len(), 1, "{parts:#?}");
+    assert!(
+        parts[0]
+            .message
+            .contains(&format!(" offset={start} length={} ", smbh.len() - start)),
+        "{}",
+        parts[0].message
+    );
+}
+
 #[test]
 fn strict_mode_refuses_a_contained_design_intent_failure() {
     let mut options = DecodeOptions::default();

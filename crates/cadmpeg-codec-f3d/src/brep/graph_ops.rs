@@ -8,7 +8,7 @@ use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::ids::{BodyId, Identity};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart};
 use std::collections::{HashMap, HashSet};
@@ -333,7 +333,8 @@ impl Brep {
     /// Gives up each topology record the ASM decode of the BREP entry `entry`
     /// read and left out, as a part over the record's bytes in the entry's
     /// stream. The inflated entry bytes are retained in no other record, so
-    /// each part keeps them. `namespace` qualifies the ids the parts drop as
+    /// each part keeps them. A part marks only a shell the graph still
+    /// holds. `namespace` qualifies the ids the parts drop and mark as
     /// [`Brep::qualify_ids`] qualifies the graph's own.
     ///
     /// # Errors
@@ -347,25 +348,30 @@ impl Brep {
         entry: &str,
         namespace: Option<&str>,
     ) -> Result<Vec<GivenUpPart>, CodecError> {
-        let withheld = std::mem::take(&mut self.asm.withheld);
+        let mut withheld = std::mem::take(&mut self.asm.withheld);
         if withheld.is_empty() {
             return Ok(Vec::new());
+        }
+        for record in &mut withheld {
+            record.marked.retain(|marked| {
+                self.asm
+                    .shells
+                    .iter()
+                    .any(|shell| shell.id.as_str() == marked.as_str())
+            });
+        }
+        if let Some(namespace) = namespace {
+            let mut map =
+                IdentityMap::new(|source: &str| Ok(qualified_id(ID_FORMAT, namespace, source)));
+            let rewritten = withheld.rewrite_identities(ctx, &mut map);
+            map.finish()?;
+            withheld = rewritten?;
         }
         let bytes = scan.entry_bytes(entry)?;
         let stream = scan.entry_stream(entry)?;
         withheld
             .into_iter()
-            .map(|mut record| {
-                if let Some(namespace) = namespace {
-                    record.dropped = record
-                        .dropped
-                        .iter()
-                        .map(|id| {
-                            Identity::new(qualified_id(ID_FORMAT, namespace, id.as_str()))
-                                .map_err(CodecError::malformed)
-                        })
-                        .collect::<Result<_, _>>()?;
-                }
+            .map(|record| {
                 let part = record.part("f3d", bytes)?.in_stream(stream.clone());
                 ctx.give_up_part(part, record.error())
             })

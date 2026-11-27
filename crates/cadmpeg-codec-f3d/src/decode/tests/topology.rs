@@ -1491,33 +1491,13 @@ fn faces_with_missing_surface_references_are_given_up() {
             .filter(|record| record.head() == "face")
             .nth(1)
             .expect("second generated face");
-        let record_at = |index: i64| {
-            records
-                .iter()
-                .find(|record| i64::try_from(record.index) == Ok(index))
-                .expect("a referenced record")
-        };
-        // The face, then each loop of its chain followed by its coedge ring:
-        // the records that need the face.
-        let mut dropped = vec![i64::try_from(face.index).unwrap()];
-        let mut next_loop = face.ref_at(4);
-        while let Some(loop_index) = next_loop.filter(|index| !dropped.contains(index)) {
-            dropped.push(loop_index);
-            let lp = record_at(loop_index);
-            let mut next_coedge = lp.ref_at(4);
-            while let Some(coedge) = next_coedge.filter(|index| !dropped.contains(index)) {
-                dropped.push(coedge);
-                next_coedge = record_at(coedge).ref_at(3);
-            }
-            next_loop = lp.ref_at(3);
-        }
-        // The loss lists the dropped ids in their sort order.
-        let mut dropped = dropped
-            .iter()
+        // The face, its loop and coedges, and the edges, vertex and point
+        // that only its coedges reach, in their sort order. The shell that
+        // keeps the other face states unstated members.
+        let dropped = [13, 14, 15, 19, 20, 24, 28, 5, 7]
             .map(|index| format!("f3d:brep:entity#{index}"))
-            .collect::<Vec<_>>();
-        dropped.sort();
-        let dropped = dropped.join(", ");
+            .join(", ");
+        assert_eq!(face.index, 5);
         let head = format!(
             "part face stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset={} length={} ",
             face.offset, face.len
@@ -1538,6 +1518,18 @@ fn faces_with_missing_surface_references_are_given_up() {
             &dropped,
         );
         assert!(charge.message.contains(cause), "{}", charge.message);
+        assert!(
+            charge.message.contains("; marked=[f3d:brep:entity#3]"),
+            "{}",
+            charge.message
+        );
+        let shells = &result.ir().geometry.shells;
+        assert_eq!(shells.len(), 1);
+        assert_eq!(shells[0].id.as_str(), "f3d:brep:entity#3");
+        assert_eq!(
+            shells[0].unstated,
+            Some(cadmpeg_ir::topology::Unstated::Members)
+        );
         assert!(!result
             .report()
             .losses

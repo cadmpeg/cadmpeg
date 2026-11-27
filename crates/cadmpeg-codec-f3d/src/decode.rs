@@ -3693,8 +3693,9 @@ impl<'a> F3dDecodeSession<'a> {
 
     /// Gives up the sources phase 2 reads after it failed with `failure`:
     /// each Design stream and Design configuration entry as an archive
-    /// entry, and the history partition of each history BREP whose
-    /// solved-record boundary frames one, each holding Design content.
+    /// entry, and the history partition of each history BREP that stores
+    /// one, from where the history decode starts, each holding Design
+    /// content.
     fn give_up_design_sources(&mut self, failure: &str) -> Result<(), CodecError> {
         let error = || CodecError::malformed(format!("design intent was not decoded: {failure}"));
         let scan = self.scan;
@@ -3711,22 +3712,20 @@ impl<'a> F3dDecodeSession<'a> {
             }
         }
         for brep in container::history_breps(scan) {
-            let Some(limit) = brep
+            let bytes = scan.entry_bytes(&brep.name)?;
+            let empty = brep
                 .kernel
                 .as_ref()
                 .and_then(crate::container::KernelFraming::solved_record_limit)
-            else {
+                .is_some_and(|limit| bytes.get(limit..) == Some(EMPTY_HISTORY_TAIL.as_slice()));
+            let Some(start) = crate::history::partition_start(bytes).filter(|_| !empty) else {
                 continue;
             };
-            let bytes = scan.entry_bytes(&brep.name)?;
-            if bytes.get(limit..) == Some(EMPTY_HISTORY_TAIL.as_slice()) {
-                continue;
-            }
             self.given_up.push(scan.give_up_entry_span(
                 self.ctx,
                 &brep.name,
                 design_intent::HISTORY_PART,
-                limit..bytes.len(),
+                start..bytes.len(),
                 [ArenaClass::Design],
                 error(),
             )?);
@@ -4504,7 +4503,8 @@ fn decode_scanned_document<'a>(
             container_losses(scan, &ModelBrepOutcome::NotAttempted),
         )?;
         let mut given_up = Vec::new();
-        match crate::xref::decode(ctx, scan) {
+        let mut unread = Vec::new();
+        match crate::xref::decode(ctx, scan, &mut unread) {
             Ok(Some(table)) => {
                 apply_assembly_classification(ctx, &mut report, scan, &table, false)?;
             }
@@ -4518,6 +4518,9 @@ fn decode_scanned_document<'a>(
             Err(failure) => {
                 report_xref_parse_loss(ctx, scan, &mut report, &mut given_up, &failure)?;
             }
+        }
+        for failure in &unread {
+            given_up.extend(failure.give_up(ctx, scan)?);
         }
         return decode_result(
             ctx,
@@ -4602,6 +4605,25 @@ fn decode_scanned_document<'a>(
                 };
                 continue;
             };
+            let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
+            part.sketch_region_bodies_omitted = part.omit_sketch_region_bodies(
+                ctx,
+                selected_body_keys
+                    .get(blob_name)
+                    .map_or(0, std::collections::HashSet::len),
+            )?;
+            let no_bodies = part.sketch_region_bodies_omitted != 0 && part.asm.bodies.is_empty();
+            let holds_geometry = !part.asm.surfaces.is_empty()
+                || !part.asm.points.is_empty()
+                || !part.asm.faces.is_empty();
+            if let Some(keys) = selected_body_keys
+                .get(blob_name)
+                .filter(|_| !no_bodies && holds_geometry)
+            {
+                part.retain_body_keys(ctx, keys)?;
+            }
+            // The give-up follows the body selection, so that each shell it
+            // marks is a shell the document keeps.
             brep_given_up.extend(
                 part.give_up_withheld(
                     ctx,
@@ -4612,14 +4634,7 @@ fn decode_scanned_document<'a>(
                         .flatten(),
                 )?,
             );
-            let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
-            part.sketch_region_bodies_omitted = part.omit_sketch_region_bodies(
-                ctx,
-                selected_body_keys
-                    .get(blob_name)
-                    .map_or(0, std::collections::HashSet::len),
-            )?;
-            if part.sketch_region_bodies_omitted != 0 && part.asm.bodies.is_empty() {
+            if no_bodies {
                 if !matches!(brep_outcome, ModelBrepOutcome::Failed { .. }) {
                     brep_outcome = ModelBrepOutcome::NoPhysicalModel;
                 }
@@ -4631,15 +4646,6 @@ fn decode_scanned_document<'a>(
                 brep_outcome = ModelBrepOutcome::Empty {
                     stream: candidate.name.clone(),
                 };
-            }
-            if part.asm.surfaces.is_empty()
-                && part.asm.points.is_empty()
-                && part.asm.faces.is_empty()
-            {
-                continue;
-            }
-            if let Some(keys) = selected_body_keys.get(blob_name) {
-                part.retain_body_keys(ctx, keys)?;
             }
             if part.asm.surfaces.is_empty()
                 && part.asm.points.is_empty()

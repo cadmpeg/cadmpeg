@@ -310,7 +310,13 @@ pub(super) fn decode(
         unbound: design_unbound_component_naming_spaces,
     } = crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
-    let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
+    let mut xref_unread = Vec::new();
+    let xref = match crate::xref::decode_with_scopes(
+        ctx,
+        scan,
+        &design_parameter_scopes,
+        &mut xref_unread,
+    ) {
         Err(crate::xref::XrefFailure {
             error: error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_)),
             ..
@@ -319,6 +325,9 @@ pub(super) fn decode(
         }
         other => other,
     };
+    for failure in &xref_unread {
+        given_up.extend(failure.give_up(ctx, scan)?);
+    }
     let design_hidden_occurrences =
         crate::design::decode::hidden_occurrences::decode_hidden_occurrences(
             scan,
