@@ -30,6 +30,8 @@ pub(super) struct Timeline {
     pub(super) features: Vec<Feature>,
     /// The folders over runs of the members.
     pub(super) folders: Vec<Folder>,
+    /// The model feature of each folder node a folder states.
+    pub(super) folder_records: Vec<FeatureId>,
     /// The feature each member node's native record became.
     pub(super) features_by_record: HashMap<String, FeatureId>,
     /// The native records of the equations folders, whose dimensions are the
@@ -53,7 +55,11 @@ enum Step<'a> {
     /// Emit a node after the nodes under it.
     Emit(&'a records::Feature, bool),
     /// Close the folder whose first member is at `first`.
-    CloseFolder { first: usize, name: &'a str },
+    CloseFolder {
+        first: usize,
+        name: &'a str,
+        record: &'a str,
+    },
 }
 
 /// The timeline of every history, in history order.
@@ -93,6 +99,7 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                             stack.push(Step::CloseFolder {
                                 first: timeline.features.len(),
                                 name: &feature.name,
+                                record: &feature.id,
                             });
                         }
                         Some(FeatureTreeNodeRole::ModelOrigin) => {
@@ -136,7 +143,11 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                         native_ref: Some(feature.id.clone()),
                     });
                 }
-                Step::CloseFolder { first, name } => {
+                Step::CloseFolder {
+                    first,
+                    name,
+                    record,
+                } => {
                     let Some(last) = timeline.features.len().checked_sub(1) else {
                         continue;
                     };
@@ -153,6 +164,7 @@ pub(super) fn timeline(histories: &[FeatureHistory]) -> Result<Timeline, CodecEr
                         first: index(first)?,
                         last: index(last)?,
                     });
+                    timeline.folder_records.push(neutral_feature_id(record)?);
                 }
             }
         }

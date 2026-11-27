@@ -18,6 +18,7 @@ use cadmpeg_ir::design::feature::{
 };
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::CodecName;
+use cadmpeg_ir::design::projection::restated::{restate_features, Restater};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -153,6 +154,13 @@ pub(crate) fn project(
         current,
         unproduced: BTreeSet::new(),
     });
+    // A Body container restates the Body's tree node: its children as
+    // members and its `Tip` as the rollback (§5.2).
+    for (body, container) in &body_containers {
+        let by = Restater::Record(container.as_str().to_owned());
+        ir.model.restated_mut().record(body.as_str(), by, []);
+    }
+    restate_features(ir);
 }
 
 /// List as unproduced each body that a definition the scope spans owns and

@@ -21,6 +21,7 @@ use crate::unknown::part::record_unreadable_kind;
 use self::fields::{FeatureField, Field, ModelFeatureField, ModelParameterField, ParameterField};
 
 pub mod fields;
+pub mod restated;
 
 /// Runs `project`, the `codec` decoder's projection of the v11 design layer
 /// of `ir`, as one part.
@@ -28,8 +29,11 @@ pub mod fields;
 /// Where `project` fails with an error that does not end the session, `ir`
 /// holds the design records and product definitions it held before the
 /// projection, `losses` holds the losses it held before the projection and
-/// one `record.unreadable` that names the layer. The geometry and the model
-/// records stand.
+/// one `record.unreadable` that names the layer, and the model holds the
+/// restatements it held before the projection. The geometry and the model
+/// records stand. Where `project` succeeds, each design feature that
+/// restates a model feature under its identity states the fields it leaves
+/// out ([`restated::restate_features`]).
 ///
 /// # Errors
 ///
@@ -44,10 +48,12 @@ pub fn project_layer(
 ) -> Result<(), CodecError> {
     let design = ir.design.clone();
     let definitions = ir.model.product_definitions.clone();
+    let restated = ir.model.restated.clone();
     let reported = losses.len();
     if let Err(error) = ctx.run_part(|| project(ir, losses))? {
         ir.design = design;
         ir.model.product_definitions = definitions;
+        ir.model.restated = restated;
         losses.truncate(reported);
         losses.push(
             LossNote::new(
@@ -56,6 +62,8 @@ pub fn project_layer(
             )
             .with_severity(Severity::Error),
         );
+    } else {
+        restated::restate_features(ir);
     }
     Ok(())
 }
