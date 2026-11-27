@@ -80,6 +80,35 @@ pub(crate) fn select(topology: &Topology, keep: &BTreeSet<String>) -> Topology {
     selected
 }
 
+/// The records of `state` that `base` does not hold with equal content, and a
+/// reference to each record of `base` whose id `state` does not hold, each in
+/// arena order.
+pub(crate) fn difference(state: &Topology, base: &Topology) -> (Topology, Vec<RecordRef>) {
+    let mut records = Topology::default();
+    let mut removed = Vec::new();
+    macro_rules! differ {
+        ($($field:ident $arm:ident),*) => {
+            $(
+                let held: BTreeMap<&str, _> = base.$field.iter()
+                    .map(|record| (record.record_identity(), record))
+                    .collect();
+                let kept: BTreeSet<&str> = state.$field.iter()
+                    .map(|record| record.record_identity())
+                    .collect();
+                records.$field = state.$field.iter()
+                    .filter(|record| held.get(record.record_identity()) != Some(record))
+                    .cloned()
+                    .collect();
+                removed.extend(base.$field.iter()
+                    .filter(|record| !kept.contains(record.record_identity()))
+                    .map(|record| RecordRef::$arm(record.id.clone())));
+            )*
+        };
+    }
+    topology_arenas!(differ);
+    (records, removed)
+}
+
 /// Removes the records whose ids `drop` holds.
 pub(super) fn remove(topology: &mut Topology, drop: &BTreeSet<String>) {
     macro_rules! retain {
