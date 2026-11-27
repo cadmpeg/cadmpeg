@@ -147,7 +147,7 @@ impl StateResolutionError {
     pub fn resource_limit(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
         match self {
             Self::ChainDepthExceeded { limit } => {
-                crate::validate::state_chain_refusal(*limit, limit.saturating_add(1))
+                crate::validate::state_chain_refusal(*limit, limit.checked_add(1)?)
             }
             _ => None,
         }

@@ -158,19 +158,14 @@ fn retained_utf16_document_envelope_uses_the_shared_recognizer_and_patcher() {
     }
 
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    assert!(
-        container::first_solidworks_envelope(&ctx, [payload.as_slice()])
-            .unwrap()
-            .is_some()
-    );
+    let read = |bytes: &[u8]| container::first_solidworks_envelope(&ctx, [bytes]).unwrap();
+    assert!(read(&payload).is_some());
     let patched =
         with_ctx(|ctx| super::super::patch_active_configuration_xml(ctx, &payload, "New"))
             .unwrap()
             .unwrap()
             .expect("the UTF-16 envelope is recognized");
-    let envelope = container::first_solidworks_envelope(&ctx, [patched.as_slice()])
-        .unwrap()
-        .expect("the rewritten envelope remains recognizable");
+    let envelope = read(&patched).expect("the rewritten envelope remains recognizable");
     assert_eq!(envelope.sw_version.as_deref(), Some("34000"));
     assert_eq!(envelope.configuration_name.as_deref(), Some("New"));
 }
