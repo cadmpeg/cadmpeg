@@ -620,7 +620,7 @@ fn a_name_of_a_lost_feature_keeps_its_native_name_or_is_released() {
 }
 
 #[test]
-fn a_native_record_that_names_a_lost_record_is_dropped() {
+fn a_native_record_that_states_a_lost_id_is_kept() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let point = ir.geometry.points[0].id.as_str().to_owned();
     let native = "test:native:mark#1";
@@ -634,8 +634,9 @@ fn a_native_record_that_names_a_lost_record_is_dropped() {
         .set_arena_records("marks", vec![record])
         .unwrap();
     let (outcome, _) = run(&mut ir, seed("geometry", "points", &point));
-    assert!(outcome.dropped.contains(native));
-    assert!(!holds(&ir, native));
+    assert!(!outcome.dropped.contains(native));
+    assert!(!outcome.marked.contains(native));
+    assert!(holds(&ir, native));
     assert_closed(&ir, &point, &outcome);
 }
 

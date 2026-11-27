@@ -1895,3 +1895,69 @@ fn a_surface_whose_source_object_equals_a_charged_id_is_kept() {
         Some("test:file:surface#7")
     );
 }
+
+/// An appearance binding of `target`, an `AppearanceTarget` in its wire
+/// form.
+fn binding_on(target: &serde_json::Value) -> crate::appearance::AppearanceBinding {
+    json::from_value(cadmpeg_core::json!({
+        "id": "test:model:appearance-binding#1",
+        "target": {"entity": target},
+        "appearance": "test:model:appearance#1",
+        "channels": {}
+    }))
+    .unwrap()
+}
+
+/// Asserts that the decode left no appearance binding and that the one
+/// charge names the binding among the records it dropped.
+#[track_caller]
+fn assert_binding_dropped(result: &DecodeResult) {
+    assert!(result.ir().model.appearance_bindings.is_empty());
+    let unreadable = crate::unknown::part::record_unreadable_kind();
+    let [charge] = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == unreadable)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("one charge: {:?}", result.report().losses);
+    };
+    let (_, dropped) = crate::unknown::part::charged(charge).expect("a charge");
+    assert!(
+        dropped
+            .iter()
+            .any(|id| id == "test:model:appearance-binding#1"),
+        "{charge:?}"
+    );
+}
+
+/// An appearance on a tessellation names it by its id: the decode drops the
+/// binding of a tessellation the decoder gave up (§3.3).
+#[test]
+fn a_binding_on_a_charged_tessellation_is_dropped() {
+    fn bound(ir: &mut CadIr) {
+        ir.model.appearance_bindings = vec![binding_on(&cadmpeg_core::json!(
+            {"kind": "tessellation", "value": "test:model:tessellation#9"}
+        ))];
+    }
+    assert_binding_dropped(&decode_charging(&ChargesLabelCodec(
+        bound,
+        "test:model:tessellation#9",
+    )));
+}
+
+/// A `Record` target names its record by its id: the decode drops the
+/// binding of a record the decoder gave up (§3.3).
+#[test]
+fn a_binding_on_a_charged_record_is_dropped() {
+    fn bound(ir: &mut CadIr) {
+        ir.model.appearance_bindings = vec![binding_on(&cadmpeg_core::json!(
+            {"kind": "record", "value": {"arena": "point_clouds", "id": "test:model:cloud#9"}}
+        ))];
+    }
+    assert_binding_dropped(&decode_charging(&ChargesLabelCodec(
+        bound,
+        "test:model:cloud#9",
+    )));
+}

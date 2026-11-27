@@ -448,7 +448,7 @@ fn authored_uniform_appearance_binds_every_box_edge_and_vertex() {
         panic!("one authored box view presentation");
     };
     assert_eq!(
-        view.object.as_deref(),
+        view.object.as_ref().map(cadmpeg_ir::ids::Identity::as_str),
         Some(crate::native::native_id("object", BOX_OBJECT).as_str())
     );
     assert_eq!(
