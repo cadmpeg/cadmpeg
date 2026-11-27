@@ -8,6 +8,7 @@ use std::f64::consts::PI;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::units::{Quantity, Unit as IrUnit, UnitFactor, UnitSymbol};
 
+mod c_number;
 pub(in crate::design) mod formula;
 
 /// What a cell's content states.
@@ -53,16 +54,11 @@ pub(super) fn read(content: &str) -> CellContent<'_> {
     if let Some(text) = content.strip_prefix('\'') {
         return CellContent::Text(text);
     }
-    if content.is_empty() {
-        return CellContent::Text(content);
-    }
-    let trimmed = content
-        .trim_start_matches([' ', '\t', '\n', '\r', '\u{000b}', '\u{000c}'])
-        .trim_end_matches([' ', '\t', '\n', '\r']);
-    if trimmed.is_empty() && content.contains(['\u{000b}', '\u{000c}']) {
-        return CellContent::Text(content);
-    }
-    if let Some(number) = c_number(trimmed) {
+    let (prefix, number) = c_number::read(content);
+    if let Some(number) = number {
+        if formula::producer_number(number).is_none() {
+            return CellContent::Unmodeled;
+        }
         return CellContent::Value(CellValue {
             number,
             kind: CellKind::Quantity(Quantity::REAL),
@@ -71,80 +67,21 @@ pub(super) fn read(content: &str) -> CellContent<'_> {
             freecad_number: Some(number),
         });
     }
-    value(trimmed).unwrap_or(CellContent::Text(content))
-}
-
-/// `text` as C's `strtod` reads a whole number: a decimal, a hexadecimal
-/// such as `0x1.8p1`, an infinity, or a NaN.
-fn c_number(text: &str) -> Option<f64> {
-    if text.is_empty() {
-        return Some(0.0);
+    if prefix {
+        return match formula::parse(content) {
+            Ok(node) => expression_value(&node).unwrap_or(CellContent::Text(content)),
+            Err(formula::Unparsed::Syntax) => CellContent::Text(content),
+            Err(formula::Unparsed::Limit) => CellContent::Unmodeled,
+        };
     }
-    let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
-    if unsigned.eq_ignore_ascii_case("inf") || unsigned.eq_ignore_ascii_case("infinity") {
-        return text.parse().ok();
-    }
-    if unsigned.eq_ignore_ascii_case("nan")
-        || unsigned
-            .get(..4)
-            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("nan("))
-            && unsigned[4..].strip_suffix(')').is_some_and(|payload| {
-                payload
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-            })
-    {
-        return Some(f64::NAN);
-    }
-    text.parse()
-        .ok()
-        .filter(|number| !decimal_out_of_range(text, *number))
-        .or_else(|| hexadecimal(text).filter(|number| number.is_finite()))
-}
-
-fn decimal_out_of_range(text: &str, number: f64) -> bool {
-    !number.is_finite()
-        || number == 0.0
-            && text
-                .split(['e', 'E'])
-                .next()
-                .is_some_and(|mantissa| mantissa.bytes().any(|byte| matches!(byte, b'1'..=b'9')))
-}
-
-fn hexadecimal(text: &str) -> Option<f64> {
-    let (negative, unsigned) = match text.as_bytes().first() {
-        Some(b'-') => (true, &text[1..]),
-        Some(b'+') => (false, &text[1..]),
-        _ => (false, text),
-    };
-    let digits = unsigned
-        .strip_prefix("0x")
-        .or_else(|| unsigned.strip_prefix("0X"))?;
-    let (mantissa, exponent) = match digits.split_once(['p', 'P']) {
-        Some((mantissa, exponent)) => (mantissa, exponent.parse::<i32>().ok()?),
-        None => (digits, 0),
-    };
-    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
-    if whole.is_empty() && fraction.is_empty() {
-        return None;
-    }
-    let mut value = 0.0_f64;
-    for digit in whole.chars().chain(fraction.chars()) {
-        value = value * 16.0 + f64::from(digit.to_digit(16)?);
-    }
-    let shift = i32::try_from(fraction.len()).ok()?.checked_mul(4)?;
-    let value = value * 2.0_f64.powi(exponent.checked_sub(shift)?);
-    Some(if negative { -value } else { value })
+    CellContent::Text(content)
 }
 
 /// The unit `text` names, where its quantity is one of length, mass, angle,
 /// and time and each of its words has a `UnitSymbol`.
 pub(super) fn neutral_unit(text: &str) -> Option<(Quantity, IrUnit)> {
-    let mut cursor = Cursor { text, at: 0 };
-    cursor.skip_space();
-    let unit = cursor.unit_expression()?;
-    cursor.skip_space();
-    if !cursor.done() || unit.state != UnitState::Known {
+    let unit = formula::parse_unit(text)?;
+    if unit.state != UnitState::Known {
         return None;
     }
     let quantity = unit.dimensions().quantity()?;
@@ -170,22 +107,29 @@ fn quantity_literal(text: &str) -> Option<(f64, Dimensions)> {
     {
         return None;
     }
-    let mut cursor = Cursor { text, at: 0 };
-    if cursor.done() {
+    if text.is_empty() {
         return Some((f64::MIN_POSITIVE, Dimensions::REAL));
     }
-    let negative = cursor.eat('-') || cursor.eat('\u{2212}');
-    cursor.skip_space();
-    let number = cursor.number();
-    cursor.skip_space();
-    if cursor.done() {
-        let number = number?;
-        return Some((if negative { -number } else { number }, Dimensions::REAL));
+    let unsigned = text.strip_prefix(['-', '\u{2212}']);
+    let negative = unsigned.is_some();
+    let text = unsigned
+        .unwrap_or(text)
+        .trim_start_matches([' ', '\t', '\n']);
+    let (number, word) = formula::number_prefix(text).map_or((None, text), |(value, end)| {
+        (
+            Some(value),
+            text[end..].trim_start_matches([' ', '\t', '\n']),
+        )
+    });
+    if word.is_empty() {
+        return Some((
+            number? * if negative { -1.0 } else { 1.0 },
+            Dimensions::REAL,
+        ));
     }
     if negative && number.is_none() {
         return None;
     }
-    let word = &cursor.text[cursor.at..];
     // These spellings include both base and derived units of the quantity
     // lexer. Its grammar and the expression grammar differ on compounds.
     if !matches!(
@@ -238,32 +182,51 @@ fn quantity_literal(text: &str) -> Option<(f64, Dimensions)> {
     Some((if negative { -number } else { number }, unit.dimensions()))
 }
 
-/// `NUM [UNIT] [/ (NUM [UNIT] | UNIT)]`, the forms `FreeCAD` takes as a
-/// value: a number with a unit, and a division whose numerator is a number
-/// or a number with a unit.
-fn value(text: &str) -> Option<CellContent<'_>> {
-    let mut cursor = Cursor { text, at: 0 };
-    let numerator = cursor.term()?;
-    cursor.skip_space();
-    let denominator = if cursor.eat('/') {
-        cursor.skip_space();
-        Some(match cursor.term() {
-            Some(term) => term,
-            None => (1.0, Some(cursor.unit().filter(|unit| !unit.compound)?)),
-        })
-    } else {
-        None
+/// Apply the raw-cell AST admission in Spreadsheet/App/Cell.cpp:336–381.
+fn expression_value<'a>(node: &formula::Node<'a>) -> Option<CellContent<'a>> {
+    use formula::{Node, Operator};
+    let (numerator, denominator) = match ungroup(node) {
+        Node::Binary {
+            op: Operator::Divide,
+            left,
+            right,
+        } => {
+            let denominator = match ungroup(right) {
+                Node::Unit(unit) if !unit.compound => (1.0, Some(unit)),
+                right => number_term(right)?,
+            };
+            (number_term(left)?, Some(denominator))
+        }
+        node => {
+            let numerator = number_term(node)?;
+            if numerator.1.is_some_and(|unit| unit.compound) {
+                return None;
+            }
+            (numerator, None)
+        }
     };
-    cursor.skip_space();
-    if !cursor.done()
-        || denominator.is_none() && numerator.1.as_ref().is_some_and(|unit| unit.compound)
+    let numerator_node = match ungroup(node) {
+        Node::Binary { left, .. } => ungroup(left),
+        node => node,
+    };
+    let denominator_node = match ungroup(node) {
+        Node::Binary { right, .. } => Some(ungroup(right)),
+        _ => None,
+    };
+    if matches!(numerator_node, Node::Constant { name: "None", .. })
+        || matches!(denominator_node, Some(Node::Constant { name: "None", .. }))
     {
-        return None;
+        return Some(CellContent::Error);
+    }
+    if formula::producer_number(numerator.0).is_none()
+        || denominator.is_some_and(|(number, _)| formula::producer_number(number).is_none())
+    {
+        return Some(CellContent::Unmodeled);
     }
     let one = Unit::one();
-    let (top, top_unit) = (numerator.0, numerator.1.as_ref().unwrap_or(&one));
+    let (top, top_unit) = (numerator.0, numerator.1.unwrap_or(&one));
     let (bottom, bottom_unit) = denominator.as_ref().map_or((1.0, &one), |(number, unit)| {
-        (*number, unit.as_ref().unwrap_or(&one))
+        (*number, unit.unwrap_or(&one))
     });
     if numerator.1.is_none()
         && denominator.as_ref().is_some_and(|(_, unit)| unit.is_none())
@@ -305,10 +268,10 @@ fn value(text: &str) -> Option<CellContent<'_>> {
     let neutral = number
         .is_finite()
         .then(|| {
-            let top = spell(numerator.0, numerator.1.as_ref())?;
+            let top = spell(numerator.0, numerator.1)?;
             match &denominator {
                 None => Some(top),
-                Some((number, unit)) => Some(format!("{top} / {}", spell(*number, unit.as_ref())?)),
+                Some((number, unit)) => Some(format!("{top} / {}", spell(*number, *unit)?)),
             }
         })
         .flatten();
@@ -319,6 +282,44 @@ fn value(text: &str) -> Option<CellContent<'_>> {
         dimensions,
         freecad_number,
     }))
+}
+
+fn ungroup<'n, 'a>(mut node: &'n formula::Node<'a>) -> &'n formula::Node<'a> {
+    while let formula::Node::Group(inner) = node {
+        node = inner;
+    }
+    node
+}
+
+fn number_term<'n>(node: &'n formula::Node<'_>) -> Option<(f64, Option<&'n Unit>)> {
+    match ungroup(node) {
+        formula::Node::Number { number, unit, .. } => Some((*number, unit.as_ref())),
+        formula::Node::Constant { value, unit, .. } => Some((*value, unit.as_ref())),
+        _ => None,
+    }
+}
+
+/// A stored formula whose whole expression is a numeric literal, for the
+/// legacy scalar cache. The expression lexer also validates this carrier.
+pub(super) fn formula_literal(text: &str) -> Option<(Quantity, f64)> {
+    use formula::Node;
+    let node = formula::parse(text).ok()?;
+    let (node, sign) = match ungroup(&node) {
+        Node::Negate(node) => (node.as_ref(), -1.0),
+        Node::Plus(node) => (node.as_ref(), 1.0),
+        node => (node, 1.0),
+    };
+    let Node::Number { number, unit, .. } = ungroup(node) else {
+        return None;
+    };
+    let number = formula::producer_number(*number)?;
+    unit.as_ref()
+        .map_or(Some((Quantity::REAL, sign * number)), |unit| {
+            if unit.state != UnitState::Known {
+                return None;
+            }
+            Some((unit.dimensions().quantity()?, sign * number * unit.scale))
+        })
 }
 
 /// A unit as `FreeCAD` writes it: its exponents of length, mass, angle, and
@@ -508,161 +509,6 @@ impl Unit {
     }
 }
 
-struct Cursor<'a> {
-    text: &'a str,
-    at: usize,
-}
-
-impl Cursor<'_> {
-    fn peek(&self) -> Option<char> {
-        self.text[self.at..].chars().next()
-    }
-
-    fn done(&self) -> bool {
-        self.at == self.text.len()
-    }
-
-    fn eat(&mut self, expected: char) -> bool {
-        let found = self.peek() == Some(expected);
-        if found {
-            self.at += expected.len_utf8();
-        }
-        found
-    }
-
-    fn skip_space(&mut self) {
-        while self.peek().is_some_and(char::is_whitespace) {
-            self.at += self.peek().map_or(0, char::len_utf8);
-        }
-    }
-
-    fn digits(&mut self) -> usize {
-        let start = self.at;
-        while self.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-            self.at += 1;
-        }
-        self.at - start
-    }
-
-    /// A number as `FreeCAD`'s expression lexer reads one: `d*[.,]d+(e[+-]?d+)?`,
-    /// `d+e[+-]?d+`, or `d+`.
-    fn number(&mut self) -> Option<f64> {
-        let start = self.at;
-        let whole = self.digits();
-        let rest = &self.text.as_bytes()[self.at..];
-        if matches!(rest, [b'.' | b',', next, ..] if next.is_ascii_digit()) {
-            self.at += 1;
-            self.digits();
-        } else if whole == 0 {
-            self.at = start;
-            return None;
-        }
-        let rest = &self.text.as_bytes()[self.at..];
-        let exponent = match rest {
-            [b'e' | b'E', next, ..] if next.is_ascii_digit() => 1,
-            [b'e' | b'E', b'+' | b'-', next, ..] if next.is_ascii_digit() => 2,
-            _ => 0,
-        };
-        if exponent > 0 {
-            self.at += exponent;
-            self.digits();
-        }
-        self.text[start..self.at].replace(',', ".").parse().ok()
-    }
-
-    /// A number and the unit that follows it.
-    fn term(&mut self) -> Option<(f64, Option<Unit>)> {
-        let start = self.at;
-        let number = self.number()?;
-        if decimal_out_of_range(&self.text[start..self.at], number) {
-            self.at = start;
-            return None;
-        }
-        let before = self.at;
-        self.skip_space();
-        let unit = self.unit();
-        if unit.is_none() {
-            self.at = before;
-        }
-        Some((number, unit))
-    }
-
-    /// A unit word, or a parenthesized unit expression, with an optional
-    /// integer power.
-    fn unit(&mut self) -> Option<Unit> {
-        let start = self.at;
-        let atom = if self.eat('(') {
-            self.skip_space();
-            let inner = self.unit_expression();
-            self.skip_space();
-            match inner {
-                Some(mut inner) if self.eat(')') => {
-                    inner.text = format!("({})", inner.text);
-                    Some(inner)
-                }
-                _ => None,
-            }
-        } else {
-            self.word()
-        };
-        let Some(atom) = atom else {
-            self.at = start;
-            return None;
-        };
-        let before = self.at;
-        self.skip_space();
-        if !self.eat('^') {
-            self.at = before;
-            return Some(atom);
-        }
-        self.skip_space();
-        let negative = self.eat('-') || self.eat('\u{2212}');
-        let start = self.at;
-        let value = self.number()?;
-        let power = formula::unit_integer(&self.text[start..self.at], value)?;
-        Some(atom.power(if negative {
-            power.checked_neg()?
-        } else {
-            power
-        }))
-    }
-
-    /// Units joined by `*` and `/`.
-    fn unit_expression(&mut self) -> Option<Unit> {
-        let mut unit = self.unit()?;
-        loop {
-            let before = self.at;
-            self.skip_space();
-            let sign = if self.eat('*') {
-                1
-            } else if self.eat('/') {
-                -1
-            } else {
-                self.at = before;
-                return Some(unit);
-            };
-            self.skip_space();
-            unit = unit.times(self.unit()?, sign);
-        }
-    }
-
-    fn word(&mut self) -> Option<Unit> {
-        let rest = &self.text[self.at..];
-        let length = match rest.chars().next()? {
-            ch if ch.is_alphabetic() => rest
-                .char_indices()
-                .find(|(_, ch)| !ch.is_alphabetic())
-                .map_or(rest.len(), |(at, _)| at),
-            ch @ ('°' | '′' | '″' | '\'' | '"') => ch.len_utf8(),
-            _ => return None,
-        };
-        let word = &rest[..length];
-        let unit = unit_word(word)?;
-        self.at += length;
-        Some(unit)
-    }
-}
-
 const LENGTH: [i8; 4] = [1, 0, 0, 0];
 const MASS: [i8; 4] = [0, 1, 0, 0];
 const ANGLE: [i8; 4] = [0, 0, 1, 0];
@@ -741,8 +587,6 @@ fn unit_word(word: &str) -> Option<Unit> {
         "psi" => (PRESSURE, PSI * 1e-3, None),
         "ksi" => (PRESSURE, PSI, None),
         "Mpsi" => (PRESSURE, PSI * 1e3, None),
-        "nW" => (POWER, 1e-3, None),
-        "uW" | "µW" => (POWER, 1.0, None),
         "mW" => (POWER, 1e3, None),
         "W" | "VA" => (POWER, 1e6, None),
         "kW" => (POWER, 1e9, None),
@@ -769,11 +613,7 @@ fn unit_word(word: &str) -> Option<Unit> {
         symbols: symbol.map(|symbol| vec![(symbol, 1)]),
         text: word.to_owned(),
         compound: false,
-        state: if matches!(word, "nW" | "uW" | "µW") {
-            UnitState::Unmodeled
-        } else {
-            UnitState::Known
-        },
+        state: UnitState::Known,
     })
 }
 
@@ -793,8 +633,6 @@ fn native_unit_word(word: &str) -> Option<Unit> {
 
     let (exponents, scale) = match word {
         "A" => (CURRENT, 1.0),
-        "nA" => (CURRENT, NANO),
-        "uA" | "µA" => (CURRENT, MICRO),
         "mA" => (CURRENT, 1e-3),
         "kA" => (CURRENT, 1e3),
         "MA" => (CURRENT, 1e6),
@@ -802,8 +640,6 @@ fn native_unit_word(word: &str) -> Option<Unit> {
         "mK" => (TEMPERATURE, 1e-3),
         "uK" | "µK" => (TEMPERATURE, MICRO),
         "mol" => (AMOUNT, 1.0),
-        "nmol" => (AMOUNT, NANO),
-        "umol" | "µmol" => (AMOUNT, MICRO),
         "mmol" => (AMOUNT, 1e-3),
         "cd" => (INTENSITY, 1.0),
         "V" => (POTENTIAL, 1e6),
@@ -819,7 +655,6 @@ fn native_unit_word(word: &str) -> Option<Unit> {
         "MOhm" => (RESISTANCE, 1e12),
         "C" => (CHARGE, 1.0),
         "T" => (FLUX_DENSITY, 1.0),
-        "mT" => (FLUX_DENSITY, 1e-3),
         "G" => (FLUX_DENSITY, 1e-4),
         "Wb" => (FLUX, 1e6),
         "F" => (CAPACITANCE, MICRO),

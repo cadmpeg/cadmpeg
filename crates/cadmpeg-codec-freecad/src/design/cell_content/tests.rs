@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
 
-use super::{neutral_unit, read, CellContent, CellKind};
+use super::{formula, neutral_unit, read, CellContent, CellKind};
 
 /// The kind, number, and neutral text of a value content.
 fn value(content: &str) -> (Option<Quantity>, Option<String>, f64, Option<String>) {
@@ -137,4 +137,35 @@ fn a_display_unit_is_a_neutral_unit_where_each_word_has_a_symbol() {
     for text in ["dm", "A", "mm 2", ""] {
         assert!(neutral_unit(text).is_none(), "{text:?}");
     }
+}
+
+#[test]
+fn subnormal_hexadecimal_cells_keep_their_exact_value() {
+    for (text, bits) in [
+        ("0x1p-1074", 1),
+        ("0x10000000000000000p-1075", 12 << 52),
+        ("0x0p1024", 0),
+    ] {
+        assert_eq!(value(text).2.to_bits(), bits, "{text}");
+    }
+    assert!(matches!(read("0x1p-2000"), CellContent::Text("0x1p-2000")));
+}
+
+#[test]
+fn bounded_unit_groups_take_the_same_parse_path_as_formulas() {
+    let text = format!("1 {}mm{}", "(".repeat(100), ")".repeat(100));
+    assert!(matches!(read(&text), CellContent::Unmodeled));
+    assert_eq!(formula::parse(&text).unwrap_err(), formula::Unparsed::Limit);
+}
+
+#[test]
+fn the_c_number_pass_distinguishes_exact_decimal_subnormals() {
+    let smallest = f64::from_bits(1);
+    let exact = format!("{smallest:.1074}");
+    assert_eq!(value(&exact).2.to_bits(), 1);
+
+    // The final nonzero digit makes the spelling inexact, though it still
+    // rounds to the smallest subnormal. The expression grammar reads zero.
+    let inexact = format!("{exact}1");
+    assert_eq!(value(&inexact).2.to_bits(), 0);
 }

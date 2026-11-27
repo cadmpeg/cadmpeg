@@ -57,7 +57,7 @@ fn kind(text: &str) -> Kind {
 
 fn path(text: &str) -> Path {
     match parse(text) {
-        Ok(Node::Path(path)) => path,
+        Ok(Node::Path(path) | Node::Indexed(path, _)) => path,
         other => panic!("{text:?} is no path: {other:?}"),
     }
 }
@@ -455,9 +455,6 @@ fn formula_results_require_a_proven_operation() {
         "<<%d>> % <<bad>>",
         "<<%s %s>> % 1",
         "<<%k>> % 1",
-        "address(1; 1; 5)",
-        "address(1; 0)",
-        "address(1; 1; 1.5)",
         "list(cos(5 mm); 1)",
         "tuple(cos(5 mm))",
         "translationm(tuple(1; <<x>>; 3))",
@@ -472,7 +469,7 @@ fn formula_results_require_a_proven_operation() {
         "cos(0; 0) == 1",
         "sum(no_such_function(1); 2 mm)",
         "tuple()",
-        "address(1)",
+        "address(1; 1; 1)",
         "Vars.K",
     ] {
         assert!(matches!(parse(text), Err(Unparsed::Syntax)), "{text}");
@@ -501,7 +498,6 @@ fn formula_results_require_a_proven_operation() {
         ("sum(translationm(vector(1; 2; 3)); 2 mm)", LENGTH),
         ("sum(translationm(tuple(1; 2; 3)); 2 mm)", LENGTH),
         ("parsequant(<<2 mm>>)", LENGTH),
-        ("address(1; 1; 4)", Kind::Text),
         ("(Operand + 2) == 1", Kind::Unknown),
         ("Operand == 1", Kind::Unknown),
     ] {
@@ -543,7 +539,9 @@ fn a_range_takes_the_quantity_its_cells_share() {
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), Kind::Unknown);
     let node = parse("sum(A1:A3) + B1").unwrap();
     let references = node.references();
-    assert!(matches!(references[0], Reference::Range("A1", "A3")));
+    assert!(
+        matches!(references[0], Reference::Range(range) if (range.from, range.to) == ("A1", "A3"))
+    );
     assert!(matches!(references[1], Reference::Path(path) if path.components == ["B1"]));
 }
 
@@ -565,7 +563,7 @@ fn a_path_records_its_object_and_property() {
     assert_eq!(path("Doc#<<My sheet>>.w").origin, Origin::Outside);
     assert_eq!(path("Sheet.<<Sub.>>.w").origin, Origin::Outside);
     assert_eq!(path(".<<Sub.>>.w").origin, Origin::Outside);
-    assert!(path("Sheet.w[0]").indexed);
+    assert!(matches!(parse("Sheet.w[0]"), Ok(Node::Indexed(..))));
     assert_eq!(
         path("Box.Placement.Base.x").components,
         ["Box", "Placement", "Base", "x"]
@@ -590,4 +588,29 @@ fn text_the_parser_refuses_is_unparsed() {
     }
     let deep = format!("{}1{}", "(".repeat(100), ")".repeat(100));
     assert_eq!(parse(&deep).err(), Some(Unparsed::Limit));
+}
+
+#[test]
+fn a_combining_mark_stays_with_its_identifier() {
+    assert_eq!(path("e\u{301}").components, ["e\u{301}"]);
+}
+
+#[test]
+fn token_and_unit_nesting_limits_keep_identified_paths() {
+    let tokens = format!("A1 + {}", "1 + ".repeat(1_024));
+    let deep = format!("A1 + 2 {}mm{}", "(".repeat(100), ")".repeat(100));
+    for text in [tokens, deep] {
+        let parsed = super::parse_with_paths(&text);
+        assert_eq!(parsed.tree.unwrap_err(), Unparsed::Limit);
+        assert_eq!(parsed.partial_paths.len(), 1);
+        assert_eq!(parsed.partial_paths[0].components, ["A1"]);
+    }
+}
+
+#[test]
+fn nonfinite_quantity_decimal_formatting_keeps_both_platform_outcomes() {
+    let node = parse("<<%d>> % (1 mm / 0)").unwrap();
+    let result = node.value(&mut Names::default());
+    assert!(result.classes().contains(&Class::Text));
+    assert!(result.classes().contains(&Class::Raises));
 }

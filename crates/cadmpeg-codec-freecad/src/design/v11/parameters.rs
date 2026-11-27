@@ -107,20 +107,19 @@ pub(super) fn project(
         .iter()
         .map(|parameter| &parameter.id)
         .collect::<BTreeSet<_>>();
-    let formulas = by_id
+    let cells = by_id
         .values()
         .filter(|parameter| is_cell(parameter))
-        .filter_map(
-            |parameter| match cell_content::read(&parameter.expression) {
-                CellContent::Formula(text) => Some((&parameter.id, formula::parse(text))),
-                CellContent::Text(_)
-                | CellContent::Value(_)
-                | CellContent::Error
-                | CellContent::Unmodeled => None,
-            },
-        )
+        .map(|parameter| (&parameter.id, cell_content::read(&parameter.expression)))
         .collect::<BTreeMap<_, _>>();
-    let values = cell_values(&by_id, &formulas, &catalog, &is_cell);
+    let formulas = cells
+        .iter()
+        .filter_map(|(id, content)| match content {
+            CellContent::Formula(text) => Some((*id, formula::parse_with_paths(text))),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let values = cell_values(&by_id, &cells, &formulas, &catalog);
     let mut projected = Vec::new();
     for parameter in all() {
         let Some(owner) = owners.get(&parameter.id) else {
@@ -140,8 +139,13 @@ pub(super) fn project(
             minted: &minted,
         };
         let (kind, value, parameter_definition) = if sheet {
-            let (kind, value, expression) =
-                cell(parameter, formulas.get(&parameter.id), &context, losses);
+            let (kind, value, expression) = cell(
+                parameter,
+                &cells[&parameter.id],
+                formulas.get(&parameter.id),
+                &context,
+                losses,
+            );
             (kind, value, ParameterDefinition::Expression(expression))
         } else {
             let (kind, value) = kind_and_value(parameter.value.as_ref());
@@ -404,9 +408,6 @@ impl<'a, 'data> Catalog<'a, 'data> {
             }
             _ => (*own, components),
         };
-        if path.indexed {
-            return Target::Unresolved;
-        }
         let mut indirect = false;
         while let Some((name, sub)) = rest.split_first() {
             let held = (object.id().as_str(), name.as_str());
@@ -476,8 +477,27 @@ impl<'a, 'data> Catalog<'a, 'data> {
         Target::Unresolved
     }
 
-    /// The cells of the sheet `owner` from `from` to `to`, each an address or
-    /// an alias.
+    fn range_address(&self, owner: &FeatureId, name: &str) -> Option<CellAddress> {
+        CellAddress::parse(&name.replace('$', "")).or_else(|| {
+            let id = (*self.named.get(&(owner.clone(), name.to_owned()))?)?;
+            self.cells
+                .get(owner)?
+                .iter()
+                .find(|(_, cell)| *cell == id)
+                .map(|(address, _)| *address)
+        })
+    }
+
+    fn range_endpoint(&self, owner: Option<&FeatureId>, name: &str) -> Option<&'a ParameterId> {
+        let owner = owner?;
+        let address = self.range_address(owner, name)?;
+        self.cells
+            .get(owner)?
+            .iter()
+            .find_map(|(found, id)| (*found == address).then_some(*id))
+    }
+
+    /// The stored cells of the sheet within the rectangle named by this range.
     fn range(
         &self,
         owner: Option<&FeatureId>,
@@ -486,16 +506,10 @@ impl<'a, 'data> Catalog<'a, 'data> {
     ) -> Option<Vec<&'a ParameterId>> {
         let owner = owner?;
         let cells = self.cells.get(owner)?;
-        let corner = |name: &str| {
-            CellAddress::parse(&name.replace('$', "")).or_else(|| {
-                let id = (*self.named.get(&(owner.clone(), name.to_owned()))?)?;
-                cells
-                    .iter()
-                    .find(|(_, cell)| *cell == id)
-                    .map(|(address, _)| *address)
-            })
-        };
-        let (from, to) = (corner(from)?, corner(to)?);
+        let (from, to) = (
+            self.range_address(owner, from)?,
+            self.range_address(owner, to)?,
+        );
         let rows = from.row().min(to.row())..=from.row().max(to.row());
         let columns = from.col().min(to.col())..=from.col().max(to.col());
         let mut selected = cells
@@ -729,9 +743,6 @@ fn property_quantity(name: &str) -> Option<Quantity> {
         "HeatFlux" => Quantity::of(0, 1, 0, -3),
         "Stiffness" => Quantity::of(0, 1, 0, -2),
         "StiffnessDensity" => Quantity::of(-2, 1, 0, -2),
-        "Float" | "FloatConstraint" | "Precision" | "Integer" | "IntegerConstraint" | "Percent" => {
-            Quantity::REAL
-        }
         _ => return None,
     })
 }
@@ -757,14 +768,14 @@ impl CellValue {
 /// references. A formula in a cycle has no kind the file determines.
 fn cell_values<'a>(
     parameters: &BTreeMap<&'a ParameterId, &'a LegacyParameter>,
-    formulas: &BTreeMap<&'a ParameterId, Result<formula::Node<'a>, Unparsed>>,
+    cells: &BTreeMap<&'a ParameterId, CellContent<'a>>,
+    formulas: &BTreeMap<&'a ParameterId, formula::Parsed<'a>>,
     catalog: &Catalog<'a, '_>,
-    is_cell: &dyn Fn(&LegacyParameter) -> bool,
 ) -> HashMap<&'a ParameterId, CellValue> {
     let mut values = HashMap::new();
-    for parameter in parameters.values().filter(|parameter| is_cell(parameter)) {
-        let value = match cell_content::read(&parameter.expression) {
-            CellContent::Text(text) => Value::text(text),
+    for (&id, content) in cells {
+        let value = match content {
+            CellContent::Text(text) => Value::text(*text),
             CellContent::Value(value) => Value::numeric(
                 if value.dimensions == Dimensions::REAL {
                     Value::number(value.freecad_number.unwrap_or(value.number))
@@ -775,16 +786,16 @@ fn cell_values<'a>(
             ),
             CellContent::Error => Value::of(&[Class::Raises]),
             CellContent::Unmodeled => Value::any(),
-            CellContent::Formula(_) => match formulas.get(&parameter.id) {
-                Some(Err(Unparsed::Syntax)) => Value::text(parameter.expression.as_str()),
-                Some(Ok(_) | Err(Unparsed::Limit | Unparsed::Unmodeled)) | None => continue,
+            CellContent::Formula(_) => match &formulas[&id].tree {
+                Err(Unparsed::Syntax) => Value::text(parameters[id].expression.as_str()),
+                _ => continue,
             },
         };
-        values.insert(&parameter.id, CellValue::of(value));
+        values.insert(id, CellValue::of(value));
     }
     let pending = formulas
         .iter()
-        .filter_map(|(id, node)| Some((*id, node.as_ref().ok()?)))
+        .filter_map(|(id, parsed)| Some((*id, parsed.tree.as_ref().ok()?)))
         .collect::<BTreeMap<_, _>>();
     let mut waiting = BTreeMap::new();
     let mut dependents = BTreeMap::<&ParameterId, Vec<&ParameterId>>::new();
@@ -800,8 +811,12 @@ fn cell_values<'a>(
                         sources.insert(id);
                     }
                 }
-                Reference::Range(from, to) => {
-                    sources.extend(catalog.range(owner, from, to).unwrap_or_default());
+                Reference::Range(range) => {
+                    sources.extend(
+                        catalog
+                            .range(owner, range.from, range.to)
+                            .unwrap_or_default(),
+                    );
                 }
             }
         }
@@ -824,7 +839,6 @@ fn cell_values<'a>(
             catalog,
             values: &values,
             owner,
-            projected: false,
         };
         let value = pending[id].value(&mut lookup);
         values.insert(id, CellValue::of(value));
@@ -852,9 +866,6 @@ struct Lookup<'c, 'a, 'data> {
     catalog: &'c Catalog<'a, 'data>,
     values: &'c HashMap<&'a ParameterId, CellValue>,
     owner: Option<&'c FeatureId>,
-    /// A cell of no kind the file determines is the real it is projected
-    /// as.
-    projected: bool,
 }
 
 impl Lookup<'_, '_, '_> {
@@ -863,11 +874,7 @@ impl Lookup<'_, '_, '_> {
     /// another parameter's from its property's type and its stored value.
     fn parameter(&self, id: &ParameterId, typed: Option<Value>) -> Value {
         if let Some(cell) = self.values.get(id) {
-            return if self.projected && cell.kind == Kind::Unknown {
-                Value::of(&[Class::quantity(Quantity::REAL)])
-            } else {
-                cell.value.clone()
-            };
+            return cell.value.clone();
         }
         let Some(parameter) = self.catalog.parameters.get(id) else {
             return typed.unwrap_or_else(Value::any);
@@ -943,35 +950,25 @@ fn name(parameter: &LegacyParameter) -> Option<NonBlankString> {
     NonBlankString::new(name.to_owned())
 }
 
-/// A cell's kind, value, and expression (§5.12), read as `FreeCAD` reads
-/// its content (`cell_content`). A value of a quantity whose units have
-/// symbols is a neutral literal; another value is the source's text. A
-/// formula that `FreeCAD` does not parse is text. A formula has the kind of
-/// its result, and where the file does not determine that kind it is a real,
-/// with a loss.
+/// Spreadsheet cells keep literal values or the result kind of their formula.
 fn cell(
     parameter: &LegacyParameter,
-    formula: Option<&Result<formula::Node<'_>, Unparsed>>,
+    content: &CellContent<'_>,
+    formula: Option<&formula::Parsed<'_>>,
     context: &Context<'_, '_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> (ValueKind, Option<ParameterValue>, Expression) {
-    let content = parameter.expression.as_str();
-    let fallback = |text: &str, losses: &mut Vec<LossNote>| {
-        assumed(parameter, losses);
-        (
-            ValueKind::Quantity(Quantity::REAL),
-            None,
-            source(text, Vec::new()),
-        )
-    };
-    let text = match cell_content::read(content) {
-        CellContent::Formula(text) => text,
+    let raw = parameter.expression.as_str();
+    let text = match content {
+        CellContent::Formula(text) => *text,
         CellContent::Text(text) => return text_cell(text),
-        CellContent::Error | CellContent::Unmodeled => return fallback(content, losses),
+        CellContent::Error | CellContent::Unmodeled => {
+            return unknown_cell(parameter, source(raw, Vec::new()), losses);
+        }
         CellContent::Value(value) => {
-            let kind = match value.kind {
-                CellKind::Quantity(quantity) => ValueKind::Quantity(quantity),
-                CellKind::Native(unit) => ValueKind::Native(unit),
+            let kind = match &value.kind {
+                CellKind::Quantity(quantity) => ValueKind::Quantity(*quantity),
+                CellKind::Native(unit) => ValueKind::Native(unit.clone()),
             };
             if !value.number.is_finite() {
                 losses.push(FreecadLossCode::ParameterValueNonFinite.note(format!(
@@ -982,9 +979,10 @@ fn cell(
             }
             let expression = value
                 .neutral
-                .and_then(|text| expr::parse(&text, &[], &[]).ok())
+                .as_deref()
+                .and_then(|text| expr::parse(text, &[], &[]).ok())
                 .map_or_else(
-                    || source(content, Vec::new()),
+                    || source(raw, Vec::new()),
                     |tree| Expression::Neutral(Neutral(tree)),
                 );
             return (
@@ -994,10 +992,17 @@ fn cell(
             );
         }
     };
-    let node = match formula {
+    let node = match formula.map(|parsed| &parsed.tree) {
         Some(Ok(node)) => node,
-        Some(Err(Unparsed::Limit | Unparsed::Unmodeled)) => return fallback(text, losses),
-        Some(Err(Unparsed::Syntax)) | None => return text_cell(content),
+        Some(Err(Unparsed::Syntax)) | None => return text_cell(raw),
+        Some(Err(Unparsed::Limit)) => {
+            let references = formula
+                .into_iter()
+                .flat_map(|parsed| &parsed.partial_paths)
+                .map(Reference::Path);
+            let spans = bind_references(parameter, text, references, context, true, losses);
+            return unknown_cell(parameter, source(text, source_tokens(text, &spans)), losses);
+        }
     };
     let kind = context
         .values
@@ -1017,10 +1022,7 @@ fn cell(
             (ValueKind::Boolean, value, expression)
         }
         Kind::Text => (ValueKind::Text, None, expression),
-        Kind::Unknown => {
-            assumed(parameter, losses);
-            (ValueKind::Quantity(Quantity::REAL), None, expression)
-        }
+        Kind::Unknown => unknown_cell(parameter, expression, losses),
     }
 }
 
@@ -1032,12 +1034,24 @@ fn text_cell(text: &str) -> (ValueKind, Option<ParameterValue>, Expression) {
     )
 }
 
-fn assumed(parameter: &LegacyParameter, losses: &mut Vec<LossNote>) {
-    losses.push(FreecadLossCode::ParameterQuantityAssumed.note(format!(
-        "FCStd cell {} has content whose kind the file does not determine; its kind is \
-         a dimensionless real",
-        parameter.id.as_str()
-    )));
+fn unknown_cell(
+    parameter: &LegacyParameter,
+    expression: Expression,
+    losses: &mut Vec<LossNote>,
+) -> (ValueKind, Option<ParameterValue>, Expression) {
+    losses.push(
+        FreecadLossCode::ParameterExpressionResultUnresolved.note(format!(
+            "FCStd cell {} keeps the source expression with an unresolved result kind",
+            parameter.id.as_str()
+        )),
+    );
+    (
+        ValueKind::Native(cadmpeg_core::nonblank_literal!(
+            "fcstd:unresolved-expression-result"
+        )),
+        None,
+        expression,
+    )
 }
 
 /// The unit of a cell's display unit, where it has the cell's quantity and
@@ -1123,14 +1137,16 @@ fn expression(
             return Expression::Neutral(Neutral(literal));
         }
     }
-    let Ok(node) = formula::parse(text) else {
-        return source(text, Vec::new());
+    let parsed = formula::parse_with_paths(text);
+    let Ok(node) = parsed.tree else {
+        let references = parsed.partial_paths.iter().map(Reference::Path);
+        let spans = bind_references(parameter, text, references, context, false, losses);
+        return source(text, source_tokens(text, &spans));
     };
     let mut lookup = Lookup {
         catalog: context.catalog,
         values: context.values,
         owner: parameter.owner.as_ref(),
-        projected: true,
     };
     let stated = node.kind(&mut lookup);
     translated(parameter, text, &node, context, stated, Some(kind), losses)
@@ -1273,71 +1289,15 @@ fn translated(
     kind: Option<&ValueKind>,
     losses: &mut Vec<LossNote>,
 ) -> Expression {
-    let mut spans = BTreeMap::new();
-    let mut dropped = Vec::new();
-    let mut indirect = Vec::new();
-    for reference in node.references() {
-        let Reference::Path(path) = reference else {
-            continue;
-        };
-        match context.catalog.resolve(parameter.owner.as_ref(), path) {
-            Target::Parameter {
-                id,
-                indirect: false,
-                ..
-            } if context.minted.contains(&parameter.id)
-                || context.minted.contains(id)
-                || parameter
-                    .dependencies
-                    .iter()
-                    .any(|dependency| dependency == id) =>
-            {
-                let reference = ParameterRef {
-                    target: RefTarget::Parameter(id.clone()),
-                    through: None,
-                };
-                spans.insert(path.span.start, (path.span.end, reference));
-            }
-            Target::Property(_) | Target::Outside => {
-                dropped.push(text.get(path.span.clone()).unwrap_or(text));
-            }
-            Target::Parameter { indirect: true, .. } => {
-                indirect.push(text.get(path.span.clone()).unwrap_or(text));
-            }
-            Target::Parameter {
-                indirect: false, ..
-            }
-            | Target::Unresolved => {}
-        }
-    }
-    if !dropped.is_empty() {
-        losses.push(FreecadLossCode::ParameterDependencyDropped.note(format!(
-            "FCStd parameter {} references {}, which is no parameter; the reference stays \
-             the source's text",
-            parameter.id.as_str(),
-            dropped.join(", ")
-        )));
-    }
-    if !indirect.is_empty() {
-        losses.push(FreecadLossCode::ParameterDependencyDropped.note(format!(
-            "FCStd parameter {} references {} through a link; the reference stays the \
-             source's text",
-            parameter.id.as_str(),
-            indirect.join(", ")
-        )));
-    }
-    let mut tokens = Vec::new();
-    let mut at = 0;
-    for (start, (end, reference)) in &spans {
-        if *start > at {
-            tokens.push(ExpressionToken::Text(text[at..*start].to_owned()));
-        }
-        tokens.push(ExpressionToken::Reference(reference.clone()));
-        at = *end;
-    }
-    if at < text.len() {
-        tokens.push(ExpressionToken::Text(text[at..].to_owned()));
-    }
+    let spans = bind_references(
+        parameter,
+        text,
+        node.references().into_iter(),
+        context,
+        kind.is_none(),
+        losses,
+    );
+    let tokens = source_tokens(text, &spans);
     let mut refs = Vec::new();
     let tree = neutral_text(node, &spans, &mut refs)
         .and_then(|neutral| Some((expr::parse(&neutral, &refs, &[]).ok()?, neutral)));
@@ -1364,6 +1324,128 @@ fn translated(
     source(text, tokens)
 }
 
+type Bindings = BTreeMap<usize, (usize, ParameterRef)>;
+
+fn bind_references<'n, 'a: 'n>(
+    parameter: &LegacyParameter,
+    text: &str,
+    references: impl Iterator<Item = Reference<'n, 'a>>,
+    context: &Context<'_, '_, '_>,
+    sheet: bool,
+    losses: &mut Vec<LossNote>,
+) -> Bindings {
+    let mut spans = BTreeMap::new();
+    let mut dropped = Vec::new();
+    let mut indirect = Vec::new();
+    let mut missing_range_members = Vec::new();
+    let owner = parameter.owner.as_ref();
+    let bind = |spans: &mut Bindings, span: &std::ops::Range<usize>, id: &ParameterId| {
+        spans.insert(
+            span.start,
+            (
+                span.end,
+                ParameterRef {
+                    target: RefTarget::Parameter(id.clone()),
+                    through: None,
+                },
+            ),
+        );
+    };
+    for reference in references {
+        match reference {
+            Reference::Path(path) => match context.catalog.resolve(owner, path) {
+                Target::Parameter {
+                    id,
+                    indirect: false,
+                    ..
+                } if sheet
+                    || context.minted.contains(&parameter.id)
+                    || context.minted.contains(id)
+                    || parameter.dependencies.contains(id) =>
+                {
+                    bind(&mut spans, &path.span, id);
+                }
+                Target::Property(_) | Target::Outside => dropped.push(&text[path.span.clone()]),
+                Target::Parameter { indirect: true, .. } => indirect.push(&text[path.span.clone()]),
+                Target::Parameter {
+                    indirect: false, ..
+                }
+                | Target::Unresolved
+                    if sheet =>
+                {
+                    dropped.push(&text[path.span.clone()]);
+                }
+                Target::Parameter {
+                    indirect: false, ..
+                }
+                | Target::Unresolved => {}
+            },
+            Reference::Range(range) if sheet => {
+                let ids =
+                    [range.from, range.to].map(|name| context.catalog.range_endpoint(owner, name));
+                for (span, id) in range.spans.iter().zip(ids) {
+                    if let Some(id) = id {
+                        bind(&mut spans, span, id);
+                    } else if owner
+                        .and_then(|owner| context.catalog.range_address(owner, &text[span.clone()]))
+                        .is_none()
+                    {
+                        dropped.push(&text[span.clone()]);
+                    }
+                }
+                if context
+                    .catalog
+                    .range(owner, range.from, range.to)
+                    .is_some_and(|members| {
+                        members
+                            .into_iter()
+                            .any(|member| !ids.contains(&Some(member)))
+                    })
+                {
+                    missing_range_members.push(&text[range.spans[0].start..range.spans[1].end]);
+                }
+            }
+            Reference::Range(_) => {}
+        }
+    }
+    for (paths, reason) in [
+        (dropped, "has no resolved parameter binding"),
+        (indirect, "uses a link with no projected occurrence path"),
+        (
+            missing_range_members,
+            "has interior cell bindings beyond its two source endpoints",
+        ),
+    ] {
+        if !paths.is_empty() {
+            losses.push(FreecadLossCode::ParameterDependencyDropped.note(format!(
+                "FCStd parameter {} refers to {}. The expression {reason}",
+                parameter.id.as_str(),
+                paths.join(", ")
+            )));
+        }
+    }
+    spans
+}
+
+fn source_tokens(text: &str, spans: &Bindings) -> Vec<ExpressionToken<ParameterRef>> {
+    let mut tokens = Vec::new();
+    let mut at = 0;
+    for (start, (end, reference)) in spans {
+        if *start < at {
+            continue;
+        }
+        if *start > at {
+            tokens.push(ExpressionToken::Text(text[at..*start].to_owned()));
+        }
+        tokens.push(ExpressionToken::Reference(reference.clone()));
+        at = *end;
+    }
+    if at < text.len() {
+        tokens.push(ExpressionToken::Text(text[at..].to_owned()));
+    }
+    tokens
+}
+
 /// The neutral text of a formula of numbers, units, the constants `pi` and
 /// `e`, references at `spans`, signs, groups, and `+ - * / ^`. Each operation
 /// is parenthesized, since the neutral syntax binds `^` tighter than a sign.
@@ -1374,8 +1456,13 @@ fn neutral_text(
 ) -> Option<String> {
     use formula::{Node as Formula, Operator};
     Some(match node {
-        Formula::Number { text, unit } => {
-            let number = text.replace(',', ".");
+        Formula::Number { text, number, unit } => {
+            let number = formula::producer_number(*number)?;
+            let number = if text.len() > 39 && text.bytes().any(|byte| !byte.is_ascii_digit()) {
+                number.to_string()
+            } else {
+                text.replace(',', ".")
+            };
             let number = if number.starts_with('.') {
                 format!("0{number}")
             } else {
@@ -1386,7 +1473,10 @@ fn neutral_text(
                 Some(unit) => format!("{number}[{}]", unit.spelling()?),
             }
         }
-        Formula::Constant { name, .. } if matches!(*name, "pi" | "e") => (*name).to_owned(),
+        Formula::Constant { name, unit, .. } if matches!(*name, "pi" | "e") => match unit {
+            None => (*name).to_owned(),
+            Some(unit) => format!("({name} * 1[{}])", unit.spelling()?),
+        },
         Formula::Path(path) => {
             let (_, reference) = spans.get(&path.span.start)?;
             let index = refs
@@ -1428,15 +1518,15 @@ fn neutral_text(
     })
 }
 
-/// The source's tokens of `text`. A source token list holds a text token
-/// (part 10): a lone reference stays the source's text.
+/// Keep a text token in a source expression, including a lone reference.
 fn source(text: &str, mut tokens: Vec<ExpressionToken<ParameterRef>>) -> Expression {
     if !text.is_empty()
         && !tokens
             .iter()
             .any(|token| matches!(token, ExpressionToken::Text(_)))
     {
-        tokens = vec![ExpressionToken::Text(text.to_owned())];
+        let text = if tokens.is_empty() { text } else { "" };
+        tokens.push(ExpressionToken::Text(text.to_owned()));
     }
     Expression::Source {
         dialect: ExpressionDialect::FreeCad,

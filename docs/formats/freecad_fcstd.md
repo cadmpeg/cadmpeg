@@ -604,17 +604,17 @@ Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an
 parameter whose identity includes its sheet and address. Address and alias remain separate;
 content, display unit, alignment, style, colors, and spans are retained independently. Cell content
 that starts with `=` is a formula, and content that starts with `'` is the text after the mark.
-Other content is a value where, after its surrounding white space, it is a number, a number with a
-simple unit, or a division whose numerator is a number or a number with a unit and whose
-denominator is a number, a number with a unit, or a simple unit. A simple unit is one word or
-symbol of `FreeCAD`'s unit vocabulary, optionally in parentheses. A number takes a `.` or `,`
-decimal mark and an exponent. A complete number in the C library's form can have a sign.
-Nonempty ASCII space, tab, and line-ending content gives zero. Other content is text, including
-`3 bolts`, `2*3`, `-5 mm` and `2 mm^2`. A text cell's value is its text. A value cell's value
-is a length in millimetres, an angle in radians, or a dimensionless real; a value of another
-quantity has no legacy value. A formula states its own value where it is a number with an optional
-length unit (`nm`, `um`, `mm`, `cm`, `dm`, `m`, `km`, `in`, `"`, `ft`, `'`, `thou`, `mil`, `yd`) or
-angle unit (`deg`, `°`, `rad`). Other formula content remains an expression without a value.
+Raw content first takes the C library's complete-number form, including signed decimal and
+hexadecimal numbers, infinity, and NaN. Nonempty ASCII space, tab, and line-ending content
+gives zero. A raw cell with a numeric prefix and no complete C number takes the formula
+grammar. A numeric node, a numeric node with a simple unit, or a division between two such
+operands is a value. The divisor can also be a simple unit. Parentheses keep the enclosed
+operand's shape, and constants are numeric nodes. A simple unit is one word or symbol of
+FreeCAD's unit vocabulary. The expression lexer accepts decimal point, decimal comma and
+exponent spellings. Other raw content is text, including `3 bolts`, `2*3`, `-5 mm`, and
+`2 mm^2`. A text cell's value is its text. A length, angle, or dimensionless value gets a
+legacy value in millimetres, radians, or its stored number. A numeric formula literal with a
+compatible unit can supply the same legacy value.
 Content without a leading `=` references nothing.
 Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
@@ -641,13 +641,13 @@ reference to a cell uses the runtime type and any value determined by its conten
 conditional evaluates the branch selected by the condition's Python truth value.
 
 - A number without a unit becomes a Python `int` when it is whole and fits a C long, and a
-  `float` otherwise. Dimensionless numeric aggregates and computed cell values follow the
-  same rule. A typed float property remains a `float` at the point of access. A Boolean
+  `float` otherwise. A positive whole number above the C int bound and within the C long
+  bound takes a narrowing conversion whose result depends on the FreeCAD build.
+  Dimensionless numeric aggregates and computed cell values follow the same runtime rule. A typed float property remains a `float` at the point of access. A Boolean
   behaves as an `int` in Python arithmetic. Direct enumeration references give their
   integer index. A valid enumeration reached through a scalar link gives its text label.
-- A `<<…>>` literal, a successful `str()` or `address()` call, string concatenation and
-  successful string `%` formatting give text. `address()` requires an integer row and
-  column and takes an optional integer reference type from 1 through 4. Multiplying a
+- A `<<…>>` literal, a successful `str()` call, string concatenation and successful string
+  `%` formatting give text. Multiplying a
   string or list by an integer or Boolean repeats it. The multiplier must fit a Python
   sequence index and the repeated size must fit the sequence's allocation.
 - Equality and ordering use the operands' Python comparison methods. The arithmetic
@@ -688,10 +688,12 @@ conditional evaluates the branch selected by the condition's Python truth value.
   digits without padding.
 
 The operand types and values establish the kind of a supported formula result. An
-unresolved kind, a formula that raises, and a formula result
-outside the four CADIR quantity dimensions use a dimensionless kind and emit
-`parameter.quantity-assumed`. A stored value cell with an extra dimension uses a
-`Native` kind. A display unit whose quantity is the cell's and whose words each have a symbol is
+unresolved kind, an expression that raises, and a formula result outside the four CADIR
+quantity dimensions keep the source expression without a cache under the native kind
+`fcstd:unresolved-expression-result`. The decoder emits
+`parameter.expression-result-unresolved`. A stored value cell with an extra dimension
+uses a `Native` kind. Source expressions bind resolved paths and range endpoints. The
+decoder charges dependencies it cannot express as source reference tokens. A display unit whose quantity is the cell's and whose words each have a symbol is
 the parameter's `unit`. Another display unit of a quantity cell is the native option
 `fcstd:displayUnit` (Text, Rule N case (a)). Alignment, style, foreground and background colors, and the display unit of a
 text cell are source settings of the cell parameter (Rule N case (b)): `fcstd:alignment`,
@@ -924,7 +926,9 @@ element's native name. A reference with no element names the whole occurrence.
 `Placement1` or `Placement2` is its resolved frame. A connector whose `Detach1` or `Detach2` is true
 is detached: `FreeCAD` holds its placement fixed in the referenced part and applies no offset. It
 is a `Component` pick of the occurrence that the reference object and its first sub-name reach,
-with `Placement1` or `Placement2` as its fixed step and its resolved frame. Each of its stored
+with `Placement1` or `Placement2` as its fixed step and its resolved frame. A detached
+reference to an unread external document uses a native pick naming the document and object.
+Each of its stored
 sub-names is the native option `fcstd:Reference1.sub<i>` or `fcstd:Reference2.sub<i>` (Text, `i`
 counting from zero in stored order), and an offset that is not the identity is the native options
 `fcstd:Offset1.<c>` or `fcstd:Offset2.<c>` (Real) for `c` in `px`, `py`, `pz`, `qx`, `qy`, `qz`,
@@ -933,8 +937,8 @@ are motions about the connector frame's z axis, with their enabled limits: angle
 revolute and cylindrical joints, and length limits on cylindrical and slider joints. Parallel,
 perpendicular, and angle joints are relations of those kinds. An angle joint's angle is the
 magnitude of `Angle`, or of a float `Distance`, reflected into a half turn: the solver holds the
-cosine of the angle between the z axes. An angle joint whose angle is less than `1e-7`
-radians from a multiple of a full turn is a parallel joint. The solver holds the z axes of fixed,
+cosine of the angle between the z axes. An angle joint is parallel when the remainder of its absolute angle modulo one turn is less
+than `1e-7` radians. The solver holds the z axes of fixed,
 revolute, cylindrical, slider, and parallel joints, of planar and concentric distance joints, and
 of distance joints between parallel axes, in either sense. The pre-solve of fixed, revolute,
 cylindrical, and slider joints, and the solver's iteration from the stored placements for the

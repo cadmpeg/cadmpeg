@@ -36,6 +36,12 @@ fn decode(bytes: &[u8]) -> CadIr {
     decoded.ir().clone()
 }
 
+fn unresolved_kind() -> ValueKind {
+    ValueKind::Native(cadmpeg_core::nonblank_literal!(
+        "fcstd:unresolved-expression-result"
+    ))
+}
+
 fn parameter<'a>(ir: &'a CadIr, id: &str) -> &'a DesignParameter {
     ir.design
         .parameters
@@ -170,9 +176,12 @@ fn a_cell_of_unknown_quantity_is_an_assumed_real_that_a_lone_reference_keeps() {
     let ir = decoded.ir();
     assert_valid_document(ir);
     let cell = parameter(ir, "fcstd:design:parameter#Sheet:cell:A1");
-    assert_eq!(cell.kind, ValueKind::Quantity(Quantity::REAL));
-    let assumed = crate::loss::FreecadLossCode::ParameterQuantityAssumed.note("");
-    assert_eq!(assumed.code.to_string(), "fcstd/parameter.quantity-assumed");
+    assert_eq!(cell.kind, unresolved_kind());
+    let assumed = crate::loss::FreecadLossCode::ParameterExpressionResultUnresolved.note("");
+    assert_eq!(
+        assumed.code.to_string(),
+        "fcstd/parameter.expression-result-unresolved"
+    );
     assert!(
         decoded
             .report()
@@ -184,12 +193,11 @@ fn a_cell_of_unknown_quantity_is_an_assumed_real_that_a_lone_reference_keeps() {
     );
     // The constraint bound to the cell keeps its dependency as a reference.
     let distance = parameter(ir, "fcstd:design:parameter#Sketch:constraint:1");
+    let wire = json::to_value(&distance.definition).unwrap();
+    assert_eq!(wire["value"]["kind"], "source");
     assert_eq!(
-        neutral(distance),
-        (
-            "$0 * 1[mm]".to_owned(),
-            vec!["fcstd:design:parameter#Sheet:cell:A1".to_owned()]
-        )
+        wire["value"]["value"]["tokens"][0]["value"]["target"]["value"],
+        "fcstd:design:parameter#Sheet:cell:A1"
     );
 }
 
@@ -504,9 +512,9 @@ fn a_python_property_takes_its_json_class_from_the_named_member() {
     for (address, expected, assumed) in [
         ("A1", ValueKind::Boolean, false),
         ("A2", ValueKind::Quantity(Quantity::LENGTH), false),
-        ("A3", ValueKind::Quantity(Quantity::REAL), true),
+        ("A3", unresolved_kind(), true),
         ("A4", ValueKind::Text, false),
-        ("A5", ValueKind::Quantity(Quantity::REAL), true),
+        ("A5", unresolved_kind(), true),
         ("A6", ValueKind::Boolean, false),
     ] {
         let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
@@ -514,7 +522,7 @@ fn a_python_property_takes_its_json_class_from_the_named_member() {
         assert_eq!(
             charge_count(
                 &losses,
-                crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+                crate::loss::FreecadLossCode::ParameterExpressionResultUnresolved,
                 &id
             ),
             usize::from(assumed),
@@ -560,8 +568,8 @@ fn a_formula_reads_typed_values_through_local_links_and_shape_paths() {
         ("A1", ValueKind::Quantity(Quantity::LENGTH), false),
         ("A2", ValueKind::Text, false),
         ("A3", ValueKind::Text, false),
-        ("A4", ValueKind::Quantity(Quantity::REAL), true),
-        ("A5", ValueKind::Quantity(Quantity::REAL), true),
+        ("A4", unresolved_kind(), true),
+        ("A5", unresolved_kind(), true),
         ("A6", ValueKind::Quantity(Quantity::LENGTH), false),
     ] {
         let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
@@ -569,7 +577,7 @@ fn a_formula_reads_typed_values_through_local_links_and_shape_paths() {
         assert_eq!(
             charge_count(
                 &losses,
-                crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+                crate::loss::FreecadLossCode::ParameterExpressionResultUnresolved,
                 &id
             ),
             usize::from(assumed),
@@ -602,7 +610,7 @@ fn charge_count(
 
 #[test]
 fn spreadsheet_formulas_keep_proven_kinds_and_distinguish_syntax_from_errors() {
-    use crate::loss::FreecadLossCode::ParameterQuantityAssumed;
+    use crate::loss::FreecadLossCode::ParameterExpressionResultUnresolved;
 
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/><Object name="Stock" type="Part::Feature"/></Objects>
@@ -665,8 +673,8 @@ fn spreadsheet_formulas_keep_proven_kinds_and_distinguish_syntax_from_errors() {
         ("A3", length.clone(), 0),
         ("A4", length.clone(), 0),
         ("A7", area.clone(), 0),
-        ("A9", real.clone(), 1),
-        ("A10", real.clone(), 1),
+        ("A9", unresolved_kind(), 1),
+        ("A10", unresolved_kind(), 1),
         ("A11", ValueKind::Text, 0),
         ("A21", real.clone(), 0),
         ("A22", angle.clone(), 0),
@@ -675,7 +683,6 @@ fn spreadsheet_formulas_keep_proven_kinds_and_distinguish_syntax_from_errors() {
         ("B1", length.clone(), 0),
         ("B2", length.clone(), 0),
         ("B3", length.clone(), 0),
-        ("B4", real.clone(), 1),
         ("B5", real.clone(), 0),
         ("B6", area, 0),
         ("C1", real.clone(), 0),
@@ -683,9 +690,9 @@ fn spreadsheet_formulas_keep_proven_kinds_and_distinguish_syntax_from_errors() {
         ("C3", ValueKind::Quantity(Quantity::of(0, 1, 0, -3)), 0),
         ("C4", ValueKind::Quantity(Quantity::of(-2, 1, 0, -2)), 0),
         ("C5", ValueKind::Text, 0),
-        ("C6", real.clone(), 1),
-        ("C7", real.clone(), 1),
-        ("C8", real, 1),
+        ("C6", unresolved_kind(), 1),
+        ("C7", unresolved_kind(), 1),
+        ("C8", unresolved_kind(), 1),
         ("C9", length, 0),
         ("D1", ValueKind::Boolean, 0),
         ("D2", ValueKind::Boolean, 0),
@@ -696,13 +703,14 @@ fn spreadsheet_formulas_keep_proven_kinds_and_distinguish_syntax_from_errors() {
         assert_eq!(cell.kind, expected, "{address}");
         assert_eq!(cell.value, None, "{address}");
         assert_eq!(
-            charge_count(&losses, ParameterQuantityAssumed, &id),
+            charge_count(&losses, ParameterExpressionResultUnresolved, &id),
             assumed,
             "{address}"
         );
     }
     for (address, original) in [
         ("A8", "=cos(0; 0) == 1"),
+        ("B4", "=address(1; 1; 5)"),
         ("A29", "=sum(no_such_function(1); 2 mm)"),
     ] {
         let id = format!("fcstd:design:parameter#Sheet:cell:{address}");
@@ -714,7 +722,7 @@ fn spreadsheet_formulas_keep_proven_kinds_and_distinguish_syntax_from_errors() {
             "{address}"
         );
         assert_eq!(
-            charge_count(&losses, ParameterQuantityAssumed, &id),
+            charge_count(&losses, ParameterExpressionResultUnresolved, &id),
             0,
             "{address}"
         );
@@ -763,7 +771,7 @@ fn a_formula_cell_takes_the_kind_freecad_computes() {
         assert!(
             !charged(
                 &losses,
-                crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+                crate::loss::FreecadLossCode::ParameterExpressionResultUnresolved,
                 &id(address)
             ),
             "{address}: {losses:?}"
@@ -805,10 +813,10 @@ fn a_formula_cell_takes_the_kind_freecad_computes() {
     );
 
     // A formula in a cycle has no kind the file determines.
-    assert_eq!(cell("A15").kind, ValueKind::Quantity(Quantity::REAL));
+    assert_eq!(cell("A15").kind, unresolved_kind());
     assert!(charged(
         &losses,
-        crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+        crate::loss::FreecadLossCode::ParameterExpressionResultUnresolved,
         &id("A15")
     ));
 
@@ -879,7 +887,7 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
     let assumed = |address: &str| {
         charged(
             &losses,
-            crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+            crate::loss::FreecadLossCode::ParameterExpressionResultUnresolved,
             &id(address),
         )
     };
@@ -887,7 +895,7 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
     // Python repeats text by an integer or a bool, and a link property's
     // label is the named object's label. An integer property and a whole
     // value cell are integers.
-    for address in ["B1", "B2", "B3", "B4", "B5"] {
+    for address in ["B1", "B2", "B3", "B4", "B5", "G1", "G2"] {
         assert_eq!(cell(address).kind, ValueKind::Text, "{address}");
         assert!(!assumed(address), "{address}: {losses:?}");
     }
@@ -919,17 +927,12 @@ fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecad
     // FreeCAD raises on a range with a text cell, text times a length or a
     // float, the label of a link with sub-names, text ordered against a
     // number, a length ordered against a dimensionless function result, and
-    // a comparison with a tuple or `None`. A repeat with an unbounded
-    // string length has an undetermined result. FreeCAD reads another property of a
-    // linked object at run time, which may hold `None`.
+    // a comparison with a tuple or `None`. FreeCAD reads another property of
+    // a linked object at run time, which may hold `None`.
     for address in [
-        "B9", "D1", "D2", "E4", "E5", "E6", "E7", "E8", "G1", "G2", "G4", "G5", "G6",
+        "B9", "D1", "D2", "E4", "E5", "E6", "E7", "E8", "G4", "G5", "G6",
     ] {
-        assert_eq!(
-            cell(address).kind,
-            ValueKind::Quantity(Quantity::REAL),
-            "{address}"
-        );
+        assert_eq!(cell(address).kind, unresolved_kind(), "{address}");
         assert!(assumed(address), "{address}: {losses:?}");
     }
 }
@@ -985,7 +988,7 @@ fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind(
     let assumed = |address: &str| {
         charged(
             &losses,
-            crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+            crate::loss::FreecadLossCode::ParameterExpressionResultUnresolved,
             &id(address),
         )
     };
@@ -996,13 +999,9 @@ fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind(
     // in error and holds no value. A Python object property that stores no
     // JSON and no class holds `None`. Python refuses text times a `float`.
     for address in [
-        "H1", "H2", "H3", "H4", "H5", "H6", "H7", "J3", "L3", "L4", "L7", "M1", "M3",
+        "H1", "H2", "H3", "H4", "H5", "H6", "H7", "J3", "L4", "L7", "M1", "M3",
     ] {
-        assert_eq!(
-            cell(address).kind,
-            ValueKind::Quantity(Quantity::REAL),
-            "{address}"
-        );
+        assert_eq!(cell(address).kind, unresolved_kind(), "{address}");
         assert!(assumed(address), "{address}: {losses:?}");
     }
 
@@ -1028,6 +1027,7 @@ fn a_comparison_freecad_refuses_an_aggregate_and_a_remainder_take_freecads_kind(
     for (address, kind) in [
         ("L1", ValueKind::Boolean),
         ("L2", ValueKind::Boolean),
+        ("L3", ValueKind::Text),
         ("L5", ValueKind::Text),
         ("L6", ValueKind::Boolean),
         ("M4", ValueKind::Boolean),

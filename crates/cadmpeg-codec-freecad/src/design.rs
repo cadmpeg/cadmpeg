@@ -1087,68 +1087,24 @@ fn direct_spreadsheet_value<'a, 'input: 'a>(
 /// with an optional length or angle unit written as the whole `=` formula. A
 /// cell computed from other cells or functions, and a value of another
 /// quantity, has no stated value.
-const MILLIMETRES_PER_NANOMETRE: f64 = 1.0e-6;
-const MILLIMETRES_PER_MICROMETRE: f64 = 1.0e-3;
-
 fn spreadsheet_cell_value(content: &str) -> Option<ParameterValue> {
     use cadmpeg_ir::design::units::Quantity;
     use cell_content::{CellContent, CellKind};
-    let text = match cell_content::read(content) {
-        CellContent::Formula(formula) => formula,
+
+    let (quantity, number) = match cell_content::read(content) {
+        CellContent::Formula(formula) => cell_content::formula_literal(formula)?,
         CellContent::Text(text) => return Some(ParameterValue::String(text.to_owned())),
         CellContent::Error | CellContent::Unmodeled => return None,
-        CellContent::Value(value) => {
-            return match value.kind {
-                CellKind::Quantity(Quantity::LENGTH) => {
-                    Length::new(value.number).map(ParameterValue::Length)
-                }
-                CellKind::Quantity(Quantity::ANGLE) => {
-                    cadmpeg_ir::scalar::Angle::new(value.number).map(ParameterValue::Angle)
-                }
-                CellKind::Quantity(Quantity::REAL) => {
-                    cadmpeg_ir::scalar::FiniteReal::new(value.number).map(ParameterValue::Real)
-                }
-                CellKind::Quantity(_) | CellKind::Native(_) => None,
-            }
-        }
+        CellContent::Value(value) => match value.kind {
+            CellKind::Quantity(quantity) => (quantity, value.number),
+            CellKind::Native(_) => return None,
+        },
     };
-    let text = text.trim();
-    let number_end = text
-        .find(|character: char| !(character.is_ascii_digit() || "+-.eE".contains(character)))
-        .unwrap_or(text.len());
-    let number = text[..number_end]
-        .parse::<f64>()
-        .ok()
-        .filter(|value| value.is_finite())?;
-    let unit = text[number_end..].trim();
-    // Millimetres per length unit and radians per angle unit.
-    let length = match unit {
-        "nm" => Some(MILLIMETRES_PER_NANOMETRE),
-        "um" | "µm" => Some(MILLIMETRES_PER_MICROMETRE),
-        "mm" => Some(1.0),
-        "cm" => Some(10.0),
-        "dm" => Some(100.0),
-        "m" => Some(1000.0),
-        "km" => Some(1.0e6),
-        "in" | "\"" => Some(25.4),
-        "ft" | "'" => Some(304.8),
-        "thou" | "mil" => Some(0.0254),
-        "yd" => Some(914.4),
+    match quantity {
+        Quantity::LENGTH => Length::new(number).map(ParameterValue::Length),
+        Quantity::ANGLE => cadmpeg_ir::scalar::Angle::new(number).map(ParameterValue::Angle),
+        Quantity::REAL => cadmpeg_ir::scalar::FiniteReal::new(number).map(ParameterValue::Real),
         _ => None,
-    };
-    let angle = match unit {
-        "deg" | "°" => Some(std::f64::consts::PI / 180.0),
-        "rad" => Some(1.0),
-        _ => None,
-    };
-    if unit.is_empty() {
-        cadmpeg_ir::scalar::FiniteReal::new(number).map(ParameterValue::Real)
-    } else if let Some(scale) = length {
-        Length::new(number * scale).map(ParameterValue::Length)
-    } else if let Some(scale) = angle {
-        cadmpeg_ir::scalar::Angle::new(number * scale).map(ParameterValue::Angle)
-    } else {
-        None
     }
 }
 

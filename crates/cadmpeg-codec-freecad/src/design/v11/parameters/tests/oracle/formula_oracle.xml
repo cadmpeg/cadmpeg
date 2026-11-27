@@ -117,7 +117,7 @@
     <Object name="Sheet">
       <Properties Count="1">
         <Property name="cells" type="Spreadsheet::PropertySheet">
-          <Cells Count="1645">
+          <Cells Count="2441">
             <Cell address="A1" content="2" alias="w" />
             <Cell address="A2" content="4" />
             <Cell address="A4" content="2 mm^2" />
@@ -1763,6 +1763,802 @@
             <Cell address="Z1637" content="=or(&lt;&lt;x&gt;&gt;)" />
             <Cell address="Z1638" content="=or(Z1:Z2)" />
             <Cell address="Z1639" content="=or()" />
+            <Cell address="X1" content="9223372036854775807 mm" />
+            <Cell address="X2" content="1/9223372036854775807 mm" />
+            <Cell address="X3" content="0.0000000000000000000000000000000000000001 / 2" />
+            <Cell address="X4" content="1 / (2)" />
+            <Cell address="X5" content="1 / (2 mm)" />
+            <Cell address="X6" content="2 mm/(2 s)" displayUnit="mm/s" />
+            <Cell address="X7" content="1/pi" />
+            <Cell address="X8" content="1/False" />
+            <Cell address="X9" content="0x1p-1074" />
+            <Cell address="X10" content="0x10000000000000000p-1075" />
+            <Cell address="X11" content="0x0p1024" />
+            <Cell address="X12" content="0x1p-2000" />
+            <Cell address="X13" content="=pi mm" displayUnit="cm" />
+            <Cell address="X14" content="=true mm" displayUnit="s" />
+            <Cell address="X15" content="=false mm" />
+            <Cell address="X16" content="=None mm" />
+            <Cell address="X17" content="=sum(A1:A2)" />
+            <Cell address="X18" content="=A1 + 0.0000000000000000000000000000000000000001" />
+            <Cell address="X19" content="=A1 + 1 " />
+            <Cell address="X20" content="ERR: invented" displayUnit="mm" />
+            <Cell address="X21" content="=&lt;&lt;ERR: invented&gt;&gt;" />
+            <Cell address="X22" content="=&lt;&lt;ERR: &gt;&gt; + &lt;&lt;invented&gt;&gt;" />
+            <Cell address="X23" content="=str(A1) * Vars.Count" />
+            <Cell address="X24" content="=A1 + ABCD" />
+            <Cell address="X25" content="=Vars.Items[A1 - 1]" />
+            <Cell address="X26" content="=sum($A$1:w)" />
+            <Cell address="X27" content="0.000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004940656458412465441765687928682213723650598026143247644255856825006755072702087518652998363616359923797965646954457177309266567103559397963987747960107818781263007131903114045278458171678489821036887186360569987307230500063874091535649843873124733972731696151400317153853980741262385655911710266585566867681870395603106249319452715914924553293054565444011274801297099995419319894090804165633245247571478690147267801593552386115501348035264934720193790268107107491703332226844753335720832431936092382893458368060106011506169809753078342277318329247904982524730776375927247874656084778203734469699533647017972677717585125660551199131504891101451037862738167250955837389733598993664809941164205702637090279242767544565229087538682506419718265533447265625" />
+            <Cell address="X28" content="0.0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000049401623927666241952215113598893455022782329663406333194914312393242543971948173099011330637799982878055858503897617315915356404468490420241913491853118079993848808311899237338739303258613219720547834976419339303084997770138677041264962788887374214993344229817851771221385953431882594173461190955589083109951022085635459386945207706433330608377252599874668736738169702854197779621013950852166819230467215422782530748133930308768897979004614082267217708890802967809541618936220688603872603486928987736551690222233000009050191927721030344430905974149801920264783032982896551498686191697259140962525636936532708804498133671479851440115917406123408927589518934342307418059946256337654434601700892820668265702148432678107725646299286381690762937068939208984375" />
+            <Cell address="Y1" content="=count(A1:A2; None)" />
+            <Cell address="Y2" content="=false in" />
+            <Cell address="Y3" content="=True" />
+            <Cell address="Y4" content="=(2,5 cm &lt; 0)" />
+            <Cell address="Y5" content="=str(($A$1 ^ false))" />
+            <Cell address="Y6" content="=$A$1" />
+            <Cell address="Y7" content="=(8.5e+3 &lt; .75)" />
+            <Cell address="Y8" content="0.000000000000000000000000000000000000001&#09;m/(pi m)" />
+            <Cell address="Y9" content="=average(A1:A2; e)" />
+            <Cell address="Y10" content="=None mN" />
+            <Cell address="Y11" content="=A1" />
+            <Cell address="Y12" content="=(Sheet.A2 / 2.25)" />
+            <Cell address="Y13" content="=((2.25 * 0 s) == (8.5e+3 deg + .A1))" />
+            <Cell address="Y14" content="=A1" />
+            <Cell address="Y15" content="=(None - 8.5e+3 in)" />
+            <Cell address="Y16" content="8.5e+3 / (cm)" />
+            <Cell address="Y17" content="=sum(A1:A2; ,125)" />
+            <Cell address="Y18" content="=None kg" />
+            <Cell address="Y19" content="=pi" />
+            <Cell address="Y20" content="=(w &lt; A1)" />
+            <Cell address="Y21" content="=((None / 15 kg) + (0 in == .A1))" />
+            <Cell address="Y22" content="=e" />
+            <Cell address="Y23" content="=cos(.A1)" />
+            <Cell address="Y24" content="2 mN^2" />
+            <Cell address="Y25" content="=max(A1:A2; A2)" />
+            <Cell address="Y26" content="=e mN" />
+            <Cell address="Y27" content="=Sheet.A2" />
+            <Cell address="Y28" content="=(A1 / 2 mA)" />
+            <Cell address="Y29" content="=abs((false ^ false))" />
+            <Cell address="Y30" content="=A2" />
+            <Cell address="Y31" content="=(2 mA - 8.5e+3)" />
+            <Cell address="Y32" content="0x2" />
+            <Cell address="Y33" content="=sum(A1:A2; 15)" />
+            <Cell address="Y34" content="=None m" />
+            <Cell address="Y35" content="=false" />
+            <Cell address="Y36" content="=(w &lt; e)" />
+            <Cell address="Y37" content="=((15 deg - ,125) &lt; (2 kg * A1))" />
+            <Cell address="Y38" content="=True" />
+            <Cell address="Y39" content="=(A2 - 25E-2)" />
+            <Cell address="Y40" content=".75 / (None cm)" />
+            <Cell address="Y41" content="=max(A1:A2; 2.25 m)" />
+            <Cell address="Y42" content="=e mA" />
+            <Cell address="Y43" content="=pi" />
+            <Cell address="Y44" content="=(None == 9223372036854775806 in)" />
+            <Cell address="Y45" content="=((A2 / 2 kg) * (&lt;&lt;text&gt;&gt; + pi))" />
+            <Cell address="Y46" content="=8.5e+3" />
+            <Cell address="Y47" content="=(9223372036854775806 kg * 25E-2)" />
+            <Cell address="Y48" content="2,5 mA^2" />
+            <Cell address="Y49" content="=count(A1:A2; false)" />
+            <Cell address="Y50" content="=true mN" />
+            <Cell address="Y51" content="=2.25" />
+            <Cell address="Y52" content="=(8.5e+3 &lt; .A1)" />
+            <Cell address="Y53" content="=((2.25 mA &lt; 2,5 mA) - str(.75))" />
+            <Cell address="Y54" content="=$A$1" />
+            <Cell address="Y55" content="=cos(A2)" />
+            <Cell address="Y56" content="15 mA/(2,5 mA)" />
+            <Cell address="Y57" content="=and(A1:A2; .75)" />
+            <Cell address="Y58" content="=None s" />
+            <Cell address="Y59" content="=0.000000000000000000000000000000000000001" />
+            <Cell address="Y60" content="=(25E-2 + .75 mN)" />
+            <Cell address="Y61" content="=((&lt;&lt;text&gt;&gt; == w) / (0 == pi))" />
+            <Cell address="Y62" content="=.A1" />
+            <Cell address="Y63" content="=(15 mA &lt; 0.000000000000000000000000000000000000001 s)" />
+            <Cell address="Y64" content="0x1p-1074" />
+            <Cell address="Y65" content="=and(A1:A2; Sheet.A2)" />
+            <Cell address="Y66" content="=true mm" />
+            <Cell address="Y67" content="=8.5e+3 deg" />
+            <Cell address="Y68" content="=str(Sheet.A2)" />
+            <Cell address="Y69" content="=((True - 2.25 s) + (&lt;&lt;text&gt;&gt; / &lt;&lt;text&gt;&gt;))" />
+            <Cell address="Y70" content="=0.000000000000000000000000000000000000001 cm" />
+            <Cell address="Y71" content="=abs(pi)" />
+            <Cell address="Y72" content="8.5e+3 kg^2" />
+            <Cell address="Y73" content="=count(A1:A2; &lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y74" content="=e deg" />
+            <Cell address="Y75" content="=pi" />
+            <Cell address="Y76" content="=str(0)" />
+            <Cell address="Y77" content="=((A1 * .75) &lt; (9223372036854775806 s &lt; &lt;&lt;text&gt;&gt;))" />
+            <Cell address="Y78" content="=.A1" />
+            <Cell address="Y79" content="=str(2.25 s)" />
+            <Cell address="Y80" content="15 m^2" />
+            <Cell address="Y81" content="=max(A1:A2; 9223372036854775806 cm)" />
+            <Cell address="Y82" content="=pi mA" />
+            <Cell address="Y83" content="=0 mA" />
+            <Cell address="Y84" content="=(True / A1)" />
+            <Cell address="Y85" content="=sqrt(($A$1 &lt; 9223372036854775806 m))" />
+            <Cell address="Y86" content="=,125" />
+            <Cell address="Y87" content="=(0.000000000000000000000000000000000000001 == pi)" />
+            <Cell address="Y88" content="2&#09;cm/(.75 cm)" />
+            <Cell address="Y89" content="=count(A1:A2; 0.000000000000000000000000000000000000001 m)" />
+            <Cell address="Y90" content="=None m" />
+            <Cell address="Y91" content="=false" />
+            <Cell address="Y92" content="=(A2 - 15)" />
+            <Cell address="Y93" content="=sqrt((0.000000000000000000000000000000000000001 == 0.000000000000000000000000000000000000001 mN))" />
+            <Cell address="Y94" content="=.A1" />
+            <Cell address="Y95" content="=(0 / e)" />
+            <Cell address="Y96" content=".75 / (25E-2)" />
+            <Cell address="Y97" content="=max(A1:A2; 25E-2)" />
+            <Cell address="Y98" content="=None mm" />
+            <Cell address="Y99" content="=Sheet.A2" />
+            <Cell address="Y100" content="=(25E-2 deg * .A1)" />
+            <Cell address="Y101" content="=(abs(0.000000000000000000000000000000000000001 m) - (25E-2 cm - 25E-2 cm))" />
+            <Cell address="Y102" content="=pi" />
+            <Cell address="Y103" content="=(25E-2 + 2.25 kg)" />
+            <Cell address="Y104" content="2.25" />
+            <Cell address="Y105" content="=and(A1:A2; 25E-2 mN)" />
+            <Cell address="Y106" content="=true mm" />
+            <Cell address="Y107" content="=.75 cm" />
+            <Cell address="Y108" content="=(2,5 deg &lt; A1)" />
+            <Cell address="Y109" content="=(str(25E-2 mN) ^ (Sheet.A2 * None))" />
+            <Cell address="Y110" content="=,125" />
+            <Cell address="Y111" content="=(2 kg * $A$1)" />
+            <Cell address="Y112" content="8.5e+3&#09;m" />
+            <Cell address="Y113" content="=count(A1:A2; false)" />
+            <Cell address="Y114" content="=false kg" />
+            <Cell address="Y115" content="=A1" />
+            <Cell address="Y116" content="=(&lt;&lt;text&gt;&gt; ^ 25E-2)" />
+            <Cell address="Y117" content="=((Sheet.A2 + 0.000000000000000000000000000000000000001 mA) &lt; abs(0.000000000000000000000000000000000000001 s))" />
+            <Cell address="Y118" content="=2,5 kg" />
+            <Cell address="Y119" content="=(.75 + ,125)" />
+            <Cell address="Y120" content="15 kg^2" />
+            <Cell address="Y121" content="=or(A1:A2; $A$1)" />
+            <Cell address="Y122" content="=false in" />
+            <Cell address="Y123" content="=,125 in" />
+            <Cell address="Y124" content="=(True / w)" />
+            <Cell address="Y125" content="=((false == None) + sqrt(&lt;&lt;text&gt;&gt;))" />
+            <Cell address="Y126" content="=0" />
+            <Cell address="Y127" content="=(None + &lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y128" content="25E-2 + 15" />
+            <Cell address="Y129" content="=max(A1:A2; 2.25 mN)" />
+            <Cell address="Y130" content="=pi mm" />
+            <Cell address="Y131" content="=25E-2" />
+            <Cell address="Y132" content="=cos(false)" />
+            <Cell address="Y133" content="=((,125 cm == .75 cm) == (.A1 &lt; None))" />
+            <Cell address="Y134" content="=9223372036854775806 mA" />
+            <Cell address="Y135" content="=(15 mA - .A1)" />
+            <Cell address="Y136" content="0.000000000000000000000000000000000000001&#09;s" />
+            <Cell address="Y137" content="=max(A1:A2; pi)" />
+            <Cell address="Y138" content="=pi in" />
+            <Cell address="Y139" content="=$A$1" />
+            <Cell address="Y140" content="=sqrt(None)" />
+            <Cell address="Y141" content="=((25E-2 mA - A1) * (0 ^ True))" />
+            <Cell address="Y142" content="=25E-2 kg" />
+            <Cell address="Y143" content="=(.75 &lt; e)" />
+            <Cell address="Y144" content="0x1p-1074" />
+            <Cell address="Y145" content="=max(A1:A2; 15 deg)" />
+            <Cell address="Y146" content="=false mN" />
+            <Cell address="Y147" content="=pi" />
+            <Cell address="Y148" content="=(w * True)" />
+            <Cell address="Y149" content="=((w ^ $A$1) / str(e))" />
+            <Cell address="Y150" content="=$A$1" />
+            <Cell address="Y151" content="=(2.25 + 2.25 m)" />
+            <Cell address="Y152" content=",125&#09;m/(2.25 m)" />
+            <Cell address="Y153" content="=sum(A1:A2; 9223372036854775806)" />
+            <Cell address="Y154" content="=pi kg" />
+            <Cell address="Y155" content="=2,5 deg" />
+            <Cell address="Y156" content="=(15 ^ 2.25)" />
+            <Cell address="Y157" content="=((0 * &lt;&lt;text&gt;&gt;) - (2 m * .A1))" />
+            <Cell address="Y158" content="=2" />
+            <Cell address="Y159" content="=(2.25 mm - ,125 kg)" />
+            <Cell address="Y160" content="15 mA" />
+            <Cell address="Y161" content="=average(A1:A2; 2 mN)" />
+            <Cell address="Y162" content="=pi deg" />
+            <Cell address="Y163" content="=True" />
+            <Cell address="Y164" content="=(&lt;&lt;text&gt;&gt; ^ None)" />
+            <Cell address="Y165" content="=((25E-2 in &lt; 25E-2 mm) == (15 &lt; 9223372036854775806 m))" />
+            <Cell address="Y166" content="=0 in" />
+            <Cell address="Y167" content="=(A1 + 9223372036854775806)" />
+            <Cell address="Y168" content=".75&#09;cm/(2.25 cm)" />
+            <Cell address="Y169" content="=average(A1:A2; 2.25 mm)" />
+            <Cell address="Y170" content="=None s" />
+            <Cell address="Y171" content="=,125" />
+            <Cell address="Y172" content="=str(e)" />
+            <Cell address="Y173" content="=((8.5e+3 deg - false) / sqrt(2))" />
+            <Cell address="Y174" content="=A1" />
+            <Cell address="Y175" content="=cos(pi)" />
+            <Cell address="Y176" content="9223372036854775806 / (8.5e+3)" />
+            <Cell address="Y177" content="=average(A1:A2; .75)" />
+            <Cell address="Y178" content="=None mA" />
+            <Cell address="Y179" content="=2,5 s" />
+            <Cell address="Y180" content="=sqrt(8.5e+3)" />
+            <Cell address="Y181" content="=((25E-2 / &lt;&lt;text&gt;&gt;) == (15 + $A$1))" />
+            <Cell address="Y182" content="=,125" />
+            <Cell address="Y183" content="=(.75 + w)" />
+            <Cell address="Y184" content="9223372036854775806 + .75" />
+            <Cell address="Y185" content="=min(A1:A2; false)" />
+            <Cell address="Y186" content="=true in" />
+            <Cell address="Y187" content="=&lt;&lt;text&gt;&gt;" />
+            <Cell address="Y188" content="=($A$1 + w)" />
+            <Cell address="Y189" content="=((w * ,125 mN) / (25E-2 s - ,125))" />
+            <Cell address="Y190" content="=A2" />
+            <Cell address="Y191" content="=(Sheet.A2 / True)" />
+            <Cell address="Y192" content="9223372036854775806 mA/(15 mA)" />
+            <Cell address="Y193" content="=min(A1:A2; A2)" />
+            <Cell address="Y194" content="=false mA" />
+            <Cell address="Y195" content="=True" />
+            <Cell address="Y196" content="=(True ^ 0.000000000000000000000000000000000000001 mm)" />
+            <Cell address="Y197" content="=(abs(0.000000000000000000000000000000000000001) / str(.A1))" />
+            <Cell address="Y198" content="=A1" />
+            <Cell address="Y199" content="=(True + 0.000000000000000000000000000000000000001 cm)" />
+            <Cell address="Y200" content="-0X.8" />
+            <Cell address="Y201" content="=min(A1:A2; $A$1)" />
+            <Cell address="Y202" content="=pi cm" />
+            <Cell address="Y203" content="=2" />
+            <Cell address="Y204" content="=(None - false)" />
+            <Cell address="Y205" content="=((A2 == pi) &lt; (25E-2 &lt; 8.5e+3))" />
+            <Cell address="Y206" content="=Sheet.A2" />
+            <Cell address="Y207" content="=(.75 == A2)" />
+            <Cell address="Y208" content="15 in/(25E-2 in)" />
+            <Cell address="Y209" content="=count(A1:A2; 15 s)" />
+            <Cell address="Y210" content="=e cm" />
+            <Cell address="Y211" content="=25E-2" />
+            <Cell address="Y212" content="=(0.000000000000000000000000000000000000001 - .75 mN)" />
+            <Cell address="Y213" content="=cos(cos(A1))" />
+            <Cell address="Y214" content="=9223372036854775806 kg" />
+            <Cell address="Y215" content="=(8.5e+3 + .75 mN)" />
+            <Cell address="Y216" content="2.25 + 2,5" />
+            <Cell address="Y217" content="=or(A1:A2; True)" />
+            <Cell address="Y218" content="=pi mA" />
+            <Cell address="Y219" content="=.A1" />
+            <Cell address="Y220" content="=cos(e)" />
+            <Cell address="Y221" content="=(($A$1 + None) + (A2 ^ A1))" />
+            <Cell address="Y222" content="=True" />
+            <Cell address="Y223" content="=(9223372036854775806 + A2)" />
+            <Cell address="Y224" content=".75 cm^2" />
+            <Cell address="Y225" content="=max(A1:A2; 9223372036854775806)" />
+            <Cell address="Y226" content="=pi cm" />
+            <Cell address="Y227" content="=True" />
+            <Cell address="Y228" content="=(false == 0 mN)" />
+            <Cell address="Y229" content="=((2.25 + A1) &lt; (0.000000000000000000000000000000000000001 mN - Sheet.A2))" />
+            <Cell address="Y230" content="=e" />
+            <Cell address="Y231" content="=(9223372036854775806 cm - 0.000000000000000000000000000000000000001 mN)" />
+            <Cell address="Y232" content=",125 / (15)" />
+            <Cell address="Y233" content="=sum(A1:A2; None)" />
+            <Cell address="Y234" content="=None mA" />
+            <Cell address="Y235" content="=True" />
+            <Cell address="Y236" content="=(&lt;&lt;text&gt;&gt; ^ 15 m)" />
+            <Cell address="Y237" content="=((0.000000000000000000000000000000000000001 mm ^ w) ^ sqrt(None))" />
+            <Cell address="Y238" content="=pi" />
+            <Cell address="Y239" content="=(0.000000000000000000000000000000000000001 mA / $A$1)" />
+            <Cell address="Y240" content="2 mN^2" />
+            <Cell address="Y241" content="=average(A1:A2; 0 mN)" />
+            <Cell address="Y242" content="=e deg" />
+            <Cell address="Y243" content="=25E-2" />
+            <Cell address="Y244" content="=(,125 mm == 25E-2 mm)" />
+            <Cell address="Y245" content="=(str(None) == (15 mm + .75 mN))" />
+            <Cell address="Y246" content="=8.5e+3 deg" />
+            <Cell address="Y247" content="=sqrt(A2)" />
+            <Cell address="Y248" content="25E-2 + 25E-2" />
+            <Cell address="Y249" content="=count(A1:A2; 9223372036854775806 mA)" />
+            <Cell address="Y250" content="=pi s" />
+            <Cell address="Y251" content="=Sheet.A2" />
+            <Cell address="Y252" content="=sqrt(.A1)" />
+            <Cell address="Y253" content="=cos((pi ^ 2,5 kg))" />
+            <Cell address="Y254" content="=25E-2 mN" />
+            <Cell address="Y255" content="=cos(25E-2)" />
+            <Cell address="Y256" content=".75 m/(False m)" />
+            <Cell address="Y257" content="=sum(A1:A2; e)" />
+            <Cell address="Y258" content="=true cm" />
+            <Cell address="Y259" content="=0.000000000000000000000000000000000000001 kg" />
+            <Cell address="Y260" content="=(None + $A$1)" />
+            <Cell address="Y261" content="=sqrt(abs(0))" />
+            <Cell address="Y262" content="=2.25 deg" />
+            <Cell address="Y263" content="=(.A1 &lt; None)" />
+            <Cell address="Y264" content="15&#09;in" />
+            <Cell address="Y265" content="=sum(A1:A2; e)" />
+            <Cell address="Y266" content="=true kg" />
+            <Cell address="Y267" content="=w" />
+            <Cell address="Y268" content="=(2.25 + 2)" />
+            <Cell address="Y269" content="=(str(,125) * (false == .75 mN))" />
+            <Cell address="Y270" content="=false" />
+            <Cell address="Y271" content="=($A$1 == pi)" />
+            <Cell address="Y272" content="9223372036854775806 + 8.5e+3" />
+            <Cell address="Y273" content="=min(A1:A2; .A1)" />
+            <Cell address="Y274" content="=false deg" />
+            <Cell address="Y275" content="=8.5e+3" />
+            <Cell address="Y276" content="=cos(w)" />
+            <Cell address="Y277" content="=((Sheet.A2 ^ A2) * (false == .75 mm))" />
+            <Cell address="Y278" content="=15" />
+            <Cell address="Y279" content="=abs(pi)" />
+            <Cell address="Y280" content="2.25 + 15" />
+            <Cell address="Y281" content="=count(A1:A2; Sheet.A2)" />
+            <Cell address="Y282" content="=pi kg" />
+            <Cell address="Y283" content="=8.5e+3 mm" />
+            <Cell address="Y284" content="=abs($A$1)" />
+            <Cell address="Y285" content="=sqrt((,125 - 25E-2))" />
+            <Cell address="Y286" content="=A1" />
+            <Cell address="Y287" content="=(0.000000000000000000000000000000000000001 mN * 0)" />
+            <Cell address="Y288" content="9223372036854775806 + .75" />
+            <Cell address="Y289" content="=min(A1:A2; A2)" />
+            <Cell address="Y290" content="=true kg" />
+            <Cell address="Y291" content="=2.25 in" />
+            <Cell address="Y292" content="=(Sheet.A2 == .75 deg)" />
+            <Cell address="Y293" content="=(abs(15 mA) * sqrt(A1))" />
+            <Cell address="Y294" content="=Sheet.A2" />
+            <Cell address="Y295" content="=sqrt(15 s)" />
+            <Cell address="Y296" content="15&#09;in/(25E-2 in)" />
+            <Cell address="Y297" content="=count(A1:A2; e)" />
+            <Cell address="Y298" content="=false cm" />
+            <Cell address="Y299" content="=pi" />
+            <Cell address="Y300" content="=(2.25 &lt; 0 mN)" />
+            <Cell address="Y301" content="=(str($A$1) - (e * 2))" />
+            <Cell address="Y302" content="=None" />
+            <Cell address="Y303" content="=(false + Sheet.A2)" />
+            <Cell address="Y304" content="0x0p1024" />
+            <Cell address="Y305" content="=min(A1:A2; .75 in)" />
+            <Cell address="Y306" content="=e kg" />
+            <Cell address="Y307" content="=8.5e+3 m" />
+            <Cell address="Y308" content="=sqrt(.A1)" />
+            <Cell address="Y309" content="=(cos(e) ^ (2 &lt; 15 kg))" />
+            <Cell address="Y310" content="=,125 mN" />
+            <Cell address="Y311" content="=(25E-2 mN &lt; e)" />
+            <Cell address="Y312" content="0.000000000000000000000000000000000000001 / (kg)" />
+            <Cell address="Y313" content="=min(A1:A2; &lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y314" content="=false in" />
+            <Cell address="Y315" content="=,125 mN" />
+            <Cell address="Y316" content="=abs(&lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y317" content="=((,125 == A1) + (2 + 15 s))" />
+            <Cell address="Y318" content="=2 in" />
+            <Cell address="Y319" content="=(e - 0 m)" />
+            <Cell address="Y320" content="25E-2 / (e m)" />
+            <Cell address="Y321" content="=average(A1:A2; A2)" />
+            <Cell address="Y322" content="=false s" />
+            <Cell address="Y323" content="=2.25 mm" />
+            <Cell address="Y324" content="=(None + pi)" />
+            <Cell address="Y325" content="=str(cos(A1))" />
+            <Cell address="Y326" content="=True" />
+            <Cell address="Y327" content="=(None &lt; w)" />
+            <Cell address="Y328" content="2.25 / (False)" />
+            <Cell address="Y329" content="=min(A1:A2; True)" />
+            <Cell address="Y330" content="=None in" />
+            <Cell address="Y331" content="=w" />
+            <Cell address="Y332" content="=(&lt;&lt;text&gt;&gt; * w)" />
+            <Cell address="Y333" content="=abs((.A1 &lt; .A1))" />
+            <Cell address="Y334" content="=2,5" />
+            <Cell address="Y335" content="=(2 mm + &lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y336" content="8.5e+3&#09;in" />
+            <Cell address="Y337" content="=min(A1:A2; True)" />
+            <Cell address="Y338" content="=true mA" />
+            <Cell address="Y339" content="=25E-2 deg" />
+            <Cell address="Y340" content="=(e == 15 m)" />
+            <Cell address="Y341" content="=(sqrt(Sheet.A2) - cos(2))" />
+            <Cell address="Y342" content="=$A$1" />
+            <Cell address="Y343" content="=(A1 * .75)" />
+            <Cell address="Y344" content=",125 deg" />
+            <Cell address="Y345" content="=average(A1:A2; 9223372036854775806 mA)" />
+            <Cell address="Y346" content="=e mN" />
+            <Cell address="Y347" content="=A2" />
+            <Cell address="Y348" content="=sqrt(2.25)" />
+            <Cell address="Y349" content="=str((8.5e+3 m + $A$1))" />
+            <Cell address="Y350" content="=25E-2 mA" />
+            <Cell address="Y351" content="=(A1 + 2 deg)" />
+            <Cell address="Y352" content="-0X.8" />
+            <Cell address="Y353" content="=min(A1:A2; 8.5e+3)" />
+            <Cell address="Y354" content="=false mN" />
+            <Cell address="Y355" content="=A1" />
+            <Cell address="Y356" content="=(2.25 in / None)" />
+            <Cell address="Y357" content="=str((A1 * $A$1))" />
+            <Cell address="Y358" content="=True" />
+            <Cell address="Y359" content="=($A$1 * .75 in)" />
+            <Cell address="Y360" content="2,5 cm/(e cm)" />
+            <Cell address="Y361" content="=or(A1:A2; True)" />
+            <Cell address="Y362" content="=false deg" />
+            <Cell address="Y363" content="=25E-2 cm" />
+            <Cell address="Y364" content="=str(0.000000000000000000000000000000000000001)" />
+            <Cell address="Y365" content="=((&lt;&lt;text&gt;&gt; + Sheet.A2) == (0.000000000000000000000000000000000000001 kg &lt; e))" />
+            <Cell address="Y366" content="=A1" />
+            <Cell address="Y367" content="=(25E-2 s / $A$1)" />
+            <Cell address="Y368" content="25E-2 s" />
+            <Cell address="Y369" content="=or(A1:A2; false)" />
+            <Cell address="Y370" content="=false mm" />
+            <Cell address="Y371" content="=0 in" />
+            <Cell address="Y372" content="=(0 m ^ True)" />
+            <Cell address="Y373" content="=((15 m &lt; None) + sqrt(0.000000000000000000000000000000000000001 kg))" />
+            <Cell address="Y374" content="=0.000000000000000000000000000000000000001" />
+            <Cell address="Y375" content="=abs(&lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y376" content="2&#09;kg/(,125 kg)" />
+            <Cell address="Y377" content="=stddev(A1:A2; ,125)" />
+            <Cell address="Y378" content="=pi s" />
+            <Cell address="Y379" content="=15 mm" />
+            <Cell address="Y380" content="=(.75 cm + ,125)" />
+            <Cell address="Y381" content="=((,125 / e) ^ sqrt(9223372036854775806))" />
+            <Cell address="Y382" content="=,125" />
+            <Cell address="Y383" content="=(2,5 mm + True)" />
+            <Cell address="Y384" content=",125 / (None kg)" />
+            <Cell address="Y385" content="=min(A1:A2; false)" />
+            <Cell address="Y386" content="=false mN" />
+            <Cell address="Y387" content="=,125 mm" />
+            <Cell address="Y388" content="=cos(0.000000000000000000000000000000000000001)" />
+            <Cell address="Y389" content="=((2 deg / $A$1) &lt; (.75 cm ^ false))" />
+            <Cell address="Y390" content="=A1" />
+            <Cell address="Y391" content="=(2.25 == .A1)" />
+            <Cell address="Y392" content="9223372036854775806" />
+            <Cell address="Y393" content="=average(A1:A2; 8.5e+3 in)" />
+            <Cell address="Y394" content="=e deg" />
+            <Cell address="Y395" content="=&lt;&lt;text&gt;&gt;" />
+            <Cell address="Y396" content="=(&lt;&lt;text&gt;&gt; ^ 25E-2)" />
+            <Cell address="Y397" content="=(cos(9223372036854775806 s) &lt; (0.000000000000000000000000000000000000001 s ^ .75))" />
+            <Cell address="Y398" content="=2,5 mA" />
+            <Cell address="Y399" content="=sqrt(None)" />
+            <Cell address="Y400" content="0.000000000000000000000000000000000000001&#09;cm/(25E-2 cm)" />
+            <Cell address="Y401" content="=and(A1:A2; &lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y402" content="=None mA" />
+            <Cell address="Y403" content="=0 m" />
+            <Cell address="Y404" content="=(A1 == A2)" />
+            <Cell address="Y405" content="=(sqrt(2.25 deg) / (Sheet.A2 * 2.25))" />
+            <Cell address="Y406" content="=2,5" />
+            <Cell address="Y407" content="=(9223372036854775806 mm == &lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y408" content="-0X.8" />
+            <Cell address="Y409" content="=or(A1:A2; 8.5e+3)" />
+            <Cell address="Y410" content="=false kg" />
+            <Cell address="Y411" content="=2.25" />
+            <Cell address="Y412" content="=(pi - A2)" />
+            <Cell address="Y413" content="=(sqrt(&lt;&lt;text&gt;&gt;) &lt; (pi - 0))" />
+            <Cell address="Y414" content="=false" />
+            <Cell address="Y415" content="=(Sheet.A2 ^ Sheet.A2)" />
+            <Cell address="Y416" content="2 / (.75 m)" />
+            <Cell address="Y417" content="=average(A1:A2; 25E-2)" />
+            <Cell address="Y418" content="=false s" />
+            <Cell address="Y419" content="=None" />
+            <Cell address="Y420" content="=(A2 + True)" />
+            <Cell address="Y421" content="=((0 mN / &lt;&lt;text&gt;&gt;) + cos(.75))" />
+            <Cell address="Y422" content="=&lt;&lt;text&gt;&gt;" />
+            <Cell address="Y423" content="=(2.25 m / 0)" />
+            <Cell address="Y424" content="2,5" />
+            <Cell address="Y425" content="=or(A1:A2; 0.000000000000000000000000000000000000001 s)" />
+            <Cell address="Y426" content="=None mA" />
+            <Cell address="Y427" content="=True" />
+            <Cell address="Y428" content="=(0.000000000000000000000000000000000000001 - 0)" />
+            <Cell address="Y429" content="=str((w == ,125 in))" />
+            <Cell address="Y430" content="=0.000000000000000000000000000000000000001 mA" />
+            <Cell address="Y431" content="=(2 deg / 25E-2 cm)" />
+            <Cell address="Y432" content="0.000000000000000000000000000000000000001 s/(0.000000000000000000000000000000000000001 s)" />
+            <Cell address="Y433" content="=sum(A1:A2; A1)" />
+            <Cell address="Y434" content="=false deg" />
+            <Cell address="Y435" content="=$A$1" />
+            <Cell address="Y436" content="=(&lt;&lt;text&gt;&gt; * 9223372036854775806 m)" />
+            <Cell address="Y437" content="=(cos(,125) + (false * $A$1))" />
+            <Cell address="Y438" content="=A1" />
+            <Cell address="Y439" content="=cos(None)" />
+            <Cell address="Y440" content="15 s" />
+            <Cell address="Y441" content="=min(A1:A2; 2.25)" />
+            <Cell address="Y442" content="=pi cm" />
+            <Cell address="Y443" content="=w" />
+            <Cell address="Y444" content="=(None == .75 in)" />
+            <Cell address="Y445" content="=(($A$1 * w) + str(A2))" />
+            <Cell address="Y446" content="=w" />
+            <Cell address="Y447" content="=(0 mm * 0.000000000000000000000000000000000000001 mA)" />
+            <Cell address="Y448" content="-0x1.8P+4" />
+            <Cell address="Y449" content="=average(A1:A2; $A$1)" />
+            <Cell address="Y450" content="=e deg" />
+            <Cell address="Y451" content="=0" />
+            <Cell address="Y452" content="=cos(false)" />
+            <Cell address="Y453" content="=(sqrt(pi) / abs(2,5))" />
+            <Cell address="Y454" content="=0" />
+            <Cell address="Y455" content="=(Sheet.A2 - A2)" />
+            <Cell address="Y456" content=",125 kg" />
+            <Cell address="Y457" content="=or(A1:A2; $A$1)" />
+            <Cell address="Y458" content="=true m" />
+            <Cell address="Y459" content="=A1" />
+            <Cell address="Y460" content="=(.A1 ^ w)" />
+            <Cell address="Y461" content="=((pi * 2.25 kg) == str(&lt;&lt;text&gt;&gt;))" />
+            <Cell address="Y462" content="=0.000000000000000000000000000000000000001 mm" />
+            <Cell address="Y463" content="=(A2 &lt; 2.25)" />
+            <Cell address="Y464" content="2.25 deg" />
+            <Cell address="Y465" content="=or(A1:A2; True)" />
+            <Cell address="Y466" content="=e mm" />
+            <Cell address="Y467" content="=9223372036854775806 deg" />
+            <Cell address="Y468" content="=($A$1 + pi)" />
+            <Cell address="Y469" content="=((A1 &lt; 2,5) + cos(A1))" />
+            <Cell address="Y470" content="=$A$1" />
+            <Cell address="Y471" content="=(.A1 + Sheet.A2)" />
+            <Cell address="Y472" content="2" />
+            <Cell address="Y473" content="=and(A1:A2; w)" />
+            <Cell address="Y474" content="=false mN" />
+            <Cell address="Y475" content="=,125 cm" />
+            <Cell address="Y476" content="=(Sheet.A2 &lt; 15)" />
+            <Cell address="Y477" content="=sqrt(sqrt(2,5 in))" />
+            <Cell address="Y478" content="=9223372036854775806 m" />
+            <Cell address="Y479" content="=cos(A2)" />
+            <Cell address="Y480" content="0.000000000000000000000000000000000000001" />
+            <Cell address="Y481" content="=sum(A1:A2; None)" />
+            <Cell address="Y482" content="=e s" />
+            <Cell address="Y483" content="=w" />
+            <Cell address="Y484" content="=sqrt(2 kg)" />
+            <Cell address="Y485" content="=((0 ^ pi) * (2,5 mA == &lt;&lt;text&gt;&gt;))" />
+            <Cell address="Y486" content="=Sheet.A2" />
+            <Cell address="Y487" content="=(A2 ^ 25E-2)" />
+            <Cell address="Y488" content=",125 / (kg)" />
+            <Cell address="Y489" content="=min(A1:A2; None)" />
+            <Cell address="Y490" content="=e in" />
+            <Cell address="Y491" content="=25E-2" />
+            <Cell address="Y492" content="=(.75 &lt; 9223372036854775806)" />
+            <Cell address="Y493" content="=str((2,5 - &lt;&lt;text&gt;&gt;))" />
+            <Cell address="Y494" content="=A2" />
+            <Cell address="Y495" content="=(0 / .A1)" />
+            <Cell address="Y496" content="2.25 deg/(0.000000000000000000000000000000000000001 deg)" />
+            <Cell address="Y497" content="=stddev(A1:A2; Sheet.A2)" />
+            <Cell address="Y498" content="=e cm" />
+            <Cell address="Y499" content="=.75" />
+            <Cell address="Y500" content="=cos(&lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y501" content="=((2 == 9223372036854775806 mA) / (2 deg + 9223372036854775806))" />
+            <Cell address="Y502" content="=15 mN" />
+            <Cell address="Y503" content="=(.75 in / 9223372036854775806 cm)" />
+            <Cell address="Y504" content=".75 s^2" />
+            <Cell address="Y505" content="=sum(A1:A2; 15)" />
+            <Cell address="Y506" content="=pi in" />
+            <Cell address="Y507" content="=2.25 mA" />
+            <Cell address="Y508" content="=(&lt;&lt;text&gt;&gt; * 9223372036854775806)" />
+            <Cell address="Y509" content="=(cos(2,5 deg) - (.75 m + w))" />
+            <Cell address="Y510" content="=0 s" />
+            <Cell address="Y511" content="=(25E-2 / false)" />
+            <Cell address="Y512" content=".75 / (8.5e+3 cm)" />
+            <Cell address="Y513" content="=min(A1:A2; $A$1)" />
+            <Cell address="Y514" content="=None deg" />
+            <Cell address="Y515" content="=,125" />
+            <Cell address="Y516" content="=(Sheet.A2 + $A$1)" />
+            <Cell address="Y517" content="=abs(cos(None))" />
+            <Cell address="Y518" content="=Sheet.A2" />
+            <Cell address="Y519" content="=abs(e)" />
+            <Cell address="Y520" content="8.5e+3 + 15" />
+            <Cell address="Y521" content="=count(A1:A2; false)" />
+            <Cell address="Y522" content="=None s" />
+            <Cell address="Y523" content="=0.000000000000000000000000000000000000001" />
+            <Cell address="Y524" content="=(0.000000000000000000000000000000000000001 &lt; pi)" />
+            <Cell address="Y525" content="=((0.000000000000000000000000000000000000001 + w) * (15 / false))" />
+            <Cell address="Y526" content="=2 m" />
+            <Cell address="Y527" content="=sqrt(&lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y528" content="2,5 mN" />
+            <Cell address="Y529" content="=stddev(A1:A2; A1)" />
+            <Cell address="Y530" content="=e kg" />
+            <Cell address="Y531" content="=A2" />
+            <Cell address="Y532" content="=(None - .75 deg)" />
+            <Cell address="Y533" content="=str(str(25E-2))" />
+            <Cell address="Y534" content="=.A1" />
+            <Cell address="Y535" content="=(0.000000000000000000000000000000000000001 s / ,125)" />
+            <Cell address="Y536" content="-0X.8" />
+            <Cell address="Y537" content="=and(A1:A2; 2,5 kg)" />
+            <Cell address="Y538" content="=e mA" />
+            <Cell address="Y539" content="=false" />
+            <Cell address="Y540" content="=($A$1 / .A1)" />
+            <Cell address="Y541" content="=((None / 25E-2 kg) + (2 mm * 9223372036854775806 cm))" />
+            <Cell address="Y542" content="=8.5e+3 kg" />
+            <Cell address="Y543" content="=abs(,125)" />
+            <Cell address="Y544" content="0.000000000000000000000000000000000000001 s/(None s)" />
+            <Cell address="Y545" content="=count(A1:A2; .A1)" />
+            <Cell address="Y546" content="=true in" />
+            <Cell address="Y547" content="=A2" />
+            <Cell address="Y548" content="=sqrt(15)" />
+            <Cell address="Y549" content="=((pi - 25E-2 deg) ^ (8.5e+3 / 9223372036854775806 cm))" />
+            <Cell address="Y550" content="=9223372036854775806" />
+            <Cell address="Y551" content="=(15 &lt; 15)" />
+            <Cell address="Y552" content=",125 + 9223372036854775806" />
+            <Cell address="Y553" content="=count(A1:A2; e)" />
+            <Cell address="Y554" content="=true s" />
+            <Cell address="Y555" content="=&lt;&lt;text&gt;&gt;" />
+            <Cell address="Y556" content="=(A2 &lt; pi)" />
+            <Cell address="Y557" content="=(($A$1 &lt; Sheet.A2) ^ sqrt(0.000000000000000000000000000000000000001 cm))" />
+            <Cell address="Y558" content="=w" />
+            <Cell address="Y559" content="=(8.5e+3 ^ pi)" />
+            <Cell address="Y560" content="0.000000000000000000000000000000000000001&#09;mN" />
+            <Cell address="Y561" content="=max(A1:A2; e)" />
+            <Cell address="Y562" content="=true mN" />
+            <Cell address="Y563" content="=8.5e+3 mm" />
+            <Cell address="Y564" content="=(e ^ e)" />
+            <Cell address="Y565" content="=cos(($A$1 * $A$1))" />
+            <Cell address="Y566" content="=e" />
+            <Cell address="Y567" content="=(e ^ Sheet.A2)" />
+            <Cell address="Y568" content="2 + 15" />
+            <Cell address="Y569" content="=stddev(A1:A2; w)" />
+            <Cell address="Y570" content="=true deg" />
+            <Cell address="Y571" content="=$A$1" />
+            <Cell address="Y572" content="=(w == 25E-2 kg)" />
+            <Cell address="Y573" content="=(str(A1) + (A2 &lt; 15))" />
+            <Cell address="Y574" content="=A1" />
+            <Cell address="Y575" content="=(pi - A1)" />
+            <Cell address="Y576" content="15 + pi" />
+            <Cell address="Y577" content="=min(A1:A2; .A1)" />
+            <Cell address="Y578" content="=false mm" />
+            <Cell address="Y579" content="=A2" />
+            <Cell address="Y580" content="=(True == 9223372036854775806)" />
+            <Cell address="Y581" content="=((.A1 - True) * (w + A2))" />
+            <Cell address="Y582" content="=True" />
+            <Cell address="Y583" content="=(9223372036854775806 kg ^ 2,5 kg)" />
+            <Cell address="Y584" content="0.000000000000000000000000000000000000001 / (25E-2 mm)" />
+            <Cell address="Y585" content="=max(A1:A2; .75)" />
+            <Cell address="Y586" content="=None in" />
+            <Cell address="Y587" content="=25E-2" />
+            <Cell address="Y588" content="=(9223372036854775806 kg - ,125 kg)" />
+            <Cell address="Y589" content="=(str(2) ^ (.75 / True))" />
+            <Cell address="Y590" content="=None" />
+            <Cell address="Y591" content="=(9223372036854775806 / .A1)" />
+            <Cell address="Y592" content="9223372036854775806 deg/(9223372036854775806 deg)" />
+            <Cell address="Y593" content="=stddev(A1:A2; w)" />
+            <Cell address="Y594" content="=true mA" />
+            <Cell address="Y595" content="=9223372036854775806 s" />
+            <Cell address="Y596" content="=(e * pi)" />
+            <Cell address="Y597" content="=((True &lt; .75 cm) / str(.A1))" />
+            <Cell address="Y598" content="=9223372036854775806 mm" />
+            <Cell address="Y599" content="=(w / $A$1)" />
+            <Cell address="Y600" content="25E-2&#09;deg" />
+            <Cell address="Y601" content="=or(A1:A2; A2)" />
+            <Cell address="Y602" content="=None mN" />
+            <Cell address="Y603" content="=Sheet.A2" />
+            <Cell address="Y604" content="=str(false)" />
+            <Cell address="Y605" content="=((0.000000000000000000000000000000000000001 s &lt; 2) / (0 * 8.5e+3 deg))" />
+            <Cell address="Y606" content="=false" />
+            <Cell address="Y607" content="=(w * .A1)" />
+            <Cell address="Y608" content="0x2" />
+            <Cell address="Y609" content="=stddev(A1:A2; None)" />
+            <Cell address="Y610" content="=None mA" />
+            <Cell address="Y611" content="=25E-2" />
+            <Cell address="Y612" content="=(e / True)" />
+            <Cell address="Y613" content="=((0.000000000000000000000000000000000000001 - None) - (25E-2 ^ 0))" />
+            <Cell address="Y614" content="=A1" />
+            <Cell address="Y615" content="=(9223372036854775806 cm ^ 0 deg)" />
+            <Cell address="Y616" content="8.5e+3 / (,125 mm)" />
+            <Cell address="Y617" content="=sum(A1:A2; $A$1)" />
+            <Cell address="Y618" content="=e deg" />
+            <Cell address="Y619" content="=2,5 mm" />
+            <Cell address="Y620" content="=sqrt(None)" />
+            <Cell address="Y621" content="=((15 mN + 15) / abs(25E-2 in))" />
+            <Cell address="Y622" content="=8.5e+3" />
+            <Cell address="Y623" content="=abs(.75 cm)" />
+            <Cell address="Y624" content="9223372036854775806 / (None)" />
+            <Cell address="Y625" content="=sum(A1:A2; ,125 kg)" />
+            <Cell address="Y626" content="=pi mm" />
+            <Cell address="Y627" content="=True" />
+            <Cell address="Y628" content="=(.A1 &lt; 2,5 mA)" />
+            <Cell address="Y629" content="=(str(0.000000000000000000000000000000000000001 m) - sqrt(2,5 mm))" />
+            <Cell address="Y630" content="=w" />
+            <Cell address="Y631" content="=sqrt(2,5)" />
+            <Cell address="Y632" content="2,5 in" />
+            <Cell address="Y633" content="=or(A1:A2; e)" />
+            <Cell address="Y634" content="=None m" />
+            <Cell address="Y635" content="=$A$1" />
+            <Cell address="Y636" content="=str(.A1)" />
+            <Cell address="Y637" content="=(abs(,125) / (9223372036854775806 - 15))" />
+            <Cell address="Y638" content="=w" />
+            <Cell address="Y639" content="=(2.25 s &lt; .75)" />
+            <Cell address="Y640" content="9223372036854775806 cm/(15 cm)" />
+            <Cell address="Y641" content="=and(A1:A2; 0)" />
+            <Cell address="Y642" content="=None deg" />
+            <Cell address="Y643" content="=0.000000000000000000000000000000000000001 kg" />
+            <Cell address="Y644" content="=(None / .75)" />
+            <Cell address="Y645" content="=str((A1 / e))" />
+            <Cell address="Y646" content="=.A1" />
+            <Cell address="Y647" content="=(2 mm ^ false)" />
+            <Cell address="Y648" content="0.000000000000000000000000000000000000001" />
+            <Cell address="Y649" content="=or(A1:A2; w)" />
+            <Cell address="Y650" content="=true m" />
+            <Cell address="Y651" content="=15 mN" />
+            <Cell address="Y652" content="=(2.25 in * 15)" />
+            <Cell address="Y653" content="=((0 mN + A1) ^ (0.000000000000000000000000000000000000001 + 9223372036854775806))" />
+            <Cell address="Y654" content="=pi" />
+            <Cell address="Y655" content="=str(e)" />
+            <Cell address="Y656" content="8.5e+3 m" />
+            <Cell address="Y657" content="=stddev(A1:A2; .A1)" />
+            <Cell address="Y658" content="=pi cm" />
+            <Cell address="Y659" content="=2,5" />
+            <Cell address="Y660" content="=(2,5 mA &lt; 15)" />
+            <Cell address="Y661" content="=(sqrt(e) / (e &lt; 2.25))" />
+            <Cell address="Y662" content="=false" />
+            <Cell address="Y663" content="=abs(&lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y664" content="15 cm^2" />
+            <Cell address="Y665" content="=stddev(A1:A2; ,125)" />
+            <Cell address="Y666" content="=None deg" />
+            <Cell address="Y667" content="=Sheet.A2" />
+            <Cell address="Y668" content="=(false / 0.000000000000000000000000000000000000001 kg)" />
+            <Cell address="Y669" content="=((None * &lt;&lt;text&gt;&gt;) / (0 cm ^ false))" />
+            <Cell address="Y670" content="=.75" />
+            <Cell address="Y671" content="=(A2 ^ .75)" />
+            <Cell address="Y672" content="25E-2 s/(2,5 s)" />
+            <Cell address="Y673" content="=max(A1:A2; ,125)" />
+            <Cell address="Y674" content="=None in" />
+            <Cell address="Y675" content="=false" />
+            <Cell address="Y676" content="=(e - 15)" />
+            <Cell address="Y677" content="=((e &lt; 15) &lt; str(.75))" />
+            <Cell address="Y678" content="=25E-2 mN" />
+            <Cell address="Y679" content="=(pi &lt; e)" />
+            <Cell address="Y680" content="2.25 + 2" />
+            <Cell address="Y681" content="=min(A1:A2; 9223372036854775806 m)" />
+            <Cell address="Y682" content="=None in" />
+            <Cell address="Y683" content="=8.5e+3" />
+            <Cell address="Y684" content="=(e / A1)" />
+            <Cell address="Y685" content="=((Sheet.A2 - None) &lt; (25E-2 * .75))" />
+            <Cell address="Y686" content="=None" />
+            <Cell address="Y687" content="=(false ^ None)" />
+            <Cell address="Y688" content=".75 mN/(25E-2 mN)" />
+            <Cell address="Y689" content="=average(A1:A2; None)" />
+            <Cell address="Y690" content="=e cm" />
+            <Cell address="Y691" content="=0 mN" />
+            <Cell address="Y692" content="=($A$1 + 2,5 s)" />
+            <Cell address="Y693" content="=(sqrt(,125 deg) + cos(0.000000000000000000000000000000000000001))" />
+            <Cell address="Y694" content="=2,5" />
+            <Cell address="Y695" content="=(0.000000000000000000000000000000000000001 cm - 15 m)" />
+            <Cell address="Y696" content="8.5e+3 / (9223372036854775806 s)" />
+            <Cell address="Y697" content="=count(A1:A2; A1)" />
+            <Cell address="Y698" content="=e mm" />
+            <Cell address="Y699" content="=false" />
+            <Cell address="Y700" content="=(8.5e+3 == 0.000000000000000000000000000000000000001)" />
+            <Cell address="Y701" content="=str((pi + 25E-2 m))" />
+            <Cell address="Y702" content="=25E-2 mm" />
+            <Cell address="Y703" content="=(2.25 &lt; 15 kg)" />
+            <Cell address="Y704" content="15 mm^2" />
+            <Cell address="Y705" content="=sum(A1:A2; $A$1)" />
+            <Cell address="Y706" content="=e in" />
+            <Cell address="Y707" content="=,125 cm" />
+            <Cell address="Y708" content="=(.75 + 25E-2)" />
+            <Cell address="Y709" content="=(str(25E-2 mm) * cos(,125 s))" />
+            <Cell address="Y710" content="=A2" />
+            <Cell address="Y711" content="=(e == None)" />
+            <Cell address="Y712" content="-0X.8" />
+            <Cell address="Y713" content="=average(A1:A2; 2)" />
+            <Cell address="Y714" content="=e mN" />
+            <Cell address="Y715" content="=A2" />
+            <Cell address="Y716" content="=(.A1 &lt; 2.25)" />
+            <Cell address="Y717" content="=(sqrt(2.25 mN) == cos(e))" />
+            <Cell address="Y718" content="=pi" />
+            <Cell address="Y719" content="=(.75 * &lt;&lt;text&gt;&gt;)" />
+            <Cell address="Y720" content="8.5e+3 m" />
+            <Cell address="Y721" content="=and(A1:A2; pi)" />
+            <Cell address="Y722" content="=e in" />
+            <Cell address="Y723" content="=2,5" />
+            <Cell address="Y724" content="=(&lt;&lt;text&gt;&gt; + 2,5 mm)" />
+            <Cell address="Y725" content="=((2 ^ false) / (A1 * false))" />
+            <Cell address="Y726" content="=25E-2" />
+            <Cell address="Y727" content="=(25E-2 kg ^ 8.5e+3)" />
+            <Cell address="Y728" content="25E-2 / (.75 m)" />
+            <Cell address="Y729" content="=min(A1:A2; 0.000000000000000000000000000000000000001)" />
+            <Cell address="Y730" content="=None in" />
+            <Cell address="Y731" content="=2.25 cm" />
+            <Cell address="Y732" content="=sqrt(.A1)" />
+            <Cell address="Y733" content="=((pi == $A$1) &lt; str(e))" />
+            <Cell address="Y734" content="=True" />
+            <Cell address="Y735" content="=(Sheet.A2 - $A$1)" />
+            <Cell address="Y736" content=".75 kg" />
+            <Cell address="Y737" content="=stddev(A1:A2; pi)" />
+            <Cell address="Y738" content="=None mm" />
+            <Cell address="Y739" content="=15" />
+            <Cell address="Y740" content="=(15 == 2.25 cm)" />
+            <Cell address="Y741" content="=(str(e) + (0.000000000000000000000000000000000000001 kg &lt; 9223372036854775806))" />
+            <Cell address="Y742" content="=2,5 deg" />
+            <Cell address="Y743" content="=(A2 &lt; A2)" />
+            <Cell address="Y744" content="9223372036854775806 kg^2" />
+            <Cell address="Y745" content="=max(A1:A2; 15)" />
+            <Cell address="Y746" content="=e in" />
+            <Cell address="Y747" content="=&lt;&lt;text&gt;&gt;" />
+            <Cell address="Y748" content="=(2,5 * 8.5e+3)" />
+            <Cell address="Y749" content="=(str(0.000000000000000000000000000000000000001) &lt; (&lt;&lt;text&gt;&gt; - True))" />
+            <Cell address="Y750" content="=0.000000000000000000000000000000000000001" />
+            <Cell address="Y751" content="=(&lt;&lt;text&gt;&gt; - 25E-2)" />
+            <Cell address="Y752" content="2,5 + 2.25" />
+            <Cell address="Y753" content="=sum(A1:A2; 2,5 kg)" />
+            <Cell address="Y754" content="=pi s" />
+            <Cell address="Y755" content="=2.25" />
+            <Cell address="Y756" content="=abs(None)" />
+            <Cell address="Y757" content="=(($A$1 * .A1) + (w - 2))" />
+            <Cell address="Y758" content="=,125 mm" />
+            <Cell address="Y759" content="=(25E-2 mA / false)" />
+            <Cell address="Y760" content="2,5 s^2" />
+            <Cell address="Y761" content="=max(A1:A2; false)" />
+            <Cell address="Y762" content="=false mm" />
+            <Cell address="Y763" content="=.A1" />
+            <Cell address="Y764" content="=(.75 s + None)" />
+            <Cell address="Y765" content="=((9223372036854775806 &lt; 15) ^ (True * $A$1))" />
+            <Cell address="Y766" content="=2" />
+            <Cell address="Y767" content="=(None == 0 m)" />
+            <Cell address="Y768" content="2.25&#09;mN/(25E-2 mN)" />
           </Cells>
         </Property>
       </Properties>

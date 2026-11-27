@@ -7,6 +7,7 @@ Regenerate with FreeCAD 1.1.4 and freecad.cmd on PATH:
 
 import argparse
 import json
+import math
 from pathlib import Path
 import subprocess
 import tempfile
@@ -21,13 +22,29 @@ def record(archive, addresses, output):
         doc.recompute()
         results = {}
         for address in addresses:
-            value = doc.Sheet.get(address)
-            if type(value) is str and value.startswith("ERR:"):
-                results[address] = ["error", None]
+            sheet = doc.Sheet
+            value = sheet.get(address)
+            stored = sheet.getContents(address)
+            result = type(value).__name__
+            signature = None
+            number = None
+            text = None
+            if type(value) is str:
+                text = value
+                if value.startswith("ERR:") and stored.startswith("="):
+                    try:
+                        sheet.evalExpression(stored[1:])
+                    except Exception:
+                        result = "error"
             elif isinstance(value, App.Units.Quantity):
-                results[address] = ["Quantity", list(value.Unit.Signature)]
-            else:
-                results[address] = [type(value).__name__, None]
+                result = "Quantity"
+                signature = list(value.Unit.Signature)
+                number = value.Value
+            elif type(value) in (int, float):
+                number = float(value)
+            if number is not None and not math.isfinite(number):
+                number = str(number)
+            results[address] = [result, signature, number, text, stored, sheet.getDisplayUnit(address)]
         Path(output).write_text(json.dumps({
             "freecad": App.Version(),
             "results": results,
@@ -37,12 +54,15 @@ def record(archive, addresses, output):
 
 
 def main():
-    from generate_formula_cases import cases, document
+    from generate_formula_cases import SEED, cases, document, grammar_cases
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scratch", type=Path, required=True)
+    parser.add_argument("--freecad", default="freecad.cmd")
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument("--seed", type=lambda value: int(value, 0), default=SEED)
     args = parser.parse_args()
-    rows = list(cases())
+    rows = list(cases(args.seed))
     addresses = [address for address, *_ in rows]
     if len(set(addresses)) != len(addresses):
         raise ValueError("duplicate generated spreadsheet address")
@@ -68,27 +88,29 @@ except BaseException:
     os._exit(1)
 os._exit(0)
 """
-        subprocess.run(["freecad.cmd", "-c"], input=f"exec({command!r})\n",
+        subprocess.run([args.freecad, "-c"], input=f"exec({command!r})\n",
                        text=True, check=True, timeout=180)
         captured = json.loads(output.read_bytes())
     if set(captured["results"]) != set(addresses):
         raise ValueError("FreeCAD result addresses differ from the generated sheet")
+    refs = {address: targets for address, _, _, _, targets in grammar_cases(args.seed)}
     table = {
+        "seed": args.seed,
         "freecad": captured["freecad"],
         "rows": [
-            [family, address, *captured["results"][address]]
-            for address, family, *_ in rows
+            [family, address, content, *captured["results"][address], refs.get(address)]
+            for address, family, content, _ in rows
         ],
     }
     # Keep one row per line so changes to an individual observation are visible in a diff.
-    encoded = ['{', '  "freecad": ' + json.dumps(table["freecad"]) + ',', '  "rows": [']
+    encoded = ['{', f'  "seed": {args.seed},', '  "freecad": ' + json.dumps(table["freecad"]) + ',', '  "rows": [']
     encoded.extend(
         '    ' + json.dumps(row) + (',' if index < len(rows) - 1 else '')
         for index, row in enumerate(table["rows"])
     )
     encoded.extend(['  ]', '}', ''])
-    script.with_name("formula_oracle.json").write_text("\n".join(encoded), encoding="utf-8")
-    script.with_name("formula_oracle.xml").write_bytes(xml)
+    (args.output / "formula_oracle.json").write_text("\n".join(encoded), encoding="utf-8")
+    (args.output / "formula_oracle.xml").write_bytes(xml)
 
 
 if __name__ == "__main__":

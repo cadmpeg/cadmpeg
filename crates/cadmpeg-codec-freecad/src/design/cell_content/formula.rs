@@ -8,9 +8,10 @@ use std::rc::Rc;
 
 use cadmpeg_ir::design::units::Quantity;
 
-use super::{decimal_out_of_range, unit_word, Cursor, Dimensions, Unit, UnitState};
+use super::{unit_word, Dimensions, Unit, UnitState};
 
 mod formatting;
+mod identifier;
 
 /// The most tokens of a formula the reader parses.
 const MAX_TOKENS: usize = 1024;
@@ -34,6 +35,13 @@ const UNIT_EXPONENT_LIMIT: i8 = 8;
 /// (`essentiallyInteger`, the range of a C `long`).
 const WHOLE: f64 = 9.223_372_036_854_776e18;
 
+/// `FreeCAD` narrows a positive whole value through C int in this interval.
+/// The result of the out-of-range cast depends on the producer build.
+pub(in crate::design) fn producer_number(number: f64) -> Option<f64> {
+    let ambiguous = number.fract() == 0.0 && number > f64::from(i32::MAX) && number <= WHOLE;
+    (!ambiguous).then_some(number)
+}
+
 /// A formula the reader does not parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::design) enum Unparsed {
@@ -41,8 +49,6 @@ pub(in crate::design) enum Unparsed {
     Syntax,
     /// The text is larger or deeper than the reader parses.
     Limit,
-    /// The reader has no proof for a lexeme.
-    Unmodeled,
 }
 
 /// The kind of a formula's result (§5.12, Kind).
@@ -122,6 +128,7 @@ enum Fact {
     Number(f64),
     WideInteger(Rc<str>),
     Text(Rc<str>),
+    TextBound(usize),
     None,
     Items(Rc<[Value]>),
 }
@@ -209,7 +216,7 @@ impl Value {
             Some(Fact::Text(text)) => Some(!text.is_empty()),
             Some(Fact::None) => Some(false),
             Some(Fact::Items(items)) => Some(!items.is_empty()),
-            Some(Fact::WideInteger(_)) | None => None,
+            Some(Fact::WideInteger(_) | Fact::TextBound(_)) | None => None,
         }
     }
 
@@ -339,6 +346,7 @@ pub(in crate::design) enum Node<'a> {
     /// A number as written, with the unit that follows it.
     Number {
         text: &'a str,
+        number: f64,
         unit: Option<Unit>,
     },
     /// The divisor of `x / unit`.
@@ -347,10 +355,12 @@ pub(in crate::design) enum Node<'a> {
     Constant {
         name: &'a str,
         value: f64,
+        unit: Option<Unit>,
     },
     /// A `<<…>>` string.
     Text(&'a str),
     Path(Path),
+    Indexed(Path, Vec<Node<'a>>),
     Negate(Box<Node<'a>>),
     Plus(Box<Node<'a>>),
     Binary {
@@ -366,6 +376,7 @@ pub(in crate::design) enum Node<'a> {
     },
     Call {
         name: &'a str,
+        function: Function,
         args: Vec<Argument<'a>>,
     },
     Group(Box<Node<'a>>),
@@ -391,18 +402,24 @@ pub(in crate::design) enum Operator {
 #[derive(Debug)]
 pub(in crate::design) enum Argument<'a> {
     Value(Node<'a>),
-    Range(&'a str, &'a str),
+    Range(CellRange<'a>),
+}
+
+/// The endpoint names and token spans of a range argument.
+#[derive(Debug)]
+pub(in crate::design) struct CellRange<'a> {
+    pub(in crate::design) from: &'a str,
+    pub(in crate::design) to: &'a str,
+    pub(in crate::design) spans: [std::ops::Range<usize>; 2],
 }
 
 /// A reference to a property, or to a cell of a sheet.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(in crate::design) struct Path {
     /// The byte range of the path in the formula.
     pub(in crate::design) span: std::ops::Range<usize>,
     pub(in crate::design) origin: Origin,
     pub(in crate::design) components: Vec<String>,
-    /// The path has an indexer.
-    pub(in crate::design) indexed: bool,
 }
 
 /// Where a path starts.
@@ -423,7 +440,7 @@ pub(in crate::design) enum Origin {
 #[derive(Debug, Clone, Copy)]
 pub(in crate::design) enum Reference<'n, 'a> {
     Path(&'n Path),
-    Range(&'a str, &'a str),
+    Range(&'n CellRange<'a>),
 }
 
 /// What the references of a formula name.
@@ -435,23 +452,56 @@ pub(in crate::design) trait Scope {
     fn range(&mut self, from: &str, to: &str) -> Option<Vec<Value>>;
 }
 
-/// The tree of `text`, a formula without its `=`.
+/// A parsed expression and any references recovered when a reader limit intervenes.
+pub(in crate::design) struct Parsed<'a> {
+    pub(in crate::design) tree: Result<Node<'a>, Unparsed>,
+    pub(in crate::design) partial_paths: Vec<Path>,
+}
+
+/// Parse a formula without its leading equals mark.
 pub(in crate::design) fn parse(text: &str) -> Result<Node<'_>, Unparsed> {
-    let lexemes = lex(text)?;
-    if lexemes.len() > MAX_TOKENS {
-        return Err(Unparsed::Limit);
-    }
-    let mut parser = Parser {
-        lexemes,
-        at: 0,
-        nesting: 0,
-    };
-    let node = parser.expression()?;
-    if parser.done() {
-        Ok(node)
+    parse_with_paths(text).tree
+}
+
+pub(in crate::design) fn parse_with_paths(text: &str) -> Parsed<'_> {
+    let (mut parser, incomplete) = parser(text);
+    let tree = incomplete
+        .and_then(|()| parser.expression())
+        .and_then(|node| {
+            if parser.done() {
+                Ok(node)
+            } else {
+                Err(Unparsed::Syntax)
+            }
+        });
+    let partial_paths = if matches!(tree, Err(Unparsed::Limit)) {
+        parser.partial_paths()
     } else {
-        Err(Unparsed::Syntax)
+        Vec::new()
+    };
+    Parsed {
+        tree,
+        partial_paths,
     }
+}
+
+pub(super) fn parse_unit(text: &str) -> Option<Unit> {
+    let (mut parser, complete) = parser(text);
+    complete.ok()?;
+    let unit = parser.unit_expression().ok()?;
+    parser.done().then_some(unit)
+}
+
+fn parser(text: &str) -> (Parser<'_>, Result<(), Unparsed>) {
+    let (lexemes, result) = lex(text);
+    (
+        Parser {
+            lexemes,
+            at: 0,
+            nesting: 0,
+        },
+        result,
+    )
 }
 
 impl<'a> Node<'a> {
@@ -463,19 +513,26 @@ impl<'a> Node<'a> {
     /// The classes of the node's result.
     pub(in crate::design) fn value(&self, scope: &mut dyn Scope) -> Value {
         match self {
-            Node::Number { text, unit } => {
-                let number = text.replace(',', ".").parse::<f64>().ok();
-                match unit {
-                    Some(unit) => literal(unit, number),
-                    None => number.map_or_else(
-                        || Value::of(&[Int, Float]),
-                        |number| Value::numeric(Value::number(number), Some(number)),
-                    ),
-                }
-            }
+            Node::Number { number, unit, .. } => match unit {
+                Some(unit) => literal(unit, producer_number(*number)),
+                None => producer_number(*number).map_or_else(
+                    || Value::of(&[Int, Float]),
+                    |number| Value::numeric(Value::number(number), Some(number)),
+                ),
+            },
             Node::Unit(unit) => literal(unit, Some(1.0)),
+            Node::Constant {
+                name: "None",
+                unit: Some(_),
+                ..
+            } => Value::of(&[Raises]),
+            Node::Constant {
+                unit: Some(unit),
+                value,
+                ..
+            } => literal(unit, Some(*value)),
             Node::Constant { name: "None", .. } => Value::none(),
-            Node::Constant { name, value } => Value::numeric(
+            Node::Constant { name, value, .. } => Value::numeric(
                 match *name {
                     "True" | "False" | "true" | "false" => Boolean,
                     _ => Float,
@@ -484,6 +541,7 @@ impl<'a> Node<'a> {
             ),
             Node::Text(text) => Value::text(unquote(text)),
             Node::Path(path) => scope.path(path),
+            Node::Indexed(..) => Value::any(),
             Node::Negate(operand) | Node::Plus(operand) => {
                 let operand = operand.value(scope);
                 let mut value = Value::default();
@@ -522,7 +580,11 @@ impl<'a> Node<'a> {
                 }
                 value
             }
-            Node::Call { name, args } => call(name, args, scope),
+            Node::Call {
+                name,
+                function,
+                args,
+            } => call(name, *function, args, scope),
         }
     }
 
@@ -536,6 +598,12 @@ impl<'a> Node<'a> {
     fn collect<'n>(&'n self, found: &mut Vec<Reference<'n, 'a>>) {
         match self {
             Node::Path(path) => found.push(Reference::Path(path)),
+            Node::Indexed(path, arguments) => {
+                found.push(Reference::Path(path));
+                for argument in arguments {
+                    argument.collect(found);
+                }
+            }
             Node::Negate(inner) | Node::Plus(inner) | Node::Group(inner) => inner.collect(found),
             Node::Binary { left, right, .. } => {
                 left.collect(found);
@@ -554,7 +622,7 @@ impl<'a> Node<'a> {
                 for arg in args {
                     match arg {
                         Argument::Value(node) => node.collect(found),
-                        Argument::Range(from, to) => found.push(Reference::Range(from, to)),
+                        Argument::Range(range) => found.push(Reference::Range(range)),
                     }
                 }
             }
@@ -765,7 +833,10 @@ fn repeat(sequence: Class, items: &Value, count: Class, multiplier: &Value) -> V
                 return true;
             }
             let size = match sequence {
-                Text => items.text_fact().map(str::len),
+                Text => match &items.1 {
+                    Some(Fact::TextBound(bound)) => Some(*bound),
+                    _ => items.text_fact().map(str::len),
+                },
                 List => items.item_facts().map(<[Value]>::len),
                 _ => None,
             };
@@ -1028,7 +1099,7 @@ fn root(quantity: Dimensions, n: i8) -> Option<Dimensions> {
 /// A function that takes each of its first three arguments as a number
 /// (`pyToQuantity`) and checks its unit (`FunctionExpression::evaluate`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Numeric {
+pub(in crate::design) enum Numeric {
     /// `cos`, `sin`, `tan`: dimensionless or an angle.
     Trigonometric,
     /// `acos`, `asin`, `atan`: dimensionless, an angle.
@@ -1073,7 +1144,7 @@ impl Numeric {
 /// A function that collects the numbers of its arguments
 /// (`FunctionExpression::evalAggregate`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Collector {
+pub(in crate::design) enum Collector {
     Sum,
     Average,
     StdDev,
@@ -1092,8 +1163,9 @@ impl Collector {
 
 /// What a function does with its arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Function {
+pub(in crate::design) enum Function {
     Numeric(Numeric),
+    Aggregate(Collector),
     /// `list`: a `list` of its arguments.
     List,
     /// `tuple`: a `tuple`, which `calc` refuses.
@@ -1104,8 +1176,6 @@ enum Function {
     Text,
     /// `parsequant`: the quantity its text states, which may raise.
     Parse,
-    /// `address`: a text of an `int` row and column.
-    Address,
     /// `vector`, `matrix`, `placement`, `rotation`: an object made of the
     /// arguments.
     Make(Class),
@@ -1122,8 +1192,6 @@ enum Function {
         lengths: usize,
         result: Class,
     },
-    /// A name `FreeCAD` does not register.
-    Unknown,
 }
 
 /// The collector of an aggregate function (`FunctionExpression::evalAggregate`).
@@ -1141,7 +1209,7 @@ fn collector(name: &str) -> Option<Collector> {
     }
 }
 
-fn function(name: &str) -> Function {
+fn function(name: &str) -> Option<Function> {
     use Numeric as N;
     const fn vectors(vectors: usize, lengths: usize, result: Class) -> Function {
         Function::Vectors {
@@ -1150,7 +1218,10 @@ fn function(name: &str) -> Function {
             result,
         }
     }
-    match name {
+    if let Some(collector) = collector(name) {
+        return Some(Function::Aggregate(collector));
+    }
+    Some(match name {
         "cos" | "sin" | "tan" => Function::Numeric(N::Trigonometric),
         "acos" | "asin" | "atan" => Function::Numeric(N::Inverse),
         "exp" | "log" | "log10" | "sinh" | "tanh" | "cosh" => Function::Numeric(N::Dimensionless),
@@ -1170,7 +1241,6 @@ fn function(name: &str) -> Function {
         "href" | "hiddenref" => Function::Reference,
         "str" => Function::Text,
         "parsequant" => Function::Parse,
-        "address" => Function::Address,
         "vector" => Function::Make(Vector),
         "placement" => Function::Make(Placement),
         "matrix" | "rotation" => Function::Make(Object),
@@ -1186,21 +1256,18 @@ fn function(name: &str) -> Function {
         "vscalex" | "vscaley" | "vscalez" => vectors(1, 1, Vector),
         "vlinedist" | "vplanedist" => vectors(3, 0, Class::Quantity(Some(Dimensions::LENGTH))),
         "vlinesegdist" | "vlineproj" | "vplaneproj" => vectors(3, 0, Vector),
-        _ => Function::Unknown,
-    }
+        _ => return None,
+    })
 }
 
-fn valid_call(name: &str, count: usize) -> bool {
+fn valid_call(name: &str, function: Function, count: usize) -> bool {
     if count == 0 {
         return false;
     }
-    if collector(name).is_some() {
-        return true;
-    }
-    match function(name) {
+    match function {
+        Function::Aggregate(_) => true,
         Function::Numeric(numeric) => numeric.takes(count),
         Function::Reference | Function::Text | Function::Parse => count == 1,
-        Function::Address => matches!(count, 2 | 3),
         Function::Make(Vector) => count == 3,
         Function::Make(Placement) => count <= 3,
         Function::Make(_) if name == "matrix" => count <= 16,
@@ -1215,7 +1282,6 @@ fn valid_call(name: &str, count: usize) -> bool {
             vectors, lengths, ..
         } => count == vectors + lengths,
         Function::List | Function::Tuple | Function::Create => true,
-        Function::Unknown => false,
     }
 }
 
@@ -1224,7 +1290,7 @@ fn valid_call(name: &str, count: usize) -> bool {
 fn argument(arg: &Argument<'_>, scope: &mut dyn Scope) -> Value {
     match arg {
         Argument::Value(node) => node.value(scope),
-        Argument::Range(from, to) => match scope.range(from, to) {
+        Argument::Range(range) => match scope.range(range.from, range.to) {
             Some(_) => Value::of(&[List]),
             None => Value::of(&[List, Raises]),
         },
@@ -1232,8 +1298,8 @@ fn argument(arg: &Argument<'_>, scope: &mut dyn Scope) -> Value {
 }
 
 /// The value of a call (`FunctionExpression::evaluate`).
-fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
-    if let Some(collector) = collector(name) {
+fn call(name: &str, function: Function, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
+    if let Function::Aggregate(collector) = function {
         return aggregate(collector, args, scope);
     }
     let values = args
@@ -1244,12 +1310,12 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
         return Value::of(&[Raises]);
     }
     let raises = values.iter().any(|value| value.contains(Raises));
-    let mut value = match function(name) {
+    let mut value = match function {
         Function::Numeric(Numeric::Translation) if values.len() == 1 => {
             outcomes(Object, sequence_of_three(&values[0]))
         }
         Function::Numeric(numeric) => numeric_call(numeric, &values),
-        Function::Unknown => return Value::any(),
+        Function::Aggregate(_) => unreachable!("aggregate arguments are evaluated separately"),
         Function::Reference => return values.first().cloned().unwrap_or(Value::of(&[Raises])),
         Function::List | Function::Tuple => {
             let class = if name == "list" { List } else { Tuple };
@@ -1259,19 +1325,8 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
                 Value::items(class, values)
             }
         }
-        Function::Text => outcomes(
-            Text,
-            all_options(&values[0], |class| match class {
-                Text | Int | Float | Boolean | Class::Quantity(_) | Vector | Placement => {
-                    Some(true)
-                }
-                Refused if matches!(values[0].1, Some(Fact::None)) => Some(true),
-                Refused | List | Tuple | Dict | Object => None,
-                Raises => Some(false),
-            }),
-        ),
+        Function::Text => string_conversion(&values[0]),
         Function::Parse => parse_quantity(&values[0]),
-        Function::Address => address(&values),
         // FreeCAD returns the allocated object regardless of PyInit status.
         Function::Make(class) => Value::of(&[class]),
         Function::Create => match values[0].text_fact() {
@@ -1297,6 +1352,41 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Value {
         value.insert(Raises);
     }
     value
+}
+
+fn string_conversion(value: &Value) -> Value {
+    match value.classes() {
+        [Text] => return value.clone(),
+        [Int] => {
+            if let Some(number) = value.numeric_fact() {
+                return Value::text(format!("{number:.0}"));
+            }
+            if let Some(Fact::WideInteger(text)) = &value.1 {
+                return Value::text(text.clone());
+            }
+        }
+        [Boolean] => {
+            if let Some(truth) = value.truth() {
+                return Value::text(if truth { "True" } else { "False" });
+            }
+        }
+        [Class::Quantity(_)] => {
+            // QuantityPy::representation uses a binary64 repr and at most
+            // eight fixed unit symbols with one-digit absolute exponents.
+            return Value(vec![Text], Some(Fact::TextBound(80)));
+        }
+        [Refused] if matches!(value.1, Some(Fact::None)) => return Value::text("None"),
+        _ => {}
+    }
+    outcomes(
+        Text,
+        all_options(value, |class| match class {
+            Text | Int | Float | Boolean | Class::Quantity(_) | Vector | Placement => Some(true),
+            Refused if matches!(value.1, Some(Fact::None)) => Some(true),
+            Refused | List | Tuple | Dict | Object => None,
+            Raises => Some(false),
+        }),
+    )
 }
 
 fn outcomes(class: Class, succeeds: Option<bool>) -> Value {
@@ -1361,34 +1451,6 @@ fn parse_quantity(value: &Value) -> Value {
     Value::of(&[Class::Quantity(None), Raises])
 }
 
-fn address(values: &[Value]) -> Value {
-    const ROWS: f64 = 16_384.0;
-    const COLUMNS: f64 = 702.0;
-    let accepted =
-        values
-            .iter()
-            .zip([ROWS, COLUMNS, 4.0])
-            .enumerate()
-            .map(|(index, (value, maximum))| {
-                all_options(value, |class| {
-                    if !matches!(class, Int | Boolean) {
-                        return Some(false);
-                    }
-                    let number = value.numeric_fact()?;
-                    if index < 2
-                        && !(f64::from(i32::MIN) + 1.0..=f64::from(i32::MAX)).contains(&number)
-                    {
-                        return None;
-                    }
-                    Some((1.0..=maximum).contains(&number))
-                })
-            });
-    outcomes(Text, require_all(accepted))
-}
-
-/// The value of a numeric function: the join over each combination of the
-/// classes of its first three arguments, where a class that is no number
-/// raises (`pyToQuantity`).
 fn numeric_call(function: Numeric, values: &[Value]) -> Value {
     let exponent = values.get(1).and_then(Value::numeric_fact);
     let checked = &values[..values.len().min(3)];
@@ -1624,8 +1686,8 @@ fn aggregate(collector: Collector, args: &[Argument<'_>], scope: &mut dyn Scope)
                 }
                 states = next;
             }
-            Argument::Range(from, to) => {
-                let Some(cells) = scope.range(from, to) else {
+            Argument::Range(range) => {
+                let Some(cells) = scope.range(range.from, range.to) else {
                     value.join(if collector.ignores_units() {
                         Value::of(&[Int, Raises])
                     } else {
@@ -1783,6 +1845,7 @@ impl Folded {
 enum Token<'a> {
     Number {
         text: &'a str,
+        number: f64,
         integer: Option<i64>,
     },
     Unit(Unit),
@@ -1800,6 +1863,7 @@ enum Token<'a> {
     Minus,
     Compare(Operator),
     Symbol(char),
+    Ignored,
 }
 
 #[derive(Debug, Clone)]
@@ -1811,7 +1875,8 @@ struct Lexeme<'a> {
 
 /// The tokens of `text` as `FreeCAD`'s lexer reads them: the longest match,
 /// and on a tie the earlier rule.
-fn lex(text: &str) -> Result<Vec<Lexeme<'_>>, Unparsed> {
+fn lex(text: &str) -> (Vec<Lexeme<'_>>, Result<(), Unparsed>) {
+    let text = text.split('\0').next().unwrap_or(text);
     let mut lexemes = Vec::new();
     let mut at = 0;
     while let Some(ch) = text[at..].chars().next() {
@@ -1819,15 +1884,25 @@ fn lex(text: &str) -> Result<Vec<Lexeme<'_>>, Unparsed> {
             at += 1;
             continue;
         }
-        let (token, length) = lexeme(&text[at..])?;
+        let (token, length) = match lexeme(&text[at..]) {
+            Ok(token) => token,
+            Err(error) => return (lexemes, Err(error)),
+        };
+        let start = at;
+        at += length;
+        if matches!(token, Token::Ignored) {
+            continue;
+        }
+        if lexemes.len() == MAX_TOKENS {
+            return (lexemes, Err(Unparsed::Limit));
+        }
         lexemes.push(Lexeme {
             token,
-            start: at,
-            end: at + length,
+            start,
+            end: at,
         });
-        at += length;
     }
-    Ok(lexemes)
+    (lexemes, Ok(()))
 }
 
 fn lexeme(rest: &str) -> Result<(Token<'_>, usize), Unparsed> {
@@ -1859,19 +1934,16 @@ fn lexeme(rest: &str) -> Result<(Token<'_>, usize), Unparsed> {
             Token::Unit(unit_word(&rest[..ch.len_utf8()]).ok_or(Unparsed::Syntax)?),
             ch.len_utf8(),
         ),
-        '$' => {
-            let length = cell_address(rest).ok_or(Unparsed::Syntax)?;
+        '$' => cell_address(rest).map_or((Token::Ignored, 1), |length| {
             (Token::Cell(&rest[..length]), length)
-        }
+        }),
         '.' | ',' | '0'..='9' => number(rest)?.unwrap_or((Token::Symbol(ch), 1)),
         '%' | '+' | '(' | ')' | '=' | '/' | '*' | '^' | '{' | '}' | '[' | ']' | ':' | ';' | '@'
         | '?' | '#' => (Token::Symbol(ch), 1),
-        ch if ch.is_alphabetic() || ch == '_' => word(rest),
-        _ => return Err(Unparsed::Unmodeled),
+        ch if identifier::is_letter(ch) || ch == '_' => word(rest),
+        // Flex's default rule consumes unmatched bytes (Expression.l).
+        _ => (Token::Ignored, ch.len_utf8()),
     };
-    if matches!(&lexeme.0, Token::Unit(unit) if unit.state == UnitState::Unmodeled) {
-        return Err(Unparsed::Unmodeled);
-    }
     Ok(lexeme)
 }
 
@@ -1891,42 +1963,77 @@ fn string(rest: &str) -> Option<usize> {
     None
 }
 
+/// Expression.l:332–342, separate from the C complete-number pass.
 fn number(rest: &str) -> Result<Option<(Token<'_>, usize)>, Unparsed> {
-    let mut cursor = Cursor { text: rest, at: 0 };
-    let Some(value) = cursor.number() else {
+    let bytes = rest.as_bytes();
+    let digits = |at: usize| {
+        bytes[at..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_digit())
+            .count()
+    };
+    let whole = digits(0);
+    let mut end = whole;
+    if matches!(bytes.get(end), Some(b'.' | b',')) {
+        let fraction = digits(end + 1);
+        if fraction != 0 {
+            end += 1 + fraction;
+        }
+    }
+    if end == 0 {
         return Ok(None);
-    };
-    let text = &rest[..cursor.at];
-    let integer = if text.bytes().all(|byte| byte.is_ascii_digit()) {
-        Some(
-            text.parse::<i64>()
-                .ok()
-                .filter(|integer| *integer < i64::MAX)
-                .ok_or(Unparsed::Syntax)?,
-        )
+    }
+    if matches!(bytes.get(end), Some(b'e' | b'E')) {
+        let start = end + 1 + usize::from(matches!(bytes.get(end + 1), Some(b'+' | b'-')));
+        let exponent = digits(start);
+        if exponent != 0 {
+            end = start + exponent;
+        }
+    }
+    let text = &rest[..end];
+    let (number, integer) = if whole == end {
+        let integer = text
+            .parse::<i64>()
+            .ok()
+            .filter(|&value| value < i64::MAX)
+            .ok_or(Unparsed::Syntax)?;
+        let number = text.parse::<f64>().map_err(|_| Unparsed::Syntax)?;
+        (number, Some(integer))
     } else {
-        // FreeCAD's decimal conversion gives zero after its 39-byte buffer.
-        if text.len() > 39 {
-            return Err(Unparsed::Unmodeled);
-        }
-        if decimal_out_of_range(text, value) {
-            return Err(Unparsed::Syntax);
-        }
-        unit_integer(text, value)
+        // Expression.cpp:3559–3585 returns zero when the local buffer fills.
+        let number = if text.len() > 39 {
+            0.0
+        } else {
+            let number = text
+                .replace(',', ".")
+                .parse::<f64>()
+                .map_err(|_| Unparsed::Syntax)?;
+            let nonzero = text
+                .split(['e', 'E'])
+                .next()
+                .is_some_and(|mantissa| mantissa.bytes().any(|byte| matches!(byte, b'1'..=b'9')));
+            if !number.is_finite() || number == 0.0 && nonzero {
+                return Err(Unparsed::Syntax);
+            }
+            number
+        };
+        (number, (number == 1.0).then_some(1))
     };
-    Ok(Some((Token::Number { text, integer }, cursor.at)))
+    Ok(Some((
+        Token::Number {
+            text,
+            number,
+            integer,
+        },
+        end,
+    )))
 }
 
-pub(super) fn unit_integer(text: &str, value: f64) -> Option<i64> {
-    if value == 1.0 {
-        Some(1)
-    } else if text.bytes().all(|byte| byte.is_ascii_digit()) {
-        text.parse::<i64>()
-            .ok()
-            .filter(|integer| *integer < i64::MAX)
-    } else {
-        None
-    }
+pub(super) fn number_prefix(text: &str) -> Option<(f64, usize)> {
+    let (Token::Number { number, .. }, length) = number(text).ok()?? else {
+        return None;
+    };
+    Some((number, length))
 }
 
 /// The length of `$A$1`, `$A1`, or `A$1` at the start of `rest`.
@@ -1956,20 +2063,11 @@ fn cell_address(rest: &str) -> Option<usize> {
 /// A token that starts with a letter or `_`: a unit, a constant, a cell
 /// address, a function name, or an identifier.
 fn word(rest: &str) -> (Token<'_>, usize) {
-    let identifier = rest
-        .char_indices()
-        .find(|&(at, ch)| !(ch.is_alphanumeric() || ch == '_' || (at > 0 && ch == '@')))
-        .map_or(rest.len(), |(at, _)| at);
-    let run = rest
-        .char_indices()
-        .find(|(_, ch)| !(ch.is_alphanumeric() || *ch == '_'))
-        .map_or(rest.len(), |(at, _)| at);
-    let function = rest.starts_with(char::is_alphabetic).then(|| {
-        let after = rest[run..].trim_start_matches('\t');
-        after
-            .starts_with('(')
-            .then_some(rest.len() - after.len() + 1)
-    });
+    let identifier = identifier::prefix(rest, false);
+    let name = identifier::prefix(rest, true);
+    let after = rest[name..].trim_start_matches(['\t', '\u{10}']);
+    let function = (name != 0 && after.starts_with('('))
+        .then_some((Token::Function(&rest[..name]), rest.len() - after.len() + 1));
     let word = &rest[..identifier];
     let constant = match word {
         "pi" => Some(std::f64::consts::PI),
@@ -1982,9 +2080,7 @@ fn word(rest: &str) -> (Token<'_>, usize) {
         unit_word(word).map(|unit| (Token::Unit(unit), identifier)),
         constant.map(|value| (Token::Constant { name: word, value }, identifier)),
         cell_address(rest).map(|length| (Token::Cell(&rest[..length]), length)),
-        function
-            .flatten()
-            .map(|length| (Token::Function(&rest[..run]), length)),
+        function,
         Some((Token::Identifier(word), identifier)),
     ];
     let mut best: Option<(Token<'_>, usize)> = None;
@@ -2037,21 +2133,27 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `rule` from the current token, or no token consumed where it fails.
-    fn attempt<T>(&mut self, rule: impl FnOnce(&mut Self) -> Option<T>) -> Option<T> {
+    /// Backtrack on a mismatched production. A resource limit is terminal.
+    fn attempt<T>(
+        &mut self,
+        rule: impl FnOnce(&mut Self) -> Result<T, Unparsed>,
+    ) -> Result<Option<T>, Unparsed> {
         let at = self.at;
-        let found = rule(self);
-        if found.is_none() {
-            self.at = at;
+        match rule(self) {
+            Ok(found) => Ok(Some(found)),
+            Err(Unparsed::Syntax) => {
+                self.at = at;
+                Ok(None)
+            }
+            Err(error) => Err(error),
         }
-        found
     }
 
     /// `rule` one level deeper.
-    fn nested(
+    fn nested<T>(
         &mut self,
-        rule: impl FnOnce(&mut Self) -> Result<Node<'a>, Unparsed>,
-    ) -> Result<Node<'a>, Unparsed> {
+        rule: impl FnOnce(&mut Self) -> Result<T, Unparsed>,
+    ) -> Result<T, Unparsed> {
         if self.nesting == MAX_NESTING {
             return Err(Unparsed::Limit);
         }
@@ -2101,7 +2203,7 @@ impl<'a> Parser<'a> {
             };
             self.at += 1;
             let right = match op {
-                Operator::Divide => match self.attempt(Self::unit_suffix) {
+                Operator::Divide => match self.attempt(Self::unit_suffix)? {
                     Some((unit, _)) => Node::Unit(unit),
                     None => self.binary(level + 1)?,
                 },
@@ -2133,14 +2235,7 @@ impl<'a> Parser<'a> {
     fn primary(&mut self) -> Result<Node<'a>, Unparsed> {
         let token = self.peek().cloned().ok_or(Unparsed::Syntax)?;
         match token {
-            Token::Number { text, .. } => {
-                self.at += 1;
-                Ok(self.number(text))
-            }
-            Token::Constant { name, value } => {
-                self.at += 1;
-                Ok(Node::Constant { name, value })
-            }
+            Token::Number { .. } | Token::Constant { .. } => self.number(),
             Token::Text(text) if !matches!(self.peek_at(1), Some(Token::Symbol('.' | '#'))) => {
                 self.at += 1;
                 Ok(Node::Text(text))
@@ -2162,51 +2257,66 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// A number with the unit that follows it, and `1' 6"`, a sum of two
-    /// numbers with `'` or `"`.
-    fn number(&mut self, text: &'a str) -> Node<'a> {
-        let Some((unit, bare)) = self.attempt(Self::unit_suffix) else {
-            return Node::Number { text, unit: None };
-        };
-        let first = Node::Number {
-            text,
-            unit: Some(unit),
-        };
-        if let (true, Some(Token::Number { text: second, .. }), Some(Token::UsUnit(unit))) =
-            (bare, self.peek_at(0), self.peek_at(1))
+    fn number(&mut self) -> Result<Node<'a>, Unparsed> {
+        let start = self.at;
+        self.at += 1;
+        let suffix = self.attempt(Self::unit_suffix)?;
+        let bare = suffix.as_ref().is_some_and(|(_, bare)| *bare);
+        let first = Self::number_node(&self.lexemes[start].token, suffix.map(|(unit, _)| unit))?;
+        if let (
+            true,
+            Some(token @ (Token::Number { .. } | Token::Constant { .. })),
+            Some(Token::UsUnit(unit)),
+        ) = (bare, self.peek_at(0), self.peek_at(1))
         {
-            let second = Node::Number {
-                text: second,
-                unit: Some(unit.clone()),
-            };
+            let second = Self::number_node(token, Some(unit.clone()))?;
             self.at += 2;
-            return Node::Binary {
+            return Ok(Node::Binary {
                 op: Operator::Add,
                 left: Box::new(first),
                 right: Box::new(second),
-            };
+            });
         }
-        first
+        Ok(first)
     }
 
-    /// The unit after a number or a `/`: a unit word, or a parenthesized
-    /// unit expression, with integer powers. It is bare where it is a lone
-    /// `'` or `"`.
-    fn unit_suffix(&mut self) -> Option<(Unit, bool)> {
-        let (mut unit, mut bare) = match self.peek()? {
-            Token::Unit(unit) => (unit.clone(), false),
-            Token::UsUnit(unit) => (unit.clone(), true),
-            Token::Symbol('(') => {
+    fn number_node(token: &Token<'a>, unit: Option<Unit>) -> Result<Node<'a>, Unparsed> {
+        match token {
+            Token::Number { text, number, .. } => Ok(Node::Number {
+                text,
+                number: *number,
+                unit,
+            }),
+            Token::Constant { name, value, .. } => Ok(Node::Constant {
+                name,
+                value: *value,
+                unit,
+            }),
+            _ => Err(Unparsed::Syntax),
+        }
+    }
+
+    /// A unit atom with optional integer powers, or a group of units.
+    fn unit_suffix(&mut self) -> Result<(Unit, bool), Unparsed> {
+        let (mut unit, mut bare) = match self.peek() {
+            Some(Token::Unit(unit)) => {
+                let unit = unit.clone();
                 self.at += 1;
-                let unit = self.unit_expression()?;
-                if !self.symbol(')') {
-                    return None;
-                }
                 (unit, false)
             }
-            _ => return None,
+            Some(Token::UsUnit(unit)) => {
+                let unit = unit.clone();
+                self.at += 1;
+                (unit, true)
+            }
+            Some(Token::Symbol('(')) => {
+                self.at += 1;
+                let unit = self.nested(Self::unit_expression)?;
+                self.require(')')?;
+                (unit, false)
+            }
+            _ => return Err(Unparsed::Syntax),
         };
-        self.at += 1;
         while self.eat('^') {
             let negative = matches!(self.peek(), Some(Token::Minus));
             self.at += usize::from(negative);
@@ -2215,22 +2325,18 @@ impl<'a> Parser<'a> {
                 ..
             }) = self.peek()
             else {
-                return None;
+                return Err(Unparsed::Syntax);
             };
-            let power = if negative {
-                power.checked_neg()?
-            } else {
-                *power
-            };
+            let power = if negative { -*power } else { *power };
             self.at += 1;
             unit = unit.power(power);
             bare = false;
         }
-        Some((unit, bare))
+        Ok((unit, bare))
     }
 
-    /// Units joined by `*` and `/`.
-    fn unit_expression(&mut self) -> Option<Unit> {
+    /// Unit products and quotients within a unit expression.
+    fn unit_expression(&mut self) -> Result<Unit, Unparsed> {
         let mut unit = self.unit_suffix()?.0;
         loop {
             let sign = if self.eat('*') {
@@ -2238,13 +2344,44 @@ impl<'a> Parser<'a> {
             } else if self.eat('/') {
                 -1
             } else {
-                return Some(unit);
+                return Ok(unit);
             };
             unit = unit.times(self.unit_suffix()?.0, sign);
         }
     }
 
+    fn span(&self, at: usize) -> std::ops::Range<usize> {
+        self.lexemes
+            .get(at)
+            .map_or(0..0, |lexeme| lexeme.start..lexeme.end)
+    }
+
+    /// Recover completed paths from a bounded token prefix. Use the same path
+    /// grammar as a complete expression, with no guessed binding for non-path tokens.
+    fn partial_paths(&mut self) -> Vec<Path> {
+        let mut paths = Vec::new();
+        self.at = 0;
+        while !self.done() {
+            let at = self.at;
+            if matches!(
+                self.peek(),
+                Some(Token::Identifier(_) | Token::Cell(_) | Token::Text(_) | Token::Symbol('.'))
+            ) {
+                if let Ok(node) = self.path() {
+                    for reference in node.references() {
+                        if let Reference::Path(path) = reference {
+                            paths.push(path.clone());
+                        }
+                    }
+                }
+            }
+            self.at = self.at.max(at + 1);
+        }
+        paths
+    }
+
     fn call(&mut self, name: &'a str) -> Result<Node<'a>, Unparsed> {
+        let function = function(name).ok_or(Unparsed::Syntax)?;
         let mut args = Vec::new();
         loop {
             let range = match (self.peek_at(0), self.peek_at(1), self.peek_at(2)) {
@@ -2256,8 +2393,9 @@ impl<'a> Parser<'a> {
                 _ => None,
             };
             if let Some((from, to)) = range {
+                let spans = [self.span(self.at), self.span(self.at + 2)];
                 self.at += 3;
-                args.push(Argument::Range(from, to));
+                args.push(Argument::Range(CellRange { from, to, spans }));
             } else {
                 args.push(Argument::Value(self.expression()?));
             }
@@ -2265,10 +2403,14 @@ impl<'a> Parser<'a> {
                 continue;
             }
             self.require(')')?;
-            if !valid_call(name, args.len()) {
+            if !valid_call(name, function, args.len()) {
                 return Err(Unparsed::Syntax);
             }
-            return Ok(Node::Call { name, args });
+            return Ok(Node::Call {
+                name,
+                function,
+                args,
+            });
         }
     }
 
@@ -2281,7 +2423,6 @@ impl<'a> Parser<'a> {
             span: start..start,
             origin: Origin::Named,
             components: Vec::new(),
-            indexed: false,
         };
         if self.eat('.') {
             path.origin = Origin::Own;
@@ -2307,27 +2448,48 @@ impl<'a> Parser<'a> {
                 path.components.push(self.id_or_cell()?);
             }
         }
-        loop {
-            if self.symbol('.') && matches!(self.peek_at(1), Some(Token::Identifier(_))) {
+        if path.components.len() > 1 || path.origin != Origin::Named {
+            while self.symbol('.') && matches!(self.peek_at(1), Some(Token::Identifier(_))) {
                 self.at += 1;
                 path.components.push(self.id_or_cell()?);
-            } else if self.eat('[') {
-                path.indexed = true;
-                while !self.eat(']') {
-                    if !self.eat(':') {
-                        self.expression()?;
-                    }
-                }
-            } else {
+            }
+        }
+        path.span.end = self.span(self.at - 1).end;
+        if !self.eat('[') {
+            return Ok(Node::Path(path));
+        }
+        let mut arguments = Vec::new();
+        loop {
+            self.indexer(&mut arguments)?;
+            while self.symbol('.') && matches!(self.peek_at(1), Some(Token::Identifier(_))) {
+                self.at += 2;
+            }
+            if !self.eat('[') {
                 break;
             }
         }
-        path.span.end = self
-            .at
-            .checked_sub(1)
-            .and_then(|at| self.lexemes.get(at))
-            .map_or(start, |lexeme| lexeme.end);
-        Ok(Node::Path(path))
+        Ok(Node::Indexed(path, arguments))
+    }
+
+    fn indexer(&mut self, arguments: &mut Vec<Node<'a>>) -> Result<(), Unparsed> {
+        let start = !self.symbol(':') && !self.symbol(']');
+        if start {
+            arguments.push(self.expression()?);
+        }
+        if self.eat(':') {
+            let stop = !self.symbol(':') && !self.symbol(']');
+            if stop {
+                arguments.push(self.expression()?);
+            }
+            if self.eat(':') {
+                arguments.push(self.expression()?);
+            } else if !start && !stop {
+                return Err(Unparsed::Syntax);
+            }
+        } else if !start {
+            return Err(Unparsed::Syntax);
+        }
+        self.require(']')
     }
 
     /// The object of a path: a `<<label>>`, or a name.
@@ -2337,7 +2499,7 @@ impl<'a> Parser<'a> {
                 if path.origin != Origin::Outside {
                     path.origin = Origin::Label;
                 }
-                label(quoted)
+                unquote(quoted).to_string()
             }
             Some(Token::Identifier(name) | Token::Cell(name)) => (*name).to_owned(),
             _ => return Err(Unparsed::Syntax),
@@ -2367,30 +2529,6 @@ impl<'a> Parser<'a> {
             _ => Err(Unparsed::Syntax),
         }
     }
-}
-
-/// The text of a `<<…>>` string, with `FreeCAD`'s escapes resolved.
-fn label(quoted: &str) -> String {
-    let inner = quoted
-        .strip_prefix("<<")
-        .and_then(|inner| inner.strip_suffix(">>"))
-        .unwrap_or(quoted);
-    let mut text = String::new();
-    let mut chars = inner.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            text.push(ch);
-            continue;
-        }
-        match chars.next() {
-            Some('t') => text.push('\t'),
-            Some('n') => text.push('\n'),
-            Some('r') => text.push('\r'),
-            Some(escaped @ ('\\' | '\'' | '"')) => text.push(escaped),
-            _ => {}
-        }
-    }
-    text
 }
 
 #[cfg(test)]

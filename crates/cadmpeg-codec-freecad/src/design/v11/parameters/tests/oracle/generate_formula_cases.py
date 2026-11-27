@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Synthetic stored Spreadsheet cells for the FreeCAD expression oracle."""
 
+from decimal import Decimal, localcontext
 from itertools import product
+import random
 from xml.etree import ElementTree as ET
 
 
@@ -178,7 +180,12 @@ def aggregates():
         yield f"={name}({args})"
 
 
-def cases():
+SEED = 0xFC5711
+GENERATED = 768
+DISPLAY_UNITS = {"X6": "mm/s", "X13": "cm", "X14": "s", "X20": "mm"}
+
+
+def cases(seed=SEED):
     fixed = (
         ("A1", "reference", "2", "w"), ("A2", "reference", "4", ""),
         ("A4", "literal", "2 mm^2", ""), ("A5", "literal", "1/0", ""),
@@ -211,6 +218,8 @@ def cases():
         ((family, content) for family, inputs in families.items() for content in inputs), 10
     ):
         yield f"Z{row}", family, content, ""
+    for address, family, content, alias, _ in grammar_cases(seed):
+        yield address, family, content, alias
 
 
 def properties(data, name, items):
@@ -275,5 +284,90 @@ def document(rows):
         cell = ET.SubElement(cells, "Cell", address=address, content=content)
         if alias:
             cell.set("alias", alias)
+        if address in DISPLAY_UNITS:
+            cell.set("displayUnit", DISPLAY_UNITS[address])
     ET.indent(root, space="  ")
     return ET.tostring(root, encoding="utf-8", xml_declaration=True) + b"\n"
+
+
+# Each derivation carries its source operands. This gives the comparator
+# dependency expectations independently of either implementation's scanner.
+def grammar_cases(seed=SEED):
+    with localcontext() as context:
+        context.prec = 1_100
+        smallest = Decimal(2) ** -1074
+        exact_decimal = format(smallest, "f")
+        inexact_decimal = format(smallest * Decimal("0.9999"), "f")
+
+    fixed = (
+        ("9223372036854775807 mm", ()),
+        ("1/9223372036854775807 mm", ()),
+        ("0.0000000000000000000000000000000000000001 / 2", ()),
+        ("1 / (2)", ()), ("1 / (2 mm)", ()), ("2 mm/(2 s)", ()), ("1/pi", ()),
+        ("1/False", ()), ("0x1p-1074", ()), ("0x10000000000000000p-1075", ()),
+        ("0x0p1024", ()), ("0x1p-2000", ()),
+        ("=pi mm", ()), ("=true mm", ()), ("=false mm", ()), ("=None mm", ()),
+        ("=sum(A1:A2)", ("A1", "A2")),
+        ("=A1 + 0.0000000000000000000000000000000000000001", ("A1",)),
+        ("=A1 + 1\u00a0", ("A1",)),
+        ("ERR: invented", ()), ("=<<ERR: invented>>", ()),
+        ("=<<ERR: >> + <<invented>>", ()), ("=str(A1) * Vars.Count", ("A1",)),
+        ("=A1 + ABCD", ("A1",)), ("=Vars.Items[A1 - 1]", ("A1",)),
+        ("=sum($A$1:w)", ("A1",)),
+        (exact_decimal, ()), (inexact_decimal, ()),
+    )
+    for row, (content, refs) in enumerate(fixed, 1):
+        yield f"X{row}", "review", content, "", refs
+
+    rng = random.Random(seed)
+    decimals = ("0", "2", "15", "2,5", "2.25", ".75", ",125", "25E-2", "8.5e+3",
+                "0.000000000000000000000000000000000000001", "9223372036854775806")
+    hexadecimals = ("0x2", "-0X.8", "0xAp-1", "-0x1.8P+4", "0x0p1024",
+                    "0x1p-1074", "0x1p-1075", "0x1.fffffffffffffp1023")
+    sizes = ("mm", "m", "cm", "in", "deg", "kg", "s", "mN", "mA")
+    references = ("A1", "A2", "$A$1", "Sheet.A2", ".A1", "w")
+    targets = ("A1", "A2", "A1", "A2", "A1", "A1")
+
+    def formula(depth):
+        if depth == 0:
+            digit = rng.randrange(len(references))
+            return rng.choice((
+                (rng.choice(decimals), ()),
+                (f"{rng.choice(decimals)} {rng.choice(sizes)}", ()),
+                (rng.choice(("pi", "e", "True", "false", "None", "<<text>>")), ()),
+                (references[digit], (targets[digit],)),
+            ))
+        head, head_refs = formula(depth - 1)
+        tail, tail_refs = formula(depth - 1)
+        if rng.randrange(4) == 0:
+            name = rng.choice(("abs", "sqrt", "str", "cos"))
+            return f"{name}({head})", head_refs
+        op = rng.choice(("+", "-", "*", "/", "^", "==", "<"))
+        return f"({head} {op} {tail})", (*head_refs, *tail_refs)
+
+    def raw():
+        top = rng.choice(decimals[1:])
+        bottom = rng.choice((*decimals[1:], "pi", "e", "False", "None"))
+        unit = rng.choice(sizes)
+        separate = rng.choice((" ", "\t", "\u00a0"))
+        return rng.choice((
+            top, rng.choice(hexadecimals), f"{top}{separate}{unit}",
+            f"{top} / ({bottom})", f"{top} / ({bottom} {unit})",
+            f"{top}{separate}{unit}/({bottom} {unit})",
+            f"{top} / ({unit})", f"{top} + {bottom}", f"{top} {unit}^2",
+        ))
+
+    for row in range(1, GENERATED + 1):
+        lane = row % 8
+        if lane == 0:
+            content, refs = raw(), ()
+        elif lane == 1:
+            name = rng.choice(COLLECTORS)
+            value, refs = formula(0)
+            content, refs = f"={name}(A1:A2; {value})", ("A1", "A2", *refs)
+        elif lane == 2:
+            content, refs = f"={rng.choice(('pi', 'e', 'true', 'false', 'None'))} {rng.choice(sizes)}", ()
+        else:
+            value, refs = formula(lane % 3)
+            content = f"={value}"
+        yield f"Y{row}", "grammar", content, "", tuple(sorted(set(refs)))
