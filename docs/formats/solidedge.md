@@ -668,21 +668,25 @@ object identifiers after the end of its function name (§4.2):
 | 128 | `CLSID_JDim` entered angle |
 | 156 | `Double Value Object` material thickness, the document variable of §10.1 index 4 |
 | 184 | `Double Value Object` extent kind |
+| 212 | `Double Value Object` material side |
 | 240 | `Double Value Object` side |
 | 296 | `Double Value Object` inside bend radius |
 | 324 | `Double Value Object` neutral factor |
 | 380 | `Double Value Object` relief width |
 | 408 | `Double Value Object` relief length |
 | 440 | `Double Value Object` offset kind, `44` |
-| 492 | `CLSID_JDim` partial width, only where the extent kind is `135` |
+| 492 | `CLSID_JDim` partial width where the extent kind is `135`; offset where the extent kind is `138` |
 | 496 | `Double Value Object` relief type, where the extent kind is `134` |
+| 512 | `CLSID_JDim` width, only where the extent kind is `138` |
 | 520 | `Double Value Object` relief type, where the extent kind is `135` |
+| 540 | `Double Value Object` relief type, where the extent kind is `138` |
 | 832 | `Double Value Object` bend method, the document variable of §10.1 index 13 |
 | 860 | `Double Value Object` bend deduction, the document variable of §10.1 index 11 |
 | 888 | `Double Value Object` bend allowance, the document variable of §10.1 index 12 |
 
 The slots from offset 492 on are 24 bytes later where the extent kind is
-`135` than where it is `134`. The slots at offsets 832, 860 and 888 are
+`135` than where it is `134`, and 44 bytes later where the extent kind is
+`138`. The slots at offsets 832, 860 and 888 are
 those of the extent kind `134` layout. The feature holds one edge. A flange
 that follows another flange in the part names that flange at offset 40.
 
@@ -690,8 +694,27 @@ The extent kind is `134` for the full length of the edge and `135` for a
 width centred on the edge. The partial width is the stored whole-edge proxy
 and a `CLSID_JDim` at offset 492; the file stores no offset from either end
 of the edge. The side value `2` turns the flange towards the normal of the
-base face. The relief type is `53` for no relief, `51` for a square relief
-and `52` for a round relief.
+base face and the side value `1` turns it against that normal. The material
+side is `1` for material inside, `2` for material outside and `9` for bend
+outside. The flange stores no thickness side. The relief type is `53` for no
+relief, `51` for a square relief and `52` for a round relief.
+
+The extent kind `138` is a width along the edge that starts at an offset from
+one end of the edge. The `CLSID_JDim` at offset 492 stores the offset and the
+`CLSID_JDim` at offset 512 stores the width. The stored edge proxy is the whole
+edge.
+
+The relief width and the relief length dimension the notch that the relief
+cuts in the base at each end of the flange width. The notch lies outside the
+flange width along the edge and cuts the full thickness. The relief width is
+the extent of the notch along the edge, from the end of the flange width away
+from the flange. The relief length is the extent of the notch across the edge,
+from the line where the bend meets the base face, away from the edge, to the
+far line of the notch. The notch also removes the bend and the base between
+that line and the edge. A relief length of zero ends the notch at that line.
+A square relief ends the notch at the far line. A round relief adds to the
+notch a half-round end of diameter equal to the relief width, centred on the
+far line and lying beyond it.
 
 The length `CLSID_JDim` stores the flange length. The length runs from the
 outer sharp, the intersection of the outer faces of the base and the flange,
@@ -705,7 +728,9 @@ Relation implementation` object of 161 bytes. The `u32` at object offset 99
 is the identifier of the flange object. The `u32` at object offset 127 is
 the identifier of the document variable object (§10.1). A value that has a
 relation follows the document variable. A value that has no relation is set
-on the flange and holds its own number.
+on the flange and holds its own number. The `u16` at object offset 18 of the
+objects at offsets 296, 324, 380 and 408 is `149` where a relation binds the
+object and `157` where none does.
 
 A `JMBendTable` object stores 362 bytes and one 93-byte record per bend. In
 record `k`, the `f64` at object offset 374 + 93`k` is the inside bend radius
