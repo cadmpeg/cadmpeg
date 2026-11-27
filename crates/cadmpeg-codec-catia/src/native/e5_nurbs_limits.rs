@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::families::e5::limit_program::{CurveLimits, SurfaceLimits};
 use crate::layout::e5_record_frame as header;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum LimitProgram {
     Pcurve(CurveLimits),

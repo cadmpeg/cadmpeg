@@ -65,6 +65,7 @@ usd = ["cadmpeg-registry/usd"]
 
 [dependencies]
 cadmpeg-core.workspace = true
+cadmpeg-derive.workspace = true
 cadmpeg-container.workspace = true
 cadmpeg-ir.workspace = true
 cadmpeg-measure.workspace = true

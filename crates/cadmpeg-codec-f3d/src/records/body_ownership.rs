@@ -17,7 +17,7 @@ const TYPED_REFERENCE_BYTES: usize = 51;
 const LOCAL_REFERENCE_BYTES: usize = 11;
 const COUNT_BYTES: usize = std::mem::size_of::<u32>();
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum BodyOwnershipReferences {
     InlineTyped {

@@ -1256,6 +1256,11 @@ pub(crate) enum F3dLossCode {
     /// its closing matrix without a component-path proof; the reference frame
     /// of that matrix is assumed.
     LocalOccurrenceMarkedPreludeAssumed,
+    /// An object-prelude carrier without a source marker takes its placement
+    /// from its closing matrix in a Design stream whose component-path
+    /// carriers all name an expanded occurrence and none names this carrier;
+    /// the reference frame of that matrix is assumed.
+    LocalOccurrenceObjectPreludeAssumed,
     /// A nested occurrence that only some placements of its definition hold
     /// is owned by the definition, so every placement shows it.
     PlacementChildrenDiffer,
@@ -2202,6 +2207,7 @@ impl F3dLossCode {
         Self::LocalOccurrencePathPoseDisagrees,
         Self::LocalOccurrencePathPoseInferred,
         Self::LocalOccurrenceMarkedPreludeAssumed,
+        Self::LocalOccurrenceObjectPreludeAssumed,
         Self::PlacementChildrenDiffer,
         Self::InstanceReferenceShared,
         Self::XrefContainedPose,
@@ -3440,6 +3446,9 @@ impl F3dLossCode {
             Self::LocalOccurrenceMarkedPreludeAssumed => {
                 "assembly.local-occurrence-marked-prelude-assumed"
             }
+            Self::LocalOccurrenceObjectPreludeAssumed => {
+                "assembly.local-occurrence-object-prelude-assumed"
+            }
             Self::PlacementChildrenDiffer => "assembly.placement-children-differ",
             Self::InstanceReferenceShared => "assembly.instance-reference-shared",
             Self::XrefContainedPose => "xref.contained-pose",
@@ -4330,6 +4339,7 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
             | Self::LocalOccurrenceMarkedPreludeAssumed
+            | Self::LocalOccurrenceObjectPreludeAssumed
             | Self::PlacementChildrenDiffer
             | Self::InstanceReferenceShared
             | Self::XrefContainedPoseDisagrees
@@ -4524,6 +4534,7 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
             | Self::LocalOccurrenceMarkedPreludeAssumed
+            | Self::LocalOccurrenceObjectPreludeAssumed
             | Self::PlacementChildrenDiffer
             | Self::InstanceReferenceShared
             | Self::XrefContainedPose
@@ -6105,6 +6116,7 @@ mod tests {
                 "assembly.local-occurrence-path-pose-disagrees",
                 "assembly.local-occurrence-path-pose-inferred",
                 "assembly.local-occurrence-marked-prelude-assumed",
+                "assembly.local-occurrence-object-prelude-assumed",
                 "assembly.placement-children-differ",
                 "assembly.instance-reference-shared",
                 "xref.contained-pose",

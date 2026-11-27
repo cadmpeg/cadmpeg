@@ -49,6 +49,36 @@ pub(crate) enum AlibreLossCode {
     SourceDialectUnverified,
     /// Streams of the container carry no decoded content in the IR.
     SourceStreamsUndecoded,
+    /// A history state holds an operation record that no feature of the history maps.
+    HistoryOperationUnmapped,
+    /// A sketch constraint record has a kind or operands that the history does not map.
+    HistoryConstraintUnmapped,
+    /// A sketch primitive holds a geometry record that the history does not map.
+    HistorySketchGeometryUnmapped,
+    /// A driving dimension holds annotation geometry that the history does not map.
+    HistoryDimensionAnnotationUnmapped,
+    /// A feature selects edges by a topology signature that names no edge of the body.
+    HistoryEdgeSelectionUnresolved,
+    /// A sketch lies on a face that a topology signature names, and the signature names no face of the body.
+    HistoryFaceSelectionUnresolved,
+    /// A loft holds settings after its section list that the history does not map.
+    HistoryLoftSettingsUnmapped,
+    /// An end condition holds a logical that the history reads as the reversal of the sketch normal.
+    HistoryDirectionFlagAssumed,
+    /// A state of the list is unreadable and gives no feature.
+    HistoryStateUnread,
+    /// A state stores an index that disagrees with its position in the state list.
+    HistoryStateIndexMismatch,
+    /// A hole has a sketch with no point, so its positions are not read.
+    HistoryHolePositionUnresolved,
+    /// The `STEP_DATA` stream holds no Alibre feature history.
+    HistoryStreamUnread,
+    /// The document profile and presentation records of the stream carry no decoded content in the IR.
+    HistoryPresentationUnmapped,
+    /// A parameter states an equation that the history does not translate, and keeps its value.
+    HistoryParameterEquationUnmapped,
+    /// Sheet-metal settings of the part that the rule does not state or maps only as a native option.
+    HistorySheetMetalSettingsUnmapped,
     /// A component file of an assembly is not available beside the assembly.
     AssemblyMemberUnavailable,
     /// A component file of an assembly is available but does not decode.
@@ -104,6 +134,21 @@ impl AlibreLossCode {
         Self::SourceRecordExtensionsUnprojected,
         Self::SourceDialectUnverified,
         Self::SourceStreamsUndecoded,
+        Self::HistoryOperationUnmapped,
+        Self::HistoryConstraintUnmapped,
+        Self::HistorySketchGeometryUnmapped,
+        Self::HistoryDimensionAnnotationUnmapped,
+        Self::HistoryEdgeSelectionUnresolved,
+        Self::HistoryFaceSelectionUnresolved,
+        Self::HistoryLoftSettingsUnmapped,
+        Self::HistoryDirectionFlagAssumed,
+        Self::HistoryStateUnread,
+        Self::HistoryStateIndexMismatch,
+        Self::HistoryHolePositionUnresolved,
+        Self::HistoryStreamUnread,
+        Self::HistoryPresentationUnmapped,
+        Self::HistoryParameterEquationUnmapped,
+        Self::HistorySheetMetalSettingsUnmapped,
         Self::AssemblyMemberUnavailable,
         Self::AssemblyMemberUndecoded,
         Self::AssemblyMemberCycle,
@@ -141,6 +186,21 @@ impl AlibreLossCode {
             Self::SourceRecordExtensionsUnprojected => "source.record-extensions-unprojected",
             Self::SourceDialectUnverified => "source.kernel-dialect-unverified",
             Self::SourceStreamsUndecoded => "source.streams-undecoded",
+            Self::HistoryOperationUnmapped => "history.operation-unmapped",
+            Self::HistoryConstraintUnmapped => "history.sketch-constraint-unmapped",
+            Self::HistorySketchGeometryUnmapped => "history.sketch-geometry-unmapped",
+            Self::HistoryDimensionAnnotationUnmapped => "history.dimension-annotation-unmapped",
+            Self::HistoryEdgeSelectionUnresolved => "history.edge-selection-unresolved",
+            Self::HistoryFaceSelectionUnresolved => "history.face-selection-unresolved",
+            Self::HistoryLoftSettingsUnmapped => "history.loft-settings-unmapped",
+            Self::HistoryDirectionFlagAssumed => "history.direction-flag-assumed",
+            Self::HistoryStateUnread => "history.state-unread",
+            Self::HistoryStateIndexMismatch => "history.state-index-mismatch",
+            Self::HistoryHolePositionUnresolved => "history.hole-position-unresolved",
+            Self::HistoryStreamUnread => "history.stream-unread",
+            Self::HistoryPresentationUnmapped => "history.presentation-unmapped",
+            Self::HistoryParameterEquationUnmapped => "history.parameter-equation-unmapped",
+            Self::HistorySheetMetalSettingsUnmapped => "history.sheet-metal-settings-unmapped",
             Self::AssemblyMemberUnavailable => "assembly.member-unavailable",
             Self::AssemblyMemberUndecoded => "assembly.member-undecoded",
             Self::AssemblyMemberCycle => "assembly.member-cycle",
@@ -178,6 +238,21 @@ impl AlibreLossCode {
             | Self::SourceRecordExtensionsUnprojected
             | Self::SourceDialectUnverified
             | Self::SourceStreamsUndecoded
+            | Self::HistoryOperationUnmapped
+            | Self::HistoryConstraintUnmapped
+            | Self::HistorySketchGeometryUnmapped
+            | Self::HistoryDimensionAnnotationUnmapped
+            | Self::HistoryEdgeSelectionUnresolved
+            | Self::HistoryFaceSelectionUnresolved
+            | Self::HistoryLoftSettingsUnmapped
+            | Self::HistoryDirectionFlagAssumed
+            | Self::HistoryStateUnread
+            | Self::HistoryStateIndexMismatch
+            | Self::HistoryHolePositionUnresolved
+            | Self::HistoryStreamUnread
+            | Self::HistoryPresentationUnmapped
+            | Self::HistoryParameterEquationUnmapped
+            | Self::HistorySheetMetalSettingsUnmapped
             | Self::AssemblyMemberUnavailable
             | Self::AssemblyMemberUndecoded
             | Self::AssemblyMemberCycle
@@ -219,6 +294,21 @@ impl AlibreLossCode {
             Self::SourceRecordExtensionsUnprojected | Self::SourceStreamsUndecoded => {
                 LossTaxonomy::MetadataNotTransferred
             }
+            Self::HistoryOperationUnmapped
+            | Self::HistoryConstraintUnmapped
+            | Self::HistorySketchGeometryUnmapped
+            | Self::HistoryDimensionAnnotationUnmapped
+            | Self::HistoryEdgeSelectionUnresolved
+            | Self::HistoryFaceSelectionUnresolved
+            | Self::HistoryLoftSettingsUnmapped
+            | Self::HistoryDirectionFlagAssumed
+            | Self::HistoryStateUnread
+            | Self::HistoryStateIndexMismatch
+            | Self::HistoryHolePositionUnresolved
+            | Self::HistoryStreamUnread
+            | Self::HistoryPresentationUnmapped
+            | Self::HistoryParameterEquationUnmapped
+            | Self::HistorySheetMetalSettingsUnmapped => LossTaxonomy::FeatureHistoryRetained,
             Self::AssemblyMemberUnavailable
             | Self::AssemblyMemberUndecoded
             | Self::AssemblyMemberCycle
@@ -278,6 +368,21 @@ mod tests {
                 "source.record-extensions-unprojected",
                 "source.kernel-dialect-unverified",
                 "source.streams-undecoded",
+                "history.operation-unmapped",
+                "history.sketch-constraint-unmapped",
+                "history.sketch-geometry-unmapped",
+                "history.dimension-annotation-unmapped",
+                "history.edge-selection-unresolved",
+                "history.face-selection-unresolved",
+                "history.loft-settings-unmapped",
+                "history.direction-flag-assumed",
+                "history.state-unread",
+                "history.state-index-mismatch",
+                "history.hole-position-unresolved",
+                "history.stream-unread",
+                "history.presentation-unmapped",
+                "history.parameter-equation-unmapped",
+                "history.sheet-metal-settings-unmapped",
                 "assembly.member-unavailable",
                 "assembly.member-undecoded",
                 "assembly.member-cycle",

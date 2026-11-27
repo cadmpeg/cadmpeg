@@ -4303,7 +4303,7 @@
             "namespace": "alibre"
           }
         },
-        "message": "component asm_box: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, STEP_DATA, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
+        "message": "component asm_box: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
         "severity": "warning"
       },
       {
@@ -4322,12 +4322,60 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "history.dimension-annotation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_box: state E1 holds a dimension annotation, which the history does not map",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.direction-flag-assumed",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_box: the logical of a blind end condition is read as the reversal of the sketch normal",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.presentation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_box: document profile, measurement format, font, hatch, configuration, and version records are not mapped",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "assembly.member-tolerance-unmerged",
             "kind": "metadata_not_transferred",
             "namespace": "alibre"
           }
         },
         "message": "component asm_box: states the document tolerances linear 0.000009999999999999999 mm and angular 0.0000000001 rad; the assembly keeps linear 0.000001 mm and angular 0.0000000001 rad",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-design-unmerged",
+            "kind": "assembly_components_external",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_box: design records of the file are not merged into the assembly",
         "severity": "warning"
       },
       {
@@ -4351,7 +4399,7 @@
             "namespace": "alibre"
           }
         },
-        "message": "component asm_cylinder: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, STEP_DATA, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
+        "message": "component asm_cylinder: streams without a decoder: DESIGN_PARAMETER_DATA, AUTOGRAPH_DATA, PROP_DATA, VERSION, HOLE_OPERATIONS_DATA, CUSTOM_ITEM_PROP_DATA, GLOBAL_PARAMETER_DATA_CACHE, STANDARD_DESIGN_PROP_DATA, LIGHT_CONFIGURATION_DATA, EXTERNAL_THREAD_OPERATIONS_DATA",
         "severity": "warning"
       },
       {
@@ -4370,12 +4418,60 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "history.dimension-annotation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: state E1 holds a dimension annotation, which the history does not map",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.direction-flag-assumed",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: the logical of a blind end condition is read as the reversal of the sketch normal",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.presentation-unmapped",
+            "kind": "feature_history_retained",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: document profile, measurement format, font, hatch, configuration, and version records are not mapped",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "assembly.member-tolerance-unmerged",
             "kind": "metadata_not_transferred",
             "namespace": "alibre"
           }
         },
         "message": "component asm_cylinder: states the document tolerances linear 0.000009999999999999999 mm and angular 0.0000000001 rad; the assembly keeps linear 0.000001 mm and angular 0.0000000001 rad",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "assembly.member-design-unmerged",
+            "kind": "assembly_components_external",
+            "namespace": "alibre"
+          }
+        },
+        "message": "component asm_cylinder: design records of the file are not merged into the assembly",
         "severity": "warning"
       }
     ],

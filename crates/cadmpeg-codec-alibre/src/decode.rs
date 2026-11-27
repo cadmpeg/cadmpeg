@@ -15,8 +15,9 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::loss::LossNote;
 
-use crate::container::{AlibreContainer, DocumentKind, SAB_STREAM};
+use crate::container::{AlibreContainer, DocumentKind, SAB_STREAM, STEP_STREAM};
 use crate::dialect::{classify, kernel_stream, Classification, KernelStream};
+use crate::history::History;
 use crate::loss::AlibreLossCode;
 use crate::FORMAT;
 
@@ -80,7 +81,37 @@ pub(crate) fn decode_part<'a>(
     let (brep, removed) = decode_kernel_stream(ctx, bytes, &kernel)?;
     losses.extend(extensions_loss(removed));
     losses.extend(container.undecoded_streams_loss());
-    from_kernel(ctx, classification, &kernel, brep, losses, digest)
+    let step = container.stream(ctx, STEP_STREAM)?;
+    let history =
+        match read_history(ctx, step.window()) {
+            Ok(Some(history)) => Some(history),
+            Ok(None) => {
+                losses.push(AlibreLossCode::HistoryStreamUnread.note(
+                    "the STEP_DATA stream names another schema or holds no part state context",
+                ));
+                None
+            }
+            Err(CodecError::Malformed(reason)) => {
+                losses.push(AlibreLossCode::HistoryStreamUnread.note(format!(
+                    "the STEP_DATA stream is not read as a feature history: {reason}"
+                )));
+                None
+            }
+            Err(error) => return Err(error),
+        };
+    from_kernel(
+        ctx,
+        classification,
+        &kernel,
+        brep,
+        losses,
+        digest,
+        history.as_ref(),
+    )
+}
+
+fn read_history(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<History>, CodecError> {
+    crate::history::read(&crate::part21::parse(ctx, bytes)?)
 }
 
 pub(crate) fn decode_kernel_stream(
@@ -166,6 +197,7 @@ fn from_kernel(
     brep: AsmBrep,
     mut losses: Vec<LossNote>,
     digest: Sha256Digest,
+    history: Option<&History>,
 ) -> Result<Decoded, CodecError> {
     let header = &kernel.header.metadata;
     losses.extend(classification.kernel_loss());
@@ -257,7 +289,7 @@ fn from_kernel(
         crate::coverage::UNKNOWN_SURFACE_FACES,
         stats.unknown_surface_faces(),
     );
-    let body = DecodeBody {
+    let mut body = DecodeBody {
         coverage,
         losses,
         ..DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(
@@ -294,14 +326,27 @@ fn from_kernel(
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
     }
+    let root = cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("alibre", "model", "product-definition"),
+        cadmpeg_ir::identity_key!("root"),
+    );
     ir.state_root_definition(
         ctx,
-        cadmpeg_ir::ids::ProductDefinitionId::compose(
-            &cadmpeg_ir::identity_namespace!("alibre", "model", "product-definition"),
-            cadmpeg_ir::identity_key!("root"),
-        ),
+        root.clone(),
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
+    if let Some(history) = history {
+        match crate::design::project(ctx, &mut ir, history, &root, &mut body.losses) {
+            Ok(()) => {}
+            Err(CodecError::Malformed(reason)) => {
+                let message =
+                    format!("the feature history is not projected into the design layer: {reason}");
+                body.losses
+                    .push(AlibreLossCode::HistoryStreamUnread.note(message));
+            }
+            Err(error) => return Err(error),
+        }
+    }
     Ok(Decoded {
         ir,
         body,

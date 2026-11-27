@@ -18,6 +18,8 @@ use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection, Surface
 use crate::loss::AlibreLossCode;
 use crate::AlibreCodec;
 
+mod history;
+
 pub(crate) mod assembly;
 mod synthetic;
 
@@ -44,9 +46,10 @@ const CONE: &[u8] = include_bytes!("../../../corpus/alibre/cone.AD_PRT");
 const CYLINDER: &[u8] = include_bytes!("../../../corpus/alibre/cylinder.AD_PRT");
 const CYLINDER_FILLET: &[u8] = include_bytes!("../../../corpus/alibre/cylinder_fillet.AD_PRT");
 const LOFT: &[u8] = include_bytes!("../../../corpus/alibre/loft.AD_PRT");
+const SMP_BOX: &[u8] = include_bytes!("../../../corpus/alibre/smp_box.AD_SMP");
 const LOFT_TWIN: &[u8] = include_bytes!("../../../corpus/alibre/loft.stp");
 
-pub(crate) fn specimens() -> [(&'static str, &'static [u8]); 6] {
+pub(crate) fn specimens() -> [(&'static str, &'static [u8]); 7] {
     [
         ("box", BOX),
         ("box_hole", BOX_HOLE),
@@ -54,6 +57,7 @@ pub(crate) fn specimens() -> [(&'static str, &'static [u8]); 6] {
         ("cylinder", CYLINDER),
         ("cylinder_fillet", CYLINDER_FILLET),
         ("loft", LOFT),
+        ("smp_box", SMP_BOX),
     ]
 }
 
@@ -223,6 +227,7 @@ fn face_counts_follow_the_modelled_features() {
         ("cylinder", CYLINDER, 3),
         ("cylinder_fillet", CYLINDER_FILLET, 4),
         ("loft", LOFT, 6),
+        ("smp_box", SMP_BOX, 6),
     ] {
         let result = decode(bytes);
         assert_eq!(result.ir().geometry.faces.len(), faces, "{name}");
@@ -239,6 +244,14 @@ fn a_box_measures_its_extrusion() {
         [-BOX_HALF_X, -BOX_HALF_Y, 0.0],
         [BOX_HALF_X, BOX_HALF_Y, BOX_HEIGHT],
     );
+}
+
+/// The sheet-metal part is one 20 x 30 mm rectangle extruded 1.5 mm.
+#[test]
+fn a_sheet_metal_part_measures_its_extrusion() {
+    let body = measured_body(decode(SMP_BOX).ir());
+    assert_eq!(kind_count(&body, SurfaceKind::Plane), 6);
+    assert_volume(&body, 20.0 * 30.0 * 1.5);
 }
 
 #[test]

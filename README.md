@@ -96,7 +96,7 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 - **STEP Part 21** — L8 ([profile](docs/format-support.md#step-part-21))
 - **Solid Edge `.par`, `.psm`, and `.asm`** — L2 ([profile](docs/format-support.md#solid-edge-par-psm-and-asm))
 - **IronCAD `.ics`** — L0 ([profile](docs/format-support.md#ironcad-ics))
-- **Onshape bundle** — L0 ([profile](docs/format-support.md#onshape-bundle))
+- **Onshape bundle** — L4 ([profile](docs/format-support.md#onshape-bundle))
 
 <!-- /generated: capability-lines -->
 
