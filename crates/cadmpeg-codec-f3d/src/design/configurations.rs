@@ -12,7 +12,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::unknown::part::GivenUpPart;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 mod json;
 
@@ -478,13 +478,26 @@ fn project_row(
     Ok(configuration)
 }
 
+/// The features to which the body history binds an output body.
+pub(crate) fn body_producers(
+    features: &[cadmpeg_ir::features::Feature],
+) -> BTreeSet<cadmpeg_ir::features::FeatureId> {
+    features
+        .iter()
+        .filter(|feature| !feature.evaluation.outputs().is_empty())
+        .map(|feature| feature.id.clone())
+        .collect()
+}
+
 /// Project the configuration tables of `native` into `model` and reconcile
 /// the active configuration with the features. A row copies the definition
 /// and dependencies of each feature it states, so this runs after every
-/// decode pass that rewrites a feature.
+/// decode pass that rewrites a feature. `producers` is [`body_producers`]
+/// taken before the owner pass, which can drop output links.
 pub(crate) fn attach(
     native: &crate::native::F3dNative,
     model: &mut cadmpeg_ir::document::Model,
+    producers: &BTreeSet<cadmpeg_ir::features::FeatureId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut configurations = crate::design::decode::record::recover_partial(
@@ -504,7 +517,23 @@ pub(crate) fn attach(
         "Configuration projection",
     )?
     .unwrap_or_default();
-    reconcile_active_configurations(&mut model.features, &mut configurations)?;
+    let unstored = native
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| scope.stored_suppression().is_none())
+        .map(crate::ids::neutral_feature_id)
+        .collect::<BTreeSet<_>>();
+    // A feature that produces a body is active in the stored geometry.
+    let undecided = model
+        .features
+        .iter()
+        .filter(|feature| {
+            !producers.contains(&feature.id)
+                && (feature.suppressed.is_none() || unstored.contains(&feature.id))
+        })
+        .map(|feature| feature.id.clone())
+        .collect();
+    reconcile_active_configurations(&mut model.features, &mut configurations, &undecided)?;
     model.configurations = configurations;
     Ok(())
 }
@@ -512,16 +541,17 @@ pub(crate) fn attach(
 /// Make the active configurations and the current feature states agree where
 /// the source leaves one of them silent. A table lists only the features it
 /// toggles, so a suppressed feature with no row keeps that state in the active
-/// row. A Sketch scope's state identities do not decide its suppression, and a
-/// feature can have no stored state, so the active row supplies it. A row with
-/// a suppression column that names no feature could name the feature that
-/// gained a row, so that row records the assumption in a property.
+/// row. The active row supplies the state of each feature of `undecided`,
+/// whose records do not decide it (f3d.md §1.2). Every other feature keeps
+/// its state, so a row that contradicts it reaches the disagreement finding.
+/// A row with a suppression column that names no feature could name the
+/// feature that gained a row, so that row records the assumption in a
+/// property.
 pub(crate) fn reconcile_active_configurations(
     features: &mut [cadmpeg_ir::features::Feature],
     configurations: &mut [cadmpeg_ir::features::parameters::DesignConfiguration],
+    undecided: &BTreeSet<cadmpeg_ir::features::FeatureId>,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
     for configuration in configurations.iter_mut().filter(|row| row.active) {
         let unresolved_column = configuration
             .properties
@@ -529,17 +559,11 @@ pub(crate) fn reconcile_active_configurations(
             .any(|key| key.as_str().starts_with("suppressed:"));
         for feature in features.iter_mut() {
             match configuration.feature_states.get(&feature.id) {
-                Some(state) if state.evaluation.is_suppressed() => {
-                    let undecided = feature.suppressed.is_none()
-                        || matches!(
-                            feature.evaluation.definition(),
-                            FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-                        );
-                    if undecided {
-                        feature.suppressed = Some(true);
+                Some(state) => {
+                    if undecided.contains(&feature.id) {
+                        feature.suppressed = Some(state.evaluation.is_suppressed());
                     }
                 }
-                Some(_) => {}
                 None => {
                     if feature.suppressed == Some(true) {
                         configuration

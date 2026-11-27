@@ -564,7 +564,9 @@ pub(crate) struct DesignCombineBodyNode {
     pub(crate) creating_scope_record_index: u32,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DesignCombineDestination {
     #[default]

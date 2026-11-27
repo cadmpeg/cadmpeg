@@ -58,7 +58,7 @@ impl DecodedProperty {
 }
 
 /// A schema-defined Protein property value.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum PropertyValue {
     /// Boolean scalar.
@@ -168,7 +168,7 @@ impl Serialize for RepeatedValues {
 }
 
 /// A schema-defined Protein property value.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 enum PropertyValueWire {
     /// Boolean scalar.

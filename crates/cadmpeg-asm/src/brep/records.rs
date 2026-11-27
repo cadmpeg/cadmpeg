@@ -370,7 +370,7 @@ native_record! {
 
 /// Shape of the evaluated tolerance slot of one tolerant ASM vertex record,
 /// with the version-gated LONG that follows the slot when it is present.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "slot", deny_unknown_fields)]
 pub enum EvaluatedToleranceSlot {
@@ -466,7 +466,7 @@ native_record! {
 }
 
 /// Release-selected fixed fields following a tolerant-coedge parameter interval.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "layout", deny_unknown_fields)]
 pub enum TolerantCoedgeExtension {
