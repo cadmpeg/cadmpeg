@@ -665,12 +665,13 @@ pub(super) fn later_body_changes(
 }
 
 /// The states after the result state of `scope` in `history` whose
-/// transition updates or deletes `slot`.
+/// transition updates, deletes or inserts `slot`. Each state carries whether
+/// its transition deletes or inserts the slot rather than only updating it.
 pub(super) fn later_slot_change_states(
     history: &AsmHistory,
     scope: &crate::records::feature::scope::DesignParameterScope,
     slot: i64,
-) -> Option<Vec<i64>> {
+) -> Option<Vec<(i64, bool)>> {
     let state_id = scope.history_state_id()?;
     let order = history.states_oldest_first()?;
     let states = history.states();
@@ -687,17 +688,11 @@ pub(super) fn later_slot_change_states(
         order[position + 1..]
             .iter()
             .filter_map(|index| states.get(*index))
-            .filter(|state| {
-                state.transition.as_ref().is_some_and(|transition| {
-                    let bodies = &transition.topology.bodies;
-                    bodies
-                        .updated
-                        .iter()
-                        .chain(&bodies.deleted)
-                        .any(|s| *s == slot)
-                })
+            .filter_map(|state| {
+                let bodies = &state.transition.as_ref()?.topology.bodies;
+                let replaced = bodies.deleted.contains(&slot) || bodies.inserted.contains(&slot);
+                (replaced || bodies.updated.contains(&slot)).then_some((state.state_id, replaced))
             })
-            .map(|state| state.state_id)
             .collect(),
     )
 }

@@ -234,7 +234,15 @@ fn live_tool_body(
     let later = super::generated_bodies::later_slot_change_states(history, creator, *slot)
         .ok_or("its creating state has no unique place in the history's state order")?;
     let stream = crate::ids::native_stream(&creator.id);
-    for changed in later {
+    let generator = inputs
+        .by_native
+        .get(creator.id.as_str())
+        .copied()
+        .ok_or("its creating scope is not a projected feature")?;
+    if later.iter().any(|(_, replaced)| *replaced) {
+        return Err("a transition before the Combine deletes or re-inserts the tool body");
+    }
+    for (changed, _) in later {
         let mut owners = inputs.scopes.iter().filter(|candidate| {
             candidate.history_state_id() == Some(changed)
                 && crate::ids::native_stream(&candidate.id) == stream
@@ -246,12 +254,14 @@ fn live_tool_body(
                 "no single feature of its history owns a later transition that changes the body",
             ),
         };
-        let precedes = inputs
-            .by_native
-            .get(owner.id.as_str())
-            .is_some_and(|feature| feature.ordinal < combine_ordinal);
-        if !precedes {
+        let Some(owner) = inputs.by_native.get(owner.id.as_str()) else {
+            return Err("a transition that changes the body belongs to no projected feature");
+        };
+        if owner.ordinal >= combine_ordinal {
             return Err("a feature that follows the Combine changes the body in its history");
+        }
+        if owner.ordinal <= generator.ordinal {
+            return Err("a feature that does not follow the tool's generator changes the body");
         }
     }
     pair.body
@@ -446,9 +456,19 @@ pub(crate) fn bind(
                 )
             })
             .collect::<Vec<_>>();
+        let mixed = {
+            let proven = || tools.iter().filter_map(|(_, tool)| tool.as_ref().ok());
+            proven().any(|tool| matches!(tool.body, ToolBody::Model(_)))
+                && proven().any(|tool| matches!(tool.body, ToolBody::Generated(_)))
+        };
         let Some(selection) = tool_selection(tools, native) else {
+            let reason = if mixed {
+                "tools mix live and history-only bodies"
+            } else {
+                "the generated-body selection is not admitted"
+            };
             losses.push(F3dLossCode::FeatureCombineToolBodyUnbound.note(format!(
-                "feature {} retains its native Combine tools: the generated-body selection is not admitted",
+                "feature {} retains its native Combine tools: {reason}",
                 feature.id
             )));
             continue;
