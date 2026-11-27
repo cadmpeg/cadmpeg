@@ -973,6 +973,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.primary_brep,
     )?;
     losses.extend(bound_outputs.losses);
+    let omitted_copies = bound_outputs.omitted_copies;
     let feature_ids = model
         .features
         .iter()
@@ -1099,6 +1100,28 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             replaced_tools,
         ),
     );
+    for (producer, state_id, slots) in omitted_copies {
+        if crate::history::feature_outputs::combine_consumes_generated_bodies(
+            &model.features,
+            &producer,
+        ) {
+            continue;
+        }
+        let Some(feature) = model.features.iter().find(|feature| feature.id == producer) else {
+            continue;
+        };
+        let (note, result) =
+            crate::history::feature_outputs::omitted_copy_outputs(feature, state_id, &slots);
+        losses.push(note);
+        if let Some(result) = result.filter(|result| {
+            !model
+                .feature_result_topologies
+                .iter()
+                .any(|known| known.output_of == result.output_of)
+        }) {
+            model.feature_result_topologies.push(result);
+        }
+    }
     // After the body selections: a Split names its input-state bodies there.
     let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,
@@ -2402,9 +2425,11 @@ fn extend_related_design_records(
         &design.asm_histories,
         &prereqs.design_types,
     );
-    crate::history::selection::bind_edge_identity_bounded_face_rules(
-        &mut design.design_edge_identity_operands,
-        &design.design_face_operands,
+    profile_losses.extend(
+        crate::history::selection::bind_edge_identity_bounded_face_rules(
+            &mut design.design_edge_identity_operands,
+            &design.design_face_operands,
+        ),
     );
     let mut placement_given_up = Vec::new();
     design.design_sketch_placements = crate::design::decode::sketch::decode_sketch_placements(
