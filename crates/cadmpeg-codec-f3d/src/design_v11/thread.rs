@@ -18,6 +18,7 @@ use crate::records::feature::thread::DesignThreadConstruction;
 
 const MILLIMETRES_PER_CENTIMETRE: f64 = 10.0;
 
+mod helix_hand;
 mod hole;
 
 pub(super) fn project(
@@ -40,6 +41,7 @@ pub(super) fn project(
     if legacy.is_empty() {
         return Ok(());
     }
+    let helices = helix_hand::paths(&ir.geometry.procedural_surfaces);
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(());
     };
@@ -100,7 +102,7 @@ pub(super) fn project(
                     .find(|feature| feature.id == owner.id)?;
                 let operation = hole::operation(
                     owner,
-                    spec(construction, extent.as_ref()),
+                    spec_with_geometric_hand(construction, extent.as_ref(), &helices),
                     options(construction),
                     losses,
                 )?;
@@ -128,7 +130,7 @@ pub(super) fn project(
         feature.definition.operation = FeatureOperation::Thread(Box::new(Thread {
             face,
             start: None,
-            spec: spec(construction, extent.as_ref()),
+            spec: spec_with_geometric_hand(construction, extent.as_ref(), &helices),
             native_options: options(construction),
             source_settings: BTreeMap::new(),
         }));
@@ -161,6 +163,20 @@ fn options(construction: &DesignThreadConstruction) -> cadmpeg_ir::design::optio
             )
         })
         .collect()
+}
+
+/// The Thread specification, with the hand of the helical faces when the
+/// stored construction does not state it.
+fn spec_with_geometric_hand(
+    construction: &DesignThreadConstruction,
+    extent: Option<&CosmeticThreadExtent>,
+    helices: &[helix_hand::HelicalPath],
+) -> ThreadSpec {
+    let mut projected = spec(construction, extent);
+    if projected.hand.is_none() {
+        projected.hand = helix_hand::hand(helices, construction);
+    }
+    projected
 }
 
 fn spec(
