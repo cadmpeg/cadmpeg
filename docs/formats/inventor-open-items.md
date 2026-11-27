@@ -286,9 +286,9 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Question.** Which records join an extrusion's stored planar termination surface to its selected input-body face and history revision? What roles do the other surface reference, state, and value forms have?
 
-**Known.** The zero-control face-surface form in section 13 stores three null references and a complete plane frame. The target source distinguishes this stored face surface from a work plane or work point. Its body-face identity stays native with `feature.extrusion-target-face-native`, once per face-surface start or termination. A face item's selector joins a stored face revision by the rule of section 13.
+**Known.** The zero-control face-surface form in section 13 stores three null references and a complete plane frame. The target source distinguishes this stored face surface from a work plane or work point. Its body-face identity stays native with `feature.extrusion-target-face-native`, once per face-surface start or termination. A zero-control parametric surface of form 29 or 73 in the termination slot terminates the extrusion at a native face selection of the surface record. A face item's selector joins a stored face revision by the rule of section 13.
 
-**Need.** A face identity for the stored termination surface requires its selector and the input-body revision of the selected face. Other surface controls require their selection, frame, and polarity roles.
+**Need.** A face identity for the stored termination surface requires its selector and the input-body revision of the selected face. A parametric termination surface requires the record that identifies its face; its class parameters do not. Other surface controls require their selection, frame, and polarity roles.
 
 ### DE-13. Coil construction operands
 
@@ -407,6 +407,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 **Known.** Section 13 defines slot 5 as the forward taper angle and slot 28 as the opposite-side taper angle. Both parameters use radians. The v10 operation retains these values in its side drafts. The v11 operation retains a drafted extrusion as native operands and reports `feature.design-operation-native`.
 
 **Need.** Controlled positive and negative taper settings, with profile and result cross-sections, for profile-plane and from-plane origins and each extent form.
+
+### DE-31. Stitch Surface operands and controls
+
+**Question.** Which body records of the state before a Stitch Surface (feature-label class `608ba39ed6117473279943ad7fbe0b63`) do the operand wrappers select, and what do the slot-3 Boolean, the slot-5 Boolean, the slot-4 parameter and its unit, and the outline value 2 or 4 control?
+
+**Known.** Section 13.12 gives the six-slot form. The state after the feature has one body key that the state before lacks, and no body key of the state before is absent after it, so the operand wrappers select no body that leaves the model. Slot 3 is true and slot 5 is false when the operand collection has two wrappers. Slot 4 is a parameter record with a positive model value and an unresolved unit.
+
+**Need.** The kernel-entity link of each operand wrapper, joined to a body key of the state before the feature, with the faces of those bodies and of the new body. Features whose slot 3 or slot 5 has the other value, features whose slot-4 value differs from the largest gap that the stitch closes, a Stitch Surface whose slot-4 parameter has a resolved unit, and a pair of features that differ only in their outline value.
 
 ## 5. Adjacent envelopes
 

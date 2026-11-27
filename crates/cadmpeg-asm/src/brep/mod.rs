@@ -21,6 +21,7 @@ pub mod annotations;
 pub mod attributes;
 pub mod emit;
 pub mod geometry;
+pub mod given_up;
 pub mod key_maps;
 pub mod records;
 pub mod stats;
@@ -141,6 +142,10 @@ pub struct AsmBrep {
     /// arenas derive from parent pointers instead of storing.
     #[serde(skip)]
     pub chain_order: ChainOrder,
+    /// Topology records the model decode read and left out; the embedding
+    /// codec gives each up as a part (CADIR §3.3).
+    #[serde(skip)]
+    pub withheld: Vec<given_up::WithheldRecord>,
 }
 
 /// A face record that states no loop on a surface whose domain is unbounded.
@@ -239,6 +244,7 @@ impl<'de> Deserialize<'de> for AsmBrep {
             annotation_records: Vec::new(),
             unbounded_faces: Vec::new(),
             chain_order: ChainOrder::default(),
+            withheld: Vec::new(),
         })
     }
 }
@@ -284,6 +290,7 @@ impl AsmBrep {
             unknowns,
             annotation_records,
             unbounded_faces,
+            withheld,
         );
         self.stats.merge(other.stats);
     }
@@ -595,6 +602,7 @@ pub fn decode_with_table(
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
     if purpose == DecodePurpose::Model {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
+        given_up::list_withheld(&mut out, records, &by_index, &reach, format)?;
         count_other_records(&mut out, records, &reach, &emitted_attributes)?;
         emit_annotation_records(ctx, &mut out, records, &by_index, &carriers, stream, format)?;
 

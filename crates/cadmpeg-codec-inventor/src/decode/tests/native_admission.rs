@@ -95,8 +95,13 @@ fn rse_native_projection_projects_malformed_unpaired_and_unframed_segments() {
         detail: "metadata issue".into(),
     };
     container.rse.segments[0].bulk = SegmentBulkState::Malformed("bulk issue".into());
-    container.rse.unpaired_metadata.push(token.clone());
-    container.rse.unpaired_bulk.push(token);
+    let pair = &container.rse.segments[0].pair;
+    let streams = (pair.metadata, pair.bulk);
+    container
+        .rse
+        .unpaired_metadata
+        .push((token.clone(), streams.0));
+    container.rse.unpaired_bulk.push((token, streams.1));
     rse_native_projection::project(&ctx, &container).expect("malformed segments project");
 }
 

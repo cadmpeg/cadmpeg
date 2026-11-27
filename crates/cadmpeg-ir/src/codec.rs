@@ -28,7 +28,7 @@ use cadmpeg_core::decode::{
     ArenaClass, ContentScope, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy,
     InspectOptions, LimitScope, ResourceLimits, View, WholeInput,
 };
-use cadmpeg_core::dialect::FormatIdentity;
+use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
 use cadmpeg_core::{CodecError, ReadSeek};
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
@@ -504,7 +504,20 @@ impl DecodeResult {
         let walk = |ir: &CadIr| {
             let arena = DecodeArena::new();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-            Ok::<_, CodecError>(crate::hash::measured_content_digest(&ctx, ir))
+            let (digest, mut measured) = crate::hash::measured_content_digest(&ctx, ir);
+            if matches!(
+                digest,
+                Err(crate::hash::DigestError::CanonicalJson(
+                    crate::hash::finite_json::CanonicalJsonError::Resource(
+                        cadmpeg_core::CodecError::ResourceLimit(ref limit)
+                    )
+                )) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+            ) {
+                if let Ok(full) = crate::hash::measure_document_bounds(ir) {
+                    measured = full;
+                }
+            }
+            Ok::<_, CodecError>((digest, measured))
         };
         let (mut digest, mut measured) = walk(&self.ir)?;
         if self.restate_expressions_past_the_bound(&measured.records) {
@@ -730,6 +743,18 @@ pub trait CodecBackend {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError>;
 
+    /// Classify the acquired root view's dialects without full container
+    /// inspection when the codec supports a lightweight header path.
+    ///
+    /// Defaults to [`Self::inspect_impl`].
+    fn classify_impl(
+        &self,
+        ctx: &DecodeContext<'_>,
+        root: View<'_>,
+    ) -> Result<Option<DialectLayers>, CodecError> {
+        Ok(self.inspect_impl(ctx, root)?.dialects().cloned())
+    }
+
     /// Decode the acquired root view, reporting incomplete or approximate
     /// transfer.
     ///
@@ -816,6 +841,14 @@ pub trait Codec: sealed::Sealed {
         options: &InspectOptions,
     ) -> Result<ContainerSummary, CodecError>;
 
+    /// Classifies the source's dialects under inspection options, using a
+    /// lightweight header path when the codec provides one.
+    fn classify_dialects(
+        &self,
+        reader: &mut dyn ReadSeek,
+        options: &InspectOptions,
+    ) -> Result<Option<DialectLayers>, CodecError>;
+
     /// Decodes the source under its input and resource limits.
     ///
     /// `options.strictness` refuses the completed decode with
@@ -896,6 +929,21 @@ impl<C: CodecBackend + ?Sized> Codec for C {
             )));
         }
         Ok(result)
+    }
+
+    fn classify_dialects(
+        &self,
+        reader: &mut dyn ReadSeek,
+        options: &InspectOptions,
+    ) -> Result<Option<DialectLayers>, CodecError> {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            limits: options.limits,
+        };
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy, DecodeDepth::Full)?;
+        let result = self.classify_impl(&ctx, root);
+        ctx.finish_session()?;
+        result
     }
 
     fn decode(

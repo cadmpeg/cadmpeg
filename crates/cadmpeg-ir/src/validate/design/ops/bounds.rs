@@ -47,7 +47,7 @@ impl<'v, 'a> Values<'v, 'a> {
     }
 }
 
-impl<'a> Site<'a> {
+impl<'a> Site<'_, 'a> {
     /// Checks a rule that bounds the values `breach` reads, which returns the
     /// rule's message where they break it. A breach among the literals alone
     /// is an Error. Where the rule reads a bound dimension, a breach in a
