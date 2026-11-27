@@ -128,7 +128,7 @@ fn regeneration_order(ir: &CadIr) -> impl Iterator<Item = &LegacyFeature> {
 }
 
 /// One ordered timeline holding every model feature in regeneration order.
-/// The decoder reads no insert position (part 11, entry B.95), so the
+/// The decoder reads no insert position (part 11, entry B.94), so the
 /// rollback of a timeline with members is unstated and the current geometry
 /// is its current state at `After(Container(timeline))` (§5.3). A timeline
 /// with no member has no member to stand before: it is built through its end,
