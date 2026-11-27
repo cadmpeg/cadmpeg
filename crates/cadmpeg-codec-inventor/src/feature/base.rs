@@ -274,7 +274,12 @@ fn source_body(
     let Ok(header) = carrier.header.as_ref() else {
         return Ok(false);
     };
-    let decoded = match crate::kernel::decode_kernel_carrier(ctx, &carrier, header) {
+    let decoded = match crate::kernel::decode_kernel_carrier(
+        ctx,
+        &carrier,
+        header,
+        cadmpeg_asm::brep::DecodePurpose::Inspect,
+    ) {
         Ok(decoded) => decoded,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(false),
