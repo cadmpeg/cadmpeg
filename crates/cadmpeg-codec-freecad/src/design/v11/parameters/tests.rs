@@ -239,3 +239,68 @@ fn a_literal_is_the_shortest_decimal_at_fifteen_significant_digits() {
     assert_eq!(super::decimal(0.1 + 0.2, |value| value), "0.3");
     assert_eq!(super::decimal(12.5, f64::to_radians), "12.5");
 }
+
+/// A sketch outside a body whose one distance constraint, with the driving
+/// flag `is_driving`, is bound to a sheet alias.
+fn bound_constraint(is_driving: &str) -> CadIr {
+    let document = format!(
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object name="Sketch" type="Sketcher::SketchObject"/><Object name="Sheet" type="Spreadsheet::Sheet"/></Objects>
+<ObjectData Count="2">
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="1"><Cell address="A1" alias="w" content="12"/></Cells></Property></Properties></Object>
+<Object name="Sketch"><Properties Count="3">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1"><Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="12" EndY="0"/></Geometry></GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="1">
+<Constrain Name="" Type="6" First="0" FirstPos="1" Second="0" SecondPos="2" Value="12" IsDriving="{is_driving}"/>
+</ConstraintList></Property>
+<Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Constraints[0]" expression="Sheet.w"/></ExpressionEngine></Property>
+</Properties></Object></ObjectData></Document>"#
+    );
+    decode(&archive(&document))
+}
+
+/// The fields a CADIR write of `ir` names for the model parameter `id`:
+/// none where it carries the parameter whole.
+fn parameter_charge(ir: &CadIr, id: &str) -> Vec<String> {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
+
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .expect("the CADIR writer drops what it cannot write");
+    let Some(loss) = plan.report().losses.iter().find(|loss| {
+        loss.code.local_code() == "arena.omitted"
+            && loss.message.contains("model arena `parameters`")
+    }) else {
+        return Vec::new();
+    };
+    let (omitted, part) = loss
+        .message
+        .split_once(" stated in part: ")
+        .unwrap_or((loss.message.as_str(), ""));
+    assert!(!omitted.contains(id), "{}", loss.message);
+    part.split_once(&format!("{id} ("))
+        .and_then(|(_, fields)| fields.split_once(')'))
+        .map(|(fields, _)| fields.split(", ").map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// A driven constraint states no expression, so a CADIR write names the
+/// expression of its model parameter and the parameters it references; the
+/// same constraint driving states its expression, and the write carries the
+/// model parameter whole.
+#[test]
+fn a_write_names_the_expression_a_driven_constraint_leaves_out() {
+    const DISTANCE: &str = "fcstd:design:parameter#Sketch:constraint:1";
+    let driven = bound_constraint("0");
+    assert_eq!(
+        parameter(&driven, DISTANCE).definition,
+        cadmpeg_ir::design::parameter::ParameterDefinition::Driven
+    );
+    let charge = parameter_charge(&driven, DISTANCE);
+    assert!(
+        charge.iter().any(|field| field == "expression"),
+        "{charge:?}"
+    );
+    let driving = bound_constraint("1");
+    assert!(parameter_charge(&driving, DISTANCE).is_empty());
+}
