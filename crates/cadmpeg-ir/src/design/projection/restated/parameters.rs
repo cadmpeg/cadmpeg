@@ -55,14 +55,26 @@ pub(super) fn parameter_cuts<'ir>(
         .collect::<Vec<_>>();
     let mut places = design
         .iter()
-        .filter_map(|(id, parameter)| Some((*id, Place::Position(parameter.position?))))
+        .filter_map(|(id, parameter)| {
+            Some((
+                *id,
+                Place {
+                    list: List::Owner(&parameter.scope, parameter.owner.as_ref()),
+                    index: usize::try_from(parameter.position?).ok()?,
+                },
+            ))
+        })
         .collect::<HashMap<_, _>>();
     places.extend(ir.design.spreadsheets.iter().flat_map(|sheet| {
-        sheet
-            .cells()
-            .iter()
-            .enumerate()
-            .map(move |(at, cell)| (cell.parameter.as_str(), Place::Cell(sheet.id.as_str(), at)))
+        sheet.cells().iter().enumerate().map(move |(index, cell)| {
+            (
+                cell.parameter.as_str(),
+                Place {
+                    list: List::Sheet(sheet.id.as_str()),
+                    index,
+                },
+            )
+        })
     }));
     let misplaced = misplaced(&ir.model.parameters, &places);
     pairs
@@ -87,20 +99,24 @@ pub(super) fn parameter_cuts<'ir>(
         .collect()
 }
 
-/// Where the design orders a parameter (§2.2): a cell of a spreadsheet, by
-/// the sheet and the cell's place among its cells, or a stated `position`.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Place<'ir> {
-    Cell(&'ir str, usize),
-    Position(u32),
+#[derive(Clone, Copy)]
+struct Place<'ir> {
+    list: List<'ir>,
+    index: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum List<'ir> {
+    Sheet(&'ir str),
+    Owner(&'ir ProductDefinitionId, Option<&'ir ParameterOwner>),
 }
 
 /// The parameters of `models` whose position by `ordinal` among the
 /// parameters of their definition and owner the design does not hold.
 /// `places` holds the place of each design parameter the design orders. A
 /// group of one parameter holds its position; a larger group holds it where
-/// each member has a place of one kind, and its order by `ordinal` is its
-/// order by place.
+/// every member has a distinct place in the same list and its order by
+/// `ordinal` is its order in that list.
 fn misplaced<'ir>(
     models: &'ir [ModelParameter],
     places: &HashMap<&str, Place<'_>>,
@@ -123,13 +139,9 @@ fn misplaced<'ir>(
             .map(|model| Some((*model, *places.get(model.id.as_str())?)))
             .collect::<Option<Vec<_>>>()
             .filter(|placed| {
-                placed.iter().all(|(_, place)| {
-                    matches!(
-                        (place, placed[0].1),
-                        (Place::Cell(..), Place::Cell(..))
-                            | (Place::Position(_), Place::Position(_))
-                    )
-                })
+                placed
+                    .iter()
+                    .all(|(_, place)| place.list == placed[0].1.list)
             })
         else {
             misplaced.extend(members.iter().map(|model| model.id.as_str()));
@@ -137,12 +149,16 @@ fn misplaced<'ir>(
         };
         let mut in_design = placed
             .iter()
-            .map(|(model, at)| (*at, model.id.as_str()))
+            .map(|(model, place)| (place.index, model.id.as_str()))
             .collect::<Vec<_>>();
         in_design.sort_unstable();
+        if in_design.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+            misplaced.extend(members.iter().map(|model| model.id.as_str()));
+            continue;
+        }
         let mut by_ordinal = placed
             .iter()
-            .map(|(model, at)| (model.ordinal, *at, model.id.as_str()))
+            .map(|(model, place)| (model.ordinal, place.index, model.id.as_str()))
             .collect::<Vec<_>>();
         by_ordinal.sort_unstable();
         for ((_, _, at_ordinal), (_, at_design)) in by_ordinal.iter().zip(&in_design) {

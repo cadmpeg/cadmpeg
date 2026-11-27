@@ -518,6 +518,43 @@ fn a_parameter_ordinal_follows_the_positions_of_its_owner() {
     );
 }
 
+#[test]
+fn a_parameter_ordinal_requires_positions_in_one_design_list() {
+    let mut first = design_parameter("width", "width");
+    let mut second = design_parameter("height", "height");
+    first.position = Some(0);
+    second.position = Some(1);
+    let models = vec![model_parameter("width", 0), model_parameter("height", 1)];
+    let mut ir = parameter_ir(models, vec![first, second]);
+
+    ir.design.parameters[1].scope = ProductDefinitionId::mint(COMPONENT).unwrap();
+    let split_scope = cuts(&ir);
+    for key in ["width", "height"] {
+        assert!(split_scope[parameter_id(key).as_str()].contains("ordinal"));
+    }
+
+    ir.design.parameters[1].scope = ProductDefinitionId::mint(SCOPE).unwrap();
+    ir.design.parameters[1].owner = Some(ParameterOwner::Feature(
+        FeatureId::mint("test:design:feature#sketch").unwrap(),
+    ));
+    let split_owner = cuts(&ir);
+    for key in ["width", "height"] {
+        assert!(split_owner[parameter_id(key).as_str()].contains("ordinal"));
+    }
+
+    ir.design.parameters[1].owner = None;
+    ir.design.parameters[1].position = Some(0);
+    ir.model.parameters[0].ordinal = 1;
+    ir.model.parameters[1].ordinal = 0;
+    let duplicate_position = cuts(&ir);
+    for key in ["width", "height"] {
+        assert_eq!(
+            duplicate_position[parameter_id(key).as_str()],
+            fields(["ordinal"])
+        );
+    }
+}
+
 /// A design parameter named by the stored name the model keeps in
 /// `source_name` carries the model name the decoder generated; another name
 /// names it.
@@ -606,18 +643,37 @@ fn a_cell_parameter_ordinal_follows_the_cells_of_its_sheet() {
         address: CellAddress::new(row, col).unwrap(),
         parameter: parameter_id(key),
     };
-    listed.design.spreadsheets.push(
+    let sheet = |id, cells| {
         crate::design::spreadsheet::Spreadsheet::new(
-            SpreadsheetId::mint("test:design:spreadsheet#sheet").unwrap(),
-            vec![cell(1, 2, "sheet:cell:B1"), cell(2, 1, "sheet:cell:A2")],
+            SpreadsheetId::mint(id).unwrap(),
+            cells,
             Vec::new(),
             Vec::new(),
             Vec::new(),
             None,
         )
-        .unwrap(),
-    );
-    let listed = cuts(&listed);
-    assert_eq!(listed[parameter_id("sheet:cell:B1").as_str()], fields([]));
-    assert_eq!(listed[parameter_id("sheet:cell:A2").as_str()], fields([]));
+        .unwrap()
+    };
+    listed.design.spreadsheets.push(sheet(
+        "test:design:spreadsheet#a",
+        vec![cell(1, 2, "sheet:cell:B1"), cell(2, 1, "sheet:cell:A2")],
+    ));
+    let together = cuts(&listed);
+    assert_eq!(together[parameter_id("sheet:cell:B1").as_str()], fields([]));
+    assert_eq!(together[parameter_id("sheet:cell:A2").as_str()], fields([]));
+
+    listed.design.spreadsheets = vec![
+        sheet(
+            "test:design:spreadsheet#a",
+            vec![cell(1, 2, "sheet:cell:B1")],
+        ),
+        sheet(
+            "test:design:spreadsheet#b",
+            vec![cell(2, 1, "sheet:cell:A2")],
+        ),
+    ];
+    let split = cuts(&listed);
+    for key in ["sheet:cell:B1", "sheet:cell:A2"] {
+        assert_eq!(split[parameter_id(key).as_str()], fields(["ordinal"]));
+    }
 }
