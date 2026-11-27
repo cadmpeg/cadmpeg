@@ -563,17 +563,17 @@ fn surface_loft_refuses_forms_outside_the_positional_surface_vector() {
 fn surface_definition_is_the_unguided_new_body_sheet_loft() {
     let solid = positional_definition();
     assert!(!matches_surface_definition(&solid));
-    let mut base = serde_json::to_value(&solid).expect("definition");
-    base["value"]["value"]["solid"] = serde_json::json!(false);
+    let mut base = json::to_value(&solid).expect("definition");
+    base["value"]["value"]["solid"] = cadmpeg_core::json!(false);
     let surface: FeatureDefinition = json::from_value(base.clone()).expect("surface loft");
     assert!(matches_surface_definition(&surface));
     assert!(!matches_definition(&surface));
     for (field, value) in [
-        ("closed", serde_json::json!(true)),
-        ("ruled", serde_json::json!(true)),
-        ("linearize", serde_json::json!(true)),
-        ("op", serde_json::json!("join")),
-        ("max_degree", serde_json::json!(3)),
+        ("closed", cadmpeg_core::json!(true)),
+        ("ruled", cadmpeg_core::json!(true)),
+        ("linearize", cadmpeg_core::json!(true)),
+        ("op", cadmpeg_core::json!("join")),
+        ("max_degree", cadmpeg_core::json!(3)),
     ] {
         let mut changed = base.clone();
         changed["value"]["value"][field] = value;
@@ -629,8 +629,8 @@ fn the_face_loop_participant_is_the_other_participant_with_its_record_type() {
 #[test]
 fn only_a_surface_loft_with_a_native_section_counts_as_unresolved() {
     use cadmpeg_ir::features::profiles::{LoftSection, PlanarProfileRef, ProfileRef};
-    let mut base = serde_json::to_value(positional_definition()).expect("definition");
-    base["value"]["value"]["solid"] = serde_json::json!(false);
+    let mut base = json::to_value(positional_definition()).expect("definition");
+    base["value"]["value"]["solid"] = cadmpeg_core::json!(false);
     let surface: FeatureDefinition = json::from_value(base.clone()).expect("surface loft");
     let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) = &surface else {
         panic!("loft");
@@ -642,12 +642,12 @@ fn only_a_surface_loft_with_a_native_section_counts_as_unresolved() {
         "record".to_owned(),
     )));
     let mut with_native = base.clone();
-    with_native["value"]["value"]["sections"] = serde_json::to_value(&native).expect("sections");
+    with_native["value"]["value"]["sections"] = json::to_value(&native).expect("sections");
     let with_native: FeatureDefinition = json::from_value(with_native).expect("loft");
     assert!(has_native_section(&with_native));
     // The solid loft keeps its own accounting.
-    let mut solid = serde_json::to_value(&with_native).expect("definition");
-    solid["value"]["value"]["solid"] = serde_json::json!(true);
+    let mut solid = json::to_value(&with_native).expect("definition");
+    solid["value"]["value"]["solid"] = cadmpeg_core::json!(true);
     let solid: FeatureDefinition = json::from_value(solid).expect("solid loft");
     assert!(!has_native_section(&solid));
 }

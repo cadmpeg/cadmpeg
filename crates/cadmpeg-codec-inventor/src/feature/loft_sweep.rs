@@ -19,8 +19,8 @@ pub(crate) mod sweep;
 pub(crate) mod validation;
 
 pub(crate) fn retained_control_losses<'a>(
-    definitions: impl IntoIterator<Item = &'a cadmpeg_ir::features::FeatureDefinition>,
-    surface_operation_refusals: usize,
+    features: impl IntoIterator<Item = (&'a cadmpeg_ir::features::FeatureDefinition, Option<&'a str>)>,
+    refused_surface_lofts: &std::collections::HashSet<String>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
     use slots::Family;
@@ -28,7 +28,7 @@ pub(crate) fn retained_control_losses<'a>(
     let mut sweeps = 0_usize;
     let mut lofts = 0_usize;
     let mut surface_lofts = 0_usize;
-    for definition in definitions {
+    for (definition, native_ref) in features {
         if let FeatureDefinition::Operation(FeatureOperation::Native {
             kind: NativeFeatureKind::Other(kind),
             ..
@@ -38,17 +38,15 @@ pub(crate) fn retained_control_losses<'a>(
                 sweeps += 1;
             } else if kind == Family::SolidLoft.native_name() {
                 lofts += 1;
-            } else if kind == Family::SurfaceLoft.native_name() {
+            } else if kind == Family::SurfaceLoft.native_name()
+                && !native_ref.is_some_and(|id| refused_surface_lofts.contains(id))
+            {
+                // A surface loft that the wrapper guard refused has its own
+                // operation loss, so it is not counted here.
                 surface_lofts += 1;
             }
         }
     }
-    // A surface loft refused for its part operation has its own loss.
-    // Every refused surface loft is also a retained surface loft, so the
-    // difference never underflows; a count that would is not reported.
-    let surface_lofts = surface_lofts
-        .checked_sub(surface_operation_refusals)
-        .unwrap_or_default();
     let mut losses = Vec::new();
     if sweeps != 0 {
         losses.push(crate::loss::InventorLossCode::FeatureSweepControlsUnresolved.note(format!(

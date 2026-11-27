@@ -17,7 +17,10 @@ fn retained_features_report_unresolved_construction_controls_by_family() {
             parameters: std::collections::BTreeMap::new(),
         })
     });
-    let losses = retained_control_losses(&definitions, 0);
+    let losses = retained_control_losses(
+        definitions.iter().map(|definition| (definition, None)),
+        &std::collections::HashSet::new(),
+    );
     assert_eq!(losses.len(), 3);
     assert_eq!(
         losses[0].code,
@@ -44,8 +47,21 @@ fn retained_features_report_unresolved_construction_controls_by_family() {
     assert!(losses[2]
         .message
         .starts_with("Retained 1 native Inventor surface loft"));
-    assert!(retained_control_losses(std::iter::empty(), 0).is_empty());
-    assert!(retained_control_losses(&definitions[4..], 0).is_empty());
+    // A surface loft the wrapper guard refused is charged elsewhere.
+    let refused = std::collections::HashSet::from(["surface".to_owned()]);
+    assert!(retained_control_losses([(&definitions[2], Some("surface"))], &refused).is_empty());
+    assert_eq!(
+        retained_control_losses([(&definitions[2], Some("other"))], &refused).len(),
+        1
+    );
+    assert!(
+        retained_control_losses(std::iter::empty(), &std::collections::HashSet::new()).is_empty()
+    );
+    assert!(retained_control_losses(
+        definitions[4..].iter().map(|definition| (definition, None)),
+        &std::collections::HashSet::new()
+    )
+    .is_empty());
 }
 
 fn header(version: u8) -> Vec<u8> {
