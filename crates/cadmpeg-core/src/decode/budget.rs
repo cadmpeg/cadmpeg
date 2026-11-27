@@ -178,6 +178,24 @@ impl DecodeBudget {
         .map_err(Into::into)
     }
 
+    /// Charges bytes that a parse holds or spends against the caller's
+    /// ceiling on the bytes expanded in all, with no allowance that scales
+    /// with the input.
+    pub(super) fn charge_expanded(
+        &self,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge(
+            ResourceDimension::DecompressedBytes,
+            &self.decompressed,
+            self.policy.limits.max_decompressed_bytes_total,
+            amount,
+            operation,
+        )
+        .map_err(Into::into)
+    }
+
     pub(super) fn decompressed_used(&self) -> u64 {
         self.decompressed.get()
     }

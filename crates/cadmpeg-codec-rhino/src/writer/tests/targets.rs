@@ -27,7 +27,7 @@ fn source_in(dialect: &'static str) -> CadIr {
 /// The resolved target `plan` reports for one request.
 fn resolved(ir: &CadIr, encoder: RhinoCodec, request: TargetRequest<'_>) -> String {
     wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
-        &(Encoder::plan(&encoder, EncodeInput::new(ir, None), request)
+        &(Encoder::plan(&encoder, EncodeInput::new(ir, None).with_target(request))
             .expect("the request resolves")
             .report()),
         "identity/target",
@@ -103,12 +103,8 @@ fn inherit_writes_a_source_that_records_no_dialect_as_the_default() {
 fn written_as_the_default(ir: &CadIr) -> String {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-    let plan = Encoder::plan(
-        &RhinoCodec,
-        EncodeInput::new(ir, None),
-        TargetRequest::Inherit,
-    )
-    .expect("the source is written as the catalog default");
+    let plan = Encoder::plan(&RhinoCodec, EncodeInput::new(ir, None))
+        .expect("the source is written as the catalog default");
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).expect("write");
     assert_eq!(
@@ -161,8 +157,7 @@ fn a_dialect_changing_explicit_write_charges_displacement_by_name() {
     let ir = source_in("rhino:archive-50");
     let plan = Encoder::plan(
         &RhinoCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit("rhino:archive-70"),
+        EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("rhino:archive-70")),
     )
     .expect("archive 70 is in the catalog");
     assert_eq!(
@@ -195,8 +190,7 @@ fn an_explicit_write_at_the_source_dialect_is_not_degraded() {
     let ir = source_in("rhino:archive-50");
     let plan = Encoder::plan(
         &RhinoCodec,
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit("rhino:archive-50"),
+        EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("rhino:archive-50")),
     )
     .expect("archive 50 is in the catalog");
     assert_eq!(
@@ -252,8 +246,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     ] {
         let plan = Encoder::plan(
             &RhinoCodec,
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(version.descriptor().id.as_str()),
+            EncodeInput::new(&ir, None)
+                .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
         )
         .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
         let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(

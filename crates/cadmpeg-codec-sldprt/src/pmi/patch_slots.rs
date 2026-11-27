@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{parse_value, Parse, Shape, ValueKind, PMI_PARSE_WORK_PER_PAYLOAD_BYTE};
-use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, DecodePolicy, ResourceLimits, WorkBudget};
 use cadmpeg_core::CodecError;
 use rmp::Marker;
 
@@ -10,13 +10,14 @@ struct FieldSpan {
     is_bool: bool,
 }
 
-fn dimension_field(payload: &[u8], offset: u64, field: &str) -> Result<FieldSpan, CodecError> {
+fn dimension_field(
+    payload: &[u8],
+    offset: u64,
+    field: &str,
+    limits: ResourceLimits,
+) -> Result<FieldSpan, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        payload,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )?;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy { limits })?;
     let invalid = || {
         CodecError::malformed(format_args!(
             "DimSemData {field} has an invalid patch field"
@@ -53,13 +54,17 @@ fn dimension_field(payload: &[u8], offset: u64, field: &str) -> Result<FieldSpan
 pub(super) struct FloatPatchSlot<'a>(&'a mut [u8; 8]);
 
 impl<'a> FloatPatchSlot<'a> {
-    pub(super) fn read(payload: &'a mut [u8], offset: u64) -> Result<Self, CodecError> {
+    pub(super) fn read(
+        payload: &'a mut [u8],
+        offset: u64,
+        limits: ResourceLimits,
+    ) -> Result<Self, CodecError> {
         let invalid = || {
             CodecError::malformed(format_args!(
                 "DimSemData value has an invalid f64 patch slot"
             ))
         };
-        let value = dimension_field(payload, offset, "value")?;
+        let value = dimension_field(payload, offset, "value", limits)?;
         if payload.get(value.start) != Some(&Marker::F64.to_u8()) {
             return Err(invalid());
         }
@@ -82,13 +87,14 @@ impl<'a> BooleanPatchSlot<'a> {
         payload: &'a mut [u8],
         offset: u64,
         field: &str,
+        limits: ResourceLimits,
     ) -> Result<Self, CodecError> {
         let invalid = || {
             CodecError::malformed(format_args!(
                 "DimSemData {field} has an invalid boolean patch slot"
             ))
         };
-        let value = dimension_field(payload, offset, field)?;
+        let value = dimension_field(payload, offset, field, limits)?;
         if !value.is_bool {
             return Err(invalid());
         }
@@ -121,13 +127,14 @@ impl<'a> IntegerPatchSlot<'a> {
         payload: &'a mut [u8],
         offset: u64,
         field: &str,
+        limits: ResourceLimits,
     ) -> Result<Self, CodecError> {
         let invalid = || {
             CodecError::malformed(format_args!(
                 "DimSemData {field} has an invalid integer patch slot"
             ))
         };
-        let value = dimension_field(payload, offset, field)?;
+        let value = dimension_field(payload, offset, field, limits)?;
         let marker = Marker::from_u8(*payload.get(value.start).ok_or_else(invalid)?);
         let bytes = payload.get_mut(value.data_offset..).ok_or_else(invalid)?;
         macro_rules! slot {
@@ -186,5 +193,6 @@ impl<'a> IntegerPatchSlot<'a> {
 
 #[cfg(test)]
 pub(super) fn field_offset(payload: &[u8], offset: u64, field: &str) -> Result<usize, CodecError> {
-    dimension_field(payload, offset, field).map(|value| value.data_offset)
+    dimension_field(payload, offset, field, ResourceLimits::service())
+        .map(|value| value.data_offset)
 }

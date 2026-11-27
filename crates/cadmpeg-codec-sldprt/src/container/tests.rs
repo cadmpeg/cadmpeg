@@ -962,3 +962,27 @@ fn stock_body_partition_does_not_compete_for_active_geometry() {
     let site = container::select_active_parasolid_site(&scan).unwrap();
     assert_eq!(site.name(), "Contents/Config-0-Partition");
 }
+
+/// The writer's envelope read parses in the encode session, so the
+/// session's expanded-bytes ceiling refuses it; a session that admits the
+/// tree reads the envelope.
+#[test]
+fn the_retained_envelope_parses_under_the_session_ceilings() {
+    let envelope = br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"/>"#.as_slice();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_total = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(CodecError::ResourceLimit(limit)) =
+        container::first_solidworks_envelope(&ctx, [envelope])
+    else {
+        panic!("the ceiling refuses the envelope tree");
+    };
+    assert_eq!(limit.operation, "SLDPRT retained envelope XML tree");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let read = container::first_solidworks_envelope(&ctx, [envelope]).unwrap();
+    assert_eq!(
+        read.and_then(|envelope| envelope.sw_version).as_deref(),
+        Some("34000")
+    );
+}

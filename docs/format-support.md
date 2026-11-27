@@ -784,11 +784,17 @@ Detected by compound-file content: the scene root class and the `Brep Data`,
 `Shape Data`, and `Document Data` streams. The reader lists streams, inflates
 the framed `Brep Data` stream, and walks its record tree. Each Parasolid record
 contributes a Parasolid dialect layer with its schema token, and each ACIS
-record contributes an ACIS layer from its binary header. The ACIS record that
-follows a part's child node decodes into B-rep topology and geometry in the
-part frame; ACIS feature records are retained. Parasolid bodies, part
-placements, and feature history are pending, and each produces a loss, as does
-every other non-empty scene stream. The headline is L0. The codec is read-only.
+record contributes an ACIS layer from its binary header. The ACIS or
+Parasolid record that follows a part's child node decodes into B-rep topology
+and geometry in the part frame; feature records are retained. Each part is
+placed by the matrix of its `Public Access` part record and carries its
+properties and mass density. When the assembly records and the assembly
+nodes of the record tree agree in count, each assembly node becomes an
+assembly definition, placed by the matrix of its assembly record, that holds
+its parts and member assemblies; otherwise every part is placed in the scene.
+The scene units come from `Document Data`. Feature history is pending, and
+each non-empty scene stream other than `Brep Data`, `Public Access`, and
+`Document Data` produces a loss. The headline is L0. The codec is read-only.
 
 See [`formats/ironcad.md`](formats/ironcad.md) and
 [`formats/ironcad-open-items.md`](formats/ironcad-open-items.md).
