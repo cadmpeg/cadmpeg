@@ -250,12 +250,73 @@ impl Holder {
         })
     }
 
+    /// The holder `entity`, a record of `arena`, is: for a record of an
+    /// arena the CADIR wire omits, whose records the CADIR schema does not
+    /// type, where its typed references or its `native_ref` values name an id
+    /// that `lookup` finds; otherwise by [`Self::named`]. A typed reference
+    /// names at the path `references`, and a `native_ref` value at the path
+    /// `native_ref`.
+    pub(crate) fn named_record<'k, T: EntitySchema>(
+        arena: &Arena,
+        id: &str,
+        entity: &T,
+        lookup: impl Fn(&str) -> Option<&'k str>,
+    ) -> Option<Self> {
+        let Arena::Home { home, field } = arena else {
+            return Self::named(arena, id, entity, lookup);
+        };
+        if !wire_omitted(home, field) {
+            return Self::named(arena, id, entity, lookup);
+        }
+        let policy = DecodePolicy::default();
+        let session = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &session, &policy).ok()?;
+        let mut native = BTreeSet::new();
+        native_refs::visit(entity, &mut |target: &str| {
+            if target != entity.identity() {
+                native.insert(target.to_owned());
+            }
+        })
+        .ok()?;
+        let mut names = Vec::new();
+        entity
+            .visit_references(&ctx, &mut |target| {
+                if !native.contains(target) {
+                    if let Some(target) = lookup(target) {
+                        names.push(("references".to_owned(), target.to_owned()));
+                    }
+                }
+                Ok(())
+            })
+            .ok()?;
+        names.extend(
+            native
+                .iter()
+                .filter_map(|target| lookup(target))
+                .map(|target| ("native_ref".to_owned(), target.to_owned())),
+        );
+        (!names.is_empty()).then(|| Self {
+            arena: arena.clone(),
+            id: id.to_owned(),
+            names,
+        })
+    }
+
     /// Whether every name lies under one of `prefixes`.
     fn names_only_under(&self, prefixes: &[&str]) -> bool {
         self.names
             .iter()
             .all(|(path, _)| prefixes.iter().any(|prefix| under(path, prefix)))
     }
+}
+
+/// Whether the CADIR wire omits the arena `field` of `home`
+/// ([`ArenaName::WIRE_OMITTED`]), so that the CADIR schema types none of its
+/// records.
+fn wire_omitted(home: &str, field: &str) -> bool {
+    ArenaName::WIRE_OMITTED
+        .iter()
+        .any(|arena| arena.home().as_str() == home && arena.key() == field)
 }
 
 /// Whether `path` is `prefix` or lies under it.
@@ -488,7 +549,8 @@ impl Walk {
     /// The walk of the arena `field` of `home`.
     /// The typed walk of a topology leaves the ids local to it, which the
     /// schema types as ids, so an arena whose records can hold a topology
-    /// is read through the JSON of its records.
+    /// is read through the JSON of its records. The schema types no record
+    /// of an arena the wire omits, so such an arena is read by its types.
     fn of(home: &'static str, field: &'static str) -> Self {
         static WALKS: OnceLock<HashMap<(&'static str, &'static str), Walk>> = OnceLock::new();
         WALKS
@@ -497,6 +559,9 @@ impl Walk {
                     .iter()
                     .map(|arena| {
                         let (home, field) = (arena.home().as_str(), arena.key());
+                        if ArenaName::WIRE_OMITTED.contains(arena) {
+                            return ((home, field), Self::Typed);
+                        }
                         let topology = Schema::cadir()
                             .and_then(|schema| schema.reaches(home, field, restate::TOPOLOGY));
                         let walk = match topology {
@@ -565,6 +630,19 @@ macro_rules! add_references {
     };
 }
 pub(crate) use add_references;
+
+/// The holder the record `$entity` of the arena `$arena` of the home `$home`
+/// is, by [`Holder::named_record`] for a home whose records have typed
+/// references, and by [`Holder::named`] otherwise.
+macro_rules! named_holder {
+    (model, $arena:expr, $id:expr, $entity:expr, $lookup:expr) => {
+        $crate::give_up::Holder::named_record($arena, $id, $entity, $lookup)
+    };
+    ($home:ident, $arena:expr, $id:expr, $entity:expr, $lookup:expr) => {
+        $crate::give_up::Holder::named($arena, $id, $entity, $lookup)
+    };
+}
+pub(crate) use named_holder;
 
 /// The compact canonical JSON text of the copies of one record: the
 /// record's own where there is one copy, and the array of the copies

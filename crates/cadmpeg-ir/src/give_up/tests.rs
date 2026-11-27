@@ -1459,9 +1459,49 @@ fn projected_cube() -> CadIr {
     ir
 }
 
+/// The projected cube with a collider on its body and a source attribute
+/// on its first face, each also projecting a native record.
+fn cube_with_model_records() -> CadIr {
+    use crate::attributes::{AttributeTarget, SourceAttribute};
+    use crate::physics::{Collider, ColliderShape, PhysicsTarget};
+
+    let mut ir = projected_cube();
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model.colliders.push(Collider {
+        id: crate::ids::ColliderId::mint("test:model:collider#0").unwrap(),
+        target: PhysicsTarget::Body { body }.into(),
+        shape: ColliderShape::ConvexHull,
+        enabled: true,
+        material: None,
+        native_ref: Some("test:native:body#1".to_owned()),
+    });
+    ir.model.attributes.push(SourceAttribute {
+        id: crate::ids::AttributeId::mint("test:model:attribute#1").unwrap(),
+        target: AttributeTarget::Face(ir.geometry.faces[0].id.clone()).into(),
+        name: "Property".into(),
+        values: Vec::new(),
+        native_ref: Some("test:native:face#1".to_owned()),
+    });
+    ir
+}
+
+/// The holders of `names` whose arena the CADIR wire carries.
+fn on_the_wire(
+    names: BTreeMap<(Arena, String), BTreeSet<String>>,
+) -> BTreeMap<(Arena, String), BTreeSet<String>> {
+    names
+        .into_iter()
+        .filter(|((arena, _), _)| match arena {
+            Arena::Home { home, field } => !super::wire_omitted(home, field),
+            Arena::Native { .. } => true,
+        })
+        .collect()
+}
+
 /// The typed walk of a record names each id that the walk of its JSON,
 /// typed by the CADIR schema, names, other than the record's own, and no
-/// other (§3.3).
+/// other (§3.3). A record of an arena the wire omits, which the schema
+/// does not type, names the ids of its typed references.
 #[test]
 fn the_typed_walk_names_what_the_schema_walk_names() {
     use super::{NativeLinks, References, Walk};
@@ -1469,13 +1509,15 @@ fn the_typed_walk_names_what_the_schema_walk_names() {
     assert_eq!(Walk::of("geometry", "faces"), Walk::Typed);
     assert_eq!(Walk::of("model", "product_definitions"), Walk::Typed);
     assert_eq!(Walk::of("model", "pmi"), Walk::Json);
-    assert_eq!(Walk::of("model", "features"), Walk::Skip);
+    assert_eq!(Walk::of("model", "features"), Walk::Typed);
+    assert_eq!(Walk::of("model", "history_bodies"), Walk::Typed);
 
     let mut pointless = crate::examples::unit_cube().unwrap();
     let point = pointless.geometry.points.remove(0).id;
     let (stored, _, _, _) = stored_state();
     let documents = vec![
         ("projected cube", projected_cube(), None),
+        ("cube with model records", cube_with_model_records(), None),
         (
             "cube without a point",
             pointless,
@@ -1515,8 +1557,39 @@ fn the_typed_walk_names_what_the_schema_walk_names() {
         let typed = walk(References::new(NativeLinks::Unread));
         let schema = walk(References::json_walk(NativeLinks::Unread));
         assert!(!typed.is_empty(), "{label}");
-        assert_eq!(typed, schema, "{label}");
+        assert_eq!(on_the_wire(typed), on_the_wire(schema), "{label}");
     }
+
+    let model = names_by_holder(
+        &cube_with_model_records(),
+        References::new(NativeLinks::Unread),
+    );
+    let holder = |field: &'static str, id: &str| {
+        model[&(Arena::home("model", field).unwrap(), id.to_owned())].clone()
+    };
+    let cube = projected_cube();
+    assert_eq!(
+        holder("colliders", "test:model:collider#0"),
+        BTreeSet::from([
+            cube.geometry.bodies[0].id.as_str().to_owned(),
+            "test:native:body#1".to_owned()
+        ])
+    );
+    assert_eq!(
+        holder("attributes", "test:model:attribute#1"),
+        BTreeSet::from([
+            cube.geometry.faces[0].id.as_str().to_owned(),
+            "test:native:face#1".to_owned()
+        ])
+    );
+
+    let history = crate::examples::unit_cube_with_history_body().unwrap();
+    let nest = history.model.history_bodies[0].id.as_str().to_owned();
+    let names = names_by_holder(&history, References::new(NativeLinks::Unread));
+    assert_eq!(
+        names[&(Arena::home("model", "history_bodies").unwrap(), nest)],
+        BTreeSet::from(["synthetic:model:feature#base".to_owned()])
+    );
 
     let typed = names_by_holder(&projected_cube(), References::new(NativeLinks::Unread));
     let cube = projected_cube();
