@@ -2659,6 +2659,7 @@ enum QuarantinedCards {
         range: Range<u32>,
         bytes: Vec<u8>,
         first_offset: u64,
+        length: u64,
     },
     None {
         directory_offset: u64,
@@ -2673,6 +2674,15 @@ impl QuarantinedParameterRecord {
         }
     }
 
+    /// The byte length of the owned cards from [`Self::source_offset`], where
+    /// the record owns a card.
+    pub(crate) fn source_length(&self) -> Option<u64> {
+        match &self.ownership {
+            QuarantinedCards::Owned { length, .. } => Some(*length),
+            QuarantinedCards::None { .. } => None,
+        }
+    }
+
     pub(crate) fn cards(&self) -> usize {
         self.bytes().len() / crate::card::CARD_WIDTH
     }
@@ -2682,11 +2692,6 @@ impl QuarantinedParameterRecord {
             QuarantinedCards::Owned { bytes, .. } => bytes,
             QuarantinedCards::None { .. } => &[],
         }
-    }
-
-    /// The stable native identity of this quarantined record.
-    pub(crate) fn identity(&self) -> String {
-        format!("iges:quarantine:parameter#{}", self.sequence)
     }
 
     pub(crate) fn loss_note(&self) -> Result<LossNote, CodecError> {
@@ -2703,17 +2708,16 @@ impl QuarantinedParameterRecord {
         self.sequence,
         self.defect.describe(),
         self.cards());
-        let tag = format!("D{}:parameter", self.sequence);
         let code = IgesLossCode::ParameterDataQuarantined;
 
         Ok(code.note(message).with_provenance(
-            SourceProvenance::in_stream(
-                "iges",
-                cadmpeg_ir::stream_name!("iges"),
-                self.failing_offset.unwrap_or_else(|| self.source_offset()),
-            )
-            .with_tag(tag),
+            self.provenance_at(self.failing_offset.unwrap_or_else(|| self.source_offset())),
         ))
+    }
+
+    fn provenance_at(&self, offset: u64) -> SourceProvenance {
+        SourceProvenance::in_stream("iges", cadmpeg_ir::stream_name!("iges"), offset)
+            .with_tag(format!("D{}:parameter", self.sequence))
     }
 }
 
@@ -2752,13 +2756,35 @@ fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>
     Ok(Some((cursor + 1, payload_end)))
 }
 
+fn push_card_slice(
+    card: &mut [u8; 64],
+    card_len: &mut usize,
+    mut rest: &[u8],
+    emit: &mut impl FnMut(&[u8]) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    while !rest.is_empty() {
+        if *card_len == 64 {
+            emit(card)?;
+            *card_len = 0;
+        }
+        let take = (64 - *card_len).min(rest.len());
+        card[*card_len..*card_len + take].copy_from_slice(&rest[..take]);
+        *card_len += take;
+        rest = &rest[take..];
+    }
+    Ok(())
+}
+
 /// Lay out an entity's logical Parameter Data into 64-column payloads.
 ///
 /// A Hollerith header is kept together while its counted payload may cross a
 /// card. Numeric fields are moved to the next card when their delimiter would
 /// otherwise cross the card boundary. Bytes after the record delimiter are
 /// comment payload and may use the remaining card space without token rules.
-pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecError> {
+pub(crate) fn for_each_parameter_card(
+    bytes: &[u8],
+    mut emit: impl FnMut(&[u8]) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
     let mut fields = Vec::new();
     let mut cursor = 0_usize;
     loop {
@@ -2781,8 +2807,9 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
         }
     }
 
-    let mut cards = Vec::new();
-    let mut card = Vec::new();
+    let mut card = [b' '; 64];
+    let mut card_len = 0_usize;
+
     for field in fields.iter().map(|range| &bytes[range.clone()]) {
         let leading = field
             .iter()
@@ -2799,27 +2826,28 @@ pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, Codec
                 "IGES generated Parameter Data field exceeds one card".into(),
             ));
         }
-        if card.len() + minimum > 64 {
-            card.extend(std::iter::repeat_with(|| b' ').take(64 - card.len()));
-            cards.push(std::mem::take(&mut card));
+        if card_len + minimum > 64 {
+            card[card_len..].fill(b' ');
+            emit(&card)?;
+            card_len = 0;
         }
-        for byte in field.iter().copied() {
-            if card.len() == 64 {
-                cards.push(std::mem::take(&mut card));
-            }
-            card.push(byte);
-        }
+        push_card_slice(&mut card, &mut card_len, field, &mut emit)?;
     }
 
-    for byte in bytes[cursor..].iter().copied() {
-        if card.len() == 64 {
-            cards.push(std::mem::take(&mut card));
-        }
-        card.push(byte);
+    push_card_slice(&mut card, &mut card_len, &bytes[cursor..], &mut emit)?;
+    if card_len > 0 {
+        emit(&card[..card_len])?;
     }
-    if !card.is_empty() {
-        cards.push(card);
-    }
+    Ok(())
+}
+
+/// Lay out an entity's logical Parameter Data into 64-column payloads.
+pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecError> {
+    let mut cards = Vec::with_capacity(bytes.len() / 64 + 1);
+    for_each_parameter_card(bytes, |card| {
+        cards.push(card.to_vec());
+        Ok(())
+    })?;
     Ok(cards)
 }
 
@@ -3595,16 +3623,20 @@ fn quarantine(
                 .ok_or_else(|| CodecError::malformed("IGES parameter card sequence overflow"))?;
             let mut range = first..range_end;
             let mut bytes = line.payload.clone();
+            let mut last = line;
             for (sequence, line) in retained {
                 range.end = sequence.checked_add(1).ok_or_else(|| {
                     CodecError::malformed("IGES parameter card sequence overflow")
                 })?;
                 bytes.extend_from_slice(&line.payload);
+                last = line;
             }
             QuarantinedCards::Owned {
                 range,
                 bytes,
                 first_offset,
+                length: crate::directory::card_span(line, last)
+                    .ok_or_else(|| CodecError::malformed("IGES parameter card span overflows"))?,
             }
         }
         None => QuarantinedCards::None {

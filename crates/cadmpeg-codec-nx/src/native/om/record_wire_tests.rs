@@ -6,10 +6,11 @@ use super::{
     DataBlockControlFormWire, DataBlockReference, DataBlockReferenceWire, ObjectRecord,
     ObjectRecordWire, StoreHeader, StoreHeaderWire,
 };
+use cadmpeg_core::serde_erase::json;
 
 fn check<T: serde::Serialize + serde::de::DeserializeOwned>(wire: &str) -> T {
     let record: T = serde_json::from_str(wire).unwrap();
-    assert_eq!(serde_json::to_vec(&record).unwrap(), wire.as_bytes());
+    assert_eq!(json::to_vec(&record).unwrap(), wire.as_bytes());
     record
 }
 
@@ -21,8 +22,8 @@ fn object_record_borrowed_wire_preserves_bytes() {
     );
     let record = check::<ObjectRecord>(&wire);
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&ObjectRecordWire::from(record.clone())).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&ObjectRecordWire::from(record.clone())).unwrap()
     );
 }
 
@@ -47,8 +48,8 @@ fn control_form_borrowed_wire_preserves_bytes() {
     ] {
         let record = check::<DataBlockControlForm>(wire);
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&DataBlockControlFormWire::from(record.clone())).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&DataBlockControlFormWire::from(record.clone())).unwrap()
         );
     }
 }
@@ -68,8 +69,8 @@ fn control_class_borrowed_wire_preserves_bytes() {
     let wire = r#"{"id":"nx:om:control-class#0","data_block":"block","ordinal":0,"class_ordinal":1,"class_definition":"class","class_name":"UGS::Part","source_offset":4}"#;
     let record = check::<DataBlockControlClassReference>(wire);
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&DataBlockControlClassReferenceWire::from(record.clone())).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&DataBlockControlClassReferenceWire::from(record.clone())).unwrap()
     );
 }
 
@@ -88,8 +89,8 @@ fn block_reference_borrowed_wire_preserves_bytes() {
     let wire = r#"{"id":"nx:om:block-reference#0","data_block":"block","ordinal":0,"object_id":0,"raw_object_id":"00","target_record":"record","target_expression_declaration":"declaration","source_offset":4}"#;
     let record = check::<DataBlockReference>(wire);
     assert_eq!(
-        serde_json::to_vec(&record).unwrap(),
-        serde_json::to_vec(&DataBlockReferenceWire::from(record.clone())).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&DataBlockReferenceWire::from(record.clone())).unwrap()
     );
 }
 
@@ -118,8 +119,8 @@ fn store_header_borrowed_wire_preserves_bytes() {
         let record = check::<StoreHeader>(wire);
         assert_eq!(record.header().id, "nx:om:header#0");
         assert_eq!(
-            serde_json::to_vec(&record).unwrap(),
-            serde_json::to_vec(&StoreHeaderWire::from(record.clone())).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&StoreHeaderWire::from(record.clone())).unwrap()
         );
         assert_eq!(
             matches!(record, StoreHeader::Fixed(_)),

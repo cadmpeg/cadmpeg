@@ -6,7 +6,7 @@ use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 use std::collections::{btree_map::Entry, BTreeMap};
 use std::fmt;
 
-use cadmpeg_core::decode::DecodeDepth;
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::write::{
@@ -33,20 +33,23 @@ pub struct StepCodec {
 
 impl EncoderBackend for StepCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "STEP";
     /// Writes B-rep, product structure, presentation and PMI; design arenas are
     /// reported as omitted, not read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REUSES_SOURCE: bool = false;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(StepSchema::DEFAULT_INDEX));
 
-    /// Synthesis-only encoder. An off-catalog STEP source cannot be reproduced
-    /// because every emitted schema stamps object-identifier arcs.
+    /// Synthesis-only encoder. Every emitted schema stamps object-identifier
+    /// arcs, so an off-catalog STEP source is written as the catalog default.
     fn plan_resolved(
         &self,
+        ctx: &DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        crate::writer::target::plan(self, input, &target)
+        crate::writer::target::plan(self, ctx, input, &target)
     }
 }
 
@@ -106,6 +109,37 @@ impl CodecBackend for StepCodec {
             inspected.losses,
             inspected.notes,
         ))
+    }
+
+    fn classify_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        root: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Option<DialectLayers>, CodecError> {
+        let bytes = root.window();
+        let exchange = if archive::has_zip_magic(bytes)
+            || (!starts_with_step_magic(bytes)
+                && cadmpeg_container::ArchiveSnapshot::has_footer(bytes))
+        {
+            let archive::OpenedRoot {
+                view: root_view, ..
+            } = archive::open_root(ctx, root)?;
+            let root_bytes = root_view.window();
+            refuse_alternate_encoding(root_bytes)?;
+            if self.detect_impl(ctx, root_view)? == Confidence::No {
+                return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
+            }
+            parse::parse_header(root_bytes, ctx)?
+        } else {
+            refuse_alternate_encoding(bytes)?;
+            if self.detect_impl(ctx, root)? == Confidence::No {
+                return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
+            }
+            parse::parse_header(bytes, ctx)?
+        };
+        Ok(Some(DialectLayers::of(
+            crate::dialect::StepDialect::classify(&exchange),
+        )))
     }
 
     fn decode_impl(
@@ -770,5 +804,36 @@ mod tests {
         );
         assert_eq!(second.attributes["entity_count"], "1");
         assert_eq!(second.attributes["unknown_entities"], "THIRD_ITEM:1");
+    }
+
+    #[test]
+    fn classify_dialects_agrees_with_inspect_across_part21_and_zip() {
+        let codec = StepCodec::default();
+        let part21 = include_bytes!("../tests/fixtures/noncanonical_solid_angle.p21");
+        let summary = codec
+            .inspect(&mut Cursor::new(part21), &InspectOptions::default())
+            .expect("inspect part21");
+        let dialects = codec
+            .classify_dialects(&mut Cursor::new(part21), &InspectOptions::default())
+            .expect("classify part21");
+        assert_eq!(dialects.as_ref(), summary.dialects());
+
+        let mut zip_bytes = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(Cursor::new(&mut zip_bytes));
+            let options = zip::write::SimpleFileOptions::default();
+            writer
+                .start_file(crate::archive::ROOT_NAME, options)
+                .unwrap();
+            std::io::Write::write_all(&mut writer, part21).unwrap();
+            writer.finish().unwrap();
+        }
+        let zip_summary = codec
+            .inspect(&mut Cursor::new(&zip_bytes), &InspectOptions::default())
+            .expect("inspect zip");
+        let zip_dialects = codec
+            .classify_dialects(&mut Cursor::new(&zip_bytes), &InspectOptions::default())
+            .expect("classify zip");
+        assert_eq!(zip_dialects.as_ref(), zip_summary.dialects());
     }
 }

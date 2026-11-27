@@ -246,12 +246,12 @@ pub mod pairs {
                     out.insert(key, value);
                 }
                 if unsorted {
-                    read_session::repair(Repair::Spelling, || {
+                    read_session::repair(Repair::Spelling, &|| {
                         "a pair map states its keys out of order".into()
                     });
                 }
                 if restated {
-                    read_session::repair(Repair::Spelling, || {
+                    read_session::repair(Repair::Spelling, &|| {
                         "a pair map states a key twice with one value".into()
                     });
                 }
@@ -324,12 +324,14 @@ pub mod set {
                     out.insert(value);
                 }
                 if unsorted {
-                    read_session::repair(Repair::Spelling, || {
+                    read_session::repair(Repair::Spelling, &|| {
                         "a set states its members out of order".into()
                     });
                 }
                 if restated {
-                    read_session::repair(Repair::Spelling, || "a set states a member twice".into());
+                    read_session::repair(Repair::Spelling, &|| {
+                        "a set states a member twice".into()
+                    });
                 }
                 Ok(out)
             }

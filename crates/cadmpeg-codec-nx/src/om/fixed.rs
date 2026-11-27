@@ -81,6 +81,7 @@ pub(crate) mod pair_wire {
 #[cfg(test)]
 mod numeric_tests {
     use super::Q155;
+    use cadmpeg_core::serde_erase::json;
 
     fn assert_projection(raw: [u8; 7], expected_bits: u64) {
         let scalar = Q155::from_raw(raw).expect("every signed seven-byte atom is valid");
@@ -138,17 +139,17 @@ mod numeric_tests {
             [0x50, 0xff, 0x89, 0xab, 0xac, 0x0d, 0xee],
         ];
         let scalars = raw.map(|bytes| Q155::from_raw(bytes).expect("valid signed atom"));
-        let encoded = serde_json::to_value(Pair { scalars }).expect("serialize pair");
+        let encoded = json::to_value(Pair { scalars }).expect("serialize pair");
         assert_eq!(encoded["scalars"]["raw_values"][0], "7446a1f19b5338");
         assert_eq!(encoded["scalars"]["raw_values"][1], "50ff89abac0dee");
-        let decoded: Pair = serde_json::from_value(encoded.clone()).expect("deserialize pair");
+        let decoded: Pair = json::from_value(encoded.clone()).expect("deserialize pair");
         assert_eq!(decoded.scalars, scalars);
 
         let mut wrong_value = encoded.clone();
-        wrong_value["scalars"]["values"][1] = serde_json::json!(0.5);
-        assert!(serde_json::from_value::<Pair>(wrong_value).is_err());
+        wrong_value["scalars"]["values"][1] = cadmpeg_core::json!(0.5);
+        assert!(json::from_value::<Pair>(wrong_value).is_err());
         let mut wrong_raw = encoded;
-        wrong_raw["scalars"]["raw_values"][1] = serde_json::json!("00000000000000");
-        assert!(serde_json::from_value::<Pair>(wrong_raw).is_err());
+        wrong_raw["scalars"]["raw_values"][1] = cadmpeg_core::json!("00000000000000");
+        assert!(json::from_value::<Pair>(wrong_raw).is_err());
     }
 }

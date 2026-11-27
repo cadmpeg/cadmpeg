@@ -21,6 +21,7 @@ use super::super::{
 fn v4_flow_associativity_requires_entity_use_flag_three() {
     let entry = |form, use_flag, structure| DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type: 402,
         parameter_start: 0,
@@ -110,6 +111,7 @@ fn decode_v4_flow_uses_the_table_use_flag_and_ignores_structure() {
 fn v4_type402_structure_is_ignored_for_each_predefined_associativity_path() {
     let entry = |form, structure| DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 1,
         entity_type: 402,
         parameter_start: 0,
@@ -147,6 +149,7 @@ fn v4_type402_structure_is_ignored_for_each_predefined_associativity_path() {
 fn v4_flow_uses_only_the_v4_target_classes() {
     let target = |entity_type, form| DirectoryEntry {
         source_offset: 0,
+        source_length: Some(160),
         sequence: 3,
         entity_type,
         parameter_start: 0,

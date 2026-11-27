@@ -384,7 +384,7 @@ pub(crate) struct DesignDerivedInstanceCarrier {
     pub(crate) transform: SketchPlacementMatrix,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum DesignDerivedInstancePlacement {
     Identity {
@@ -566,7 +566,7 @@ pub(crate) struct DesignOccurrenceAttribute {
 }
 
 /// The value of an occurrence attribute, by its stored type.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(rename_all = "snake_case", tag = "type", content = "value")]
 pub(crate) enum DesignOccurrenceAttributeValue {
     /// `IntrinsicMetaTypebool`: one byte, `0` or `1`.

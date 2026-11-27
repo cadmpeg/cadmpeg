@@ -425,20 +425,17 @@ class EvidenceTest(unittest.TestCase):
             document = evidence.locate_document(path.read_bytes(), 0, 1 << 20)
             result = evidence.cli_sweep(path, document.ordinal, cadmpeg, 30)
         self.assertEqual(len(result["runs"]), 4)
+        # The synthetic file's kernel carrier is empty, so the decoder gives
+        # no record up (CADIR §3.3) and --no-salvage admits its losses.
         self.assertTrue(
             all(
                 run["inspect"]["status"] == 0
-                and all(
-                    item["status"] == (0 if run["mode"] == "salvage" else 1)
-                    for item in run["decode"]
-                )
-                and all(
-                    item["status"] == (0 if run["mode"] == "salvage" else 1)
-                    for item in run["validate"]
-                )
+                and all(item["status"] == 0 for item in run["decode"])
+                and all(item["status"] == 0 for item in run["validate"])
                 for run in result["runs"]
             )
         )
+        self.assertEqual({run["mode"] for run in result["runs"]}, {"salvage", "strict"})
         self.assertTrue(all(run["decode_deterministic"] for run in result["runs"]))
         self.assertTrue(all(run["validate_deterministic"] for run in result["runs"]))
 

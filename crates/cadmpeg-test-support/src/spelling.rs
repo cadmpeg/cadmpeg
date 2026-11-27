@@ -19,8 +19,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::serde_erase::from_json_value;
 use cadmpeg_ir::CadIr;
-use serde::Deserialize;
 use serde_json::{Map, Value};
 
 use crate::unknown_keys::{
@@ -64,7 +64,7 @@ impl SpellingSweep {
     /// Returns the serde error when `ir` does not read back as a `CadIr`.
     pub fn sweep(&mut self, ir: &Value) -> Result<BTreeSet<String>, serde_json::Error> {
         let mut accepting = BTreeSet::new();
-        let read = CadIr::deserialize(ir)?;
+        let read = from_json_value::<CadIr>(ir)?;
         let canonical = canonical_text(&read)?;
         let written: Value = serde_json::from_str(&canonical)?;
         if let Some(at) = first_difference(ir, &written) {
@@ -82,7 +82,7 @@ impl SpellingSweep {
             if !self.probed.insert(signature) {
                 continue;
             }
-            let reads_back = |graft: &Value| CadIr::deserialize(graft).is_ok();
+            let reads_back = |graft: &Value| from_json_value::<CadIr>(graft).is_ok();
             let (document, path) = grafted_document(ir, &empty, &node.path)
                 .filter(|(graft, _)| reads_back(graft))
                 .or_else(|| {
@@ -141,7 +141,7 @@ impl SpellingSweep {
         edit: impl FnOnce() -> String,
     ) {
         self.probes += 1;
-        if CadIr::deserialize(document).is_ok() {
+        if from_json_value::<CadIr>(document).is_ok() {
             accepting.insert(edit());
         }
     }

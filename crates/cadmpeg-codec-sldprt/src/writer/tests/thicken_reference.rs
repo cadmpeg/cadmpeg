@@ -49,7 +49,7 @@ fn thicken_writer_keeps_stored_result_and_chain_settings_it_cannot_encode() {
                     *result = Some(SolidFeatureResult::NewBody {});
                 }
             });
-        let unwritten =
+        let (unwritten, _) =
             crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
         assert!(
             unwritten
@@ -742,7 +742,7 @@ fn semantic_writer_keeps_the_stored_draft_for_a_two_sided_edit() {
             *second_side = Some(DraftSecondSide::Symmetric {});
         });
     }
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert!(
         unwritten
@@ -1457,7 +1457,7 @@ fn semantic_writer_keeps_stored_face_motion_without_losing_a_component() {
             };
         });
     }
-    let unwritten =
+    let (unwritten, _) =
         crate::test_support::unwritten_feature_edits(decoded.ir(), decoded.source_fidelity());
     assert_eq!(unwritten.len(), 1, "{unwritten:?}");
     let FeatureDefinition::Operation(FeatureOperation::MoveFace {

@@ -783,6 +783,7 @@ pub(crate) fn install(
     Ok(NativeInstall {
         losses,
         opaque_records,
+        given_up: Vec::new(),
     })
 }
 

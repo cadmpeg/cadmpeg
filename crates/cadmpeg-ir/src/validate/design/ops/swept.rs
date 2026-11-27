@@ -11,8 +11,8 @@ use crate::design::ops::shared::{Limit, RadialDimension, Span};
 use crate::design::ops::swept::{
     CenterlineAt, CornerTransition, DraftNeutral, Extrude, ExtrudeDraft, GuideFrame,
     HelicalSection, HelicalSweep, HoleDraft, Loft, PathExtent, Primitive, PrimitiveShape,
-    ProfileFit, Revolve, Rib, ScalingLaw, SectionForm, SectionShape, SectionTurn, Spine, Sweep,
-    SweepControls, SweepOrientation, SweepSection,
+    ProfileFit, Revolve, Rib, ScalingLaw, SectionForm, SectionShape, SectionTurn, Spine,
+    SpineLimits, Sweep, SweepControls, SweepOrientation, SweepSection,
 };
 use crate::design::options::{
     BodyForm, Boolean, BooleanOp, SectionCondition, SolidOutput, Support,
@@ -24,7 +24,7 @@ use super::super::records::DesignRecords;
 
 pub(super) fn check_extrude(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     extrude: &Extrude,
     findings: &mut Vec<Finding>,
 ) {
@@ -62,7 +62,7 @@ fn cuts(output: &SolidOutput) -> bool {
 }
 
 fn check_extrude_draft(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     draft: &ExtrudeDraft,
     span: Option<&Span<crate::scalar::Length>>,
     findings: &mut Vec<Finding>,
@@ -108,7 +108,7 @@ fn check_extrude_draft(
     }
 }
 
-fn check_fit(site: Site<'_>, fit: &ProfileFit, findings: &mut Vec<Finding>) {
+fn check_fit(site: Site<'_, '_>, fit: &ProfileFit, findings: &mut Vec<Finding>) {
     if fit.outer.is_none() && fit.inner.is_none() {
         error(
             findings,
@@ -143,7 +143,7 @@ fn check_fit(site: Site<'_>, fit: &ProfileFit, findings: &mut Vec<Finding>) {
 
 pub(super) fn check_revolve(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     revolve: &Revolve,
     findings: &mut Vec<Finding>,
 ) {
@@ -157,9 +157,34 @@ pub(super) fn check_revolve(
     options::check_solid_output(index, site, &revolve.output, findings);
 }
 
+/// `SpineLimits` targets are points or planes (§6.6).
+pub(super) fn check_spine_limits(
+    site: Site<'_, '_>,
+    field: &str,
+    limits: &SpineLimits,
+    findings: &mut Vec<Finding>,
+) {
+    for (end, target) in [("start", &limits.start), ("end", &limits.end)] {
+        let Some(class) = target
+            .as_ref()
+            .and_then(|target| picks::refused(target, picks::is_point_or_plane))
+        else {
+            continue;
+        };
+        error(
+            findings,
+            site.entity,
+            crate::rule!(
+                "design.spine-limit-picks-no-point-or-plane",
+                "{field}.{end} picks {class}; a spine limit is a point or a plane"
+            ),
+        );
+    }
+}
+
 pub(super) fn check_sweep(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     sweep: &Sweep,
     findings: &mut Vec<Finding>,
 ) {
@@ -192,6 +217,7 @@ pub(super) fn check_sweep(
         }
     }
     options::check_path(site, "Sweep.path", &sweep.path, findings);
+    check_spine_limits(site, "Sweep.limits", &sweep.limits, findings);
     check_controls(site, &sweep.controls, sweep.guides.len(), findings);
     for guide in &sweep.guides {
         options::check_path(site, "SweepGuide.path", &guide.path, findings);
@@ -216,7 +242,7 @@ pub(super) fn check_sweep(
 }
 
 fn check_controls(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     controls: &SweepControls,
     guides: usize,
     findings: &mut Vec<Finding>,
@@ -247,7 +273,7 @@ fn check_controls(
     }
 }
 
-fn check_path_extent(site: Site<'_>, extent: &PathExtent, findings: &mut Vec<Finding>) {
+fn check_path_extent(site: Site<'_, '_>, extent: &PathExtent, findings: &mut Vec<Finding>) {
     for fraction in [&extent.along, &extent.against].into_iter().flatten() {
         site.bound(findings, |values| {
             let value = values.get(fraction)?.get();
@@ -264,7 +290,7 @@ fn check_path_extent(site: Site<'_>, extent: &PathExtent, findings: &mut Vec<Fin
 }
 
 fn check_section_shape(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     shape: &SectionShape,
     helical: bool,
     findings: &mut Vec<Finding>,
@@ -292,7 +318,7 @@ fn check_section_shape(
 
 pub(super) fn check_helical_sweep(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     sweep: &HelicalSweep,
     findings: &mut Vec<Finding>,
 ) {
@@ -315,7 +341,7 @@ pub(super) fn check_helical_sweep(
 /// curve is read.
 pub(super) fn check_helix_circle(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     circle: &crate::design::selection::OrderedSelection,
     findings: &mut Vec<Finding>,
 ) {
@@ -367,7 +393,7 @@ pub(super) fn check_helix_circle(
 
 pub(super) fn check_rib(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     rib: &Rib,
     findings: &mut Vec<Finding>,
 ) {
@@ -408,7 +434,7 @@ pub(super) fn check_rib(
 
 pub(super) fn check_primitive(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     primitive: &Primitive,
     findings: &mut Vec<Finding>,
 ) {
@@ -461,7 +487,7 @@ pub(super) fn check_primitive(
 }
 
 fn check_wedge(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     y: &[Dimension<crate::scalar::Length>; 2],
     base: &[Dimension<crate::scalar::Length>; 4],
     top: &[Dimension<crate::scalar::Length>; 4],
@@ -489,7 +515,7 @@ fn check_wedge(
 
 pub(super) fn check_loft(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     loft: &Loft,
     findings: &mut Vec<Finding>,
 ) {
@@ -636,7 +662,7 @@ pub(super) fn check_loft(
 
 /// Where a `CornerTransition` other than a sweep's occurs.
 pub(super) fn check_corner(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     corner: Option<&CornerTransition>,
     findings: &mut Vec<Finding>,

@@ -50,10 +50,7 @@ fn held(decoded: &DecodeResult) -> CadIr {
 
 fn write(ir: &CadIr, decoded: &DecodeResult) -> (Vec<u8>, ExportReport) {
     let plan = F3dCodec
-        .plan(
-            EncodeInput::new(ir, Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(ir, Some(decoded.source_fidelity())))
         .expect("plan");
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes).expect("write");
@@ -174,13 +171,17 @@ fn a_design_edit_the_history_cannot_state_is_named() {
         "{:?}",
         report.notes
     );
+    assert!(
+        report.synthesis_cause().is_some(),
+        "{:#?}",
+        report.write_path()
+    );
     assert_eq!(
-        charged(&report, F3dLossCode::WriterPatchDeclined).len(),
+        charged(&report, F3dLossCode::WriterHistoryUnrestored).len(),
         1,
         "{:#?}",
         report.losses
     );
-    assert!(charged(&report, F3dLossCode::WriterHistoryUnrestored).is_empty());
 }
 
 /// The only catalog row. `SOURCE` is of this dialect, so a write to it
@@ -199,7 +200,7 @@ fn write_to(
     request: TargetRequest<'_>,
 ) -> (Vec<u8>, ExportReport) {
     let plan = F3dCodec
-        .plan(EncodeInput::new(ir, Some(fidelity)), request)
+        .plan(EncodeInput::new(ir, Some(fidelity)).with_target(request))
         .expect("plan");
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes).expect("write");
@@ -260,23 +261,34 @@ fn three_millimetres() -> ParameterValue {
 }
 
 /// A saved design whose retained archive does not decode is written from its
-/// `design` records. The patch of that archive charges the failure where the
-/// target patches it, and the restore charges it on a catalog row.
+/// `design` records, and the restore charges the failure once, where the
+/// target patches the archive and on a catalog row. Where the target patches
+/// the archive, the synthesis cause states why the patch did not run, the
+/// arenas the document lacks, and not the decode failure the loss states.
 #[test]
 fn a_retained_archive_that_does_not_decode_is_charged_once() {
     let decoded = decode(SOURCE);
     let (bytes, report) = write_to(
         &with_d1_edited(&decoded),
         &undecodable(&decoded),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     );
-    assert_eq!(
-        charged(&report, F3dLossCode::WriterPatchDeclined).len(),
-        1,
-        "{:#?}",
-        report.losses
-    );
-    assert!(charged(&report, F3dLossCode::WriterHistoryUnrestored).is_empty());
+    let Some(cadmpeg_ir::report::export::SynthesisCause::PatchDeclined { reason: declined }) =
+        report.synthesis_cause()
+    else {
+        panic!("a synthesis cause: {:#?}", report.write_path());
+    };
+    let unrestored = charged(&report, F3dLossCode::WriterHistoryUnrestored);
+    let [unrestored] = unrestored.as_slice() else {
+        panic!("one unrestored charge: {:#?}", report.losses);
+    };
+    let failure = unrestored
+        .split_once("archive (")
+        .and_then(|(_, rest)| rest.rsplit_once("); the file"))
+        .map(|(failure, _)| failure)
+        .expect("the charge states the decode failure");
+    assert!(!declined.contains(failure), "{declined}");
+    assert!(declined.contains("read from CADIR"), "{declined}");
     assert_eq!(d1(&bytes), Some(three_millimetres()));
 
     let decoded = decode(&off_catalog_source());
@@ -292,7 +304,6 @@ fn a_retained_archive_that_does_not_decode_is_charged_once() {
         "{:#?}",
         report.losses
     );
-    assert!(charged(&report, F3dLossCode::WriterPatchDeclined).is_empty());
     assert_eq!(d1(&bytes), Some(three_millimetres()));
 }
 
@@ -319,7 +330,6 @@ fn a_design_edit_the_history_cannot_state_is_charged_on_a_catalog_row() {
     let unrestored = charged(&report, F3dLossCode::WriterHistoryUnrestored);
     assert_eq!(unrestored.len(), 1, "{:#?}", report.losses);
     assert!(unrestored[0].contains(&comment), "{unrestored:?}");
-    assert!(charged(&report, F3dLossCode::WriterPatchDeclined).is_empty());
 }
 
 /// A saved design written to a catalog row other than its source's dialect
@@ -334,8 +344,8 @@ fn a_saved_design_synthesizes_as_its_decode_does() {
     let synthesized = |ir: &CadIr| {
         let plan = F3dCodec
             .plan(
-                EncodeInput::new(ir, Some(decoded.source_fidelity())),
-                TargetRequest::Explicit("f3d:manifest-3-2-0-0"),
+                EncodeInput::new(ir, Some(decoded.source_fidelity()))
+                    .with_target(TargetRequest::Explicit("f3d:manifest-3-2-0-0")),
             )
             .expect("plan");
         assert!(matches!(

@@ -260,7 +260,7 @@ fn json_payload(arena: &str, records: u64, rows: &[FieldRow]) -> Value {
     let fields: Vec<Value> = rows
         .iter()
         .map(|row| {
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "path": row.path,
                 "present": row.present,
                 "records": records,
@@ -270,7 +270,7 @@ fn json_payload(arena: &str, records: u64, rows: &[FieldRow]) -> Value {
             })
         })
         .collect();
-    serde_json::json!({
+    cadmpeg_core::json!({
         "arena": arena,
         "records": records,
         "inferred": true,
@@ -318,7 +318,7 @@ fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) ->
 #[cfg(test)]
 mod tests {
     use super::{infer_fields, FieldRow, Relation, EXAMPLE_MAX};
-    use serde_json::json;
+    use cadmpeg_core::json;
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]

@@ -1,24 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rhino target resolution and export reporting.
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     output_empty, target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions,
-    Consumption, EncodeInput, ExportBody, WritePath,
+    Consumption, EncodeInput, ExportBody, NativeDisposition, NativeDispositions, WritePath,
 };
 
 use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
-
-/// Why this writer cannot reproduce a source archive version outside
-/// [`RhinoArchiveVersion::TARGETS`].
-///
-/// Archives 1, 2, 3, 4, 5 and 90 decode without a writer, unknown words decode
-/// as residual, and 3DM has no retained-image path that could write any of
-/// them back.
-const OFF_CATALOG_SOURCE_REASON: &str =
-    "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
-     path that could preserve it";
 
 /// The regions that state no complete shell list and hold no partial face.
 /// Their stated faces can close, and 3DM reads a closed Brep as a solid, so
@@ -42,19 +33,24 @@ fn unjoined_regions(ir: &cadmpeg_ir::CadIr) -> std::collections::BTreeSet<&str> 
         .collect()
 }
 
-/// Synthesize the resolved archive version.
+/// Synthesize the resolved archive version in the encode's session `ctx`.
 ///
 /// Every catalog resolution names its `RhinoArchiveVersion::ALL` row by
-/// position; the preserved resolution has no row and is refused here because
-/// 3DM has no replay path.
+/// position. 3DM has no replay path, so a source archive version outside the
+/// catalog is written as the catalog default (§3.4, Refusals, `Inherit`).
 pub(crate) fn plan(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let Some(index) = target.index() else {
-        return Err(target.unavailable(OFF_CATALOG_SOURCE_REASON));
-    };
-    let version = RhinoArchiveVersion::ALL[index];
+    let version = target
+        .synthesized_row()
+        .and_then(|(index, _)| RhinoArchiveVersion::ALL.get(index).copied());
+    debug_assert!(
+        version.is_some(),
+        "the Rhino catalog declares a default and is projected from RhinoArchiveVersion::ALL"
+    );
+    let version = version.unwrap_or(RhinoArchiveVersion::V8);
     let source = input.ir;
     let unjoined = unjoined_regions(source);
     let (complete, partial_losses) = match cadmpeg_ir::codec::write::without_partial_topology(
@@ -67,8 +63,8 @@ pub(crate) fn plan(
     };
     let ir = complete.as_ref().unwrap_or(source);
     let mut bytes = Vec::new();
-    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir)?;
-    let written = super::write(&recovered.document, version, &unjoined, &mut bytes)?;
+    let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(ir, ctx)?;
+    let written = super::write(&recovered.document, version, &unjoined, ctx, &mut bytes)?;
     let withheld_meshes = super::withheld_body_meshes(ir);
     let written_meshes = || {
         ir.model
@@ -203,9 +199,6 @@ pub(crate) fn plan(
             "{points} support point record(s) and {curves} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry"
         )));
     }
-    if let Some(message) = target.displacement_message() {
-        losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
-    }
     if vertex_quantization {
         losses.push(RhinoLossCode::MeshVertexPrecisionReduced.note(
             "archive version 50 stores standalone mesh vertices as f32; \
@@ -221,6 +214,7 @@ pub(crate) fn plan(
     }
     Ok(ExportBody {
         bytes,
+        synthesis_cause: None,
         census: cadmpeg_ir::report::export::EntityCensus {
             basis: cadmpeg_ir::report::export::CensusBasis::IrArenas,
             counts: source.census(),
@@ -229,9 +223,28 @@ pub(crate) fn plan(
             consumption: Consumption::NotConsumed,
         },
         coverage: ArenaCoverage::Declared(COVERAGE),
+        native: native_dispositions(input.ir),
         losses,
         notes: vec![format!("3DM archive version {}", version.value())],
+        written_row: None,
+        annotations: None,
     })
+}
+
+/// What the archive does with each native record (§3.4, Rule W3): it
+/// regenerates the `rhino` records [`super::omitted_native_records`] does not
+/// name, and holds no record of another format.
+fn native_dispositions(ir: &cadmpeg_ir::CadIr) -> NativeDispositions {
+    let mut native = NativeDispositions::dropped("which the Rhino writer does not write");
+    native.namespace("rhino", NativeDisposition::Regenerated);
+    if let Some(namespace) = ir.native.namespace("rhino") {
+        native.drop_records(
+            "rhino",
+            "that the 3DM writer does not regenerate",
+            super::omitted_native_records(namespace),
+        );
+    }
+    native
 }
 
 /// What `prepare_write` does with each model arena.

@@ -35,10 +35,7 @@ use super::endpoints::{
     terminal_relation_class_offset, unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
 use super::grid::quantize;
-use super::holes::{
-    feature_input_sketch_marker_transform, feature_input_support_frame, reference_support_frame,
-    sketch_feature_frames, SupportFrame,
-};
+use super::holes::{feature_input_sketch_marker_transform, SupportFrame};
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
     legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
@@ -274,7 +271,9 @@ fn compact_linear_dimensions(
 }
 
 /// Lane markers grouped by owning feature, in lane order.
-fn markers_by_owner(markers: &[SketchInputEntity]) -> HashMap<&str, Vec<&SketchInputEntity>> {
+pub(crate) fn markers_by_owner(
+    markers: &[SketchInputEntity],
+) -> HashMap<&str, Vec<&SketchInputEntity>> {
     let mut owned = HashMap::<_, Vec<_>>::new();
     for marker in markers {
         if let Some(owner) = marker.feature_ref.as_deref() {
@@ -569,18 +568,71 @@ pub(crate) fn project_compact_sketch_profiles(
     lanes: &[FeatureInputLane],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<PlaneBindings, CodecError> {
+    project_compact_sketch_profiles_with_cache(
+        ctx,
+        features,
+        sketches,
+        sketch_entities,
+        histories,
+        super::lane_cache::CachedLanes {
+            lanes,
+            context: super::lane_cache::CachedLaneContext::default(),
+        },
+        losses,
+    )
+}
+
+pub(crate) fn project_compact_sketch_profiles_with_cache(
+    ctx: &DecodeContext<'_>,
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
+    histories: &[crate::records::FeatureHistory],
+    input_lanes: super::lane_cache::CachedLanes<'_, '_, '_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<PlaneBindings, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let lanes = input_lanes.lanes;
+    let cache = input_lanes.context.cache;
+    let shared_plane_frames = input_lanes.context.plane_frames;
     let mut plane_bindings = PlaneBindings::default();
     let metadata_ids = history_metadata_ids(histories);
 
     let native_features = crate::records::HistoryFeatures::new(histories);
     let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
-        let plane_frames = lane_sketch_plane_frames(features, histories, lane);
-        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
-        let names = FeatureObjectNames::new(&lane.names);
-        let markers_by_feature = markers_by_owner(&lane.sketch_entities);
+        let cached = cache.and_then(|cache| cache.get(lane));
+        let owned_plane_frames;
+        let plane_frames = if let Some(frames) =
+            shared_plane_frames.and_then(|map| map.get(&std::ptr::from_ref(lane).addr()))
+        {
+            frames
+        } else {
+            owned_plane_frames = lane_sketch_plane_frames(features, histories, lane);
+            &owned_plane_frames
+        };
+        let owned_plane_index;
+        let plane_index = if let Some(cached) = cached {
+            cached.plane_index()
+        } else {
+            owned_plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+            &owned_plane_index
+        };
+        let owned_names;
+        let names = if let Some(cached) = cached {
+            cached.names()
+        } else {
+            owned_names = FeatureObjectNames::new(&lane.names);
+            &owned_names
+        };
+        let owned_markers_by_feature;
+        let markers_by_feature = if let Some(cached) = cached {
+            cached.markers_by_feature()
+        } else {
+            owned_markers_by_feature = markers_by_owner(&lane.sketch_entities);
+            &owned_markers_by_feature
+        };
         let dimensions_by_feature = compact_linear_dimensions(lane, NATIVE_TO_IR);
         let class_offsets = |name: &str| {
             SortedOffsets::new(
@@ -711,10 +763,11 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(SupportFrame {
                 frame: (origin, normal, u_axis),
                 binding,
-            }) = feature_input_support_frame(
+            }) = super::holes::feature_input_support_frame_with_cache(
+                cached,
                 &lane.native_payload,
-                &plane_frames,
-                &plane_index,
+                plane_frames,
+                plane_index,
                 context_start,
                 start,
                 end,
@@ -765,8 +818,8 @@ pub(crate) fn project_compact_sketch_profiles(
                 native_ref: Some(lane.id.clone()),
             };
             let Some(transform) = feature_input_sketch_marker_transform(
-                &plane_frames,
-                &plane_index,
+                plane_frames,
+                plane_index,
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
@@ -1348,7 +1401,7 @@ fn collect_marker_arc_centers(
 
 /// The classes and relation instances of one lane, indexed to recognize the
 /// markers that carry a terminal relation's display.
-struct TerminalRelationCarriers<'a> {
+pub(crate) struct TerminalRelationCarriers<'a> {
     lane: &'a FeatureInputLane,
     /// The first class at each offset.
     classes_by_offset: HashMap<u64, &'a str>,
@@ -1357,7 +1410,7 @@ struct TerminalRelationCarriers<'a> {
 }
 
 impl<'a> TerminalRelationCarriers<'a> {
-    fn new(lane: &'a FeatureInputLane) -> Self {
+    pub(crate) fn new(lane: &'a FeatureInputLane) -> Self {
         let mut classes_by_offset = HashMap::new();
         for class in &lane.classes {
             classes_by_offset
@@ -1466,8 +1519,30 @@ pub(crate) fn project_marker_backed_sketches(
     sources: MarkerSources<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<PlaneBindings, CodecError> {
+    project_marker_backed_sketches_with_cache(
+        super::lane_cache::CachedLaneContext::default(),
+        ctx,
+        features,
+        sketches,
+        entities,
+        sources,
+        losses,
+    )
+}
+
+pub(crate) fn project_marker_backed_sketches_with_cache(
+    cached_context: super::lane_cache::CachedLaneContext<'_, '_>,
+    ctx: &DecodeContext<'_>,
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &mut Vec<Sketch>,
+    entities: MarkerSketchEntities<'_>,
+    sources: MarkerSources<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<PlaneBindings, CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let cache = cached_context.cache;
+    let shared_plane_frames = cached_context.plane_frames;
     let mut plane_bindings = PlaneBindings::default();
     let MarkerSketchEntities {
         projected: sketch_entities,
@@ -1489,37 +1564,112 @@ pub(crate) fn project_marker_backed_sketches(
     {
         marker_owners.insert(owner);
     }
-    let feature_frames = sketch_feature_frames(features, histories, lanes);
-    project_detached_legacy_config_sketches(
+    let owned_shared_frames;
+    let resolved_plane_frames = if let Some(frames) = shared_plane_frames {
+        frames
+    } else {
+        owned_shared_frames = lanes
+            .iter()
+            .map(|lane| {
+                (
+                    std::ptr::from_ref(lane).addr(),
+                    lane_sketch_plane_frames(features, histories, lane),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        &owned_shared_frames
+    };
+    let feature_frames = super::holes::sketch_feature_frames_with_cache(
+        cache,
+        Some(resolved_plane_frames),
+        features,
+        histories,
+        lanes,
+    );
+    project_detached_legacy_config_sketches_with_cache(
         features,
         sketches,
         sketch_entities,
         &native_features,
-        lanes,
+        super::lane_cache::CachedLanes {
+            lanes,
+            context: super::lane_cache::CachedLaneContext {
+                cache,
+                plane_frames: None,
+            },
+        },
         &feature_frames,
         &mut plane_bindings,
     );
     let feature_positions = FeaturePositions::new(features);
     for lane in lanes {
-        let plane_frames = lane_sketch_plane_frames(features, histories, lane);
-        let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
-        let record_lists = SketchRecordLists::new(&lane.native_payload);
+        let cached = cache.and_then(|cache| cache.get(lane));
+        let owned_plane_frames;
+        let plane_frames =
+            if let Some(frames) = resolved_plane_frames.get(&std::ptr::from_ref(lane).addr()) {
+                frames
+            } else {
+                owned_plane_frames = lane_sketch_plane_frames(features, histories, lane);
+                &owned_plane_frames
+            };
+        let owned_plane_index;
+        let plane_index = if let Some(cached) = cached {
+            cached.plane_index()
+        } else {
+            owned_plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+            &owned_plane_index
+        };
+        let owned_record_lists;
+        let record_lists = if let Some(cached) = cached {
+            cached.record_lists()
+        } else {
+            owned_record_lists = SketchRecordLists::new(&lane.native_payload);
+            &owned_record_lists
+        };
         let mut markers_by_id = HashMap::new();
         for marker in &lane.sketch_entities {
             markers_by_id.insert(marker.id(), marker);
-            if let Some(conflict) = index_from_u64(marker.offset()).and_then(|offset| {
-                unchecked_record_conflict(&lane.native_payload, &record_lists, offset)
-            }) {
+        }
+        if let Some(cached) = cached {
+            for (marker_id, conflict) in cached.unchecked_conflicts() {
                 held_geometry
                     .unchecked
-                    .insert(marker.id().to_owned(), conflict);
+                    .insert((*marker_id).to_owned(), *conflict);
+            }
+        } else {
+            for marker in &lane.sketch_entities {
+                if let Some(conflict) = index_from_u64(marker.offset()).and_then(|offset| {
+                    unchecked_record_conflict(&lane.native_payload, record_lists, offset)
+                }) {
+                    held_geometry
+                        .unchecked
+                        .insert(marker.id().to_owned(), conflict);
+                }
             }
         }
-        let names = FeatureObjectNames::new(&lane.names);
-        let markers_by_feature = markers_by_owner(&lane.sketch_entities);
+        let owned_names;
+        let names = if let Some(cached) = cached {
+            cached.names()
+        } else {
+            owned_names = FeatureObjectNames::new(&lane.names);
+            &owned_names
+        };
+        let owned_markers_by_feature;
+        let markers_by_feature = if let Some(cached) = cached {
+            cached.markers_by_feature()
+        } else {
+            owned_markers_by_feature = markers_by_owner(&lane.sketch_entities);
+            &owned_markers_by_feature
+        };
         let marker_offsets =
             SortedOffsets::new(lane.sketch_entities.iter().map(SketchInputEntity::offset));
-        let terminal_carriers = TerminalRelationCarriers::new(lane);
+        let owned_terminal_carriers;
+        let terminal_carriers = if let Some(cached) = cached {
+            cached.terminal_carriers()
+        } else {
+            owned_terminal_carriers = TerminalRelationCarriers::new(lane);
+            &owned_terminal_carriers
+        };
         let mut objects = Vec::new();
         for feature in native_features
             .iter()
@@ -1584,7 +1734,7 @@ pub(crate) fn project_marker_backed_sketches(
                     .and_then(|offset| {
                         listed_entity(
                             &lane.native_payload,
-                            &record_lists,
+                            record_lists,
                             offset,
                             &owns,
                             &|[u, v]: [f64; 2]| Some(Point2::new(u, v)),
@@ -1604,19 +1754,27 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let support_frame = if block_definition {
-                reference_support_frame
+            let support = if block_definition {
+                super::holes::reference_support_frame_with_cache(
+                    cached,
+                    &lane.native_payload,
+                    plane_frames,
+                    plane_index,
+                    context_start,
+                    start,
+                    end,
+                )
             } else {
-                feature_input_support_frame
-            };
-            let support = support_frame(
-                &lane.native_payload,
-                &plane_frames,
-                &plane_index,
-                context_start,
-                start,
-                end,
-            )
+                super::holes::feature_input_support_frame_with_cache(
+                    cached,
+                    &lane.native_payload,
+                    plane_frames,
+                    plane_index,
+                    context_start,
+                    start,
+                    end,
+                )
+            }
             .or_else(|| feature_frames.get(native_feature.id.as_str()).copied());
             let binding = support.map_or(PlaneBinding::Stored, |support| support.binding);
             let component = binding.principal();
@@ -1782,8 +1940,8 @@ pub(crate) fn project_marker_backed_sketches(
                 native_ref: Some(lane.id.clone()),
             };
             let Some(transform) = feature_input_sketch_marker_transform(
-                &plane_frames,
-                &plane_index,
+                plane_frames,
+                plane_index,
                 [context_start, start, end],
                 &sketch,
                 QUANTUM,
@@ -1821,7 +1979,7 @@ pub(crate) fn project_marker_backed_sketches(
                     match index_from_u64(marker.offset()).and_then(|offset| {
                         listed_entity(
                             &lane.native_payload,
-                            &record_lists,
+                            record_lists,
                             offset,
                             &owns,
                             &project_coordinates,
@@ -1842,7 +2000,7 @@ pub(crate) fn project_marker_backed_sketches(
                             |offset| {
                                 marker_is_construction(
                                     &lane.native_payload,
-                                    &record_lists,
+                                    record_lists,
                                     offset,
                                     &listed.geometry,
                                     Some(listed.construction),
@@ -2503,14 +2661,14 @@ pub(crate) fn project_marker_backed_sketches(
                                 let read = if off_chord {
                                     off_chord_arc(
                                         &lane.native_payload,
-                                        &record_lists,
+                                        record_lists,
                                         offset,
                                         &project_coordinates,
                                     )
                                 } else {
                                     listed_entity(
                                         &lane.native_payload,
-                                        &record_lists,
+                                        record_lists,
                                         offset,
                                         &|_| true,
                                         &project_coordinates,
@@ -2522,7 +2680,7 @@ pub(crate) fn project_marker_backed_sketches(
                         {
                             read.construction = marker_is_construction(
                                 &lane.native_payload,
-                                &record_lists,
+                                record_lists,
                                 offset,
                                 &read.geometry,
                                 Some(read.construction),
@@ -2545,7 +2703,7 @@ pub(crate) fn project_marker_backed_sketches(
                         index_from_u64(marker.offset()).map_or((false, false), |offset| {
                             marker_is_construction(
                                 &lane.native_payload,
-                                &record_lists,
+                                record_lists,
                                 offset,
                                 &geometry,
                                 None,
@@ -2637,7 +2795,7 @@ pub(crate) fn project_marker_backed_sketches(
                 }
                 let Some(Ok(listed)) = listed_entity(
                     &lane.native_payload,
-                    &record_lists,
+                    record_lists,
                     offset,
                     &owns,
                     &project_coordinates,
@@ -2659,7 +2817,7 @@ pub(crate) fn project_marker_backed_sketches(
                     .collect();
                 let (construction, assumed) = marker_is_construction(
                     &lane.native_payload,
-                    &record_lists,
+                    record_lists,
                     offset,
                     &listed.geometry,
                     Some(listed.construction),
@@ -3654,6 +3812,7 @@ fn transform_sketch_block_direction(
     result.is_finite().then_some(result)
 }
 
+#[cfg(test)]
 fn project_detached_legacy_config_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
@@ -3663,13 +3822,39 @@ fn project_detached_legacy_config_sketches(
     feature_frames: &HashMap<String, SupportFrame>,
     plane_bindings: &mut PlaneBindings,
 ) {
+    project_detached_legacy_config_sketches_with_cache(
+        features,
+        sketches,
+        sketch_entities,
+        native_features,
+        super::lane_cache::CachedLanes {
+            lanes,
+            context: super::lane_cache::CachedLaneContext::default(),
+        },
+        feature_frames,
+        plane_bindings,
+    );
+}
+
+fn project_detached_legacy_config_sketches_with_cache(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
+    native_features: &crate::records::HistoryFeatures<'_>,
+    input_lanes: super::lane_cache::CachedLanes<'_, '_, '_>,
+    feature_frames: &HashMap<String, SupportFrame>,
+    plane_bindings: &mut PlaneBindings,
+) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let lanes = input_lanes.lanes;
+    let cache = input_lanes.context.cache;
 
     for lane in lanes
         .iter()
         .filter(|lane| is_supplemental_config_lane(lane))
     {
+        let cached = cache.and_then(|cache| cache.get(lane));
         let lane_key = lane
             .id
             .rsplit_once('#')
@@ -3694,7 +3879,13 @@ fn project_detached_legacy_config_sketches(
                 ..*frame
             }
         };
-        let markers_by_feature = markers_by_owner(&lane.sketch_entities);
+        let owned_markers_by_feature;
+        let markers_by_feature = if let Some(cached) = cached {
+            cached.markers_by_feature()
+        } else {
+            owned_markers_by_feature = markers_by_owner(&lane.sketch_entities);
+            &owned_markers_by_feature
+        };
         for feature in features.iter_mut() {
             'feature_edit: {
                 let Some(native_ref) = feature.native_ref.as_deref() else {
@@ -4304,7 +4495,7 @@ mod detached_legacy_sketch_tests {
         let mut builder = cadmpeg_ir::AnnotationBuilder::new();
         let stream =
             cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
-        builder.note(sketch.id.as_str(), &stream, 1, Some("profile"));
+        builder.note(&sketch.id, &stream, 1, Some("profile"));
         let annotations = builder.build();
         let mut admitted = [feature.clone()];
         super::bind_sketch_profiles(
@@ -4391,7 +4582,7 @@ mod detached_legacy_sketch_tests {
         let mut builder = cadmpeg_ir::AnnotationBuilder::new();
         let stream =
             cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
-        builder.note(sketch.id.as_str(), &stream, 1, Some("profile"));
+        builder.note(&sketch.id, &stream, 1, Some("profile"));
         let annotations = builder.build();
         for _ in 0..32 {
             let mut admitted = neutral.clone();

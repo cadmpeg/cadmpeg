@@ -79,7 +79,7 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
             &source_less_spatial_line(Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)),
             None,
         ),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut first_encoding))
     .expect("source-less spatial line should encode");
@@ -99,7 +99,7 @@ fn retained_spatial_line_endpoint_edits_round_trip() {
     let mut second_encoding = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
+        TargetRequest::Unnamed,
     )
     .and_then(|plan| plan.write_to(&mut second_encoding))
     .expect("edited retained spatial line should encode");

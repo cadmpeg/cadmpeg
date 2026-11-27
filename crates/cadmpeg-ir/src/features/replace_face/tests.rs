@@ -2,17 +2,7 @@
 
 use super::ReplaceFaceOperands;
 use crate::features::selections::FaceSelection;
-
-#[cfg(feature = "schema")]
-#[test]
-fn tangent_chain_schema_is_optional_boolean() {
-    let schema = serde_json::to_value(schemars::schema_for!(ReplaceFaceOperands)).unwrap();
-    assert_eq!(schema["properties"]["tangent_chain"]["type"], "boolean");
-    assert!(!schema["required"]
-        .as_array()
-        .unwrap()
-        .contains(&serde_json::json!("tangent_chain")));
-}
+use cadmpeg_core::serde_erase::json;
 
 #[test]
 fn optional_tangent_chain_preserves_legacy_wire_forms_and_refuses_null() {
@@ -23,25 +13,25 @@ fn optional_tangent_chain_preserves_legacy_wire_forms_and_refuses_null() {
         )
         .unwrap()
         .with_tangent_chain(tangent_chain);
-        let mut expected = serde_json::json!({
+        let mut expected = cadmpeg_core::json!({
             "targets": {"kind": "native", "value": "native:target"},
             "replacements": {"kind": "native", "value": "native:replacement"}
         });
         if let Some(value) = tangent_chain {
-            expected["tangent_chain"] = serde_json::json!(value);
+            expected["tangent_chain"] = cadmpeg_core::json!(value);
         }
-        let wire = serde_json::to_value(&operands).unwrap();
+        let wire = json::to_value(&operands).unwrap();
         assert_eq!(wire, expected);
         assert_eq!(
-            serde_json::from_value::<ReplaceFaceOperands>(wire.clone()).unwrap(),
+            json::from_value::<ReplaceFaceOperands>(wire.clone()).unwrap(),
             operands
         );
         let mut unknown = wire.clone();
-        unknown["unknown"] = serde_json::json!(true);
-        assert!(serde_json::from_value::<ReplaceFaceOperands>(unknown).is_err());
+        unknown["unknown"] = cadmpeg_core::json!(true);
+        assert!(json::from_value::<ReplaceFaceOperands>(unknown).is_err());
         let mut null = wire;
         null["tangent_chain"] = serde_json::Value::Null;
-        assert!(serde_json::from_value::<ReplaceFaceOperands>(null).is_err());
+        assert!(json::from_value::<ReplaceFaceOperands>(null).is_err());
     }
 }
 

@@ -3,6 +3,7 @@ use super::identities;
 use super::typed::{IdentityMap, RewriteIdentities};
 use crate::ids::PointId;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeSeq;
 use serde::{Serialize, Serializer};
@@ -100,7 +101,7 @@ fn generic_unknown_links_share_the_typed_identity_rewrite_boundary() {
         id: crate::ids::UnknownId::mint("test:model:unknown#source").unwrap(),
         links: vec![crate::ids::Identity::new("test:model:point#a").unwrap()],
     };
-    let rewritten = serde_json::to_value(
+    let rewritten = json::to_value(
         identities(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             record.clone(),
@@ -111,7 +112,7 @@ fn generic_unknown_links_share_the_typed_identity_rewrite_boundary() {
     .unwrap();
     assert_eq!(
         rewritten,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "test:occurrence:unknown#source",
             "links": ["test:occurrence:point#a"]
         })
@@ -140,9 +141,9 @@ fn rewriting_distinguishes_identities_from_identical_text_in_every_container() {
         references: BTreeMap::from([(id("a"), id("b"))]),
         extensions: BTreeMap::from([(source.clone(), source.clone())]),
     };
-    let original = serde_json::to_value(&entity).unwrap();
+    let original = json::to_value(&entity).unwrap();
     let calls = std::cell::Cell::new(0);
-    let rewritten = serde_json::to_value(
+    let rewritten = json::to_value(
         identities(
             &cadmpeg_core::decode::test_support::service_decode_context(),
             entity.clone(),
@@ -157,7 +158,7 @@ fn rewriting_distinguishes_identities_from_identical_text_in_every_container() {
     assert_eq!(calls.get(), 2);
     assert_eq!(
         rewritten,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "id": "test:occurrence:point#a", "label": source,
             "optional": "test:occurrence:point#a", "absent": null,
             "tuple": ["test:occurrence:point#a", source],
@@ -168,13 +169,13 @@ fn rewriting_distinguishes_identities_from_identical_text_in_every_container() {
             "extensions": {"test:model:point#a": "test:model:point#a"}
         })
     );
-    assert_eq!(serde_json::to_value(&entity).unwrap(), original);
+    assert_eq!(json::to_value(&entity).unwrap(), original);
 }
 
 #[test]
 fn colliding_map_keys_and_invalid_targets_fail_without_changing_the_source() {
     let source = BTreeMap::from([(id("a"), 1), (id("b"), 2)]);
-    let before = serde_json::to_value(&source).unwrap();
+    let before = json::to_value(&source).unwrap();
     let error = identities(
         &cadmpeg_core::decode::test_support::service_decode_context(),
         source.clone(),
@@ -190,7 +191,7 @@ fn colliding_map_keys_and_invalid_targets_fail_without_changing_the_source() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("invalid identity"), "{error}");
-    assert_eq!(serde_json::to_value(&source).unwrap(), before);
+    assert_eq!(json::to_value(&source).unwrap(), before);
 }
 
 #[derive(Debug, Clone)]
@@ -237,8 +238,8 @@ fn a_serializer_cannot_swallow_a_rewrite_collision() {
     .unwrap_err();
     assert!(error.to_string().contains("collides"), "{error}");
     assert_eq!(
-        serde_json::to_value(&source).unwrap(),
-        serde_json::json!(["test:model:point#a", "test:model:point#b"])
+        json::to_value(&source).unwrap(),
+        cadmpeg_core::json!(["test:model:point#a", "test:model:point#b"])
     );
 }
 
@@ -304,7 +305,7 @@ fn full_fidelity_reference_rewrites_without_rewriting_identical_display_text() {
         Some("scoped:native:curve#1")
     );
     assert_eq!(rewritten.endpoint_refs, ["scoped:native:point#1"]);
-    let mut wire = serde_json::to_value(source).unwrap();
+    let mut wire = json::to_value(source).unwrap();
     let mut map = IdentityMap::new(|source: &str| Ok(source.replace("test:", "scoped:")));
     NativeLink::rewrite_native_value(&ctx, &mut wire, &mut map).unwrap();
     map.finish().unwrap();
@@ -313,6 +314,6 @@ fn full_fidelity_reference_rewrites_without_rewriting_identical_display_text() {
     assert_eq!(wire["geometry_ref"], "scoped:native:curve#1");
     assert_eq!(
         wire["endpoint_refs"],
-        serde_json::json!(["scoped:native:point#1"])
+        cadmpeg_core::json!(["scoped:native:point#1"])
     );
 }

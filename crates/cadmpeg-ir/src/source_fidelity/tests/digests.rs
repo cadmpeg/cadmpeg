@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 
 use super::{fidelity, id, record, root_digest};
@@ -32,7 +33,7 @@ fn the_sidecar_writes_one_digest_per_file_before_its_records() {
     fidelity
         .file_digests
         .insert(definition("pin"), component.clone());
-    let text = serde_json::to_string(&fidelity).unwrap();
+    let text = json::to_string(&fidelity).unwrap();
     let keys: Vec<&str> = [
         "decode_digest",
         "file_digests",
@@ -57,9 +58,9 @@ fn the_sidecar_writes_one_digest_per_file_before_its_records() {
     assert_eq!(wire["decode_digest"], root_digest().as_str());
     assert_eq!(
         wire["file_digests"],
-        serde_json::json!({"synthetic:document:definition#pin": component.as_str()})
+        cadmpeg_core::json!({"synthetic:document:definition#pin": component.as_str()})
     );
-    assert_eq!(wire["retained_records"], serde_json::json!({}));
+    assert_eq!(wire["retained_records"], cadmpeg_core::json!({}));
     assert_eq!(
         serde_json::from_str::<SourceFidelity>(&text).unwrap(),
         fidelity
@@ -68,7 +69,7 @@ fn the_sidecar_writes_one_digest_per_file_before_its_records() {
 
 #[test]
 fn every_digest_field_but_the_content_digest_is_required() {
-    let wire = serde_json::to_value(fidelity()).unwrap();
+    let wire = json::to_value(fidelity()).unwrap();
     for field in [
         "decode_digest",
         "file_digests",
@@ -78,7 +79,7 @@ fn every_digest_field_but_the_content_digest_is_required() {
     ] {
         let mut without = wire.clone();
         without.as_object_mut().unwrap().remove(field);
-        let error = serde_json::from_value::<SourceFidelity>(without)
+        let error = json::from_value::<SourceFidelity>(without)
             .expect_err("a sidecar states every field")
             .to_string();
         assert!(error.contains(field), "{field}: {error}");
@@ -88,28 +89,25 @@ fn every_digest_field_but_the_content_digest_is_required() {
 #[test]
 fn a_content_digest_is_absent_where_none_was_taken() {
     let none = fidelity();
-    let wire = serde_json::to_value(&none).unwrap();
+    let wire = json::to_value(&none).unwrap();
     assert!(wire.get("content_digest").is_none(), "{wire}");
     assert_eq!(
-        serde_json::from_value::<SourceFidelity>(wire.clone()).unwrap(),
+        json::from_value::<SourceFidelity>(wire.clone()).unwrap(),
         none
     );
 
     let mut null = wire;
     null["content_digest"] = serde_json::Value::Null;
-    serde_json::from_value::<SourceFidelity>(null).expect_err("an absent digest is omitted");
+    json::from_value::<SourceFidelity>(null).expect_err("an absent digest is omitted");
 
     let mut taken = fidelity();
     taken.content_digest = Some(Sha256Digest::digest(b"document"));
-    let wire = serde_json::to_value(&taken).unwrap();
+    let wire = json::to_value(&taken).unwrap();
     assert_eq!(
         wire["content_digest"],
         Sha256Digest::digest(b"document").as_str()
     );
-    assert_eq!(
-        serde_json::from_value::<SourceFidelity>(wire).unwrap(),
-        taken
-    );
+    assert_eq!(json::from_value::<SourceFidelity>(wire).unwrap(), taken);
 }
 
 #[test]

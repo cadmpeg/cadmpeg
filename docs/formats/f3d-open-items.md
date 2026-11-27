@@ -20,6 +20,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-1063. MetaStream type of the `DesignConfigurationRoot` record
+
+**Question.** Which MetaStream type row registers the `DesignConfigurationRoot` record: its type GUID, base-type GUID, type version, and add-in name?
+
+**Known.** The record is an indexed Design record in a Design `BulkStream`, and `f3d.md` §1.2 gives its layout. Its three-digit class tag is the dynamic class tag `256 + k` of the type row at ordinal `k` whose entity list holds the record index, and the primary record index gives its extent. The key `DesignConfigurationRoot` identifies the record without its type row. The table id and row id name a row of a `DesignConfigurationTable` JSON document. The serializer trigger records of the configuration-table and configuration-rule documents register under type version `0`, add-in `Fusion`, and one shared base type (`f3d.md` §3.1, "Records of a sketch-and-extrude design").
+
+**Need.** A save of a design that has a configuration table with two rows, saved once with each row active. Compare the Design `MetaStream` type rows and find the row whose entity list holds the index of the record with the key `DesignConfigurationRoot`.
+
+**Note.** The writer registers the record under a type GUID it generates, the version-8 UUID `deterministic_guid("type", "DesignConfigurationRoot")` that `ROOT_TYPE` in `writer/generate/configuration_root.rs` holds, with the base type, type version and add-in of the serializer trigger records, and charges `export:record.residual-unavailable` naming the configuration whose row the record names, or the configuration table document whose stated row it names.
+
 ### DR-1014. Order of a body-override appearance and the body's material assignment
 
 **Question.** When a body has a material assignment that names one appearance and a body-override record that names a different appearance, which appearance does Fusion show on the body?
@@ -3845,17 +3855,17 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The decoder assumes the null names no item and reports `feature.timeline-null-slot-assumed`.
 
-### DR-530. Body frame of object-prelude occurrence snapshots
+### DR-530. Placement of object-prelude occurrences that no component path names
 
-**Question.** How does the closing placement of an object-prelude occurrence map the solved BREP body frame into its containing component?
+**Question.** What gives the local placement of an object-prelude occurrence, whose carrier GUID follows the ordinal directly, when no component-path record names it as its target?
 
-**Known.** An occurrence carrier can have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Its carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. A chain of three such carriers gives one solved body a Y axis with its XZ center at (-4.3,13.5) mm; the axis of the mating body is near (0,0) mm. A single such carrier rotates the X axis of a solved body to Z; the mating body has axis X. In both cases the CommonData stream has zero admitted component paths. A carrier with a two-byte prefix and a source marker is placed from its closing matrix under the assumption that the matrix is in the component frame. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
+**Known.** An occurrence carrier can have an object property prelude, a one-byte zero ordinal prefix, and one closing placement. Its carrier GUID follows the ordinal directly. The closing component reference precedes the placement flag. A component-path record that names such an occurrence as its target stores a world pose that differs from the closing matrix. In a stream with a component-path record, where every record is read as a local path form and names one unique expanded occurrence, the closing matrices of the object-prelude occurrences that no record names place their solved bodies coaxially with the bodies they mate with. A single such carrier in a stream with no component-path record rotates the X axis of a solved body to Z; the mating body has axis X. A carrier with a two-byte prefix and a source marker is placed from its closing matrix under the assumption that the matrix is in the component frame. The leading-source and closing-local placements in the F30 generation are separate fields in another complete envelope.
 
-**Need.** A controlled object-prelude save with a moved component, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement.
+**Need.** A controlled object-prelude save with a moved component, with and without a component-path record for it, its original and solved BREP frames, and an independent current placement. Determine the reference frame of the closing matrix and the body-frame correction before admitting that matrix as a body placement in a stream with no component-path record.
 
-**Conflict.** Treating the closing matrix of an object-prelude carrier whose GUID follows the ordinal directly as a solved-body local placement gives the two incorrect mating placements above.
+**Conflict.** Treating the closing matrix of an object-prelude carrier whose GUID follows the ordinal directly as a solved-body local placement, in a stream with no component-path record, gives the incorrect mating placement above.
 
-**Note.** The decoder retains the native carrier. A matrix-bearing object-prelude occurrence whose carrier GUID follows the ordinal directly requires an independently resolved component-path pose before neutral projection. Its unresolved subtree retains stored body frames and the existing `assembly.local-occurrence-unplaced` loss. Identity frames retain their definition frame. Ancestor placement must also resolve. An object-prelude occurrence whose two-byte prefix carries a source marker (flag 0 or 1) is placed from its closing matrix without that proof, with the assumption loss `assembly.local-occurrence-marked-prelude-assumed`.
+**Note.** The decoder retains the native carrier. It assumes the closing matrix is the local placement in the component frame of the owner, and records `assembly.local-occurrence-object-prelude-assumed`, only when the carrier's Design stream stores at least one component-path record, every component-path record of that stream is read as a local path form, every one names one unique expanded occurrence (a pose chosen among several instances does not), and none names the carrier as its target. Otherwise the matrix-bearing occurrence keeps its stored body frames and the existing `assembly.local-occurrence-unplaced` loss. The condition applies to each Design stream separately. Identity frames retain their definition frame. Ancestor placement must also resolve. An object-prelude occurrence whose two-byte prefix carries a source marker (flag 0 or 1) is placed from its closing matrix without that proof, with the assumption loss `assembly.local-occurrence-marked-prelude-assumed`. A carrier that an assembly alignment operand path names, with no frame sense, is placed from its closing matrix and carries the same assumption loss; an occurrence that an assembly operation places from an operation matrix does not.
 
 ### SM-03. ContourFlange travel, thickness side and rule entries
 

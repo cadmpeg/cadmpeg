@@ -83,7 +83,7 @@ pub(in crate::validate) fn check_position(
 /// unordered container: `After(m)` is then `m`'s own result (§5.3).
 fn unordered_feature<'a>(
     index: &DesignRecords<'a>,
-    position: PositionKey<'a>,
+    position: PositionKey<'_>,
 ) -> Option<&'a Feature> {
     let PositionKey::After(MemberKey::Feature(id)) = position else {
         return None;
@@ -103,7 +103,7 @@ fn has_own_result(
     feature: &Feature,
     configuration: Option<&str>,
 ) -> Option<bool> {
-    let operation = &index.definition_in(feature, configuration).operation;
+    let operation = &index.definition_in(feature, configuration, None).operation;
     if matches!(operation, FeatureOperation::Native { .. }) {
         return None;
     }
@@ -216,7 +216,7 @@ pub(super) fn check_evaluations(
         .max()
         .and_then(|&deepest| crate::validate::state_chain_refusal(max_chain_depth, deepest))
     {
-        return Err(refusal);
+        return Err(CodecError::ResourceLimit(refusal));
     }
     let mut keys = BTreeMap::new();
     for evaluation in &index.ir.design.evaluations {
@@ -334,7 +334,7 @@ pub(super) fn check_evaluations(
                 );
             } else if matches!(of, OfKey::Tool(_))
                 && super::ops::builds_tool_body(
-                    &index.definition_in(feature, configuration).operation,
+                    &index.definition_in(feature, configuration, None).operation,
                 ) == Some(false)
             {
                 super::error(
@@ -561,7 +561,7 @@ pub(super) fn is_stateless(
         return true;
     }
     index
-        .definition_in(feature, configuration)
+        .definition_in(feature, configuration, None)
         .operation
         .cannot_change_state()
 }
@@ -578,7 +578,7 @@ fn listed_bodies(definition: &ProductDefinition) -> impl Iterator<Item = &crate:
 
 pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
-    let moved = super::selections::moved_occurrences(ir);
+    let moved = index.moved_occurrences();
     let bodies: BTreeSet<&str> = ir
         .geometry
         .bodies
@@ -630,7 +630,7 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             }
             for path in current.poses.keys() {
                 *posed.entry(path).or_default() += 1;
-                check_path(index, Some(entity), path, &moved, entity, findings);
+                check_path(index, Some(entity), path, moved, entity, findings);
             }
         }
         for body in &scope.unproduced {
@@ -830,7 +830,7 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
             .as_ref()
             .map(ConfigurationId::as_str);
         let FeatureOperation::Stored { bodies, .. } =
-            &index.definition_in(feature, active).operation
+            &index.definition_in(feature, active, None).operation
         else {
             continue;
         };

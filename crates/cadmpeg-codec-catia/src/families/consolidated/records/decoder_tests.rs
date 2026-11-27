@@ -2,6 +2,7 @@
 //! Record-decoder tests for the `consolidated` family over synthetic byte fixtures.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_test_support::wire;
 
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -1596,8 +1597,8 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
 fn class23_scalar_deserialization_requires_nine_values() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
     for count in 0..=11 {
-        let wire = serde_json::json!({"kind": "scalar23", "operands": [1, 2, 3], "values": vec![0.0; count]});
-        let result = serde_json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
+        let wire = cadmpeg_core::json!({"kind": "scalar23", "operands": [1, 2, 3], "values": vec![0.0; count]});
+        let result = json::from_value::<ConsolidatedEdgeDefinitionData>(wire);
         assert_eq!(result.is_ok(), count == 9, "scalar23 {count}");
     }
 }

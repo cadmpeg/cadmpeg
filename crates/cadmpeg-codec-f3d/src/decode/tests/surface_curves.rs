@@ -12,7 +12,6 @@
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
 
@@ -143,7 +142,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less projection encode");
     let round_trip = F3dCodec
@@ -226,7 +225,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less early-close projection encode");
     let round_trip = F3dCodec
@@ -330,7 +329,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less three-surface intersection encode");
     let round_trip = F3dCodec
@@ -448,7 +447,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
         let round_trip = F3dCodec
@@ -566,7 +565,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .unwrap_or_else(|error| panic!("{name} source-less encode failed: {error}"));
         let round_trip = F3dCodec

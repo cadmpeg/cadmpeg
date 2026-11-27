@@ -10,9 +10,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::declared_measures::{
     DeclaredMeasure, DeclaredQuantity, DeclaredTarget, MeasureBasis,
 };
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
+use cadmpeg_ir::{CadIr, DecodeFailure};
 
-use crate::test_support::exchange::decode_inline;
+use crate::test_support::exchange::{decode_inline, decode_inline_with_options};
 use crate::test_support::validated_part::{part, validation_property, Item, PartBody};
 use crate::StepCodec;
 
@@ -56,6 +57,22 @@ fn scalar(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
 fn point(x: f64, y: f64, z: f64) -> cadmpeg_ir::features::geometry::FinitePoint3 {
     cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, y, z))
         .unwrap()
+}
+
+/// The sorted record ids that the `record.unreadable` losses name.
+/// The error text of each `record.unreadable` loss, sorted.
+fn given_up_errors(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
+    let mut errors = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .filter_map(|loss| loss.message.split_once(": "))
+        .filter_map(|(_, error)| error.split("; dropped=").next())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    errors.sort();
+    errors
 }
 
 fn unsupported_items(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<String> {
@@ -388,6 +405,17 @@ fn item_names_select_the_class_of_each_quantity() {
             .map(|item| format!("geometric validation property #1000 has unsupported item #{item}"))
             .collect::<Vec<_>>()
     );
+    // Each unsupported item is dropped: the measures are not stated and the
+    // points are not model points.
+    assert_eq!(
+        given_up_errors(&result),
+        (first + 3..first + 7)
+            .map(|item| format!(
+                "malformed container: step/validation.item-unsupported: \
+                 geometric validation property #1000 has unsupported item #{item}"
+            ))
+            .collect::<Vec<_>>()
+    );
     for id in first..first + 7 {
         assert!(
             !result
@@ -399,6 +427,45 @@ fn item_names_select_the_class_of_each_quantity() {
             "validation point #{id} is a model point"
         );
     }
+}
+
+#[test]
+fn a_pinned_decode_refuses_an_unsupported_validation_item() {
+    let part = part(&[CUBE]);
+    let validation = validation_property(
+        &part,
+        1000,
+        part.shape,
+        &[Item::Length("curve length measure", 0.0)],
+    );
+    let records = format!("{}{validation}", part.records);
+    let item = records
+        .find("#1007=")
+        .map(|start| &records[start..])
+        .and_then(|rest| rest.find(';').map(|end| &rest[..=end]))
+        .expect("the item statement");
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let error = decode_inline_with_options(&records, &options)
+        .expect_err("a pinned decode refuses the dropped item");
+    let DecodeFailure::StrictRejected { rejection } = error else {
+        panic!("a strict rejection");
+    };
+    let loss = rejection.loss();
+    assert_eq!(loss.code, record_unreadable_kind());
+    assert!(
+        loss.message
+            .starts_with("part data_record stream=\"\" offset=")
+            && loss
+                .message
+                .contains(&format!(" length={} record=", item.len()))
+            && loss
+                .message
+                .contains(": step/validation.item-unsupported: ")
+            && loss.message.ends_with("; dropped=[]"),
+        "{}",
+        loss.message
+    );
 }
 
 #[test]

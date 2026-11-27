@@ -68,6 +68,7 @@
 //!   compared values, so it cannot agree across platforms either. See
 //!   [`fidelity_snapshot`].
 
+use cadmpeg_core::serde_erase::json;
 use std::path::{Path, PathBuf};
 
 use cadmpeg_ir::compare::values_agree;
@@ -307,10 +308,7 @@ impl Harness {
             !branches.is_empty(),
             "no golden branches; the harness would pass vacuously"
         );
-        let workers = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .min(4)
-            .min(inputs.len().max(1));
+        let workers = cadmpeg_core::parallelism().min(4).min(inputs.len().max(1));
         if workers <= 1 {
             for (name, bytes) in inputs {
                 for branch in branches {
@@ -415,10 +413,7 @@ impl Harness {
                 Some(failure)
             }
         };
-        let workers = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZeroUsize::get)
-            .min(4)
-            .min(inputs.len().max(1));
+        let workers = cadmpeg_core::parallelism().min(4).min(inputs.len().max(1));
         let mut failures: Vec<String> = if workers <= 1 {
             inputs
                 .iter()
@@ -582,17 +577,30 @@ pub const NATIVE_ELISION_KEY: &str = "__elided";
 pub const NATIVE_ELISION_MARKER: &str =
     "native arena values are omitted; the records are pinned by a digest over their canonical JSON";
 
-/// Serializes decode-time source fidelity for a snapshot, with
-/// [`ELIDED_DIGEST`] in place of the content digest and of each codec digest
-/// whose key ends in `_local_sha256`: they digest decoded content, so they
-/// differ across platforms. Digests over source bytes stay pinned.
+/// Serializes the source fidelity of a CADIR write of `ir` for a snapshot:
+/// `fidelity` with the annotations of the written document (§3.2, §3.4), and
+/// with [`ELIDED_DIGEST`] in place of the content digest and of each codec
+/// digest whose key ends in `_local_sha256`: they digest decoded content, so
+/// they differ across platforms. Digests over source bytes stay pinned.
 ///
 /// # Panics
 ///
-/// The fidelity does not serialize.
+/// The CADIR writer refuses `ir`, or the fidelity does not serialize.
 #[must_use]
-pub fn fidelity_snapshot(fidelity: &cadmpeg_ir::SourceFidelity) -> serde_json::Value {
-    let mut value = serde_json::to_value(fidelity).expect("serialize source_fidelity");
+pub fn fidelity_snapshot(
+    ir: &cadmpeg_ir::CadIr,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+) -> serde_json::Value {
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
+    let plan = CadirEncoder
+        .plan(EncodeInput::new(ir, Some(fidelity)))
+        .expect("the CADIR writer drops what it cannot write and does not refuse");
+    let mut value = json::to_value(fidelity).expect("serialize source_fidelity");
+    value["annotations"] = json::to_value(
+        plan.annotations()
+            .expect("a CADIR write with a fidelity states its annotations"),
+    )
+    .expect("serialize annotations");
     if let Some(digest) = value.get_mut("content_digest") {
         *digest = ELIDED_DIGEST.into();
     }
@@ -630,6 +638,7 @@ pub fn snapshot_text(value: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::serde_erase::json;
     use std::cell::Cell;
     use std::path::PathBuf;
     use std::sync::{Mutex, MutexGuard};
@@ -747,10 +756,10 @@ mod tests {
     fn value_display_preserves_pretty_snapshot_bytes() {
         for value in [
             serde_json::Value::Null,
-            serde_json::json!({"z": [1.25, true, null], "a": "é\n\""}),
+            cadmpeg_core::json!({"z": [1.25, true, null], "a": "é\n\""}),
         ] {
             let expected =
-                serde_json::to_string_pretty(&value).expect("pretty JSON for the fixture") + "\n";
+                json::to_string_pretty(&value).expect("pretty JSON for the fixture") + "\n";
             assert_eq!(snapshot_text(&value), expected);
         }
     }
@@ -763,7 +772,7 @@ mod tests {
 
     #[test]
     fn snapshot_text_writes_negative_zero_as_the_writer_does() {
-        let value = serde_json::json!({"x": -0.0, "y": [-0.0, -1.5], "n": -0});
+        let value = cadmpeg_core::json!({"x": -0.0, "y": [-0.0, -1.5], "n": -0});
         assert_eq!(
             snapshot_text(&value),
             "{\n  \"n\": 0,\n  \"x\": 0.0,\n  \"y\": [\n    0.0,\n    -1.5\n  ]\n}\n"

@@ -41,13 +41,14 @@ impl<'de> serde::Deserialize<'de> for PayloadText<String> {
 #[cfg(test)]
 mod tests {
     use super::PayloadText;
+    use cadmpeg_core::serde_erase::json;
 
     #[test]
     fn payload_text_preserves_wire_and_owned_transfer() {
         let text = " ×Name42";
         let value = PayloadText::new(text).unwrap().into_owned();
-        let json = serde_json::to_string(&value).unwrap();
-        assert_eq!(json, serde_json::to_string(text).unwrap());
+        let json = json::to_string(&value).unwrap();
+        assert_eq!(json, json::to_string(text).unwrap());
         assert_eq!(
             serde_json::from_str::<PayloadText<String>>(&json).unwrap(),
             value
@@ -58,7 +59,7 @@ mod tests {
     fn payload_text_rejects_empty_and_control() {
         for text in ["", "\0", "\n", "\t", "\u{7f}"] {
             assert!(PayloadText::new(text).is_err());
-            let json = serde_json::to_string(text).unwrap();
+            let json = json::to_string(text).unwrap();
             let error = serde_json::from_str::<PayloadText<String>>(&json).unwrap_err();
             assert!(error.to_string().contains("value"));
         }
@@ -72,12 +73,12 @@ mod tests {
             assert_eq!(borrowed.as_str(), text);
             assert_eq!(owned.as_str(), text);
             assert_eq!(
-                serde_json::to_string(&borrowed).unwrap(),
-                serde_json::to_string(text).unwrap()
+                json::to_string(&borrowed).unwrap(),
+                json::to_string(text).unwrap()
             );
             assert_eq!(
-                serde_json::to_string(&owned).unwrap(),
-                serde_json::to_string(text).unwrap()
+                json::to_string(&owned).unwrap(),
+                json::to_string(text).unwrap()
             );
         }
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Component-path world poses applied to expanded nested occurrences.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem::size_of;
 
@@ -1216,13 +1217,13 @@ fn a_proven_root_instance_element_selects_the_saved_world_pose() {
 }
 
 fn object_snapshot(carrier: &mut DesignComponentOccurrence) {
-    let mut wire = serde_json::to_value(&*carrier).unwrap();
-    wire["attributed"] = serde_json::json!({
+    let mut wire = json::to_value(&*carrier).unwrap();
+    wire["attributed"] = cadmpeg_core::json!({
         "attributes": [], "property_names": ["Transform"],
         "persistent_key": "0_100", "ordinal_prefix": 0,
         "path_discriminator": 0, "key_record_index": 0, "key_segment_index": 0
     });
-    *carrier = serde_json::from_value(wire).unwrap();
+    *carrier = json::from_value(wire).unwrap();
 }
 
 #[test]
@@ -1256,6 +1257,251 @@ fn an_object_snapshot_with_an_unproven_body_frame_keeps_its_subtree_native() {
         .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
 }
 
+fn leaf_path() -> DesignComponentPath {
+    path(
+        902,
+        &[
+            (159, Kind::Component),
+            (100, Kind::Occurrence),
+            (SUB_MODULE, Kind::Occurrence),
+            (LEAF, Kind::Occurrence),
+        ],
+        pose(EYE, [0.5, 0.25, 2.0]),
+    )
+}
+
+fn snapshot_of_the_module(carriers: &mut [DesignComponentOccurrence]) {
+    object_snapshot(
+        carriers
+            .iter_mut()
+            .find(|carrier| carrier.record_index == 100)
+            .unwrap(),
+    );
+}
+
+#[test]
+fn an_object_snapshot_that_no_path_names_keeps_its_closing_matrix_in_a_stream_whose_paths_resolve()
+{
+    let (original, components) = fixture(1);
+    let paths = [leaf_path()];
+    let expected = project(&original, &components, &paths);
+    let mut carriers = original.clone();
+    snapshot_of_the_module(&mut carriers);
+    let projection = project(&carriers, &components, &paths);
+    for chain in [&[100][..], &[100, u32::try_from(SUB_MODULE).unwrap()]] {
+        let id = instance(&carriers, chain);
+        assert_close(world(&projection, &id), world(&expected, &id));
+    }
+    let leaf = instance(
+        &carriers,
+        &[
+            100,
+            u32::try_from(SUB_MODULE).unwrap(),
+            u32::try_from(LEAF).unwrap(),
+        ],
+    );
+    assert_close(
+        world(&projection, &leaf),
+        millimetres(pose(EYE, [0.5, 0.25, 2.0])),
+    );
+    assert!(!has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrenceObjectPreludeAssumed
+    ));
+}
+
+#[test]
+fn an_object_snapshot_stays_native_when_a_path_of_its_stream_is_not_read_or_not_applied() {
+    let (original, mut components) = fixture(1);
+    let mut carriers = original.clone();
+    snapshot_of_the_module(&mut carriers);
+    let module = instance(&carriers, &[100]);
+    let unplaced = |projection: &super::super::LocalComponentProjection| {
+        projection
+            .occurrences
+            .iter()
+            .all(|occurrence| occurrence.id != module)
+            && has(projection, F3dLossCode::LocalOccurrenceUnplaced)
+            && !has(projection, F3dLossCode::LocalOccurrenceObjectPreludeAssumed)
+    };
+    // A path record of the stream that no admitted form reads.
+    components.get_mut(STREAM).unwrap().unadmitted_paths = 1;
+    assert!(unplaced(&project(&carriers, &components, &[leaf_path()])));
+    components.get_mut(STREAM).unwrap().unadmitted_paths = 0;
+    // A path that names no expanded occurrence.
+    let mut stray = leaf_path();
+    stray.elements[0].record_index = 902;
+    assert!(unplaced(&project(&carriers, &components, &[stray])));
+    // A stream without any path record.
+    assert!(unplaced(&project(&carriers, &components, &[])));
+}
+
+fn module_is_unplaced(
+    projection: &super::super::LocalComponentProjection,
+    carriers: &[DesignComponentOccurrence],
+) -> bool {
+    let module = instance(carriers, &[100]);
+    projection
+        .occurrences
+        .iter()
+        .all(|occurrence| occurrence.id != module)
+        && has(projection, F3dLossCode::LocalOccurrenceUnplaced)
+        && !has(projection, F3dLossCode::LocalOccurrenceObjectPreludeAssumed)
+}
+
+#[test]
+fn an_unposed_ancestor_keeps_its_nested_object_snapshot_native() {
+    let (mut carriers, components) = fixture(2);
+    for record in [SUB_MODULE, LEAF] {
+        object_snapshot(
+            carriers
+                .iter_mut()
+                .find(|carrier| u64::from(carrier.record_index) == record)
+                .unwrap(),
+        );
+    }
+    let sub_pose = pose(EYE, [2.0, 0.0, 1.0]);
+    let projection = project(
+        &carriers,
+        &components,
+        &[path(
+            901,
+            &[
+                (SUB_COMPONENT, Kind::Component),
+                (SUB_MODULE, Kind::Occurrence),
+                (100, Kind::Occurrence),
+            ],
+            sub_pose,
+        )],
+    );
+    let sub = u32::try_from(SUB_MODULE).unwrap();
+    let leaf = u32::try_from(LEAF).unwrap();
+    assert_close(
+        world(&projection, &instance(&carriers, &[100, sub])),
+        millimetres(sub_pose),
+    );
+    let present = |chain: &[u32]| {
+        let id = instance(&carriers, chain);
+        projection
+            .occurrences
+            .iter()
+            .any(|occurrence| occurrence.id == id)
+    };
+    // The posed instance keeps its snapshot leaf, placed from its matrix.
+    assert!(present(&[100, sub, leaf]));
+    // The path names the carrier as its target but not this instance, so the
+    // instance and the leaf below it have no proof.
+    assert!(!present(&[400, sub]));
+    assert!(!present(&[400, sub, leaf]));
+    assert!(has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+}
+
+#[test]
+fn a_disagreeing_path_leaves_the_stream_without_an_assumption() {
+    let (original, components) = fixture(1);
+    let mut carriers = original.clone();
+    snapshot_of_the_module(&mut carriers);
+    let mut other = leaf_path();
+    other.id = format!("{STREAM}:design-component-path#903");
+    other.carrier_record_index = 903;
+    other.transform = Some(ComponentPathTransform::try_from(pose(EYE, [9.0, 9.0, 9.0])).unwrap());
+    let projection = project(&carriers, &components, &[leaf_path(), other]);
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseDisagrees
+    ));
+    assert!(module_is_unplaced(&projection, &carriers));
+}
+
+#[test]
+fn a_pose_inferred_among_several_instances_gives_no_assumption() {
+    let (mut carriers, components) = fixture(2);
+    object_snapshot(
+        carriers
+            .iter_mut()
+            .find(|carrier| carrier.record_index == 300)
+            .unwrap(),
+    );
+    let unplaced = project(&carriers, &components, &[]);
+    let first = pose_in(&unplaced, &carriers, &[100], leaf_local());
+    let second = pose_in(&unplaced, &carriers, &[400], leaf_local());
+    let projection = project(
+        &carriers,
+        &components,
+        &[bare(900, 200, second), bare(901, 200, first)],
+    );
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseInferred
+    ));
+    assert!(has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrenceObjectPreludeAssumed
+    ));
+}
+
+#[test]
+fn another_stream_does_not_decide_the_assumption_and_is_not_decided_by_it() {
+    let other = "f3d:Other/BulkStream.dat";
+    let (original, mut components) = fixture(1);
+    let mut carriers = original.clone();
+    snapshot_of_the_module(&mut carriers);
+    let paths = [leaf_path()];
+    // A second stream with a path record that no form reads, and a path that
+    // names nothing, leaves this stream's assumption in place.
+    components.insert(
+        other.to_owned(),
+        StreamComponents {
+            unadmitted_paths: 1,
+            ..StreamComponents::default()
+        },
+    );
+    let mut stray = leaf_path();
+    stray.id = format!("{other}:design-component-path#904");
+    stray.elements[0].record_index = 902;
+    let projection = project(&carriers, &components, &[leaf_path(), stray]);
+    assert!(!has(&projection, F3dLossCode::LocalOccurrenceUnplaced));
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrenceObjectPreludeAssumed
+    ));
+    // The same stray path in this stream removes the assumption.
+    let mut inside = leaf_path();
+    inside.id = format!("{STREAM}:design-component-path#905");
+    inside.elements[0].record_index = 902;
+    assert!(module_is_unplaced(
+        &project(&carriers, &components, &[paths[0].clone(), inside]),
+        &carriers
+    ));
+}
+
+#[test]
+fn a_current_pose_path_naming_an_unplaced_carrier_removes_the_assumption() {
+    let (mut carriers, components) = fixture(2);
+    snapshot_of_the_module(&mut carriers);
+    // The second root-contained module has no component binding, so it is not
+    // placed, and its current-pose path resolves to no expanded occurrence.
+    let unbound = carriers
+        .iter_mut()
+        .find(|carrier| carrier.record_index == 400)
+        .unwrap();
+    unbound.component_record_index = 999;
+    unbound.current_pose = Some(crate::records::xref::XrefCurrentPose {
+        carrier_record_index: 903,
+        frame_bytes: Vec::new().into(),
+        transform: Some(pose(EYE, [1.0, 0.0, 0.0]).try_into().unwrap()),
+    });
+    let unbound_path = path(
+        903,
+        &[(999, Kind::Component), (400, Kind::Occurrence)],
+        pose(EYE, [1.0, 0.0, 0.0]),
+    );
+    let projection = project(&carriers, &components, &[leaf_path(), unbound_path]);
+    assert!(module_is_unplaced(&projection, &carriers));
+}
+
 #[test]
 fn an_object_snapshot_with_an_explicit_source_frame_uses_its_closing_local_pose() {
     let (original, components) = fixture(1);
@@ -1267,13 +1513,13 @@ fn an_object_snapshot_with_an_explicit_source_frame_uses_its_closing_local_pose(
             .find(|carrier| carrier.record_index == 100)
             .unwrap();
         object_snapshot(carrier);
-        let mut wire = serde_json::to_value(&*carrier).unwrap();
+        let mut wire = json::to_value(&*carrier).unwrap();
         wire["attributed"]["guid_marker"] = source_flag.into();
         if source_flag == 0 {
             wire["attributed"]["source_transform"] =
-                serde_json::to_value(pose(EYE, [7.0, 8.0, 9.0])).unwrap();
+                json::to_value(pose(EYE, [7.0, 8.0, 9.0])).unwrap();
         }
-        *carrier = serde_json::from_value(wire).unwrap();
+        *carrier = json::from_value(wire).unwrap();
         let projection = project(&carriers, &components, &[]);
         for chain in [
             &[100][..],
@@ -1378,4 +1624,151 @@ fn a_world_path_proves_one_expanded_object_snapshot() {
         .occurrences
         .iter()
         .all(|occurrence| occurrence.id != unresolved));
+}
+
+fn project_with_scopes(
+    carriers: &[DesignComponentOccurrence],
+    components: &BTreeMap<String, StreamComponents>,
+    paths: &[DesignComponentPath],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> super::super::LocalComponentProjection {
+    let empty = BTreeSet::new();
+    super::super::project_local_components(&super::super::LocalComponentSources {
+        hidden_bodies: None,
+        scopes,
+        occurrences: carriers,
+        paths,
+        components,
+        body_bindings: &[],
+        bodies: Some(&empty),
+        limits: cadmpeg_core::decode::ResourceLimits::default(),
+    })
+    .unwrap()
+}
+
+/// A `Qualified`-form assembly alignment without a frame sense whose two
+/// operand occurrence paths name `occurrence_guid`.
+fn qualifier_scope(occurrence_guid: &str) -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::assembly::{
+        DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+        DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier,
+    };
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayload,
+    };
+    use crate::records::identity::Located;
+    let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
+        reference_record_index: index,
+        reference_offset: 0,
+        transform: EYE_4.try_into().unwrap(),
+        transform_offset: 0,
+    });
+    let qualifiers = [11_u32, 21].map(|index| {
+        let link = DesignAssemblyOperandPathLink {
+            locator_reference_offset: 0,
+            locator_record_index: index - 1,
+            locator_class_tag: "337".to_owned().try_into().unwrap(),
+            locator_byte_offset: 0,
+            locator_scope_reference_offset: 0,
+            wrapper_record_index: index + 1,
+            wrapper_reference_offset: 0,
+            wrapper_class_tag: "341".to_owned().try_into().unwrap(),
+            wrapper_byte_offset: 0,
+            path_reference_offset: 0,
+        };
+        let occurrence = Located {
+            value: guid(occurrence_guid).into(),
+            offset: 200,
+        };
+        let identity = (0..4)
+            .map(|ordinal| Located {
+                value: guid("22222222-2222-2222-2222-22222222222b"),
+                offset: 300 + ordinal,
+            })
+            .collect();
+        let path = DesignAssemblyOperandPath::try_new(
+            link,
+            index,
+            "386".to_owned().try_into().unwrap(),
+            100,
+            vec![occurrence],
+            identity,
+        )
+        .unwrap();
+        DesignAssemblyOperandQualifier::OccurrencePath { path }
+    });
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#3"),
+        DesignFeatureKind::Assemble,
+        3,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.payload = DesignScopePayload::Assemble(Some(
+                DesignAssemblyAlignment::try_new(
+                    0.0,
+                    [0.0; 3],
+                    Vec::new(),
+                    Some(DesignAssemblyAlignmentForm::qualified(frames, qualifiers)),
+                )
+                .unwrap(),
+            ));
+        })
+        .unwrap();
+    scope
+}
+
+const EYE_4: [[f64; 4]; 4] = [
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+    [0.0, 0.0, 0.0, 1.0],
+];
+
+/// Guid of the module carrier, record 100.
+const MODULE_GUID: &str = "00000000-0000-4000-8000-000000000001";
+
+#[test]
+fn a_carrier_placed_by_an_operand_qualifier_still_reports_the_object_prelude_assumption() {
+    let (mut carriers, components) = fixture(1);
+    snapshot_of_the_module(&mut carriers);
+    let paths = [leaf_path()];
+    let baseline = project(&carriers, &components, &paths);
+    let projection = project_with_scopes(
+        &carriers,
+        &components,
+        &paths,
+        &[qualifier_scope(MODULE_GUID)],
+    );
+    let module = instance(&carriers, &[100]);
+    assert_close(world(&projection, &module), world(&baseline, &module));
+    let code = F3dLossCode::LocalOccurrenceObjectPreludeAssumed;
+    assert!(has(&baseline, code));
+    assert!(message(&baseline, code).starts_with("1 local occurrence(s)"));
+    assert_eq!(message(&projection, code), message(&baseline, code));
+}
+
+#[test]
+fn a_marked_carrier_placed_by_an_operand_qualifier_still_reports_the_marked_prelude_assumption() {
+    let (mut carriers, components) = fixture(1);
+    snapshot_of_the_module(&mut carriers);
+    let carrier = carriers
+        .iter_mut()
+        .find(|carrier| carrier.record_index == 100)
+        .unwrap();
+    let mut wire = cadmpeg_core::serde_erase::to_json_value(&*carrier).unwrap();
+    wire["attributed"]["guid_marker"] = 1.into();
+    *carrier = cadmpeg_core::serde_erase::from_json_value(&wire).unwrap();
+    let paths = [leaf_path()];
+    let baseline = project(&carriers, &components, &paths);
+    let projection = project_with_scopes(
+        &carriers,
+        &components,
+        &paths,
+        &[qualifier_scope(MODULE_GUID)],
+    );
+    let code = F3dLossCode::LocalOccurrenceMarkedPreludeAssumed;
+    assert!(has(&baseline, code));
+    assert!(message(&baseline, code).starts_with("1 local occurrence(s)"));
+    assert_eq!(message(&projection, code), message(&baseline, code));
 }

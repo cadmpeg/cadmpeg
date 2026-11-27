@@ -117,8 +117,13 @@ fn a_triangle_within_the_chord_limit_stays_whole() {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let index = ModelIndex::new_model_only(&ir);
     let work = WorkBudget::new(1 << 20);
-    let carrier =
-        crate::surface::Carrier::new(&index, &work, &ir.geometry.faces[0].surface).unwrap();
+    let carrier = crate::surface::Carrier::new(
+        &index,
+        &work,
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &ir.geometry.faces[0].surface,
+    )
+    .unwrap();
     let uv = vec![[0.5, 0.5], [0.504, 0.5], [0.5, 0.504]];
     let mut points = Vec::new();
     let mut normals = Vec::new();

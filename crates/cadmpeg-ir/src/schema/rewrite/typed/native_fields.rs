@@ -14,16 +14,18 @@ pub fn rewrite_field<Owner, Field: RewriteIdentities>(
     map: &mut IdentityMap<'_>,
     _owner_field: fn(&Owner) -> Option<&Field>,
 ) -> Result<(), CodecError> {
-    let Value::Object(fields) = value else {
-        return Ok(());
-    };
-
-    if let Some(value) = fields.get_mut(name) {
-        if !value.is_null() {
-            Field::rewrite_native_value(ctx, value, map)?;
-        }
+    match stated_field(value, name) {
+        Some(value) => Field::rewrite_native_value(ctx, value, map),
+        None => Ok(()),
     }
-    Ok(())
+}
+
+/// The member `name` of the object `value`, where it states a value.
+fn stated_field<'v>(value: &'v mut Value, name: &str) -> Option<&'v mut Value> {
+    let Value::Object(fields) = value else {
+        return None;
+    };
+    fields.get_mut(name).filter(|value| !value.is_null())
 }
 
 /// Rewrite an owner-declared native identity field without touching display text.

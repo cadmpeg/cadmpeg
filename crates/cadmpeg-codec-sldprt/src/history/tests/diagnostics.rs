@@ -19,7 +19,9 @@ fn duplicate_ids_retain_spans_in_diagnostics() {
     .unwrap();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
-    let histories = crate::history::histories(&ctx, &scan, &mut annotations, &mut losses).unwrap();
+    let histories =
+        crate::history::histories(&ctx, &scan, &mut annotations, &mut losses, &mut Vec::new())
+            .unwrap();
     assert_eq!(histories.len(), 1);
     let properties = &histories[0].properties;
     let ids = properties
@@ -57,7 +59,9 @@ fn unsaved_dependencies_carry_an_inferred_marker() {
     .unwrap();
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
-    let histories = crate::history::histories(&ctx, &scan, &mut annotations, &mut losses).unwrap();
+    let histories =
+        crate::history::histories(&ctx, &scan, &mut annotations, &mut losses, &mut Vec::new())
+            .unwrap();
     let projection = crate::history::project::project_feature_model(&histories).unwrap();
     let feature = projection
         .features

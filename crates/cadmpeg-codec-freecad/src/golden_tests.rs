@@ -10,7 +10,7 @@
 //! `tests/golden/decode/` pins the decoded document: the IR, the decode
 //! report's losses, and source fidelity.
 
-use cadmpeg_test_support::EditableDecodeResult;
+use cadmpeg_core::serde_erase::json;
 
 use std::collections::BTreeSet;
 use std::io::Cursor;
@@ -18,7 +18,7 @@ use std::path::Path;
 
 use cadmpeg_codec_step::StepCodec;
 use cadmpeg_core::decode::InspectOptions;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::compare::texts_agree;
 use cadmpeg_test_support::golden::{
@@ -61,8 +61,8 @@ fn branches() -> [Branch; 3] {
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value =
         match FcstdCodec.inspect(&mut Cursor::new(bytes.to_vec()), &InspectOptions::default()) {
-            Ok(summary) => serde_json::to_value(&summary).expect("serialize inspect summary"),
-            Err(error) => serde_json::json!({ "inspect_error": error.to_string() }),
+            Ok(summary) => json::to_value(&summary).expect("serialize inspect summary"),
+            Err(error) => cadmpeg_core::json!({ "inspect_error": error.to_string() }),
         };
     snapshot_text(&value)
 }
@@ -75,21 +75,34 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 /// descends only what the snapshot keeps. The digest reads the typed arenas, so
 /// it is unaffected by either step.
 fn decode_snapshot(bytes: &[u8]) -> String {
-    let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-    {
+    decode_snapshot_from(crate::test_support::cached_full_decode(bytes))
+}
+
+fn decode_snapshot_uncached(bytes: &[u8]) -> String {
+    let fresh = FcstdCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .map(std::sync::Arc::new)
+        .map_err(|error| error.to_string());
+    decode_snapshot_from(fresh)
+}
+
+fn decode_snapshot_from(
+    decoded: Result<std::sync::Arc<cadmpeg_ir::codec::DecodeResult>, String>,
+) -> String {
+    let value = match decoded {
         Ok(result) => {
-            let mut ir = serde_json::to_value(result.ir()).expect("serialize ir");
+            let mut ir = json::to_value(result.ir()).expect("serialize ir");
             if let Some(native) = ir.get_mut("native") {
                 *native = elided_native(&result.ir().native);
             }
             elide_authoring_paths(&mut ir);
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "ir": ir,
-                "report": serde_json::to_value(result.report()).expect("serialize report"),
-                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.source_fidelity()),
+                "report": json::to_value(result.report()).expect("serialize report"),
+                "source_fidelity": cadmpeg_test_support::golden::fidelity_snapshot(result.ir(), result.source_fidelity()),
             })
         }
-        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+        Err(error) => cadmpeg_core::json!({ "decode_error": error }),
     };
     snapshot_text(&value)
 }
@@ -169,14 +182,14 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
         let mut namespace_digests = serde_json::Map::new();
         let mut namespace_values = serde_json::Map::new();
         for (arena, records) in namespace.arenas() {
-            namespace_counts.insert(arena.to_string(), serde_json::json!(records.len()));
+            namespace_counts.insert(arena.to_string(), cadmpeg_core::json!(records.len()));
             if matches!(arena.as_str(), "attachments" | "product_nodes") && !records.is_empty() {
-                namespace_values.insert(arena.to_string(), serde_json::json!(records));
+                namespace_values.insert(arena.to_string(), cadmpeg_core::json!(records));
                 continue;
             }
             namespace_digests.insert(
                 arena.to_string(),
-                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
+                cadmpeg_core::json!(cadmpeg_ir::hash::canonical_json_sha256(
                     &cadmpeg_core::decode::test_support::service_decode_context(),
                     records
                 )
@@ -192,7 +205,7 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
     let mut block = serde_json::Map::new();
     block.insert(
         NATIVE_ELISION_KEY.to_owned(),
-        serde_json::json!(if values.is_empty() {
+        cadmpeg_core::json!(if values.is_empty() {
             NATIVE_ELISION_MARKER
         } else {
             "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
@@ -216,38 +229,33 @@ fn elided_native(native: &cadmpeg_ir::Native) -> serde_json::Value {
 /// Panics when a produced archive is not a readable ZIP, or when two runs in one
 /// process produce different bytes.
 fn encode_snapshot(bytes: &[u8]) -> String {
-    let value = match encode_once(bytes) {
+    let value = match encode_from_cached(bytes) {
         Ok((report, archive)) => {
-            let (_, second) = encode_once(bytes).expect("a second encode of the same input");
+            let (_, second) = encode_from_cached(bytes).expect("a second encode of the same input");
             assert!(
                 archive == second,
                 "the FCStd writer produced different bytes for the same input in one process"
             );
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "entries": archive_entries(&archive),
-                "report": serde_json::to_value(&report).expect("serialize export report"),
+                "report": json::to_value(&report).expect("serialize export report"),
             })
         }
-        Err(error) => serde_json::json!({ "encode_error": error }),
+        Err(error) => cadmpeg_core::json!({ "encode_error": error }),
     };
     snapshot_text(&value)
 }
 
-/// Decodes `bytes` and writes the document back, returning the export report and
-/// the produced archive, or the first refusal as text.
-fn encode_once(
+/// Encodes the cached decoded document for `bytes`, returning the export report
+/// and the produced archive, or the first refusal as text.
+fn encode_from_cached(
     bytes: &[u8],
 ) -> Result<(cadmpeg_ir::report::export::ExportReport, Vec<u8>), String> {
-    let decoded = EditableDecodeResult::from(
-        FcstdCodec
-            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-            .map_err(|error| error.to_string())?,
-    );
+    let decoded = crate::test_support::cached_full_decode(bytes)?;
     let mut produced = Vec::new();
     let report = Encoder::plan(
         &FcstdCodec,
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut produced))
     .map_err(|error| error.to_string())?;
@@ -270,7 +278,7 @@ fn archive_entries(archive: &[u8]) -> serde_json::Value {
             let mut payload = Vec::new();
             std::io::Read::read_to_end(&mut entry, &mut payload)
                 .unwrap_or_else(|error| panic!("inflate {name}: {error}"));
-            serde_json::json!({
+            cadmpeg_core::json!({
                 "name": name,
                 "payload_len": payload.len(),
                 "payload_sha256": cadmpeg_ir::hash::sha256_hex(&payload),
@@ -294,22 +302,26 @@ fn golden_inspect_is_deterministic() {
 
 macro_rules! golden_determinism {
     ($($name:ident: $partition:expr, $kind:literal, $snapshot:ident),+ $(,)?) => {
-        $(#[test] fn $name() { check_determinism_partition($partition, Branch::named($kind, $snapshot)); })+
+        $(#[test] fn $name() { check_determinism_partition($partition, $kind, $snapshot); })+
     };
 }
 
 golden_determinism! {
-    golden_decode_is_deterministic_0: 0, "decode", decode_snapshot,
-    golden_decode_is_deterministic_1: 1, "decode", decode_snapshot,
-    golden_decode_is_deterministic_2: 2, "decode", decode_snapshot,
-    golden_decode_is_deterministic_3: 3, "decode", decode_snapshot,
+    golden_decode_is_deterministic_0: 0, "decode", decode_snapshot_uncached,
+    golden_decode_is_deterministic_1: 1, "decode", decode_snapshot_uncached,
+    golden_decode_is_deterministic_2: 2, "decode", decode_snapshot_uncached,
+    golden_decode_is_deterministic_3: 3, "decode", decode_snapshot_uncached,
     golden_encode_is_deterministic_0: 0, "encode", encode_snapshot,
     golden_encode_is_deterministic_1: 1, "encode", encode_snapshot,
     golden_encode_is_deterministic_2: 2, "encode", encode_snapshot,
     golden_encode_is_deterministic_3: 3, "encode", encode_snapshot,
 }
 
-fn check_determinism_partition(partition: usize, branch: Branch) {
+fn check_determinism_partition(
+    partition: usize,
+    kind: &'static str,
+    snapshot: fn(&[u8]) -> String,
+) {
     let harness = harness();
     let inputs: Vec<_> = harness
         .fixture_inputs()
@@ -317,7 +329,18 @@ fn check_determinism_partition(partition: usize, branch: Branch) {
         .enumerate()
         .filter_map(|(index, input)| (index % 4 == partition).then_some(input))
         .collect();
-    harness.check_determinism_inputs(&inputs, &[branch]);
+    if kind == "decode" {
+        for (name, bytes) in &inputs {
+            let first = decode_snapshot(bytes);
+            let second = snapshot(bytes);
+            assert!(
+                first == second,
+                "fixture `{name}`: nondeterministic decode between cached and fresh runs"
+            );
+        }
+    } else {
+        harness.check_determinism_inputs(&inputs, &[Branch::named(kind, snapshot)]);
+    }
 }
 
 /// Serializes what one fixture exports as, or the refusal the export reports.
@@ -325,17 +348,14 @@ fn check_determinism_partition(partition: usize, branch: Branch) {
 /// Pins STEP output by content for this crate's fixtures. Export errors are
 /// frozen too.
 fn step_snapshot(bytes: &[u8]) -> String {
-    let decoded = EditableDecodeResult::from(
-        match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(decoded) => decoded,
-            Err(error) => return format!("decode_error: {error}\n"),
-        },
-    );
+    let decoded = match crate::test_support::cached_full_decode(bytes) {
+        Ok(decoded) => decoded,
+        Err(error) => return format!("decode_error: {error}\n"),
+    };
     let mut exported = Vec::new();
     match Encoder::plan(
         &StepCodec::default(),
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
     )
     .and_then(|plan| plan.write_to(&mut exported))
     {
@@ -509,11 +529,12 @@ mod step_comparison {
 
 mod native_elision {
     use super::elided_native;
+    use cadmpeg_core::serde_erase::json;
 
     /// One record under `id` whose only codec-owned member is `name`.
     fn named_record(id: &str, name: &str) -> cadmpeg_ir::NativeRecord {
         let mut fields = serde_json::Map::new();
-        fields.insert("name".to_owned(), serde_json::json!(name));
+        fields.insert("name".to_owned(), cadmpeg_core::json!(name));
         cadmpeg_ir::NativeRecord::new(
             cadmpeg_ir::ids::Identity::new(id).expect("valid identity"),
             fields,
@@ -569,7 +590,7 @@ mod native_elision {
                 ids.sort_unstable();
                 arenas.insert(
                     arena.to_string(),
-                    serde_json::json!({ "count": records.len(), "ids": ids }),
+                    cadmpeg_core::json!({ "count": records.len(), "ids": ids }),
                 );
             }
             shape.insert(format.to_string(), serde_json::Value::Object(arenas));
@@ -616,7 +637,7 @@ mod native_elision {
             let records = &native.0["fcstd"].arenas()[arena];
             assert_eq!(
                 arena_digest(&block, arena),
-                serde_json::json!(cadmpeg_ir::hash::canonical_json_sha256(
+                cadmpeg_core::json!(cadmpeg_ir::hash::canonical_json_sha256(
                     &cadmpeg_core::decode::test_support::service_decode_context(),
                     records
                 )
@@ -636,11 +657,11 @@ mod native_elision {
             let mut fields = serde_json::Map::new();
             fields.insert(
                 "object".to_owned(),
-                serde_json::json!("fcstd:native:object#Box"),
+                cadmpeg_core::json!("fcstd:native:object#Box"),
             );
             fields.insert(
                 frame_field.to_owned(),
-                serde_json::json!([
+                cadmpeg_core::json!([
                     [1.0, 0.0, 0.0, 0.0],
                     [0.0, 1.0, 0.0, 0.0],
                     [0.0, 0.0, 1.0, 0.0],
@@ -664,17 +685,18 @@ mod native_elision {
             assert_eq!(before["__arena_counts"]["fcstd"][arena], 1);
             assert_eq!(
                 before["__arena_values"]["fcstd"][arena],
-                serde_json::to_value(&native.0["fcstd"].arenas()[arena]).unwrap()
+                json::to_value(&native.0["fcstd"].arenas()[arena]).unwrap()
             );
             let mut after = before.clone();
             after["__arena_values"]["fcstd"][arena][0][frame_field][0][0] =
-                serde_json::json!(1.0 + cadmpeg_ir::compare::FLOAT_TOLERANCE / 4.0);
+                cadmpeg_core::json!(1.0 + cadmpeg_ir::compare::FLOAT_TOLERANCE / 4.0);
             assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_ok());
-            after["__arena_values"]["fcstd"][arena][0][frame_field][0][0] = serde_json::json!(2.0);
+            after["__arena_values"]["fcstd"][arena][0][frame_field][0][0] =
+                cadmpeg_core::json!(2.0);
             assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_err());
             let mut after = before.clone();
             after["__arena_values"]["fcstd"][arena][0]["object"] =
-                serde_json::json!("fcstd:native:object#Other");
+                cadmpeg_core::json!("fcstd:native:object#Other");
             assert!(cadmpeg_ir::compare::values_agree(&before, &after).is_err());
         }
     }

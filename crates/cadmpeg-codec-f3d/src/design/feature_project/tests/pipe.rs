@@ -3,6 +3,7 @@
 use crate::native::F3dNative;
 use crate::records::feature::scope::DesignScopePayload;
 use crate::test_support::pipe::{Config, Fixture};
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 fn project(native: &F3dNative) -> Vec<cadmpeg_ir::features::Feature> {
@@ -63,7 +64,7 @@ fn pipe_dispatch_preserves_native_facts_without_inventing_a_section() {
                     assert!(matches!(features[0].evaluation.definition(),
                         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
                         if kind.as_str() == "Pipe"));
-                    assert!(!serde_json::to_string(&features)
+                    assert!(!json::to_string(&features)
                         .unwrap()
                         .contains("circular_region"));
                 }

@@ -3,6 +3,7 @@ use super::super::lofts::{
     CompoundLoftTail,
 };
 use crate::math::Vector3;
+use cadmpeg_core::serde_erase::json;
 
 fn scale() -> CompoundLoftScale {
     CompoundLoftScale {
@@ -31,11 +32,11 @@ fn compound(count: usize) -> CompoundLoftConstruction {
 fn compound_loft_scales_are_one_dense_array_of_the_present_scales() {
     for count in 0..=5 {
         let construction = compound(count);
-        let wire = serde_json::to_value(&construction).unwrap();
+        let wire = json::to_value(&construction).unwrap();
         assert_eq!(wire["scales"].as_array().unwrap().len(), count);
         assert!(wire.get("fifth_scale").is_none());
         assert_eq!(
-            serde_json::from_value::<CompoundLoftConstruction>(wire).unwrap(),
+            json::from_value::<CompoundLoftConstruction>(wire).unwrap(),
             construction
         );
     }
@@ -44,19 +45,19 @@ fn compound_loft_scales_are_one_dense_array_of_the_present_scales() {
 #[test]
 fn compound_loft_scales_reject_more_than_the_native_slot_count() {
     assert!(CompoundLoftScales::<5>::try_new((0..6).map(|_| scale()).collect()).is_err());
-    let mut wire = serde_json::to_value(compound(5)).unwrap();
+    let mut wire = json::to_value(compound(5)).unwrap();
     wire["scales"]
         .as_array_mut()
         .unwrap()
-        .push(serde_json::to_value(scale()).unwrap());
-    assert!(serde_json::from_value::<CompoundLoftConstruction>(wire).is_err());
+        .push(json::to_value(scale()).unwrap());
+    assert!(json::from_value::<CompoundLoftConstruction>(wire).is_err());
 }
 
 #[test]
 fn compound_loft_construction_rejects_an_unknown_key_by_name() {
-    let mut wire = serde_json::to_value(compound(2)).unwrap();
-    wire["zz_bogus"] = serde_json::json!(1);
-    let error = serde_json::from_value::<CompoundLoftConstruction>(wire)
+    let mut wire = json::to_value(compound(2)).unwrap();
+    wire["zz_bogus"] = cadmpeg_core::json!(1);
+    let error = json::from_value::<CompoundLoftConstruction>(wire)
         .expect_err("an unknown key beside scales must be rejected")
         .to_string();
     assert!(error.contains("zz_bogus"), "{error}");
@@ -67,10 +68,10 @@ fn scaled_loft_scales_hold_at_most_three_and_carry_no_null_slots() {
     for count in 0..=3 {
         let prefix =
             CompoundLoftScales::<3>::try_new((0..count).map(|_| scale()).collect()).unwrap();
-        let wire = serde_json::to_value(&prefix).unwrap();
+        let wire = json::to_value(&prefix).unwrap();
         assert_eq!(wire.as_array().unwrap().len(), count);
         assert_eq!(
-            serde_json::from_value::<CompoundLoftScales<3>>(wire).unwrap(),
+            json::from_value::<CompoundLoftScales<3>>(wire).unwrap(),
             prefix
         );
     }

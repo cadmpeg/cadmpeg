@@ -57,7 +57,7 @@ impl Tag<'_> {
                 T::deserialize(de::value::U64Deserializer::<serde_json::Error>::new(index))
             }
         };
-        read.map_err(|error| message(&error))
+        read.map_err(|error| error.to_string())
     }
 }
 
@@ -147,7 +147,7 @@ pub fn end<T>(
     mut deserializer: serde_json::Deserializer<StrRead<'_>>,
 ) -> Result<T, String> {
     read.and_then(|value| deserializer.end().map(|()| value))
-        .map_err(|error| message(&error))
+        .map_err(|error| crate::serde_erase::without_position(error).to_string())
 }
 
 /// Reads `T` from the text of a payload.
@@ -156,8 +156,7 @@ pub fn end<T>(
 ///
 /// Returns the refusal without its position in `text`.
 pub fn read<T: DeserializeOwned>(text: &str) -> Result<T, String> {
-    let mut deserializer = payload(text);
-    end(T::deserialize(&mut deserializer), deserializer)
+    crate::serde_erase::from_json_str(text).map_err(|error| error.to_string())
 }
 
 /// Reads the struct of a struct variant of an enum tagged by `tag` and
@@ -196,25 +195,12 @@ pub fn read_unit(text: &str, expecting: &str) -> Result<(), String> {
 ///
 /// Returns the refusal of the missing field.
 pub fn missing<T: DeserializeOwned>(field: &'static str) -> Result<T, String> {
-    T::deserialize(Missing(field)).map_err(|error| message(&error))
+    T::deserialize(Missing(field)).map_err(|error| error.to_string())
 }
 
 /// serde's message for the missing `field`.
 pub fn missing_field(field: &'static str) -> String {
     serde_json::Error::missing_field(field).to_string()
-}
-
-/// The message of `error` without the position that the parser appends.
-fn message(error: &serde_json::Error) -> String {
-    let text = error.to_string();
-    if error.line() == 0 {
-        return text;
-    }
-    let position = format!(" at line {} column {}", error.line(), error.column());
-    match text.strip_suffix(&position) {
-        Some(stated) => stated.to_owned(),
-        None => text,
-    }
 }
 
 const HEX: &[u8; 16] = b"0123456789abcdef";

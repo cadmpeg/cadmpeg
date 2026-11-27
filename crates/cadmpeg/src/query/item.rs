@@ -6,6 +6,7 @@
 //! `--fields` projects a closed list of dotted paths as TSV; cell escaping is
 //! projection-specific (see [`project_fields`]).
 
+use cadmpeg_core::serde_erase::json;
 use std::fmt;
 
 use anyhow::{bail, Context, Result};
@@ -257,7 +258,7 @@ pub(super) fn emit_values(
         }
         println!(
             "{}",
-            serde_json::to_string_pretty(value).context("serializing a record")?
+            json::to_string_pretty(value).context("serializing a record")?
         );
     }
     Ok(())
@@ -383,7 +384,7 @@ pub(super) fn field_cell(value: &serde_json::Value) -> String {
         serde_json::Value::Number(n) => n.to_string(),
         serde_json::Value::String(s) => s.replace('\t', "\\t").replace('\n', "\\n"),
         serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-            serde_json::to_string(value).unwrap_or_default()
+            json::to_string(value).unwrap_or_default()
         }
     }
 }
@@ -750,7 +751,7 @@ mod tests {
 
     #[test]
     fn field_cell_escapes_tab_and_compacts_arrays() {
-        assert_eq!(field_cell(&serde_json::json!("a\tb")), "a\\tb".to_owned());
-        assert_eq!(field_cell(&serde_json::json!([1, 2])), "[1,2]".to_owned());
+        assert_eq!(field_cell(&cadmpeg_core::json!("a\tb")), "a\\tb".to_owned());
+        assert_eq!(field_cell(&cadmpeg_core::json!([1, 2])), "[1,2]".to_owned());
     }
 }
