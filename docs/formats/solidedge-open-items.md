@@ -48,15 +48,13 @@
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 
-### DR-1016. Feature navigator final word with failed features and repeated suppression
+### DR-1016. Feature navigator final word after unsuppression
 
-**Question.** Does a feature whose recompute failed lower the contribution of an earlier suppressed feature to the final word, and which sequence of suppress and unsuppress actions leaves a residue in the word?
+**Question.** How much does an unsuppression add to the final word?
 
-**Known.** One suppressed feature adds the number of later non-folder items (§4.1).
+**Known.** Suppress, unsuppress and suppress again on one feature store a word that rises at each step. The first suppression adds the number of later non-folder items (§4.1).
 
-**Conflict.** A failed mirror copy that follows a suppressed extruded protrusion adds nothing. A document with no suppressed feature has a final word above `n` + 1 after a feature in it was suppressed and unsuppressed, and the same suppression saved again keeps that word.
-
-**Need.** Documents with one failed feature and no suppression, one failed feature after a suppressed feature, and the same suppression applied, removed and applied again, with the final word read at each step.
+**Need.** The same three steps on features with other counts of later items, to separate the added amount from the later-item count and from `n`.
 
 ### DR-1017. Group feature kind and feature operands
 
