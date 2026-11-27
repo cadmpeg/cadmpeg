@@ -1922,41 +1922,39 @@ pub(crate) fn enrich_history_reference_axes(
             for class in &lane.classes {
                 if matches!(
                     class.name.as_str(),
-                    "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
+                    "moLineAxisData_c"
+                        | "moPlaneInterAxisData_c"
+                        | "moSurfaceAxisData_c"
+                        | "moTwoPtsAxisData_c"
                 ) && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
                 {
                     axis_data_classes.push(class);
                 }
             }
+            let line_axes_only = axis_data_classes
+                .iter()
+                .all(|class| class.name == "moLineAxisData_c");
             let mut anchored_frames = Vec::new();
             for class in &axis_data_classes {
-                let Some(body) = usize::try_from(class.offset)
+                let Some(frame) = usize::try_from(class.offset)
                     .ok()
-                    .and_then(|offset| offset.checked_add(6 + class.name.len()))
+                    .and_then(|offset| offset.checked_sub(start)?.checked_add(6 + class.name.len()))
+                    .and_then(|body| bytes.get(body..body.checked_add(88)?))
+                    .and_then(explicit_reference_axis_frame)
                 else {
                     continue;
                 };
-                let Some(end) = body.checked_add(88) else {
-                    continue;
-                };
-                let Some(payload) = lane.native_payload.get(body..end) else {
-                    continue;
-                };
-                if let Some(frame) = explicit_reference_axis_frame(payload) {
-                    anchored_frames.push(frame);
-                }
+                anchored_frames.push(frame);
             }
             anchored_frames.sort_by(|left, right| {
                 reference_axis_frame_key(left).cmp(&reference_axis_frame_key(right))
             });
             anchored_frames.dedup_by_key(|frame| reference_axis_frame_key(frame));
-            let explicit_frame = if axis_data_classes.is_empty() {
-                explicit_reference_axis_frame(bytes)
-            } else {
-                let [frame] = anchored_frames.as_slice() else {
-                    continue;
-                };
-                Some(*frame)
+            let explicit_frame = match anchored_frames.as_slice() {
+                _ if axis_data_classes.is_empty() => explicit_reference_axis_frame(bytes),
+                [frame] => Some(*frame),
+                _ if line_axes_only => explicit_reference_axis_frame(bytes),
+                _ => continue,
             };
             if let Some((origin, direction)) = explicit_frame {
                 let feature = &mut histories[history_index].features[feature_index];

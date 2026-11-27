@@ -217,13 +217,13 @@ fn fixtures_survive_the_semantic_write_path() {
                     assert_eq!(history(written.ir()), history(source.ir()));
                 }
                 SemanticOutcome::Refused { error } => {
-                    panic!("fixture `{name}`: a faceless part writes from its partition: {error}")
+                    panic!("fixture `{name}`: the legacy part writes from its partition: {error}")
                 }
             });
             continue;
         }
         if name == "document_envelope" {
-            // The faceless part keeps its `SWObjects` member, and with it
+            // The part keeps its `SWObjects` member, and with it
             // every metadata record.
             let values = |ir: &cadmpeg_ir::CadIr| {
                 ir.model
@@ -248,7 +248,7 @@ fn fixtures_survive_the_semantic_write_path() {
                     assert_eq!(values(written.ir()), values(source.ir()));
                 }
                 SemanticOutcome::Refused { error } => {
-                    panic!("fixture `{name}`: a faceless part writes: {error}")
+                    panic!("fixture `{name}`: the envelope part writes: {error}")
                 }
             });
             continue;
@@ -264,6 +264,12 @@ fn fixtures_survive_the_semantic_write_path() {
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
+                let expected = match &source {
+                    Ok(decoded) if omits_every_body(decoded.ir(), &report.losses) => {
+                        brep_free_text(fixture, decoded)
+                    }
+                    _ => expected,
+                };
                 let written = decode_container(bytes);
                 if let Err(mismatch) = snapshots_agree(&expected, &neutral_text(bytes, &written)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
@@ -331,6 +337,58 @@ fn assert_members_carried_or_named(
             ids.len()
         );
     }
+}
+
+/// Whether `losses` declare that the write omits every body of `source`,
+/// each of which holds a partial face.
+fn omits_every_body(
+    source: &cadmpeg_ir::CadIr,
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+) -> bool {
+    let declared = losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "writer.bodies-omitted")
+        .map(|loss| loss.message.as_str())
+        .collect::<Vec<_>>();
+    let geometry = &source.geometry;
+    let holds_partial_face = |body: &cadmpeg_ir::topology::Body| {
+        geometry.faces.iter().any(|face| {
+            face.loops.is_partial()
+                && geometry.shells.iter().any(|shell| {
+                    shell.id == face.shell
+                        && geometry
+                            .regions
+                            .iter()
+                            .any(|region| region.id == shell.region && region.body == body.id)
+                })
+        })
+    };
+    !geometry.bodies.is_empty()
+        && geometry.bodies.iter().all(|body| {
+            holds_partial_face(body)
+                && declared
+                    .iter()
+                    .any(|message| names_record(message, body.id.as_str()))
+        })
+}
+
+/// [`neutral_text`] of `decoded` without its B-rep: the document a write
+/// states when it omits every body. The write states one active
+/// configuration, and with no body left to place, a part's configurations
+/// state its design, which types the part's definition.
+fn brep_free_text(bytes: &[u8], decoded: &DecodeResult) -> String {
+    let mut ir = decoded.ir().clone();
+    ir.geometry = cadmpeg_ir::document::Topology::default();
+    let configured = !ir.model.configurations.is_empty();
+    for definition in &mut ir.model.product_definitions {
+        definition.bodies.clear();
+        if configured {
+            definition.kind = Some(cadmpeg_ir::products::ProductDefinitionKind::Part);
+        }
+    }
+    let scan = crate::test_support::container::scan(bytes);
+    let sections = section_identities(&scan).expect("unique admitted source member identities");
+    snapshot_text(&normalized_document(&ir, &sections))
 }
 
 /// Whether `message` names record `id` as a whole token.
@@ -564,8 +622,8 @@ fn frozen_invalid_cache_fixture(name: &str, bytes: &[u8]) -> bool {
     true
 }
 
-/// The original history bytes lack both an active configuration source index
-/// and a complete typed BODY ownership class. Keep the bytes and their raw
+/// The original history bytes lack an active configuration source index and a
+/// typed BODY record, and their loops do not decode. Keep the bytes and their raw
 /// replay coverage; do not turn their unsupported semantic write into a pass.
 fn assert_legacy_history_preconditions(bytes: &[u8]) {
     let scan = crate::test_support::container::scan(bytes);
@@ -604,8 +662,19 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
     };
     assert!(configuration.active);
     assert_eq!(configuration.source_index, Some(0));
-    assert!(configuration.bodies.is_none());
-    assert_eq!(arena_sizes(result.ir()), [0; 8]);
+    // The FACE names a loop whose VERTEX records do not resolve, so the face
+    // stays in partial form under a derived body hierarchy.
+    let [face] = result.ir().geometry.faces.as_slice() else {
+        panic!("the one partial face");
+    };
+    assert!(face.loops.is_partial());
+    assert_eq!(face.loops.stated().count(), 0);
+    assert_eq!(arena_sizes(result.ir()), [1, 1, 1, 1, 0, 0, 0, 0]);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::SldprtLossCode::TopologyBodyHierarchyDerived.kind()));
     assert!(result.ir().source.is_some());
     let mut ir = result.ir().clone();
     assert!(

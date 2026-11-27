@@ -64,7 +64,7 @@ pub enum AttributeTarget {
     /// Attribute is owned by an occurrence.
     Occurrence(OccurrenceId),
     /// Attribute is owned by a tessellation, by its id.
-    Tessellation(String),
+    Tessellation(crate::tessellation::TessellationId),
     /// Attribute is owned by a PMI annotation.
     Pmi(PmiId),
     /// Attribute is owned by a semantic annotation.
@@ -83,7 +83,7 @@ pub enum AttributeTarget {
         /// The arena's field name.
         arena: NonBlankString,
         /// The record's id.
-        id: String,
+        id: crate::ids::Identity,
     },
 }
 

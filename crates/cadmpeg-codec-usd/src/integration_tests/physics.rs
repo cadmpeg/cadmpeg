@@ -575,6 +575,73 @@ fn gear_and_rack_joints_couple_their_joints_and_survive_a_write() {
     );
 }
 
+/// A coupling joint needs the joints it couples. Where one of them is given
+/// up, the couplings that name it leave the document with it, named in its
+/// `record.unreadable` and charged nothing of their own.
+#[test]
+fn couplings_of_a_given_up_hinge_are_dropped_with_it() {
+    let text = COUPLINGS.replacen(
+        "rel physics:body1 = </Rig/A>\n    }\n    def PhysicsRevoluteJoint \"HingeB\"",
+        "rel physics:body1 = </Rig/Missing>\n    }\n    def PhysicsRevoluteJoint \"HingeB\"",
+        1,
+    );
+    assert_ne!(text, COUPLINGS);
+    let result = decode(&text);
+    let gone = ["/Rig/HingeA", "/Rig/Gear", "/Rig/Pinion"];
+    let model = &result.ir().model;
+    for path in gone {
+        let joint = crate::ids::joint(path);
+        assert!(
+            model
+                .assembly_joints
+                .iter()
+                .all(|record| record.id != joint),
+            "{path}"
+        );
+        let feature = crate::ids::joint_feature(path);
+        assert!(
+            result
+                .ir()
+                .design
+                .features
+                .iter()
+                .all(|record| record.id != feature),
+            "{path}"
+        );
+    }
+    for path in ["/Rig/HingeB", "/Rig/Track"] {
+        let joint = crate::ids::joint(path);
+        assert!(
+            model
+                .assembly_joints
+                .iter()
+                .any(|record| record.id == joint),
+            "{path}"
+        );
+    }
+    let mut dropped = [
+        crate::ids::joint("/Rig/Gear").to_string(),
+        crate::ids::joint("/Rig/Pinion").to_string(),
+    ];
+    dropped.sort();
+    let charges: Vec<&str> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(
+        charges,
+        [format!(
+            "record {} given up: usd/physics.joint-rejected: the joint names a body that is not a \
+             transferred prim; dropped=[{}]",
+            crate::ids::joint("/Rig/HingeA"),
+            dropped.join(", ")
+        )]
+    );
+}
+
 /// A negative `physics:gearRatio` turns both gears the same way, as an
 /// internal gear does: a positive ratio, written back as it was read. A
 /// negative rack ratio moves the rack against the pinion's turn.
