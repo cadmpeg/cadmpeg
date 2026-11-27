@@ -4,7 +4,7 @@
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Seek, Write};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::subset_lowering::{lower_subset_curves, SubsetLowering};
@@ -59,6 +59,7 @@ pub(super) struct Generated {
 /// states it cannot write (cadir-v11.md §3.4), and report the rest as losses
 /// (see [`reduce`]).
 pub(super) fn write_new(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     missing_states: MissingStateForm,
     writer: &mut dyn Write,
@@ -66,7 +67,7 @@ pub(super) fn write_new(
     // The history-true form writes the state at its timeline marker, which
     // an evaluation can hold in place of the current state.
     let staged = match missing_states {
-        MissingStateForm::HistoryTrue => design::state_at_marker(target),
+        MissingStateForm::HistoryTrue => design::state_at_marker(target, &ctx.policy().limits)?,
         MissingStateForm::GeometryTrue => None,
     };
     let (target, staged_loss) = match &staged {
@@ -79,29 +80,29 @@ pub(super) fn write_new(
         ir: lowered,
         unlowered,
     } = lower_subset_curves(target, |_| true);
-    let mut reduction = Reduction::new(lowered.as_ref(), missing_states);
+    let mut reduction = Reduction::new(ctx, lowered.as_ref(), missing_states);
     reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
-    let (mut staged, mut coverage, design_losses) = loop {
-        let mut staged = tempfile::tempfile()?;
-        match attempt(
-            reduction.ir(),
-            reduction.writes_design(),
-            reduction.writes_neutral_design(),
+    let (staged, mut coverage, design_losses) = loop {
+        let mut staged = std::io::Cursor::new(Vec::new());
+        let form = AttemptForm {
+            write_design: reduction.writes_design(),
+            write_neutral: reduction.writes_neutral_design(),
             missing_states,
-            reduction.fallback(),
-            reduction.dropped(),
-            &mut staged,
-        ) {
+            fallback: reduction.fallback(),
+            dropped: reduction.dropped(),
+        };
+        match attempt(ctx, reduction.ir(), &form, &mut staged) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
-            Err(failure) => reduction.degrade(failure, writes_alone)?,
+            Err(failure) => {
+                reduction.degrade(failure, |target, stage| writes_alone(ctx, target, stage))?;
+            }
         }
     };
     if reduction.drops_neutral_design() {
         coverage.design = design::DROPPED;
     }
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, writer)?;
+    writer.write_all(staged.get_ref())?;
     let geometry_true = missing_states == MissingStateForm::HistoryTrue
         && reduction.drops_neutral_design()
         && !reduction.ir().geometry.bodies.is_empty()
@@ -128,21 +129,28 @@ pub(super) fn write_new(
 /// document) on its own without native records: with the carrier metadata
 /// only those records carry cleared, as the reduction clears it once they are
 /// dropped.
-fn writes_alone(target: &CadIr, stage: Stage) -> bool {
+fn writes_alone(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &CadIr,
+    stage: Stage,
+) -> bool {
     let target = reduce::without_native_carrier_metadata(target);
     let native = crate::native::F3dNative::default();
     match stage {
         Stage::Brep => {
             let attributes = attributes::AttributeIndex::new(&target, &native);
-            encode_brep(&target, &native, &attributes).is_ok()
+            encode_brep(ctx, &target, &native, &attributes).is_ok()
         }
         Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
+            ctx,
             &target,
-            false,
-            false,
-            MissingStateForm::GeometryTrue,
-            &design::Fallback::default(),
-            &DroppedRecords::default(),
+            &AttemptForm {
+                write_design: false,
+                write_neutral: false,
+                missing_states: MissingStateForm::GeometryTrue,
+                fallback: &design::Fallback::default(),
+                dropped: &DroppedRecords::default(),
+            },
             &mut std::io::Cursor::new(Vec::new()),
         )
         .is_ok(),
@@ -150,6 +158,7 @@ fn writes_alone(target: &CadIr, stage: Stage) -> bool {
 }
 
 fn encode_brep(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &crate::native::F3dNative,
     attributes: &attributes::AttributeIndex<'_>,
@@ -157,25 +166,38 @@ fn encode_brep(
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, native)?;
     validate_source_less_auxiliary_geometry(target)?;
-    encode_smbh(target, native, attributes)
+    encode_smbh(target, native, attributes, ctx)
 }
 
-/// Write `target` once. `write_design` states whether its native Design
-/// records are written, and `write_neutral` whether its design scope is, in
-/// the form `missing_states` names; `fallback` names the parts of the design
-/// scope's form dropped after a failure; `dropped` holds the keys of the
-/// dropped records, which no written record names. A failure
-/// names the stage that failed. Returns the arena coverage and the losses of
-/// the design scope's records.
-fn attempt<W: Write + Seek>(
-    target: &CadIr,
+/// The parts of the document one [`attempt`] writes.
+struct AttemptForm<'a> {
+    /// Whether the native Design records are written.
     write_design: bool,
+    /// Whether the design scope is written, in the form `missing_states`
+    /// names.
     write_neutral: bool,
     missing_states: MissingStateForm,
-    fallback: &design::Fallback,
-    dropped: &DroppedRecords,
+    /// The parts of the design scope's form dropped after a failure.
+    fallback: &'a design::Fallback,
+    /// The keys of the dropped records, which no written record names.
+    dropped: &'a DroppedRecords,
+}
+
+/// Write `target` once in `form`. A failure names the stage that failed.
+/// Returns the arena coverage and the losses of the design scope's records.
+fn attempt<W: Write + Seek>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    target: &CadIr,
+    form: &AttemptForm<'_>,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
+    let &AttemptForm {
+        write_design,
+        write_neutral,
+        missing_states,
+        fallback,
+        dropped,
+    } = form;
     #[cfg(test)]
     if let Some(error) = write_neutral.then(design::requested_test_failure).flatten() {
         return Err(Failure::neutral_design(error));
@@ -192,7 +214,7 @@ fn attempt<W: Write + Seek>(
     } else {
         Failure::design
     };
-    let loaded_native = f3d_native(target).map_err(Failure::design)?;
+    let loaded_native = f3d_native(ctx, target).map_err(Failure::design)?;
     let has_native = loaded_native.is_some();
     let mut native = loaded_native.unwrap_or_default();
     for header in &mut native.design_entity_headers {
@@ -257,13 +279,13 @@ fn attempt<W: Write + Seek>(
         {
             return Err(Failure::unwritable(Stage::Brep, unwritable));
         }
-        encode_brep(target, &native, &attributes)
+        encode_brep(ctx, target, &native, &attributes)
     };
     let smbh = match brep {
         Ok(smbh) => smbh,
         // The design scope's names fail the B-rep stream when it writes
         // without them.
-        Err(error) if stamped && writes_alone(target, Stage::Brep) => {
+        Err(error) if stamped && writes_alone(ctx, target, Stage::Brep) => {
             return Err(Failure::neutral_design(error));
         }
         Err(error) => return Err(Failure::brep(error)),
@@ -289,7 +311,7 @@ fn attempt<W: Write + Seek>(
         }
         let mut native_design = || -> Result<design::parameters::ParameterSource, CodecError> {
             validate_source_less_history_graph(target, &native)?;
-            let projection = design::parameters::native_projection(&native)?;
+            let projection = design::parameters::native_projection(ctx, &native)?;
             let parameters = design::parameters::native_or_neutral(target, &projection.parameters);
             projected = Some(projection);
             validate_source_less_design_ownership(&native)?;
@@ -315,7 +337,7 @@ fn attempt<W: Write + Seek>(
         let snapshot = if body_less {
             None
         } else {
-            Some(snapshot_stream(target, &native).map_err(Failure::neutral_design)?)
+            Some(snapshot_stream(ctx, target, &native).map_err(Failure::neutral_design)?)
         };
         let members = design
             .archive(
@@ -519,6 +541,7 @@ fn attempt<W: Write + Seek>(
 /// The snapshot stream of a Base Feature design: the B-rep stream of
 /// `target` whose bodies carry no name and the ASM body key `-1`.
 fn snapshot_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &crate::native::F3dNative,
 ) -> Result<Vec<u8>, CodecError> {
@@ -531,7 +554,7 @@ fn snapshot_stream(
     });
     let attributes =
         attributes::AttributeIndex::new(target, &unnamed).with_body_keys(target, |_| -1);
-    design::history::snapshot(&encode_brep(target, &unnamed, &attributes)?)
+    design::history::snapshot(&encode_brep(ctx, target, &unnamed, &attributes)?)
 }
 
 /// The losses of the appearances of a Base Feature archive, whose Protein

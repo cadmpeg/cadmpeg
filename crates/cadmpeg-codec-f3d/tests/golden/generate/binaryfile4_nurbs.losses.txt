@@ -1,2 +1,1 @@
-f3d/source.preserved-image-unavailable Blocking preserved F3D source image is unavailable; regenerated from IR
 f3d/writer.procedural-reduced Warning procedural construction f3d:brep:procedural_curve#19 was reduced to the solved geometry of carrier f3d:brep:entity#19: not implemented yet: source-less F3D unknown procedural curve f3d:brep:procedural_curve#19 cannot be regenerated losslessly

@@ -25,6 +25,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde_json::Value;
 
@@ -70,8 +71,9 @@ pub trait HistoryText {
 ///
 /// # Errors
 ///
-/// The error of the sidecar's edit comparison.
+/// The error of the sidecar's edit comparison in the session `ctx`.
 pub fn saved_source<'a>(
+    ctx: &DecodeContext<'_>,
     input: EncodeInput<'a>,
     id: &str,
     replays: bool,
@@ -88,7 +90,7 @@ pub fn saved_source<'a>(
     else {
         return Ok(None);
     };
-    if replays && !fidelity.edited(input.ir)? {
+    if replays && !fidelity.edited(ctx, input.ir)? {
         return Ok(None);
     }
     Ok(Some(image))
