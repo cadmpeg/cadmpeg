@@ -48,18 +48,21 @@ use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
+use cadmpeg_ir::design::projection::fields::{Field, ModelSketchConstraintField};
+use cadmpeg_ir::design::projection::restated::Restater;
 use cadmpeg_ir::design::projection::sketch::{curve_ends, planar_curve};
 use cadmpeg_ir::design::selection::{
     Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, PrincipalEntity, Selection,
 };
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
+use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinitionInput as Kind, SketchEntityId, SketchGeometryDefinition as Geometry,
-    SketchLocus,
+    SketchConstraint as LegacyConstraint, SketchConstraintDefinitionInput as Kind,
+    SketchConstraintId, SketchEntityId, SketchGeometryDefinition as Geometry, SketchLocus,
 };
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
@@ -83,6 +86,7 @@ pub(super) struct Sketches {
     pub(super) records: Vec<Sketch>,
     pub(super) entities: Vec<SketchEntity<Planar>>,
     pub(super) constraints: Vec<SketchConstraint<Planar>>,
+    coincidences: Vec<Coincidence>,
     /// The `Driven` parameters minted for reference dimensions.
     pub(super) driven: Vec<DesignParameter>,
     /// The tree parameters a reference dimension binds.
@@ -100,6 +104,50 @@ pub(super) struct Sketches {
     /// The circles built from a dimension record that the design leaves
     /// out, or states construction although the decoder does not mark them.
     pub(super) dimension_circles: Vec<DimensionCircle>,
+}
+
+impl Sketches {
+    pub(super) fn restate_coincidences(&self, model: &mut Model) {
+        for coincidence in &self.coincidences {
+            model.restated_mut().record(
+                coincidence.constraint.as_str(),
+                Restater::Record(coincidence.point.as_str().to_owned()),
+                coincidence.cut.iter().copied(),
+            );
+        }
+    }
+}
+
+struct Coincidence {
+    constraint: SketchConstraintId,
+    point: SketchEntityId,
+    cut: Vec<&'static str>,
+}
+
+impl Coincidence {
+    fn restated_at(constraint: &LegacyConstraint, point: &SketchEntityId) -> Self {
+        use ModelSketchConstraintField as Key;
+        let cut = [
+            (Key::Name, constraint.name.is_some()),
+            (Key::Driving, constraint.driving.is_some()),
+            (Key::Active, constraint.active.is_some()),
+            (Key::VirtualSpace, constraint.virtual_space.is_some()),
+            (Key::Visible, constraint.visible.is_some()),
+            (Key::Orientation, constraint.orientation.is_some()),
+            (Key::LabelDistance, constraint.label_distance.is_some()),
+            (Key::LabelPosition, constraint.label_position.is_some()),
+            (Key::Metadata, constraint.metadata.is_some()),
+            (Key::NativeRef, constraint.native_ref.is_some()),
+        ]
+        .into_iter()
+        .filter_map(|(field, stated)| stated.then_some(field.key()))
+        .collect();
+        Self {
+            constraint: constraint.id.clone(),
+            point: point.clone(),
+            cut,
+        }
+    }
 }
 
 /// A circle built from a dimension record that the design does not keep as
@@ -335,6 +383,7 @@ fn sketch(
     }
     sketch_entities.extend(roles.minted(&record.id));
     let mut constraints = Vec::new();
+    let mut coincidences = Vec::new();
     let mut driven = Vec::new();
     let mut references = Vec::new();
     let mut bound = Vec::new();
@@ -356,8 +405,15 @@ fn sketch(
                 continue;
             }
         };
-        if matches!(&relation, SketchRelation::Coincident { a, b } if a == b) {
-            continue;
+        if let SketchRelation::Coincident { a, b } = &relation {
+            if a == b {
+                if let (Operand::Entity(point), Kind::CoincidentLoci { .. }) =
+                    (a, constraint.definition.kind())
+                {
+                    coincidences.push(Coincidence::restated_at(constraint, point));
+                }
+                continue;
+            }
         }
         if let Some((parameter, quantity, minted)) = binding {
             if constraint.driving == Some(false) && context.entries.contains(&parameter) {
@@ -403,6 +459,7 @@ fn sketch(
         native_ref: record.native_ref.clone(),
     });
     out.entities.extend(sketch_entities);
+    out.coincidences.extend(coincidences);
     out.outside_profile.extend(outside_profile);
     out.dimension_circles.extend(
         dimension_circles

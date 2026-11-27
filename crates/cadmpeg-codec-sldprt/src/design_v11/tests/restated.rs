@@ -75,7 +75,17 @@ fn a_read_construction_flag_false_is_stated() {
 /// states at those ends; a CADIR write carries the line's endpoint records.
 #[test]
 fn endpoint_records_without_point_entities_are_stated_as_points() {
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Kind;
+
     let (mut ir, _) = sketch_and_extrude();
+    let coincidence = ir
+        .model
+        .sketch_constraints
+        .iter_mut()
+        .find(|constraint| matches!(constraint.definition.kind(), Kind::CoincidentLoci { .. }))
+        .unwrap();
+    coincidence.native_ref = Some("native:corner-relation".to_owned());
+    let coincidence = coincidence.id.clone();
     ir.model.sketch_entities.retain(|model| {
         !matches!(
             model.geometry.definition(),
@@ -110,6 +120,15 @@ fn endpoint_records_without_point_entities_are_stated_as_points() {
                 role: DefiningRole::Start,
             },
         ]
+    );
+    assert!(!ir
+        .design
+        .sketch_constraints
+        .iter()
+        .any(|constraint| constraint.id == coincidence));
+    assert_eq!(
+        charge(&ir, "sketch_constraints", coincidence.as_str()),
+        ["native_ref"]
     );
     for line in 0..4 {
         let id = entity(&format!("l{line}"));

@@ -92,6 +92,7 @@ pub(super) fn project(
     );
     ir.design.features = timeline.features;
     ir.design.parameters = parameters;
+    typed.sketches.restate_coincidences(&mut ir.model);
     ir.design.sketches = std::mem::take(&mut typed.sketches.records);
     ir.design.sketch_entities = std::mem::take(&mut typed.sketches.entities);
     ir.design.sketch_constraints = std::mem::take(&mut typed.sketches.constraints);
