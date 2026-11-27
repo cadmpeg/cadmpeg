@@ -584,7 +584,8 @@ pub(crate) struct ReplacedTools {
 }
 
 /// Name each generated tool body by the identity that the result state of its
-/// generating feature lists. A tool whose identity that result state lists
+/// generating feature lists. `results` holds the result states that the body
+/// selections produce, before the tool result states of this pass. A tool whose identity that result state lists
 /// keeps it. A generating feature whose result state lists one body generates
 /// that body, so another tool that it generates is that body. A `Combine` with
 /// a tool that neither rule names, or whose tools then name one body twice,
