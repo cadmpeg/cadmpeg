@@ -5036,9 +5036,9 @@ fn attach_standard_topology_inner(
         let allocation_endpoint_points = vertex_roster
             .as_ref()
             .map(|roster| standard_successor_endpoint_points(&supports, roster));
-        let roster_endpoint_pairs = vertex_roster
-            .as_ref()
-            .and_then(|roster| standard_serialized_endpoint_pairs(&supports, &native_edges, roster));
+        let roster_endpoint_pairs = vertex_roster.as_ref().and_then(|roster| {
+            standard_serialized_endpoint_pairs(&supports, &native_edges, roster)
+        });
         let mut native_support_ids = HashSet::new();
         for id in native_edge_supports.keys().copied() {
             native_support_ids.insert(id);
