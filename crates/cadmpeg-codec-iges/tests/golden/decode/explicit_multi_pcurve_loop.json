@@ -2773,6 +2773,24 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "geometry.not-projected",
+            "kind": "geometry_not_transferred",
+            "namespace": "iges"
+          }
+        },
+        "message": "IGES entity type 510 form 1 geometry was not projected: face loop is missing",
+        "provenance": {
+          "format": "iges",
+          "offset": 2187,
+          "stream": "iges",
+          "tag": "directory_entry:D25"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "record.unreadable",
             "kind": "decode_diagnostic",
             "namespace": "decode",
