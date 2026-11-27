@@ -4976,6 +4976,7 @@ fn attach_standard_topology_inner(
             }
             None => None,
         };
+        let has_visualization_endpoint_pairs = visualization_endpoint_pairs.is_some();
         if let Some(pairs) = &visualization_endpoint_pairs {
             if pairs.len() != ordered_endpoint_pairs.len() {
                 return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
@@ -5218,11 +5219,16 @@ fn attach_standard_topology_inner(
         );
         let mut native_ports = Vec::new();
         let mut all_ports = true;
-        for pair in native_port_options.iter().copied() {
+        let mut all_directed_ports = true;
+        for (edge, pair) in native_port_options.iter().copied().enumerate() {
             let Some(pair) = pair else {
                 all_ports = false;
+                all_directed_ports = false;
                 break;
             };
+            if !directed_native_edge_tags.contains(&supports[edge].tag) {
+                all_directed_ports = false;
+            }
             native_ports.push(pair);
         }
         let native_ports = all_ports.then_some(native_ports);
@@ -5270,7 +5276,11 @@ fn attach_standard_topology_inner(
                 let merged = if directed_native_edge_tags.contains(&supports[edge].tag) {
                     merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair)
                 } else {
-                    merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair)
+                    ordered_endpoint_pairs.get(edge).is_some_and(|slot| {
+                        slot.is_none_or(|previous| {
+                            missing_edge::same_unordered_pair(previous, pair)
+                        })
+                    })
                 };
                 if !merged {
                     return Err(StandardTopologyFailure::ConflictingNativeEndpoints.into());
@@ -5351,9 +5361,18 @@ fn attach_standard_topology_inner(
             }
         }
         if let (Some(options), Some(pairs)) = (&mut endpoint_options, &native_endpoint_evidence) {
-            for (options, pair) in options.iter_mut().zip(pairs) {
+            for (edge, (options, pair)) in options.iter_mut().zip(pairs).enumerate() {
                 if let Some(pair) = pair {
-                    *options = vec![*pair];
+                    if directed_native_edge_tags.contains(&supports[edge].tag) {
+                        *options = vec![*pair];
+                    } else if !matches!(
+                        options.as_slice(),
+                        [existing] if missing_edge::same_unordered_pair(*existing, *pair)
+                    ) {
+                        let mut sorted = *pair;
+                        sorted.sort_unstable_by(Ord::cmp);
+                        *options = vec![sorted];
+                    }
                 }
             }
         }
@@ -5368,12 +5387,17 @@ fn attach_standard_topology_inner(
         }
         let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
             Some(pairs) => {
+                let port_ordered_seeds = if all_directed_ports || native_edges.is_empty() {
+                    &ordered_endpoint_pairs
+                } else {
+                    pairs
+                };
                 let Some(propagated) =
                     missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
                         ctx,
                         &native_port_options,
                         pairs,
-                        &ordered_endpoint_pairs,
+                        port_ordered_seeds,
                     )
                     .map_err(StandardTopologyError::Codec)?
                 else {
@@ -5386,9 +5410,18 @@ fn attach_standard_topology_inner(
         if let (Some(options), Some(pairs)) =
             (&mut endpoint_options, &graph_propagated_endpoint_pairs)
         {
-            for (options, pair) in options.iter_mut().zip(pairs) {
+            for (edge, (options, pair)) in options.iter_mut().zip(pairs).enumerate() {
                 if let Some(pair) = pair {
-                    *options = vec![*pair];
+                    if directed_native_edge_tags.contains(&supports[edge].tag) {
+                        *options = vec![*pair];
+                    } else if !matches!(
+                        options.as_slice(),
+                        [existing] if missing_edge::same_unordered_pair(*existing, *pair)
+                    ) {
+                        let mut sorted = *pair;
+                        sorted.sort_unstable_by(Ord::cmp);
+                        *options = vec![sorted];
+                    }
                 }
             }
         }
@@ -5802,6 +5835,7 @@ fn attach_standard_topology_inner(
                 }
             }
             for (edge, pairs) in options.iter_mut().enumerate() {
+                let unfiltered = pairs.clone();
                 let mut refusal = None;
                 pairs.retain(|pair| {
                     if refusal.is_some() {
@@ -5817,6 +5851,14 @@ fn attach_standard_topology_inner(
                 });
                 if let Some(limit) = refusal {
                     return Err(StandardTopologyError::Codec(CodecError::from(limit)));
+                }
+                if pairs.is_empty()
+                    && native_endpoint_evidence
+                        .as_ref()
+                        .and_then(|evidence| evidence.get(edge).copied().flatten())
+                        .is_some()
+                {
+                    *pairs = unfiltered;
                 }
                 pairs.sort_unstable_by(Ord::cmp);
                 pairs.dedup();
@@ -5836,11 +5878,34 @@ fn attach_standard_topology_inner(
             Some(pairs)
         } else if let Some((options, ports)) = endpoint_options.as_ref().zip(native_ports.as_ref())
         {
-            native_port_endpoint_pairs(ctx, options, ports, &ordered_endpoint_pairs, refusal)
+            let empty_ordered_seeds;
+            let port_ordered_seeds = if all_directed_ports {
+                &ordered_endpoint_pairs
+            } else if let Some(pairs) = native_endpoint_evidence.as_ref() {
+                pairs
+            } else {
+                empty_ordered_seeds = ctx
+                    .alloc_filled(supports.len(), None, "catia_unordered_native_port_seeds")
+                    .map_err(StandardTopologyError::Codec)?;
+                &empty_ordered_seeds
+            };
+            native_port_endpoint_pairs(ctx, options, ports, port_ordered_seeds, refusal)
                 .map_err(StandardTopologyError::Codec)?
         } else {
             None
         };
+        let native_endpoint_pairs = native_endpoint_pairs.map(|mut pairs| {
+            if !all_directed_ports {
+                for (pair, ordered) in pairs.iter_mut().zip(&ordered_endpoint_pairs) {
+                    if let Some(ordered) = ordered {
+                        if missing_edge::same_unordered_pair(*pair, *ordered) {
+                            *pair = *ordered;
+                        }
+                    }
+                }
+            }
+            pairs
+        });
         let propagated_endpoint_pairs = if let Some((options, ports)) =
             endpoint_options.as_ref().zip(
                 missing_edge::edge_port_identities(ctx, spine)
@@ -6007,7 +6072,10 @@ fn attach_standard_topology_inner(
             let standard = fbb::parse_standard(ctx, spine).map_err(StandardTopologyError::Codec)?;
             if standard.is_some() {
                 standard
-            } else if let Some(ports) = native_ports.as_ref() {
+            } else if let Some(ports) = all_directed_ports
+                .then_some(native_ports.as_deref())
+                .flatten()
+            {
                 topology::parse_fbb_with_native_vertices(ctx, spine, ports)
                     .map_err(StandardTopologyError::Codec)?
             } else {
@@ -6068,28 +6136,51 @@ fn attach_standard_topology_inner(
                 | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
             })
             .collect::<Vec<_>>();
-        let native_fbb_topology =
-            if edge_table_form == EdgeTableForm::FbbOnly && !has_open_face_domains {
-                if let Some(pairs) = native_endpoint_pairs.as_ref() {
-                    fbb::parse_fbb_endpoints_with_edge_classes(
-                        ctx,
-                        work_budget,
-                        spine,
-                        &edge_faces,
-                        pairs,
-                        Some(&edge_classes),
-                    )
-                    .map_err(StandardTopologyError::Codec)?
-                } else {
-                    None
-                }
+        let native_fbb_topology = if all_directed_ports
+            && edge_table_form == EdgeTableForm::FbbOnly
+            && !has_open_face_domains
+        {
+            if let Some(pairs) = native_endpoint_pairs.as_ref() {
+                fbb::parse_fbb_endpoints_with_edge_classes(
+                    ctx,
+                    work_budget,
+                    spine,
+                    &edge_faces,
+                    pairs,
+                    Some(&edge_classes),
+                )
+                .map_err(StandardTopologyError::Codec)?
             } else {
                 None
-            };
+            }
+        } else {
+            None
+        };
         let mut selected_face_assignment = None;
         let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
     } else if let Some(topology) = native_fbb_topology {
+        let point_assignment = (0..ir.geometry.points.len()).collect::<Vec<_>>();
+        (topology, point_assignment)
+    } else if let Some(topology) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        if has_open_face_domains || !(all_directed_ports || has_visualization_endpoint_pairs) {
+            return Ok(None);
+        }
+        if let Some(pairs) = native_endpoint_pairs.as_ref() {
+            fbb::parse_standard_endpoints_with_edge_classes(
+                ctx,
+                work_budget,
+                spine,
+                &edge_faces,
+                pairs,
+                Some(&edge_classes),
+            )
+        } else {
+            Ok(None)
+        }
+    })()
+    .map_err(StandardTopologyError::Codec)?
+    {
         let point_assignment = (0..ir.geometry.points.len()).collect::<Vec<_>>();
         (topology, point_assignment)
     } else if let Some(bound) = (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
@@ -6378,35 +6469,50 @@ fn attach_standard_topology_inner(
         if has_open_face_domains {
             return Ok(None);
         }
-        if let Some(pairs) = native_endpoint_pairs.as_ref() {
-            let candidate = fbb::parse_standard_endpoints_with_edge_classes(
-                ctx,
-                work_budget,
-                spine,
-                &edge_faces,
-                pairs,
-                Some(&edge_classes),
-            )?;
-            if candidate.is_some() {
-                return Ok(candidate);
+        if let Some(options) = constrained_endpoint_options.as_ref() {
+            if let Some(ports) = mesh_cache.edge_ports(ctx, spine)? {
+                let candidate = fbb::parse_standard_port_endpoint_candidates(
+                    ctx,
+                    spine,
+                    &edge_faces,
+                    options,
+                    &ports,
+                    work_budget,
+                )?;
+                if candidate.is_some() {
+                    return Ok(candidate);
+                }
+            }
+        }
+        if !(all_directed_ports || has_visualization_endpoint_pairs) {
+            if let Some(pairs) = native_endpoint_pairs.as_ref() {
+                let candidate = if edge_table_form == EdgeTableForm::FbbOnly {
+                    fbb::parse_fbb_endpoints_with_edge_classes(
+                        ctx,
+                        work_budget,
+                        spine,
+                        &edge_faces,
+                        pairs,
+                        Some(&edge_classes),
+                    )?
+                } else {
+                    fbb::parse_standard_endpoints_with_edge_classes(
+                        ctx,
+                        work_budget,
+                        spine,
+                        &edge_faces,
+                        pairs,
+                        Some(&edge_classes),
+                    )?
+                };
+                if candidate.is_some() {
+                    return Ok(candidate);
+                }
             }
         }
         let Some(options) = constrained_endpoint_options.as_ref() else {
             return Ok(None);
         };
-        if let Some(ports) = mesh_cache.edge_ports(ctx, spine)? {
-            let candidate = fbb::parse_standard_port_endpoint_candidates(
-                ctx,
-                spine,
-                &edge_faces,
-                options,
-                &ports,
-                work_budget,
-            )?;
-            if candidate.is_some() {
-                return Ok(candidate);
-            }
-        }
         fbb::parse_standard_endpoint_candidates(ctx, spine, &edge_faces, options, work_budget)
     })()
     .map_err(StandardTopologyError::Codec)?
