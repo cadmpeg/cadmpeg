@@ -590,3 +590,156 @@ fn a_lateral_edge_cut_by_a_transverse_cylinder_is_bounded_on_its_branch() {
     // leaves its branch.
     assert!(!bounded(&crossing_cylinders(2.5), -1.2, (-9.0, 9.0)));
 }
+
+/// Two unit squares side by side whose shared edge is a middle curve. A
+/// body over both squares loses the second square at the Intersect.
+#[test]
+fn an_intersect_keeps_the_regions_its_transition_did_not_remove() {
+    use super::super::tests::plane_faces;
+    use crate::design::geometry::ProfileGeometryWork;
+    use crate::design::profile_select::ScopedExtrudeProfileResolution;
+    use crate::history_records::{
+        AsmDeltaState, AsmHistoricalTransition, AsmHistory, AsmStateSnapshot,
+    };
+    use cadmpeg_ir::features::extents::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+    };
+    use cadmpeg_ir::features::operation_settings::BooleanOp;
+    use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
+    use cadmpeg_ir::scalar::NonZeroLength;
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+        SketchPlacement, SketchProfiles,
+    };
+    use std::collections::{BTreeMap, HashSet};
+
+    let id = SketchId::mint("synthetic:test:sketch#intersect-pair").unwrap();
+    let sketch = Sketch {
+        id: id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        native_ref: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: SketchProfiles::default(),
+    };
+    let lines = [
+        ("bottom", (0.0, 0.0), (2.0, 0.0)),
+        ("right", (2.0, 0.0), (2.0, 1.0)),
+        ("top", (2.0, 1.0), (0.0, 1.0)),
+        ("left", (0.0, 1.0), (0.0, 0.0)),
+        ("middle", (1.0, 0.0), (1.0, 1.0)),
+    ];
+    let entities = lines
+        .iter()
+        .map(|(name, start, end)| {
+            SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:curve#{name}")).unwrap(),
+                id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: Point2::new(start.0, start.1),
+                    end: Point2::new(end.0, end.1),
+                })
+                .unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let curve = |name: &str| SketchEntityId::mint(format!("synthetic:test:curve#{name}")).unwrap();
+    let ring = |width: f64| vec![(0.0, 0.0), (width, 0.0), (width, 1.0), (0.0, 1.0)];
+    let before = plane_faces(&[(1, 0.0, vec![ring(2.0)]), (2, -2.0, vec![ring(2.0)])]);
+    let after = plane_faces(&[(3, 0.0, vec![ring(1.0)]), (4, -2.0, vec![ring(1.0)])]);
+    let topologies = [before, after];
+    let empty = BTreeMap::new();
+    let snapshot = |index: usize| AsmStateSnapshot {
+        state_id: i64::try_from(index + 1).unwrap(),
+        topology: &topologies[index],
+        versions: &empty,
+    };
+    let states = (0..2)
+        .map(|index| {
+            let transition = AsmHistoricalTransition::between(
+                index.checked_sub(1).map(snapshot),
+                snapshot(index),
+            )
+            .unwrap();
+            AsmDeltaState {
+                id: format!("synthetic:test:state#{}", index + 1),
+                parent: "synthetic:test:history#intersect".into(),
+                byte_offset: 0,
+                state_id: i64::try_from(index + 1).unwrap(),
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: (index == 0).then_some(2),
+                next_ref: (index == 1).then_some(1),
+                node_index: i64::try_from(index + 1).unwrap(),
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: Some(transition),
+            }
+        })
+        .collect::<Vec<_>>();
+    let history = AsmHistory::new(
+        "synthetic:test:history#intersect".into(),
+        0,
+        None,
+        false,
+        states,
+    );
+    let run = |operation: BooleanOp, named: &[&str]| {
+        let named = named.iter().map(|name| curve(name)).collect::<HashSet<_>>();
+        crate::test_support::with_decode_context(|ctx| {
+            let work = ProfileGeometryWork::new();
+            let resolution = ScopedExtrudeProfileResolution {
+                entities: &entities,
+                spatial_entities: &[],
+                histories: std::slice::from_ref(&history),
+                linear_tolerance: TOLERANCE,
+                angular_tolerance: TOLERANCE,
+                profile_work: &work,
+                ctx,
+            };
+            super::intersect_candidate(
+                &sketch,
+                resolution,
+                (2, 1),
+                super::Sweep {
+                    operation: &operation,
+                    start: &ExtrudeStart::ProfilePlane {},
+                    direction: &ExtrudeDirection::ProfileNormal {},
+                    extent: &ExtrudeExtent::OneSided {
+                        side: ExtrudeSide {
+                            termination: LinearTermination::Blind {
+                                length: NonZeroLength::new(2.0).unwrap(),
+                            },
+                            draft: None,
+                        },
+                    },
+                },
+                &named,
+            )
+        })
+        .unwrap()
+    };
+    let Some(PlanarProfileRef::SketchRegions { regions, .. }) =
+        run(BooleanOp::Intersect, &["left", "middle", "bottom", "top"])
+    else {
+        panic!("sketch regions");
+    };
+    assert_eq!(regions.len(), 1);
+    assert!(matches!(
+        &regions[0],
+        SketchProfileRegion::Trimmed { outer_boundary, .. } if outer_boundary.len() == 4
+    ));
+    // Only an Intersect reads its profile from the regions it did not lose.
+    assert!(run(BooleanOp::Cut, &["left", "middle", "bottom", "top"]).is_none());
+    // A named curve that bounds no kept region leaves the selection native.
+    assert!(run(BooleanOp::Intersect, &["right"]).is_none());
+    assert!(run(BooleanOp::Intersect, &[]).is_none());
+}

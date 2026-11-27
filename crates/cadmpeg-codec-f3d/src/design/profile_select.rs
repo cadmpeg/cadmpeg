@@ -1035,6 +1035,39 @@ fn bind_one_extrude_profile_selection(
                                     break 'feature_edit;
                                 }
                             }
+                            if let Some(states) = scope
+                                .history_state_id()
+                                .zip(effective_previous_history_state_id)
+                            {
+                                let named = operand
+                                    .planar_region_selection()
+                                    .and_then(|selection| selection.resolution_regions())
+                                    .into_iter()
+                                    .flatten()
+                                    .flat_map(|region| region.members.iter())
+                                    .filter_map(|member| {
+                                        sketch_profile_member_entity(
+                                            stream,
+                                            u32::try_from(operand.entity_id.suffix()).ok()?,
+                                            member,
+                                            sketch,
+                                            curve_resolution.curve_identities,
+                                            curve_resolution.sketch_entities,
+                                        )
+                                        .cloned()
+                                    })
+                                    .collect::<HashSet<_>>();
+                                if let Some(selected) = cap_regions::compact::intersect_candidate(
+                                    sketch,
+                                    scoped_resolution,
+                                    states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                    &named,
+                                )? {
+                                    *profile = ProfileRef::Planar(selected);
+                                    break 'feature_edit;
+                                }
+                            }
                             unresolved_region_operand = Some((operand, stream));
                         }
                     }

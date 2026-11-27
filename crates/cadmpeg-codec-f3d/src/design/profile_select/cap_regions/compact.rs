@@ -977,3 +977,101 @@ fn edge_height_is_bounded(
 
 #[cfg(test)]
 pub(in crate::design::profile_select) mod tests;
+
+/// The regions of an Intersect whose far plane the transition left untouched,
+/// when the transition removed at least one other region from the planes
+/// parallel to the sketch and every curve the selection names bounds a kept
+/// region. An Intersect keeps the body inside the profile, so a region whose
+/// material a changed plane lost lies outside it.
+pub(in crate::design::profile_select) fn intersect_candidate(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    resolution: super::super::ScopedExtrudeProfileResolution<'_>,
+    state_ids: (i64, i64),
+    sweep: Sweep<'_>,
+    named: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+) -> Result<Option<PlanarProfileRef>, CodecError> {
+    if !matches!(sweep.operation, BooleanOp::Intersect) || named.is_empty() {
+        return Ok(None);
+    }
+    let Some((after, state)) = unique_state(resolution.histories, state_ids.0) else {
+        return Ok(None);
+    };
+    let Some(transition) = state
+        .transition
+        .as_ref()
+        .filter(|transition| transition.previous_state_id == Some(state_ids.1))
+    else {
+        return Ok(None);
+    };
+    let Some((before, _)) = unique_state(resolution.histories, state_ids.1) else {
+        return Ok(None);
+    };
+    let tolerance = resolution.linear_tolerance;
+    let Some(planes) = changed_planes(
+        sketch,
+        (before, after),
+        &transition.topology.faces,
+        tolerance,
+    ) else {
+        return Ok(None);
+    };
+    let work = ProfileGeometryWork::new();
+    let Some(regions) = atomic_sketch_regions(
+        sketch,
+        resolution.entities,
+        tolerance,
+        &work,
+        resolution.ctx,
+    )?
+    else {
+        return Ok(None);
+    };
+    let Some(sampled) = sample_regions(&regions, tolerance, resolution.profile_work) else {
+        return Ok(None);
+    };
+    let removed = |region: &super::Sampled<'_>| {
+        planes.iter().any(|plane| {
+            plane.before.iter().any(|cap| cap.contains(region.point))
+                && !plane.after.iter().any(|cap| cap.contains(region.point))
+        })
+    };
+    if !sampled.iter().any(removed) {
+        return Ok(None);
+    }
+    let kept: Vec<usize> = sampled
+        .iter()
+        .enumerate()
+        .filter(|(_, region)| !removed(region) && !region.region.encloses_island)
+        .map(|(index, _)| index)
+        .collect();
+    if kept.is_empty() || kept.len() + 1 > sampled.len() {
+        return Ok(None);
+    }
+    let bounding: HashSet<_> = kept
+        .iter()
+        .flat_map(|index| {
+            sampled[*index]
+                .region
+                .boundary
+                .iter()
+                .map(|use_| &use_.entity)
+        })
+        .collect();
+    if !named.iter().all(|id| bounding.contains(id))
+        || !kept.iter().all(|index| {
+            sampled[*index]
+                .region
+                .boundary
+                .iter()
+                .any(|use_| named.contains(&use_.entity))
+        })
+    {
+        return Ok(None);
+    }
+    let Some(ResolvedProfileSelection::Regions(regions)) =
+        super::trimmed_selection(&sampled, &kept, tolerance)
+    else {
+        return Ok(None);
+    };
+    Ok(PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok())
+}
