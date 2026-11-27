@@ -6,6 +6,7 @@ use crate::history_records::{
     AsmHistoricalPlane, AsmHistoricalRowsDelta, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition,
 };
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::features::operation_settings::ShellMode;
 use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureId;
@@ -325,19 +326,18 @@ fn bind_selection(
 
     let members: Vec<_> = (7..7 + member_count).collect();
     let offsets: Vec<_> = (0..member_count).map(|ordinal| ordinal * 11).collect();
-    let group: DesignConstructionOperandGroup =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": "f3d:test:group#43", "byte_offset": 0, "class_tag": "261",
-            "record_index": 43, "scope_record_index": 42, "scope_reference_ordinal": 0,
-            "members": members, "member_offsets": offsets, "role": 68_719_476_736_u64,
-            "role_offset": 0, "paired_byte_offset": 200, "paired_class_tag": "266",
-            "frame": {
-                "member_count_offset": 0, "opaque_index": 1, "opaque_index_offset": 18,
-                "opaque_scalar": 0.0, "opaque_scalar_offset": 22, "trailing_flags": [],
-                "trailing_record_indices": [], "trailing_record_offsets": [], "variant": false
-            }
-        }))
-        .unwrap();
+    let group: DesignConstructionOperandGroup = json::from_value(cadmpeg_core::json!({
+        "id": "f3d:test:group#43", "byte_offset": 0, "class_tag": "261",
+        "record_index": 43, "scope_record_index": 42, "scope_reference_ordinal": 0,
+        "members": members, "member_offsets": offsets, "role": 68_719_476_736_u64,
+        "role_offset": 0, "paired_byte_offset": 200, "paired_class_tag": "266",
+        "frame": {
+            "member_count_offset": 0, "opaque_index": 1, "opaque_index_offset": 18,
+            "opaque_scalar": 0.0, "opaque_scalar_offset": 22, "trailing_flags": [],
+            "trailing_record_indices": [], "trailing_record_offsets": [], "variant": false
+        }
+    }))
+    .unwrap();
     let scope = DesignParameterScope::empty("f3d:test:scope#42", DesignFeatureKind::Shell, 42);
     bind_shell_removed_faces(
         selection,

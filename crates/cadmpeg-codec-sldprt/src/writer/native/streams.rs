@@ -298,7 +298,7 @@ pub(super) fn keywords(facts: &Facts<'_>) -> Vec<u8> {
 }
 
 /// Metres to millimetres.
-const MILLIMETRES_PER_METRE: f64 = 1000.0;
+pub(crate) const MILLIMETRES_PER_METRE: f64 = 1000.0;
 
 /// `swXmlContents/Features`: the `swSolidWorks` document listing the file,
 /// its model and its configuration. The `swVersion` attribute is left out:

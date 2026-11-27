@@ -177,7 +177,7 @@ pub(super) fn re_anchor(value: &mut Json, from: &[Json]) -> bool {
                 && kind(object) == Some("pinned")
                 && object.get("value").is_some_and(|at| from.contains(at));
             if pinned {
-                *node = serde_json::json!({ "kind": "current" });
+                *node = cadmpeg_core::json!({ "kind": "current" });
                 changed = true;
                 continue;
             }

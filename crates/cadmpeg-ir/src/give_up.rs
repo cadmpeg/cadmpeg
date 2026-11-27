@@ -20,6 +20,7 @@ use cadmpeg_core::decode::{ArenaClass, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::Serialize;
 
+use crate::annotations::Removed;
 use crate::design::container::Container;
 use crate::design::evaluation::StateDelta;
 use crate::design::refs::{EntityRef, Member, RecordRef};
@@ -100,7 +101,7 @@ pub(crate) struct Seed {
 }
 
 /// What removing one seed did to the document.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct Released {
     /// The record's path in the document.
     pub(crate) path: String,
@@ -109,13 +110,18 @@ pub(crate) struct Released {
     /// The records kept in a partial form or with a mark, sorted.
     pub(crate) marked: BTreeSet<String>,
     /// The records of the delta of each stored state that the delta dropped
-    /// and marked, by the state's path. A record of a delta is the state's
-    /// own: the document's record of the same id keeps its own outcome.
-    pub(crate) states: BTreeMap<String, Released>,
+    /// and marked, by the state's arena and id, each under the state's path.
+    /// A record of a delta is the state's own: the document's record of the
+    /// same id keeps its own outcome.
+    pub(crate) states: BTreeMap<(Arena, String), Released>,
     /// The stored states dropped whole, each with the occurrences whose
     /// member entry names a removed definition: no delta states that an
     /// occurrence leaves a state (§5.4, §6.7).
     pub(crate) unstatable: BTreeMap<String, BTreeSet<String>>,
+    /// Each record that named a removed record, with the removed ids it
+    /// named: a record that names one by a reference, and a record that the
+    /// removed one owns.
+    pub(crate) needs: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// The part a given-up seed leaves.
@@ -131,10 +137,19 @@ impl Released {
     fn new(path: String) -> Self {
         Self {
             path,
-            dropped: BTreeSet::new(),
-            marked: BTreeSet::new(),
-            states: BTreeMap::new(),
-            unstatable: BTreeMap::new(),
+            ..Self::default()
+        }
+    }
+
+    /// Adds what `other` released to what this one did.
+    fn absorb(&mut self, other: Self) {
+        self.dropped.extend(other.dropped);
+        self.marked.extend(other.marked);
+        self.marked.retain(|record| !self.dropped.contains(record));
+        self.states.extend(other.states);
+        self.unstatable.extend(other.unstatable);
+        for (record, named) in other.needs {
+            self.needs.entry(record).or_default().extend(named);
         }
     }
 
@@ -160,9 +175,10 @@ impl Released {
     /// dropped because its delta cannot state what leaves it.
     pub(crate) fn stated(&self) -> Vec<String> {
         let mut parts = Vec::new();
-        for (path, state) in &self.states {
+        for state in self.states.values() {
             parts.push(format!(
-                "delta of {path}: dropped=[{}]; marked=[{}]",
+                "delta of {}: dropped=[{}]; marked=[{}]",
+                state.path,
                 list(state.dropped.iter().map(String::as_str)),
                 list(state.marked.iter().map(String::as_str))
             ));
@@ -221,6 +237,37 @@ impl Holder {
         })
     }
 
+    /// The holder `entity`, a record of `arena`, is: for a neutral record,
+    /// where a field the CADIR schema types as an id, a key of a map keyed
+    /// by ids, or a `native_ref` names an id that `lookup` finds (§3.3), so
+    /// that a label that equals an id names nothing; for a native record,
+    /// by [`Self::of`]. A walk that reads no native record
+    /// ([`NativeLinks::Unread`]) asks for no native holder. A walk that
+    /// reads them ([`NativeLinks::Read`]) also names by [`Self::of`] for a
+    /// record of an arena the schema does not hold.
+    pub(crate) fn named<'k, T: Serialize>(
+        native_links: NativeLinks,
+        arena: &Arena,
+        id: &str,
+        entity: &T,
+        lookup: impl Fn(&str) -> Option<&'k str>,
+    ) -> Option<Self> {
+        let Arena::Home { home, field } = arena else {
+            return Self::of(arena, id, entity, lookup);
+        };
+        let schema = restate::Schema::cadir()?;
+        if native_links == NativeLinks::Read && !schema.holds(home, field) {
+            return Self::of(arena, id, entity, lookup);
+        }
+        let value = crate::hash::finite_json::to_json_value(entity).ok()?;
+        let names = schema.references(home, field, &value, &lookup);
+        (!names.is_empty()).then(|| Self {
+            arena: arena.clone(),
+            id: id.to_owned(),
+            names,
+        })
+    }
+
     /// Whether every name lies under one of `prefixes`.
     fn names_only_under(&self, prefixes: &[&str]) -> bool {
         self.names
@@ -268,16 +315,41 @@ fn keys<'k>(
     }
 }
 
+/// Whether a native record names the ids its values state, for a release.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum NativeLinks {
+    /// A native record names nothing (§2): the release of a decode or of a
+    /// read, whose codec states what each of its native records needs
+    /// (`dropped_with`).
+    #[default]
+    Unread,
+    /// A native record, and a record of an arena the CADIR schema does not
+    /// hold, names each id its values state: the drop of a write, which
+    /// omits a native record that holds a reference the write does not
+    /// resolve (Rule W1).
+    Read,
+}
+
 /// The references of a document, from one walk of its records: the number
 /// of records that hold each id, and the records that name each id.
 #[derive(Debug, Default)]
 pub(crate) struct References {
+    pub(crate) native_links: NativeLinks,
     held: HashMap<String, usize>,
     holders: Vec<(Arena, String)>,
     named_by: HashMap<String, Vec<usize>>,
 }
 
 impl References {
+    /// The references a walk that reads native records by `native_links`
+    /// fills.
+    pub(crate) fn new(native_links: NativeLinks) -> Self {
+        Self {
+            native_links,
+            ..Self::default()
+        }
+    }
+
     /// Counts one record, neutral or native, that holds `id`.
     pub(crate) fn hold(&mut self, id: &str) {
         *self.held.entry(id.to_owned()).or_default() += 1;
@@ -287,7 +359,7 @@ impl References {
     /// counted so far. The caller counts every record first.
     pub(crate) fn add<T: Serialize>(&mut self, arena: &Arena, id: &str, entity: &T) {
         let held = &self.held;
-        let Some(holder) = Holder::of(arena, id, entity, |text| {
+        let Some(holder) = Holder::named(self.native_links, arena, id, entity, |text| {
             held.get_key_value(text).map(|(key, _)| key.as_str())
         }) else {
             return;
@@ -321,6 +393,38 @@ impl References {
         })
     }
 
+    /// The seeds of `candidates` that no record names other than one of
+    /// `dropped` or of these seeds: a candidate that another record names
+    /// is kept, and so is each candidate that a kept one names.
+    fn unnamed(&self, candidates: Vec<Seed>, dropped: &[Seed]) -> Vec<Seed> {
+        let dropped: BTreeSet<&str> = dropped.iter().map(|seed| seed.id.as_str()).collect();
+        let mut left: BTreeSet<String> = candidates.iter().map(|seed| seed.id.clone()).collect();
+        loop {
+            let named: Vec<String> = left
+                .iter()
+                .filter(|id| {
+                    self.named_by.get(id.as_str()).is_some_and(|slots| {
+                        slots.iter().any(|slot| {
+                            let holder = self.holders[*slot].1.as_str();
+                            !dropped.contains(holder) && !left.contains(holder)
+                        })
+                    })
+                })
+                .cloned()
+                .collect();
+            if named.is_empty() {
+                break;
+            }
+            for id in named {
+                left.remove(&id);
+            }
+        }
+        candidates
+            .into_iter()
+            .filter(|seed| left.contains(&seed.id))
+            .collect()
+    }
+
     /// Each record that names an id of `gone`, once.
     fn naming(&self, gone: &BTreeSet<String>) -> BTreeSet<&(Arena, String)> {
         gone.iter()
@@ -351,7 +455,8 @@ pub(crate) fn record_text<T: Serialize>(copies: &[T]) -> String {
 /// Gives up each seed, in order, as a part (§3.3): removes it as
 /// [`drop_records`] does, and adds its `unknowns` stub to `codec`'s
 /// namespace and its canonical JSON to `fidelity` as an `untyped` retained
-/// record. `loss` states the loss of each seed from what its give-up did.
+/// record. The annotations of each record the give-ups remove go with it.
+/// `loss` states the loss of each seed from what its give-up did.
 ///
 /// # Errors
 ///
@@ -365,7 +470,8 @@ pub(crate) fn give_up(
     seeds: Vec<Seed>,
     mut loss: impl FnMut(&Seed, &Released, &Retained) -> LossNote,
 ) -> Result<Vec<LossNote>, CodecError> {
-    let mut cascade = Cascade::new(ctx, ir)?;
+    let before = (!fidelity.annotations.is_empty()).then(|| Removed::before(ir));
+    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Unread, &BTreeSet::new())?;
     let mut losses = Vec::new();
     for seed in seeds {
         let Some(text) = text(ir, &seed.arena, &seed.id) else {
@@ -396,6 +502,9 @@ pub(crate) fn give_up(
         )?;
         losses.push(part.commit(ctx, ir, fidelity)?);
     }
+    if let Some(before) = before {
+        fidelity.annotations.remove(&before.after(ir));
+    }
     Ok(losses)
 }
 
@@ -413,7 +522,7 @@ pub(crate) fn drop_records(
     ir: &mut CadIr,
     seeds: Vec<Seed>,
 ) -> Result<Vec<(Seed, Released)>, CodecError> {
-    let mut cascade = Cascade::new(ctx, ir)?;
+    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Read, &BTreeSet::new())?;
     let mut removed = Vec::new();
     for seed in seeds {
         if let Some(released) = remove(ctx, ir, &mut cascade, &seed)? {
@@ -423,12 +532,51 @@ pub(crate) fn drop_records(
     Ok(removed)
 }
 
+/// Removes from `ir` each seed as [`drop_records`] does, and each record of
+/// `unnamed` that no record outside `seeds` and `unnamed` names, directly or
+/// through records of `unnamed` it keeps; then each record that needs an id
+/// of `gone`, which `ir` no longer holds, and each record that needs one of
+/// those, transitively, as [`drop_records`] removes the records that need a
+/// seed. Returns what the removals released together. The seeds go first,
+/// so that a record that needs a seed names the seed among its needs.
+///
+/// # Errors
+///
+/// A resource refusal for a rewritten `unknowns` arena or for the walk of
+/// the carriers.
+pub(crate) fn drop_records_needing(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    gone: BTreeSet<String>,
+    seeds: Vec<Seed>,
+    unnamed: Vec<Seed>,
+) -> Result<Released, CodecError> {
+    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Read, &gone)?;
+    let unnamed = cascade.references.unnamed(unnamed, &seeds);
+    let mut released = Released::default();
+    for seed in seeds.into_iter().chain(unnamed) {
+        if let Some(removed) = remove(ctx, ir, &mut cascade, &seed)? {
+            released.absorb(removed);
+        }
+    }
+    release(
+        ctx,
+        ir,
+        &mut cascade.references,
+        &cascade.lazy,
+        gone,
+        Vec::new(),
+        &mut released,
+    )?;
+    Ok(released)
+}
+
 /// States `Source` each expression of the records of each seed whose tree
 /// passes the bound of an expression (§2.5), the form §3.3 gives an
 /// expression of which nothing is read, and returns the seeds whose records
 /// it restated. The arenas are in identity order.
 pub(crate) fn restate_past_the_bound(ir: &mut CadIr, seeds: &[Seed]) -> Vec<Seed> {
-    let Some(schema) = Schema::read() else {
+    let Some(schema) = Schema::cadir() else {
         return Vec::new();
     };
     let gone = BTreeSet::new();
@@ -438,11 +586,11 @@ pub(crate) fn restate_past_the_bound(ir: &mut CadIr, seeds: &[Seed]) -> Vec<Seed
             let Arena::Home { home, field } = &seed.arena else {
                 return false;
             };
-            let Some(restate) = Restate::new(&schema, &gone, &seed.id, *home == "process") else {
+            let Some(restate) = Restate::new(schema, &gone, &seed.id, *home == "process") else {
                 return false;
             };
             let restate = restate.past_the_bound();
-            ir.rewrite_records(&seed.arena, &seed.id, |record| {
+            ir.rewrite_records(&seed.arena, &seed.id, &mut |record| {
                 restate.record(home, field, record)
             })
         })
@@ -462,35 +610,24 @@ struct Cascade {
 /// What a batch of removals reads of the document once a record needs it.
 #[derive(Default)]
 struct Lazy {
-    /// The CADIR schema.
-    schema: OnceCell<Option<Schema>>,
     /// The stored states whose delta names each id, by id.
     stated: OnceCell<HashMap<String, BTreeSet<String>>>,
 }
 
 impl Cascade {
     /// The state of a batch of removals from `ir`, which it puts in
-    /// identity order.
-    fn new(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Self, CodecError> {
-        ir.finalize();
-        Ok(Self {
-            references: ir.references(),
-            lazy: Lazy::default(),
-            unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
-        })
-    }
-
-    /// The state of a batch of releases of `lost`, ids that no record of
-    /// `ir` may hold, so that the walk of the references finds the records
-    /// that name them.
-    fn naming(
+    /// identity order, walking native records by `native_links`, where
+    /// `gone` holds the ids that records of `ir` name and `ir` no longer
+    /// holds.
+    fn new(
         ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
-        lost: &[String],
+        native_links: NativeLinks,
+        gone: &BTreeSet<String>,
     ) -> Result<Self, CodecError> {
         ir.finalize();
-        let mut named = References::default();
-        for id in lost {
+        let mut named = References::new(native_links);
+        for id in gone {
             named.name(id);
         }
         Ok(Self {
@@ -522,6 +659,13 @@ fn remove(
         return Ok(None);
     }
     let mut released = Released::new(format!("{}/{}", seed.arena, seed.id));
+    for (_, record) in &owned {
+        released
+            .needs
+            .entry(record.clone())
+            .or_default()
+            .insert(seed.id.clone());
+    }
     mark_parents(ir, &parents, &mut released.marked);
     let gone = references.release(&seed.id, copies);
     release(
@@ -552,42 +696,50 @@ fn remove(
 /// carrier left with no user (§3.3). An id a record of `ir` holds names that
 /// record, so nothing needs the given-up one, and it releases nothing.
 ///
+/// Each release goes into `released` as it runs, so `released` holds what
+/// left `ir` also when a release stops on an error.
+///
 /// # Errors
 ///
-/// A resource refusal for a rewritten `unknowns` arena or for the walk of
-/// the carriers.
+/// A refusal of a rewritten `unknowns` arena, or a resource refusal for the
+/// walk of the carriers.
 pub(crate) fn release_lost(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     ids: &[String],
-) -> Result<Vec<(String, Released)>, CodecError> {
-    let mut cascade = Cascade::naming(ctx, ir, ids)?;
+    released: &mut Vec<(String, Released)>,
+) -> Result<(), CodecError> {
+    let lost: BTreeSet<String> = ids.iter().cloned().collect();
+    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Unread, &lost)?;
     let Cascade {
         references,
         lazy,
         unreached,
     } = &mut cascade;
-    let mut released_ids = Vec::new();
     for id in ids {
         if references.holds(id) {
             continue;
         }
-        let mut released = Released::new(id.clone());
-        release(
+        let mut release_of = Released::new(id.clone());
+        let outcome = release(
             ctx,
             ir,
             references,
             lazy,
             BTreeSet::from([id.clone()]),
             Vec::new(),
-            &mut released,
-        )?;
-        if !released.dropped.is_empty() || !released.states.is_empty() {
-            drop_orphans(ctx, ir, references, lazy, unreached, &mut released)?;
-        }
-        released_ids.push((id.clone(), released));
+            &mut release_of,
+        )
+        .and_then(|_| {
+            if release_of.dropped.is_empty() && release_of.states.is_empty() {
+                return Ok(());
+            }
+            drop_orphans(ctx, ir, references, lazy, unreached, &mut release_of)
+        });
+        released.push((id.clone(), release_of));
+        outcome?;
     }
-    Ok(released_ids)
+    Ok(())
 }
 
 /// Drops each carrier that the releases so far left with no user, until
@@ -929,9 +1081,14 @@ fn release(
                 unheld = gone.difference(&held).cloned().collect();
                 &unheld
             };
-            let Some(mut holder) = ir.holder(arena, id, here) else {
+            let Some(mut holder) = ir.holder(references.native_links, arena, id, here) else {
                 continue;
             };
+            released
+                .needs
+                .entry(holder.id.clone())
+                .or_default()
+                .extend(holder.names.iter().map(|(_, target)| target.clone()));
             if holder
                 .names
                 .iter()
@@ -962,7 +1119,7 @@ fn release(
                 None => {
                     clear_native_refs(ir, &mut holder)
                         || keep_topology(ir, &holder)
-                        || restate(ir, &holder, here, &lazy.schema)
+                        || restate(ir, &holder, here)
                         || keep_unresolved(ir, &holder)
                 }
             };
@@ -975,7 +1132,16 @@ fn release(
         let mut next = BTreeSet::new();
         for (arena, ids) in drops {
             let parents: Vec<String> = ids.iter().flat_map(|id| parents(ir, &arena, id)).collect();
-            carried.extend(ids.iter().flat_map(|id| owned(ir, &arena, id)));
+            for id in &ids {
+                for (owned_arena, record) in owned(ir, &arena, id) {
+                    released
+                        .needs
+                        .entry(record.clone())
+                        .or_default()
+                        .insert(id.clone());
+                    carried.push((owned_arena, record));
+                }
+            }
             for (id, copies) in ir.remove_ids(&arena, &ids) {
                 if references.release(&id, copies) {
                     next.insert(id.clone());
@@ -1091,11 +1257,11 @@ fn release_states(
             .get(id)
             .is_some_and(|states| states.iter().any(|state| *state != holder.id))
     };
-    let path = format!("{}/{}", holder.arena, holder.id);
+    let key = (holder.arena.clone(), holder.id.clone());
     let mut state = released
         .states
-        .remove(&path)
-        .unwrap_or_else(|| Released::new(path.clone()));
+        .remove(&key)
+        .unwrap_or_else(|| Released::new(format!("{}/{}", holder.arena, holder.id)));
     let plans: Vec<Withdrawn> = deltas(ir, &holder.arena, &holder.id)
         .into_iter()
         .map(|delta| withdrawn(ir, &holder.id, delta, here))
@@ -1108,9 +1274,55 @@ fn release_states(
         changed |= release_delta(ctx, references, lazy, &elsewhere, delta, plan, &mut state)?;
     }
     if !state.dropped.is_empty() || !state.marked.is_empty() {
-        released.states.insert(path, state);
+        released.states.insert(key, state);
     }
     Ok(changed)
+}
+
+/// Drops from the delta of each copy of the stored state `holder` each of
+/// its records of `ids` and each record of the delta that needs one, as §3.3
+/// drops a record, and returns what the deltas dropped and marked, under the
+/// state's path, or `None` where no delta changed.
+///
+/// # Errors
+///
+/// A resource refusal for the walk of the carriers.
+pub(crate) fn drop_state_records(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    holder: &Seed,
+    ids: BTreeSet<String>,
+) -> Result<Option<Released>, CodecError> {
+    let Cascade {
+        references, lazy, ..
+    } = Cascade::new(ctx, ir, NativeLinks::Read, &BTreeSet::new())?;
+    let naming = lazy.stated.get_or_init(|| states_naming(ir));
+    let elsewhere = |id: &str| {
+        naming
+            .get(id)
+            .is_some_and(|states| states.iter().any(|state| *state != holder.id))
+    };
+    let plan = Withdrawn {
+        gone: BTreeSet::new(),
+        ids,
+        removed: Vec::new(),
+        names: Vec::new(),
+        owners: Vec::new(),
+    };
+    let mut state = Released::new(format!("{}/{}", holder.arena, holder.id));
+    let mut changed = false;
+    for delta in deltas_mut(ir, &holder.arena, &holder.id) {
+        changed |= release_delta(
+            ctx,
+            &references,
+            &lazy,
+            &elsewhere,
+            delta,
+            &plan,
+            &mut state,
+        )?;
+    }
+    Ok(changed.then_some(state))
 }
 
 /// What a stored state withdraws because an owner entry of its delta names
@@ -1329,7 +1541,7 @@ fn release_delta(
             }
         }
     }
-    let mut local = References::default();
+    let mut local = References::new(references.native_links);
     for id in &plan.gone {
         local.name(id);
     }
@@ -1450,7 +1662,7 @@ fn clear_native_refs(ir: &mut CadIr, holder: &mut Holder) -> bool {
     if !holder.names.iter().any(|(path, _)| path == "native_ref") {
         return false;
     }
-    let cleared = ir.rewrite_records(&holder.arena, &holder.id, |record| {
+    let cleared = ir.rewrite_records(&holder.arena, &holder.id, &mut |record| {
         if let Some(record) = record.as_object_mut() {
             record.remove("native_ref");
         }
@@ -1509,23 +1721,18 @@ fn keep_topology(ir: &mut CadIr, holder: &Holder) -> bool {
 
 /// Restates `holder`, a record that names an id of `gone`, through its JSON
 /// in the partial forms of its values (§3.3), and returns whether it names
-/// none of them after. `schema` is read when first needed.
-fn restate(
-    ir: &mut CadIr,
-    holder: &Holder,
-    gone: &BTreeSet<String>,
-    schema: &OnceCell<Option<Schema>>,
-) -> bool {
+/// none of them after.
+fn restate(ir: &mut CadIr, holder: &Holder, gone: &BTreeSet<String>) -> bool {
     let Arena::Home { home, field } = &holder.arena else {
         return false;
     };
-    let Some(schema) = schema.get_or_init(Schema::read) else {
+    let Some(schema) = Schema::cadir() else {
         return false;
     };
     let Some(restate) = Restate::new(schema, gone, &holder.id, *home == "process") else {
         return false;
     };
-    ir.rewrite_records(&holder.arena, &holder.id, |record| {
+    ir.rewrite_records(&holder.arena, &holder.id, &mut |record| {
         restate.record(home, field, record)
     })
 }

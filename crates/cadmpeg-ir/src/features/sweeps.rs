@@ -401,7 +401,7 @@ pub type SheetSweepSection = SweepSection<NoGeneratedSection>;
 /// `G` names the geometry the result may generate. A solid result generates a
 /// circular region; a sheet result generates nothing, and its `G` is
 /// uninhabited.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
@@ -419,18 +420,17 @@ fn raw_with_flags(
     flags: u32,
     kind: &serde_json::Value,
 ) -> crate::sketch::PmDcSketchEntity {
-    let mut entity: crate::sketch::PmDcSketchEntity =
-        cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
-            "id": format!("inventor:pmdc:sketch-entity#segment-{ordinal}"),
-            "type_id": "3bdf52ced011d0d20008ccbc0663dc09",
-            "segment_token": "segment", "record_ordinal": ordinal,
-            "save_version_major": 22,
-            "header": {"header_value": 0, "header_id": 0, "flags": 0, "source_index": 0,
-                "next": {"index": 0, "qualified": false},
-                "context": {"index": 0, "qualified": false}},
-            "entity_flags": flags, "sketch": {"index": owner, "qualified": true}, "kind": kind,
-        }))
-        .expect("raw entity");
+    let mut entity: crate::sketch::PmDcSketchEntity = json::from_value(cadmpeg_core::json!({
+        "id": format!("inventor:pmdc:sketch-entity#segment-{ordinal}"),
+        "type_id": "3bdf52ced011d0d20008ccbc0663dc09",
+        "segment_token": "segment", "record_ordinal": ordinal,
+        "save_version_major": 22,
+        "header": {"header_value": 0, "header_id": 0, "flags": 0, "source_index": 0,
+            "next": {"index": 0, "qualified": false},
+            "context": {"index": 0, "qualified": false}},
+        "entity_flags": flags, "sketch": {"index": owner, "qualified": true}, "kind": kind,
+    }))
+    .expect("raw entity");
     entity.identity.type_id =
         crate::record_identity::RecordTypeId::from_bytes(entity.kind.record_type_id());
     entity
@@ -447,12 +447,12 @@ fn native(raw: &crate::sketch::PmDcSketchEntity) -> SketchEntity {
 
 fn non_curve_kinds() -> [serde_json::Value; 3] {
     [
-        serde_json::json!({"form": "point", "position": [0.0, 0.0],
+        cadmpeg_core::json!({"form": "point", "position": [0.0, 0.0],
             "endpoint_of": {"marker": 2, "metadata": null, "references": []},
             "center_of": {"marker": 2, "metadata": null, "references": []},
             "state": null, "associations": null}),
-        serde_json::json!({"form": "polygon", "reference": {"index": 0, "qualified": false}, "value": 0}),
-        serde_json::json!({"form": "block_member", "instances": {"marker": 2, "metadata": null, "references": []},
+        cadmpeg_core::json!({"form": "polygon", "reference": {"index": 0, "qualified": false}, "value": 0}),
+        cadmpeg_core::json!({"form": "block_member", "instances": {"marker": 2, "metadata": null, "references": []},
             "member": {"index": 0, "qualified": false}}),
     ]
 }
@@ -493,7 +493,7 @@ fn block(ordinal: u32, owner: u32, definition: u32) -> crate::sketch::PmDcSketch
     raw(
         ordinal,
         owner,
-        &serde_json::json!({
+        &cadmpeg_core::json!({
             "form": "block_instance", "definition": {"index": definition, "qualified": true},
             "group": {"index": 0, "qualified": false}, "masks": [273, 202],
             "placement": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], "value": 1,
@@ -508,7 +508,7 @@ fn a_block_requires_every_placed_definition_curve() {
         raw(
             ordinal,
             101,
-            &serde_json::json!({
+            &cadmpeg_core::json!({
                 "form": "circle", "points": {"marker": 2, "metadata": null, "references": []},
                 "auxiliary": [], "center": {"index": 0, "qualified": false}, "radius": 0.2, "state": 1,
             }),
@@ -563,7 +563,7 @@ fn block_completion_requires_every_geometry_producer_in_the_definition() {
     let curve = raw(
         101,
         101,
-        &serde_json::json!({
+        &cadmpeg_core::json!({
             "form": "circle", "points": {"marker": 2, "metadata": null, "references": []},
             "auxiliary": [], "center": {"index": 0, "qualified": false}, "radius": 0.2, "state": 1,
         }),
@@ -632,7 +632,7 @@ fn block_definition_nullness_qualifies_the_construction_curve_join() {
             101,
             definition,
             0x8_0000,
-            &serde_json::json!({
+            &cadmpeg_core::json!({
                 "form": "line", "points": {"marker": 2, "metadata": null, "references": []},
                 "auxiliary": [], "origin": [0.0, 0.0], "direction": [1.0, 0.0],
             }),
@@ -713,12 +713,12 @@ fn loose_ellipses_stay_conservative() {
 #[test]
 fn missing_raw_lines_are_located_before_the_split_gate() {
     let references = |indices: &[u32]| {
-        serde_json::json!({
+        cadmpeg_core::json!({
             "marker": 2,
             "metadata": if indices.is_empty() { serde_json::Value::Null } else {
-                serde_json::json!({"values": [2, 0], "width": "u32"})
+                cadmpeg_core::json!({"values": [2, 0], "width": "u32"})
             },
-            "references": indices.iter().map(|index| serde_json::json!({"index": index, "qualified": true})).collect::<Vec<_>>(),
+            "references": indices.iter().map(|index| cadmpeg_core::json!({"index": index, "qualified": true})).collect::<Vec<_>>(),
         })
     };
     for (start, end, blocks) in [
@@ -730,7 +730,7 @@ fn missing_raw_lines_are_located_before_the_split_gate() {
             raw(
                 ordinal,
                 1,
-                &serde_json::json!({
+                &cadmpeg_core::json!({
                     "form": "point", "position": position,
                     "endpoint_of": references(&[]), "center_of": references(&[]),
                     "state": null, "associations": null,
@@ -743,7 +743,7 @@ fn missing_raw_lines_are_located_before_the_split_gate() {
             raw(
                 52,
                 1,
-                &serde_json::json!({
+                &cadmpeg_core::json!({
                     "form": "line", "points": references(&[51, 52]), "auxiliary": [],
                     "origin": start, "direction": [1.0, 0.0],
                 }),
@@ -768,11 +768,9 @@ fn missing_raw_lines_are_located_before_the_split_gate() {
                 .is_none(),
             blocks
         );
-        let mut construction =
-            cadmpeg_core::serde_erase::json::to_value(&raw_entities[2]).expect("line");
-        construction["entity_flags"] = serde_json::json!(0x80000);
-        raw_entities[2] =
-            cadmpeg_core::serde_erase::json::from_value(construction).expect("construction line");
+        let mut construction = json::to_value(&raw_entities[2]).expect("line");
+        construction["entity_flags"] = cadmpeg_core::json!(0x80000);
+        raw_entities[2] = json::from_value(construction).expect("construction line");
         let index = ProfileIndex::new(&[], &[], &[], &raw_entities, &entities);
         assert!(!index.incomplete_sketches.contains_key(&("segment", 0)));
         assert!(index

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{DesignSketchPlacement, DesignSketchPlacementWire, SKETCH_PLACEMENT_CLONE_COUNT};
+use cadmpeg_core::serde_erase::json;
 
 fn placement(member: bool) -> DesignSketchPlacement {
     let (frame_length, paired_byte_offset, member_run_head) = if member {
@@ -19,8 +20,8 @@ fn sketch_placement_borrowed_wire_matches_owned_wire_bytes() {
     for record in [placement(false), placement(true)] {
         let owned = DesignSketchPlacementWire::from(record.clone());
         assert_eq!(
-            cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-            cadmpeg_core::serde_erase::json::to_vec(&owned).unwrap()
+            json::to_vec(&record).unwrap(),
+            json::to_vec(&owned).unwrap()
         );
     }
 }
@@ -33,22 +34,18 @@ fn null_reference_head_wire_preserves_its_matrix_and_extent() {
         [0.0, -1.0, 0.0, 3.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let mut wire = cadmpeg_core::serde_erase::json::to_value(placement(true)).unwrap();
-    wire["frame_length"] = serde_json::json!(152);
-    wire["transform"] = serde_json::json!(transform);
-    wire["transform_offset"] = serde_json::json!(122);
-    wire["paired_byte_offset"] = serde_json::json!(50);
-    let record: DesignSketchPlacement =
-        cadmpeg_core::serde_erase::json::from_value(wire.clone()).unwrap();
+    let mut wire = json::to_value(placement(true)).unwrap();
+    wire["frame_length"] = cadmpeg_core::json!(152);
+    wire["transform"] = cadmpeg_core::json!(transform);
+    wire["transform_offset"] = cadmpeg_core::json!(122);
+    wire["paired_byte_offset"] = cadmpeg_core::json!(50);
+    let record: DesignSketchPlacement = json::from_value(wire.clone()).unwrap();
     assert_eq!(record.frame_length(), 152);
     assert_eq!(*record.transform(), transform);
+    assert_eq!(json::to_value(&record).unwrap(), wire);
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(&record).unwrap(),
-        wire
-    );
-    assert_eq!(
-        cadmpeg_core::serde_erase::json::to_vec(&record).unwrap(),
-        cadmpeg_core::serde_erase::json::to_vec(&DesignSketchPlacementWire::from(record)).unwrap()
+        json::to_vec(&record).unwrap(),
+        json::to_vec(&DesignSketchPlacementWire::from(record)).unwrap()
     );
 }
 
@@ -69,10 +66,9 @@ fn sketch_visibility_collection_wire_requires_omission_or_a_positive_identity() 
         super::DesignSketchVisibility::new(std::num::NonZeroU32::new(2).unwrap(), 30, false)
             .unwrap();
     visibility.ordinal_collection = std::num::NonZeroU64::new(300);
-    let wire = cadmpeg_core::serde_erase::json::to_value(visibility).unwrap();
+    let wire = json::to_value(visibility).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignSketchVisibility>(wire.clone())
-            .unwrap(),
+        json::from_value::<super::DesignSketchVisibility>(wire.clone()).unwrap(),
         visibility
     );
     let mut omitted = wire.clone();
@@ -80,21 +76,14 @@ fn sketch_visibility_collection_wire_requires_omission_or_a_positive_identity() 
         .as_object_mut()
         .unwrap()
         .remove("ordinal_collection");
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignSketchVisibility>(omitted)
-            .unwrap()
-            .ordinal_collection
-            .is_none()
-    );
-    for invalid in [serde_json::Value::Null, serde_json::json!(0)] {
+    assert!(json::from_value::<super::DesignSketchVisibility>(omitted)
+        .unwrap()
+        .ordinal_collection
+        .is_none());
+    for invalid in [serde_json::Value::Null, cadmpeg_core::json!(0)] {
         let mut invalid_wire = wire.clone();
         invalid_wire["ordinal_collection"] = invalid;
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<super::DesignSketchVisibility>(
-                invalid_wire
-            )
-            .is_err()
-        );
+        assert!(json::from_value::<super::DesignSketchVisibility>(invalid_wire).is_err());
     }
 }
 
@@ -103,18 +92,17 @@ fn sketch_visibility_sketch_flag_wire_reads_back() {
     let mut visibility =
         super::DesignSketchVisibility::new(std::num::NonZeroU32::new(2).unwrap(), 30, false)
             .unwrap();
-    let cleared = cadmpeg_core::serde_erase::json::to_value(visibility).unwrap();
+    let cleared = json::to_value(visibility).unwrap();
     assert!(cleared.get("sketch_flag").is_none());
     assert!(
-        !cadmpeg_core::serde_erase::json::from_value::<super::DesignSketchVisibility>(cleared)
+        !json::from_value::<super::DesignSketchVisibility>(cleared)
             .unwrap()
             .sketch_flag
     );
     visibility.sketch_flag = true;
-    let wire = cadmpeg_core::serde_erase::json::to_value(visibility).unwrap();
-    assert_eq!(wire["sketch_flag"], serde_json::json!(true));
-    let read =
-        cadmpeg_core::serde_erase::json::from_value::<super::DesignSketchVisibility>(wire).unwrap();
+    let wire = json::to_value(visibility).unwrap();
+    assert_eq!(wire["sketch_flag"], cadmpeg_core::json!(true));
+    let read = json::from_value::<super::DesignSketchVisibility>(wire).unwrap();
     assert!(read.sketch_flag);
     assert_eq!(read, visibility);
 }
@@ -123,9 +111,9 @@ fn sketch_visibility_sketch_flag_wire_reads_back() {
 fn sketch_placement_display_name_wire_validates_non_blank_non_control_bounds() {
     let mut record = placement(false);
     record.display_name = Some("MountingHoles".into());
-    let valid = cadmpeg_core::serde_erase::json::to_value(&record).unwrap();
+    let valid = json::to_value(&record).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<DesignSketchPlacement>(valid.clone())
+        json::from_value::<DesignSketchPlacement>(valid.clone())
             .unwrap()
             .display_name
             .as_deref(),
@@ -133,9 +121,7 @@ fn sketch_placement_display_name_wire_validates_non_blank_non_control_bounds() {
     );
     for bad in ["", "   ", "Bad\nName", &"x".repeat(257)] {
         let mut invalid = valid.clone();
-        invalid["display_name"] = serde_json::json!(bad);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<DesignSketchPlacement>(invalid).is_err()
-        );
+        invalid["display_name"] = cadmpeg_core::json!(bad);
+        assert!(json::from_value::<DesignSketchPlacement>(invalid).is_err());
     }
 }

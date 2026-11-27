@@ -246,7 +246,7 @@ fn ruled_surface_is_written_as_a_trimmed_sampled_bspline_face() {
 fn sampled_ruled_surface_stays_within_the_residual_limit() {
     let ir = ruled(1.0);
     let surface_id = ir.geometry.surfaces[0].id.clone();
-    let mut approximator = Approximator::new(&ir);
+    let mut approximator = Approximator::new(&ir, crate::test_support::write_context());
     let limit = approximator.residual_limit();
     let carrier = approximator.surface(surface_id.as_str()).unwrap();
     let exact_index = ModelIndex::new_model_only(&ir);
@@ -277,7 +277,7 @@ fn sampled_ruled_surface_stays_within_the_residual_limit() {
 fn surface_with_a_trim_off_its_edge_keeps_the_omission_report() {
     let ir = ruled(0.5);
     let surface_id = ir.geometry.surfaces[0].id.clone();
-    let mut approximator = Approximator::new(&ir);
+    let mut approximator = Approximator::new(&ir, crate::test_support::write_context());
     assert!(approximator.surface(surface_id.as_str()).is_none());
     assert!(approximator.surface(surface_id.as_str()).is_none());
     let (text, losses) = written(&ir);
@@ -463,4 +463,52 @@ fn a_cylinder_spline_intersection_edge_is_written_within_the_document_tolerance(
         checked += 1;
     }
     assert_eq!(checked, 1);
+}
+
+#[test]
+fn the_sampling_evaluation_nests_apart_from_the_session_recursion_limit() {
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceLimits,
+    };
+
+    let ir = ruled(1.0);
+    let surface_id = ir.geometry.surfaces[0].id.clone();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: ResourceLimits {
+            max_recursion_depth: 1,
+            ..ResourceLimits::desktop()
+        },
+    };
+    let context = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let mut approximator = Approximator::new(&ir, &context);
+    assert!(approximator.surface(surface_id.as_str()).is_some());
+    assert_eq!(approximator.resource_limit(), None);
+}
+
+#[test]
+fn an_encode_refuses_under_the_callers_depth_limit() {
+    use cadmpeg_core::decode::{ResourceDimension, ResourceLimits};
+    use cadmpeg_ir::codec::write::target::TargetRequest;
+    use cadmpeg_ir::codec::write::{EncodeError, EncodeInput, Encoder};
+
+    let ir = ruled(1.0);
+    let limits = ResourceLimits {
+        max_recursion_depth: 1,
+        ..ResourceLimits::desktop()
+    };
+    let refusal = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None)
+                .with_target(TargetRequest::Explicit(
+                    StepSchema::Ap214.descriptor().id.as_str(),
+                ))
+                .with_limits(limits),
+        )
+        .expect_err("the document nests deeper than the caller allows");
+    let EncodeError::ResourceLimit(limit) = refusal else {
+        panic!("expected a resource refusal, got {refusal:?}");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert_eq!(limit.limit, 1);
 }

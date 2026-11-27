@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The order rule of names on the current geometry (part 10, Names).
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::container::{Container, OrderedKind, Rollback};
@@ -67,7 +68,7 @@ fn named_by_prototype(instance: bool) -> CadIr {
     ir.design
         .features
         .push(unresolved("proto", OperationFamily::Extrude));
-    let name: TopoName = cadmpeg_core::serde_erase::json::from_value(serde_json::json!({
+    let name: TopoName = json::from_value(cadmpeg_core::json!({
         "kind": "generated",
         "value": {"kind": "face", "feature": feature("proto")},
     }))

@@ -4,7 +4,6 @@
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
-use crate::loss::IgesLossCode;
 use crate::test_support::plan_at;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
@@ -35,15 +34,15 @@ fn inherit(
     ir: &CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
-    IgesCodec.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+    IgesCodec.plan(EncodeInput::new(ir, fidelity))
 }
 
 /// The flagship case: `convert in.igs -o out.igs` on a file that is not the
 /// catalog default keeps the file it was handed.
 ///
-/// The command line builds `Inherit` for a same-format conversion, and the
-/// resolved dialect is then the source's by construction, so the replay law
-/// admits byte replay. Under the catalog default this file would have been
+/// The command line names no target for a same-format conversion, so the
+/// request inherits as `Inherit` does, the resolved dialect is the source's
+/// by construction, and the replay law admits byte replay. Under the catalog default this file would have been
 /// silently rewritten as 5.3.
 #[test]
 fn inherit_replays_a_non_default_version_verbatim() {
@@ -106,11 +105,12 @@ fn inherit_synthesizes_the_source_version_when_the_image_is_gone() {
         .map(ToString::to_string),
         Some("iges:5.1-fixed-ascii".to_owned())
     );
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::PreservedSourceUnavailable.kind()));
+    assert_eq!(
+        plan.report().synthesis_cause(),
+        Some(&cadmpeg_ir::report::export::SynthesisCause::PatchDeclined {
+            reason: "the encode holds no source fidelity".to_owned(),
+        })
+    );
 }
 
 /// A dialect this codec reads but cannot write is written as the catalog
@@ -220,11 +220,6 @@ fn an_explicit_target_writes_a_source_the_catalog_cannot_inherit() {
             cadmpeg_ir::loss_namespace!("iges"),
             SOURCE_DIALECT_DISPLACED
         )));
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != IgesLossCode::PreservedSourceUnavailable.kind()));
 }
 
 /// The catalog is the five Fixed ASCII rows the semantic writer emits, each
@@ -269,8 +264,8 @@ fn every_synthesized_target_re_decodes_as_the_dialect_the_report_named() {
     for version in IgesVersion::ALL {
         let plan = IgesCodec
             .plan(
-                EncodeInput::new(&ir, None),
-                TargetRequest::Explicit(version.descriptor().id.as_str()),
+                EncodeInput::new(&ir, None)
+                    .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
             )
             .unwrap_or_else(|error| panic!("{version:?} is a catalog row, got {error}"));
         let claimed = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(

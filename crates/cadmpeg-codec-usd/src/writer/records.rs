@@ -22,7 +22,9 @@ use cadmpeg_ir::topology::{AnchoredVertexUse, Body, BodyKind, Coedge, LoopBounda
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
-use cadmpeg_tessellate::{CoedgeTrace, FaceMesh, Tessellator};
+use cadmpeg_tessellate::{CoedgeTrace, Tessellator};
+
+use super::brep::FaceMeshes;
 
 use crate::brep::nurbs::{harmonic_arc, Nurbs};
 use crate::brep::{
@@ -597,8 +599,8 @@ struct Exporter<'t, 'ir> {
     tessellator: &'t mut Tessellator<'ir>,
     /// Every face needs a mesh: the body has no tessellation of its own.
     meshes_wanted: bool,
-    /// The mesh of each face record, when it has one.
-    meshes: Vec<Option<FaceMesh>>,
+    /// The tessellation of each face that has one.
+    meshes: FaceMeshes,
     brep: Brep,
     vertices: BTreeMap<VertexId, usize>,
     edges: BTreeMap<EdgeId, usize>,
@@ -633,6 +635,8 @@ pub(super) struct Exported {
     /// The IR face of each face record.
     pub(super) faces: Vec<FaceId>,
     pub(super) unwritten: Unwritten,
+    /// The tessellation of each face that has one.
+    pub(super) meshes: FaceMeshes,
 }
 
 impl<'t, 'ir> Exporter<'t, 'ir> {
@@ -647,7 +651,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             index,
             tessellator,
             meshes_wanted,
-            meshes: Vec::new(),
+            meshes: FaceMeshes::new(),
             brep: Brep {
                 tolerance: ir.tolerances.linear.get(),
                 angle_scale: 1.0,
@@ -1040,19 +1044,13 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         };
         let planar = matches!(surface, (Catalog::Analytic, index)
             if self.brep.analytic_surfaces[index].kind == SurfaceKind::Plane);
-        let mesh = if self.meshes_wanted || !planar {
-            match self.tessellator.face(face_id) {
-                Ok(mesh) => Some(mesh),
-                Err(refusal) => {
-                    self.unwritten
-                        .unmeshed
-                        .push(format!("{face_id}: {refusal}"));
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let tessellated = (self.meshes_wanted || !planar).then(|| self.tessellator.face(face_id));
+        if let Some(Err(refusal)) = &tessellated {
+            self.unwritten
+                .unmeshed
+                .push(format!("{face_id}: {refusal}"));
+        }
+        let mesh = tessellated.as_ref().and_then(|result| result.as_ref().ok());
         let mut loops = Vec::new();
         for loop_id in face.loops.boundary().into_iter().flatten() {
             let Some(loop_) = self.index.loops(loop_id.as_str(), StandardIndex) else {
@@ -1134,7 +1132,9 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             id,
         });
         self.faces.push(face_id.clone());
-        self.meshes.push(mesh);
+        if let Some(tessellated) = tessellated {
+            self.meshes.insert(face_id.clone(), tessellated);
+        }
     }
 
     /// The period of each record parameter of a surface record.
@@ -1422,7 +1422,7 @@ pub(super) fn export<'ir>(
     }
     // A source whose vertices and edges lie off their surfaces states that
     // distance as its tolerance.
-    for mesh in exporter.meshes.iter().flatten() {
+    for mesh in exporter.meshes.values().flatten() {
         tolerance = tolerance.max(mesh.deviation * DEVIATION_MARGIN);
     }
     exporter.brep.tolerance = tolerance;
@@ -1433,6 +1433,7 @@ pub(super) fn export<'ir>(
         brep: exporter.brep,
         faces: exporter.faces,
         unwritten: exporter.unwritten,
+        meshes: exporter.meshes,
     })
 }
 

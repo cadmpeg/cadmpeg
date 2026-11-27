@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::test_support::edit;
+use cadmpeg_core::serde_erase::json;
 
 use super::{OffsetSurfaceConstruction, SubSurfaceConstruction, SubsetSurfaceConstruction};
 use crate::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
@@ -23,22 +24,15 @@ fn assert_positive_revision_lane(wire: &serde_json::Value, pointer: &str) {
     for revision in [0_i64, -1] {
         assert!(crate::scalar::PositiveI64::new(revision).is_none());
         let mut invalid = wire.clone();
-        *invalid.pointer_mut(pointer).unwrap() = serde_json::json!(revision);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(invalid)
-                .is_err()
-        );
+        *invalid.pointer_mut(pointer).unwrap() = cadmpeg_core::json!(revision);
+        assert!(json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
     }
     let mut maximum = wire.clone();
-    *maximum.pointer_mut(pointer).unwrap() = serde_json::json!(i64::MAX);
-    let parsed =
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(maximum)
-            .unwrap();
+    *maximum.pointer_mut(pointer).unwrap() = cadmpeg_core::json!(i64::MAX);
+    let parsed = json::from_value::<ProceduralSurfaceDefinition>(maximum).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::to_value(parsed)
-            .unwrap()
-            .pointer(pointer),
-        Some(&serde_json::json!(i64::MAX))
+        json::to_value(parsed).unwrap().pointer(pointer),
+        Some(&cadmpeg_core::json!(i64::MAX))
     );
 }
 
@@ -48,15 +42,15 @@ fn surface_restrictions_keep_their_distinct_range_domains_and_wire_fields() {
     let definition = ProceduralSurfaceDefinition::SubSurface(
         SubSurfaceConstruction::try_new(support(), ranges).unwrap(),
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_eq!(
         wire,
-        serde_json::json!({
+        cadmpeg_core::json!({
             "kind": "sub_surface", "support": support(), "parameter_ranges": ranges,
         })
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         definition
     );
     assert!(SubsetSurfaceConstruction::try_new(support(), ranges, None, None, None).is_err());
@@ -153,73 +147,60 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
         form: Box::new(form.clone()),
     });
 
-    let legacy_wire = cadmpeg_core::serde_erase::json::to_value(&legacy).unwrap();
+    let legacy_wire = json::to_value(&legacy).unwrap();
     assert_eq!(
         legacy_wire["extension"]["kind"],
-        serde_json::json!("legacy")
+        cadmpeg_core::json!("legacy")
     );
     assert_eq!(
         legacy_wire["extension"]["flags"],
-        serde_json::json!({"kind": "enabled", "secondary": true})
+        cadmpeg_core::json!({"kind": "enabled", "secondary": true})
     );
     assert!(legacy_wire.get("extension_flags").is_none());
-    let revision_wire = cadmpeg_core::serde_erase::json::to_value(&revision).unwrap();
+    let revision_wire = json::to_value(&revision).unwrap();
     assert_eq!(
         revision_wire["extension"]["kind"],
-        serde_json::json!("revision")
+        cadmpeg_core::json!("revision")
     );
     assert!(revision_wire.get("extension_flags").is_none());
     assert!(revision_wire.get("revision_form").is_none());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<OffsetSurfaceConstruction>(
-            legacy_wire.clone()
-        )
-        .unwrap(),
+        json::from_value::<OffsetSurfaceConstruction>(legacy_wire.clone()).unwrap(),
         legacy
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<OffsetSurfaceConstruction>(
-            revision_wire.clone()
-        )
-        .unwrap(),
+        json::from_value::<OffsetSurfaceConstruction>(revision_wire.clone()).unwrap(),
         revision
     );
 
     let mut legacy_with_form = legacy_wire;
-    legacy_with_form["extension"]["flags"] = serde_json::json!({"kind": "absent"});
-    legacy_with_form["extension"]["form"] =
-        cadmpeg_core::serde_erase::json::to_value(&form).unwrap();
-    let error =
-        cadmpeg_core::serde_erase::json::from_value::<OffsetSurfaceConstruction>(legacy_with_form)
-            .unwrap_err()
-            .to_string();
+    legacy_with_form["extension"]["flags"] = cadmpeg_core::json!({"kind": "absent"});
+    legacy_with_form["extension"]["form"] = json::to_value(&form).unwrap();
+    let error = json::from_value::<OffsetSurfaceConstruction>(legacy_with_form)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("form"), "{error}");
 
-    let error = cadmpeg_core::serde_erase::json::from_value::<LegacyExtensionFlags>(
-        serde_json::json!({"kind": "disabled", "secondary": true}),
+    let error = json::from_value::<LegacyExtensionFlags>(
+        cadmpeg_core::json!({"kind": "disabled", "secondary": true}),
     )
     .unwrap_err()
     .to_string();
     assert!(error.contains("unknown field `secondary`"), "{error}");
 
     for wire in [
-        serde_json::json!({"kind": "absent"}),
-        serde_json::json!({"kind": "disabled"}),
-        serde_json::json!({"kind": "enabled", "secondary": false}),
-        serde_json::json!({"kind": "enabled", "secondary": false, "tertiary": true}),
+        cadmpeg_core::json!({"kind": "absent"}),
+        cadmpeg_core::json!({"kind": "disabled"}),
+        cadmpeg_core::json!({"kind": "enabled", "secondary": false}),
+        cadmpeg_core::json!({"kind": "enabled", "secondary": false, "tertiary": true}),
     ] {
-        let flags =
-            cadmpeg_core::serde_erase::json::from_value::<LegacyExtensionFlags>(wire.clone())
-                .unwrap();
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(flags).unwrap(),
-            wire
-        );
+        let flags = json::from_value::<LegacyExtensionFlags>(wire.clone()).unwrap();
+        assert_eq!(json::to_value(flags).unwrap(), wire);
     }
 
     let mut short_run = revision_wire;
-    short_run["extension"]["form"]["flags"] = serde_json::json!([true, true, true]);
-    let error = cadmpeg_core::serde_erase::json::from_value::<OffsetSurfaceConstruction>(short_run)
+    short_run["extension"]["form"]["flags"] = cadmpeg_core::json!([true, true, true]);
+    let error = json::from_value::<OffsetSurfaceConstruction>(short_run)
         .unwrap_err()
         .to_string();
     assert!(
@@ -269,33 +250,30 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
     })
     .unwrap();
 
-    let legacy_wire = cadmpeg_core::serde_erase::json::to_value(&legacy).unwrap();
-    assert_eq!(legacy_wire["spline"]["kind"], serde_json::json!("legacy"));
+    let legacy_wire = json::to_value(&legacy).unwrap();
+    assert_eq!(legacy_wire["spline"]["kind"], cadmpeg_core::json!("legacy"));
     assert!(legacy_wire.get("parameters").is_none());
     assert!(legacy_wire.get("revision_form").is_none());
-    let revision_wire = cadmpeg_core::serde_erase::json::to_value(&revision).unwrap();
+    let revision_wire = json::to_value(&revision).unwrap();
     assert_eq!(
         revision_wire["spline"]["kind"],
-        serde_json::json!("revision")
+        cadmpeg_core::json!("revision")
     );
     assert!(revision_wire["spline"].get("form").is_some());
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ExactSurfacePayload>(legacy_wire.clone())
-            .unwrap(),
+        json::from_value::<ExactSurfacePayload>(legacy_wire.clone()).unwrap(),
         legacy
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ExactSurfacePayload>(revision_wire.clone())
-            .unwrap(),
+        json::from_value::<ExactSurfacePayload>(revision_wire.clone()).unwrap(),
         revision
     );
 
     let mut legacy_with_form = legacy_wire;
-    legacy_with_form["spline"]["form"] = cadmpeg_core::serde_erase::json::to_value(&form).unwrap();
-    let error =
-        cadmpeg_core::serde_erase::json::from_value::<ExactSurfacePayload>(legacy_with_form)
-            .unwrap_err()
-            .to_string();
+    legacy_with_form["spline"]["form"] = json::to_value(&form).unwrap();
+    let error = json::from_value::<ExactSurfacePayload>(legacy_with_form)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("form"), "{error}");
 
     let mut revision_without_form = revision_wire;
@@ -303,10 +281,9 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
         .as_object_mut()
         .unwrap()
         .remove("form");
-    let error =
-        cadmpeg_core::serde_erase::json::from_value::<ExactSurfacePayload>(revision_without_form)
-            .unwrap_err()
-            .to_string();
+    let error = json::from_value::<ExactSurfacePayload>(revision_without_form)
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("form"), "{error}");
 }
 
@@ -324,21 +301,17 @@ fn exact_and_compound_payloads_reject_nonfinite_nested_parameters() {
         })
     };
     let valid = ProceduralSurfaceDefinition::Exact(exact([1.0, 1.0]).unwrap());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&valid).unwrap();
+    let wire = json::to_value(&valid).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire.clone())
-            .unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
         valid
     );
     for range in [[2.0, 1.0], [f64::NAN, 1.0], [0.0, f64::INFINITY]] {
         assert!(exact(range).is_err());
     }
     let mut invalid = wire;
-    invalid["spline"]["ranges"][0] = serde_json::json!([2.0, 1.0]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(invalid)
-            .is_err()
-    );
+    invalid["spline"]["ranges"][0] = cadmpeg_core::json!([2.0, 1.0]);
+    assert!(json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
     assert!(CompoundSurfacePayload::try_new(Vec::new(), None).is_ok());
     for parameter in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
         assert!(CompoundSurfacePayload::try_new(
@@ -387,10 +360,9 @@ fn loft_payload_admits_only_finite_entries_and_bridge_doubles() {
         )
     };
     let valid = ProceduralSurfaceDefinition::Loft(loft(-1.0, -2.0).unwrap());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&valid).unwrap();
+    let wire = json::to_value(&valid).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire.clone())
-            .unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
         valid
     );
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
@@ -398,11 +370,8 @@ fn loft_payload_admits_only_finite_entries_and_bridge_doubles() {
         assert!(loft(0.0, value).is_err());
     }
     let mut invalid = wire;
-    invalid["parameters"]["ranges"][0] = serde_json::json!([1.0, 0.0]);
-    assert!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(invalid)
-            .is_err()
-    );
+    invalid["parameters"]["ranges"][0] = cadmpeg_core::json!([1.0, 0.0]);
+    assert!(json::from_value::<ProceduralSurfaceDefinition>(invalid).is_err());
 }
 
 #[test]
@@ -451,10 +420,9 @@ fn a_compound_loft_scale_member_direction_is_refused_by_the_payload_admission() 
         CompoundLoftSurfacePayload::try_new(*construction(Some(Vector3::new(0.0, 0.0, 1.0))), None)
             .unwrap();
     let definition = ProceduralSurfaceDefinition::CompoundLoft(admitted);
-    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire.clone())
-            .unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
         definition
     );
     assert!(CompoundLoftSurfacePayload::try_new(*construction(None), None).is_ok());
@@ -469,7 +437,7 @@ fn a_compound_loft_scale_member_direction_is_refused_by_the_payload_admission() 
     // direction; the admission above is the route that reads it.
     assert_eq!(
         wire["construction"]["scales"][0]["members"][0]["data"]["direction"],
-        serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
+        cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0})
     );
 }
 
@@ -585,10 +553,9 @@ fn a_loft_member_form_direction_is_refused_by_the_loft_and_net_payload_admission
 
     let admitted = Vector3::new(0.0, 0.0, 1.0);
     let definition = ProceduralSurfaceDefinition::Loft(loft(Some(admitted), None).unwrap());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire.clone())
-            .unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire.clone()).unwrap(),
         definition
     );
     // The admitted direction is the only one the profile writes, and the
@@ -596,7 +563,7 @@ fn a_loft_member_form_direction_is_refused_by_the_loft_and_net_payload_admission
     let profile = &wire["sections"][0]["entries"][0]["profile"];
     assert_eq!(
         profile[0]["form"]["direction"],
-        serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0})
+        cadmpeg_core::json!({"x": 0.0, "y": 0.0, "z": 1.0})
     );
     assert_eq!(profile[1]["form"].get("direction"), None);
 
@@ -778,40 +745,40 @@ fn the_loft_and_net_admissions_refuse_a_non_finite_section_or_cache_scalar() {
     };
 
     let definition = ProceduralSurfaceDefinition::Loft(loft(admitted).unwrap());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_positive_revision_lane(&wire, "/cache/form/revision");
     let entry = &wire["sections"][0]["entries"][0];
     let member = &entry["profile"][0];
     assert_eq!(
         member["form"]["subdata"]["rows"][0]["extra"],
-        serde_json::json!([0.0, 1.0])
+        cadmpeg_core::json!([0.0, 1.0])
     );
     assert_eq!(
         member["form"]["support_bounds"],
-        serde_json::json!([0.0, 1.0, null, 2.0])
+        cadmpeg_core::json!([0.0, 1.0, null, 2.0])
     );
     assert_eq!(
         member["profile"]["endpoints"],
-        serde_json::json!([0.0, null])
+        cadmpeg_core::json!([0.0, null])
     );
     assert_eq!(
         entry["path"]["path"]["endpoints"],
-        serde_json::json!([null, 1.0])
+        cadmpeg_core::json!([null, 1.0])
     );
     assert_eq!(
         wire["cache"]["form"]["cache"]["u_interval"],
-        serde_json::json!([0.0, 1.0])
+        cadmpeg_core::json!([0.0, 1.0])
     );
     assert_eq!(
         wire["cache"]["form"]["cache"]["v_interval"],
-        serde_json::json!([null, 2.0])
+        cadmpeg_core::json!([null, 2.0])
     );
     assert_eq!(
         wire["cache"]["form"]["discontinuities"][0],
-        serde_json::json!([3.0])
+        cadmpeg_core::json!([3.0])
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         definition
     );
     assert!(loft_wire(admitted).is_ok());
@@ -1063,25 +1030,25 @@ fn the_revision_gated_surface_admissions_refuse_every_non_finite_form_scalar() {
     };
 
     let definition = ProceduralSurfaceDefinition::Exact(exact(admitted).unwrap());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_positive_revision_lane(&wire, "/spline/form/revision");
     let stored = &wire["spline"]["form"];
     assert_eq!(
         stored["support_bounds"],
-        serde_json::json!([0.0, null, 1.0, null])
+        cadmpeg_core::json!([0.0, null, 1.0, null])
     );
     assert_eq!(
         stored["reference_endpoints"],
-        serde_json::json!([2.0, null])
+        cadmpeg_core::json!([2.0, null])
     );
-    assert_eq!(stored["second_endpoints"], serde_json::json!([null, 3.0]));
+    assert_eq!(stored["second_endpoints"], cadmpeg_core::json!([null, 3.0]));
     assert_eq!(
         stored["cache"]["u_interval"],
-        serde_json::json!([4.0, null])
+        cadmpeg_core::json!([4.0, null])
     );
-    assert_eq!(stored["discontinuities"][0], serde_json::json!([5.0]));
+    assert_eq!(stored["discontinuities"][0], cadmpeg_core::json!([5.0]));
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         definition
     );
     for ok in [
@@ -1303,24 +1270,27 @@ fn the_sweep_and_vertex_blend_admissions_refuse_their_remaining_optional_scalars
     };
 
     let definition = ProceduralSurfaceDefinition::Sweep(sweep(admitted).unwrap());
-    let wire = cadmpeg_core::serde_erase::json::to_value(&definition).unwrap();
+    let wire = json::to_value(&definition).unwrap();
     assert_positive_revision_lane(&wire, "/native/cache/form/revision");
     assert_positive_revision_lane(
-        &cadmpeg_core::serde_erase::json::to_value(ProceduralSurfaceDefinition::VertexBlend(
+        &json::to_value(ProceduralSurfaceDefinition::VertexBlend(
             vertex(admitted).unwrap(),
         ))
         .unwrap(),
         "/construction/revision",
     );
     let stored = &wire["native"]["cache"]["form"];
-    assert_eq!(stored["profile_endpoints"], serde_json::json!([0.0, null]));
-    assert_eq!(stored["path_endpoints"], serde_json::json!([null, 1.0]));
+    assert_eq!(
+        stored["profile_endpoints"],
+        cadmpeg_core::json!([0.0, null])
+    );
+    assert_eq!(stored["path_endpoints"], cadmpeg_core::json!([null, 1.0]));
     assert_eq!(
         stored["cache"]["u_interval"],
-        serde_json::json!([2.0, null])
+        cadmpeg_core::json!([2.0, null])
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         definition
     );
     assert!(sweep_wire(admitted).is_ok());
@@ -1394,12 +1364,12 @@ fn the_blend_admission_refuses_a_non_finite_radius_law() {
     let admitted = ProceduralSurfaceDefinition::Blend(
         blend_new(BlendRadiusLaw::linear(-1.5, 2.5).unwrap()).unwrap(),
     );
-    let wire = cadmpeg_core::serde_erase::json::to_value(&admitted).unwrap();
-    assert_eq!(wire["radius"]["kind"], serde_json::json!("linear"));
-    assert_eq!(wire["radius"]["start"], serde_json::json!(-1.5));
-    assert_eq!(wire["radius"]["end"], serde_json::json!(2.5));
+    let wire = json::to_value(&admitted).unwrap();
+    assert_eq!(wire["radius"]["kind"], cadmpeg_core::json!("linear"));
+    assert_eq!(wire["radius"]["start"], cadmpeg_core::json!(-1.5));
+    assert_eq!(wire["radius"]["end"], cadmpeg_core::json!(2.5));
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(wire).unwrap(),
         admitted
     );
     assert!(blend_new(BlendRadiusLaw::constant(-3.0).unwrap()).is_ok());
@@ -1489,10 +1459,8 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
         CacheContract::from_form(None),
     )
     .unwrap();
-    let admitted_wire = cadmpeg_core::serde_erase::json::to_value(
-        ProceduralSurfaceDefinition::Revolution(admitted.clone()),
-    )
-    .unwrap();
+    let admitted_wire =
+        json::to_value(ProceduralSurfaceDefinition::Revolution(admitted.clone())).unwrap();
     let origin = Point3::new(0.0, 0.0, 0.0);
 
     for direction in [
@@ -1507,11 +1475,8 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
         assert!(admit_revolution_axis(origin, direction).is_err());
         assert!(RevolutionSurfaceConstruction::try_from(wire(origin, direction)).is_err());
         let mut definition = admitted_wire.clone();
-        definition["axis_direction"] = serde_json::json!([direction.x, direction.y, direction.z]);
-        assert!(
-            cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(definition)
-                .is_err()
-        );
+        definition["axis_direction"] = cadmpeg_core::json!([direction.x, direction.y, direction.z]);
+        assert!(json::from_value::<ProceduralSurfaceDefinition>(definition).is_err());
     }
     for axis_origin in [
         Point3::new(f64::NAN, 0.0, 0.0),
@@ -1546,8 +1511,7 @@ fn a_revolution_admits_a_finite_axis_origin_and_a_unit_axis_direction() {
         .unwrap()
     );
     assert_eq!(
-        cadmpeg_core::serde_erase::json::from_value::<ProceduralSurfaceDefinition>(admitted_wire)
-            .unwrap(),
+        json::from_value::<ProceduralSurfaceDefinition>(admitted_wire).unwrap(),
         ProceduralSurfaceDefinition::Revolution(admitted)
     );
 }

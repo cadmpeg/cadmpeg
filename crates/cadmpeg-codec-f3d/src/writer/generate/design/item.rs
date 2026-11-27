@@ -547,24 +547,7 @@ impl<'a, 'p> Rows<'a, 'p> {
     /// position in the plan and the number of written sketches before the
     /// feature.
     fn sketch(&self, selection: &ProfileRef) -> Result<(usize, usize), &'static str> {
-        const NOT_WRITTEN: &str = "its sketch is not written";
-        let Picks::Named(members) = &selection.picks else {
-            return Err(NOT_WRITTEN);
-        };
-        let [picked] = members.as_slice() else {
-            return Err(NOT_WRITTEN);
-        };
-        let PickTarget::Sketch(sketch) = &picked.target else {
-            return Err(NOT_WRITTEN);
-        };
-        let owner = self
-            .target
-            .design
-            .sketches
-            .iter()
-            .find(|record| &record.id == sketch)
-            .map(|record| &record.owner)
-            .ok_or(NOT_WRITTEN)?;
+        let owner = sketch_owner(self.target, selection).ok_or(SKETCH_NOT_WRITTEN)?;
         let position_of = |feature: &FeatureId| {
             self.features
                 .iter()
@@ -575,9 +558,9 @@ impl<'a, 'p> Rows<'a, 'p> {
             .items
             .iter()
             .position(|item| item.feature == owner)
-            .ok_or(NOT_WRITTEN)?;
+            .ok_or(SKETCH_NOT_WRITTEN)?;
         if position_of(owner).is_none_or(|at| at >= self.position) {
-            return Err(NOT_WRITTEN);
+            return Err(SKETCH_NOT_WRITTEN);
         }
         let after = self
             .sketches
@@ -587,6 +570,39 @@ impl<'a, 'p> Rows<'a, 'p> {
             .count();
         Ok((index, after))
     }
+}
+
+/// Why the writer writes no item of a feature whose profile is not on one
+/// written sketch.
+pub(super) const SKETCH_NOT_WRITTEN: &str = "its sketch is not written";
+
+/// The feature of the one sketch the profile `selection` picks.
+fn sketch_owner<'a>(target: &'a CadIr, selection: &ProfileRef) -> Option<&'a FeatureId> {
+    let Picks::Named(members) = &selection.picks else {
+        return None;
+    };
+    let [picked] = members.as_slice() else {
+        return None;
+    };
+    let PickTarget::Sketch(sketch) = &picked.target else {
+        return None;
+    };
+    target
+        .design
+        .sketches
+        .iter()
+        .find(|record| &record.id == sketch)
+        .map(|record| &record.owner)
+}
+
+/// The feature of the sketch the profile of `feature` lies on, where the
+/// writer writes items of its family.
+pub(super) fn profile_sketch<'a>(target: &'a CadIr, feature: &FeatureId) -> Option<&'a FeatureId> {
+    let selection = match typed(target, feature)? {
+        Typed::Extrude(extrude) => &extrude.profile,
+        Typed::Revolve(revolve) => &revolve.profile,
+    };
+    sketch_owner(target, selection)
 }
 
 /// Whether the state at `at` stands after every feature of `run`: after a

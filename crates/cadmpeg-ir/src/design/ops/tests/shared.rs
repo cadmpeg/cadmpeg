@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The shared operation types: the spacing and sides of a run, and loci.
 
-use serde_json::json;
+use cadmpeg_core::json;
 
 use super::{
     angle, bound, construction, length, lit, point3, refuses, selection, text, to_value, unread,

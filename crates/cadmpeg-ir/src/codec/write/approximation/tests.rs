@@ -14,6 +14,7 @@ use crate::geometry::{
 use crate::ids::{CurveId, ProceduralCurveId};
 use crate::math::{Point2, Point3};
 use crate::transform::Transform2;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
 
 #[test]
 fn chart_snapping_moves_only_an_end_pole_within_the_fit_tolerance() {
@@ -157,7 +158,9 @@ fn a_cornered_curve_on_a_spline_surface_is_fitted_with_a_pole_on_the_corner() {
         native_ref: None,
     });
 
-    let mut approximator = Approximator::new(&ir);
+    let arena = DecodeArena::new();
+    let context = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let mut approximator = Approximator::new(&ir, &context);
     let Some(SolvedCurveGeometry::Nurbs(fitted)) = approximator.curve(curve.as_str()) else {
         panic!("a cornered curve is fitted one smooth stretch at a time");
     };
@@ -265,7 +268,9 @@ fn a_constant_parameter_curve_across_a_spline_surface_becomes_the_exact_isocurve
         native_ref: None,
     });
 
-    let mut approximator = Approximator::new(&ir);
+    let arena = DecodeArena::new();
+    let context = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let mut approximator = Approximator::new(&ir, &context);
     let Some(SolvedCurveGeometry::Nurbs(exact)) = approximator.curve(curve.as_str()) else {
         panic!("a constant-parameter curve on a spline surface has an exact spline form");
     };
@@ -379,7 +384,9 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
         native_ref: None,
     });
 
-    let mut approximator = Approximator::new(&ir);
+    let arena = DecodeArena::new();
+    let context = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let mut approximator = Approximator::new(&ir, &context);
     let Some(SolvedCurveGeometry::Nurbs(exact)) = approximator.curve(curve.as_str()) else {
         panic!("a constant-parameter curve on a linear sweep has an exact spline form");
     };
@@ -470,7 +477,9 @@ fn a_kinked_curve_on_a_plane_becomes_the_exact_spline_through_the_plane() {
         native_ref: None,
     });
 
-    let mut approximator = Approximator::new(&ir);
+    let arena = DecodeArena::new();
+    let context = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let mut approximator = Approximator::new(&ir, &context);
     let Some(SolvedCurveGeometry::Nurbs(exact)) = approximator.curve(curve.as_str()) else {
         panic!("a spline on a plane has an exact spline form");
     };
@@ -539,7 +548,9 @@ fn fitting_retains_an_evaluation_resource_refusal() {
         source_object: None,
         native_ref: None,
     });
-    let mut approximator = Approximator::new(&ir);
+    let arena = DecodeArena::new();
+    let context = DecodeContext::new(&arena, &DecodePolicy::default(), DecodeDepth::Full);
+    let mut approximator = Approximator::new(&ir, &context);
     assert!(approximator.curve(curve.as_str()).is_none());
     let refusal = approximator
         .resource_limit()

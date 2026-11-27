@@ -13,6 +13,7 @@ use cadmpeg_ir::CadIr;
 
 #[test]
 fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
+    test_ctx!(ctx);
     // The circle of radius 1e308 about (MAX, 0, 0) reaches x = MAX + 1e308
     // at angle 0, which has no finite value; at a quarter turn it is finite.
     let directrix = CurveId::mint("test:iges:curve#directrix").expect("identity grammar");
@@ -49,7 +50,7 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
         None,
     ));
     assert_eq!(
-        extrusion_surface_entities(&ir, &construction, 0, crate::IgesVersion::V5_3)
+        extrusion_surface_entities(&ctx, &ir, &construction, 0, crate::IgesVersion::V5_3)
             .err()
             .map(|error| error.to_string()),
         Some(
@@ -63,6 +64,7 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
 
 #[test]
 fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_ends() {
+    test_ctx!(ctx);
     // With major radius 1 and minor radius MAX, the directrix point at
     // t = 1e-7 is (cosh t, MAX sinh t, 0), which is finite; only MAX cosh t,
     // which the point does not read, overflows. The Type 122 and Type 104
@@ -101,8 +103,9 @@ fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_en
         ),
         None,
     ));
-    let entities = extrusion_surface_entities(&ir, &construction, 0, crate::IgesVersion::V5_3)
-        .expect("the finite hyperbola end is written");
+    let entities =
+        extrusion_surface_entities(&ctx, &ir, &construction, 0, crate::IgesVersion::V5_3)
+            .expect("the finite hyperbola end is written");
     assert_eq!(entities[0].type_code, 104);
     assert_eq!(entities[1].type_code, 122);
     let written_end = format!(

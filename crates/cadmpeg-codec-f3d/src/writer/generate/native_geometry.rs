@@ -4955,7 +4955,7 @@ mod native_interval_curve_tests {
 
     #[test]
     fn source_less_sweep_with_unallocatable_conic_intervals_writes_with_a_loss() {
-        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+        use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
         use cadmpeg_ir::geometry::analytic::CircleCurve;
         use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
@@ -5022,7 +5022,7 @@ mod native_interval_curve_tests {
             ));
             let mut output = vec![0x93, 0x2a];
             let result = crate::F3dCodec
-                .plan(EncodeInput::new(&target, None), TargetRequest::Inherit)
+                .plan(EncodeInput::new(&target, None))
                 .and_then(|plan| plan.write_to(&mut output));
             if representable {
                 result.expect("ordinary circle interval writes");
@@ -6222,6 +6222,7 @@ mod pcurve_chart_tests {
             });
             let mut output = vec![0x93, 0x2a];
             let generated = crate::writer::generate::write_new(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &target,
                 cadmpeg_ir::codec::write::MissingStateForm::GeometryTrue,
                 &mut output,

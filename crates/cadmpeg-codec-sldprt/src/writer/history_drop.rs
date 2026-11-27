@@ -519,6 +519,51 @@ pub(super) fn foreign_native_operations(ir: &mut CadIr) -> Vec<LossNote> {
         .notes("a native operation of another format, which only its own codec writes")
 }
 
+/// Drop each feature whose result body the document does not hold, with every
+/// record that needs it, and name them: the history writer writes a feature's
+/// scope from its result bodies. An encode set leaves out the bodies of the
+/// definitions another output writes.
+pub(super) fn features_without_result(ir: &mut CadIr) -> Option<LossNote> {
+    let bodies = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<BTreeSet<_>>();
+    let seeds = Removed {
+        features: ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| {
+                feature
+                    .evaluation
+                    .outputs()
+                    .iter()
+                    .any(|body| !bodies.contains(body))
+            })
+            .map(|feature| feature.id.as_str().to_owned())
+            .collect(),
+        ..Removed::default()
+    };
+    if seeds.is_empty() {
+        return None;
+    }
+    let removed = remove(ir, &seeds);
+    let list = |ids: &BTreeSet<String>| ids.iter().cloned().collect::<Vec<_>>().join(", ");
+    Some(SldprtLossCode::WriterFeatureResultAbsent.note(format!(
+        "the SLDPRT history writer writes a feature's scope from its result bodies, and the \
+         output holds no result body of {} feature(s); it writes the output without them and \
+         without the records that need them: features [{}]; sketches [{}]; parameters [{}]; \
+         constraints [{}]",
+        seeds.features.len(),
+        list(&removed.features),
+        list(&removed.sketches),
+        list(&removed.parameters),
+        list(&removed.constraints),
+    )))
+}
+
 impl Removed {
     fn is_empty(&self) -> bool {
         self.features.is_empty()

@@ -308,6 +308,12 @@ impl Provenance<SourceLocation> {
         self.tag = tag;
         self
     }
+
+    /// The named container stream, or `None` for the root stream.
+    #[must_use]
+    pub const fn source_stream(&self) -> Option<&StreamName> {
+        self.location.stream.as_ref()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -427,18 +433,15 @@ mod tests {
     use super::StreamName;
     use super::{SourceObjectAssociation, SourceProvenance};
     use crate::test_support::wire;
+    use cadmpeg_core::serde_erase::json;
 
     #[cfg(feature = "schema")]
     #[test]
     fn provenance_schemas_use_admitted_stream_names_and_codec_ids() {
-        let schema =
-            cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(StreamName)).unwrap();
+        let schema = json::to_value(schemars::schema_for!(StreamName)).unwrap();
         assert_eq!(schema["type"], "string");
         assert_eq!(schema["minLength"], 1);
-        let schema = cadmpeg_core::serde_erase::json::to_value(schemars::schema_for!(
-            SourceObjectAssociation
-        ))
-        .unwrap();
+        let schema = json::to_value(schemars::schema_for!(SourceObjectAssociation)).unwrap();
         assert_eq!(schema["properties"]["format"]["$ref"], "#/$defs/CodecId");
         assert_eq!(schema["$defs"]["CodecId"]["pattern"], "^[a-z0-9]+$");
     }
@@ -447,18 +450,15 @@ mod tests {
     fn a_source_object_names_any_codec_id() {
         for format in ["3dm", "usd", "step"] {
             let wire =
-                serde_json::json!({"format": format, "object_id": "#42", "instance_path": []});
+                cadmpeg_core::json!({"format": format, "object_id": "#42", "instance_path": []});
             let value: SourceObjectAssociation =
-                cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("a codec id");
+                json::from_value(wire.clone()).expect("a codec id");
             assert_eq!(value.format.as_str(), format);
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(value).expect("serialize"),
-                wire
-            );
+            assert_eq!(json::to_value(value).expect("serialize"), wire);
         }
         for format in ["", "Step", "st-ep", "step "] {
-            cadmpeg_core::serde_erase::json::from_value::<SourceObjectAssociation>(
-                serde_json::json!({"format": format, "object_id": "#42", "instance_path": []}),
+            json::from_value::<SourceObjectAssociation>(
+                cadmpeg_core::json!({"format": format, "object_id": "#42", "instance_path": []}),
             )
             .expect_err("not a codec id");
         }
@@ -467,10 +467,9 @@ mod tests {
     #[test]
     fn a_source_provenance_stream_is_named_or_absent() {
         let root = SourceProvenance::root("iges", 12);
-        let wire = cadmpeg_core::serde_erase::json::to_value(&root).expect("serialize");
-        assert_eq!(wire, serde_json::json!({"format": "iges", "offset": 12}));
-        let read: SourceProvenance =
-            cadmpeg_core::serde_erase::json::from_value(wire).expect("root reads back");
+        let wire = json::to_value(&root).expect("serialize");
+        assert_eq!(wire, cadmpeg_core::json!({"format": "iges", "offset": 12}));
+        let read: SourceProvenance = json::from_value(wire).expect("root reads back");
         assert_eq!(
             wire::field_or_default::<Option<String>>(&read, "stream").as_deref(),
             None
@@ -478,20 +477,19 @@ mod tests {
         assert_eq!(read, root);
 
         let named = SourceProvenance::in_stream("fcstd", crate::stream_name!("Document.xml"), 0);
-        let wire = cadmpeg_core::serde_erase::json::to_value(&named).expect("serialize");
+        let wire = json::to_value(&named).expect("serialize");
         assert_eq!(
             wire,
-            serde_json::json!({"format": "fcstd", "stream": "Document.xml", "offset": 0})
+            cadmpeg_core::json!({"format": "fcstd", "stream": "Document.xml", "offset": 0})
         );
-        let read: SourceProvenance =
-            cadmpeg_core::serde_erase::json::from_value(wire).expect("named reads back");
+        let read: SourceProvenance = json::from_value(wire).expect("named reads back");
         assert_eq!(
             wire::field_or_default::<Option<String>>(&read, "stream").as_deref(),
             Some("Document.xml")
         );
 
-        let error = cadmpeg_core::serde_erase::json::from_value::<SourceProvenance>(
-            serde_json::json!({"format": "iges", "stream": "", "offset": 0}),
+        let error = json::from_value::<SourceProvenance>(
+            cadmpeg_core::json!({"format": "iges", "stream": "", "offset": 0}),
         )
         .expect_err("the empty string does not name a stream")
         .to_string();
@@ -518,15 +516,12 @@ mod tests {
 
     #[test]
     fn source_object_identity_is_nonempty_and_preserves_wire() {
-        let wire = serde_json::json!({"format": "step", "object_id": "#42", "instance_path": []});
+        let wire = cadmpeg_core::json!({"format": "step", "object_id": "#42", "instance_path": []});
         let value: SourceObjectAssociation =
-            cadmpeg_core::serde_erase::json::from_value(wire.clone()).expect("nonempty identity");
-        assert_eq!(
-            cadmpeg_core::serde_erase::json::to_value(value).expect("serialize"),
-            wire
-        );
-        let error = cadmpeg_core::serde_erase::json::from_value::<SourceObjectAssociation>(
-            serde_json::json!({"format": "step", "object_id": "", "instance_path": []}),
+            json::from_value(wire.clone()).expect("nonempty identity");
+        assert_eq!(json::to_value(value).expect("serialize"), wire);
+        let error = json::from_value::<SourceObjectAssociation>(
+            cadmpeg_core::json!({"format": "step", "object_id": "", "instance_path": []}),
         )
         .expect_err("empty identity");
         assert!(error.to_string().contains("object_id"));
@@ -535,23 +530,17 @@ mod tests {
     #[test]
     fn source_geometry_role_preserves_ownership_and_requires_omission_for_absence() {
         for role in ["independent", "support"] {
-            let wire = serde_json::json!({
+            let wire = cadmpeg_core::json!({
                 "format": "iges", "object_id": "D1", "instance_path": [], "geometry_role": role
             });
             let value: SourceObjectAssociation =
-                cadmpeg_core::serde_erase::json::from_value(wire.clone())
-                    .expect("source ownership");
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_value(value).expect("serialize"),
-                wire
-            );
+                json::from_value(wire.clone()).expect("source ownership");
+            assert_eq!(json::to_value(value).expect("serialize"), wire);
         }
-        for role in [serde_json::Value::Null, serde_json::json!("unknown")] {
-            let error = cadmpeg_core::serde_erase::json::from_value::<SourceObjectAssociation>(
-                serde_json::json!({
-                    "format": "iges", "object_id": "D1", "instance_path": [], "geometry_role": role
-                }),
-            )
+        for role in [serde_json::Value::Null, cadmpeg_core::json!("unknown")] {
+            let error = json::from_value::<SourceObjectAssociation>(cadmpeg_core::json!({
+                "format": "iges", "object_id": "D1", "instance_path": [], "geometry_role": role
+            }))
             .expect_err("invalid ownership");
             assert!(error.to_string().contains("geometry_role"));
         }

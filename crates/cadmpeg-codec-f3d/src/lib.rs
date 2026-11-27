@@ -39,7 +39,6 @@
 //!
 //! ```no_run
 //! use cadmpeg_codec_f3d::F3dCodec;
-//! use cadmpeg_ir::codec::write::target::TargetRequest;
 //! use cadmpeg_ir::codec::write::Encoder;
 //! use cadmpeg_ir::{CodecBackend, Codec, DecodeOptions};
 //! use std::fs::File;
@@ -51,10 +50,7 @@
 //! // Edit supported fields in `ir`.
 //! let mut output = File::create("part-edited.f3d")?;
 //! F3dCodec
-//!     .plan(
-//!         cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
-//!         TargetRequest::Inherit,
-//!     )?
+//!     .plan(cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)))?
 //!     .write_to(&mut output)?;
 //! # Ok(())
 //! # }
@@ -154,14 +150,15 @@ impl F3dCodec {
     /// Replay retained source bytes when the document is the one the decode
     /// returned (§3.1, Rule B); otherwise patch. Returns which branch ran.
     fn write_preserved_bytes(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         ir: &CadIr,
         fidelity: &cadmpeg_ir::SourceFidelity,
         data: &[u8],
         writer: &mut dyn Write,
         notes: &mut Vec<String>,
     ) -> Result<PreservedWritePath, CodecError> {
-        if fidelity.edited(ir)? {
-            writer::patch::write_semantic(ir, data, writer, notes)?;
+        if fidelity.edited(ctx, ir)? {
+            writer::patch::write_semantic(ctx, ir, data, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;
@@ -241,29 +238,33 @@ impl CodecBackend for F3dCodec {
 
 impl EncoderBackend for F3dCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
+    const NAME: &'static str = "F3D";
     /// Patches the retained source, so it plans from the history and design
     /// records it rewrites.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog =
         Catalog::new(dialect::TARGETS, Some(0)).with_replay_rows(dialect::REPLAY_ROWS);
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 
     fn restore(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: &ResolvedWrite<'_>,
         notes: &mut Vec<String>,
         losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) -> Result<Option<CadIr>, CodecError> {
-        writer::saved::restore(input, target, notes, losses)
+        writer::saved::restore(ctx, input, target, notes, losses)
     }
 }
 

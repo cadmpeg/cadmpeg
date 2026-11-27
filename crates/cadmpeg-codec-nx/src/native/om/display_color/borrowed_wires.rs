@@ -95,6 +95,7 @@ impl Serialize for RmDisplayColorAssignment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
@@ -105,16 +106,10 @@ mod tests {
         ] {
             let value: RmDisplayColorAssignmentEncoding = serde_json::from_str(json).unwrap();
             assert_eq!(
-                cadmpeg_core::serde_erase::json::to_vec(&value).unwrap(),
-                cadmpeg_core::serde_erase::json::to_vec(&super::super::wire::EncodingWire::from(
-                    value.clone()
-                ))
-                .unwrap()
+                json::to_vec(&value).unwrap(),
+                json::to_vec(&super::super::wire::EncodingWire::from(value.clone())).unwrap()
             );
-            assert_eq!(
-                cadmpeg_core::serde_erase::json::to_string(&value).unwrap(),
-                json
-            );
+            assert_eq!(json::to_string(&value).unwrap(), json);
         }
     }
 
@@ -122,12 +117,12 @@ mod tests {
     fn color_assignment_borrowed_bytes_and_limit() {
         let json = r#"{"id":"nx:rm-display-color-assignments:assignment#0","ordinal":0,"encoding":{"kind":"target","target_index":2,"raw_target_index":"02","target_index_source_offset":15,"indices":[3,4,5],"raw_indices":["03","04","05"],"index_source_offsets":[20,21,22],"mode":7},"color_index":128,"color_definition":"definition","raw_color_index":"8080","source_entry":"entry","source_offset":8,"row_source_offset":10}"#;
         let value: RmDisplayColorAssignment = serde_json::from_str(json).unwrap();
-        let borrowed = cadmpeg_core::serde_erase::json::to_vec(&value).unwrap();
+        let borrowed = json::to_vec(&value).unwrap();
         assert_eq!(
             borrowed,
-            cadmpeg_core::serde_erase::json::to_vec(
-                &super::super::wire::RmDisplayColorAssignmentWire::from(value.clone())
-            )
+            json::to_vec(&super::super::wire::RmDisplayColorAssignmentWire::from(
+                value.clone()
+            ))
             .unwrap()
         );
         assert_eq!(borrowed, json.as_bytes());

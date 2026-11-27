@@ -2,6 +2,7 @@
 //! A record the generator cannot write as it stands is degraded or renamed
 //! with a loss naming it, and the rest of the document is written.
 
+use cadmpeg_core::serde_erase::json;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -100,9 +101,8 @@ fn a_subset_that_cannot_be_restated_on_its_source_is_written_as_its_cache() {
         .find(|curve| &curve.id == written_curve)
         .and_then(|curve| curve.geometry.solved())
         .expect("the written carrier is solved geometry");
-    let [written, cache] = [written, cache].map(|geometry| {
-        cadmpeg_core::serde_erase::json::to_value(geometry).expect("curve geometry serializes")
-    });
+    let [written, cache] = [written, cache]
+        .map(|geometry| json::to_value(geometry).expect("curve geometry serializes"));
     assert!(agree(&written, &cache), "{written:#}\n{cache:#}");
 }
 

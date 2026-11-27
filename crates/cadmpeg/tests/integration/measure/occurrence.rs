@@ -21,6 +21,7 @@
 //! ROOT is the root definition: it owns `#140` and `#150` and no occurrence
 //! places it.
 
+use cadmpeg_core::serde_erase::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -49,7 +50,7 @@ fn bodies_are_placed_by_their_own_transform_then_the_occurrence_chain() {
     let path = assembly();
     let model = measure_json(&[path.to_str().unwrap()]);
     let body = only_body(&model);
-    assert_eq!(body["placement"], serde_json::json!({"space": "model"}));
+    assert_eq!(body["placement"], cadmpeg_core::json!({"space": "model"}));
     assert_point(&body["centroid"], [0.0, 0.0, 20.0], 30.0);
     assert!(model["measure"].get("occurrence").is_none());
 
@@ -74,7 +75,7 @@ fn bodies_are_placed_by_their_own_transform_then_the_occurrence_chain() {
         let body = only_body(&report);
         assert_eq!(
             body["placement"],
-            serde_json::json!({"space": "occurrence", "occurrence": occurrence})
+            cadmpeg_core::json!({"space": "occurrence", "occurrence": occurrence})
         );
         assert_measured(&body["volume"], 3000.0 * pi, 1.0);
         assert_point(&body["centroid"], centroid, 110.0);
@@ -82,8 +83,8 @@ fn bodies_are_placed_by_their_own_transform_then_the_occurrence_chain() {
         let block = &report["measure"]["occurrence"];
         assert_eq!(block["occurrence"], occurrence);
         assert_eq!(block["prototype"], "step:product:product#111");
-        assert_eq!(block["chain"], serde_json::json!(chain));
-        assert_eq!(block["bodies"], serde_json::json!(["step:data:body#71"]));
+        assert_eq!(block["chain"], cadmpeg_core::json!(chain));
+        assert_eq!(block["bodies"], cadmpeg_core::json!(["step:data:body#71"]));
         assert!(block.get("unavailable").is_none());
     }
 
@@ -126,7 +127,7 @@ fn a_subassembly_occurrence_measures_the_bodies_of_its_subtree() {
     let body = only_body(&report);
     assert_eq!(
         body["placement"],
-        serde_json::json!({"space": "occurrence", "occurrence": "step:product:occurrence#150"})
+        cadmpeg_core::json!({"space": "occurrence", "occurrence": "step:product:occurrence#150"})
     );
     assert_measured(&body["area"], 800.0 * pi, 1000.0);
     assert_point(&body["centroid"], [20.0, 50.0, 100.0], 110.0);
@@ -134,7 +135,7 @@ fn a_subassembly_occurrence_measures_the_bodies_of_its_subtree() {
     assert_measured(&report["measure"]["document"]["area"], 800.0 * pi, 1000.0);
     let block = &report["measure"]["occurrence"];
     assert_eq!(block["prototype"], "step:product:product#107");
-    assert_eq!(block["bodies"], serde_json::json!(["step:data:body#71"]));
+    assert_eq!(block["bodies"], cadmpeg_core::json!(["step:data:body#71"]));
     assert!(block.get("unavailable").is_none());
     let descendants = block["descendants"].as_array().unwrap();
     let [descendant] = descendants.as_slice() else {
@@ -144,7 +145,7 @@ fn a_subassembly_occurrence_measures_the_bodies_of_its_subtree() {
     assert_eq!(descendant["parent"], "step:product:occurrence#150");
     assert_eq!(
         descendant["bodies"],
-        serde_json::json!(["step:data:body#71"])
+        cadmpeg_core::json!(["step:data:body#71"])
     );
 }
 
@@ -159,15 +160,10 @@ fn edited(dir: &Path, edit: impl Fn(&mut Value)) -> PathBuf {
         .arg("--force")
         .assert()
         .success();
-    let mut document: Value =
-        cadmpeg_core::serde_erase::json::from_slice(&fs::read(&cadir).unwrap()).unwrap();
+    let mut document: Value = json::from_slice(&fs::read(&cadir).unwrap()).unwrap();
     edit(&mut document);
     let out = dir.join("edited.cadir.json");
-    fs::write(
-        &out,
-        cadmpeg_core::serde_erase::json::to_vec(&document).unwrap(),
-    )
-    .unwrap();
+    fs::write(&out, json::to_vec(&document).unwrap()).unwrap();
     out
 }
 
@@ -179,10 +175,9 @@ fn edit_occurrence(document: &mut Value, id: &str, edit: impl FnOnce(&mut Occurr
         .iter_mut()
         .find(|occurrence| occurrence["id"] == id)
         .unwrap();
-    let mut occurrence: Occurrence =
-        cadmpeg_core::serde_erase::json::from_value(entry.clone()).unwrap();
+    let mut occurrence: Occurrence = json::from_value(entry.clone()).unwrap();
     edit(&mut occurrence);
-    *entry = cadmpeg_core::serde_erase::json::to_value(occurrence).unwrap();
+    *entry = json::to_value(occurrence).unwrap();
 }
 
 /// Points the occurrence `id` at a new definition stored in `document`,
@@ -193,7 +188,7 @@ fn place_externally(cadir: &mut Value, id: &str, document: ExternalDocument) {
         .as_array_mut()
         .unwrap()
         .push(
-            cadmpeg_core::serde_erase::json::to_value(ProductDefinition::new(
+            json::to_value(ProductDefinition::new(
                 external.clone(),
                 Storage::External(document),
             ))

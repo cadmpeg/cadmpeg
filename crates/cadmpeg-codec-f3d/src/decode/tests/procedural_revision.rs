@@ -11,13 +11,14 @@
 )]
 
 use cadmpeg_core::convert::f64_from_index;
+use cadmpeg_core::serde_erase::json;
 
 use cadmpeg_test_support::edit;
 
 use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
 use zip::CompressionMethod;
@@ -385,7 +386,7 @@ fn generated_single_radius_variable_blend_decodes_explicit_circular_cross_sectio
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("selector-zero source-less encode");
     let round_trip = F3dCodec
@@ -673,17 +674,13 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
         .expect("legal revision compound loft decode")
         .into_parts()
         .0;
-    let mut wire =
-        cadmpeg_core::serde_erase::json::to_value(&legal.geometry.procedural_surfaces[0]).unwrap();
+    let mut wire = json::to_value(&legal.geometry.procedural_surfaces[0]).unwrap();
     assert_eq!(wire["definition"]["construction"]["tail"]["kind"], "curve");
     wire["definition"]["construction"]["tail"]
         .as_object_mut()
         .unwrap()
         .remove("curve");
-    let error = cadmpeg_core::serde_erase::json::from_value::<
-        cadmpeg_ir::geometry::ProceduralSurface,
-    >(wire)
-    .unwrap_err();
+    let error = json::from_value::<cadmpeg_ir::geometry::ProceduralSurface>(wire).unwrap_err();
     assert!(error.to_string().contains("curve"), "{error}");
 }
 
@@ -775,7 +772,7 @@ fn record_level_surface_bounds_round_trip() {
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&source_less, None))
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("record-bounds encode");
     let round_trip = F3dCodec
@@ -909,7 +906,7 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
         }
         let mut encoded = Vec::new();
         F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+            .plan(EncodeInput::new(&source_less, None))
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less vertex-blend encode");
         let round_trip = F3dCodec

@@ -166,15 +166,21 @@ pub(crate) fn uniform_offset_circle_file() -> Vec<u8> {
 }
 
 pub(crate) fn uniform_offset_circle_file_with_parameters(offset: &[u8]) -> Vec<u8> {
+    offset_file_with_source("100", b"100,0,0,0,2,0,0,2;", offset)
+}
+
+/// A Type 130 offset curve at D3 whose source is the entity of type
+/// `source_type` with the Parameter Data `source` at D1.
+pub(crate) fn offset_file_with_source(source_type: &str, source: &[u8], offset: &[u8]) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
-        ["100", "1", "0", "0", "0", "0", "0", "0", "00010000"],
+        [source_type, "1", "0", "0", "0", "0", "0", "0", "00010000"],
         1,
     ));
     bytes.extend(directory_card(
-        ["100", "0", "0", "1", "0", "", "", "ARC", "0"],
+        [source_type, "0", "0", "1", "0", "", "", "ARC", "0"],
         2,
     ));
     bytes.extend(directory_card(
@@ -185,7 +191,7 @@ pub(crate) fn uniform_offset_circle_file_with_parameters(offset: &[u8]) -> Vec<u
         ["130", "0", "0", "1", "0", "", "", "OFFSET", "0"],
         4,
     ));
-    bytes.extend(parameter_card(b"100,0,0,0,2,0,0,2;", 1, 1));
+    bytes.extend(parameter_card(source, 1, 1));
     bytes.extend(parameter_card(offset, 3, 2));
     let global_cards = global_card_count(global);
     bytes.extend(card(

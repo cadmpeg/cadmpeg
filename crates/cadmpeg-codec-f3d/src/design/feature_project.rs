@@ -101,7 +101,7 @@ mod unstitch;
 mod work_axes;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
-pub(super) const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
+pub(crate) const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
 
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;

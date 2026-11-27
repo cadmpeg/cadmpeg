@@ -7,7 +7,7 @@
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::report::loss::LossNote;
@@ -19,9 +19,7 @@ use crate::SldprtCodec;
 
 /// Writes `ir` as a generated part: no retained source.
 fn write(ir: &cadmpeg_ir::CadIr) -> (Vec<u8>, Vec<LossNote>) {
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
-        .unwrap();
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, None)).unwrap();
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();

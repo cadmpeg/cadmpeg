@@ -165,9 +165,9 @@ fn current_per_object_mesh_userdata_reaches_object_presentation() {
     let mesh = object_presentation(&result)
         .field("custom_render_mesh")
         .expect("current per-object mesh settings");
-    assert_eq!(mesh["version"], serde_json::json!([1, 5]));
-    assert_eq!(mesh["compute_curvature"], serde_json::json!(false));
-    assert_eq!(mesh["custom_settings"], serde_json::json!(true));
+    assert_eq!(mesh["version"], cadmpeg_core::json!([1, 5]));
+    assert_eq!(mesh["compute_curvature"], cadmpeg_core::json!(false));
+    assert_eq!(mesh["custom_settings"], cadmpeg_core::json!(true));
     assert_valid(&result);
 }
 
@@ -231,10 +231,10 @@ fn obsolete_custom_mesh_userdata_reaches_object_presentation() {
     let mesh = object_presentation(&result)
         .field("custom_render_mesh")
         .expect("obsolete custom mesh settings");
-    assert_eq!(mesh["version"], serde_json::json!([1, 5]));
-    assert_eq!(mesh["custom_settings"], serde_json::json!(true));
-    assert_eq!(mesh["custom_settings_enabled"], serde_json::json!(true));
-    assert_eq!(mesh["compute_curvature"], serde_json::json!(false));
+    assert_eq!(mesh["version"], cadmpeg_core::json!([1, 5]));
+    assert_eq!(mesh["custom_settings"], cadmpeg_core::json!(true));
+    assert_eq!(mesh["custom_settings_enabled"], cadmpeg_core::json!(true));
+    assert_eq!(mesh["compute_curvature"], cadmpeg_core::json!(false));
     assert_valid(&result);
 }
 
