@@ -160,7 +160,36 @@ fn a_scale_with_no_body_before_another_object_ends_after_its_closing_bytes() {
 }
 
 #[test]
-fn a_scale_with_two_bodies_stops_the_walk() {
+fn a_scale_with_one_body_reads_its_pointer_and_closing_bytes() {
+    let mut bytes = 1u16.to_le_bytes().to_vec();
+    bytes.extend([0, 0]);
+    bytes.extend(0u32.to_le_bytes());
+    bytes.extend([0xff; 4]);
+    bytes.extend([0; 12]);
+    let end = bytes.len();
+    bytes.extend([0xaa; 2]);
+    assert_eq!(read_scale_tail(&bytes), (Ok(()), end));
+}
+
+#[test]
+fn a_scale_without_closing_bytes_before_more_stream_is_refused() {
+    let mut bytes = 0u16.to_le_bytes().to_vec();
+    bytes.extend(0u32.to_le_bytes());
+    bytes.extend([0; 16]);
+    bytes.extend([0xaa; 2]);
+    assert!(read_scale_tail(&bytes).0.is_err());
+}
+
+#[test]
+fn a_scale_with_part_of_its_closing_bytes_at_the_stream_end_is_refused() {
+    let mut bytes = 0u16.to_le_bytes().to_vec();
+    bytes.extend(0u32.to_le_bytes());
+    bytes.extend([0xff, 0xff, 0xff, 0xff, 0, 0]);
+    assert!(read_scale_tail(&bytes).0.is_err());
+}
+
+#[test]
+fn a_scale_with_two_bodies_is_refused() {
     let mut bytes = 2u16.to_le_bytes().to_vec();
     bytes.extend([0; 16]);
     assert!(read_scale_tail(&bytes).0.is_err());

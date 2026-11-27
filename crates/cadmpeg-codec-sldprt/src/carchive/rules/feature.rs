@@ -1466,7 +1466,7 @@ pub(crate) fn scale(r: &mut Reader<'_>) -> Res<V> {
 }
 
 /// The bytes of a `moScale_c` after its six zero bytes: the scaled bodies,
-/// the identifier list and, unless the stream ends there, i32 `-1` and twelve
+/// the identifier list and, when the stream continues, i32 `-1` and twelve
 /// zero bytes.
 fn scaled_bodies(r: &mut Reader<'_>) -> Res<()> {
     let bodies = r.u16()?;
