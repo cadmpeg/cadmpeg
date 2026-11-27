@@ -298,6 +298,7 @@ byte. The function names are:
 | `JMBaseTabFunction` | sheet-metal base tab |
 | `JMFlangeFunction` | sheet-metal flange |
 | `JMMultiFlangeFunction` | sheet-metal flange |
+| `JMBodyStateToggleAssocFunction` | conversion of a construction body to a design body |
 
 A `CLSID_JMGroup` feature is a mirror copy or a pattern.
 
@@ -866,6 +867,26 @@ by the polyline's departure. The chart may stop short of a vertex or run past
 it. Limit records carry a type character and a counted
 point array. Types `L`, `H`, `T`, and `B` place their terminal point first in
 that array.
+
+### 13.1 Body role
+
+A BODY owns one ATTRIBUTE whose definition is named `MONIKER/BODY_ID_ATTRIB`.
+The `identifier` pointer of the ATTRIB_DEF node names a KEY node, and the
+characters of that KEY node are the definition name. A CHAR_VALUES node in the
+`fields` list of the ATTRIBUTE holds the role string. The role string is ASCII
+`SE `, a build number, one space, `Type`, and a decimal role number. Role
+number 86 marks a design body. Role number 96 marks a construction body.
+
+The role number does not depend on the body type. A construction body is a
+solid body (type 1) when its faces enclose a volume, a sheet body (type 3)
+when they do not, and a wire body (type 2) when it holds only edges. Converting
+a closed construction body to a design body changes the role number from 96 to
+86 and leaves the body type 1.
+
+The feature that creates a construction body is an object of class
+`CLSID_JMConstruction`. The object stays in the document when the body is
+converted to a design body, and a `JMBodyStateToggleAssocFunction` feature is
+added. The class of the object does not state the role of the body.
 
 ## 14. Document version declarations
 

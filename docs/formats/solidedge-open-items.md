@@ -48,6 +48,14 @@
 
 **Need.** A document saved with one feature suppressed, one saved with the rollback position moved, and a no-edit resave of each.
 
+### DR-1077. Body role values, construction display state and feature link
+
+**Question.** Which role numbers other than 86 and 96 occur, which role number does a design sheet or wire body carry, which fields bind the display state of a construction to its body, where is the display state of a design body stored, and which field links a construction body to its `CLSID_JMConstruction` object?
+
+**Known.** The role numbers 86 and 96 are stated in §13.1. Hiding a construction through its feature, and hiding it through its body, clear the same two stored values: bit `0x0800` of the flag word of the construction's entry in `PartsLiteData`, and one byte of a record in the `CLSID_JMPartOwner` object that holds the identifier of the `CLSID_JMConstruction` object. Both are set while the construction is shown. A document with one construction body holds one `CLSID_JMConstruction` object.
+
+**Need.** A part with two construction bodies of which one is hidden, a part with a design body hidden and shown, and a part with a design sheet body or a design wire body.
+
 ### DR-1021. Topology proxy selections
 
 **Question.** Which faces does a `CLSID_JMTopologyProxy` object select, how does an edge proxy select a curved edge, what do the `f64` values after the axis of a circular-edge proxy store, which face of a two-setback chamfer is its reference face, where does a thin wall with several open faces store the faces after the first, and how does a proxy name the topology of its creating feature?

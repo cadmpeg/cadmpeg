@@ -1338,6 +1338,46 @@ pub(crate) fn sphere_partition() -> Vec<u8> {
     bytes
 }
 
+/// The sphere partition whose body owns one attribute of the definition
+/// named `definition`, with the character value `role`.
+pub(crate) fn role_partition(definition: &str, role: &str) -> Vec<u8> {
+    const KEY: u16 = 20;
+    const DEFINITION: u16 = 21;
+    const VALUES: u16 = 22;
+    const ATTRIBUTE: u16 = 23;
+    const BODY: u16 = 2;
+    let mut bytes = sphere_partition();
+    bytes.truncate(bytes.len() - 4);
+    for (kind, index, text) in [(79, KEY, definition), (84, VALUES, role)] {
+        bytes.extend_from_slice(&u16::to_be_bytes(kind));
+        integer(&mut bytes, u32::try_from(text.len()).unwrap());
+        pointer(&mut bytes, index);
+        bytes.extend_from_slice(text.as_bytes());
+    }
+    bytes.extend_from_slice(&80u16.to_be_bytes());
+    integer(&mut bytes, 2);
+    pointer(&mut bytes, DEFINITION);
+    pointer(&mut bytes, 1);
+    pointer(&mut bytes, KEY);
+    integer(&mut bytes, 9);
+    bytes.extend_from_slice(&[0; 8]);
+    pointer(&mut bytes, 1);
+    bytes.extend_from_slice(&[1; 14]);
+    bytes.extend_from_slice(&[1, 2]);
+    bytes.extend_from_slice(&81u16.to_be_bytes());
+    integer(&mut bytes, 1);
+    pointer(&mut bytes, ATTRIBUTE);
+    integer(&mut bytes, 7);
+    pointer(&mut bytes, DEFINITION);
+    pointer(&mut bytes, BODY);
+    for _ in 0..4 {
+        pointer(&mut bytes, 1);
+    }
+    pointer(&mut bytes, VALUES);
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    bytes
+}
+
 /// One solid body holding two solid regions and the void region, each solid
 /// region owning one shell with one face on the shared sphere surface.
 pub(crate) fn two_solid_regions_partition() -> Vec<u8> {
