@@ -26,7 +26,6 @@ use cadmpeg_ir::ids::{HistoryBodyId, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
-use crate::feature::history_bodies::HistoryState;
 use crate::loss::InventorLossCode;
 
 /// The place in the timeline of the state that holds a history body.
@@ -56,7 +55,7 @@ struct Planned {
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    states: &BTreeMap<u32, HistoryState>,
+    states: &BTreeMap<u32, Topology>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if ir.model.history_bodies.is_empty() {
@@ -123,9 +122,9 @@ pub(crate) fn project(
     // through its stored bodies where the decoded state is the current
     // geometry record for record.
     for (body, feature, ordinal) in held {
-        let same = states.get(&ordinal).is_some_and(|state| {
-            StateDelta::between(&records, &state.geometry) == StateDelta::default()
-        });
+        let same = states
+            .get(&ordinal)
+            .is_some_and(|state| StateDelta::between(&records, state) == StateDelta::default());
         let written = ir
             .design
             .features
@@ -149,7 +148,7 @@ pub(crate) fn project(
         let Some(state) = states.get(&ordinal) else {
             continue;
         };
-        let delta = StateDelta::between(&records, &state.geometry);
+        let delta = StateDelta::between(&records, state);
         ctx.charge_entities(1, "state an Inventor history state")?;
         let id = EvaluationId::mint(format!("inventor:design:evaluation#{ordinal}"))
             .map_err(CodecError::malformed)?;
@@ -165,17 +164,17 @@ pub(crate) fn project(
             of: Evaluated::State(position),
             status: EvaluationStatus::Current,
             content: Some(StateContent { base, delta }),
-            native_ref: Some(format!("inventor:history:{ordinal}#{}", state.identifier)),
+            native_ref: None,
         });
         base = StateBase::Evaluation(id);
-        records.clone_from(&state.geometry);
+        records.clone_from(state);
     }
     ir.design.evaluations.extend(evaluations);
     ir.design.evaluations.sort_by(|a, b| a.id.cmp(&b.id));
     for (body, by) in restated {
         ir.model
             .restated_mut()
-            .record(body.as_str(), Restater::Record(by), []);
+            .record(body.as_str(), Restater::Record(by), ["state"]);
     }
     Ok(())
 }

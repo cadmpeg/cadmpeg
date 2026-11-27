@@ -353,7 +353,6 @@ fn the_state_before_a_split_gives_the_consumed_body() {
         let ordinals: Vec<_> = built.states.keys().copied().collect();
         assert_eq!(ordinals, [0], "{width:?}");
         let state = &built.states[&0];
-        assert_eq!(state.identifier, 12);
         let key = body
             .topology
             .body
@@ -363,14 +362,12 @@ fn the_state_before_a_split_gives_the_consumed_body() {
             .expect("nest key")
             .1;
         assert!(
-            state.geometry.bodies.iter().any(|held| held
-                .id
-                .as_str()
-                .rsplit_once('#')
-                .map(|(_, k)| k)
-                == Some(key)),
+            state
+                .bodies
+                .iter()
+                .any(|held| held.id.as_str().rsplit_once('#').map(|(_, k)| k) == Some(key)),
             "{:?}",
-            state.geometry.bodies
+            state.bodies
         );
         assert_eq!(
             body.consumed_by.as_ref().map(cadmpeg_ir::FeatureId::as_str),

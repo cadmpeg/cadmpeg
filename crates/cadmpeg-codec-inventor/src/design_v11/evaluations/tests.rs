@@ -94,20 +94,17 @@ fn part(features: Vec<LegacyFeature>, bodies: Vec<HistoryBody>) -> CadIr {
 }
 
 /// State 0 holds body slot 9 in place of the current body.
-fn states() -> BTreeMap<u32, HistoryState> {
+fn states() -> BTreeMap<u32, Topology> {
     BTreeMap::from([(
         0,
-        HistoryState {
-            identifier: 12,
-            geometry: Topology {
-                bodies: vec![body(9)],
-                ..Topology::default()
-            },
+        Topology {
+            bodies: vec![body(9)],
+            ..Topology::default()
         },
     )])
 }
 
-fn project_part(ir: &mut CadIr, states: &BTreeMap<u32, HistoryState>) -> Vec<LossNote> {
+fn project_part(ir: &mut CadIr, states: &BTreeMap<u32, Topology>) -> Vec<LossNote> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
@@ -154,6 +151,23 @@ fn write(ir: &CadIr) -> (Vec<String>, CadIr) {
     (omitted, read)
 }
 
+/// A CADIR write states the history body `nest` in every field except its
+/// state ordinal and identifier, which no native record holds.
+fn assert_stated_but_state(omitted: &[String], nest: &str) {
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains(&format!("{nest} (state)"))),
+        "{omitted:?}"
+    );
+    assert!(
+        !omitted.iter().any(|message| message
+            .split_once("record(s) omitted: ")
+            .is_some_and(|(_, ids)| ids.split("; ").next().unwrap_or("").contains(nest))),
+        "{omitted:?}"
+    );
+}
+
 /// The state entering a Split is the state after the nearest earlier feature
 /// with a state, based on the current state; a CADIR write carries the
 /// Split's history body through it.
@@ -174,10 +188,7 @@ fn the_state_before_a_split_is_an_evaluation_that_carries_its_history_body() {
         ))
     };
     assert_eq!(evaluation.of, Evaluated::State(after("a")));
-    assert_eq!(
-        evaluation.native_ref.as_deref(),
-        Some("inventor:history:0#12")
-    );
+    assert_eq!(evaluation.native_ref, None);
     let content = evaluation.content.as_ref().expect("content");
     assert_eq!(content.base, StateBase::Current(after("s")));
     assert_eq!(content.delta.records.bodies, vec![body(9)]);
@@ -188,10 +199,7 @@ fn the_state_before_a_split_is_an_evaluation_that_carries_its_history_body() {
     );
     let nest = ir.model.history_bodies[0].id.as_str().to_owned();
     let (omitted, read) = write(&ir);
-    assert!(
-        !omitted.iter().any(|message| message.contains(&nest)),
-        "{omitted:?}"
-    );
+    assert_stated_but_state(&omitted, &nest);
     assert_eq!(read.design.evaluations, ir.design.evaluations);
 }
 
@@ -238,23 +246,18 @@ fn a_base_state_the_current_geometry_holds_is_restated_by_its_feature() {
         vec![history_body("base", 0, false, 7)],
     );
     let mut states = states();
-    states.get_mut(&0).expect("state").geometry.bodies = vec![body(7)];
+    states.get_mut(&0).expect("state").bodies = vec![body(7)];
     let losses = project_part(&mut ir, &states);
     assert!(losses.is_empty(), "{losses:?}");
     assert!(ir.design.evaluations.is_empty());
     let nest = ir.model.history_bodies[0].id.as_str().to_owned();
+    let restating = ir.model.restated().get(&nest).expect("restated");
     assert_eq!(
-        ir.model
-            .restated()
-            .get(&nest)
-            .map(cadmpeg_ir::design::projection::restated::Restating::by),
-        Some(&Restater::Record("inventor:design:feature#base".to_owned()))
+        restating.by(),
+        &Restater::Record("inventor:design:feature#base".to_owned())
     );
     let (omitted, _) = write(&ir);
-    assert!(
-        !omitted.iter().any(|message| message.contains(&nest)),
-        "{omitted:?}"
-    );
+    assert_stated_but_state(&omitted, &nest);
 }
 
 /// Two states chain back: the earlier is based on the later, and the later
@@ -264,12 +267,9 @@ fn earlier_states_are_based_on_later_ones() {
     let mut states = states();
     states.insert(
         1,
-        HistoryState {
-            identifier: 13,
-            geometry: Topology {
-                bodies: vec![body(9), body(11)],
-                ..Topology::default()
-            },
+        Topology {
+            bodies: vec![body(9), body(11)],
+            ..Topology::default()
         },
     );
     let mut later = history_body("b", 1, false, 11);
@@ -292,10 +292,10 @@ fn earlier_states_are_based_on_later_ones() {
         "the chain resolves"
     );
     let (omitted, _) = write(&ir);
-    assert!(
-        !omitted
-            .iter()
-            .any(|message| message.contains("history_bodies")),
-        "{omitted:?}"
-    );
+    for nest in [
+        "inventor:history-body:nest#h0000",
+        "inventor:history-body:nest#h0001",
+    ] {
+        assert_stated_but_state(&omitted, nest);
+    }
 }
