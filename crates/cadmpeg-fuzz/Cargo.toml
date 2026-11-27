@@ -22,9 +22,10 @@ unreachable_pub = "deny"
 
 [features]
 default = [
-  "solidedge", "ironcad", "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
+  "alibre", "solidedge", "ironcad", "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
   "rhino", "iges", "sat", "pvz", "edrawings", "usd", "step",
 ]
+alibre = ["dep:cadmpeg-codec-alibre"]
 f3d = ["dep:cadmpeg-codec-f3d"]
 solidedge = ["dep:cadmpeg-codec-solidedge"]
 ironcad = ["dep:cadmpeg-codec-ironcad"]
@@ -48,6 +49,7 @@ cadmpeg-asm = { path = "../cadmpeg-asm" }
 cadmpeg-core = { path = "../cadmpeg-core" }
 cadmpeg-parasolid = { path = "../cadmpeg-parasolid" }
 cadmpeg-container = { path = "../cadmpeg-container" }
+cadmpeg-codec-alibre = { path = "../cadmpeg-codec-alibre", optional = true }
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d", optional = true }
 cadmpeg-codec-solidedge = { path = "../cadmpeg-codec-solidedge", optional = true }
 cadmpeg-codec-ironcad = { path = "../cadmpeg-codec-ironcad", optional = true }
@@ -872,6 +874,22 @@ test = false
 doc = false
 bench = false
 required-features = ["solidedge"]
+
+[[bin]]
+name = "alibre_codec"
+path = "fuzz_targets/alibre_codec.rs"
+test = false
+doc = false
+bench = false
+required-features = ["alibre"]
+
+[[bin]]
+name = "alibre_sab"
+path = "fuzz_targets/alibre_sab.rs"
+test = false
+doc = false
+bench = false
+required-features = ["alibre"]
 
 [[bin]]
 name = "ironcad_codec"

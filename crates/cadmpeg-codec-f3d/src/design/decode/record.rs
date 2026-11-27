@@ -96,13 +96,19 @@ impl<'a> RecordFrame<'a> {
         frames: &mut Vec<GivenUpFrame>,
     ) {
         let why = with_position(why, self.stream, Some(self.start));
-        frames.push(GivenUpFrame {
+        frames.push(self.caused_by(&why));
+        losses.push(why);
+    }
+
+    /// The frame, given up for the codec loss `why` that the caller reports
+    /// once for every frame it names.
+    pub(crate) fn caused_by(self, why: &LossNote) -> GivenUpFrame {
+        GivenUpFrame {
             stream: self.stream.to_owned(),
             start: self.start,
             end: self.end,
             error: format!("{}: {}", why.code, why.message),
-        });
-        losses.push(why);
+        }
     }
 }
 
@@ -147,13 +153,34 @@ impl GivenUpFrame {
     }
 }
 
-/// Gives up each frame in `frames` as a part.
+/// Gives up each frame in `frames` as a part. Frames that start at one
+/// offset of one stream are one part, whose stub id the stream and offset
+/// mint: the part spans the longest of them and its loss states every cause,
+/// in the order the passes gave them.
 pub(crate) fn give_up_frames(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     frames: impl IntoIterator<Item = GivenUpFrame>,
 ) -> Result<Vec<GivenUpPart>, CodecError> {
-    frames
+    let mut merged: Vec<GivenUpFrame> = Vec::new();
+    let mut at = std::collections::HashMap::new();
+    for frame in frames {
+        match at.entry((frame.stream.clone(), frame.start)) {
+            std::collections::hash_map::Entry::Occupied(slot) => {
+                let kept: &mut GivenUpFrame = &mut merged[*slot.get()];
+                kept.end = kept.end.max(frame.end);
+                if !kept.error.contains(&frame.error) {
+                    kept.error.push_str("; ");
+                    kept.error.push_str(&frame.error);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(merged.len());
+                merged.push(frame);
+            }
+        }
+    }
+    merged
         .into_iter()
         .map(|frame| frame.give_up(ctx, scan))
         .collect()
@@ -308,6 +335,49 @@ mod tests {
             panic!("one given-up frame: {frames:?}");
         };
         assert_eq!(frame.span(), (STREAM, 100..160));
+    }
+
+    /// Two passes that give up one frame start mint one part id; the part
+    /// spans the longer frame and names both causes.
+    #[test]
+    fn two_frames_at_one_start_give_up_one_part_naming_both_causes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        const DESIGN: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let archive =
+            crate::test_support::body_map_test::f3d_with_breps_and_design(&[], &[0x5a; 64], &[]);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+        let scan = crate::container::scan(&ctx, root).unwrap();
+        let mut losses = Vec::new();
+        let mut frames = Vec::new();
+        RecordFrame::new(DESIGN, 8, 24).give_up(
+            F3dLossCode::SketchPointUndecoded.note("first cause".to_owned()),
+            &mut losses,
+            &mut frames,
+        );
+        RecordFrame::new(DESIGN, 8, 40).give_up(
+            F3dLossCode::SketchCurveUndecoded.note("second cause".to_owned()),
+            &mut losses,
+            &mut frames,
+        );
+        let parts = super::give_up_frames(&ctx, &scan, frames).unwrap();
+        let [part] = parts.as_slice() else {
+            panic!("one part for one frame start: {}", parts.len());
+        };
+        let loss = part.loss();
+        assert!(
+            loss.message.starts_with(&format!(
+                "part design-record stream=\"{DESIGN}\" offset=8 length=32 "
+            )),
+            "{}",
+            loss.message
+        );
+        assert!(
+            loss.message.contains("first cause") && loss.message.contains("second cause"),
+            "{}",
+            loss.message
+        );
     }
 
     #[test]

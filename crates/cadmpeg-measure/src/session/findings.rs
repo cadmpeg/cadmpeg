@@ -24,7 +24,8 @@
 //! one [`Check::MeasurementIncomplete`] info finding states how many faces
 //! and bodies the pass did not check.
 
-use std::collections::{BTreeSet, HashMap};
+use crate::{fast_map, fast_map_with_capacity, FastMap};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_ir::report::check::{Check, Finding, RuleName};
@@ -113,7 +114,7 @@ impl<'ir> Measurer<'ir> {
             pass: &declared_pass,
             eval: Eval {
                 ctx,
-                index: &self.index,
+                index: &self.owners.index,
                 work: &witness_slice,
             },
             placements: &placements,
@@ -127,7 +128,7 @@ impl<'ir> Measurer<'ir> {
                 pass: &orientation_pass,
                 eval: Eval {
                     ctx,
-                    index: &self.index,
+                    index: &self.owners.index,
                     work: &orient_witness_slice,
                 },
                 placements: &placements,
@@ -155,8 +156,8 @@ impl<'ir> Measurer<'ir> {
 }
 
 struct MeasuredFaces<'ir> {
-    faces: HashMap<&'ir str, FaceResult<'ir>>,
-    orientation_override: HashMap<&'ir str, FaceResult<'ir>>,
+    faces: FastMap<&'ir str, FaceResult<'ir>>,
+    orientation_override: FastMap<&'ir str, FaceResult<'ir>>,
 }
 
 struct CombinedScope<'ir> {
@@ -170,16 +171,16 @@ struct CombinedPass<'a, 'ir> {
     ctx: &'a DecodeContext<'a>,
     orientation_pass: &'a PassAllowance,
     declared_pass: &'a PassAllowance,
-    placements: &'a HashMap<&'ir str, Outcome<Placement>>,
+    placements: &'a FastMap<&'ir str, Outcome<Placement>>,
     declared_scope: &'a BTreeSet<&'ir str>,
 }
 
 struct CombinedResults<'a, 'ir> {
-    faces: &'a HashMap<&'ir str, FaceResult<'ir>>,
-    orientation_faces_override: &'a HashMap<&'ir str, FaceResult<'ir>>,
-    edges: &'a HashMap<&'ir str, EdgeGeometry<'ir>>,
+    faces: &'a FastMap<&'ir str, FaceResult<'ir>>,
+    orientation_faces_override: &'a FastMap<&'ir str, FaceResult<'ir>>,
+    edges: &'a FastMap<&'ir str, EdgeGeometry<'ir>>,
     flux_bodies: &'a BTreeSet<&'ir str>,
-    flux_origins: &'a HashMap<&'ir str, cadmpeg_ir::math::Point3>,
+    flux_origins: &'a FastMap<&'ir str, cadmpeg_ir::math::Point3>,
     starved: &'a BTreeSet<&'ir str>,
     witness_exhausted: bool,
 }
@@ -226,10 +227,10 @@ impl<'ir> CombinedPass<'_, 'ir> {
         &self,
         scope: &CombinedScope<'ir>,
         starved: &mut BTreeSet<&'ir str>,
-    ) -> Result<HashMap<&'ir str, EdgeGeometry<'ir>>, ResourceLimit> {
+    ) -> Result<FastMap<&'ir str, EdgeGeometry<'ir>>, ResourceLimit> {
         let owners = &self.measurer.owners;
-        let index = &self.measurer.index;
-        let mut edges = HashMap::with_capacity(scope.needed_edges.len());
+        let index = &self.measurer.owners.index;
+        let mut edges = fast_map_with_capacity(scope.needed_edges.len());
         for &edge_id in &scope.needed_edges {
             let Some(edge) = owners.edge(edge_id) else {
                 continue;
@@ -277,13 +278,13 @@ impl<'ir> CombinedPass<'_, 'ir> {
 
     fn flux_origins(
         &self,
-        edges: &HashMap<&'ir str, EdgeGeometry<'ir>>,
+        edges: &FastMap<&'ir str, EdgeGeometry<'ir>>,
     ) -> (
         BTreeSet<&'ir str>,
-        HashMap<&'ir str, cadmpeg_ir::math::Point3>,
+        FastMap<&'ir str, cadmpeg_ir::math::Point3>,
     ) {
         let owners = &self.measurer.owners;
-        let no_faces: HashMap<&'ir str, FaceResult<'ir>> = HashMap::new();
+        let no_faces: FastMap<&'ir str, FaceResult<'ir>> = fast_map();
         let flux_bodies: BTreeSet<&'ir str> = self
             .measurer
             .input
@@ -308,7 +309,7 @@ impl<'ir> CombinedPass<'_, 'ir> {
             })
             .map(|body| body.id.as_str())
             .collect();
-        let mut flux_origins = HashMap::new();
+        let mut flux_origins = fast_map();
         for &id in flux_bodies.iter().chain(self.declared_scope.iter()) {
             flux_origins.entry(id).or_insert_with(|| {
                 self.measurer
@@ -335,16 +336,16 @@ impl<'ir> CombinedPass<'_, 'ir> {
     fn measure_faces(
         &self,
         scope: &CombinedScope<'ir>,
-        edges: &HashMap<&'ir str, EdgeGeometry<'ir>>,
+        edges: &FastMap<&'ir str, EdgeGeometry<'ir>>,
         flux_bodies: &BTreeSet<&'ir str>,
-        flux_origins: &HashMap<&'ir str, cadmpeg_ir::math::Point3>,
+        flux_origins: &FastMap<&'ir str, cadmpeg_ir::math::Point3>,
         starved: &mut BTreeSet<&'ir str>,
     ) -> Result<MeasuredFaces<'ir>, ResourceLimit> {
         let owners = &self.measurer.owners;
-        let index = &self.measurer.index;
+        let index = &self.measurer.owners.index;
         let geometry = &self.measurer.input.ir.geometry;
-        let mut faces = HashMap::with_capacity(geometry.faces.len());
-        let mut orientation_override = HashMap::new();
+        let mut faces = fast_map_with_capacity(geometry.faces.len());
+        let mut orientation_override = fast_map();
         for face_id in faces_by_inverted_boundary(owners, &scope.declared_faces) {
             let Some(face) = owners.face(face_id) else {
                 continue;
@@ -566,7 +567,8 @@ impl<'ir> Measurer<'ir> {
                 }
             }
         }
-        let mut edges: HashMap<&'ir str, EdgeGeometry<'ir>> = HashMap::new();
+        let mut edges: FastMap<&'ir str, EdgeGeometry<'ir>> =
+            fast_map_with_capacity(needed_edges.len());
         for edge_id in needed_edges {
             let Some(edge) = self.owners.edge(edge_id) else {
                 continue;
@@ -574,7 +576,7 @@ impl<'ir> Measurer<'ir> {
             let slice = pass.edge_slice();
             let eval = Eval {
                 ctx,
-                index: &self.index,
+                index: &self.owners.index,
                 work: &slice,
             };
             let placement = placement_of(self.owners.edge_body(edge_id));
@@ -585,7 +587,7 @@ impl<'ir> Measurer<'ir> {
             edges.insert(edge_id, geometry);
         }
 
-        let no_faces: HashMap<&'ir str, FaceResult<'ir>> = HashMap::new();
+        let no_faces: FastMap<&'ir str, FaceResult<'ir>> = fast_map();
         let flux_bodies: BTreeSet<&'ir str> = geometry
             .bodies
             .iter()
@@ -606,13 +608,14 @@ impl<'ir> Measurer<'ir> {
             })
             .map(|body| body.id.as_str())
             .collect();
-        let flux_origins: HashMap<&'ir str, cadmpeg_ir::math::Point3> = flux_bodies
-            .iter()
-            .map(|id| (*id, self.flux_origin(id, &edges, &placement_of(Some(id)))))
-            .collect();
+        let mut flux_origins: FastMap<&'ir str, cadmpeg_ir::math::Point3> =
+            fast_map_with_capacity(flux_bodies.len());
+        for id in &flux_bodies {
+            flux_origins.insert(*id, self.flux_origin(id, &edges, &placement_of(Some(id))));
+        }
 
-        let mut faces: HashMap<&'ir str, FaceResult<'ir>> =
-            HashMap::with_capacity(geometry.faces.len());
+        let mut faces: FastMap<&'ir str, FaceResult<'ir>> =
+            fast_map_with_capacity(geometry.faces.len());
         let parallel_workers = cadmpeg_core::parallelism().min(6);
         let pass_remaining = pass.remaining();
         let face_limit = pass.face_limit();
@@ -623,7 +626,7 @@ impl<'ir> Measurer<'ir> {
             let checkpoint = ctx.checkpoint();
             let chunks: Vec<_> = geometry.faces.chunks(chunk_size).collect();
             let owners = &self.owners;
-            let index = &self.index;
+            let index = &self.owners.index;
             let edges_ref = &edges;
             let placements_ref = &placements;
             let flux_origins_ref = &flux_origins;
@@ -744,7 +747,7 @@ impl<'ir> Measurer<'ir> {
                 let slice = pass.face_slice();
                 let eval = Eval {
                     ctx,
-                    index: &self.index,
+                    index: &self.owners.index,
                     work: &slice,
                 };
                 let input = FaceInput {
@@ -777,7 +780,7 @@ impl<'ir> Measurer<'ir> {
             pass,
             eval: Eval {
                 ctx,
-                index: &self.index,
+                index: &self.owners.index,
                 work: &witness_slice,
             },
             placements: &placements,
@@ -1011,7 +1014,7 @@ fn face_finding(result: &FaceResult<'_>) -> Option<Finding> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use crate::fast_map;
 
     use cadmpeg_ir::report::check::{Check, Finding};
     use cadmpeg_ir::report::Severity;
@@ -1132,12 +1135,12 @@ mod tests {
         let measurer = Measurer::new(input, MeasureOptions::default());
         let pass = PassAllowance::new(1 << 30);
         let placement = Ok(Placement::identity());
-        let mut edges = HashMap::new();
+        let mut edges = fast_map();
         for edge in &ir.geometry.edges {
             let slice = pass.edge_slice();
             let eval = Eval {
                 ctx: &ctx,
-                index: &measurer.index,
+                index: &measurer.owners.index,
                 work: &slice,
             };
             let geometry = measure_edge(&eval, &measurer.owners, edge, &placement, Work::Row)
@@ -1152,7 +1155,7 @@ mod tests {
                 let slice = pass.face_slice();
                 let eval = Eval {
                     ctx: &ctx,
-                    index: &measurer.index,
+                    index: &measurer.owners.index,
                     work: &slice,
                 };
                 let result = FaceInput {

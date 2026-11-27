@@ -11,7 +11,7 @@
 //! by the entities its name matches. A surface or curve the document does not
 //! state analytically is not judged.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::design::construction::{kinds, Construction};
@@ -47,15 +47,22 @@ pub(super) fn check<'a>(
     findings: &mut Vec<Finding>,
 ) {
     let ir = index.records.ir;
+    let mut overrides_by_feature: HashMap<&'a str, Vec<&'a FeatureDefinition>> = HashMap::new();
+    for configuration in &ir.design.configurations {
+        for (feature_id, state) in &configuration.overrides.features {
+            if let Some(definition) = &state.definition {
+                overrides_by_feature
+                    .entry(feature_id.as_str())
+                    .or_default()
+                    .push(definition);
+            }
+        }
+    }
+    let mut seen: HashSet<Finding> = findings.iter().cloned().collect();
     for feature in &ir.design.features {
-        let overrides = ir.design.configurations.iter().filter_map(|configuration| {
-            configuration
-                .overrides
-                .features
-                .get(&feature.id)?
-                .definition
-                .as_ref()
-        });
+        let overrides = overrides_by_feature
+            .get(feature.id.as_str())
+            .map_or(&[][..], Vec::as_slice);
         let mut probe = Probe {
             index,
             matchers,
@@ -64,13 +71,13 @@ pub(super) fn check<'a>(
             linear: ir.tolerances.linear.get(),
             findings: Vec::new(),
         };
-        for definition in std::iter::once(&feature.definition).chain(overrides) {
+        for definition in std::iter::once(&feature.definition).chain(overrides.iter().copied()) {
             probe.definition = definition;
             probe.operation(&definition.operation);
             probe.chain_operation(&definition.operation);
         }
         for finding in probe.findings {
-            if !findings.contains(&finding) {
+            if seen.insert(finding.clone()) {
                 findings.push(finding);
             }
         }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Retain body changes after the last feature with a bound result.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{work_units, WorkBudget};
 use cadmpeg_core::CodecError;
@@ -61,6 +61,8 @@ pub(crate) fn collect(
     }
     let mut tails = Vec::new();
     let mut unread = Vec::new();
+    let mut state_maps = HashMap::new();
+    let mut touch_cache = HashMap::new();
     for (body, feature) in latest {
         let Some(history) = super::history_bodies::output_history(
             std::iter::once(body.as_str()),
@@ -109,8 +111,25 @@ pub(crate) fn collect(
             ));
             continue;
         };
+        let states = state_maps
+            .entry(std::ptr::from_ref(history))
+            .or_insert_with(|| {
+                history
+                    .states()
+                    .iter()
+                    .map(|state| (state.state_id, state))
+                    .collect::<HashMap<_, _>>()
+            });
         let work = WorkBudget::new(MAX_HISTORY_TAIL_WORK);
-        if changed_after(history, histories, current, head.state_id, slot, &work) {
+        if changed_after_with_cache(
+            history,
+            histories,
+            states,
+            (current, head.state_id),
+            slot,
+            &work,
+            &mut touch_cache,
+        ) {
             tails.push(unproved(
                 head.id.clone(),
                 Some(current),
@@ -122,6 +141,16 @@ pub(crate) fn collect(
     BodyHistoryTails { tails, unread }
 }
 
+enum CachedStateTouch {
+    NoChange,
+    MissingTopology,
+    Touched {
+        slots: usize,
+        bodies: Option<BTreeSet<i64>>,
+    },
+}
+
+#[cfg(test)]
 fn changed_after(
     history: &AsmHistory,
     histories: &[AsmHistory],
@@ -129,6 +158,35 @@ fn changed_after(
     current: i64,
     body: i64,
     work: &WorkBudget,
+) -> bool {
+    let states = history
+        .states()
+        .iter()
+        .map(|state| (state.state_id, state))
+        .collect::<HashMap<_, _>>();
+    let mut touch_cache = HashMap::new();
+    changed_after_with_cache(
+        history,
+        histories,
+        &states,
+        (previous, current),
+        body,
+        work,
+        &mut touch_cache,
+    )
+}
+
+fn changed_after_with_cache(
+    history: &AsmHistory,
+    histories: &[AsmHistory],
+    states: &HashMap<i64, &crate::history_records::AsmDeltaState>,
+    (previous, current): (i64, i64),
+    body: i64,
+    work: &WorkBudget,
+    touch_cache: &mut HashMap<
+        (*const crate::history_records::AsmDeltaState, bool),
+        CachedStateTouch,
+    >,
 ) -> bool {
     if !work.charge_by(work_units(history.states().len())) {
         return true;
@@ -138,11 +196,6 @@ fn changed_after(
     else {
         return true;
     };
-    let states = history
-        .states()
-        .iter()
-        .map(|state| (state.state_id, state))
-        .collect::<HashMap<_, _>>();
     for id in chain.states {
         let Some(&state) = states.get(&id) else {
             return true;
@@ -156,48 +209,55 @@ fn changed_after(
         let Some(&before) = transition.previous_state_id.and_then(|id| states.get(&id)) else {
             return true;
         };
-        let changes = [
-            (
-                state,
-                super::body_closures::changed_topology_family_refs(&transition.topology, false),
-            ),
-            (
-                before,
-                super::body_closures::changed_topology_family_refs(&transition.topology, true),
-            ),
-        ];
-        for (state, changed) in changes {
-            if changed.is_empty() {
-                continue;
-            }
-            let Some(topology) = history.topology(state) else {
-                return true;
-            };
-            let slots = [
-                &topology.bodies,
-                &topology.regions,
-                &topology.shells,
-                &topology.faces,
-                &topology.loops,
-                &topology.coedges,
-                &topology.edges,
-                &topology.vertices,
-                &topology.points,
-                &topology.surfaces,
-                &topology.curves,
-                &topology.pcurves,
-            ]
-            .iter()
-            .map(|family| family.len())
-            .sum();
-            if !work.charge_by(work_units(slots)) {
-                return true;
-            }
-            let Some(touched) = super::body_closures::bodies_touching(topology, &[&changed]) else {
-                return true;
-            };
-            if touched.iter().any(|bodies| bodies.contains(&body)) {
-                return true;
+        for (target_state, deleted) in [(state, false), (before, true)] {
+            let cached = touch_cache
+                .entry((std::ptr::from_ref(state), deleted))
+                .or_insert_with(|| {
+                    let changed = super::body_closures::changed_topology_family_refs(
+                        &transition.topology,
+                        deleted,
+                    );
+                    if changed.is_empty() {
+                        return CachedStateTouch::NoChange;
+                    }
+                    let Some(topology) = history.topology(target_state) else {
+                        return CachedStateTouch::MissingTopology;
+                    };
+                    let slots = [
+                        &topology.bodies,
+                        &topology.regions,
+                        &topology.shells,
+                        &topology.faces,
+                        &topology.loops,
+                        &topology.coedges,
+                        &topology.edges,
+                        &topology.vertices,
+                        &topology.points,
+                        &topology.surfaces,
+                        &topology.curves,
+                        &topology.pcurves,
+                    ]
+                    .iter()
+                    .map(|family| family.len())
+                    .sum();
+                    let bodies = super::body_closures::bodies_touching(topology, &[&changed])
+                        .and_then(|touched| touched.into_iter().next());
+                    CachedStateTouch::Touched { slots, bodies }
+                });
+            match cached {
+                CachedStateTouch::NoChange => {}
+                CachedStateTouch::MissingTopology => return true,
+                CachedStateTouch::Touched { slots, bodies } => {
+                    if !work.charge_by(work_units(*slots)) {
+                        return true;
+                    }
+                    let Some(bodies) = bodies else {
+                        return true;
+                    };
+                    if bodies.contains(&body) {
+                        return true;
+                    }
+                }
             }
         }
     }

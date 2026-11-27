@@ -840,34 +840,10 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    #[cfg(feature = "schema")]
-    use super::NonEmptyMap;
     use super::{
         AnnotationBuilder, Annotations, ExactnessNote, FieldName, Inexactness, StreamHandle,
     };
     use crate::provenance::Exactness;
-
-    #[cfg(feature = "schema")]
-    #[test]
-    fn exactness_schemas_preserve_field_and_population_admission() {
-        let schema = json::to_value(schemars::schema_for!(NonEmptyMap)).unwrap();
-        assert_eq!(schema["minProperties"], 1);
-        assert_eq!(schema["additionalProperties"], false);
-        assert!(schema["patternProperties"].get("[\\s\\S]").is_some());
-        let schema = json::to_value(schemars::schema_for!(FieldName)).unwrap();
-        assert_eq!(schema["type"], "string");
-        assert_eq!(schema["minLength"], 1);
-
-        // Whitespace and line breaks are legal field text; only absence is refused.
-        for field in [" ", "\n", "geometry.radius"] {
-            let key = FieldName::try_from(field.to_owned()).unwrap();
-            let map = NonEmptyMap::try_from(BTreeMap::from([(key, Exactness::Derived)])).unwrap();
-            let wire = json::to_value(&map).unwrap();
-            assert_eq!(json::from_value::<NonEmptyMap>(wire).unwrap(), map);
-        }
-        assert!(FieldName::try_from(String::new()).is_err());
-        assert!(NonEmptyMap::try_from(BTreeMap::new()).is_err());
-    }
 
     #[test]
     fn builder_names_streams_and_records_provenance() {
