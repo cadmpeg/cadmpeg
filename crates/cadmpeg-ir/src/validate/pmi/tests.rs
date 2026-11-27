@@ -418,6 +418,41 @@ fn basic_and_single_limit_need_a_stated_nominal() {
     assert_errors(&mut ir, "basic or single-limit tolerance and no nominal", 2);
 }
 
+#[test]
+fn decimals_need_a_stated_length_or_angle_nominal() {
+    let mut ir = document([
+        stating(
+            PmiDimensionKind::Size,
+            Some(literal(10.0, PmiQuantity::Length)),
+            None,
+            Some(2),
+        ),
+        stating(
+            PmiDimensionKind::Angular,
+            Some(literal(0.5, PmiQuantity::Angle)),
+            None,
+            Some(1),
+        ),
+        stating(PmiDimensionKind::Size, None, None, None),
+    ]);
+    assert_errors(&mut ir, "", 0);
+
+    let mut ir = document([
+        stating(PmiDimensionKind::Size, None, None, Some(2)),
+        stating(
+            PmiDimensionKind::Other("ratio".into()),
+            Some(literal(0.5, PmiQuantity::Ratio)),
+            None,
+            Some(2),
+        ),
+    ]);
+    assert_errors(
+        &mut ir,
+        "states `decimals` and no nominal with a length or angle quantity",
+        2,
+    );
+}
+
 fn warnings(ir: &mut CadIr) -> Vec<Finding> {
     ir.finalize();
     validate_neutral(ir, Vec::new())

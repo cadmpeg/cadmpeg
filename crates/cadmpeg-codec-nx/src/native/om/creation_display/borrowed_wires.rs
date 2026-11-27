@@ -109,6 +109,7 @@ impl Serialize for RmCreationDisplayDataRelation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_core::serde_erase::json;
     use cadmpeg_test_support::native_serialization::assert_native_limit;
 
     #[test]
@@ -128,8 +129,8 @@ mod tests {
                 r#"{{"id":"nx:rm-creation-display:relation#0","ordinal":0{first},"class_name":"UGS::RM_creation_display_data","class_definition":"definition","encoding":{encoding},"source_entry":"entry","source_offset":5}}"#
             );
             let record: RmCreationDisplayDataRelation = serde_json::from_str(&json).unwrap();
-            let borrowed = serde_json::to_vec(&record).unwrap();
-            let owned = serde_json::to_vec(
+            let borrowed = json::to_vec(&record).unwrap();
+            let owned = json::to_vec(
                 &super::super::wire::RmCreationDisplayDataRelationWire::from(record.clone()),
             )
             .unwrap();

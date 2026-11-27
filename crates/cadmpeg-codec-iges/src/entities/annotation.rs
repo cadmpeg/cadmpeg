@@ -1185,7 +1185,7 @@ pub(super) fn project(
                 | AnnotationKind::NewGeneralNote
                 | AnnotationKind::Leader => "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
             };
-            super::push_entity_loss(&mut losses, entry, format_args!("{message}"));
+            super::push_entity_finding(&mut losses, entry, format_args!("{message}"));
         }
     }
 

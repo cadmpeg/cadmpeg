@@ -49,6 +49,13 @@ pub(super) struct ExtrudePlan<'a> {
     pub(super) reversed: bool,
     pub(super) along: OwnedParameter,
     pub(super) taper: OwnedParameter,
+    /// The body and faces of its state; `None` for a rolled-back extrude.
+    pub(super) result: Option<ExtrudeResult<'a>>,
+}
+
+/// The result body of an `Extrude` item and its faces.
+#[derive(Debug)]
+pub(super) struct ExtrudeResult<'a> {
     pub(super) body: &'a BodyId,
     pub(super) start_cap: &'a FaceId,
     pub(super) end_cap: &'a FaceId,
@@ -126,9 +133,20 @@ pub(super) fn plan<'a>(
         return Err("its extent is not one-sided blind");
     }
     new_solid(&extrude.output)?;
-    let faces = Faces::new(target, body, linear, target.tolerances.angular.get())
-        .matched(planned, &loops, distance, reversed)
-        .ok_or("its faces do not match its profile")?;
+    let result = body
+        .map(|body| {
+            let faces = Faces::new(target, body, linear, target.tolerances.angular.get())
+                .matched(planned, &loops, distance, reversed)
+                .ok_or("its faces do not match its profile")?;
+            Ok::<_, &'static str>(ExtrudeResult {
+                body,
+                start_cap: faces.start_cap,
+                end_cap: faces.end_cap,
+                sides: faces.sides,
+                links: faces.links,
+            })
+        })
+        .transpose()?;
     let taper_ordinal = ordinal
         .checked_add(1)
         .ok_or("its parameters exceed the source ordinals")?;
@@ -180,11 +198,7 @@ pub(super) fn plan<'a>(
         reversed,
         along,
         taper,
-        body,
-        start_cap: faces.start_cap,
-        end_cap: faces.end_cap,
-        sides: faces.sides,
-        links: faces.links,
+        result,
     })
 }
 
@@ -574,11 +588,15 @@ pub(super) fn stamp(
     use crate::records::sketch_links::{SketchCurveLink, SketchLinkSense};
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::attributes::AttributeTarget;
-    let faces = [(START_TOKEN, plan.start_cap), (END_TOKEN, plan.end_cap)]
+    let result = plan
+        .result
+        .as_ref()
+        .ok_or_else(|| CodecError::Malformed("a rolled-back Extrude has no result".into()))?;
+    let faces = [(START_TOKEN, result.start_cap), (END_TOKEN, result.end_cap)]
         .into_iter()
-        .chain((FIRST_SIDE_TOKEN..).zip(plan.sides.iter().copied()));
-    name_result("extrude", plan.preceding, plan.body, faces, native)?;
-    for ((profile_loop, at), coedges) in plan.entries().zip(&plan.links) {
+        .chain((FIRST_SIDE_TOKEN..).zip(result.sides.iter().copied()));
+    name_result("extrude", plan.preceding, result.body, faces, native)?;
+    for ((profile_loop, at), coedges) in plan.entries().zip(&result.links) {
         let entry = profile_loop.entries[at];
         let sense = if profile_loop.exterior {
             Some(
@@ -625,7 +643,7 @@ pub(super) fn name_result<'f>(
     let reference = i64::try_from(identity)
         .map_err(|_| CodecError::malformed(format_args!("{family} identity")))?;
     native.persistent_design_links.push(PersistentDesignLink {
-        id: format!("f3d:generated:{family}-body#0"),
+        id: format!("f3d:generated:{family}-body#{identity}"),
         target: AttributeTarget::Body(body.clone()),
         design_id: DesignPersistentIdText::try_from(identity.to_string())
             .map_err(CodecError::Malformed)?,
@@ -637,7 +655,7 @@ pub(super) fn name_result<'f>(
         native
             .persistent_subentity_tags
             .push(PersistentSubentityTag {
-                id: format!("f3d:generated:{family}-face#{token}"),
+                id: format!("f3d:generated:{family}-face#{identity}.{token}"),
                 target: AttributeTarget::Face(face.clone()),
                 selector: i64::try_from(text.len())
                     .map_err(|_| CodecError::NotImplemented("face token".into()))?,

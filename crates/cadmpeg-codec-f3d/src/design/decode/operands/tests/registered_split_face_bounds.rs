@@ -8,6 +8,7 @@ use crate::records::topology::face::DesignFaceOperand;
 use crate::test_support::split_face::metadata;
 use crate::test_support::{indexed_header, lp_ascii};
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::serde_erase::json;
 use cadmpeg_ir::report::loss::LossNote;
 
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -114,7 +115,7 @@ fn decode_with_scanned_header(
     let groups: Vec<DesignConstructionOperandGroup> = role
         .into_iter()
         .map(|role| {
-            serde_json::from_value(serde_json::json!({
+            json::from_value(cadmpeg_core::json!({
                 "id": format!("{STREAM}:group#90"),
                 "scope_record_index": 50,
                 "scope_reference_ordinal": 0,

@@ -227,7 +227,14 @@ pub struct PolylineVertex<R = f64, P = Point3> {
 /// A parameterized polyline carries one parameter per sample in the sample
 /// row, so a parameter list that does not match the sample count has no
 /// spelling.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, cadmpeg_derive::StructuralOrd)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Serialize,
+    cadmpeg_derive::DeserializeTagged,
+    cadmpeg_derive::StructuralOrd,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

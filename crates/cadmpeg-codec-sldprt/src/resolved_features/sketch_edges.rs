@@ -111,7 +111,7 @@ pub(super) fn project_endpoint_constraints(
         };
         crate::annotations::note(
             annotations,
-            id.as_str(),
+            &id,
             stream,
             0,
             "feature_input_shared_endpoint",

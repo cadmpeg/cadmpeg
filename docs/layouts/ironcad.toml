@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: Apache-2.0
+# Machine-readable record layouts for IronCAD `.ics` scene files.
+schema = 1
+format = "ironcad"
+spec = "docs/formats/ironcad.md"
+endianness = "little"
+note = """
+Framed compound streams carry a fixed 20-byte header and one zlib stream
+(§2). The `Brep Data` payload is a tree of u64-length nodes and u32-length
+kernel records; only the record header has fixed offsets (§3).
+"""
+
+# --- §2 Compressed stream frame --------------------------------------------
+
+[[record]]
+name = "frame_header"
+kind = "byte"
+section = "2"
+anchor = "A framed stream holds a 20-byte little-endian header and one zlib stream."
+size = 20
+parsed_by = "crates/cadmpeg-codec-ironcad/src/frame.rs"
+
+[[record.field]]
+name = "magic"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `magic` | `0x3de3de00`. |"
+value = 0x3de3de00
+
+[[record.field]]
+name = "block_size"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | 4 | `block_size` | `0x40000`."
+value = 0x40000
+
+[[record.field]]
+name = "payload_length"
+offset = 8
+type = "u64"
+source = "spec"
+anchor = "| 8 | 8 | `payload_length` |"
+
+[[record.field]]
+name = "compressed_length"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| 16 | 4 | `compressed_length` |"
+
+# --- §3 Kernel record tree --------------------------------------------------
+
+[[record]]
+name = "tree_node_header"
+kind = "byte"
+section = "3"
+anchor = "A **node** starts with a little-endian `u64` length."
+size = 8
+parsed_by = "crates/cadmpeg-codec-ironcad/src/tree.rs"
+
+[[record.field]]
+name = "length"
+offset = 0
+type = "u64"
+source = "spec"
+anchor = "A **node** starts with a little-endian `u64` length."
+
+[[record]]
+name = "kernel_record_header"
+kind = "byte"
+section = "3"
+anchor = "The kernel bytes start at offset 28 and fill the remainder of the record."
+size = 28
+parsed_by = "crates/cadmpeg-codec-ironcad/src/tree.rs"
+
+[[record.field]]
+name = "length"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| 0 | 4 | `length` |"
+
+[[record.field]]
+name = "marker"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| 4 | 4 | `marker` | `0x0009b401`. |"
+value = 0x0009b401
+
+[[record.field]]
+name = "kernel"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "| 8 | 4 | `kernel` |"
+
+[[record.field]]
+name = "words"
+offset = 12
+type = "u32[3]"
+source = "spec"
+anchor = "| 12 | 12 | `words` |"
+
+[[record.field]]
+name = "reserved"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "| 24 | 4 | `reserved` | `0`. |"
+
+[[token]]
+tag = "0x80000001"
+name = "KERNEL_ACIS"
+note = "Kernel record holding one ACIS binary save stream."
+section = "3"
+anchor = "`0x80000001` for ACIS"
+
+[[token]]
+tag = "0x80000002"
+name = "KERNEL_PARASOLID"
+note = "Kernel record holding one little-endian Parasolid transmit."
+section = "3"
+anchor = "`0x80000002` for Parasolid"
+
+[[not_applicable]]
+area = "Parasolid kernel prologue"
+reason = "A lead byte, then a u16-length description and a u32-length schema token; every later offset depends on those lengths."
+section = "3.1"
+anchor = "byte `0x41`, a `u16` description length"

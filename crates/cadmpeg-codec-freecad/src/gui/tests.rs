@@ -326,7 +326,9 @@ pub(crate) fn retains_ordered_document_level_gui_state() {
         "OrthographicCamera { position 1 2 3 orientation 0 0 1 0.25 }"
     );
     assert_eq!(presentation.states()[1].assets.len(), 1);
-    assert!(presentation.states()[1].assets[0].ends_with("section.bin"));
+    assert!(presentation.states()[1].assets[0]
+        .as_str()
+        .ends_with("section.bin"));
     assert!(result.ir().model.view_presentations.is_empty());
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
@@ -1894,6 +1896,12 @@ fn assert_material_shininess_remains_source_only(shininess: &str, expected: &str
     assert!(assert_gui_metadata_recovery(&recovered)
         .message
         .contains(expected));
+    assert!(recovered.report().losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+            && loss.message.starts_with(
+                "part archive-entry \"GuiDocument.xml\" stream=\"GuiDocument.xml\" offset=0 ",
+            )
+    }));
     assert!(recovered.ir().model.appearances.is_empty());
 }
 

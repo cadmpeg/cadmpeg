@@ -4,6 +4,7 @@
 
 #![cfg(all(feature = "step", not(any(feature = "fcstd", feature = "f3d"))))]
 
+use cadmpeg_core::serde_erase::json;
 use std::fs;
 use std::io::Write;
 
@@ -40,7 +41,7 @@ fn delayed_step_archive_root_inspects_and_loads_with_step() {
         String::from_utf8_lossy(&inspected.stderr)
     );
     let summary: serde_json::Value =
-        serde_json::from_slice(&inspected.stdout).expect("parse inspect JSON");
+        json::from_slice(&inspected.stdout).expect("parse inspect JSON");
     assert_eq!(summary["selection"]["kind"], "detected");
     // The leading window holds only a generic ZIP signal; the seekable
     // central directory then names the exact Part 21 root member.
@@ -61,8 +62,7 @@ fn delayed_step_archive_root_inspects_and_loads_with_step() {
         "{}",
         String::from_utf8_lossy(&loaded.stderr)
     );
-    let document: serde_json::Value =
-        serde_json::from_slice(&loaded.stdout).expect("parse CADIR JSON");
+    let document: serde_json::Value = json::from_slice(&loaded.stdout).expect("parse CADIR JSON");
     assert!(
         document["source"]["identity"]["dialects"]["primary"]["dialect"]
             .as_str()

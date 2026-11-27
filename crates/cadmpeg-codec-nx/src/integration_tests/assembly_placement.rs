@@ -17,7 +17,7 @@ fn placement_native_validator_rejects_matrix_that_disagrees_with_source_bytes() 
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let mut wire = serde_json::json!({
+    let mut wire = cadmpeg_core::json!({
         "id":"nx:assembly:placement#123", "raw_frame":NativeBytes::new(bytes.as_slice()),
         "matrix":[1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0.],
         "label":"A", "uuid":"01234567-89ab-cdef-0123-456789abcdef",
@@ -30,7 +30,7 @@ fn placement_native_validator_rejects_matrix_that_disagrees_with_source_bytes() 
     assert!(crate::NxCodec::validate_native(&ctx, &ir, None)
         .unwrap()
         .is_empty());
-    wire["matrix"][3] = serde_json::json!(1.0);
+    wire["matrix"][3] = cadmpeg_core::json!(1.0);
     ir.native
         .namespace_mut(cadmpeg_ir::codec_id!("nx"))
         .set_arena(&ctx, "assembly_placements", &[&wire])
@@ -55,13 +55,13 @@ fn placement_native_validator_checks_its_bounded_object_reference() {
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let placement = serde_json::json!({
+    let placement = cadmpeg_core::json!({
         "id":"nx:assembly:placement#123", "raw_frame":NativeBytes::new(bytes.as_slice()),
         "matrix":[1.,0.,0.,0., 0.,1.,0.,0., 0.,0.,1.,0.],
         "label":"A", "uuid":"01234567-89ab-cdef-0123-456789abcdef",
         "object_record":"nx:om-record:entry#1", "source_entry":"/Root/UG_PART/UG_PART", "source_offset":123,
     });
-    let mut object = serde_json::json!({
+    let mut object = cadmpeg_core::json!({
         "id":"nx:om-record:entry#1", "object_id":17, "object_id_source_offset":16,
         "section_ordinal":0, "record_ordinal":0, "section_offset":0,
         "byte_len":bytes.len(), "sha256":"0000000000000000000000000000000000000000000000000000000000000000",
@@ -78,7 +78,7 @@ fn placement_native_validator_checks_its_bounded_object_reference() {
     assert!(crate::NxCodec::validate_native(&ctx, &ir, None)
         .unwrap()
         .is_empty());
-    object["source_offset"] = serde_json::json!(124);
+    object["source_offset"] = cadmpeg_core::json!(124);
     ir.native
         .namespace_mut(cadmpeg_ir::codec_id!("nx"))
         .set_arena(&ctx, "object_records", &[&object])
