@@ -39,7 +39,7 @@ enum Production {
     FinalTerminator,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "production", rename_all = "snake_case", deny_unknown_fields)]
 enum MetadataWire {
     Map {

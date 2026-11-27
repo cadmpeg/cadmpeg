@@ -326,7 +326,7 @@ cadmpeg_core::named_optional_field!(deserialize_parameter, PmDcReference, "param
 type PmDcReferenceScalarMap = crate::pmdc::PmDcPairedMap<FiniteReal>;
 type PmDcReferencePairMap = crate::pmdc::PmDcPairedMap<PmDcReference>;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchConstraintKind {
     SplinePoint {
@@ -519,7 +519,7 @@ impl PmDcSketchEntityPayload {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcSketchEntityKind {
     Spline {

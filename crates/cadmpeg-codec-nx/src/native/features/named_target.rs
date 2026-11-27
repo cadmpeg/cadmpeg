@@ -14,7 +14,7 @@ use crate::container::Container;
 use crate::om::named_target::NamedTargetReference;
 use cadmpeg_core::printable::PrintableString;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(
     tag = "construction_kind",
     content = "construction",

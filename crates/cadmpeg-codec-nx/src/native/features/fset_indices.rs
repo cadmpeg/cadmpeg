@@ -29,7 +29,7 @@ struct LaneWire {
     layout: LayoutWire,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum LayoutWire {
     Empty {},

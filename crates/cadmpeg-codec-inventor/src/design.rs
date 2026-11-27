@@ -118,7 +118,7 @@ pub(crate) struct PmDcExpressionPayload {
     pub(crate) kind: PmDcExpressionKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcExpressionKind {
     Value {
@@ -245,7 +245,7 @@ impl Serialize for PmDcUnitKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 enum PmDcUnitKindWire {
     Definition {

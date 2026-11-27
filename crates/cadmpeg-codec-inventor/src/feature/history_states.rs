@@ -350,7 +350,7 @@ pub(crate) enum UnboundReason {
 }
 
 /// Outcome of the join of one feature.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum Binding {
     /// The feature has a state pair and, for Split and Base, a confirmed body key.

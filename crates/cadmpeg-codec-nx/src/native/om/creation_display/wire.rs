@@ -9,7 +9,7 @@ use super::{
 };
 use crate::om::compact::{atom, row_indices};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum RmCreationDisplayDataEncodingWire {
     Index {

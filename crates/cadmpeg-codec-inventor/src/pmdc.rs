@@ -443,7 +443,7 @@ fn paired_items<M, T>(metadata: Option<M>, values: Vec<T>) -> PairedItems<M, T> 
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "width", content = "values", rename_all = "snake_case")]
 pub(crate) enum PmDcListMetadata {
     U16([u16; 2]),
