@@ -94,10 +94,7 @@ pub(crate) fn two_body_step() -> Vec<u8> {
     }
     ir.geometry = json::from_value(geometry).unwrap();
     let plan = cadmpeg_codec_step::StepCodec::default()
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit("step:ap214"),
-        )
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Explicit("step:ap214")))
         .unwrap();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
@@ -140,9 +137,9 @@ pub(crate) fn unresolved(family: &str) -> Value {
 pub(crate) fn cadir_round_trip(
     result: &DecodeResult,
 ) -> (cadmpeg_ir::CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::write::{CadirEncoder, EncodeInput, Encoder};
     let plan = CadirEncoder
-        .plan(EncodeInput::new(result.ir(), None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(result.ir(), None))
         .unwrap();
     let losses = plan.report().losses.clone();
     let mut bytes = Vec::new();

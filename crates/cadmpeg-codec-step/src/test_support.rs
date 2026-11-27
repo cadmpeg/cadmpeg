@@ -9,7 +9,18 @@ pub(crate) mod exchange;
 pub(crate) mod revolved_wedge;
 pub(crate) mod validated_part;
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+
+/// A desktop-limit context for a test that drives the writer without an
+/// encode plan.
+pub(crate) fn write_context() -> &'static DecodeContext<'static> {
+    let arena = Box::leak(Box::new(DecodeArena::new()));
+    Box::leak(Box::new(DecodeContext::new(
+        arena,
+        &DecodePolicy::default(),
+        DecodeDepth::Full,
+    )))
+}
 
 pub(crate) fn with_service_context<T>(
     bytes: &[u8],

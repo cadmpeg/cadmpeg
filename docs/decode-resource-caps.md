@@ -125,26 +125,44 @@ chokepoints are:
 
 Expansion output from `begin_expand` is charged as decompressed bytes, not
 again as retained bytes. Parse trees, indexes, caches, and other working
-storage are not retained bytes; per-input bounds, entity charges, and local
-work caps bound them. A new copy of bytes that the decoded document keeps
-must call `retain_bytes` before the copy. A native record's text may be
+storage are not retained bytes; the expanded-bytes charge of an XML or JSON
+parse, per-input bounds, entity charges, and local work caps bound them. A new
+copy of bytes that the decoded document keeps must call `retain_bytes`
+before the copy. A native record's text may be
 counted twice toward retained bytes, once by the codec before attach and
 once by the IR at attach (Rhino link bytes and `from_typed_for_decode`
 JSON copies), so the retained ceiling is conservative by at most that
 text.
 
 `parse_xml`, `parse_json_value` and `parse_json` scan the text before they
-parse it, charge its depth to the session, and bound the tree's storage by
-the per-expansion allowance. For XML, the scan counts what roxmltree 0.21.1
-allocates: the node and attribute slots that it reserves for every `<` and
-`=` in the text, the texts and attribute values that it copies (those with
-references, carriage returns, CDATA, tabs or line breaks), the merged text
-pieces, the per-level parser state, and the namespaces. The rest of the
-allowance becomes roxmltree's node limit. The depth is charged before
-roxmltree parses, because roxmltree recurses once per element level. A JSON
-tree is estimated from its delimiter counts as a `serde_json::Value` tree,
-also for typed parses. A tree that could exceed the allowance is
-`NotImplemented` and does not set the fuse.
+parse it and charge its depth to the session. The depth is charged before
+the parser runs, because roxmltree recurses once per element level.
+
+For XML, the scan counts what roxmltree 0.21.1 allocates: the node and
+attribute slots that it reserves for every `<` and `=` in the text, the
+texts and attribute values that it copies (those with references, carriage
+returns, CDATA, tabs or line breaks), the merged text pieces, the per-level
+parser state, the temporary attributes of the widest tag, the namespaces,
+and three node slots for each node it can make: the root, one for each
+`<`, and one text node after each `<`. It also counts the name comparisons
+that roxmltree makes, one byte each: each attribute with the earlier
+attributes of its tag, and the name of each tag and prefixed attribute with
+the namespaces in scope. The session charges that count to the
+decompressed-bytes dimension before roxmltree parses, against the caller's
+`max_decompressed_bytes_total` with no allowance that scales with the
+input, and adds it to the other expanded bytes of the session. The
+scan's set of namespace prefixes is admitted against the same ceiling as it
+grows. A refusal is `ResourceLimit` of `scope: Session` whose `additional`
+is the count, `u64::MAX` where the count passes `u64`, and it sets the
+fuse. For a text that `parse_input_xml` reads, each attribute, a namespace
+declaration included, and each distinct namespace prefix is an entity
+charged to the session before roxmltree parses.
+
+A JSON tree is estimated from its delimiter counts as a `serde_json::Value`
+tree, also for typed parses. The session charges that estimate to the
+decompressed-bytes dimension before the parse, against the same ceiling as
+an XML parse, and a refusal is the same `ResourceLimit` with the estimate
+as `additional`.
 
 ## Retained-byte availability
 
@@ -213,8 +231,6 @@ report a loss; a caller may report a general failure for the same item.
 | Crate                    | File                                               | Constant                                  | Value                                                   | Kind | Enforcement                                                                                                                                                                                                                                                                  |
 | ------------------------ | -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg-core`           | `src/decode/zstd.rs`                               | `MAX_DECODER_WINDOW`                      | `1 << 30` on 32-bit targets, else `1 << 31`             | 1    | The largest Zstandard window that the linked decoder can open on this target. `open_zstd` first checks each frame's buffered output (its window, or its declared content size when that is smaller) against the per-expansion allowance as a per-input bound: excess is `NotImplemented` for that stream, names the allowance, and does not set the fuse. A declared window above this constant is also `NotImplemented` and does not set the fuse. |
-| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_TAG_ATTRIBUTES`                  | `256`                                                   | 2    | Attributes in one XML tag, counted by the scan before `parse_xml`. roxmltree compares each attribute with the earlier ones in its tag. Excess is `NotImplemented` for that text and does not set the fuse.                                                                  |
-| `cadmpeg-core`           | `src/decode/tree.rs`                               | `MAX_XML_NAMESPACE_PREFIXES`              | `256`                                                   | 2    | Distinct namespace prefixes declared in one XML text, counted by the same scan. roxmltree searches the namespaces in scope per element and copies them into each declaring element. Excess is `NotImplemented` and does not set the fuse.                                  |
 | `cadmpeg-ir`             | `src/native/mod.rs`                                | `MAX_NATIVE_NESTING_DEPTH`                | `256`                                                   | 1    | CADIR native field nesting. `NativeRecord::new`, replay and canonical text refuse a deeper field with `FieldNestsTooDeep`.                                                                                                                                                   |
 | `cadmpeg-ir` | `src/document/read.rs` | `MAX_REPAIRS` | `64` | 2 | Refusals one record's repairs take in `CadIr::read`. Exhaustion gives the record up as a part and charges `decode/record.unreadable`. |
 | `cadmpeg-ir` | `src/document/read.rs` | `MAX_COLLECTION_SITES` | `16` | 2 | Objects of one record tried as the home of one omitted collection in `CadIr::read`. A record that no tried site repairs is given up as a part and charges `decode/record.unreadable`. |

@@ -67,6 +67,11 @@ impl EvaluationRefusal {
 pub enum EvaluationAdmission<'ctx, 'arena> {
     /// Count nesting against this live decode context.
     Decode(&'ctx DecodeContext<'arena>),
+    /// Take refusals, the cumulative ceilings, and model work slices from
+    /// this live write session, and count nesting against the independent
+    /// limits of [`Self::Standard`], so that a writer evaluates every
+    /// nesting the document admits.
+    Write(&'ctx DecodeContext<'arena>),
     /// Use an independent depth limit of 256 and, for a model evaluation, a
     /// fresh work slice.
     Standard,
@@ -90,7 +95,17 @@ enum WorkSlicePolicy<'ctx, 'arena> {
     Session {
         context: &'ctx DecodeContext<'arena>,
         work: &'ctx WorkBudget,
+        nesting: Nesting,
     },
+}
+
+/// Where a session slice counts nesting.
+#[derive(Clone, Copy)]
+enum Nesting {
+    /// Against the session's recursion limit.
+    Session,
+    /// Against the independent limits.
+    Independent,
 }
 
 impl<'ctx, 'arena> From<&'ctx DecodeContext<'arena>> for EvaluationAdmission<'ctx, 'arena> {
@@ -132,7 +147,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             scratch.settle(result)
         };
         match self {
-            Self::Decode(_) => self.within_work_slice(work, evaluate),
+            Self::Decode(_) | Self::Write(_) => self.within_work_slice(work, evaluate),
             Self::Standard => evaluate(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
                 policy: WorkSlicePolicy::Standalone(work),
             })),
@@ -159,7 +174,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
                     | WorkSlicePolicy::Standalone(work)
                     | WorkSlicePolicy::Session { work, .. },
             }) => Some(work),
-            Self::Decode(_) | Self::Standard => None,
+            Self::Decode(_) | Self::Write(_) | Self::Standard => None,
         }
     }
 
@@ -191,10 +206,16 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
             Some(context) => {
                 session_refusal(context)?;
                 let child = WorkBudget::new(parent.remaining());
+                let nesting = if self.nesting_context().is_some() {
+                    Nesting::Session
+                } else {
+                    Nesting::Independent
+                };
                 let result = run(EvaluationAdmission::WorkSlice(EvaluationWorkSlice {
                     policy: WorkSlicePolicy::Session {
                         context,
                         work: &child,
+                        nesting,
                     },
                 }));
                 // A transfer that does not fit exhausts the parent; a child
@@ -221,13 +242,39 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
 
     pub(super) fn context(self) -> Option<&'ctx DecodeContext<'arena>> {
         match self {
-            Self::Decode(context) => Some(context),
+            Self::Decode(context) | Self::Write(context) => Some(context),
             Self::Standard => None,
             Self::WorkSlice(EvaluationWorkSlice {
                 policy: WorkSlicePolicy::Session { context, .. },
             }) => Some(context),
             Self::WorkSlice(EvaluationWorkSlice {
                 policy: WorkSlicePolicy::Independent(_) | WorkSlicePolicy::Standalone(_),
+            }) => None,
+        }
+    }
+
+    /// The session whose recursion limit counts this admission's nesting.
+    pub(super) fn nesting_context(self) -> Option<&'ctx DecodeContext<'arena>> {
+        match self {
+            Self::Decode(context)
+            | Self::WorkSlice(EvaluationWorkSlice {
+                policy:
+                    WorkSlicePolicy::Session {
+                        context,
+                        nesting: Nesting::Session,
+                        ..
+                    },
+            }) => Some(context),
+            Self::Write(_)
+            | Self::Standard
+            | Self::WorkSlice(EvaluationWorkSlice {
+                policy:
+                    WorkSlicePolicy::Independent(_)
+                    | WorkSlicePolicy::Standalone(_)
+                    | WorkSlicePolicy::Session {
+                        nesting: Nesting::Independent,
+                        ..
+                    },
             }) => None,
         }
     }
@@ -291,7 +338,7 @@ impl<'ctx, 'arena> EvaluationAdmission<'ctx, 'arena> {
     where
         'ctx: 'scratch,
     {
-        match self.context() {
+        match self.nesting_context() {
             Some(context) => context
                 .enter_nested_limit("geometry evaluation nesting")
                 .map(|guard| EvaluationDepthGuard::Decode { _guard: guard }),
