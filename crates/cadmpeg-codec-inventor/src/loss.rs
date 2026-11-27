@@ -1084,6 +1084,7 @@ mod tests {
                 "feature.history-body-not-closed",
                 "feature.history-body-bounded",
                 "feature.history-body-unlinked",
+                "feature.history-state-unplaced",
                 "drawing.native-only",
                 "drawing.record-malformed",
                 "pmi.target-unresolved",

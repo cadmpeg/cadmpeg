@@ -116,13 +116,17 @@ pub(crate) fn project(
         charge(&unplaced, losses);
         return Ok(());
     }
-    let mut records = match ir.resolved_current_state(&scope, &at) {
-        Ok(state) => state.records().clone(),
-        Err(error) => {
-            return Err(CodecError::malformed(format_args!(
-                "Inventor v11 current state does not resolve: {error}"
-            )))
+    let Ok(mut records) = ir
+        .resolved_current_state(&scope, &at)
+        .map(|state| state.records().clone())
+    else {
+        for body in &ir.model.history_bodies {
+            if !unplaced.iter().any(|(charged, _)| charged.id == body.id) {
+                unplaced.push((body, "the current state does not resolve"));
+            }
         }
+        charge(&unplaced, losses);
+        return Ok(());
     };
     let mut restated = Vec::new();
     // A Base feature whose state is the current state restates its body
