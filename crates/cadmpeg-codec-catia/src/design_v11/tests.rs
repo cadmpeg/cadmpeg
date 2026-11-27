@@ -7,9 +7,12 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::write::{target::TargetRequest, CadirEncoder, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::design::construction::{InputReference, Relation, Subject};
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
-use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::ops::datum::DatumElement;
 use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::selection::{Anchor, PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::{CadIr, ReadOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -141,6 +144,52 @@ fn container<'ir>(ir: &'ir CadIr, prefix: &str, entity_id: u32) -> &'ir Containe
         .unwrap()
 }
 
+/// A feature's operation by its native kind or its unresolved family.
+fn operation(operation: &FeatureOperation) -> String {
+    match operation {
+        FeatureOperation::Native { kind, .. } => kind.as_str().to_owned(),
+        FeatureOperation::Unresolved { family } => format!("unresolved {family:?}"),
+        other => panic!("an untyped operation: {other:?}"),
+    }
+}
+
+/// The principal entity and the anchor of an origin datum's one
+/// `Coincident` input (§6.2, Origin features).
+fn origin_plane(operation: &FeatureOperation) -> (PrincipalEntity, Anchor) {
+    let FeatureOperation::Datum(datum) = operation else {
+        panic!("an origin feature is a datum: {operation:?}");
+    };
+    let DatumElement::Plane(plane) = &datum.element else {
+        panic!("a plane datum");
+    };
+    assert!(plane.after.is_empty());
+    let [input] = plane.inputs.as_slice() else {
+        panic!("one input");
+    };
+    let role = input.role.as_ref().unwrap();
+    assert_eq!(
+        (&role.subject, &role.relation),
+        (&Subject::Whole, &Relation::Coincident)
+    );
+    let Some(InputReference::Picks(selection)) = &input.reference else {
+        panic!("the input picks");
+    };
+    let Picks::Named(members) = &selection.picks else {
+        panic!("a named pick");
+    };
+    let [picked] = members.as_slice() else {
+        panic!("one pick");
+    };
+    let PickTarget::Principal {
+        entity,
+        container: None,
+    } = &picked.target
+    else {
+        panic!("a principal pick");
+    };
+    (*entity, selection.at.clone())
+}
+
 /// Write the document as CADIR and read it back: the read document and the
 /// write's losses that name a design record.
 fn cadir_round_trip(ir: &CadIr) -> (CadIr, Vec<String>) {
@@ -235,21 +284,23 @@ fn a_part_root_states_its_group_and_its_bodies_in_list_order() {
             .features
             .iter()
             .map(|feature| {
-                let FeatureOperation::Native { kind, .. } = &feature.definition.operation else {
-                    panic!("an untyped feature is native");
-                };
                 (
                     feature.id.as_str().split('#').next().unwrap(),
                     entity(feature.id.as_str()),
-                    kind.as_str(),
+                    operation(&feature.definition.operation),
                     feature.native_ref.is_some(),
                 )
             })
             .collect::<Vec<_>>(),
         [
-            ("catia:outer:feature", 4, "catia:GSMPlane", true),
-            ("catia:outer:feature", 5, "catia:Pad", true),
-            ("catia:outer:feature", 6, "catia:Pad", true),
+            (
+                "catia:outer:feature",
+                4,
+                "unresolved Datum".to_owned(),
+                true
+            ),
+            ("catia:outer:feature", 5, "catia:Pad".to_owned(), true),
+            ("catia:outer:feature", 6, "catia:Pad".to_owned(), true),
         ]
     );
     assert_eq!(design_findings(&result), Vec::<String>::new());
@@ -348,10 +399,8 @@ fn a_feature_no_read_set_lists_is_a_member_of_the_part_group() {
     };
     assert_eq!(feature.id, legacy.id);
     assert_eq!(
-        feature.definition.operation,
-        FeatureOperation::Unresolved {
-            family: OperationFamily::Datum
-        }
+        origin_plane(&feature.definition.operation),
+        (PrincipalEntity::XyPlane, Anchor::Current)
     );
     assert!(result.report().losses.iter().any(|loss| loss.code
         == crate::loss::CatiaLossCode::DesignFeaturesUngrouped
@@ -360,6 +409,29 @@ fn a_feature_no_read_set_lists_is_a_member_of_the_part_group() {
         && loss.message.contains(legacy.id.as_str())));
     assert_eq!(design_findings(&result), Vec::<String>::new());
     assert_design_survives_cadir(ir);
+}
+
+/// The part's xy, yz, and zx planes are origin features on the matching
+/// principal planes, members of the part's group (§6.2).
+#[test]
+fn the_part_planes_are_origin_datums_on_the_principal_planes() {
+    for (class, entity) in [
+        ("xy-plane", PrincipalEntity::XyPlane),
+        ("yz-plane", PrincipalEntity::YzPlane),
+        ("zx-plane", PrincipalEntity::XzPlane),
+    ] {
+        let result = decode(principal_plane_part(class), &DecodeOptions::default());
+        let ir = result.ir();
+        let [feature] = ir.design.features.as_slice() else {
+            panic!("one design feature");
+        };
+        assert_eq!(
+            origin_plane(&feature.definition.operation),
+            (entity, Anchor::Current)
+        );
+        assert_eq!(design_findings(&result), Vec::<String>::new());
+        assert_design_survives_cadir(ir);
+    }
 }
 
 #[test]

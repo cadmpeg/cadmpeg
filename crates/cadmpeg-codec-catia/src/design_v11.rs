@@ -20,6 +20,7 @@ use crate::decode::ModelingGraphScope;
 use crate::loss::CatiaLossCode;
 use crate::native::CatiaNative;
 
+mod datums;
 mod history;
 mod parameters;
 mod tree;
@@ -88,7 +89,7 @@ pub(crate) fn restate_exactness(
 #[deny(clippy::wildcard_enum_match_arm)]
 fn feature_inputs(field: FeatureField) -> &'static [ModelFeatureField] {
     match field {
-        FeatureField::Definition => &[ModelFeatureField::Definition, ModelFeatureField::SourceTag],
+        FeatureField::Definition => &[ModelFeatureField::Definition],
         FeatureField::NativeRef => &[ModelFeatureField::NativeRef],
         FeatureField::Name
         | FeatureField::Suppressed

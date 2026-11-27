@@ -10,12 +10,14 @@ use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, 
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::CodecName;
 use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::selection::Anchor;
 use cadmpeg_ir::features::{
     Feature as LegacyFeature, FeatureId, FeatureOperation as Legacy, UnresolvedFamily,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
+use super::datums;
 use super::tree::{Body, Item, Tree};
 use crate::ids::neutral_history_id;
 use crate::loss::{identity_statement, CatiaLossCode};
@@ -49,7 +51,7 @@ pub(super) fn project(
     let mut bodies = Vec::new();
     if let Some(tree) = tree {
         for item in &tree.group {
-            if let Some(member) = stated.item(tree.graph_offset, item)? {
+            if let Some(member) = stated.item(tree.graph_offset, item, Anchor::Current)? {
                 group.insert(member);
             }
         }
@@ -83,7 +85,7 @@ pub(super) fn project(
             continue;
         }
         ungrouped.push(feature.id.as_str().to_owned());
-        group.insert(stated.legacy_feature(feature)?);
+        group.insert(stated.legacy_feature(feature, Anchor::Current)?);
     }
     if !contradicted.is_empty() {
         losses.push(CatiaLossCode::DesignFeaturesContradicted.note(format!(
@@ -139,7 +141,7 @@ impl Statements<'_, '_> {
         let mut members = Vec::with_capacity(body.members.len());
         let mut in_work = None;
         for item in &body.members {
-            if let Some(member) = self.item(graph_offset, item)? {
+            if let Some(member) = self.item(graph_offset, item, Anchor::Input)? {
                 if Some(item.entity_id()) == self.current {
                     in_work = Some(members.len());
                 }
@@ -168,7 +170,14 @@ impl Statements<'_, '_> {
         Ok(id)
     }
 
-    fn item(&mut self, graph_offset: u64, item: &Item<'_>) -> Result<Option<Member>, CodecError> {
+    /// The member for one listed item; `at` anchors the selections of a
+    /// feature in the container that lists it (§5.8).
+    fn item(
+        &mut self,
+        graph_offset: u64,
+        item: &Item<'_>,
+        at: Anchor,
+    ) -> Result<Option<Member>, CodecError> {
         let (member, class) = match item {
             Item::Body(body) => return Ok(Some(Member::Container(self.body(graph_offset, body)?))),
             Item::Feature { member, class } => (member, *class),
@@ -176,25 +185,31 @@ impl Statements<'_, '_> {
         let id = member_feature_id(graph_offset, member.entity_id)?;
         if let Some(legacy) = self.legacy.get(&id) {
             if legacy_agrees(legacy, class) {
-                return self.legacy_feature(legacy).map(Some);
+                return self.legacy_feature(legacy, at).map(Some);
             }
             self.reclassified.push(format!(
                 "{} (record class {class}, restated by it)",
                 id.as_str()
             ));
         }
-        let Some(kind) = CodecName::new(&cadmpeg_ir::codec_id!("catia"), class) else {
-            return Ok(None);
+        let operation = match datums::by_class(class) {
+            Some(operation) => operation,
+            None => {
+                let Some(kind) = CodecName::new(&cadmpeg_ir::codec_id!("catia"), class) else {
+                    return Ok(None);
+                };
+                FeatureOperation::Native {
+                    kind,
+                    native_options: BTreeMap::new(),
+                    source_settings: BTreeMap::new(),
+                }
+            }
         };
         self.ctx.charge_entities(1, "project a CATIA feature")?;
         self.restated.insert(id.clone());
         self.features.push(feature(
             id.clone(),
-            FeatureOperation::Native {
-                kind,
-                native_options: BTreeMap::new(),
-                source_settings: BTreeMap::new(),
-            },
+            operation,
             member
                 .target
                 .as_ref()
@@ -203,12 +218,12 @@ impl Statements<'_, '_> {
         Ok(Some(Member::Feature(id)))
     }
 
-    fn legacy_feature(&mut self, legacy: &LegacyFeature) -> Result<Member, CodecError> {
+    fn legacy_feature(&mut self, legacy: &LegacyFeature, at: Anchor) -> Result<Member, CodecError> {
         self.ctx.charge_entities(1, "project a CATIA feature")?;
         self.restated.insert(legacy.id.clone());
         self.features.push(feature(
             legacy.id.clone(),
-            legacy_operation(legacy),
+            legacy_operation(legacy, at),
             legacy.native_ref.clone(),
         ));
         Ok(Member::Feature(legacy.id.clone()))
@@ -280,9 +295,16 @@ fn contradicting_class<'n>(native: &'n CatiaNative, feature: &LegacyFeature) -> 
     (!legacy_agrees(feature, &class.name)).then_some(class.name.as_str())
 }
 
-fn legacy_operation(feature: &LegacyFeature) -> FeatureOperation {
+/// The design operation of a feature the decoder types.
+fn legacy_operation(feature: &LegacyFeature, at: Anchor) -> FeatureOperation {
     let family = match feature.evaluation.definition().operation() {
         Legacy::Sketch { .. } => OperationFamily::Sketch,
+        Legacy::DatumPrincipalPlane { plane } => {
+            if let Some(operation) = datums::principal(*plane, at) {
+                return operation;
+            }
+            OperationFamily::Datum
+        }
         _ => OperationFamily::Datum,
     };
     FeatureOperation::Unresolved { family }
