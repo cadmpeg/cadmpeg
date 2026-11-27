@@ -910,15 +910,6 @@ fn decode_container<'a>(
                     ));
                 }
                 ir.model.history_bodies = history.bodies.bodies;
-                losses.extend(crate::feature::stitch::losses(
-                    ir.model
-                        .features
-                        .iter()
-                        .filter(|feature| {
-                            feature.source_tag.as_deref() == Some(crate::feature::stitch::TAG)
-                        })
-                        .count(),
-                ));
             }
             losses.extend(crate::feature::body_selection::native_losses(
                 &ir.model, &joined,
@@ -1225,6 +1216,15 @@ fn decode_container<'a>(
         losses.extend(composite_losses);
         losses.extend(crate::feature::unrecognized_class_losses(
             &ir.model.features,
+        ));
+        losses.extend(crate::feature::stitch::losses(
+            ir.model
+                .features
+                .iter()
+                .filter(|feature| {
+                    feature.source_tag.as_deref() == Some(crate::feature::stitch::TAG)
+                })
+                .count(),
         ));
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,

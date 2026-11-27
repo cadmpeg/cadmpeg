@@ -278,24 +278,21 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
             LegacyOperation::SewBodies {
                 bodies,
                 gap_tolerance,
-            } => {
-                if gap_tolerance.is_some() {
-                    return Err("the knit states a tolerance with no v11 reading");
-                }
-                FeatureOperation::Knit(Box::new(cadmpeg_ir::design::ops::surface::Knit {
-                    elements: selections::bodies(bodies)?,
-                    tolerance: None,
-                    simplify: None,
-                    healing: None,
-                    federation: None,
-                    output: cadmpeg_ir::design::options::SheetOutput {
-                        solid: None,
-                        boolean: None,
-                    },
-                    native_options: BTreeMap::default(),
-                    source_settings: BTreeMap::default(),
-                }))
-            }
+            } => FeatureOperation::Knit(Box::new(cadmpeg_ir::design::ops::surface::Knit {
+                elements: selections::bodies(bodies)?,
+                tolerance: gap_tolerance.as_ref().map(|gap| {
+                    Dimension::Literal(cadmpeg_ir::scalar::NonNegativeLength::from(*gap))
+                }),
+                simplify: None,
+                healing: None,
+                federation: None,
+                output: cadmpeg_ir::design::options::SheetOutput {
+                    solid: None,
+                    boolean: None,
+                },
+                native_options: BTreeMap::default(),
+                source_settings: BTreeMap::default(),
+            })),
             LegacyOperation::Pattern { seeds, pattern } => {
                 FeatureOperation::Pattern(Box::new(patterns::project(seeds, pattern)?))
             }

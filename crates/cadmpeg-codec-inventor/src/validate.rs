@@ -2694,6 +2694,42 @@ fn validate_features(
                 ));
             }
         }
+        if matches!(family, crate::feature::FeatureFamily::Stitch) {
+            let token = raw_feature.identity.segment_token.as_str();
+            let expected = crate::feature::stitch::operation(
+                raw_feature,
+                |reference| {
+                    properties_by_record
+                        .get(&(token, reference.checked_sub(1)?))
+                        .copied()
+                },
+                |reference| {
+                    let raw = feature_parameters
+                        .get(&(token, reference.checked_sub(1)?))?
+                        .as_ref()?;
+                    match parameter_values
+                        .get(raw.id().as_str())?
+                        .as_ref()?
+                        .value
+                        .as_ref()?
+                    {
+                        cadmpeg_ir::features::parameters::ParameterValue::Length(value) => {
+                            Some(*value)
+                        }
+                        _ => None,
+                    }
+                },
+            );
+            if expected.is_none_or(|(expected, _)| {
+                cadmpeg_ir::features::FeatureDefinition::Operation(expected) != *definition
+            }) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor neutral stitch does not match its PmDc slots".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+        }
         let output_slot = if matches!(family, crate::feature::FeatureFamily::Split) {
             crate::feature::split::output_slot(definition)
         } else {

@@ -16,11 +16,11 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::native::bytes::NativeBytes;
-use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::scalar::{Length, PositiveLength};
 
 use super::{
-    ClassId, PmDcFeature, PmDcFeatureLabel, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
-    ProjectionIndex,
+    ClassId, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty, PmDcFeaturePropertyKind,
+    PmDcFeatureReferenceFamily, ProjectionIndex,
 };
 
 /// Feature-label class of a Stitch Surface.
@@ -43,31 +43,63 @@ const CONTROL_SLOTS: [usize; 2] = [3, 5];
 /// Slot of the tolerance parameter.
 const TOLERANCE_SLOT: usize = 4;
 
-/// The wrappers of the operand collection, in collection order.
-fn operand_wrappers(source: &PmDcFeature, index: &ProjectionIndex<'_>) -> Option<Vec<String>> {
+/// The neutral operation and the result wrapper that the PmDc slots give.
+/// `property` resolves a record reference index to a feature property, and
+/// `length` resolves one to the value of a length parameter.
+pub(crate) fn operation<'a>(
+    source: &PmDcFeature,
+    property: impl Fn(u32) -> Option<&'a PmDcFeatureProperty>,
+    length: impl Fn(u32) -> Option<Length>,
+) -> Option<(FeatureOperation, &'a PmDcFeatureProperty)> {
     let slots = source.properties.references();
-    if slots.len() != SLOT_COUNT || slots[1].index() != 0 || slots[TOLERANCE_SLOT].index() == 0 {
+    if slots.len() != SLOT_COUNT || slots[1].index() != 0 {
         return None;
     }
+    let slot = |slot: usize| property(slots[slot].index());
     let PmDcFeaturePropertyKind::References {
         family: PmDcFeatureReferenceFamily::ObjectCollection,
         items,
-    } = &super::slot_property(source, 0, index)?.kind
+    } = &slot(0)?.kind
     else {
         return None;
     };
-    let token = source.identity.segment_token.as_str();
     let wrappers = items
         .references()
         .iter()
         .map(|reference| {
-            let property = super::resolve_property(token, reference.index(), index)?;
-            matches!(property.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
-                .then(|| property.id())
+            let wrapper = property(reference.index())?;
+            matches!(wrapper.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
+                .then(|| wrapper.id())
         })
         .collect::<Option<Vec<_>>>()?;
     let distinct = wrappers.iter().collect::<std::collections::HashSet<_>>();
-    (!wrappers.is_empty() && distinct.len() == wrappers.len()).then_some(wrappers)
+    if wrappers.is_empty() || distinct.len() != wrappers.len() {
+        return None;
+    }
+    if !CONTROL_SLOTS.into_iter().all(|control| {
+        matches!(
+            slot(control).map(|property| &property.kind),
+            Some(PmDcFeaturePropertyKind::Boolean { .. })
+        )
+    }) {
+        return None;
+    }
+    let result = slot(RESULT_SLOT)?;
+    if !matches!(result.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
+        return None;
+    }
+    let gap_tolerance = PositiveLength::new(length(slots[TOLERANCE_SLOT].index())?.get())?;
+    let bodies = match wrappers.as_slice() {
+        [one] => BodySelection::Native(one.clone()),
+        _ => BodySelection::NativeSet(NativeSelections::try_from(wrappers).ok()?),
+    };
+    Some((
+        FeatureOperation::SewBodies {
+            bodies: SewBodySelection::try_from(bodies).ok()?,
+            gap_tolerance: Some(gap_tolerance),
+        },
+        result,
+    ))
 }
 
 /// Project a Stitch Surface with its operand wrappers and its result body.
@@ -77,17 +109,12 @@ pub(super) fn project(
     label: &PmDcFeatureLabel,
     index: &ProjectionIndex<'_>,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    let operands = operand_wrappers(source, index)?;
-    let controls = CONTROL_SLOTS.into_iter().all(|slot| {
-        matches!(
-            super::slot_property(source, slot, index).map(|property| &property.kind),
-            Some(PmDcFeaturePropertyKind::Boolean { .. })
-        )
-    });
-    let wrapper = super::slot_property(source, RESULT_SLOT, index)?;
-    if !controls || !matches!(wrapper.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }) {
-        return None;
-    }
+    let token = source.identity.segment_token.as_str();
+    let (operation, wrapper) = operation(
+        source,
+        |reference| super::resolve_property(token, reference, index),
+        |reference| super::length_reference(token, reference, index),
+    )?;
     let members = FeatureResultMembers::new(
         vec![cadmpeg_core::text::NonBlankString::new(wrapper.id())?],
         Vec::new(),
@@ -95,13 +122,6 @@ pub(super) fn project(
         Vec::new(),
     )
     .ok()?;
-    let bodies = match operands.as_slice() {
-        [one] => BodySelection::Native(one.clone()),
-        _ => BodySelection::NativeSet(NativeSelections::try_from(operands).ok()?),
-    };
-    let bodies = SewBodySelection::try_from(bodies).ok()?;
-    let gap_tolerance = super::length_parameter(source, TOLERANCE_SLOT, index)
-        .and_then(|length| PositiveLength::new(length.get()));
     if let Err(error) = ctx.charge_entities(2, "project Inventor Stitch Surface") {
         return Some(Err(error));
     }
@@ -134,12 +154,7 @@ pub(super) fn project(
             source_tag: Some(TAG.into()),
             source_text: None,
             source_content: FeatureContent::default(),
-            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-                FeatureOperation::SewBodies {
-                    bodies,
-                    gap_tolerance,
-                },
-            )),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation)),
             native_ref: Some(source.id()),
         },
         result,

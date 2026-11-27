@@ -1637,13 +1637,13 @@ Feature-label class `608ba39ed6117473279943ad7fbe0b63` identifies a Stitch Surfa
 | 0 | Object collection of the operand surface-body wrappers |
 | 1 | Null |
 | 2 | Surface-body wrapper of the result |
-| 3 | Boolean property, true |
+| 3 | Boolean property |
 | 4 | Parameter record |
-| 5 | Boolean property, false |
+| 5 | Boolean property |
 
 The operand collection is nonempty, and its members are distinct surface-body wrappers. The parameter in slot 4 has a positive length value. The outline value of the record is 4 or 2.
 
-Exactly one body key is live in `state_after` and in no body record live in `state_before` (section 13.10), and no body key is live in `state_before` and in no body record live in `state_after`. The new body is the body of the slot-2 wrapper.
+Exactly one body key is live in `state_after` and in no body record live in `state_before` (section 13.10), and no body key is live in `state_before` and in no body record live in `state_after`.
 
 ## 14. Document kind
 
