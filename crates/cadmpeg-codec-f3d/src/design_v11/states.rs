@@ -151,14 +151,7 @@ pub(super) fn project(
         pairs: sources.history_owners,
         losses: &mut found,
     }
-    .read(sources.scan, &mut evaluations, &mut carried)
-    .and_then(|read| {
-        local.charge_entities(
-            u64_from_index(evaluations.len()),
-            "project F3D v11 history states",
-        )?;
-        Ok(read)
-    });
+    .read(sources.scan, &mut evaluations, &mut carried);
     let unfit = || "the walk does not fit the decode's resource limits left".to_owned();
     let outcome = match read {
         _ if local.resource_refusal().is_some() => Err(unfit()),
@@ -308,17 +301,20 @@ struct Planned {
     targets: Vec<Option<i64>>,
 }
 
-/// Why the walk stops, and the features whose states it leaves unstated.
+/// Why the walk leaves the states after some features unstated, and those
+/// features.
 #[derive(Debug, PartialEq, Eq)]
 struct Stop {
     reason: String,
     features: Vec<FeatureId>,
 }
 
-/// The items with evaluations, latest first, and where the walk stops.
+/// The items with evaluations, latest first, the gaps whose evaluations the
+/// walk gives up, and where the walk stops.
 #[derive(Debug, PartialEq, Eq)]
 struct Plan {
     planned: Vec<Planned>,
+    gaps: Vec<Stop>,
     stop: Option<Stop>,
 }
 
@@ -345,15 +341,36 @@ fn before(states: &BTreeMap<i64, String>, state: i64, previous: Option<i64>) -> 
         .or_else(|| states.range(..state).next_back().map(|(found, _)| *found))
 }
 
+/// Whether the state `previous` before an item can follow the last item of
+/// `earlier` bound to the history `history`: where there is such an item,
+/// `previous` is a state that is not below the state of that item.
+fn meets(earlier: &[Entry<'_>], history: usize, previous: Option<i64>) -> bool {
+    let last = earlier.iter().rev().find_map(|entry| match entry.kind {
+        Kind::Bound {
+            history: found,
+            state,
+            ..
+        } if found == history => Some(state),
+        _ => None,
+    });
+    match (last, previous) {
+        (None, _) => true,
+        (Some(last), Some(previous)) => previous >= last,
+        (Some(_), None) => false,
+    }
+}
+
 /// Binds to one of `histories`, whose heads are `heads`, the state of each
 /// item of `entries` that its scope tail does not place, walking latest
 /// first from each head. An item with no scope tail that is the one such
 /// item between two items of a history whose stored states do not meet, or
 /// between the last item of a history and a head above its state, takes
 /// that gap. An item whose state id several histories store takes the one
-/// of them that the walk stands at that state in. The walk ends where the
-/// stored states of two items of a history do not meet otherwise. Returns
-/// each item so bound, by index, with why.
+/// of them that the walk stands at that state in and whose state before it
+/// is not below the state of the earlier item of that history. The walk
+/// goes on past a gap that no single such item takes, and ends where the
+/// state before a later item of a history is below the state of an earlier
+/// one, or is none. Returns each item so bound, by index, with why.
 fn resolve(
     entries: &mut [Entry<'_>],
     heads: &[Option<i64>],
@@ -378,10 +395,14 @@ fn resolve(
                 stored,
                 previous,
             } if !entry.stateless => {
-                let mut standing = stored
-                    .iter()
-                    .copied()
-                    .filter(|history| at[*history] == Some(*state));
+                let mut standing = stored.iter().copied().filter(|history| {
+                    at[*history] == Some(*state)
+                        && meets(
+                            &entries[..index],
+                            *history,
+                            before(&histories[*history].states, *state, *previous),
+                        )
+                });
                 match (standing.next(), standing.next()) {
                     (Some(history), None) => Some((history, *state, *previous, stored.len())),
                     _ => None,
@@ -444,6 +465,7 @@ fn resolve(
                     placed.insert(*one);
                 }
                 (_, _, None) => {}
+                (Some(gap), _, Some(_)) if gap > state => {}
                 (_, _, Some(_)) => break,
             }
         }
@@ -456,7 +478,12 @@ fn resolve(
 
 /// The states after `entries`, walking back through the histories named
 /// `names` from the state after the last item of each, or from its head in
-/// `heads` where no item stores one of its states.
+/// `heads` where no item stores one of its states. Where the state of an
+/// item of a history is below the state before the next item of that
+/// history, the states between them have no position: the walk gives up
+/// the evaluations of the items between the two and goes on from the
+/// earlier item's state. It stops where the state before the later item is
+/// below the earlier item's state, or is none.
 fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
     let mut at = last_items(entries, heads)
         .into_iter()
@@ -464,7 +491,9 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
         .map(|(last, head)| last.map(|(state, _)| state).or(*head))
         .collect::<Vec<_>>();
     let mut set = vec![0_usize; heads.len()];
+    let mut later = vec![None::<&FeatureId>; heads.len()];
     let mut planned = Vec::<Planned>::new();
+    let mut gaps = Vec::new();
     for (index, entry) in entries.iter().enumerate().rev() {
         let Kind::Bound {
             history,
@@ -474,6 +503,22 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
         else {
             continue;
         };
+        if let (Some(gap), Some(next)) = (at[history].filter(|gap| *gap > state), later[history]) {
+            gaps.push(Stop {
+                reason: format!(
+                    "no timeline item joins the states of {} after state {state} of feature {} up to state {gap}, which feature {next} stores as the state before it, so the state of that history after the items between them is not known",
+                    names[history], entry.feature
+                ),
+                features: planned
+                    .drain(set[history]..)
+                    .map(|planned| entries[planned.entry].feature.clone())
+                    .collect(),
+            });
+            for set in &mut set {
+                *set = (*set).min(planned.len());
+            }
+            at[history] = Some(state);
+        }
         if at[history] != Some(state) {
             let reason = format!(
                 "feature {} stores state {state} of {}, and the items after it leave that history at {}",
@@ -494,6 +539,7 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
                 .collect();
             return Plan {
                 planned,
+                gaps,
                 stop: Some(Stop { reason, features }),
             };
         }
@@ -505,9 +551,11 @@ fn plan(entries: &[Entry<'_>], heads: &[Option<i64>], names: &[&str]) -> Plan {
         }
         at[history] = previous;
         set[history] = planned.len();
+        later[history] = Some(entry.feature);
     }
     Plan {
         planned,
+        gaps,
         stop: None,
     }
 }
@@ -718,8 +766,8 @@ fn unstated(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Option<L
 
 /// One loss for each item of `entries` before the current position whose
 /// state the walk does not place. The walk takes such an item to commit no
-/// state, and the check between the items of each history stops it where
-/// their stored states disagree.
+/// state, and the check between the items of each history gives up the
+/// states between two of them whose stored states do not meet.
 fn unresolved(definition: &ProductDefinitionId, entries: &[Entry<'_>]) -> Vec<LossNote> {
     entries
         .iter()
@@ -1114,10 +1162,15 @@ impl<'r> Reader<'r, '_> {
         mark_current(&mut entries, &heads, &others, end);
         self.losses.extend(unstated(&scope.definition, &entries));
         self.losses.extend(unresolved(&scope.definition, &entries));
-        let Plan { planned, stop } = plan(&entries, &heads, &names);
+        let Plan {
+            planned,
+            gaps,
+            stop,
+        } = plan(&entries, &heads, &names);
         self.losses.extend(
-            stop.as_ref()
-                .and_then(|stop| stopped(&scope.definition, stop)),
+            gaps.iter()
+                .chain(&stop)
+                .filter_map(|stop| stopped(&scope.definition, stop)),
         );
         if planned.is_empty() {
             return Ok(Ok(()));
@@ -1417,7 +1470,8 @@ impl<'r> Reader<'r, '_> {
     /// each body that takes an owner the file does not state for it. The
     /// chain stops before an evaluation whose native records, with those of
     /// the evaluations after it, can cost more retained bytes to attach to
-    /// the document than the allowance left. Returns where the chain stops.
+    /// the document than the allowance left, and before an evaluation whose
+    /// records exceed the entity limit left. Returns where the chain stops.
     fn emit(
         &mut self,
         chain: &Chain<'_, '_>,
@@ -1489,6 +1543,7 @@ impl<'r> Reader<'r, '_> {
             }
             let mut delta = StateDelta::default();
             let mut sources = Vec::<&StateRecords>::new();
+            let mut marking = Vec::new();
             for (at, target) in chain.wants[index].iter().enumerate() {
                 let records = previous[at].1;
                 if previous[at].0 == *target {
@@ -1592,10 +1647,7 @@ impl<'r> Reader<'r, '_> {
                         )));
                     };
                     if let Some(rule) = rule {
-                        marks
-                            .entry((at, rule, owner.clone()))
-                            .or_default()
-                            .insert(body.id.clone());
+                        marking.push(((at, rule, owner.clone()), body.id.clone()));
                     }
                     if *owner != scope.definition {
                         delta.owners.insert(body.id.clone(), Some(owner.clone()));
@@ -1623,6 +1675,14 @@ impl<'r> Reader<'r, '_> {
                     )));
                 }
             }
+            let count = u64_from_index(len(&delta.records) + delta.removed.len() + 1);
+            if let Err(reason) = stored_states::task(self.ctx, "the evaluation", |ctx| {
+                ctx.charge_entities(count, "project F3D v11 history states")
+                    .map(Ok)
+            })? {
+                carried.truncate(held);
+                return Ok(Some(chain.stop(index, reason)));
+            }
             let id = evaluation_id(entry.stream, entry.record)?;
             if !current.names().is_empty() {
                 let stepped = previous
@@ -1636,10 +1696,6 @@ impl<'r> Reader<'r, '_> {
             }
             self.notes(&delta.records, current.records(), &sources, &id);
             sort(&mut delta.records);
-            self.ctx.charge_entities(
-                u64_from_index(len(&delta.records) + delta.removed.len()),
-                "project F3D v11 history state records",
-            )?;
             out.push(Evaluation {
                 id: id.clone(),
                 scope: scope.definition.clone(),
@@ -1660,6 +1716,9 @@ impl<'r> Reader<'r, '_> {
                     | Kind::Ambiguous { .. } => None,
                 },
             });
+            for (key, body) in marking {
+                marks.entry(key).or_default().insert(body);
+            }
             depth += 1;
         }
         Ok(None)

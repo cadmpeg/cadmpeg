@@ -204,7 +204,10 @@ history. Before it states an evaluation, the walk adds an upper bound of
 the retained bytes that the attachment of its native records to the
 document charges: six bytes for each byte of each record identity and link,
 32 bytes for each record, and 3 bytes for each link. The chain stops before
-the evaluation where the sum exceeds the allowance left.
+the evaluation where the sum exceeds the allowance left. The charge of the
+records, removed records and identity of each evaluation to the entity
+limit is a task of its own: where it does not fit, the chain stops before
+that evaluation in the same way.
 
 ## Scan limits
 
