@@ -6,9 +6,14 @@ use super::{edge_line, EdgeLine};
 /// Agreement of a computed millimetre value with the hand-computed one.
 const EPS_MM: f64 = 1e-9;
 
-/// A proxy of `len` bytes with the edge fields in metres.
+/// A proxy of `len` bytes whose geometry record is a straight edge with the
+/// fields in metres. The geometry class identifier ends at offset 104 + 16.
 fn proxy(len: usize, start: [f64; 3], direction: [f64; 3], length: f64) -> Vec<u8> {
+    const IDENTIFIER_AT: usize = 104;
+    let tail = [0xce, 0x11, 0x9a, 0x5e, 0x08, 0x00, 0x36, 0x9b, 0x41, 0x02];
     let mut bytes = vec![0_u8; len];
+    bytes[IDENTIFIER_AT + 6..IDENTIFIER_AT + 16].copy_from_slice(&tail);
+    bytes[IDENTIFIER_AT + 16] = 3;
     let mut put = |at: usize, values: &[f64]| {
         for (index, value) in values.iter().enumerate() {
             let start = at + index * 8;

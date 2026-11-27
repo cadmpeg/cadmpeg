@@ -332,25 +332,6 @@ Unstated regions:
 
 - `0..1053` (1053 B): §7.2 states the fields before the thread in the hole_prop_data record.
 
-## `topology_proxy_edge`
-
-Spec §7.6 · layout: byte offsets · size: 559 B
-
-Parsed by:
-- `crates/cadmpeg-codec-solidedge/src/edge.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 121 | 24 | `start` | `f64[3]` | little | spec | `f64` values at object offsets 121, 129 and 137 are the edge start point, |
-| 145 | 24 | `direction` | `f64[3]` | little | spec | the `f64` values at offsets 145, 153 and 161 are the unit edge direction, |
-| 177 | 8 | `length` | `f64` | little | spec | and the `f64` at offset 177 is the edge length. |
-
-Unstated regions:
-
-- `0..121` (121 B): §7.6 states no field before the edge start point.
-- `169..177` (8 B): §7.6 states no field between the edge direction and the edge length.
-- `185..559` (374 B): §7.6 states no field after the edge length.
-
 ## `ref_axis`
 
 Spec §6.4 · layout: byte offsets · size: 61 B
