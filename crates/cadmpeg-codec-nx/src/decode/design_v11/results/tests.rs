@@ -51,6 +51,7 @@ fn extrude(id: &str, ordinal: u64) -> LegacyFeature {
 fn result(
     key: &str,
     output_of: &str,
+    bodies: &[&str],
     faces: &[&str],
     edges: &[&str],
     vertices: &[&str],
@@ -64,7 +65,7 @@ fn result(
         FeatureResultTopologyId::mint(format!("nx:feature-history:result#{key}")).unwrap(),
         FeatureId::mint(output_of).unwrap(),
         FeatureResultMembers::new(
-            Vec::new(),
+            members(bodies),
             members(faces),
             members(edges),
             members(vertices),
@@ -77,7 +78,8 @@ fn result(
 /// A tetrahedron whose faces, edges, and vertices are the members of the
 /// results of two extrudes and of the equations node. Feature `a` holds
 /// faces 0 and 1, edge 0, vertex 0, and a face that is not current; feature
-/// `b` holds faces 1 and 2; the equations node holds face 3.
+/// `b` holds faces 1 and 2, and a feature-local body with face 2 in a second
+/// result; the equations node holds face 3.
 fn part() -> CadIr {
     let mut ir = polyhedron(
         &[
@@ -106,9 +108,17 @@ fn part() -> CadIr {
         extrude(B, 2),
     ];
     ir.model.feature_result_topologies = vec![
-        result("a", A, &[&f0, &f1, "nx:s0:face#999"], &[&e0], &[&v0]),
-        result("b", B, &[&f1, &f2], &[], &[]),
-        result("equations", EQUATIONS, &[&f3], &[], &[]),
+        result("a", A, &[], &[&f0, &f1, "nx:s0:face#999"], &[&e0], &[&v0]),
+        result("b", B, &[], &[&f1, &f2], &[], &[]),
+        result(
+            "b-body",
+            B,
+            &["nx:feature-history:body-identity#0000000001"],
+            &[&f2],
+            &[],
+            &[],
+        ),
+        result("equations", EQUATIONS, &[], &[&f3], &[], &[]),
     ];
     ir
 }
@@ -198,7 +208,7 @@ fn a_member_of_a_result_of_no_design_feature_is_unnamed() {
 
 /// Each result of a design feature is restated by its feature without its
 /// members; the name table restates the members of a result whose members
-/// are all current and named with the feature.
+/// are all current and named with the feature, and holds no body member.
 #[test]
 fn a_result_is_restated_by_its_feature_and_by_the_names_that_hold_its_members() {
     let (ir, _) = project_part();
@@ -219,6 +229,12 @@ fn a_result_is_restated_by_its_feature_and_by_the_names_that_hold_its_members() 
         b.cut_by(|restater| restater == &Restater::Names),
         Some(BTreeSet::new())
     );
+    let body = restated.get("nx:feature-history:result#b-body").unwrap();
+    assert_eq!(
+        body.cut_by(|restater| restater == &Restater::Record(B.to_owned())),
+        Some(BTreeSet::from(["members"]))
+    );
+    assert_eq!(body.cut_by(|restater| restater == &Restater::Names), None);
 }
 
 /// A CADIR write carries a result the name table holds, states in part a
@@ -245,7 +261,8 @@ fn a_cadir_write_carries_the_results_the_design_restates() {
         [
             "the cadir write does not represent model arena `feature_result_topologies`: \
              1 record(s) omitted: nx:feature-history:result#equations; \
-             1 record(s) stated in part: nx:feature-history:result#a (members)"
+             2 record(s) stated in part: nx:feature-history:result#a (members), \
+             nx:feature-history:result#b-body (members)"
         ]
     );
     let mut written = Vec::new();
