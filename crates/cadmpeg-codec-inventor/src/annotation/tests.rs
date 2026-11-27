@@ -21,8 +21,7 @@ use super::records::{
     NAMING_TABLE, PARAMETER, PLANE, SIZE_RELATION, STYLE, TOLERANCE_FEATURE, VALUE,
 };
 use super::{
-    fit, losses, project_segment, tolerance, Label, Malformed, Outcome, Selections,
-    UndecodedNominal,
+    fit, losses, project_segment, tolerance, Label, Malformed, NeedsParameter, Outcome, Selections,
 };
 use crate::loss::InventorLossCode;
 
@@ -502,15 +501,15 @@ fn measure_of_another_owner_kind_stays_native() {
 }
 
 #[test]
-fn a_dimension_without_a_decoded_nominal_is_given_up_and_its_value_record_is_not() {
+fn a_dimension_without_a_decoded_nominal_leaves_with_its_parameter_record() {
     let mut fixture = Fixture::dimension(6, 0, 0.015, -0.015);
     fixture.parameters.remove(&NOMINAL_AT);
     let (annotations, outcome) = run(&fixture, OWNER_AT);
     assert!(annotations.is_empty());
     assert!(refused(&outcome).is_empty());
     assert_eq!(
-        outcome.nominals,
-        [UndecodedNominal {
+        outcome.needs_parameter,
+        [NeedsParameter {
             segment_token: "segment".to_owned(),
             parameter: NOMINAL_AT,
             annotation: cadmpeg_ir::ids::PmiId::try_from(pmi(OWNER_AT)).expect("annotation id"),
@@ -529,7 +528,6 @@ fn a_malformed_naming_table_is_charged_by_its_record() {
     let (annotations, outcome) = run(&fixture, OWNER_AT);
     assert!(annotations[0].targets.is_empty());
     assert_eq!(refused(&outcome), [(TABLE_AT, None)]);
-    assert_eq!(outcome.shared_malformed, 0);
 }
 
 #[test]
@@ -893,6 +891,32 @@ fn plain_frame_transfers_with_ordered_datum_system() {
 }
 
 #[test]
+fn a_frame_whose_magnitude_parameter_is_not_decoded_leaves_with_that_record() {
+    let mut fixture = frame_fixture(9, 0);
+    fixture.parameters.remove(&MAGNITUDE_AT);
+    let (annotations, outcome) = run(&fixture, FRAME_OWNER_AT);
+    assert!(!annotations.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::GeometricTolerance { .. } | PmiDefinition::DatumSystem { .. }
+    )));
+    assert_eq!(outcome.frames_native, 0);
+    assert!(refused(&outcome).is_empty());
+    let dropped = outcome
+        .needs_parameter
+        .iter()
+        .map(|need| (need.parameter, need.annotation.as_str().to_owned()))
+        .collect::<Vec<_>>();
+    let frame = pmi(FRAME_OWNER_AT);
+    assert_eq!(
+        dropped,
+        [
+            (MAGNITUDE_AT, frame.clone()),
+            (MAGNITUDE_AT, format!("{frame}-datums")),
+        ]
+    );
+}
+
+#[test]
 fn frame_with_zone_modifiers_stays_native() {
     let fixture = frame_fixture(9, 23);
     let (annotations, outcome) = run(&fixture, FRAME_OWNER_AT);
@@ -1165,13 +1189,6 @@ fn every_loss_variant_has_its_note() {
                 ..Outcome::default()
             },
             InventorLossCode::PmiDatumSystemUnresolved,
-        ),
-        (
-            Outcome {
-                shared_malformed: 1,
-                ..Outcome::default()
-            },
-            InventorLossCode::PmiRecordMalformed,
         ),
         (
             Outcome {
@@ -1499,17 +1516,15 @@ fn a_tolerance_feature_face_selector_outside_both_grammars_is_charged_by_its_rec
     let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
     assert!(targets.is_empty());
     assert_eq!(refused(&outcome), [(FEATURE_SELECTOR_AT, None)]);
-    assert_eq!(outcome.shared_malformed, 0);
 }
 
 #[test]
-fn a_feature_operand_face_selector_outside_the_annotation_grammar_is_counted() {
+fn a_feature_operand_face_selector_with_another_body_source_is_charged_by_its_record() {
     let mut fixture = feature_fixture(&FeatureRecord::new(&[ATTACHMENT_AT], Some(COLLECTION_AT)));
     fixture.put(BODY_AT, BODY, state_header(78));
     let (targets, outcome) = run_features(&fixture, &[FEATURE_AT]);
     assert!(targets.is_empty());
-    assert!(refused(&outcome).is_empty());
-    assert_eq!(outcome.shared_malformed, 1);
+    assert_eq!(refused(&outcome), [(FEATURE_SELECTOR_AT, None)]);
 }
 
 #[test]

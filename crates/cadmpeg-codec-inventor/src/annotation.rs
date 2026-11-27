@@ -98,9 +98,6 @@ struct Joins {
     failed_sources: HashSet<u32>,
     /// The records outside the grammar that only annotations read, with why.
     malformed: Vec<(u32, &'static str)>,
-    /// The tolerance-feature face selectors outside the annotation grammar
-    /// that the feature-operand grammar reads.
-    shared_malformed: usize,
 }
 
 /// The ordinal that a qualified reference at `offset` of a payload names, when
@@ -205,17 +202,10 @@ impl Joins {
                         .or_default()
                         .push(selector),
                     Err(_) => {
-                        if matches!(
-                            crate::feature::face_selection::parse(ctx, payload, segment.version),
-                            Ok(Some(_))
-                        ) {
-                            self.shared_malformed += 1;
-                        } else {
-                            self.malformed.push((
-                                record_ordinal,
-                                "tolerance-feature face selector is outside the established grammar",
-                            ));
-                        }
+                        self.malformed.push((
+                            record_ordinal,
+                            "tolerance-feature face selector is outside the established grammar",
+                        ));
                         if let Some(source) = state_offset
                             .checked_sub(4)
                             .and_then(|offset| View::u32_le_at(payload.window(), offset))
@@ -300,11 +290,10 @@ pub(crate) struct Malformed {
     pub(crate) annotation: Option<PmiId>,
 }
 
-/// A dimension whose nominal parameter record carries no decoded parameter.
-/// The dimension leaves the document with that record when the record is
-/// given up, and is given up itself otherwise.
+/// An annotation whose value needs a parameter record that carries no decoded
+/// parameter. The annotation leaves the document with that record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UndecodedNominal {
+pub(crate) struct NeedsParameter {
     pub(crate) segment_token: String,
     pub(crate) parameter: u32,
     pub(crate) annotation: PmiId,
@@ -318,10 +307,7 @@ struct Outcome {
     datum_systems_unresolved: usize,
     unresolved_targets: usize,
     malformed: Vec<Malformed>,
-    /// Tolerance-feature face selectors outside the annotation grammar that
-    /// the feature-operand grammar reads.
-    shared_malformed: usize,
-    nominals: Vec<UndecodedNominal>,
+    needs_parameter: Vec<NeedsParameter>,
     tolerance_unresolved: usize,
 }
 
@@ -345,9 +331,9 @@ impl Outcome {
 }
 
 /// The losses of a projection, the annotation records outside the
-/// established grammar, and the dimensions whose nominal parameter is not
-/// decoded.
-pub(crate) type Projected = (Vec<LossNote>, Vec<Malformed>, Vec<UndecodedNominal>);
+/// established grammar, and the annotations whose value needs a parameter
+/// that is not decoded.
+pub(crate) type Projected = (Vec<LossNote>, Vec<Malformed>, Vec<NeedsParameter>);
 
 /// Projects the part annotations into `ir`. Returns the losses, the
 /// annotation records outside the established grammar, and the dimensions
@@ -469,7 +455,7 @@ pub(crate) fn project(
         .pmi
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     let losses = losses(&outcome);
-    Ok((losses, outcome.malformed, outcome.nominals))
+    Ok((losses, outcome.malformed, outcome.needs_parameter))
 }
 
 fn project_segment(
@@ -484,7 +470,6 @@ fn project_segment(
     for (ordinal, detail) in &joins.malformed {
         outcome.refuse(segment, *ordinal, detail, None);
     }
-    outcome.shared_malformed += joins.shared_malformed;
     let mut features = HashMap::new();
     for label in labels {
         if segment.record(label.owner, TOLERANCE_FEATURE).is_none() {
@@ -602,7 +587,7 @@ fn dimension(
         );
     }
     let Some(&model_value) = scope.parameters.get(&value.nominal_parameter) else {
-        outcome.nominals.push(UndecodedNominal {
+        outcome.needs_parameter.push(NeedsParameter {
             segment_token: segment.token.clone(),
             parameter: value.nominal_parameter,
             annotation: annotation_id(segment, owner_ordinal)?,
@@ -1013,6 +998,15 @@ fn datums(
     Ok((annotations, ids))
 }
 
+/// The identity of the datum system of the frame owner `owner_ordinal`.
+fn datum_system_id(segment: &Segment<'_>, owner_ordinal: u32) -> Result<PmiId, CodecError> {
+    PmiId::try_from(format!(
+        "inventor:annotation:pmi#{}-{owner_ordinal}-datums",
+        segment.token
+    ))
+    .map_err(|_| CodecError::malformed("invalid Inventor datum-system identity"))
+}
+
 fn characteristic(code: u32) -> Option<GeometricToleranceKind> {
     Some(match code {
         1 => GeometricToleranceKind::Straightness,
@@ -1057,22 +1051,47 @@ fn frame(
     let Ok(row) = frame_row(segment, row_payload) else {
         return refuse(row_ordinal, "frame row is outside the established grammar");
     };
-    let secondary_zero = row
-        .secondary
-        .iter()
-        .all(|parameter| scope.parameters.get(parameter) == Some(&0.0));
-    let magnitude = scope
-        .parameters
-        .get(&row.magnitude)
-        .and_then(|value| PmiValue::new(value * MILLIMETRES_PER_CENTIMETRE, PmiQuantity::Length))
-        .and_then(PmiMagnitude::new);
-    let (Some(kind), Some(magnitude), true, true) = (
-        characteristic(row.characteristic),
-        magnitude,
-        row.plain,
-        secondary_zero,
-    ) else {
-        outcome.frames_native += 1;
+    let kind = characteristic(row.characteristic);
+    let magnitude = scope.parameters.get(&row.magnitude).map(|value| {
+        PmiValue::new(value * MILLIMETRES_PER_CENTIMETRE, PmiQuantity::Length)
+            .and_then(PmiMagnitude::new)
+    });
+    let native = kind.is_none()
+        || !row.plain
+        || matches!(magnitude, Some(None))
+        || row.secondary.iter().any(|parameter| {
+            scope
+                .parameters
+                .get(parameter)
+                .is_some_and(|value| *value != 0.0)
+        });
+    let missing = std::iter::once(row.magnitude)
+        .chain(row.secondary.iter().copied())
+        .filter(|parameter| !scope.parameters.contains_key(parameter))
+        .collect::<Vec<_>>();
+    let (false, true, Some(kind), Some(Some(magnitude))) =
+        (native, missing.is_empty(), kind, magnitude)
+    else {
+        if native {
+            outcome.frames_native += 1;
+        } else {
+            let mut dropped = vec![annotation_id(segment, owner_ordinal)?];
+            if row.frame_reference.is_none()
+                && !row.datums.is_empty()
+                && row.datums.iter().all(|datum| datum_ids.contains_key(datum))
+            {
+                dropped.push(datum_system_id(segment, owner_ordinal)?);
+            }
+            for parameter in missing {
+                outcome
+                    .needs_parameter
+                    .extend(dropped.iter().map(|annotation| NeedsParameter {
+                        segment_token: segment.token.clone(),
+                        parameter,
+                        annotation: annotation.clone(),
+                    }));
+            }
+        }
         return Ok(Vec::new());
     };
     let mut annotations = Vec::new();
@@ -1100,11 +1119,7 @@ fn frame(
             }
             Some(references) if references.is_empty() => None,
             Some(references) => {
-                let id = PmiId::try_from(format!(
-                    "inventor:annotation:pmi#{}-{owner_ordinal}-datums",
-                    segment.token
-                ))
-                .map_err(|_| CodecError::malformed("invalid Inventor datum-system identity"))?;
+                let id = datum_system_id(segment, owner_ordinal)?;
                 let references = DatumReferences::try_from(references).map_err(|error| {
                     CodecError::malformed(format_args!("Inventor datum system: {error}"))
                 })?;
@@ -1176,7 +1191,7 @@ fn losses(outcome: &Outcome) -> Vec<LossNote> {
             outcome.datum_systems_unresolved
         )));
     }
-    let malformed = outcome.malformed.len() + outcome.shared_malformed;
+    let malformed = outcome.malformed.len();
     if malformed > 0 {
         losses.push(InventorLossCode::PmiRecordMalformed.note(format!(
             "{malformed} annotation records are outside the established grammar; their annotations or joins stay native"

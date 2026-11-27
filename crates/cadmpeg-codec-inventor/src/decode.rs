@@ -778,9 +778,9 @@ fn decode_container<'a>(
         UnresolvedDesign::default()
     };
     let mut malformed_annotations = Vec::new();
-    let mut undecoded_nominals = Vec::new();
+    let mut needs_parameter = Vec::new();
     if delivered >= DecodeDepth::Geometry {
-        let (annotation_losses, malformed, nominals) = crate::annotation::project(
+        let (annotation_losses, malformed, needs) = crate::annotation::project(
             ctx,
             &crate::annotation::Inputs {
                 rse: &container.rse,
@@ -792,7 +792,7 @@ fn decode_container<'a>(
         )?;
         losses.extend(annotation_losses);
         malformed_annotations = malformed;
-        undecoded_nominals = nominals;
+        needs_parameter = needs;
     }
     let mut stored_body_losses = Vec::new();
     if delivered >= DecodeDepth::Design && !body_keys.is_empty() {
@@ -1214,7 +1214,7 @@ fn decode_container<'a>(
         give_up_annotation_records(
             ctx,
             container,
-            (&malformed_annotations, &undecoded_nominals),
+            (&malformed_annotations, &needs_parameter),
             (&mut issue_records, &mut given_up),
             &mut losses,
         )?;
@@ -2152,15 +2152,14 @@ fn give_up_issue_records<'a>(
 
 /// Gives up each annotation record outside the established grammar that
 /// `named` does not hold yet, and drops each annotation that a record takes
-/// out of the document with the give-up of that record. A dimension whose
-/// nominal parameter record `named` holds is dropped with that record; any
-/// other dimension of `nominals` is given up.
+/// out of the document with the give-up of that record. An annotation of
+/// `needs` is dropped with the parameter record it needs.
 fn give_up_annotation_records(
     ctx: &DecodeContext<'_>,
     container: &InventorContainer<'_>,
-    (malformed, nominals): (
+    (malformed, needs): (
         &[crate::annotation::Malformed],
-        &[crate::annotation::UndecodedNominal],
+        &[crate::annotation::NeedsParameter],
     ),
     (named, parts): (
         &mut std::collections::BTreeSet<(String, u32)>,
@@ -2182,23 +2181,13 @@ fn give_up_annotation_records(
             )?);
         }
     }
-    for nominal in nominals {
-        let token = nominal.segment_token.as_str();
-        if named.contains(&(token.to_owned(), nominal.parameter)) {
-            let part = rse_record_part(container, (token, nominal.parameter), ArenaClass::Design)?;
-            losses.push(dropped_with(&nominal.annotation, part.id()?));
-        } else {
-            losses.push(
-                GivenUpRecord::new(
-                    &nominal.annotation,
-                    format_args!(
-                        "{code}: the nominal parameter record {token}-{} of the dimension value carries no decoded parameter",
-                        nominal.parameter
-                    ),
-                )
-                .loss(),
-            );
-        }
+    for need in needs {
+        let part = rse_record_part(
+            container,
+            (need.segment_token.as_str(), need.parameter),
+            ArenaClass::Design,
+        )?;
+        losses.push(dropped_with(&need.annotation, part.id()?));
     }
     Ok(())
 }
