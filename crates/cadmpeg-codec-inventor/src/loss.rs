@@ -142,7 +142,7 @@ pub(crate) enum InventorLossCode {
     FeatureSurfaceExtrusionPolarityAssumed,
     /// A through-all surface extrusion reads its neutral extent as bounded by the selected solid body.
     FeatureSurfaceExtrusionSolidBoundAssumed,
-    /// A planar extrusion target retains its unresolved body-face identity.
+    /// An extrusion target face retains its stored surface record without a resolved body-face identity.
     FeatureExtrusionTargetFaceNative,
     /// Rectangular patterns retain construction operands outside the fixed-spacing feature form.
     FeatureRectangularPatternOperandsNative,
@@ -152,6 +152,9 @@ pub(crate) enum InventorLossCode {
     FeatureThickenOperandsNative,
     /// Thicken retains a construction form with unresolved operands.
     FeatureThickenConstructionNative,
+    /// A typed Stitch Surface keeps its Boolean controls as source properties
+    /// and assumes the tolerance role of its slot-4 parameter.
+    FeatureStitchControlsNative,
     /// Shell operations retain construction controls only natively.
     FeatureShellDefinitionPartial,
     /// Attachment type-9 modes, Boolean controls, and states have no construction map.
@@ -257,8 +260,10 @@ pub(crate) enum InventorLossCode {
     FeatureStateUnresolved,
     /// Derived components retain external source construction only natively.
     FeatureDerivedSourceNative,
-    /// Derived result-body operands retain unresolved current-model body joins.
+    /// Derived result-body operands absent from the current model stay native: no state introduces the key, the state does not decode, or the state views passed their work cap.
     FeatureDerivedResultNative,
+    /// Stored-body Base results absent from the current model retain a history state that does not decode or passed its work cap.
+    FeatureBaseResultStateNative,
     /// Derived-part tagging has no neutral construction rule.
     FeatureDerivedTaggingNative,
     /// Tagging selection effects remain native.
@@ -425,6 +430,7 @@ impl InventorLossCode {
         Self::FeatureThreadDefinitionPartial,
         Self::FeatureThickenOperandsNative,
         Self::FeatureThickenConstructionNative,
+        Self::FeatureStitchControlsNative,
         Self::FeatureShellDefinitionPartial,
         Self::FeatureSheetMetalAttachmentControlsNative,
         Self::FeatureSheetMetalBendControlsNative,
@@ -478,6 +484,7 @@ impl InventorLossCode {
         Self::FeatureStateUnresolved,
         Self::FeatureDerivedSourceNative,
         Self::FeatureDerivedResultNative,
+        Self::FeatureBaseResultStateNative,
         Self::FeatureDerivedTaggingNative,
         Self::FeatureTaggingNative,
         Self::FeatureCompositeOperandsNative,
@@ -604,6 +611,7 @@ impl InventorLossCode {
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
+            Self::FeatureStitchControlsNative => "feature.stitch-controls-native",
             Self::FeatureShellDefinitionPartial => "feature.shell-definition-partial",
             Self::FeatureSheetMetalAttachmentControlsNative => {
                 "feature.sheet-metal-attachment-controls-native"
@@ -679,6 +687,7 @@ impl InventorLossCode {
             Self::FeatureStateUnresolved => "feature.state-unresolved",
             Self::FeatureDerivedSourceNative => "feature.derived-source-native",
             Self::FeatureDerivedResultNative => "feature.derived-result-native",
+            Self::FeatureBaseResultStateNative => "feature.base-result-state-native",
             Self::FeatureDerivedTaggingNative => "feature.derived-tagging-native",
             Self::FeatureTaggingNative => "feature.tagging-native",
             Self::FeatureCompositeOperandsNative => "feature.composite-operands-native",
@@ -795,6 +804,7 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureThickenConstructionNative
+            | Self::FeatureStitchControlsNative
             | Self::FeatureDesignOperationNative
             | Self::SketchDesignConstraintNative
             | Self::FeatureShellDefinitionPartial
@@ -869,6 +879,7 @@ impl InventorLossCode {
             | Self::FeatureStateUnresolved
             | Self::FeatureDerivedSourceNative
             | Self::FeatureDerivedResultNative
+            | Self::FeatureBaseResultStateNative
             | Self::FeatureDerivedTaggingNative
             | Self::FeatureCompositeOperandsNative
             | Self::FeatureCoilOperandsNative
@@ -1001,6 +1012,7 @@ mod tests {
                 "feature.thread-definition-partial",
                 "feature.thicken-operands-native",
                 "feature.thicken-construction-native",
+                "feature.stitch-controls-native",
                 "feature.shell-definition-partial",
                 "feature.sheet-metal-attachment-controls-native",
                 "feature.sheet-metal-bend-controls-native",
@@ -1054,6 +1066,7 @@ mod tests {
                 "feature.state-unresolved",
                 "feature.derived-source-native",
                 "feature.derived-result-native",
+                "feature.base-result-state-native",
                 "feature.derived-tagging-native",
                 "feature.tagging-native",
                 "feature.composite-operands-native",

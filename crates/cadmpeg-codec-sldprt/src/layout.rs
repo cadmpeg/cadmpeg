@@ -3069,6 +3069,18 @@ pub(crate) mod identity_reference_header {
     pub(crate) const ZERO_TAIL_VALUE: u16 = 0x0000;
 }
 
+/// Byte offsets for the `three_int_identity_own` record.
+///
+/// Spec §2.3. Record length 12 B.
+///
+/// ```text
+/// Own bytes of a three-integer identity representation; they follow its `moFR_c` object.
+/// ```
+pub(crate) mod three_int_identity_own {
+    /// Record length in bytes. Spec §2.3.
+    pub(crate) const LEN: usize = 12;
+}
+
 /// Byte offsets for the `named_object_header` record.
 ///
 /// Spec §2.3. Record length 16 B.

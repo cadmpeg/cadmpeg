@@ -9,7 +9,7 @@ use cadmpeg_ir::CadIr;
 use super::{classify, transfer, Bodies};
 use crate::loss::IronCadLossCode;
 use crate::test_support::{
-    acis_stream, face_body, node, parasolid_record, plane_face_body, record, Sab,
+    acis_stream, face_body, face_body_on, node, parasolid_record, plane_face_body, record, Sab,
 };
 use crate::{dialect, tree};
 
@@ -267,6 +267,90 @@ fn a_history_partition_is_charged_and_retained() {
     assert_eq!(count(&losses, IronCadLossCode::BodyPartitionUnread), 1);
     assert!(bodies.brep.is_some());
     assert_eq!(bodies.retained.len(), 2);
+}
+
+#[test]
+fn a_face_whose_surface_names_no_record_is_given_up_in_its_result_record() {
+    let body = face_body_on("plane", 9);
+    let payload = node(&[part(&body, &body), part(&body, &body)]);
+    let (bodies, losses) = classified(&payload);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let decoded = transfer(
+        &ctx,
+        CadIr::empty(),
+        bodies,
+        super::Scene::default(),
+        losses,
+        Sha256Digest::digest(&payload),
+    )
+    .unwrap();
+    let mut charges: Vec<_> = decoded
+        .body
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    charges.sort_unstable();
+    assert_eq!(charges.len(), 2, "{charges:#?}");
+    for (charge, ordinal) in charges.iter().zip([1, 3]) {
+        assert!(
+            charge.starts_with(&format!(
+                "part face stream=\"ironcad:Brep Data/record-{ordinal}\" offset="
+            )),
+            "{charge}"
+        );
+        assert!(
+            charge.contains("the face record's surface reference names no record"),
+            "{charge}"
+        );
+        assert!(
+            charge.ends_with(&format!(
+                "; dropped=[ironcad:brep/record-{ordinal}/brep:entity#3]"
+            )),
+            "{charge}"
+        );
+    }
+}
+
+#[test]
+fn a_sole_result_record_gives_up_its_withheld_face_under_the_unqualified_id() {
+    let body = face_body_on("plane", 9);
+    let payload = part(&body, &body);
+    let (bodies, losses) = classified(&payload);
+    assert!(bodies.pending.is_empty());
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let decoded = transfer(
+        &ctx,
+        CadIr::empty(),
+        bodies,
+        super::Scene::default(),
+        losses,
+        Sha256Digest::digest(&payload),
+    )
+    .unwrap();
+    let charges: Vec<_> = decoded
+        .body
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind())
+        .map(|loss| loss.message.as_str())
+        .collect();
+    assert_eq!(charges.len(), 1, "{charges:#?}");
+    assert!(
+        charges[0].starts_with("part face stream=\"ironcad:Brep Data/record-1\" offset="),
+        "{}",
+        charges[0]
+    );
+    assert!(
+        charges[0].ends_with("; dropped=[ironcad:brep:entity#3]"),
+        "{}",
+        charges[0]
+    );
 }
 
 /// A part or assembly record translated by `z` millimetres.

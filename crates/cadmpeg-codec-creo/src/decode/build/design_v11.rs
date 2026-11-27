@@ -57,6 +57,7 @@ pub(super) fn project(
     let names = names::Names::new(scan, regeneration_order(ir).map(|feature| &feature.id));
     project_timeline(ctx, ir, &definition, &sketches, &names)?;
     ir.design.names = names.table(ctx, ir)?;
+    names.restate_results(ir);
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(())

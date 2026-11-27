@@ -18,6 +18,7 @@ use cadmpeg_ir::products::{
 };
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart};
 use cadmpeg_ir::{CadIr, SourceFidelity, UnknownRecord};
 
 use crate::binding::{self, Place, ResultSpan};
@@ -100,13 +101,14 @@ struct Scene {
     objects: Option<Vec<SceneObject>>,
 }
 
-/// The decoded ACIS graph, the decoded Parasolid bodies, and the kernel
-/// records retained beside them.
+/// The decoded ACIS graph, the decoded Parasolid bodies, the kernel records
+/// retained beside them, and the ACIS records the graph leaves out.
 #[derive(Default)]
 struct Bodies<'a> {
     brep: Option<AsmBrep>,
     parasolid: Vec<TransmitGeometry>,
     retained: Vec<UnknownRecord>,
+    given_up: Vec<GivenUpPart>,
     /// The record ordinal and bodies of each part result record, in stored
     /// order once settled.
     results: Vec<(usize, Vec<BodyId>)>,
@@ -116,7 +118,11 @@ struct Bodies<'a> {
 
 /// One decoded part result before its identities settle.
 enum PendingBody {
-    Acis(Box<AsmBrep>),
+    /// An ACIS graph, and whether its kernel record is also retained whole.
+    Acis {
+        brep: Box<AsmBrep>,
+        retained: bool,
+    },
     Parasolid(Box<TransmitGeometry>),
 }
 
@@ -134,6 +140,7 @@ fn transfer(
         brep,
         parasolid,
         retained,
+        given_up,
         results,
         pending: _,
     } = bodies;
@@ -142,6 +149,7 @@ fn transfer(
         stats,
         annotation_records,
         unbounded_faces,
+        withheld: _,
     } = match brep {
         Some(brep) => transfer_into_ir(ctx, &mut ir, cadmpeg_ir::codec_id!("ironcad"), brep)?.1,
         None => AsmTransferRemainder {
@@ -149,6 +157,7 @@ fn transfer(
             stats: cadmpeg_asm::brep::stats::Stats::default(),
             annotation_records: Vec::new(),
             unbounded_faces: Vec::new(),
+            withheld: Vec::new(),
         },
     };
     for decoded in parasolid {
@@ -220,6 +229,9 @@ fn transfer(
     source_fidelity.attach_native_unknown_records(&mut ir, dialect::FORMAT, retained, ctx)?;
     for id in untyped {
         source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
+    }
+    for part in given_up {
+        losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
     }
     let spans: Option<Vec<ResultSpan>> = results
         .iter()
@@ -435,9 +447,15 @@ fn acis_body<'a>(
             return retain(ctx, record, ordinal, bodies);
         }
     };
-    bodies
-        .pending
-        .push((*record, ordinal, PendingBody::Acis(Box::new(brep))));
+    let retained = unread.is_some() || reduced > 0;
+    bodies.pending.push((
+        *record,
+        ordinal,
+        PendingBody::Acis {
+            brep: Box::new(brep),
+            retained,
+        },
+    ));
     if let Some(offset) = unread {
         losses.push(IronCadLossCode::BodyPartitionUnread.note(format!(
             "{carrier}: the ACIS stream holds bytes after its solved records from offset \
@@ -450,7 +468,7 @@ fn acis_body<'a>(
              extension integers have no neutral projection; the kernel record is retained"
         )));
     }
-    if unread.is_some() || reduced > 0 {
+    if retained {
         retain(ctx, record, ordinal, bodies)?;
     }
     Ok(())
@@ -487,7 +505,8 @@ fn parasolid_body<'a>(
 }
 
 /// Moves the decoded part results into `bodies`, each under its record's
-/// namespace when more than one part result decoded.
+/// namespace when more than one part result decoded, and gives up each ACIS
+/// record a graph leaves out as a part of its kernel record.
 fn settle(
     ctx: &DecodeContext<'_>,
     bodies: &mut Bodies<'_>,
@@ -500,16 +519,31 @@ fn settle(
         let namespace = format!("record-{ordinal}");
         let namespace = qualify.then_some(namespace.as_str());
         let settled = match body {
-            PendingBody::Acis(brep) => match namespace {
-                Some(namespace) => acis::qualify(ctx, *brep, namespace)
-                    .map(|brep| PendingBody::Acis(Box::new(brep))),
-                None => Ok(PendingBody::Acis(brep)),
+            PendingBody::Acis { brep, retained } => match namespace {
+                Some(namespace) => {
+                    acis::qualify(ctx, *brep, namespace).map(|brep| PendingBody::Acis {
+                        brep: Box::new(brep),
+                        retained,
+                    })
+                }
+                None => Ok(PendingBody::Acis { brep, retained }),
             },
             PendingBody::Parasolid(decoded) => parasolid::qualify(ctx, *decoded, namespace)
                 .map(|decoded| PendingBody::Parasolid(Box::new(decoded))),
         };
         match settled {
-            Ok(PendingBody::Acis(brep)) => {
+            Ok(PendingBody::Acis { mut brep, retained }) => {
+                let stream = cadmpeg_ir::stream_name!("ironcad:")
+                    .with_suffix(format!("{BREP_DATA}/record-{ordinal}"));
+                for withheld in std::mem::take(&mut brep.withheld) {
+                    let mut part = withheld.part(dialect::FORMAT).in_stream(stream.clone());
+                    if retained {
+                        part = part.digest_only();
+                    }
+                    bodies
+                        .given_up
+                        .push(ctx.give_up_part(part, withheld.error())?);
+                }
                 bodies.results.push((
                     ordinal,
                     brep.bodies.iter().map(|body| body.id.clone()).collect(),
