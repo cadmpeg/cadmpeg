@@ -1524,7 +1524,9 @@ fn decode_container<'a>(
                     .collect::<BTreeMap<_, _>>();
                 for (_, cause) in &assembly_projection.unbuilt_placements {
                     if let Some(count) = kept.get_mut(cause) {
-                        *count = count.saturating_sub(1);
+                        if let Some(left) = count.checked_sub(1) {
+                            *count = left;
+                        }
                     }
                 }
                 for (cause, count) in kept.into_iter().filter(|(_, count)| *count != 0) {
