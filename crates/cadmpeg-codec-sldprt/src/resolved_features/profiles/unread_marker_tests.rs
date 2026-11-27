@@ -768,6 +768,7 @@ fn a_line_of_state_zero_is_read_and_joins_no_profile() {
         SketchGeometryDefinition::Line { .. }
     ));
     assert!(!diagonal.construction);
+    assert!(diagonal.construction_read());
     let profiles = sketch.profiles.iter().collect::<Vec<_>>();
     let [profile] = profiles.as_slice() else {
         panic!("one profile: {profiles:?}");

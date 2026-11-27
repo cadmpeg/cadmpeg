@@ -867,7 +867,10 @@ fn parameter(
         comment: None,
         native_options: NativeOptions::new(),
         source_settings: NativeOptions::new(),
-        native_ref: None,
+        native_ref: readings
+            .decoded
+            .parameter(&entry.id, entry.name.as_str())
+            .and_then(|parameter| parameter.native_ref.clone()),
     }
 }
 

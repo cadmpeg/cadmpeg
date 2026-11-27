@@ -1218,7 +1218,7 @@ pub(crate) fn finalize_unread_marker_entities(
             .and_then(|marker| listed.remove(&(entity.sketch.clone(), marker)))
         {
             entity.geometry = read.geometry;
-            entity.construction = read.construction;
+            entity.read_construction(read.construction);
             if read.outside_profile {
                 outside_profile.insert(entity.id().clone());
             }
@@ -1849,7 +1849,7 @@ pub(crate) fn project_marker_backed_sketches(
                                 )
                             },
                         );
-                        return Ok((listed.geometry.clone(), construction));
+                        return Ok((listed.geometry.clone(), (construction, true)));
                     }
                     let project = |endpoint: &SketchInputEntity| {
                         let [u, v] = endpoint.coordinates_m?.get();
@@ -2542,13 +2542,18 @@ pub(crate) fn project_marker_backed_sketches(
                         }
                     }
                     let construction =
-                        index_from_u64(marker.offset()).map_or((false, false), |offset| {
-                            marker_is_construction(
-                                &lane.native_payload,
-                                &record_lists,
-                                offset,
-                                &geometry,
-                                None,
+                        index_from_u64(marker.offset()).map_or(((false, false), false), |offset| {
+                            (
+                                marker_is_construction(
+                                    &lane.native_payload,
+                                    &record_lists,
+                                    offset,
+                                    &geometry,
+                                    None,
+                                ),
+                                record_lists
+                                    .listed_curve_kind(&lane.native_payload, offset)
+                                    .is_some(),
                             )
                         });
                     Ok((geometry, construction))
@@ -2558,7 +2563,7 @@ pub(crate) fn project_marker_backed_sketches(
                     Err(MarkerGeometryFailure::Absent) => None,
                     Err(MarkerGeometryFailure::Codec(error)) => return Err(error),
                 };
-                if let Some((geometry, (construction, assumed))) = entity {
+                if let Some((geometry, ((construction, assumed), read))) = entity {
                     let mut endpoint_refs = Vec::new();
                     if let Some(listed) = &listed {
                         for at in listed.endpoints.into_iter().flatten() {
@@ -2604,10 +2609,13 @@ pub(crate) fn project_marker_backed_sketches(
                             ),
                         );
                     }
-                    let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry)
+                    let mut entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry)
                         .with_construction(construction)
                         .with_native_ref(Some(marker.id().to_owned()))
                         .with_endpoint_refs(endpoint_refs);
+                    if read {
+                        entity.read_construction(construction);
+                    }
                     if let Some(loss) = listed
                         .as_ref()
                         .and_then(|listed| listed.index_basis_loss.clone())
@@ -2675,7 +2683,7 @@ pub(crate) fn project_marker_backed_sketches(
                     );
                 }
                 let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
-                    .with_construction(construction)
+                    .with_read_construction(construction)
                     .with_endpoint_refs(endpoint_refs);
                 if listed.outside_profile {
                     outside_profile.insert(entity.id().clone());

@@ -440,6 +440,10 @@ pub struct SketchEntity {
     pub sketch: SketchId,
     /// Whether the entity is construction geometry.
     pub construction: bool,
+    /// Whether the decoder read [`Self::construction`] from a stored record.
+    /// The model holds it in memory only.
+    #[serde(skip)]
+    construction_read: bool,
     /// Source-native geometry record represented by this entity.
     #[serde(
         default,
@@ -467,6 +471,7 @@ impl SketchEntity {
             id,
             sketch,
             construction: false,
+            construction_read: false,
             native_ref: None,
             geometry_ref: None,
             endpoint_refs: Vec::new(),
@@ -484,6 +489,25 @@ impl SketchEntity {
     pub fn with_construction(mut self, construction: bool) -> Self {
         self.construction = construction;
         self
+    }
+
+    /// Set the construction flag a stored record of the source states.
+    #[must_use]
+    pub fn with_read_construction(mut self, construction: bool) -> Self {
+        self.read_construction(construction);
+        self
+    }
+
+    /// Set the construction flag a stored record of the source states.
+    pub fn read_construction(&mut self, construction: bool) {
+        self.construction = construction;
+        self.construction_read = true;
+    }
+
+    /// Whether the decoder read the construction flag from a stored record.
+    #[must_use]
+    pub fn construction_read(&self) -> bool {
+        self.construction_read
     }
 
     /// Set the source-native geometry record.

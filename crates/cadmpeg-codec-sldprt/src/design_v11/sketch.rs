@@ -55,12 +55,13 @@ use cadmpeg_ir::design::selection::{
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput as Kind, SketchEntityId, SketchGeometryDefinition as Geometry,
     SketchLocus,
 };
-use cadmpeg_ir::units::UnitVector3;
+use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
 use super::parameters::Entries;
 use super::profile_check;
@@ -319,7 +320,11 @@ fn sketch(
             sketch: record.id.clone(),
             definition: EntityDefinition::Free(form),
             roles: roles.of(entity.id()),
-            construction: (entity.construction || outside || reading.is_some()).then_some(true),
+            construction: if entity.construction || outside || reading.is_some() {
+                Some(true)
+            } else {
+                entity.construction_read().then_some(false)
+            },
             centerline: None,
             native: None,
             native_options: NativeOptions::new(),
@@ -327,6 +332,7 @@ fn sketch(
             native_ref: entity.native_ref.clone(),
         });
     }
+    sketch_entities.extend(roles.minted(&record.id));
     let mut constraints = Vec::new();
     let mut driven = Vec::new();
     let mut references = Vec::new();
@@ -532,9 +538,19 @@ pub(super) fn selection(picks: Vec<Picked>) -> Result<OrderedSelection, &'static
 
 /// The point entity at each end of the sketch's lines and arcs: the point
 /// whose native record the curve names as that end and whose position is the
-/// end's.
+/// end's. An endpoint record that no point entity of the sketch carries gets
+/// a point minted at the first curve end that names it.
 struct Roles {
     ends: HashMap<(SketchEntityId, bool), SketchEntityId>,
+    minted: Vec<MintedPoint>,
+}
+
+/// A point the design states for an endpoint record that no point entity
+/// of the sketch carries.
+struct MintedPoint {
+    id: SketchEntityId,
+    native: String,
+    position: [f64; 2],
 }
 
 impl Roles {
@@ -550,6 +566,12 @@ impl Roles {
                     .or_insert(Some(entity));
             }
         }
+        let taken = entities
+            .iter()
+            .map(|entity| entity.id().as_str())
+            .collect::<HashSet<_>>();
+        let mut minted_at = HashMap::<&str, usize>::new();
+        let mut minted = Vec::<MintedPoint>::new();
         let mut ends = HashMap::new();
         for curve in entities {
             let Some([start, end]) = curve_ends(&curve.geometry) else {
@@ -559,18 +581,68 @@ impl Roles {
                 continue;
             };
             for (native, at, is_start) in [(first, start, true), (second, end, false)] {
-                let Some(Some(point)) = points.get(native.as_str()) else {
-                    continue;
+                let (id, position) = match points.get(native.as_str()) {
+                    Some(Some(point)) => {
+                        let Geometry::Point { position } = point.geometry.definition() else {
+                            continue;
+                        };
+                        (point.id(), [position.u, position.v])
+                    }
+                    Some(None) => continue,
+                    None => {
+                        let index = if let Some(&index) = minted_at.get(native.as_str()) {
+                            index
+                        } else {
+                            let side = if is_start { "start" } else { "end" };
+                            let Ok(id) =
+                                SketchEntityId::mint(format!("{}/{side}-point", curve.id()))
+                            else {
+                                continue;
+                            };
+                            if taken.contains(id.as_str()) {
+                                continue;
+                            }
+                            minted.push(MintedPoint {
+                                id,
+                                native: native.clone(),
+                                position: at,
+                            });
+                            minted_at.insert(native.as_str(), minted.len() - 1);
+                            minted.len() - 1
+                        };
+                        (&minted[index].id, minted[index].position)
+                    }
                 };
-                let Geometry::Point { position } = point.geometry.definition() else {
-                    continue;
-                };
-                if coincident([position.u, position.v], at) {
-                    ends.insert((curve.id().clone(), is_start), point.id().clone());
+                if coincident(position, at) {
+                    ends.insert((curve.id().clone(), is_start), id.clone());
                 }
             }
         }
-        Self { ends }
+        Self { ends, minted }
+    }
+
+    /// The minted points, as design entities of `sketch`.
+    fn minted(&self, sketch: &cadmpeg_ir::sketches::SketchId) -> Vec<SketchEntity<Planar>> {
+        self.minted
+            .iter()
+            .filter_map(|point| {
+                let [u, v] = point.position;
+                Some(SketchEntity {
+                    id: point.id.clone(),
+                    sketch: sketch.clone(),
+                    definition: EntityDefinition::Free(PlanarCurve::Point(FinitePoint2::new(
+                        Point2::new(u, v),
+                    )?)),
+                    roles: self.of(&point.id),
+                    construction: None,
+                    centerline: None,
+                    native: None,
+                    native_options: NativeOptions::new(),
+                    source_settings: NativeOptions::new(),
+                    native_ref: Some(point.native.clone()),
+                })
+            })
+            .collect()
     }
 
     /// The roles of the point entity `point`.

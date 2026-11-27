@@ -302,6 +302,24 @@ fn an_unstated_construction_flag_is_false() {
     assert_eq!(cut(true, None), fields(["construction"]));
 }
 
+/// A construction flag a stored record states is carried only where the
+/// design states that flag: a read `false` the design leaves unstated is
+/// named.
+#[test]
+fn a_read_construction_flag_is_carried_only_where_the_design_states_it() {
+    let cut = |model: bool, design: Option<bool>| {
+        let mut ir = sketch_fixture();
+        let (model_point, design_point) = entity_pair(&mut ir, START);
+        model_point.read_construction(model);
+        design_point.construction = design;
+        cuts(&ir)[START].clone()
+    };
+    assert_eq!(cut(false, Some(false)), fields([]));
+    assert_eq!(cut(false, None), fields(["construction"]));
+    assert_eq!(cut(true, Some(true)), fields([]));
+    assert_eq!(cut(false, Some(true)), fields(["construction"]));
+}
+
 /// A design entity carries a record curve of a native kind where its native
 /// form names that kind, alone or in the namespace of a codec, and names it
 /// where the form names another kind.
