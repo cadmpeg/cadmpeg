@@ -123,7 +123,7 @@ pub(crate) fn f3d_with_smbh_and_manifest_version(smbh: &[u8], version: &str) -> 
 pub(crate) fn with_manifest_version(archive: &[u8], version: &str) -> Vec<u8> {
     use std::io::Read;
 
-    let session = cadmpeg_core::decode::test_support::service_decode_context();
+    let session = cadmpeg_core::decode::test_support::desktop_decode_context();
     session
         .charge_input(
             cadmpeg_core::decode::u64_from_index(archive.len()),

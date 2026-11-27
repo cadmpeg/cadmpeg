@@ -1386,7 +1386,7 @@ fn u16_precision_survives_plain_patch_round_trip() {
         &record.parent,
         &mut payload,
         &|_| true,
-        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .unwrap();
     assert_eq!(&payload[offset..offset + 3], &[0xcd, 0x00, 0x03]);
@@ -1456,7 +1456,7 @@ fn a_count_beyond_float_precision_keeps_the_stored_value_and_is_named() {
         &parent,
         &mut patched,
         &|_| true,
-        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .unwrap();
     assert_eq!(patched, payload);
@@ -1542,7 +1542,7 @@ fn pmi_patch_admits_records_at_the_maximum_field_depth() {
             "block",
             &mut [],
             &|_| true,
-            &cadmpeg_core::decode::test_support::service_decode_context()
+            &cadmpeg_core::decode::test_support::desktop_decode_context()
         ),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));

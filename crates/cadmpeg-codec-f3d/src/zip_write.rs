@@ -148,7 +148,7 @@ mod tests {
             &zip_fixture::zstd_stored_frame(&plain),
             &plain,
         )]);
-        let session = cadmpeg_core::decode::test_support::service_decode_context();
+        let session = cadmpeg_core::decode::test_support::desktop_decode_context();
         session
             .charge_input(
                 cadmpeg_core::decode::u64_from_index(archive.len()),

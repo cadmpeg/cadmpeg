@@ -765,7 +765,7 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
         )],
         &[],
         &mut losses,
-        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::desktop_decode_context(),
     )
     .unwrap()
     .unwrap();
