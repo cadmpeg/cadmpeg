@@ -469,6 +469,7 @@ pub(crate) fn project<'a>(
     crate::helix::project(&cluster, &types, &listed, ir, losses);
     crate::sheet_metal::project_base_tabs(&cluster, &types, &listed, ir, losses);
     crate::sheet_metal::flange::project(&cluster, &types, &listed, ir, losses);
+    crate::lofts::project(&cluster, &types, &listed, ir, losses);
     crate::dressup::project(&cluster, &types, &listed, ir, losses);
     crate::patterns::project(&cluster, &types, &listed, ir, losses);
     crate::sketches::name_untyped_profiles(&listed, ir);

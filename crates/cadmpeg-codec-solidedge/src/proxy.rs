@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Edge selections (`docs/formats/solidedge.md` §7.6): a 559-byte
-//! `CLSID_JMTopologyProxy` selects one straight edge, stated as a pick whose
-//! witness holds the edge end points.
+//! Topology proxies (`docs/formats/solidedge.md` §7.6): the geometry record of
+//! a `CLSID_JMTopologyProxy` object, read from the byte after its geometry
+//! class identifier. A straight edge is stated as a pick whose witness holds
+//! the edge end points.
 //!
 //! Stored lengths are metres; the design states millimetres.
 
@@ -13,15 +14,21 @@ use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::UnitVector3;
 
-use crate::layout::{topology_proxy_edge, topology_proxy_edge_tail};
+use crate::extents::MM_PER_M;
 use crate::psm::Object;
 
-/// Millimetres per metre.
-const MM_PER_M: f64 = 1000.0;
 /// Bytes of one `f64`.
 const REAL: usize = 8;
-/// Bytes of a topology proxy that stores one straight edge (§7.6).
-const EDGE_PROXY_LEN: usize = 559;
+/// The last ten bytes of the geometry class identifier of a topology proxy
+/// (§7.6).
+const GEOMETRY_TAIL: [u8; 10] = [0xce, 0x11, 0x9a, 0x5e, 0x08, 0x00, 0x36, 0x9b, 0x41, 0x02];
+/// The geometry kind byte of a straight edge (§7.6).
+const GEOMETRY_LINE: u8 = 3;
+/// Bytes from the geometry kind byte of a straight edge to its start, its
+/// direction and its length (§7.6).
+const LINE_START: usize = 1;
+const LINE_DIRECTION: usize = 25;
+const LINE_LENGTH: usize = 57;
 /// A stored edge direction has unit length within this distance.
 const EPS_DIRECTION_UNIT: f64 = 1e-6;
 
@@ -44,7 +51,16 @@ impl EdgeLine {
     }
 }
 
-/// Three consecutive `f64` at `at`.
+/// The offset of the geometry record of a proxy: the byte after the geometry
+/// class identifier (§7.6).
+fn geometry_at(bytes: &[u8]) -> Option<usize> {
+    bytes
+        .windows(GEOMETRY_TAIL.len())
+        .position(|window| window == GEOMETRY_TAIL)
+        .map(|at| at + GEOMETRY_TAIL.len())
+}
+
+/// Three consecutive finite `f64` at `at`, in metres.
 fn vector(bytes: &[u8], at: usize) -> Option<Vector3> {
     let real = |index: usize| {
         index
@@ -56,11 +72,17 @@ fn vector(bytes: &[u8], at: usize) -> Option<Vector3> {
     Some(Vector3::new(real(0)?, real(1)?, real(2)?))
 }
 
-/// The edge line stored at the given offsets of `bytes`, in millimetres.
-fn read_edge(bytes: &[u8], start: usize, direction: usize, length: usize) -> Option<EdgeLine> {
-    let start = vector(bytes, start)?;
-    let direction = vector(bytes, direction)?;
-    let length = View::f64_le_at(bytes, length)?;
+/// The edge line of the bytes of a topology proxy. `None` where the proxy
+/// holds no straight edge, a value is not finite, the direction is not a unit
+/// vector, or the length is not positive.
+pub(crate) fn edge_line(bytes: &[u8]) -> Option<EdgeLine> {
+    let at = geometry_at(bytes)?;
+    if bytes.get(at) != Some(&GEOMETRY_LINE) {
+        return None;
+    }
+    let start = vector(bytes, at.checked_add(LINE_START)?)?;
+    let direction = vector(bytes, at.checked_add(LINE_DIRECTION)?)?;
+    let length = View::f64_le_at(bytes, at.checked_add(LINE_LENGTH)?)?;
     if (direction.norm() - 1.0).abs() > EPS_DIRECTION_UNIT || !length.is_finite() || length <= 0.0 {
         return None;
     }
@@ -71,53 +93,26 @@ fn read_edge(bytes: &[u8], start: usize, direction: usize, length: usize) -> Opt
     })
 }
 
-/// The edge line of the bytes of a topology proxy. `None` where the object
-/// is not 559 bytes, a value is not finite, the direction is not a unit
-/// vector, or the length is not positive.
-pub(crate) fn edge_line(bytes: &[u8]) -> Option<EdgeLine> {
-    if bytes.len() != EDGE_PROXY_LEN {
-        return None;
-    }
-    read_edge(
-        bytes,
-        topology_proxy_edge::START,
-        topology_proxy_edge::DIRECTION,
-        topology_proxy_edge::LENGTH,
-    )
-}
-
-/// The edge line of a topology proxy of any size that holds the edge fields
-/// at the end of the object (§7.6). `None` where the proxy is shorter than
-/// those fields or a value does not read as in [`edge_line`].
-pub(crate) fn edge_line_from_end(bytes: &[u8]) -> Option<EdgeLine> {
-    let base = bytes.len().checked_sub(topology_proxy_edge_tail::LEN)?;
-    read_edge(
-        bytes,
-        base.checked_add(topology_proxy_edge_tail::START)?,
-        base.checked_add(topology_proxy_edge_tail::DIRECTION)?,
-        base.checked_add(topology_proxy_edge_tail::LENGTH)?,
-    )
+/// The point a vertex proxy stores, in millimetres. `None` where the proxy
+/// holds no geometry record or a value is not finite.
+pub(crate) fn vertex_point(bytes: &[u8]) -> Option<Vector3> {
+    let point = vector(bytes, geometry_at(bytes)?)?;
+    Some(Vector3::new(
+        point.x * MM_PER_M,
+        point.y * MM_PER_M,
+        point.z * MM_PER_M,
+    ))
 }
 
 fn point(at: Vector3) -> Option<FinitePoint3> {
     FinitePoint3::new(Point3::new(at.x, at.y, at.z))
 }
 
-/// The selection of the edge a 559-byte proxy object stores: one
+/// The selection of the edge a proxy object stores: one
 /// native pick whose witness holds the edge end points and direction.
 /// `Picks::Unread` where the object does not store a straight edge.
 pub(crate) fn edge_selection<O: MemberOrder>(proxy: &Object<'_>) -> (Selection<O>, bool) {
-    selection_of(edge_line(proxy.bytes))
-}
-
-/// [`edge_selection`] for a proxy of any size that holds the edge fields at
-/// the end of the object.
-pub(crate) fn edge_selection_from_end<O: MemberOrder>(proxy: &Object<'_>) -> (Selection<O>, bool) {
-    selection_of(edge_line_from_end(proxy.bytes))
-}
-
-fn selection_of<O: MemberOrder>(line: Option<EdgeLine>) -> (Selection<O>, bool) {
-    let read = line.and_then(|line| {
+    let read = edge_line(proxy.bytes).and_then(|line| {
         let pick = Picked {
             target: PickTarget::Native { within: None },
             context: None,

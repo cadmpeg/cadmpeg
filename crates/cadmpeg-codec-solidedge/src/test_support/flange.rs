@@ -97,6 +97,11 @@ impl Default for FlangeSpec {
 fn proxy_body(spec: &FlangeSpec) -> Vec<u8> {
     let mut body = vec![0_u8; spec.proxy_len - 8];
     let base = spec.proxy_len - 438;
+    // The geometry class identifier ends at `base - 2` and the geometry kind
+    // byte of a straight edge precedes the start point (§7.6).
+    let tail = [0xce, 0x11, 0x9a, 0x5e, 0x08, 0x00, 0x36, 0x9b, 0x41, 0x02];
+    body[base - 11 - 8..base - 1 - 8].copy_from_slice(&tail);
+    body[base - 1 - 8] = 3;
     put_reals(&mut body, base, &spec.edge_start);
     put_reals(&mut body, base + 24, &spec.edge_direction);
     put_reals(&mut body, base + 56, &[spec.edge_length]);
