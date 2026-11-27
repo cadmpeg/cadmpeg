@@ -191,8 +191,12 @@ fn part_in_order(
         classes.push(("moProfileFeature_c", "Sketch1", 8));
     }
     let mut ir = part_with_history(keywords.as_bytes(), &classes);
-    let native =
-        SldprtNative::load(ir.native.namespace("sldprt").unwrap(), ir.tolerances.linear).unwrap();
+    let native = SldprtNative::load_under(
+        ir.native.namespace("sldprt").unwrap(),
+        cadmpeg_core::decode::ResourceLimits::default(),
+        ir.tolerances.linear,
+    )
+    .unwrap();
     let id = |name: &str| {
         ir.model
             .features

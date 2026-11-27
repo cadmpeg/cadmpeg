@@ -178,11 +178,20 @@ fn bounded_plane_rejects_a_self_intersecting_piecewise_linear_nurbs_boundary() {
 
 #[test]
 fn bounded_plane_over_the_pair_budget_is_skipped_with_a_loss() {
-    let result = decode(bounded_plane_entity_file(
-        GLOBAL_V5_0,
-        126,
-        &crate::test_support::test_curves_and_surfaces::closed_ring_linear_nurbs_parameters(32_770),
-    ));
+    // The 9 ring points need 9² pairs, over the pass's 80.
+    let result = crate::reader::decode_with_test_limits(
+        &bounded_plane_entity_file(
+            GLOBAL_V5_0,
+            126,
+            &crate::test_support::test_curves_and_surfaces::closed_ring_linear_nurbs_parameters(9),
+        ),
+        &cadmpeg_ir::codec::DecodeOptions::default(),
+        crate::reader::DecodeLimits::with_projection(crate::entities::geometry::ProjectionLimits {
+            planar_point_pairs: 80,
+            ..crate::entities::geometry::ProjectionLimits::DEFAULT
+        }),
+    )
+    .unwrap();
 
     assert!(result.ir().geometry.faces.is_empty());
     assert!(

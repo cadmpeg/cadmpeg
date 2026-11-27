@@ -100,6 +100,7 @@ rewrite_enum!(BodySelection, []; {
     HistoricalSet { state, members },
     Generated { bodies, native },
     GeneratedSet { members },
+    Occurrence { occurrence, occurrence_path, bodies, native },
     Local { bodies, native },
     Native(field0),
     NativeSet(field0),

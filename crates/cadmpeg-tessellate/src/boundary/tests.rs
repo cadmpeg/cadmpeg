@@ -137,6 +137,7 @@ fn a_curve_piece_of_no_length_takes_no_turn_samples() {
     let sampler = Sampler {
         index: &index,
         work: &work,
+        admission: cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         chord: options.chord,
         angle: options.angle,
     };

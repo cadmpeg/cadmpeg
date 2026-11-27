@@ -314,6 +314,7 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
         &ir,
         StepSchema::Ap242Edition3,
         std::collections::HashSet::new(),
+        crate::test_support::write_context(),
     )
     .unwrap();
     assert!(builder.emit_curve("composite").is_none());
