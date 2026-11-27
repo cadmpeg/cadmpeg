@@ -17,7 +17,7 @@ use cadmpeg_ir::features::extents::{
 use cadmpeg_ir::features::operation_settings::BooleanOp;
 use cadmpeg_ir::features::profiles::{PlanarProfileRef, ProfileRef};
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 mod two_sided;
 
@@ -1086,19 +1086,103 @@ fn plane_material(
     Some(caps)
 }
 
+/// The curve and the ordered parameter interval of one boundary piece, which
+/// the two faces on either side of the piece share.
+fn fragment(
+    use_: &cadmpeg_ir::features::profiles::SketchProfileBoundaryUse,
+) -> (&cadmpeg_ir::sketches::SketchEntityId, [u64; 2]) {
+    let [first, second] = use_.parameter_range.endpoints();
+    (
+        &use_.entity,
+        [first.min(second).to_bits(), first.max(second).to_bits()],
+    )
+}
+
+/// The unique largest set of atomic faces, none of them in `removed`, whose
+/// union has exactly the curves `named` as its boundary. A face that touches a
+/// named curve is a candidate. A candidate with a boundary piece on an unnamed
+/// curve needs the face across that piece in the set, so a face that leaves
+/// such a piece on the outside is dropped, and the set shrinks until every
+/// remaining unnamed piece lies inside it. Empty when a named curve is not a
+/// boundary curve of the remaining faces.
+fn profile_faces(
+    sampled: &[super::Sampled<'_>],
+    removed: &[usize],
+    named: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+) -> Vec<usize> {
+    let mut across: HashMap<(&cadmpeg_ir::sketches::SketchEntityId, [u64; 2]), Vec<usize>> =
+        HashMap::new();
+    for (index, region) in sampled.iter().enumerate() {
+        for use_ in &region.region.boundary {
+            across.entry(fragment(use_)).or_default().push(index);
+        }
+    }
+    let mut inside: Vec<bool> = sampled
+        .iter()
+        .enumerate()
+        .map(|(index, region)| {
+            !removed.contains(&index)
+                && region
+                    .region
+                    .boundary
+                    .iter()
+                    .any(|use_| named.contains(&use_.entity))
+        })
+        .collect();
+    loop {
+        let mut shrunk = false;
+        for (index, region) in sampled.iter().enumerate() {
+            if !inside[index] {
+                continue;
+            }
+            let open = region.region.boundary.iter().any(|use_| {
+                !named.contains(&use_.entity)
+                    && !across[&fragment(use_)]
+                        .iter()
+                        .any(|other| *other != index && inside[*other])
+            });
+            if open {
+                inside[index] = false;
+                shrunk = true;
+            }
+        }
+        if !shrunk {
+            break;
+        }
+    }
+    let faces: Vec<usize> = (0..sampled.len()).filter(|index| inside[*index]).collect();
+    let mut bounding: HashSet<&cadmpeg_ir::sketches::SketchEntityId> = HashSet::new();
+    for &index in &faces {
+        for use_ in &sampled[index].region.boundary {
+            if !across[&fragment(use_)]
+                .iter()
+                .any(|other| *other != index && inside[*other])
+            {
+                bounding.insert(&use_.entity);
+            }
+        }
+    }
+    if named.iter().all(|id| bounding.contains(id)) {
+        faces
+    } else {
+        Vec::new()
+    }
+}
+
 /// The regions of an Intersect that its transition kept, when the transition
 /// removed at least one other region. An Intersect keeps the body inside the
 /// profile. Among the planes parallel to the sketch within the extent of the
 /// Intersect, a region is removed when the material of a plane held its
-/// interior before the transition and not after it, and kept when the
-/// material of a plane holds it on both sides. The material of a plane is
-/// every face on it, changed or not. A plane that no changed face lies on
-/// counts too, when every face on it has a proven cap. A region that no such
-/// plane holds is not selected. `None` when a plane within the extent has a
-/// changed face with no proven cap, when a region is both removed and kept,
-/// when a kept region encloses an island, when the removed regions disagree
-/// with the changed planes, or when a curve the selection names bounds no
-/// kept region or a kept region has no named boundary curve.
+/// interior before the transition and not after it. The material of a plane
+/// is every face on it, changed or not, and a plane that no changed face lies
+/// on counts when every face on it has a proven cap. The kept regions are the
+/// faces that `profile_faces` returns for the removed regions and the named
+/// curves: their union has exactly the named curves as its boundary. A region
+/// whose material a plane holds on both sides must be among them. `None` when
+/// a plane within the extent has a changed face with no proven cap, when a
+/// region is both removed and held, when no removed region or no kept face
+/// remains, when a kept face encloses an island, or when the removed regions
+/// disagree with the changed planes.
 pub(in crate::design::profile_select) fn intersect_candidate(
     sketch: &cadmpeg_ir::sketches::Sketch,
     resolution: super::super::ScopedExtrudeProfileResolution<'_>,
@@ -1201,7 +1285,7 @@ pub(in crate::design::profile_select) fn intersect_candidate(
         return Ok(None);
     };
     let mut removed = Vec::new();
-    let mut kept = Vec::new();
+    let mut retained = Vec::new();
     for (index, region) in sampled.iter().enumerate() {
         let (mut lost, mut held) = (false, false);
         for plane in &planes {
@@ -1216,32 +1300,19 @@ pub(in crate::design::profile_select) fn intersect_candidate(
         match (lost, held) {
             (true, true) => return Ok(None),
             (true, false) => removed.push(index),
-            (false, true) if region.region.encloses_island => return Ok(None),
-            (false, true) => kept.push(index),
+            (false, true) => retained.push(index),
             (false, false) => {}
         }
     }
-    if removed.is_empty() || kept.is_empty() {
+    if removed.is_empty() {
         return Ok(None);
     }
-    let bounding: HashSet<_> = kept
-        .iter()
-        .flat_map(|index| {
-            sampled[*index]
-                .region
-                .boundary
-                .iter()
-                .map(|use_| &use_.entity)
-        })
-        .collect();
-    if !named.iter().all(|id| bounding.contains(id))
-        || !kept.iter().all(|index| {
-            sampled[*index]
-                .region
-                .boundary
-                .iter()
-                .any(|use_| named.contains(&use_.entity))
-        })
+    let kept = profile_faces(&sampled, &removed, named);
+    if kept.is_empty()
+        || retained.iter().any(|index| !kept.contains(index))
+        || kept
+            .iter()
+            .any(|index| sampled[*index].region.encloses_island)
     {
         return Ok(None);
     }

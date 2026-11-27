@@ -971,3 +971,38 @@ fn an_intersect_reads_the_retained_material_of_an_unchanged_plane() {
     // The same face beyond the extent is no evidence.
     assert!(run(-5.0).is_none());
 }
+
+/// The profile names the boundary of the square A and the empty square C
+/// together. The material of the body decides only what the Intersect removes:
+/// the faces left over are what the named curves enclose.
+#[test]
+fn an_intersect_keeps_a_region_over_no_material_when_its_profile_names_it() {
+    let mut lines = rectangle("outer", 0.0, 3.0).to_vec();
+    lines.push(("first", (1.0, 0.0), (1.0, 1.0)));
+    lines.push(("second", (2.0, 0.0), (2.0, 1.0)));
+    let before = [strip(1, 0.0, 0.0, 2.0), strip(2, -2.0, 0.0, 2.0)];
+    let after = [strip(3, 0.0, 1.0, 2.0), strip(4, -2.0, 1.0, 2.0)];
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &["first", "right", "bottom", "top"],
+        two_down(),
+    );
+    let Some(PlanarProfileRef::SketchRegions { regions, .. }) = selected else {
+        panic!("sketch regions");
+    };
+    assert_eq!(regions.len(), 2);
+    // The curve between A and C is inside the profile, so naming it too
+    // leaves the profile without a consistent boundary.
+    let (selected, _) = run_intersect(
+        &lines,
+        &before,
+        &after,
+        BooleanOp::Intersect,
+        &["first", "second", "right", "bottom", "top"],
+        two_down(),
+    );
+    assert!(selected.is_none());
+}
