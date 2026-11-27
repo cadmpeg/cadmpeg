@@ -10,17 +10,24 @@ use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::ops::sheet_metal::{BendSpec, SheetMetal, SheetMetalKind};
 use cadmpeg_ir::design::options::NativeOption;
-use cadmpeg_ir::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
+use cadmpeg_ir::design::selection::{
+    Anchor, Members, PickTarget, Picked, Picks, Selection, Witness,
+};
+use cadmpeg_ir::features::evaluation::FeatureInputTopology;
 use cadmpeg_ir::CadIr;
 
 use crate::feature::sheet_metal::flange::{Flange, FlangeKind};
 use crate::feature::{FeatureInventory, PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind};
 use crate::pmdc::PmDcReference;
 
+/// The contour flange of the attached plate `source` under `parent`.
+/// `witness` gives the witness of the attachment edge with a selector
+/// source.
 pub(crate) fn definition<'a>(
     parent: &Flange,
     source: &PmDcFeature,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+    witness: impl Fn(u32) -> Option<Witness>,
 ) -> Result<Option<FeatureOperation>, CodecError> {
     if FlangeKind::of(parent) != Some(FlangeKind::Contour)
         || parent.identity.segment_token != source.identity.segment_token
@@ -90,7 +97,7 @@ pub(crate) fn definition<'a>(
                 ]),
             }),
             domain: None,
-            witness: None,
+            witness: witness(edge.selector_source),
             resolved: None,
         });
     }
@@ -163,28 +170,60 @@ pub(crate) fn project(ir: &mut CadIr, inventory: &FeatureInventory) -> Result<()
         else {
             continue;
         };
-        let Some(operation) = definition(parent, source, |reference| {
-            properties
-                .get(&(token, reference.record_ordinal()?))
-                .and_then(Option::as_ref)
-                .copied()
-        })?
-        else {
-            continue;
-        };
         // Only a plate that the operation stages retained in its native
         // form takes the attached contour flange.
-        if let Some(feature) = ir.design.features.iter_mut().find(|feature| {
+        let Some(index) = ir.design.features.iter().position(|feature| {
             feature.native_ref.as_deref() == Some(source.id().as_str())
                 && matches!(
                     feature.definition.operation,
                     FeatureOperation::Native { .. }
                 )
-        }) {
-            feature.definition.operation = operation;
-        }
+        }) else {
+            continue;
+        };
+        let feature = &ir.design.features[index].id;
+        let mut inputs = ir
+            .model
+            .feature_input_topologies
+            .iter()
+            .filter(|input| &input.input_of == feature);
+        let input = match (inputs.next(), inputs.next()) {
+            (Some(input), None) => Some(input),
+            _ => None,
+        };
+        let Some(operation) = definition(
+            parent,
+            source,
+            |reference| {
+                properties
+                    .get(&(token, reference.record_ordinal()?))
+                    .and_then(Option::as_ref)
+                    .copied()
+            },
+            |selector| witness(input?, token, selector),
+        )?
+        else {
+            continue;
+        };
+        ir.design.features[index].definition.operation = operation;
     }
     Ok(())
+}
+
+/// The witness of the edge with selector source `selector` of the contour
+/// plate's input state `input`, where `input` holds one sample of it.
+fn witness(input: &FeatureInputTopology, token: &str, selector: u32) -> Option<Witness> {
+    let edge = format!("inventor:input-edge#{token}-{selector}");
+    let mut samples = input
+        .edge_geometry
+        .iter()
+        .filter(|sample| sample.edge.as_str() == edge);
+    match (samples.next(), samples.next()) {
+        (Some(sample), None) => Some(crate::design_v11::operations::selections::edge_witness(
+            sample,
+        )),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

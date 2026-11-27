@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
+use cadmpeg_asm::brep::annotations::AnnotationRecord;
 use cadmpeg_asm::history::walk_entity_versions;
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
@@ -22,6 +23,7 @@ use cadmpeg_ir::ids::HistoryBodyId;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{BodyKind, EdgeCarrier};
+use cadmpeg_ir::UnknownRecord;
 
 use super::history_states::{
     Binding, Closed, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
@@ -76,14 +78,25 @@ pub(crate) struct Outcome {
     pub(crate) unlinked: usize,
 }
 
+/// Every record of a decoded history state, in the slot ids of the current
+/// geometry.
+#[derive(Debug, Default)]
+pub(crate) struct StateRecords {
+    pub(crate) geometry: Topology,
+    /// The records that the transfer keeps undecoded.
+    pub(crate) unknowns: Vec<UnknownRecord>,
+    /// The source location of each record of `unknowns`.
+    pub(crate) provenance: Vec<AnnotationRecord>,
+}
+
 /// Nests of a part and their links.
 #[derive(Debug, Default)]
 pub(crate) struct Built {
     /// Nests, sorted by identity.
     pub(crate) bodies: Vec<HistoryBody>,
-    /// Every record of each state that holds a nest, in the slot ids of the
-    /// current geometry, by oldest-first ordinal.
-    pub(crate) states: BTreeMap<u32, Topology>,
+    /// Every record of each state that holds a nest, by oldest-first
+    /// ordinal.
+    pub(crate) states: BTreeMap<u32, StateRecords>,
     /// Identity of the nest of each feature record, by record index.
     pub(crate) links: HashMap<usize, HistoryBodyId>,
     /// Counts.
@@ -199,7 +212,7 @@ pub(crate) fn build(
         by_ordinal.entry(want.ordinal).or_default().push(index);
     }
     let mut extracted = BTreeMap::<usize, Extract>::new();
-    let mut decoded = BTreeMap::<u32, Topology>::new();
+    let mut decoded = BTreeMap::<u32, StateRecords>::new();
     let mut failure = None;
     let mut bounded = HashSet::<usize>::new();
     let mut visited = 0_usize;
@@ -229,6 +242,8 @@ pub(crate) fn build(
         let Scratch {
             body_keys: keys,
             model: scratch,
+            unknowns,
+            provenance,
         } = match decode_scratch(ctx, bytes, header, archive, versions, ordinal) {
             Ok(Some(scratch)) => scratch,
             Ok(None) => return,
@@ -262,7 +277,14 @@ pub(crate) fn build(
             .iter()
             .any(|index| matches!(extracted.get(index), Some(Extract::Nest(_))))
         {
-            decoded.insert(ordinal, scratch.geometry);
+            decoded.insert(
+                ordinal,
+                StateRecords {
+                    geometry: scratch.geometry,
+                    unknowns,
+                    provenance,
+                },
+            );
         }
     });
     if let Some(error) = failure {

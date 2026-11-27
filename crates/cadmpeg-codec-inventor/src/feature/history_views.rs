@@ -9,6 +9,7 @@
 //! nest cap and nest work budget of [`super::history_bodies`] do not apply to
 //! it. The decode of one state into a scratch model is shared with the nests.
 
+use cadmpeg_asm::brep::annotations::AnnotationRecord;
 use cadmpeg_asm::brep::{decode_with_header, DecodePurpose};
 use cadmpeg_asm::history::{materialize_record_table, walk_entity_versions_until};
 use cadmpeg_asm::kernel_header::BinaryHeader;
@@ -16,8 +17,9 @@ use cadmpeg_asm::sab::Record;
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::UnknownRecord;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::ControlFlow;
 use std::rc::Rc;
 
@@ -147,6 +149,10 @@ pub(crate) struct Scratch {
     pub(crate) body_keys: Vec<(String, u64)>,
     /// The decoded and transferred state.
     pub(crate) model: CadIr,
+    /// The records of the state that the transfer keeps undecoded.
+    pub(crate) unknowns: Vec<UnknownRecord>,
+    /// The source location of each record of `unknowns`.
+    pub(crate) provenance: Vec<AnnotationRecord>,
 }
 
 /// Materialize the records of the state at `ordinal` from its `versions` and
@@ -190,7 +196,24 @@ pub(crate) fn decode_scratch(
         cadmpeg_ir::codec_id!("inventor"),
         brep,
     ) {
-        Ok(_) => Ok(Some(Scratch { body_keys, model })),
+        Ok((_, remainder)) => {
+            let ids = remainder
+                .unknowns
+                .iter()
+                .map(|record| record.id().as_str())
+                .collect::<HashSet<_>>();
+            let provenance = remainder
+                .annotation_records
+                .into_iter()
+                .filter(|record| ids.contains(record.id.as_str()))
+                .collect();
+            Ok(Some(Scratch {
+                body_keys,
+                model,
+                unknowns: remainder.unknowns,
+                provenance,
+            }))
+        }
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(_) => Ok(None),
     }

@@ -17,7 +17,7 @@ use crate::loss::InventorLossCode;
 
 mod body;
 mod dressup;
-mod selections;
+pub(super) mod selections;
 mod sheet_metal;
 mod swept;
 

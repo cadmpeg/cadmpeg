@@ -801,6 +801,28 @@ fn body_takes_the_stored_name_of_the_label_that_owns_its_wrapper() {
     assert_eq!(names(&ir), [Some("Feature 3"), Some("Feature 4")]);
 }
 
+/// The bodies of a decoded history state take their names by the rule of
+/// the current bodies: a state body under the identity of a joined current
+/// body takes its name, and a body that no wrapper joins keeps none.
+#[test]
+fn a_history_state_body_takes_the_name_of_its_joined_body() {
+    let wrapper = wrapper_at(7);
+    let mut state = model_with_bodies(&[("body:a", None), ("body:b", None)]).geometry;
+    let joins = HashMap::from([(wrapper.id(), body("body:a"))]);
+    let inventory = FeatureInventory {
+        properties: vec![wrapper],
+        labels: vec![name_label(7, 3)],
+        ..FeatureInventory::default()
+    };
+    name_bodies(&mut state, &joins, &inventory);
+    let names = state
+        .bodies
+        .iter()
+        .map(|body| body.name.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(names, [Some("Feature 3"), None]);
+}
+
 #[test]
 fn a_label_names_only_the_body_of_its_own_wrapper() {
     let (first, second) = (wrapper_at(7), wrapper_at(9));

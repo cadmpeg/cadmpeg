@@ -170,6 +170,25 @@ fn source_group<'a, O: MemberOrder>(
     Ok(value)
 }
 
+/// The witness of an edge of an input state: its interior point, tangent
+/// and end points.
+pub(in crate::design_v11) fn edge_witness(
+    sample: &cadmpeg_ir::features::evaluation::HistoricalEdgeGeometry,
+) -> cadmpeg_ir::design::selection::Witness {
+    cadmpeg_ir::design::selection::Witness {
+        point: Some(sample.interior),
+        direction: sample.tangent,
+        endpoints: sample
+            .start
+            .zip(sample.end)
+            .map(|(start, end)| [start, end]),
+        frame: None,
+        curves: Vec::new(),
+        surface: None,
+        body: None,
+    }
+}
+
 fn historical_edges<'a>(
     state: &cadmpeg_ir::ids::FeatureInputTopologyId,
     edges: impl Iterator<Item = &'a cadmpeg_ir::ids::HistoricalEdgeId>,
@@ -195,18 +214,7 @@ fn historical_edges<'a>(
             if samples.next().is_some() {
                 return Err("the selected edge sample is ambiguous");
             }
-            pick.witness = Some(cadmpeg_ir::design::selection::Witness {
-                point: Some(sample.interior),
-                direction: sample.tangent,
-                endpoints: sample
-                    .start
-                    .zip(sample.end)
-                    .map(|(start, end)| [start, end]),
-                frame: None,
-                curves: Vec::new(),
-                surface: None,
-                body: None,
-            });
+            pick.witness = Some(edge_witness(sample));
         }
         picks.push(pick);
     }

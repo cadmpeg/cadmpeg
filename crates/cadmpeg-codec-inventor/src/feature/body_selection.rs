@@ -690,7 +690,7 @@ pub(crate) fn project(
 /// surface-body wrapper joins it, exactly one label in the wrapper's
 /// segment names the wrapper as its owner, and the stored name is faithful and
 /// non-blank.
-fn name_bodies(
+pub(crate) fn name_bodies(
     geometry: &mut Topology,
     bodies: &HashMap<String, BodyId>,
     inventory: &FeatureInventory,

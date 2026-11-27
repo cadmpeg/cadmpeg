@@ -352,7 +352,7 @@ fn the_state_before_a_split_gives_the_consumed_body() {
         // nest's body under its state identity.
         let ordinals: Vec<_> = built.states.keys().copied().collect();
         assert_eq!(ordinals, [0], "{width:?}");
-        let state = &built.states[&0];
+        let state = &built.states[&0].geometry;
         let key = body
             .topology
             .body

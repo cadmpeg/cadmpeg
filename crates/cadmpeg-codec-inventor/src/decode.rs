@@ -671,6 +671,7 @@ fn decode_container<'a>(
     let mut carrier_given_up = false;
     let mut history_chain = None;
     let mut decoded_states = std::collections::BTreeMap::new();
+    let mut state_unknowns = Vec::new();
     let mut empty_kernel_stream = false;
     let kernel_brep = match &container.rse.active_carrier {
         ActiveCarrierState::Selected(carrier) => match carrier.header.as_ref() {
@@ -912,6 +913,13 @@ fn decode_container<'a>(
                 }
                 ir.model.history_bodies = history.bodies.bodies;
                 decoded_states = history.bodies.states;
+                for state in decoded_states.values_mut() {
+                    crate::feature::body_selection::name_bodies(
+                        &mut state.geometry,
+                        &joined,
+                        &feature_inventory,
+                    );
+                }
             }
             losses.extend(crate::feature::body_selection::native_losses(
                 &ir.model, &joined,
@@ -975,7 +983,10 @@ fn decode_container<'a>(
             }
         })
         .collect::<HashMap<_, _>>();
-    for face in &mut ir.geometry.faces {
+    let state_faces = decoded_states
+        .values_mut()
+        .flat_map(|state| state.geometry.faces.iter_mut());
+    for face in ir.geometry.faces.iter_mut().chain(state_faces) {
         if face.color.is_none() {
             face.color = face_colors.get(&face.id).copied();
         }
@@ -1613,27 +1624,7 @@ fn decode_container<'a>(
             }
         }
     }
-    if !kernel_unknowns.is_empty() {
-        // Topology-only vertex and edge records carry nothing the arenas lack.
-        let untyped = kernel_unknowns
-            .iter()
-            .filter(|record| {
-                let id = record.id().as_str();
-                !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
-            })
-            .map(|record| record.id().clone())
-            .collect::<Vec<_>>();
-        source_fidelity
-            .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns, ctx)
-            .map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "Inventor kernel unknown retention failed: {error}"
-                ))
-            })?;
-        for id in untyped {
-            source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
-        }
-    }
+    retain_kernel_unknowns(ctx, &mut ir, &mut source_fidelity, kernel_unknowns)?;
     let kernel_unknown_record_count = ir.native_unknowns("inventor")?.len();
     for part in given_up {
         losses.push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
@@ -1892,8 +1883,43 @@ fn decode_container<'a>(
                 &design_inventory.units,
                 losses,
             )?;
-            crate::design_v11::evaluations::project(ctx, ir, &decoded_states, losses)
+            crate::design_v11::evaluations::project(
+                ctx,
+                ir,
+                &decoded_states,
+                &mut state_unknowns,
+                losses,
+            )
         })?;
+    }
+    if !state_unknowns.is_empty() {
+        let mut provenance = AnnotationBuilder::new();
+        for (ordinal, record) in &state_unknowns {
+            let located = decoded_states
+                .get(ordinal)
+                .into_iter()
+                .flat_map(|state| &state.provenance)
+                .filter(|located| located.id.as_str() == record.id().as_str());
+            for located in located {
+                let stream = cadmpeg_ir::StreamName::try_from(located.stream.clone())
+                    .map_err(CodecError::malformed)?;
+                provenance.note(
+                    &located.id,
+                    &StreamHandle::new(stream),
+                    located.offset,
+                    Some(located.tag.as_str()),
+                );
+            }
+        }
+        source_fidelity
+            .annotations
+            .provenance
+            .extend(provenance.build().provenance);
+        let records = state_unknowns
+            .into_iter()
+            .map(|(_, record)| record)
+            .collect();
+        retain_kernel_unknowns(ctx, &mut ir, &mut source_fidelity, records)?;
     }
     let mut body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
@@ -2236,6 +2262,39 @@ fn carrier_unknown_id(carrier: &crate::kernel::ActiveCarrier<'_>) -> UnknownId {
         &cadmpeg_ir::identity_namespace!("inventor", "kernel", "carrier"),
         carrier.segment_token.clone().dash(carrier.record_ordinal),
     )
+}
+
+/// Retain the undecoded kernel records `records` in the document's unknown
+/// arena.
+fn retain_kernel_unknowns(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    source_fidelity: &mut SourceFidelity,
+    records: Vec<UnknownRecord>,
+) -> Result<(), CodecError> {
+    if records.is_empty() {
+        return Ok(());
+    }
+    // Topology-only vertex and edge records carry nothing the arenas lack.
+    let untyped = records
+        .iter()
+        .filter(|record| {
+            let id = record.id().as_str();
+            !id.contains(":brep:tvertex#") && !id.contains(":brep:tedge#")
+        })
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
+    source_fidelity
+        .attach_native_unknown_records(ir, "inventor", records, ctx)
+        .map_err(|error| {
+            CodecError::malformed(format_args!(
+                "Inventor kernel unknown retention failed: {error}"
+            ))
+        })?;
+    for id in untyped {
+        source_fidelity.mark_untyped(id.as_str(), [cadmpeg_core::decode::ArenaClass::Model])?;
+    }
+    Ok(())
 }
 
 fn admit_kernel_annotation(

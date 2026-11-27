@@ -361,55 +361,60 @@ pub(super) fn compose(
 }
 
 impl CadIr {
-    /// The first record of `state` that references an id which neither
-    /// `state` nor a record of this document outside its geometry holds,
-    /// with that id: the reference that keeps `state` from closing as the
-    /// state of an evaluation of this document (§5.4).
+    /// The ids that the records of `state` reference and that keep `state`
+    /// from closing as the state of an evaluation of this document (§5.4):
+    /// each id that `state` does not hold and that is a `Topology` record of
+    /// the document or no record of it.
     ///
     /// # Errors
     ///
     /// Returns a codec error where `ctx` refuses the work.
-    pub fn open_reference(
+    pub fn open_references(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         state: &Topology,
-    ) -> Result<Option<(String, String)>, cadmpeg_core::CodecError> {
+    ) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
         use crate::schema::rewrite::typed::RewriteIdentities;
 
         let mut held = BTreeSet::new();
-        let mut geometry = BTreeSet::new();
+        let mut topology = BTreeSet::new();
+        let deltas = self
+            .design
+            .evaluations
+            .iter()
+            .filter_map(|evaluation| evaluation.content.as_ref())
+            .map(|content| &content.delta.records);
         macro_rules! ids {
             ($($field:ident $arm:ident),*) => {$(
                 held.extend(state.$field.iter().map(ArenaRecord::record_identity));
-                geometry.extend(self.geometry.$field.iter().map(ArenaRecord::record_identity));
+                topology.extend(self.geometry.$field.iter().map(ArenaRecord::record_identity));
+                for records in deltas.clone() {
+                    topology.extend(records.$field.iter().map(ArenaRecord::record_identity));
+                }
             )*};
         }
         topology_arenas!(ids);
         let index = crate::index::ModelIndex::build(self);
-        let mut found = None;
+        let mut open = BTreeSet::new();
         macro_rules! scan {
             ($($field:ident $arm:ident),*) => {$(
                 for record in &state.$field {
-                    let own = record.record_identity();
                     record.visit_identity_references(ctx, &mut |target| {
-                        if found.is_none()
-                            && target != own
-                            && !held.contains(target)
-                            && (geometry.contains(target)
-                                || !index.contains(target, crate::index::StandardIndex))
-                        {
-                            found = Some((own.to_owned(), target.to_owned()));
+                        if crate::validate::design::resolved::leaves_state(
+                            held.contains(target),
+                            target,
+                            &topology,
+                            &index,
+                        ) {
+                            open.insert(target.to_owned());
                         }
                         Ok(())
                     })?;
-                    if found.is_some() {
-                        return Ok(found);
-                    }
                 }
             )*};
         }
         topology_arenas!(scan);
-        Ok(found)
+        Ok(open)
     }
 
     /// The definition that lists a body among its bodies.
