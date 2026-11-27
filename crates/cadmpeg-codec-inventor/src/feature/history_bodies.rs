@@ -26,7 +26,7 @@ use cadmpeg_ir::topology::{BodyKind, EdgeCarrier};
 use super::history_states::{
     Binding, Closed, FeatureHistoryState, BASE_TAG, NATIVE_BASE_KIND, SPLIT_TAG,
 };
-use super::history_views::{decode_scratch, Scratch};
+use super::history_views::{decode_scratch, Decoded, Scratch};
 use crate::kernel::ActiveCarrier;
 
 /// Cap of nests per part. A nest materializes and decodes a whole history state.
@@ -103,7 +103,8 @@ pub(crate) enum Unbuilt {
     NotClosed(Open),
     /// The feature of the body is not a projected feature.
     Unlinked,
-    /// The request passed the nest or work cap.
+    /// The request passed the nest or work cap, or the decode of its state
+    /// passed the retained-byte budget.
     Bounded,
 }
 
@@ -268,8 +269,12 @@ pub(crate) fn build(
             body_keys: keys,
             model: scratch,
         } = match decode_scratch(ctx, bytes, header, archive, versions, ordinal) {
-            Ok(Some(scratch)) => scratch,
-            Ok(None) => return,
+            Ok(Decoded::Scratch(scratch)) => *scratch,
+            Ok(Decoded::Failed) => return,
+            Ok(Decoded::Bounded) => {
+                bounded.extend(indices.iter().copied());
+                return;
+            }
             Err(error) => {
                 failure = Some(error);
                 return;
@@ -335,6 +340,10 @@ pub(crate) fn build(
                     built.give_up(want, Unbuilt::Unlinked)?;
                     continue;
                 };
+                ctx.retain_bytes(
+                    cadmpeg_core::decode::u64_from_index(topology.name_bytes()),
+                    "keep history body names",
+                )?;
                 let body = nest(ctx, want, feature, *topology)?;
                 ctx.charge_entities(
                     cadmpeg_core::decode::u64_from_index(body.topology.record_count()),

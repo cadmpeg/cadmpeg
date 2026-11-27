@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
-use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{work_units, DecodeContext, ResourceLimit, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model, Topology};
 use cadmpeg_ir::features::evaluation::FeatureEvaluation;
@@ -1028,7 +1028,7 @@ fn fill_history(
                             (&header.metadata, subtypes),
                             identity,
                         ) {
-                            Ok(Some(slot)) => {
+                            Ok(Ok(slot)) => {
                                 resolved = Want {
                                     origin: want.origin,
                                     producer: None,
@@ -1041,13 +1041,21 @@ fn fill_history(
                                 };
                                 &resolved
                             }
-                            Ok(None) => {
+                            Ok(Err(Unbuilt::Undecoded)) => {
                                 losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(
                                     format!(
                                         "{} state {state_id} has an unresolved body identity",
                                         want.origin.id
                                     ),
                                 ));
+                                continue;
+                            }
+                            Ok(Err(Unbuilt::Bounded(limit))) => {
+                                losses.push(F3dLossCode::FeatureHistoryBodyBounded.note(format!(
+                                    "{} state {state_id} body identity: {}",
+                                    want.origin.id,
+                                    CodecError::ResourceLimit(limit)
+                                )));
                                 continue;
                             }
                             Err(error) => {
@@ -1074,7 +1082,7 @@ fn fill_history(
                     (produced, consumed),
                     (ordinal, bodies.len(), consumed.is_some() || join.is_some()),
                 ) {
-                    Ok(Some(mut built)) => {
+                    Ok(Ok(mut built)) => {
                         built.body.state_of =
                             finals.and_then(|finals| final_body(history, finals, want));
                         place(
@@ -1085,10 +1093,18 @@ fn fill_history(
                             (consumed.is_some(), join),
                         );
                     }
-                    Ok(None) => {
+                    Ok(Err(Unbuilt::Undecoded)) => {
                         losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
                             "{} body slot {} state {state_id} has an incomplete or invalid geometry closure",
                             want.origin.id, want.slot
+                        )));
+                    }
+                    Ok(Err(Unbuilt::Bounded(limit))) => {
+                        losses.push(F3dLossCode::FeatureHistoryBodyBounded.note(format!(
+                            "{} body slot {} state {state_id}: {}",
+                            want.origin.id,
+                            want.slot,
+                            CodecError::ResourceLimit(limit)
                         )));
                     }
                     Err(error) => failure = Some(error),
@@ -1281,18 +1297,17 @@ fn build(
     want: &Want<'_>,
     owners: (Option<&Feature>, Option<&Feature>),
     position: (usize, usize, bool),
-) -> Result<Option<Built>, CodecError> {
+) -> Result<Result<Built, Unbuilt>, CodecError> {
     let (ordinal, nest_index, keep_records) = position;
-    let decode_table =
-        |table: &[cadmpeg_asm::sab::Record]| -> Result<Option<Box<BodyTopology>>, CodecError> {
-            let brep = match cadmpeg_asm::brep::decode_with_table(
-                ctx,
+    let decode_table = |table: &[cadmpeg_asm::sab::Record]| {
+        ctx.scratch(|scratch| {
+            let brep = match cadmpeg_asm::brep::inspect_with_table(
+                scratch,
                 table,
                 bytes,
                 (Some(tables.0), tables.1),
                 "f3d:history",
                 crate::ids::ID_FORMAT,
-                cadmpeg_asm::brep::DecodePurpose::Inspect,
             ) {
                 Ok(brep) => brep,
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -1306,40 +1321,40 @@ fn build(
             else {
                 return Ok(None);
             };
-            let mut scratch = CadIr::empty();
+            let mut model = CadIr::empty();
             cadmpeg_asm::brep::transfer::transfer_into_ir(
-                ctx,
-                &mut scratch,
+                scratch,
+                &mut model,
                 cadmpeg_ir::codec_id!("f3d"),
                 brep,
             )?;
-            match extract(ctx, &scratch.geometry, body.as_str())? {
+            match extract(scratch, &model.geometry, body.as_str())? {
                 Extract::Nest(topology) => Ok(Some(topology)),
                 Extract::Absent | Extract::NotClosed => Ok(None),
             }
-        };
-    let topology = if let Some(subset) = body_record_closure(versions, archive, want.slot) {
-        match decode_table(&subset)? {
-            Some(topology) => topology,
-            None => {
-                let Some(table) = materialize_hashed_table(versions, archive) else {
-                    return Ok(None);
-                };
-                let Some(topology) = decode_table(&table)? else {
-                    return Ok(None);
-                };
-                topology
-            }
-        }
-    } else {
-        let Some(table) = materialize_hashed_table(versions, archive) else {
-            return Ok(None);
-        };
-        let Some(topology) = decode_table(&table)? else {
-            return Ok(None);
-        };
-        topology
+        })
+        .map(|decoded| decoded.map_err(Unbuilt::Bounded))
     };
+    let decoded = match body_record_closure(versions, archive, want.slot) {
+        Some(subset) => decode_table(&subset)?,
+        None => Ok(None),
+    };
+    let decoded = match decoded {
+        Ok(None) => match materialize_hashed_table(versions, archive) {
+            Some(table) => decode_table(&table)?,
+            None => Ok(None),
+        },
+        decoded => decoded,
+    };
+    let topology = match decoded {
+        Ok(Some(topology)) => topology,
+        Ok(None) => return Ok(Err(Unbuilt::Undecoded)),
+        Err(unbuilt) => return Ok(Err(unbuilt)),
+    };
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(topology.name_bytes()),
+        "keep history body names",
+    )?;
     let records = keep_records.then(|| (*topology).clone());
     let mut map = IdentityMap::new(|id: &str| {
         let (_, rest) = id
@@ -1377,7 +1392,9 @@ fn build(
         },
         want.origin,
     )?;
-    Ok(body.map(|body| Built { body, records }))
+    Ok(body
+        .map(|body| Built { body, records })
+        .ok_or(Unbuilt::Undecoded))
 }
 
 /// Add a built nest, or join its producing feature onto the equal consumed
@@ -1450,6 +1467,14 @@ fn final_body(
     Some(body.clone())
 }
 
+/// Why a requested history body was not built.
+enum Unbuilt {
+    /// The state does not decode, or its body is not a closed nest.
+    Undecoded,
+    /// The decode of the state passed the retained-byte allowance.
+    Bounded(ResourceLimit),
+}
+
 /// A history body, and its records before the nest identities, when kept.
 struct Built {
     body: HistoryBody,
@@ -1470,23 +1495,29 @@ fn identity_body_slot(
         &cadmpeg_asm::nurbs::toks::SubtypeTable,
     ),
     identity: &BodyIdentity,
-) -> Result<Option<i64>, CodecError> {
+) -> Result<Result<i64, Unbuilt>, CodecError> {
     let Some(table) = materialize_hashed_table(versions, archive) else {
-        return Ok(None);
+        return Ok(Err(Unbuilt::Undecoded));
     };
-    match cadmpeg_asm::brep::decode_with_table(
-        ctx,
-        &table,
-        bytes,
-        (Some(tables.0), tables.1),
-        "f3d:history",
-        crate::ids::ID_FORMAT,
-        cadmpeg_asm::brep::DecodePurpose::Inspect,
-    ) {
-        Ok(brep) => identity_slot(&brep, identity),
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(_) => Ok(None),
-    }
+    let slot = ctx.scratch(|scratch| {
+        match cadmpeg_asm::brep::inspect_with_table(
+            scratch,
+            &table,
+            bytes,
+            (Some(tables.0), tables.1),
+            "f3d:history",
+            crate::ids::ID_FORMAT,
+        ) {
+            Ok(brep) => identity_slot(&brep, identity),
+            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            Err(_) => Ok(None),
+        }
+    })?;
+    Ok(match slot {
+        Ok(Some(slot)) => Ok(slot),
+        Ok(None) => Err(Unbuilt::Undecoded),
+        Err(limit) => Err(Unbuilt::Bounded(limit)),
+    })
 }
 
 fn admit(

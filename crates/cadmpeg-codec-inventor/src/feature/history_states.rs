@@ -89,6 +89,14 @@ pub(crate) enum Unread {
     Bounded,
 }
 
+/// A chain that was not read, and the byte offset of its first `delta_state`
+/// marker in the carrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UnreadChain {
+    pub(crate) reason: Unread,
+    pub(crate) start: usize,
+}
+
 /// Result of reading the history of a carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Reading {
@@ -245,7 +253,7 @@ pub(crate) enum Framing {
     /// The stream holds no `delta_state` record.
     Absent,
     /// The chain does not frame.
-    Unread(Unread),
+    Unread(UnreadChain),
     /// Every state frames.
     Framed(FramedChain),
 }
@@ -259,7 +267,10 @@ pub(crate) fn frame_chain(
     let (framing, preframed) = frame_history_chain_with_preframed(ctx, bytes, width)?;
     Ok(match framing {
         ChainFraming::Absent => Framing::Absent,
-        ChainFraming::Unframed => Framing::Unread(Unread::Unclosed),
+        ChainFraming::Unframed { start } => Framing::Unread(UnreadChain {
+            reason: Unread::Unclosed,
+            start,
+        }),
         ChainFraming::Framed(chain) => Framing::Framed(FramedChain {
             chain,
             preframed: RefCell::new(preframed),
@@ -681,7 +692,7 @@ pub(crate) enum Read<'a> {
     /// does not parse, or the stream holds no `delta_state` record.
     Absent,
     /// The chain was not read.
-    Unread(Unread),
+    Unread(UnreadChain),
     /// The chain closed.
     Closed(Box<Closed<'a>>),
 }
@@ -708,21 +719,22 @@ pub(crate) fn read<'a>(
 ) -> Result<Read<'a>, CodecError> {
     let Framing::Framed(chain) = framed else {
         return Ok(match framed {
-            Framing::Unread(reason) => Read::Unread(*reason),
+            Framing::Unread(unread) => Read::Unread(*unread),
             _ => Read::Absent,
         });
     };
     let Ok(header) = carrier.header.as_ref() else {
         return Ok(Read::Absent);
     };
+    let start = chain.start;
     let chain = match prepare(ctx, chain, carrier.bytes.window(), header.width)? {
-        Prepared::Unread(reason) => return Ok(Read::Unread(reason)),
+        Prepared::Unread(reason) => return Ok(Read::Unread(UnreadChain { reason, start })),
         Prepared::Ready(chain) => chain,
     };
     Ok(
         match index_chain(&chain, carrier.schema, MAX_STATE_SCAN_WORK) {
             Reading::Read(index) => Read::Closed(Box::new(Closed::new(*chain, index))),
-            Reading::Unread(reason) => Read::Unread(reason),
+            Reading::Unread(reason) => Read::Unread(UnreadChain { reason, start }),
         },
     )
 }
@@ -747,7 +759,7 @@ pub(crate) struct Projection {
     /// Joined features; empty when the chain was not read.
     pub(crate) records: Vec<FeatureHistoryState>,
     /// Unread reading, if any.
-    pub(crate) unread: Option<Unread>,
+    pub(crate) unread: Option<UnreadChain>,
     /// Features that retain a state from a naming tag with a stored schema
     /// other than the carrier schema, bound or not.
     pub(crate) schema_assumed: usize,
@@ -756,7 +768,7 @@ pub(crate) struct Projection {
 }
 
 impl Projection {
-    fn without_records(unread: Option<Unread>) -> Self {
+    fn without_records(unread: Option<UnreadChain>) -> Self {
         Self {
             records: Vec::new(),
             unread,
@@ -786,7 +798,7 @@ pub(crate) fn project(
 ) -> Result<Projection, CodecError> {
     let closed = match history {
         Read::Absent => return Ok(Projection::without_records(None)),
-        Read::Unread(reason) => return Ok(Projection::without_records(Some(*reason))),
+        Read::Unread(unread) => return Ok(Projection::without_records(Some(*unread))),
         Read::Closed(closed) => closed,
     };
     let mut records = join(&closed.index, inputs);
@@ -813,7 +825,7 @@ pub(crate) fn project(
 pub(crate) fn losses(projection: &Projection) -> Vec<LossNote> {
     use crate::loss::InventorLossCode;
     let mut notes = Vec::new();
-    match projection.unread {
+    match projection.unread.map(|unread| unread.reason) {
         Some(Unread::Unclosed) => notes.push(InventorLossCode::KernelHistoryUnclosed.note(
             "The kernel carrier's delta_state chain does not frame or close; features have no history states.",
         )),
@@ -890,7 +902,7 @@ fn body_given_up(
         ),
         Unbuilt::Bounded => (
             InventorLossCode::FeatureHistoryBodyBounded,
-            "the body passed the local cap of history bodies",
+            "the body passed the local cap of history bodies or the retained-byte budget",
         ),
     };
     cadmpeg_ir::unknown::part::GivenUpRecord::new(nest, format_args!("{}: {detail}", code.kind()))
@@ -922,7 +934,7 @@ fn body_losses(outcome: &super::history_bodies::Outcome) -> Vec<LossNote> {
     }
     if outcome.bounded > 0 {
         notes.push(InventorLossCode::FeatureHistoryBodyBounded.note(format!(
-            "{} body(ies) of Split and Base features passed the local cap of history bodies; those bodies have no history body.",
+            "{} body(ies) of Split and Base features passed the local cap of history bodies or the retained-byte budget; those bodies have no history body.",
             outcome.bounded
         )));
     }

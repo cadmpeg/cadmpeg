@@ -36,6 +36,7 @@ use crate::nurbs;
 use crate::nurbs::proc_curve::ProceduralCurveConstruction;
 use crate::nurbs::proc_surface::DecodedProceduralSurface;
 use crate::sab::Record;
+use cadmpeg_core::decode::ScratchContext;
 use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 use cadmpeg_ir::geometry::{
     pcurve::{Pcurve, PcurveGeometry},
@@ -376,13 +377,28 @@ pub struct WireShellTopology {
 pub enum DecodePurpose {
     /// Transfer complete neutral geometry and retained native records.
     Model,
-    /// Transfer the graph [`DecodePurpose::Model`] transfers, for a caller
-    /// that reads it and gives up none of its records, such as the decode of
-    /// one history state: withheld records mark their shells, and `withheld`
-    /// stays empty.
-    Inspect,
     /// Transfer stable topology plus measurements used by history binding.
     History,
+}
+
+/// The outputs of one decode, with the scratch decode of [`inspect_with_header`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Purpose {
+    Model,
+    /// Transfer the graph [`Purpose::Model`] transfers, for a caller that
+    /// reads it and gives up none of its records: withheld records mark
+    /// their shells, and `withheld` stays empty.
+    Inspect,
+    History,
+}
+
+impl From<DecodePurpose> for Purpose {
+    fn from(purpose: DecodePurpose) -> Self {
+        match purpose {
+            DecodePurpose::Model => Self::Model,
+            DecodePurpose::History => Self::History,
+        }
+    }
 }
 
 /// Decode a framed active slice into the ASM B-rep graph.
@@ -493,6 +509,71 @@ pub fn decode_with_table(
     stream: &str,
     format: IdFormat,
     purpose: DecodePurpose,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    decode_graph(ctx, records, bytes, tables, stream, format, purpose.into())
+}
+
+/// Decode a framed slice into a graph that the caller reads and drops, such
+/// as the decode of one history state.
+///
+/// The decode runs on a [`ScratchContext`], which releases the bytes the graph
+/// retains: the caller charges what it keeps. Withheld records mark their
+/// shells, and `withheld` stays empty.
+pub fn inspect_with_header(
+    scratch: &ScratchContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    header: Option<&crate::kernel_header::KernelHeader>,
+    stream: &str,
+    format: IdFormat,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    let token_table = nurbs::toks::SubtypeTable::from_records(records)
+        .with_save_format_version(header.and_then(|header| header.save_format_version));
+    inspect_with_table(
+        scratch,
+        records,
+        bytes,
+        (header, &token_table),
+        stream,
+        format,
+    )
+}
+
+/// [`inspect_with_header`] with the stream subtype ordinals of a materialized
+/// record table.
+pub fn inspect_with_table(
+    scratch: &ScratchContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    tables: (
+        Option<&crate::kernel_header::KernelHeader>,
+        &nurbs::toks::SubtypeTable,
+    ),
+    stream: &str,
+    format: IdFormat,
+) -> Result<AsmBrep, cadmpeg_core::CodecError> {
+    decode_graph(
+        scratch,
+        records,
+        bytes,
+        tables,
+        stream,
+        format,
+        Purpose::Inspect,
+    )
+}
+
+fn decode_graph(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &[Record],
+    bytes: &[u8],
+    tables: (
+        Option<&crate::kernel_header::KernelHeader>,
+        &nurbs::toks::SubtypeTable,
+    ),
+    stream: &str,
+    format: IdFormat,
+    purpose: Purpose,
 ) -> Result<AsmBrep, cadmpeg_core::CodecError> {
     let (header, token_table) = tables;
     let mut out = AsmBrep::default();
@@ -605,13 +686,13 @@ pub fn decode_with_table(
         },
     )?;
     let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format)?;
-    if matches!(purpose, DecodePurpose::Model | DecodePurpose::Inspect) {
+    if matches!(purpose, Purpose::Model | Purpose::Inspect) {
         emit_passthrough_unknowns(ctx, &mut out, records, bytes, &reach, format)?;
         given_up::list_withheld(
             ctx,
             &mut out,
             records,
-            (purpose == DecodePurpose::Model).then_some(bytes),
+            (purpose == Purpose::Model).then_some(bytes),
             &by_index,
             &reach,
             format,

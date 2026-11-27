@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Inventor kernel-carrier selection and envelope framing.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScratchContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_asm::brep::given_up::WithheldRecord;
-use cadmpeg_asm::brep::{decode_with_header, AsmBrep, DecodePurpose};
+use cadmpeg_asm::brep::{decode_with_header, inspect_with_header, AsmBrep, DecodePurpose};
 use cadmpeg_asm::kernel_header::BinaryHeader;
 use cadmpeg_asm::sab;
 use cadmpeg_asm::{acis_header, asm_header};
@@ -113,8 +113,61 @@ pub(crate) fn decode_kernel_carrier(
     ctx: &DecodeContext<'_>,
     carrier: &ActiveCarrier<'_>,
     header: &BinaryHeader,
-    purpose: DecodePurpose,
 ) -> Result<DecodedKernelCarrier, CodecError> {
+    let records = frame_kernel_records(ctx, carrier, header)?;
+    let mut brep = decode_with_header(
+        ctx,
+        &records,
+        carrier.bytes.window(),
+        Some(&header.metadata),
+        &carrier_stream(carrier),
+        cadmpeg_asm::asm_format!("inventor"),
+        DecodePurpose::Model,
+    )?;
+    let withheld = std::mem::take(&mut brep.withheld)
+        .into_iter()
+        .map(|record| Ok((carrier.stream_offset(record.offset)?, record)))
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    Ok(DecodedKernelCarrier {
+        header: header.clone(),
+        brep,
+        withheld,
+        model_records: records
+            .iter()
+            .filter(|record| record.head() != "asmheader")
+            .count(),
+    })
+}
+
+/// The graph of a carrier that the caller reads and drops.
+pub(crate) fn inspect_kernel_carrier(
+    scratch: &ScratchContext<'_>,
+    carrier: &ActiveCarrier<'_>,
+    header: &BinaryHeader,
+) -> Result<AsmBrep, CodecError> {
+    let records = frame_kernel_records(scratch, carrier, header)?;
+    inspect_with_header(
+        scratch,
+        &records,
+        carrier.bytes.window(),
+        Some(&header.metadata),
+        &carrier_stream(carrier),
+        cadmpeg_asm::asm_format!("inventor"),
+    )
+}
+
+fn carrier_stream(carrier: &ActiveCarrier<'_>) -> String {
+    format!(
+        "RSeStorage/B{}:record:{}",
+        carrier.segment_token, carrier.record_ordinal
+    )
+}
+
+fn frame_kernel_records(
+    ctx: &DecodeContext<'_>,
+    carrier: &ActiveCarrier<'_>,
+    header: &BinaryHeader,
+) -> Result<Vec<sab::Record>, CodecError> {
     let bytes = carrier.bytes.window();
     let (start, solved_limit) = match carrier.family {
         KernelFamily::Asm => (
@@ -137,7 +190,7 @@ pub(crate) fn decode_kernel_carrier(
         }
     };
     let width = header.width;
-    let records = match solved_limit {
+    match solved_limit {
         Some(limit) => sab::frame(ctx, bytes, start, limit, width, None),
         None => sab::frame_history(ctx, bytes, start, bytes.len(), width, None),
     }
@@ -148,32 +201,6 @@ pub(crate) fn decode_kernel_carrier(
                 carrier.family.label()
             ))
         })
-    })?;
-    let stream = format!(
-        "RSeStorage/B{}:record:{}",
-        carrier.segment_token, carrier.record_ordinal
-    );
-    let mut brep = decode_with_header(
-        ctx,
-        &records,
-        bytes,
-        Some(&header.metadata),
-        &stream,
-        cadmpeg_asm::asm_format!("inventor"),
-        purpose,
-    )?;
-    let withheld = std::mem::take(&mut brep.withheld)
-        .into_iter()
-        .map(|record| Ok((carrier.stream_offset(record.offset)?, record)))
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    Ok(DecodedKernelCarrier {
-        header: header.clone(),
-        brep,
-        withheld,
-        model_records: records
-            .iter()
-            .filter(|record| record.head() != "asmheader")
-            .count(),
     })
 }
 
@@ -329,7 +356,8 @@ pub(crate) fn parse_carrier<'a>(
         header_value,
         schema,
         carrier_offset: record_payload_offset
-            + cadmpeg_core::decode::u64_from_index(carrier_header::LEN),
+            .checked_add(cadmpeg_core::decode::u64_from_index(carrier_header::LEN))
+            .ok_or_else(|| CodecError::malformed("Inventor kernel-carrier offset overflows"))?,
         bytes: carrier,
         header,
         selected_key,
@@ -416,12 +444,7 @@ mod tests {
             .header
             .as_ref()
             .map_err(|detail| CodecError::Malformed(detail.clone()))?;
-        decode_kernel_carrier(
-            ctx,
-            carrier,
-            header,
-            cadmpeg_asm::brep::DecodePurpose::Model,
-        )
+        decode_kernel_carrier(ctx, carrier, header)
     }
 
     #[test]

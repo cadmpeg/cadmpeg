@@ -9,7 +9,7 @@
 //! nest cap and nest work budget of [`super::history_bodies`] do not apply to
 //! it. The decode of one state into a scratch model is shared with the nests.
 
-use cadmpeg_asm::brep::{decode_with_header, DecodePurpose};
+use cadmpeg_asm::brep::inspect_with_header;
 use cadmpeg_asm::history::{materialize_record_table, walk_entity_versions_until};
 use cadmpeg_asm::kernel_header::BinaryHeader;
 use cadmpeg_asm::sab::Record;
@@ -42,7 +42,8 @@ pub(crate) enum StateModel {
     /// The state lists the feature, and it does not materialize, decode or
     /// transfer.
     Failed,
-    /// The views of the part passed their work cap.
+    /// The views of the part passed their work cap, or the decode of the
+    /// state passed the retained-byte budget.
     Bounded,
 }
 
@@ -145,8 +146,9 @@ impl<'c, 'a> StateViews<'c, 'a> {
                 &versions,
                 ordinal,
             )? {
-                Some(scratch) => StateModel::Model(Box::new(scratch.model)),
-                None => StateModel::Failed,
+                Decoded::Scratch(scratch) => StateModel::Model(Box::new(scratch.model)),
+                Decoded::Failed => StateModel::Failed,
+                Decoded::Bounded => StateModel::Bounded,
             },
         )
     }
@@ -160,9 +162,18 @@ pub(crate) struct Scratch {
     pub(crate) model: CadIr,
 }
 
+/// The outcome of the decode of one history state.
+pub(crate) enum Decoded {
+    Scratch(Box<Scratch>),
+    /// The state does not materialize, decode or transfer.
+    Failed,
+    /// The decode passed the retained-byte budget.
+    Bounded,
+}
+
 /// Materialize the records of the state at `ordinal` from its `versions` and
-/// transfer them into a scratch model. `None` when the state does not
-/// materialize, decode or transfer. Only a resource limit is an error.
+/// transfer them into a scratch model. Only a resource limit outside the
+/// retained-byte budget is an error.
 pub(crate) fn decode_scratch(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -170,41 +181,42 @@ pub(crate) fn decode_scratch(
     archive: &HashMap<i64, Record>,
     versions: &BTreeMap<i64, i64>,
     ordinal: u32,
-) -> Result<Option<Scratch>, CodecError> {
+) -> Result<Decoded, CodecError> {
     let Some(table) = materialize_record_table(versions, |revision| archive.get(&revision)) else {
-        return Ok(None);
+        return Ok(Decoded::Failed);
     };
     let stream = format!("inventor:history:{ordinal}");
-    let brep = match decode_with_header(
-        ctx,
-        &table,
-        bytes,
-        Some(&header.metadata),
-        &stream,
-        cadmpeg_asm::asm_format!("inventor"),
-        DecodePurpose::Inspect,
-    ) {
-        Ok(brep) => brep,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
-    };
-    drop(table);
-    let body_keys = brep
-        .body_native_keys
-        .iter()
-        .filter_map(|record| Some((record.body.as_str().to_owned(), record.asm_body_key?)))
-        .collect();
-    let mut model = CadIr::empty();
-    match cadmpeg_asm::brep::transfer::transfer_into_ir(
-        ctx,
-        &mut model,
-        cadmpeg_ir::codec_id!("inventor"),
-        brep,
-    ) {
-        Ok(_) => Ok(Some(Scratch { body_keys, model })),
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(_) => Ok(None),
-    }
+    let decoded = ctx.scratch(|scratch| {
+        let brep = match inspect_with_header(
+            scratch,
+            &table,
+            bytes,
+            Some(&header.metadata),
+            &stream,
+            cadmpeg_asm::asm_format!("inventor"),
+        ) {
+            Ok(brep) => brep,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => return Ok(Decoded::Failed),
+        };
+        let body_keys = brep
+            .body_native_keys
+            .iter()
+            .filter_map(|record| Some((record.body.as_str().to_owned(), record.asm_body_key?)))
+            .collect();
+        let mut model = CadIr::empty();
+        match cadmpeg_asm::brep::transfer::transfer_into_ir(
+            scratch,
+            &mut model,
+            cadmpeg_ir::codec_id!("inventor"),
+            brep,
+        ) {
+            Ok(_) => Ok(Decoded::Scratch(Box::new(Scratch { body_keys, model }))),
+            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            Err(_) => Ok(Decoded::Failed),
+        }
+    })?;
+    Ok(decoded.unwrap_or(Decoded::Bounded))
 }
 
 impl StateViews<'_, '_> {

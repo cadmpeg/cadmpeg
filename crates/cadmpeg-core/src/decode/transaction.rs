@@ -83,6 +83,32 @@ pub(super) fn record(events: &mut Vec<Event>, event: Event) {
     }
 }
 
+/// Rewrites the events of work whose retained bytes are released when it
+/// returns. Its retained charges are dropped, and each allowance reading and
+/// decision is stated against the room the work had at its start, so a replay
+/// reaches the decisions the work reached.
+pub(super) fn release_retained(events: Vec<Event>) -> impl Iterator<Item = Event> {
+    let mut retained = 0_u64;
+    events.into_iter().filter_map(move |event| match event {
+        Event::Charge(ResourceDimension::RetainedBytes, amount, _) => {
+            retained = retained.saturating_add(amount);
+            None
+        }
+        Event::Batch(mut batch) => {
+            retained = retained.saturating_add(batch.amounts[1]);
+            batch.amounts[1] = 0;
+            Some(Event::Batch(batch))
+        }
+        Event::Available(available) => Some(Event::Available(available.saturating_add(retained))),
+        Event::Allowance(available) => Some(Event::Allowance(available.saturating_add(retained))),
+        Event::AllowanceUse(remaining, requested) => Some(Event::AllowanceUse(
+            remaining.saturating_add(retained),
+            requested.saturating_add(retained),
+        )),
+        event => Some(event),
+    })
+}
+
 impl Charges {
     fn replay(self, candidate: &DecodeContext<'_>) -> bool {
         let initial = candidate.budget.state().depth;

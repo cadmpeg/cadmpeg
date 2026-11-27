@@ -93,6 +93,16 @@ impl BodyTopology {
             + self.points.len()
     }
 
+    /// Bytes of the names of the body and its faces.
+    #[must_use]
+    pub fn name_bytes(&self) -> usize {
+        self.faces
+            .iter()
+            .filter_map(|face| face.name.as_deref())
+            .chain(self.body.name.as_deref())
+            .fold(0, |total: usize, name| total.saturating_add(name.len()))
+    }
+
     /// The nest as a topology that holds only its records, for the topology checks.
     #[must_use]
     pub fn to_topology(&self) -> crate::document::Topology {

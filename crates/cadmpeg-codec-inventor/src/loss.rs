@@ -345,11 +345,15 @@ pub(crate) enum InventorLossCode {
     /// The body of a Base or Split feature in its history state is not a closed
     /// manifold solid.
     FeatureHistoryBodyNotClosed,
-    /// A part passed the local cap of history bodies or of their materialization work.
+    /// A part passed the local cap of history bodies or of their materialization
+    /// work, or the decode of a history state passed the retained-byte budget.
     FeatureHistoryBodyBounded,
     /// The Base or Split feature of a decoded history body is not a projected
     /// feature, so the body has no origin to name.
     FeatureHistoryBodyUnlinked,
+    /// The decode of the source carrier of a Base feature passed the
+    /// retained-byte budget, so the feature keeps its native form.
+    FeatureBaseSourceBounded,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
@@ -524,6 +528,7 @@ impl InventorLossCode {
         Self::FeatureHistoryBodyNotClosed,
         Self::FeatureHistoryBodyBounded,
         Self::FeatureHistoryBodyUnlinked,
+        Self::FeatureBaseSourceBounded,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
         Self::PmiTargetUnresolved,
@@ -726,6 +731,7 @@ impl InventorLossCode {
             Self::FeatureHistoryBodyNotClosed => "feature.history-body-not-closed",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::FeatureHistoryBodyUnlinked => "feature.history-body-unlinked",
+            Self::FeatureBaseSourceBounded => "feature.base-source-bounded",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
             Self::PmiTargetUnresolved => "pmi.target-unresolved",
@@ -885,6 +891,7 @@ impl InventorLossCode {
             | Self::FeatureHistoryBodyUndecoded
             | Self::FeatureHistoryBodyNotClosed
             | Self::FeatureHistoryBodyBounded
+            | Self::FeatureBaseSourceBounded
             | Self::FeatureHistoryBodyUnlinked
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
@@ -1103,6 +1110,7 @@ mod tests {
                 "feature.history-body-not-closed",
                 "feature.history-body-bounded",
                 "feature.history-body-unlinked",
+                "feature.base-source-bounded",
                 "drawing.native-only",
                 "drawing.record-malformed",
                 "pmi.target-unresolved",

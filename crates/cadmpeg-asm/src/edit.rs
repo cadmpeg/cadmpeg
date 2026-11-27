@@ -823,7 +823,7 @@ impl AsmEditSet {
         direction: Vector3,
         native_position: Point3,
     ) -> Result<(), CodecError> {
-        let record_bytes = record_slice(bytes, record, "extrusion")?;
+        let record_bytes = record.bytes_in(bytes)?;
         let layout = crate::nurbs::proc_curve::extrusion_patch_layout(record_bytes, self.ref_width)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -869,7 +869,7 @@ impl AsmEditSet {
         record: &Record,
         radii: [f64; 2],
     ) -> Result<(), CodecError> {
-        let record_bytes = record_slice(bytes, record, "rolling-ball")?;
+        let record_bytes = record.bytes_in(bytes)?;
         let layout =
             crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, self.ref_width)
                 .transpose()?
@@ -897,7 +897,7 @@ impl AsmEditSet {
         record: &Record,
         tolerance: f64,
     ) -> Result<(), CodecError> {
-        let record_bytes = record_slice(bytes, record, "procedural-surface")?;
+        let record_bytes = record.bytes_in(bytes)?;
         let layout = crate::nurbs::core::final_surface_patch_layout(record_bytes, self.ref_width)
             .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -925,7 +925,7 @@ impl AsmEditSet {
         record: &Record,
         tolerance: f64,
     ) -> Result<(), CodecError> {
-        let record_bytes = record_slice(bytes, record, "procedural-curve")?;
+        let record_bytes = record.bytes_in(bytes)?;
         let layout = crate::nurbs::core::final_curve_patch_layout(record_bytes, self.ref_width)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -1048,17 +1048,6 @@ impl AsmEditSet {
     }
 }
 
-fn record_slice<'a>(bytes: &'a [u8], record: &Record, label: &str) -> Result<&'a [u8], CodecError> {
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "{label} record extent overflows address space"
-        ))
-    })?;
-    bytes
-        .get(record.offset..end)
-        .ok_or_else(|| CodecError::malformed(format_args!("{label} record is truncated")))
-}
-
 const fn native_bool(value: bool) -> u8 {
     if value {
         0x0a
@@ -1081,7 +1070,7 @@ fn patch_helix_definition(
     let apex_factor = definition.apex_factor();
     let axis = definition.axis();
 
-    let record_bytes = record_slice(bytes, record, "helix")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1131,7 +1120,7 @@ fn patch_vector_offset_definition(
     parameter_range: [f64; 2],
     offset: Vector3,
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "vector-offset")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
         CodecError::malformed(format_args!(
@@ -1162,7 +1151,7 @@ fn patch_subset_definition(
     record: &sab::Record,
     parameter_range: [f64; 2],
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "subset")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1185,7 +1174,7 @@ fn patch_compound_definition(
     parameters: &[FiniteReal],
     components: &[CompoundComponent<CurveId, FiniteReal>],
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "compound")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -1225,7 +1214,7 @@ fn patch_two_sided_offset_definition(
     discontinuity_flag: bool,
     offsets: [f64; 2],
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "two-sided offset")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout =
         crate::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, stream_width)
             .filter(|layout| {
@@ -1331,7 +1320,7 @@ fn patch_surface_offset_definition(
     let base_u_range = base_u_range.endpoints();
     let base_v_range = base_v_range.endpoints();
     let base_range = base_range.endpoints();
-    let record_bytes = record_slice(bytes, record, "surface-offset")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::surface_offset_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("surface-offset construction is malformed".into()))?;
     patch_intcurve_context(
@@ -1382,7 +1371,7 @@ fn patch_spring_definition(
         } => *discontinuity_flag,
         cadmpeg_ir::geometry::surface_curves::SpringLayout::CacheFirst { .. } => false,
     };
-    let record_bytes = record_slice(bytes, record, "spring")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::spring_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
     patch_intcurve_context(
@@ -1412,7 +1401,7 @@ fn patch_projection_definition(
     discontinuity_flag: bool,
     tail: &ProjectionTail<FiniteReal>,
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "projection")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::projection_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
     if layout
@@ -1479,7 +1468,7 @@ fn patch_intersection_definition(
     context: &IntcurveSupportContext,
     discontinuity_flag: bool,
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "intersection")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::intersection_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| CodecError::Malformed("intersection construction is malformed".into()))?;
     patch_intcurve_context(
@@ -1502,7 +1491,7 @@ fn patch_three_surface_intersection_definition(
     context: &IntcurveSupportContext,
     selector: i64,
 ) -> Result<(), CodecError> {
-    let record_bytes = record_slice(bytes, record, "three-surface intersection")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::three_surface_patch_layout(record_bytes, stream_width)
         .ok_or_else(|| {
         CodecError::Malformed("three-surface construction is malformed".into())
@@ -1533,7 +1522,7 @@ fn patch_surface_curve_definition(
     family: &SurfaceCurveFamily,
 ) -> Result<(), CodecError> {
     let context = family.context();
-    let record_bytes = record_slice(bytes, record, "surface-curve")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = crate::nurbs::proc_curve::surface_curve_patch_layout(
         record_bytes,
         stream_width,
@@ -1568,7 +1557,7 @@ fn patch_silhouette_definition(
             Some(draft_factor.get())
         }
     };
-    let record_bytes = record_slice(bytes, record, "silhouette")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout =
         crate::nurbs::proc_curve::silhouette_patch_layout(record_bytes, stream_width, silhouette)
             .ok_or_else(|| CodecError::Malformed("silhouette construction is malformed".into()))?;
@@ -1595,7 +1584,7 @@ fn patch_nurbs_surface_record(
     surface_ordinal: Option<usize>,
 ) -> Result<(), CodecError> {
     let surface = edit.surface;
-    let record_bytes = record_slice(bytes, record, "NURBS surface")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = surface_ordinal
         .map_or_else(
             || crate::nurbs::core::final_surface_patch_layout(record_bytes, stream_width),
@@ -1699,7 +1688,7 @@ fn patch_nurbs_curve_record(
     target: CacheTarget,
 ) -> Result<(), CodecError> {
     let curve = edit.curve;
-    let record_bytes = record_slice(bytes, record, "NURBS curve")?;
+    let record_bytes = record.bytes_in(bytes)?;
     let layout = match target {
         CacheTarget::Final => {
             crate::nurbs::core::final_curve_patch_layout(record_bytes, stream_width)
@@ -2398,7 +2387,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
-        assert!(error.to_string().contains("truncated"));
+        assert!(error.to_string().contains("beyond the 10 the stream holds"));
         assert_eq!(truncated, before);
     }
 

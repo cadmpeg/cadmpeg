@@ -2,7 +2,7 @@
 //! Stored-body Base features and their current-model body joins.
 
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::decode::{unique_index, DecodeContext, View};
+use cadmpeg_core::decode::{unique_index, DecodeContext, ResourceLimit, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
@@ -219,34 +219,34 @@ fn source_body(
     document: &RseInventory<'_>,
     inventory: &FeatureInventory,
     wrapper: &PmDcFeatureProperty,
-) -> Result<bool, CodecError> {
+) -> Result<Result<bool, ResourceLimit>, CodecError> {
     let Some(reference) = surface_reference(wrapper) else {
-        return Ok(false);
+        return Ok(Ok(false));
     };
     if reference.index() == 0 {
-        return Ok(!reference.qualified());
+        return Ok(Ok(!reference.qualified()));
     }
     if !reference.qualified() {
-        return Ok(false);
+        return Ok(Ok(false));
     }
     let Some(link) = one(inventory.kernel_entity_links.iter().filter(|link| {
         link.identity.segment_token == wrapper.identity.segment_token
             && Some(link.identity.record_ordinal) == reference.record_ordinal()
     })) else {
-        return Ok(false);
+        return Ok(Ok(false));
     };
     if link.state != 0
         || link.selection_source != wrapper.header.source_index
         || !link.body.qualified()
     {
-        return Ok(false);
+        return Ok(Ok(false));
     }
     let Some(segment) = one(document
         .segments
         .iter()
         .filter(|segment| *segment.pair.token.key() == wrapper.identity.segment_token))
     else {
-        return Ok(false);
+        return Ok(Ok(false));
     };
     let Some(record) = framed_records(segment).and_then(|records| {
         one(records.iter().filter(|record| {
@@ -254,10 +254,10 @@ fn source_body(
                 && record.type_id == crate::kernel::KERNEL_RECORD_TYPE_ID
         }))
     }) else {
-        return Ok(false);
+        return Ok(Ok(false));
     };
     let Some(version) = segment.registry.map(|registry| registry.version_major) else {
-        return Ok(false);
+        return Ok(Ok(false));
     };
     let Ok(carrier) = crate::kernel::parse_carrier(
         record.payload,
@@ -266,30 +266,25 @@ fn source_body(
         record.payload_offset,
         version,
     ) else {
-        return Ok(false);
+        return Ok(Ok(false));
     };
     if PmDcReference::from_packed(carrier.selected_key) != link.body {
-        return Ok(false);
+        return Ok(Ok(false));
     }
     let Ok(header) = carrier.header.as_ref() else {
-        return Ok(false);
+        return Ok(Ok(false));
     };
-    let decoded = match crate::kernel::decode_kernel_carrier(
-        ctx,
-        &carrier,
-        header,
-        cadmpeg_asm::brep::DecodePurpose::Inspect,
-    ) {
-        Ok(decoded) => decoded,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(false),
-    };
-    Ok(one(decoded
-        .brep
-        .body_native_keys
-        .iter()
-        .filter(|key| key.asm_body_key == Some(u64::from(link.entity_id))))
-    .is_some())
+    ctx.scratch(
+        |scratch| match crate::kernel::inspect_kernel_carrier(scratch, &carrier, header) {
+            Ok(brep) => Ok(one(brep
+                .body_native_keys
+                .iter()
+                .filter(|key| key.asm_body_key == Some(u64::from(link.entity_id))))
+            .is_some()),
+            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            Err(_) => Ok(false),
+        },
+    )
 }
 
 #[derive(Default)]
@@ -455,7 +450,18 @@ pub(crate) fn project(
         let source_valid = match sources.get(&source_key) {
             Some(&valid) => valid,
             None => {
-                let valid = source_body(ctx, document, inventory, input)?;
+                let valid = match source_body(ctx, document, inventory, input)? {
+                    Ok(valid) => valid,
+                    Err(limit) => {
+                        projection.losses.push(
+                            crate::loss::InventorLossCode::FeatureBaseSourceBounded.note(format!(
+                                "Base source body check: {}",
+                                CodecError::ResourceLimit(limit)
+                            )),
+                        );
+                        false
+                    }
+                };
                 sources.insert(source_key, valid);
                 valid
             }

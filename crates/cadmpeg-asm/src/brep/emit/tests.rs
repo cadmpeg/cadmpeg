@@ -554,7 +554,7 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
                 ctx: &asm_decode_ctx,
                 by_index: &by_index,
                 token_table: &table,
-                purpose: super::super::DecodePurpose::Model,
+                purpose: super::super::Purpose::Model,
                 format: crate::asm_format!("f3d"),
             },
             &mut out,

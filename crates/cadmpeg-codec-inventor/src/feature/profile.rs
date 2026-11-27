@@ -85,8 +85,9 @@ pub(crate) struct ProfileBody {
 /// The profile bodies of a document's `PmDc` kernel-body records.
 pub(crate) struct ProfileBodies {
     pub(crate) bodies: Vec<ProfileBody>,
-    /// Kernel-body records that do not decode. Profile selections that link
-    /// to them keep their native selection.
+    /// Kernel-body records that do not decode, or whose decode passes the
+    /// retained-byte budget. Profile selections that link to them keep their
+    /// native selection.
     pub(crate) undecoded: usize,
 }
 
@@ -130,12 +131,12 @@ pub(crate) fn decode_profile_bodies(
                 record.payload_offset,
                 version,
             ) {
-                Ok(body) => {
+                Ok(Some(body)) => {
                     ctx.charge_entities(1, "admit Inventor PmDc profile body")?;
                     decoded.bodies.push(body);
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => decoded.undecoded += 1,
+                Ok(None) | Err(_) => decoded.undecoded += 1,
             }
         }
     }
@@ -149,7 +150,7 @@ fn decode_profile_body(
     record_ordinal: u32,
     payload_offset: u64,
     version: u8,
-) -> Result<ProfileBody, CodecError> {
+) -> Result<Option<ProfileBody>, CodecError> {
     let carrier = crate::kernel::parse_carrier(
         payload,
         segment_token,
@@ -158,17 +159,16 @@ fn decode_profile_body(
         version,
     )?;
     let header = carrier.header.as_deref().map_err(CodecError::malformed)?;
-    let decoded = crate::kernel::decode_kernel_carrier(
-        ctx,
-        &carrier,
-        header,
-        cadmpeg_asm::brep::DecodePurpose::Inspect,
-    )?;
-    Ok(ProfileBody {
+    let Ok(brep) =
+        ctx.scratch(|scratch| crate::kernel::inspect_kernel_carrier(scratch, &carrier, header))?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(ProfileBody {
         segment_token: segment_token.clone(),
         record_ordinal,
-        wires: profile_wires(ctx, &decoded.brep)?,
-    })
+        wires: profile_wires(ctx, &brep)?,
+    }))
 }
 
 fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileWire>, CodecError> {
