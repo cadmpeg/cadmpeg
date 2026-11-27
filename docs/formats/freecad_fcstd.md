@@ -729,9 +729,7 @@ Prototype cycles are invalid in both the native and neutral product graphs.
 
 CADIR decision: a scalar link whose `LinkTransform` is true and whose linked object has no own
 occurrence in the document's scope emits `feature.link-placement-unresolved`; its v11 `Place`
-states no placement, and the occurrence's transform holds the composed placement. A `Placement`
-that a v11 design record states and that the decoder cannot read emits
-`feature.placement-unresolved`.
+states no placement, and the occurrence's transform holds the composed placement.
 Component identity keeps the stable source object name separately from its user-visible label,
 description, part number, and additional named BOM fields. Generated BOM spreadsheets remain
 spreadsheet objects; they are not treated as the authoritative identity of their source component.
