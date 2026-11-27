@@ -1802,6 +1802,7 @@ pub(in crate::families) fn a5_owned_surfaces_from_records(
 }
 
 const TERMINAL_SPAN_DOMAIN_TOLERANCE: f64 = 1.0e-6;
+const IDENTITY_AFFINE_SCALE_TOLERANCE: f64 = 1.0e-12;
 
 /// Decode one owned `A_34` NURBS surface record, including records whose
 /// payload spans multiple physical extents in `sources`.
@@ -1963,8 +1964,6 @@ fn a5_surface(
     let v_scale = 1.0_f64
         .max(v_distinct[v_distinct.len() - 1].abs())
         .max(v_distinct[v_distinct.len() - 2].abs());
-    const TERMINAL_SPAN_DOMAIN_TOLERANCE: f64 = 1.0e-6;
-    const IDENTITY_AFFINE_SCALE_TOLERANCE: f64 = 1.0e-12;
     let matches_terminal_span = parameters[0] == 0.0
         && (parameters[1] - u_last_span).abs() <= TERMINAL_SPAN_DOMAIN_TOLERANCE * u_scale
         && parameters[2] == 0.0

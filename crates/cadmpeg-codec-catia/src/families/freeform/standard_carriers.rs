@@ -122,9 +122,11 @@ pub(in crate::families) fn recover_missing_plane_normals(
                 });
                 if bounds_ok {
                     journal_planes.insert(prefix.target, plane);
-                    if !normals.contains_key(&prefix.target) {
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        normals.entry(prefix.target)
+                    {
                         if let Some(vector) = FiniteVector::new([axis.x, axis.y, axis.z]) {
-                            normals.insert(prefix.target, vector);
+                            entry.insert(vector);
                             continue;
                         }
                     }
@@ -307,7 +309,6 @@ impl<'a> CarrierResolver<'a> {
                         .journal
                         .index(carrier.source_index(), carrier.source_range().start)?;
                     depth += 1;
-                    continue;
                 }
                 (ConsolidatedFamily::B, 0x37 | 0x3b) => {
                     let payload = carrier.payload_bytes(self.data, self.sources)?;
@@ -321,7 +322,6 @@ impl<'a> CarrierResolver<'a> {
                         .journal
                         .index(carrier.source_index(), carrier.source_range().start)?;
                     depth += 1;
-                    continue;
                 }
                 (ConsolidatedFamily::B, 0x38) => {
                     let payload = carrier.payload_bytes(self.data, self.sources)?;
@@ -335,7 +335,6 @@ impl<'a> CarrierResolver<'a> {
                         .journal
                         .index(carrier.source_index(), carrier.source_range().start)?;
                     depth += 1;
-                    continue;
                 }
                 _ => break,
             }
@@ -1084,7 +1083,7 @@ fn decode_compact_bspline_pcurve_payload(
     at = at.checked_add(8)?;
     let degree = crate::wire::bytes::compact_int(payload, &mut at)?;
     let nknots = usize::try_from(crate::wire::bytes::compact_int(payload, &mut at)?).ok()?;
-    if !matches!(degree, 1 | 3 | 5) || nknots < 2 || nknots > MAX_BSPLINE_PCURVE_KNOTS {
+    if !matches!(degree, 1 | 3 | 5) || !(2..=MAX_BSPLINE_PCURVE_KNOTS).contains(&nknots) {
         return None;
     }
     let marker = *payload.get(at)?;
@@ -1403,7 +1402,6 @@ fn resolve_b2_plane<'a>(
                 let inner_ref = allocation_reference(&payload, &mut at)?;
                 carrier = resolve_ref(journal, carrier_index, inner_ref)?;
                 depth += 1;
-                continue;
             }
             (ConsolidatedFamily::B, 0x37 | 0x3b) => {
                 let carrier_index =
@@ -1416,7 +1414,6 @@ fn resolve_b2_plane<'a>(
                 let inner_ref = allocation_reference(&payload, &mut at)?;
                 carrier = resolve_ref(journal, carrier_index, inner_ref)?;
                 depth += 1;
-                continue;
             }
             (ConsolidatedFamily::B, 0x38) => {
                 let carrier_index =
@@ -1429,7 +1426,6 @@ fn resolve_b2_plane<'a>(
                 let inner_ref = allocation_reference(&payload, &mut at)?;
                 carrier = resolve_ref(journal, carrier_index, inner_ref)?;
                 depth += 1;
-                continue;
             }
             _ => break,
         }

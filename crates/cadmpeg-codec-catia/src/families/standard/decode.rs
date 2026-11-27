@@ -2347,7 +2347,7 @@ fn try_decode_standard_population(
                 .or_else(|| {
                     journal_planes
                         .get(&prefix.target)
-                        .cloned()
+                        .copied()
                         .map(SolvedSurfaceGeometry::Plane)
                         .map(SurfaceGeometry::Solved)
                 })

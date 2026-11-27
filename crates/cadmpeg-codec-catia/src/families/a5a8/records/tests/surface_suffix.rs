@@ -90,6 +90,8 @@ fn owned_surface_reports_fixed_tail_parameters_outside_the_neutral_carrier() {
 
 #[test]
 fn owned_surface_keeps_full_domain_identity_parameters_without_a_loss() {
+    use crate::layout::surface_terminal_span_tail as layout;
+
     let bytes = a5_surface_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let mut refusal = crate::nurbs::LaneRefusals::new();
@@ -100,7 +102,6 @@ fn owned_surface_keeps_full_domain_identity_parameters_without_a_loss() {
 
     // A 1-ULP IEEE-754 rounding residual on unit affine scales (0.9999999999999999)
     // is still an identity parameter map.
-    use crate::layout::surface_terminal_span_tail as layout;
     let mut near_id = a5_surface_tail();
     let near_one = 1.0_f64 - f64::EPSILON * 0.5;
     let values = [0.0_f64, 1.0, 0.0, 1.0, near_one, 0.0, near_one, 0.0]
