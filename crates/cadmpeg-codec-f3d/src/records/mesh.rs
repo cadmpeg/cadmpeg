@@ -1096,7 +1096,7 @@ impl DesignMeshPlacement {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum DesignMeshBodyWords {
     Plain { body_word: u32 },

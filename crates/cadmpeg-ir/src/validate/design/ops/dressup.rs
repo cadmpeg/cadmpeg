@@ -22,7 +22,7 @@ use crate::scalar::PositiveLength;
 
 use super::super::records::DesignRecords;
 
-pub(super) fn check_fillet(site: Site<'_>, fillet: &Fillet, findings: &mut Vec<Finding>) {
+pub(super) fn check_fillet(site: Site<'_, '_>, fillet: &Fillet, findings: &mut Vec<Finding>) {
     if fillet.sets.is_empty() {
         error(
             findings,
@@ -64,7 +64,7 @@ fn set_radius(set: &FilletSet) -> Option<&Dimension<PositiveLength>> {
 
 /// On a `SweptAround` with three members a single listed piece is the
 /// largest (§6.4), read from the radii the three sets state.
-fn check_swept_around(site: Site<'_>, fillet: &Fillet, findings: &mut Vec<Finding>) {
+fn check_swept_around(site: Site<'_, '_>, fillet: &Fillet, findings: &mut Vec<Finding>) {
     for (at, transition) in fillet.controls.transitions.iter().enumerate() {
         if !matches!(transition.kind, Some(TransitionKind::SweptAround { .. })) {
             continue;
@@ -90,7 +90,7 @@ fn check_swept_around(site: Site<'_>, fillet: &Fillet, findings: &mut Vec<Findin
     }
 }
 
-fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>) {
+fn check_fillet_set(site: Site<'_, '_>, set: &FilletSet, findings: &mut Vec<Finding>) {
     let (section, holds) = match set {
         FilletSet::Edges { section, hold, .. } => (
             Some(section),
@@ -187,7 +187,7 @@ fn check_fillet_set(site: Site<'_>, set: &FilletSet, findings: &mut Vec<Finding>
     }
 }
 
-fn check_stations<Q>(site: Site<'_>, stations: &Stations<Q>, findings: &mut Vec<Finding>) {
+fn check_stations<Q>(site: Site<'_, '_>, stations: &Stations<Q>, findings: &mut Vec<Finding>) {
     if stations.points.len() < 2 {
         error(
             findings,
@@ -244,7 +244,7 @@ fn check_stations<Q>(site: Site<'_>, stations: &Stations<Q>, findings: &mut Vec<
 
 /// The controls shared by fillet and chamfer: corners, transitions.
 fn check_controls(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     controls: &BlendControls,
     sets: usize,
     findings: &mut Vec<Finding>,
@@ -295,7 +295,7 @@ fn check_controls(
 
 /// A transition's members by its kind, and its kind's own counts.
 fn check_transition(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     at: usize,
     sets: usize,
     transition: &Transition,
@@ -352,7 +352,7 @@ fn check_transition(
     }
 }
 
-pub(super) fn check_chamfer(site: Site<'_>, chamfer: &Chamfer, findings: &mut Vec<Finding>) {
+pub(super) fn check_chamfer(site: Site<'_, '_>, chamfer: &Chamfer, findings: &mut Vec<Finding>) {
     if chamfer.sets.is_empty() {
         error(
             findings,
@@ -390,7 +390,7 @@ pub(super) fn check_chamfer(site: Site<'_>, chamfer: &Chamfer, findings: &mut Ve
     check_controls(site, &chamfer.controls, chamfer.sets.len(), findings);
 }
 
-pub(super) fn check_shell(site: Site<'_>, shell: &ShellFeature, findings: &mut Vec<Finding>) {
+pub(super) fn check_shell(site: Site<'_, '_>, shell: &ShellFeature, findings: &mut Vec<Finding>) {
     for (at, faces) in shell.faces.iter().enumerate() {
         let shared = shell.faces[..at]
             .iter()
@@ -412,7 +412,7 @@ pub(super) fn check_shell(site: Site<'_>, shell: &ShellFeature, findings: &mut V
     }
 }
 
-pub(super) fn check_draft(site: Site<'_>, draft: &Draft, findings: &mut Vec<Finding>) {
+pub(super) fn check_draft(site: Site<'_, '_>, draft: &Draft, findings: &mut Vec<Finding>) {
     if draft.sets.is_empty() {
         error(
             findings,
@@ -474,7 +474,7 @@ pub(super) fn check_draft(site: Site<'_>, draft: &Draft, findings: &mut Vec<Find
 
 pub(super) fn check_thicken(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     thicken: &Thicken,
     findings: &mut Vec<Finding>,
 ) {
@@ -488,7 +488,7 @@ pub(super) fn check_thicken(
 
 pub(super) fn check_offset(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     offset: &Offset,
     findings: &mut Vec<Finding>,
 ) {
@@ -506,7 +506,7 @@ pub(super) fn check_offset(
 
 pub(super) fn check_hole(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     hole: &Hole,
     findings: &mut Vec<Finding>,
 ) {
@@ -636,7 +636,7 @@ fn picks_no_datum_point(index: &DesignRecords<'_>, target: &PickTarget) -> bool 
 
 fn check_series(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     hole: &Hole,
     findings: &mut Vec<Finding>,
 ) {
@@ -718,7 +718,7 @@ fn check_series(
 }
 
 fn check_hole_shape(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     shape: &HoleShape,
     extent: Option<&Limit<crate::scalar::Length>>,
     findings: &mut Vec<Finding>,
@@ -762,7 +762,7 @@ fn check_hole_shape(
     }
 }
 
-fn check_bore(site: Site<'_>, bore: &Bore, findings: &mut Vec<Finding>) {
+fn check_bore(site: Site<'_, '_>, bore: &Bore, findings: &mut Vec<Finding>) {
     let cones = [&bore.near_chamfer, &bore.neck_chamfer, &bore.far_chamfer];
     let head_cone = match &bore.head {
         Some(HoleHead::Countersink(cone)) => Some(cone),
@@ -800,7 +800,7 @@ fn check_bore(site: Site<'_>, bore: &Bore, findings: &mut Vec<Finding>) {
     }
 }
 
-fn check_thread_spec(site: Site<'_>, spec: &ThreadSpec, findings: &mut Vec<Finding>) {
+fn check_thread_spec(site: Site<'_, '_>, spec: &ThreadSpec, findings: &mut Vec<Finding>) {
     site.bound(findings, |values| {
         let read = |diameter: Option<&Dimension<PositiveLength>>| {
             diameter
@@ -823,7 +823,7 @@ fn check_thread_spec(site: Site<'_>, spec: &ThreadSpec, findings: &mut Vec<Findi
 }
 
 fn check_face_edge_or_plane(
-    site: Site<'_>,
+    site: Site<'_, '_>,
     field: &str,
     selection: &crate::design::selection::SetSelection,
     findings: &mut Vec<Finding>,
@@ -843,7 +843,7 @@ fn check_face_edge_or_plane(
 
 pub(super) fn check_thread(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     thread: &Thread,
     findings: &mut Vec<Finding>,
 ) {
@@ -884,7 +884,7 @@ pub(super) fn check_thread(
 
 pub(super) fn check_emboss(
     index: &DesignRecords<'_>,
-    site: Site<'_>,
+    site: Site<'_, '_>,
     emboss: &Emboss,
     findings: &mut Vec<Finding>,
 ) {
@@ -894,7 +894,7 @@ pub(super) fn check_emboss(
     }
 }
 
-pub(super) fn check_dome(site: Site<'_>, dome: &Dome, findings: &mut Vec<Finding>) {
+pub(super) fn check_dome(site: Site<'_, '_>, dome: &Dome, findings: &mut Vec<Finding>) {
     if let Some(class) = picks::refused(&dome.faces, picks::is_face) {
         error(
             findings,
@@ -917,7 +917,7 @@ pub(super) fn check_dome(site: Site<'_>, dome: &Dome, findings: &mut Vec<Finding
     }
 }
 
-pub(super) fn check_decal(site: Site<'_>, decal: &Decal, findings: &mut Vec<Finding>) {
+pub(super) fn check_decal(site: Site<'_, '_>, decal: &Decal, findings: &mut Vec<Finding>) {
     if let Some(class) = picks::refused(&decal.faces, picks::is_face) {
         error(
             findings,

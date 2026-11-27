@@ -7,10 +7,11 @@
 use super::degrade::{face_users, naming, Unwritten};
 use super::{
     curve_reference_span, edge_span, flatten_curve, is_decoder_free_geometry_body, lifted_pcurve,
-    pcurve_orientation_context, rigid_placement, solved_curve, topology_edge_explicit_tolerance,
+    rigid_placement, solved_curve, topology_edge_explicit_tolerance, PcurveOrientationContext,
     TopologyIndex, UseDirection,
 };
 use crate::loss::IgesLossCode;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
@@ -827,15 +828,21 @@ pub(super) fn dissimilar_supports(ir: &CadIr) -> BTreeSet<String> {
 /// `procedural.reduced` note for each procedural carrier that the placement
 /// states by its solved form. Geometry that a body shares with a body under
 /// another transform is placed as a copy for each body.
-pub(super) fn placed_bodies(ir: &CadIr) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), Unwritten> {
+pub(super) fn placed_bodies<'ir>(
+    ctx: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<(Cow<'ir, CadIr>, Vec<LossNote>), Unwritten> {
     let separated = separated_bodies(ir)?;
-    match placed(separated.as_ref())? {
+    match placed(ctx, separated.as_ref())? {
         Some((placed, losses)) => Ok((Cow::Owned(placed), losses)),
         None => Ok((separated, Vec::new())),
     }
 }
 
-fn placed(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Unwritten> {
+fn placed(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<Option<(CadIr, Vec<LossNote>)>, Unwritten> {
     let placements = Placements::of(ir)?;
     if placements.bodies.is_empty() {
         return Ok(None);
@@ -941,7 +948,7 @@ fn placed(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Unwritten> {
                 waiting.push(position);
                 continue;
             }
-            let map = composite_map(ir, segments, &curve_maps).map_err(|reason| {
+            let map = composite_map(ctx, ir, segments, &curve_maps).map_err(|reason| {
                 failure(
                     curve.id.as_str(),
                     body,
@@ -1120,7 +1127,7 @@ fn placed(ir: &CadIr) -> Result<Option<(CadIr, Vec<LossNote>)>, Unwritten> {
             }
         }
     }
-    let against = against_edge_chains(ir, &reflected_loops)?;
+    let against = against_edge_chains(ctx, ir, &reflected_loops)?;
     let unparametric = |uses: &mut [PcurveUse]| {
         for use_ in uses {
             if pcurve_maps
@@ -1249,6 +1256,7 @@ fn loop_pcurves<'ir>(ir: &'ir CadIr, loop_: &'ir cadmpeg_ir::topology::Loop) -> 
 /// coedge's traversal, against its edge curve. A reflection makes each such
 /// coedge forward, so its chain must then run along the edge curve.
 fn against_edge_chains(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     loops: &BTreeMap<&str, &str>,
 ) -> Result<BTreeSet<String>, Unwritten> {
@@ -1287,17 +1295,18 @@ fn against_edge_chains(
             .ok_or_else(missing)?;
         let orientation = solved_curve(curve)
             .and_then(flatten_curve)
-            .and_then(|geometry| edge_span(&index, edge, &geometry))
+            .and_then(|geometry| edge_span(ctx, &index, edge, &geometry))
             .and_then(|span| {
-                pcurve_orientation_context(
-                    &index,
-                    &surface.geometry,
-                    span.start,
-                    span.end,
-                    UseDirection::traversed(coedge.sense),
-                    topology_edge_explicit_tolerance(&index, edge),
-                    coedge.id.as_str(),
-                )
+                PcurveOrientationContext {
+                    ctx,
+                    index: &index,
+                    surface: &surface.geometry,
+                    natural_start: span.start,
+                    natural_end: span.end,
+                    direction: UseDirection::traversed(coedge.sense),
+                    tolerance: topology_edge_explicit_tolerance(&index, edge),
+                    owner: coedge.id.as_str(),
+                }
                 .orientation(&coedge.pcurves)
             })
             .map_err(naming(coedge.id.as_str()))?;
@@ -1338,6 +1347,7 @@ fn flipped(ir: &CadIr, uses: &[PcurveUse]) -> Result<Vec<PcurveUse>, String> {
 /// The placed composite parameter of each composite parameter, which runs
 /// over the reference spans of the children in turn.
 fn composite_map(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     segments: &[cadmpeg_ir::geometry::CompositeCurveSegment],
     maps: &BTreeMap<String, (ParameterMap, &str)>,
@@ -1353,7 +1363,7 @@ fn composite_map(
         let geometry = solved_curve(child)
             .and_then(flatten_curve)
             .map_err(|error| error.to_string())?;
-        let span = curve_reference_span(ir, &segment.curve, &geometry)
+        let span = curve_reference_span(ctx, ir, &segment.curve, &geometry)
             .map_err(|error| error.to_string())?;
         let [start, end] = span.range.finite_components().map(FiniteReal::get);
         let (map, _) = maps

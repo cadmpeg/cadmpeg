@@ -13,6 +13,7 @@ mod design_parameters;
 mod design_v11;
 mod document_identity;
 mod emboss_operands;
+mod encode_sets;
 mod external_placement;
 mod f30_placements;
 mod fillet_projection;
@@ -243,6 +244,33 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&configured);
 }
 
+/// A `delta_state` header whose integer is mistagged leaves every state of
+/// the history unread, so the history partition is given up over its bytes.
+#[test]
+fn a_mistagged_delta_state_header_gives_up_the_history_partition() {
+    let mut smbh = synthetic_geometry_with_history_smbh();
+    let marker = b"\x0d\x0bdelta_state";
+    let second = smbh
+        .windows(marker.len())
+        .enumerate()
+        .filter(|(_, window)| *window == marker)
+        .nth(1)
+        .map(|(at, _)| at)
+        .expect("the history holds a second state");
+    let tag = second + marker.len();
+    assert_eq!(smbh[tag], 0x04, "the state id is an integer");
+    smbh[tag] = 0x0c;
+    let bytes = f3d_with_smbh(&smbh);
+
+    let decoded = decode(bytes.clone());
+    let head =
+        "part asm-history stream=\"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" offset=";
+    crate::test_support::charged_part(decoded.ir(), &decoded.report().losses, head, "");
+    assert!(f3d_native(decoded.ir()).asm_histories.is_empty());
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    crate::test_support::assert_pinned_refusal(bytes, head);
+}
+
 #[test]
 fn preserved_source_pipeline_applies_semantic_geometry_edits_without_losing_archive_entries() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
@@ -275,7 +303,7 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
     add_empty_f3d_native(&mut ir);
     let mut bytes = Vec::new();
     F3dCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(&ir, None))
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("source-less F3D encode");
     assert_eq!(
@@ -500,8 +528,8 @@ fn plan(
     request: TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     F3dCodec.plan(
-        EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity())),
-        request,
+        EncodeInput::new(result.ir(), fidelity.then(|| result.source_fidelity()))
+            .with_target(request),
     )
 }
 
@@ -651,10 +679,7 @@ fn the_patch_path_names_the_preserved_dialect() {
     );
 
     let plan = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(result.source_fidelity())),
-            TargetRequest::Unnamed,
-        )
+        .plan(EncodeInput::new(&edited, Some(result.source_fidelity())))
         .expect("an edited archive still preserves its dialect");
     assert!(matches!(
         plan.report().write_path(),

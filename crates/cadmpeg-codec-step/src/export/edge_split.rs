@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Preserve open edge topology at the representation uncertainty.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::{
@@ -27,7 +27,11 @@ pub(super) enum Split {
 
 /// How `edge` is written. An error is a decode-context or resource failure
 /// of the parameter search.
-pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Split, CodecError> {
+pub(super) fn midpoint(
+    index: &ModelIndex<'_>,
+    edge: &Edge,
+    ctx: &DecodeContext<'_>,
+) -> Result<Split, CodecError> {
     let Some(ends) = edge.ends.as_ref().filter(|ends| ends.start != ends.end) else {
         return Ok(Split::Whole);
     };
@@ -63,12 +67,9 @@ pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Split, Cod
     let [first, last] = match range {
         Some(range) => range,
         None => {
-            let arena = DecodeArena::new();
-            let policy = DecodePolicy::service();
-            let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0)?;
             let parameter = |point, seed| {
                 model_curve_parameter_near_point_in_index_with_tolerance(
-                    &ctx,
+                    ctx,
                     index,
                     curve_id,
                     point,
@@ -82,7 +83,9 @@ pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Split, Cod
             };
             let first = parameter(start, seeds[0])?;
             let last = parameter(end, seeds[1])?;
-            ctx.finish_session()?;
+            if let Some(limit) = ctx.resource_refusal() {
+                return Err(limit.into());
+            }
             let (Some(first), Some(last)) = (first, last) else {
                 return Ok(Split::Unsplittable);
             };
@@ -101,7 +104,7 @@ pub(super) fn midpoint(index: &ModelIndex<'_>, edge: &Edge) -> Result<Split, Cod
         return Ok(Split::Unsplittable);
     }
     let point = finite_or_refusal(model_curve_point_by_id(
-        EvaluationAdmission::Standard,
+        EvaluationAdmission::Write(ctx),
         index,
         curve_id,
         middle,

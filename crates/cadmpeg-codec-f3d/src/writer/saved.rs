@@ -3,13 +3,11 @@
 //! from the decode of its retained archive and the edits its `design`
 //! records state.
 
-use std::io::Cursor;
-
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::saved::{restore_history, saved_source, HistoryText};
 use cadmpeg_ir::codec::write::target::ResolvedWrite;
 use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::design::expr::ExpressionDialect;
 use cadmpeg_ir::design::units::Unit;
 use cadmpeg_ir::document::{CadIr, Model};
@@ -17,29 +15,27 @@ use cadmpeg_ir::features::parameters::DesignParameter;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::primitives::{configuration_targets, decoded_configurations, f3d_native};
+use crate::ids;
 use crate::loss::F3dLossCode;
-use crate::{ids, F3dCodec};
 
 /// `input`'s document with the arenas the CADIR wire omits restored from
 /// its retained archive, where it was read from CADIR JSON and `target` does
 /// not replay it unedited. A restore that the design edits refuse, or that
 /// fails for a reason other than a limit, leaves the document as read, which
-/// the generator writes from its `design` records, and adds the reason to
-/// `notes`. Where `target` does not replay the archive, the restore also
-/// charges the reason as `f3d:writer.history-unrestored` to `losses`; where it
-/// does, the patch of the same archive charges it.
+/// the generator writes from its `design` records, adds the reason to
+/// `notes`, and charges it as `f3d:writer.history-unrestored` to `losses`.
 pub(crate) fn restore(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     notes: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<CadIr>, CodecError> {
     let replays = target.entry().is_none() || target.preserves_source();
-    let Some(image) = saved_source(input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
+    let Some(image) = saved_source(ctx, input, ids::FILE_SOURCE_IMAGE_ID, replays)? else {
         return Ok(None);
     };
-    let restored = F3dCodec
-        .decode(&mut Cursor::new(image), &DecodeOptions::default())
+    let restored = super::decode_retained_source(image, *ctx.policy())
         .map_err(|failure| match failure {
             DecodeFailure::Codec(error) => error,
             other => CodecError::malformed(format!(
@@ -48,7 +44,7 @@ pub(crate) fn restore(
         })
         .and_then(|decoded| restore_history(input.ir, decoded.ir(), &FusionText))
         .and_then(|mut restored| {
-            reproject(&mut restored.ir)?;
+            reproject(ctx, &mut restored.ir)?;
             Ok(restored)
         });
     match restored {
@@ -59,12 +55,12 @@ pub(crate) fn restore(
                  design edits: {}",
                 restored.unwritten.join("; ")
             );
-            unrestored(reason, replays, notes, losses);
+            unrestored(reason, notes, losses);
             Ok(None)
         }
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
         Err(error) => {
-            unrestored(error.to_string(), replays, notes, losses);
+            unrestored(error.to_string(), notes, losses);
             Ok(None)
         }
     }
@@ -72,8 +68,11 @@ pub(crate) fn restore(
 
 /// Replaces the configurations `ir` took from the archive's decode with the
 /// ones the decoder states for the configuration tables `ir` was read with.
-fn reproject(ir: &mut CadIr) -> Result<(), CodecError> {
-    ir.model.configurations = match f3d_native(ir)? {
+fn reproject(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<(), CodecError> {
+    ir.model.configurations = match f3d_native(ctx, ir)? {
         Some(native) => {
             decoded_configurations(
                 &native.design_configurations,
@@ -86,15 +85,12 @@ fn reproject(ir: &mut CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-/// Records why the history arenas were not restored, and charges it where
-/// the target does not replay the retained archive.
-fn unrestored(reason: String, replays: bool, notes: &mut Vec<String>, losses: &mut Vec<LossNote>) {
-    if !replays {
-        losses.push(F3dLossCode::WriterHistoryUnrestored.note(format!(
-            "the history arenas were not restored from the retained F3D archive ({reason}); \
-             the file is written from the design records"
-        )));
-    }
+/// Records and charges why the history arenas were not restored.
+fn unrestored(reason: String, notes: &mut Vec<String>, losses: &mut Vec<LossNote>) {
+    losses.push(F3dLossCode::WriterHistoryUnrestored.note(format!(
+        "the history arenas were not restored from the retained F3D archive ({reason}); \
+         the file is written from the design records"
+    )));
     notes.push(reason);
 }
 

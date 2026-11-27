@@ -203,8 +203,11 @@ fn run(
     let written = match read_back {
         Some(written) => written,
         None => std::sync::Arc::new(
-            crate::decode::decode_for_read_back(&output)
-                .map_err(|error| format!("{label}: output does not decode: {error}"))?,
+            crate::decode::decode_for_read_back(
+                &output,
+                cadmpeg_core::decode::ResourceLimits::desktop(),
+            )
+            .map_err(|error| format!("{label}: output does not decode: {error}"))?,
         ),
     };
     let read = named(&written.ir().model.features, &job.feature);
