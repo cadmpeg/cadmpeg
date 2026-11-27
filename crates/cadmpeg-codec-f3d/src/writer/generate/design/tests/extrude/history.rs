@@ -484,29 +484,38 @@ fn every_kind_with_a_definition_writer_follows_the_marker_with_the_no_state_tail
     );
 }
 
-/// `ir` with an `f3d` namespace whose one native Design record is a Fusion
-/// Design type row: the writer writes the Design stream from its native
-/// records.
+/// `ir` with an `f3d` namespace whose native Design records are a Fusion
+/// Design type row and a record header: the writer writes the Design stream
+/// from its native records.
 fn with_a_native_design(mut ir: CadIr) -> CadIr {
+    use crate::records::decal::DesignRecordHeader;
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
-    crate::test_support::native_test::f3d_native_mut(&mut ir).design_types =
-        vec![SegmentType::try_new(
-            "f3d:generated/MetaStream.dat:design-type#0".into(),
-            SegmentTypeData {
-                byte_offset: 0,
-                module: "Fusion".to_owned(),
-                entities: crate::records::identity::ReferenceRun::unlocated(vec![1]),
-                type_guid: "11111111-2222-3333-4444-555555555555"
-                    .to_owned()
-                    .try_into()
-                    .expect("type GUID"),
-                type_guid_offset: 0,
-                base_type_guid: BaseTypeGuid::Absent,
-                version: 7,
-                version_offset: 0,
-            },
-        )
-        .expect("a Design type row")];
+    let mut native = crate::test_support::native_test::f3d_native_mut(&mut ir);
+    native.design_record_headers = vec![DesignRecordHeader {
+        id: "f3d:generated:record-header#1".into(),
+        record_index: 584,
+        class_tag: crate::records::references::DesignClassTag::try_from("269".to_owned())
+            .expect("class tag"),
+        byte_offset: 0,
+    }];
+    native.design_types = vec![SegmentType::try_new(
+        "f3d:generated/MetaStream.dat:design-type#0".into(),
+        SegmentTypeData {
+            byte_offset: 0,
+            module: "Fusion".to_owned(),
+            entities: crate::records::identity::ReferenceRun::unlocated(vec![1]),
+            type_guid: "11111111-2222-3333-4444-555555555555"
+                .to_owned()
+                .try_into()
+                .expect("type GUID"),
+            type_guid_offset: 0,
+            base_type_guid: BaseTypeGuid::Absent,
+            version: 7,
+            version_offset: 0,
+        },
+    )
+    .expect("a Design type row")];
+    drop(native);
     ir
 }
 
@@ -522,6 +531,7 @@ fn a_native_design_rolled_back_writes_the_chosen_form() {
             )),
             "{omitted}"
         );
+        assert!(!omitted.contains("arena `design_types`"), "{omitted}");
     };
 
     let (report, decoded, _) = write_bytes_as(&ir, MissingStateForm::HistoryTrue);

@@ -1174,6 +1174,12 @@ impl NeutralDesign<'_> {
         Ok(members)
     }
 
+    /// Whether the design writes a feature of the scope as a timeline item:
+    /// a `Sketch` item, a geometry item, or a rolled-back item.
+    pub(super) fn writes_features(&self) -> bool {
+        self.writes_sketches() || !self.item.items().is_empty() || !self.rolled.is_empty()
+    }
+
     /// Whether the design writes a `Sketch` item.
     pub(super) fn writes_sketches(&self) -> bool {
         !self.sketches.items.is_empty()

@@ -8,13 +8,15 @@ use std::io::{Seek, SeekFrom, Write};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::subset_lowering::{lower_subset_curves, SubsetLowering};
 use cadmpeg_ir::codec::write::{
-    ArenaDisposition, ArenaDispositions, MissingStateForm, NativeDispositions,
+    ArenaDisposition, ArenaDispositions, MissingStateForm, NativeDisposition, NativeDispositions,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
-use crate::writer::primitives::{configuration_targets, decoded_configurations, f3d_native};
+use crate::writer::primitives::{
+    configuration_targets, decoded_configurations, f3d_native, projection,
+};
 mod attributes;
 pub(in crate::writer) mod configuration_root;
 mod configuration_table;
@@ -31,12 +33,12 @@ mod smbh;
 use preconditions::{
     body_members_naming, replaced_by_stamp, shadowing_record_headers, shared_body_visibilities,
     sketch_curve_links_naming, sketch_records_naming, typed_sketch_indices, unowned_sketch_records,
-    unreachable_record_headers, unwritable_link_records, unwritable_tolerant_coedges,
-    unwritable_tolerant_tails, validate_source_less_auxiliary_geometry,
-    validate_source_less_design_links, validate_source_less_design_ownership,
-    validate_source_less_history_graph, validate_source_less_procedural_carriers,
-    validate_source_less_recipes, validate_source_less_sketch_graph,
-    validate_source_less_topology_tolerances, StampMark,
+    unreachable_record_headers, unwritable_link_records, unwritable_sketch_records,
+    unwritable_tolerant_coedges, unwritable_tolerant_tails,
+    validate_source_less_auxiliary_geometry, validate_source_less_design_links,
+    validate_source_less_design_ownership, validate_source_less_history_graph,
+    validate_source_less_procedural_carriers, validate_source_less_recipes,
+    validate_source_less_sketch_graph, validate_source_less_topology_tolerances, StampMark,
 };
 use presentation::{BodySelection, GeneratedDesignRegistry};
 use records::{encode_design_bulkstream, encode_design_metastream};
@@ -82,7 +84,7 @@ pub(super) fn write_new(
     let mut reduction = Reduction::new(lowered.as_ref(), missing_states);
     reduction.reduce_unlowered_subsets(unlowered);
     reduction.prepare()?;
-    let (mut staged, mut coverage, design_losses) = loop {
+    let (mut staged, mut coverage, design_losses, regenerated_parameters) = loop {
         let mut staged = tempfile::tempfile()?;
         match attempt(
             reduction.ir(),
@@ -93,7 +95,11 @@ pub(super) fn write_new(
             reduction.dropped(),
             &mut staged,
         ) {
-            Ok((coverage, losses)) => break (staged, coverage, losses),
+            Ok(Attempted {
+                coverage,
+                losses,
+                regenerated_parameters,
+            }) => break (staged, coverage, losses, regenerated_parameters),
             Err(failure) => reduction.degrade(failure, writes_alone)?,
         }
     };
@@ -113,7 +119,10 @@ pub(super) fn write_new(
         .ok()
         .flatten()
         .is_some_and(|design| design.rolls_back());
-    let (mut losses, native) = reduction.finish();
+    let (mut losses, mut native) = reduction.finish();
+    if regenerated_parameters {
+        native.arena("f3d", "design_parameters", NativeDisposition::Regenerated);
+    }
     losses.extend(staged_loss);
     losses.extend(design_losses);
     Ok(Generated {
@@ -165,8 +174,7 @@ fn encode_brep(
 /// the form `missing_states` names; `fallback` names the parts of the design
 /// scope's form dropped after a failure; `dropped` holds the keys of the
 /// dropped records, which no written record names. A failure
-/// names the stage that failed. Returns the arena coverage and the losses of
-/// the design scope's records.
+/// names the stage that failed.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
     write_design: bool,
@@ -175,7 +183,7 @@ fn attempt<W: Write + Seek>(
     fallback: &design::Fallback,
     dropped: &DroppedRecords,
     staged: W,
-) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
+) -> Result<Attempted, Failure> {
     #[cfg(test)]
     if let Some(error) = write_neutral.then(design::requested_test_failure).flatten() {
         return Err(Failure::neutral_design(error));
@@ -213,9 +221,6 @@ fn attempt<W: Write + Seek>(
                 list.record_reference = None;
             }
         }
-    }
-    if write_design && records::holds_parameter_records(&native) {
-        return Err(Failure::parameter_records());
     }
     let stamped = neutral
         .as_ref()
@@ -289,6 +294,7 @@ fn attempt<W: Write + Seek>(
     if write_design {
         if let Some(unwritable) = unowned_sketch_records(&native)
             .or_else(|| sketch_records_naming(&native, &gone))
+            .or_else(|| unwritable_sketch_records(&native))
             .or_else(|| shadowing_record_headers(&native))
             .or_else(|| unreachable_record_headers(&native))
         {
@@ -316,6 +322,9 @@ fn attempt<W: Write + Seek>(
         "writes these bodies as visible: the source did not record their visibility",
         std::mem::take(&mut design_registry.guessed_visible),
     );
+    let member_runs = write_design
+        .then(|| records::member_run_loss(&native))
+        .flatten();
     if let Some(mut design) = if timeline { neutral.take() } else { None } {
         let snapshot = if body_less {
             None
@@ -352,7 +361,11 @@ fn attempt<W: Write + Seek>(
                 "the history-true design holds no body at its timeline marker, so the archive stores no B-rep stream and these geometry records were not written: {}",
                 reduce::geometry_records_by_arena(&target.geometry).join("; ")
             )));
-            return Ok((coverage, losses));
+            return Ok(Attempted {
+                coverage,
+                losses,
+                regenerated_parameters: false,
+            });
         }
         losses.extend(unstated_visibility);
         losses.extend(cadmpeg_ir::codec::write::value_unwritable(
@@ -365,7 +378,11 @@ fn attempt<W: Write + Seek>(
                 .filter(|body| body.visible == Some(false))
                 .map(|body| body.id.to_string()),
         ));
-        return Ok((coverage, losses));
+        return Ok(Attempted {
+            coverage,
+            losses,
+            regenerated_parameters: false,
+        });
     }
     let mut neutral_records = None;
     let parameter_records = match (neutral.as_mut(), &native_parameters) {
@@ -393,13 +410,21 @@ fn attempt<W: Write + Seek>(
         } else {
             decoded.configurations.as_slice()
         };
-        let (written, losses) = configuration_table::regenerate(
+        let (mut written, losses) = configuration_table::regenerate(
             &native.design_configurations,
             &decoded,
             neutral,
             &targets,
         )
         .map_err(Failure::design)?;
+        // The written Design stream holds no feature scope and no parameter
+        // owner, so the written tables read back without their targets.
+        let held = crate::design::configurations::ConfigurationTargets {
+            owners: &[],
+            scopes: &[],
+            ..targets
+        };
+        written.projection = projection(&written.documents, &held).map_err(Failure::design)?;
         let plan = configuration_root::plan(
             target,
             &native.design_configurations,
@@ -410,7 +435,7 @@ fn attempt<W: Write + Seek>(
         table_losses = losses;
         table_losses.extend(
             written
-                .read_back(plan.active(), &targets)
+                .read_back(plan.active(), &held)
                 .map_err(Failure::design)?,
         );
         let names = configuration_entry_names(&written.documents);
@@ -471,33 +496,51 @@ fn attempt<W: Write + Seek>(
         },
     )
     .map_err(Failure::archive)?;
+    let mut native_losses = Vec::new();
     let parameters = match native_parameters {
-        Some(design::parameters::ParameterSource::Native) => ArenaDisposition::Written,
+        Some(design::parameters::ParameterSource::Native(parameters)) => {
+            native_losses = parameters.into_losses();
+            ArenaDisposition::Written
+        }
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
             let mut losses = plan.into_losses();
             losses.extend(unstated_visibility);
+            losses.extend(member_runs);
             losses.extend(configuration_losses);
-            return Ok((
-                coverage(
+            return Ok(Attempted {
+                coverage: coverage(
                     write_design,
                     ArenaDisposition::Reported,
                     false,
                     ArenaDisposition::Written,
                 ),
                 losses,
-            ));
+                regenerated_parameters: true,
+            });
         }
         None if neutral.is_some() => ArenaDisposition::Reported,
         None => ArenaDisposition::Dropped,
     };
     let written = neutral.is_some();
     let mut losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
+    losses.extend(native_losses);
     losses.extend(unstated_visibility);
+    losses.extend(member_runs);
     losses.extend(configuration_losses);
-    Ok((
-        coverage(write_design, parameters, written, ArenaDisposition::Written),
+    Ok(Attempted {
+        coverage: coverage(write_design, parameters, written, ArenaDisposition::Written),
         losses,
-    ))
+        regenerated_parameters: false,
+    })
+}
+
+/// What one attempt wrote: the arena coverage, the losses of the design
+/// scope's records, and whether the native parameter records were
+/// regenerated from the design scope's parameters.
+struct Attempted {
+    coverage: ArenaDispositions,
+    losses: Vec<LossNote>,
+    regenerated_parameters: bool,
 }
 
 /// The snapshot stream of a Base Feature design: the B-rep stream of

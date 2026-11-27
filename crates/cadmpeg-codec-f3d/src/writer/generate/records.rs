@@ -148,24 +148,19 @@ pub(super) fn native_tolerant_coedge_extension(
     }
 }
 
-/// Whether `native` holds a Design parameter record that the source-less
-/// Design stream has no form for.
-pub(super) fn holds_parameter_records(native: &F3dNative) -> bool {
-    !native.design_parameter_companions.is_empty()
-        || !native.design_dimension_annotation_frames.is_empty()
-        || !native.design_dimension_presentation_frames.is_empty()
-        || !native.design_face_source_groups.is_empty()
-        || !native.design_dimension_locus_pairs.is_empty()
-        || !native.design_dimension_locus_groups.is_empty()
-        || !native.design_dimension_null_locus_pairs.is_empty()
-        || !native.design_dimension_recipe_records.is_empty()
-        || !native.design_parameter_owners.is_empty()
-        || !native.design_parameter_scopes.is_empty()
-        || !native.design_sketch_placements.is_empty()
-        || native
+/// The sketch headers whose member run the written Design stream leaves
+/// out: the written header form stores the reference list and the
+/// base-record slot.
+pub(super) fn member_run_loss(native: &F3dNative) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    cadmpeg_ir::codec::write::value_unwritable(
+        "F3D",
+        "writes these sketch headers without their member run: the written header form stores the reference list and the base-record slot",
+        native
             .design_entity_headers
             .iter()
-            .any(|header| header.member_values().next().is_some())
+            .filter(|header| header.member_values().next().is_some())
+            .map(|header| header.id.clone()),
+    )
 }
 
 pub(super) fn encode_design_bulkstream(
@@ -450,27 +445,36 @@ fn primary_record_u64(
     })
 }
 
+/// A parameter record in the user form the Design stream writes, with its
+/// family discriminator, source ordinal, expression and value in database
+/// units.
+pub(super) struct UserParameter<'a> {
+    pub(super) record: &'a crate::records::parameters::DesignParameter,
+    pub(super) family_discriminator: crate::records::parameters::DesignParameterDiscriminator,
+    pub(super) source_ordinal: u32,
+    pub(super) expression: &'a str,
+    pub(super) evaluated: f64,
+}
+
 /// The document parameters as Design records whose tails name the parameter
 /// collection `collection_record_index`.
 pub(super) fn encode_document_parameters(
-    parameters: &[crate::records::parameters::DesignParameter],
+    parameters: &[UserParameter<'_>],
     collection_record_index: u32,
 ) -> Result<ParameterRecords, CodecError> {
     let mut out = Vec::new();
     let mut parameter_indices = std::collections::BTreeSet::new();
     let mut parameter_ordinals = std::collections::BTreeSet::new();
-    for parameter in parameters {
-        let crate::records::parameters::DesignParameterSource::User {
-            family_discriminator: Some(family_discriminator),
-            ..
-        } = parameter.source()
-        else {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D owned Design parameter records are not writable".into(),
-            ));
-        };
+    for UserParameter {
+        record: parameter,
+        family_discriminator,
+        source_ordinal,
+        expression,
+        evaluated,
+    } in parameters
+    {
         if !parameter_indices.insert(parameter.record_index)
-            || !parameter_ordinals.insert(parameter.source_ordinal)
+            || !parameter_ordinals.insert(*source_ordinal)
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} duplicates a record index or source ordinal",
@@ -484,12 +488,12 @@ pub(super) fn encode_document_parameters(
         // (empty when none), the ordinal, the null owner, the expression, the
         // ten-byte trailer with the document flag, and the empty text value.
         out.extend_from_slice(&[0; 11]);
-        out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());
+        out.extend_from_slice(&family_discriminator.code().to_le_bytes());
         out.push(0);
         native_lp_utf16(&mut out, parameter.comment().unwrap_or_default())?;
-        out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
+        out.extend_from_slice(&source_ordinal.to_le_bytes());
         out.push(0);
-        native_lp_utf16(&mut out, parameter.expression())?;
+        native_lp_utf16(&mut out, expression)?;
         out.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         native_lp_utf16(&mut out, "User Parameter")?;
         out.extend_from_slice(&0u32.to_le_bytes());
@@ -499,7 +503,7 @@ pub(super) fn encode_document_parameters(
             out.extend_from_slice(&0u32.to_le_bytes());
         }
         native_lp_utf16(&mut out, parameter.name())?;
-        out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
+        out.extend_from_slice(&evaluated.to_le_bytes());
         out.extend_from_slice(&[0, 1]);
         out.extend_from_slice(&collection_record_index.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
@@ -508,7 +512,7 @@ pub(super) fn encode_document_parameters(
         bytes: out,
         indices: parameters
             .iter()
-            .map(|parameter| parameter.record_index)
+            .map(|parameter| parameter.record.record_index)
             .collect(),
     })
 }

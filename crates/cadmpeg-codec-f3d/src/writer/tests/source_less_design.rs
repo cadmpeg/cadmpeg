@@ -1065,7 +1065,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         &source_less,
         None,
         "export/native.records-omitted",
-        "share record index 600",
+        "of sketch records that the Design type registration of their class tag does not name",
     );
     f3d_native_mut(&mut source_less).sketch_points[0].record_index = 100;
     let round_trip = F3dCodec
