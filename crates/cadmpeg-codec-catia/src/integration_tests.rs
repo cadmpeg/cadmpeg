@@ -27,6 +27,7 @@ use crate::variant::Variant;
 use crate::CatiaCodec;
 
 mod chart_domains;
+mod give_ups;
 mod owned_sheet;
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {

@@ -212,8 +212,8 @@ fn discover(
             &primary,
             &typed_primary,
         )
+        .expect("the admission charges its losses")
     });
-    let admitted = admitted.unwrap();
     (admitted.occurrences, admitted.losses, admitted.superseded)
 }
 

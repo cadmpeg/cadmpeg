@@ -161,13 +161,38 @@ impl GivenUpFrame {
     }
 }
 
-/// Gives up each frame in `frames` as a part.
+/// Gives up each frame in `frames` as a part. Frames that start at one
+/// offset of one stream are one part, whose stub id the stream and offset
+/// mint: the part spans the longest of them, its loss states the text of
+/// every frame in the order the passes gave them, and it is unreadable when
+/// any frame is.
 pub(crate) fn give_up_frames(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     frames: impl IntoIterator<Item = GivenUpFrame>,
 ) -> Result<Vec<GivenUpPart>, CodecError> {
-    frames
+    let mut merged: Vec<GivenUpFrame> = Vec::new();
+    let mut at = std::collections::HashMap::new();
+    for frame in frames {
+        match at.entry((frame.stream.clone(), frame.start)) {
+            std::collections::hash_map::Entry::Occupied(slot) => {
+                let kept: &mut GivenUpFrame = &mut merged[*slot.get()];
+                kept.end = kept.end.max(frame.end);
+                if frame.cause == Cause::Unreadable {
+                    kept.cause = Cause::Unreadable;
+                }
+                if !kept.error.contains(&frame.error) {
+                    kept.error.push_str("; ");
+                    kept.error.push_str(&frame.error);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(merged.len());
+                merged.push(frame);
+            }
+        }
+    }
+    merged
         .into_iter()
         .map(|frame| frame.give_up(ctx, scan))
         .collect()
@@ -340,6 +365,42 @@ mod tests {
         let (cause, text) = frame.reason();
         assert_eq!(cause, Cause::Undecoded);
         assert!(text.contains("synthetic point failure"), "{text}");
+    }
+
+    /// Two passes that give up one frame start mint one part id; the part
+    /// spans the longer frame, names both texts, and is unreadable when one
+    /// pass shows a format break.
+    #[test]
+    fn two_frames_at_one_start_give_up_one_part_naming_both_causes() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        const DESIGN: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let archive =
+            crate::test_support::body_map_test::f3d_with_breps_and_design(&[], &[0x5a; 64], &[]);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+        let scan = crate::container::scan(&ctx, root).unwrap();
+        let mut frames = Vec::new();
+        RecordFrame::new(DESIGN, 8, 24).give_up(Cause::Undecoded, "first cause", &mut frames);
+        RecordFrame::new(DESIGN, 8, 40).give_up(Cause::Unreadable, "second cause", &mut frames);
+        let parts = super::give_up_frames(&ctx, &scan, frames).unwrap();
+        let [part] = parts.as_slice() else {
+            panic!("one part for one frame start: {}", parts.len());
+        };
+        let loss = part.loss();
+        assert_eq!(loss.code, record_unreadable_kind());
+        assert!(
+            loss.message.starts_with(&format!(
+                "part design-record stream=\"{DESIGN}\" offset=8 length=32 "
+            )),
+            "{}",
+            loss.message
+        );
+        assert!(
+            loss.message.contains("first cause") && loss.message.contains("second cause"),
+            "{}",
+            loss.message
+        );
     }
 
     #[test]

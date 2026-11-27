@@ -681,3 +681,36 @@ fn a_tail_gains_the_wrapper_s_dropped_and_marked_records_in_order() {
         ("t:a:rec#1/s", "t:r:rec#1/s")
     );
 }
+
+#[test]
+fn a_part_and_a_record_name_the_records_they_mark_sorted() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).expect("root");
+    let part = Part::new(
+        "synthetic",
+        "face",
+        root.child(4, 18).expect("extent"),
+        [ArenaClass::Model],
+    )
+    .dropping([identity("t:m:face#3")])
+    .marking([identity("t:m:shell#9"), identity("t:m:shell#2")]);
+    let id = part.id().expect("part id");
+    let given_up = ctx
+        .give_up_part(part, Cause::Unreadable, CodecError::malformed("damaged"))
+        .expect("given up");
+    assert_eq!(
+        given_up.loss().message,
+        format!(
+            "part face stream=\"\" offset=4 length=14 record={id}: malformed container: damaged; \
+             dropped=[t:m:face#3]; marked=[t:m:shell#2, t:m:shell#9]"
+        )
+    );
+    assert_eq!(
+        super::GivenUpRecord::new(identity("t:m:loop#5"), Cause::Unreadable, "bad")
+            .marking([identity("t:m:face#4"), identity("t:m:face#4")])
+            .loss()
+            .message,
+        "record t:m:loop#5 given up: bad; dropped=[]; marked=[t:m:face#4]"
+    );
+}

@@ -26,7 +26,8 @@ fn table() -> Result<Tables, cadmpeg_core::CodecError> {
         &ctx,
         [1; 3],
         bytes.each_ref().map(|bytes| View::over_retained(bytes)),
-    )?;
+    )
+    .map_err(|(_, error)| error)?;
     Ok(Tables {
         id: "inventor:drawing:reference-tables#generated".into(),
         segment_token: cadmpeg_ir::identity_key!("generated"),
@@ -78,29 +79,33 @@ fn every_reference_width_refuses_short_long_and_wrong_count_forms_as_unread() ->
             } else {
                 invalid.payloads[index].pop();
             }
-            assert!(parse(
-                &ctx,
-                invalid.counts,
-                invalid
-                    .payloads
-                    .each_ref()
-                    .map(|bytes| View::over_retained(bytes))
-            )
-            .is_err_and(|error| matches!(error, CodecError::NotImplemented(_))));
+            assert!(matches!(
+                parse(
+                    &ctx,
+                    invalid.counts,
+                    invalid
+                        .payloads
+                        .each_ref()
+                        .map(|bytes| View::over_retained(bytes))
+                ),
+                Err((at, CodecError::NotImplemented(_))) if at == index
+            ));
             assert!(!invalid.valid(&ctx)?);
         }
         for count in [0, 2, u32::MAX] {
             let mut invalid = valid.clone();
             invalid.counts[index] = count;
-            assert!(parse(
-                &ctx,
-                invalid.counts,
-                invalid
-                    .payloads
-                    .each_ref()
-                    .map(|bytes| View::over_retained(bytes))
-            )
-            .is_err_and(|error| matches!(error, CodecError::NotImplemented(_))));
+            assert!(matches!(
+                parse(
+                    &ctx,
+                    invalid.counts,
+                    invalid
+                        .payloads
+                        .each_ref()
+                        .map(|bytes| View::over_retained(bytes))
+                ),
+                Err((at, CodecError::NotImplemented(_))) if at == index
+            ));
             assert!(!invalid.valid(&ctx)?);
         }
     }
@@ -117,7 +122,8 @@ fn unresolved_reference_words_and_counts_remain_exact_native_fields() -> TestRes
             &ctx,
             [1; 3],
             bytes.each_ref().map(|bytes| View::over_retained(bytes)),
-        )?;
+        )
+        .map_err(|(_, error)| error)?;
         let mut table = table()?;
         table.payloads = bytes.map(Into::into);
         table.pairs = pairs;

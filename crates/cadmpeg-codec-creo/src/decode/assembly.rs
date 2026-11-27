@@ -37,10 +37,10 @@ pub(super) fn transfer_assembly_members(
     source_carriers: &SourceUnitCarriers,
 ) -> Result<(), CodecError> {
     let Some(table) = scan.assembly.as_ref() else {
-        if declares_assembly(&scan.framing.version_line) {
+        if declares_assembly(&scan.framing.version_line) && member_sections(scan).next().is_none() {
             transfer_losses.push(CreoLossCode::AssemblyMemberTableUnread.note(
-                "the header declares an assembly, but no NeuAsmSld component table was read; \
-                 no component occurrence transferred",
+                "the header declares an assembly, but no NeuAsmSld section holds a component \
+                 table; no component occurrence transferred",
             ));
         }
         return Ok(());
@@ -171,9 +171,10 @@ pub(super) fn transfer_assembly_members(
     Ok(())
 }
 
-/// Charges a table stop that [`give_up_unread_rows`] does not give up: a
-/// row count other than the declared one breaks the table framing, and a
-/// row stop outside any `NeuAsmSld` section leaves the rows unread.
+/// Charges a table stop that [`give_up_unread_tables`] does not give up: a
+/// row count other than the declared one, or a row that the section ends
+/// inside, breaks the table framing; a row of a form without a reading past
+/// the end of the table's `NeuAsmSld` section leaves the rows unread.
 fn record_table_stop(
     scan: &ContainerScan,
     table: &MemberTable,
@@ -183,9 +184,9 @@ fn record_table_stop(
         return;
     };
     let code = match stop.row {
-        None => CreoLossCode::AssemblyMemberTableIncomplete,
-        Some(_) if unread_rows(scan).is_none() => CreoLossCode::AssemblyMemberTableUnread,
-        Some(_) => return,
+        _ if rows_given_up(scan, table, stop) => return,
+        None | Some(RowFault::Broken) => CreoLossCode::AssemblyMemberTableIncomplete,
+        Some(RowFault::Unread) => CreoLossCode::AssemblyMemberTableUnread,
     };
     transfer_losses.push(code.note(table_stop(table, stop)));
 }
@@ -202,55 +203,93 @@ fn table_stop(table: &MemberTable, stop: &MemberTableStop) -> String {
     )
 }
 
-/// The component table, its stop at a row the grammar does not admit, and
-/// the bytes from that row to the end of its `NeuAsmSld` section.
-fn unread_rows<'a>(
-    scan: &'a ContainerScan,
-) -> Option<(&'a MemberTable, &'a MemberTableStop, &'a [u8])> {
-    let table = scan.assembly.as_ref()?;
-    let stop = table.stop.as_ref().filter(|stop| stop.row.is_some())?;
-    let bytes = scan
-        .framing
-        .sections
-        .iter()
-        .find(|section| {
-            section.name() == "NeuAsmSld"
-                && section.offset() <= stop.offset
-                && stop.offset < section.end()
-        })
-        .and_then(|section| scan.framing.data.get(stop.offset..section.end()))?;
-    Some((table, stop, bytes))
+/// The first `members` field of each `NeuAsmSld` section, as an offset in
+/// the framed data, with the section's region and end.
+fn member_sections<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> impl Iterator<Item = (usize, Vec<usize>, &'a [u8], usize)> + 'a {
+    scan.framing.sections.iter().filter_map(|section| {
+        if section.name() != "NeuAsmSld" {
+            return None;
+        }
+        let region = crate::container::section_region(&scan.framing.data, section)?;
+        let fields = crate::assembly::member_fields(region).collect::<Vec<_>>();
+        let first = section.offset() + *fields.first()?;
+        Some((first, fields, region, section.end()))
+    })
 }
 
-/// Gives up the component rows from the first row the grammar does not
-/// admit to the end of its `NeuAsmSld` section, as a `component-rows` part:
-/// unreadable where the row breaks the grammar, undecoded where it holds a
-/// value form without a reading. The decode retains no other copy of those
-/// bytes.
-pub(super) fn give_up_unread_rows(
+/// Whether [`give_up_unread_tables`] gives up the rows of the transferred
+/// `table` from its stop at a row: the stop lies inside the section that
+/// holds the table.
+fn rows_given_up(scan: &ContainerScan, table: &MemberTable, stop: &MemberTableStop) -> bool {
+    stop.row.is_some()
+        && member_sections(scan)
+            .any(|(field, _, _, end)| field == table.offset && stop.offset < end)
+}
+
+/// Gives up each component table of a `NeuAsmSld` section that the decode
+/// reads and does not transfer, from its `members` field to the end of the
+/// section, as a `component-table` part: the decode reads one table, so
+/// another one is undecoded. For the transferred table, gives up the rows
+/// from the first row the grammar does not admit to the end of the section,
+/// as a `component-rows` part: unreadable where the row breaks the grammar,
+/// undecoded where it holds a value form without a reading. The decode
+/// retains no other copy of those bytes.
+pub(super) fn give_up_unread_tables(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Option<GivenUpPart>, CodecError> {
-    let Some((table, stop, bytes)) = unread_rows(scan) else {
-        return Ok(None);
-    };
-    let part = Part::at(
-        "creo",
-        "component-rows",
-        u64_from_index(stop.offset),
-        bytes,
-        [ArenaClass::Model],
-    );
-    let cause = match stop.row {
-        Some(RowFault::Unread) => Cause::Undecoded,
-        _ => Cause::Unreadable,
-    };
-    ctx.give_up_part(
-        part,
-        cause,
-        super::give_up_error(cause, table_stop(table, stop)),
-    )
-    .map(Some)
+) -> Result<Vec<GivenUpPart>, CodecError> {
+    let mut given_up = Vec::new();
+    for (field, fields, region, end) in member_sections(scan) {
+        let (kind, offset, cause, why) =
+            match scan.assembly.as_ref().filter(|table| table.offset == field) {
+                Some(table) => match table
+                    .stop
+                    .as_ref()
+                    .filter(|stop| rows_given_up(scan, table, stop))
+                {
+                    Some(stop) => (
+                        "component-rows",
+                        stop.offset,
+                        match stop.row {
+                            Some(RowFault::Unread) => Cause::Undecoded,
+                            _ => Cause::Unreadable,
+                        },
+                        table_stop(table, stop),
+                    ),
+                    None => continue,
+                },
+                None => (
+                    "component-table",
+                    field,
+                    Cause::Undecoded,
+                    format!(
+                        "{}: {}",
+                        CreoLossCode::AssemblyMemberTableUnread.kind(),
+                        if fields.len() > 1 {
+                            "the section holds more than one members field"
+                        } else if crate::assembly::member_table(region).is_some() {
+                            "another NeuAsmSld section also holds a component table"
+                        } else {
+                            "the members field header is not the table array form the reader reads"
+                        }
+                    ),
+                ),
+            };
+        let Some(bytes) = scan.framing.data.get(offset..end) else {
+            continue;
+        };
+        let part = Part::at(
+            "creo",
+            kind,
+            u64_from_index(offset),
+            bytes,
+            [ArenaClass::Model],
+        );
+        given_up.push(ctx.give_up_part(part, cause, super::give_up_error(cause, why))?);
+    }
+    Ok(given_up)
 }
 
 /// The native address of a component row.

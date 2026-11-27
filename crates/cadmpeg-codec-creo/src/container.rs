@@ -2346,6 +2346,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut variables.rows {
             row.offset += section_offset;
         }
+        variables.rows_end += section_offset;
     }
     if let Some(segments) = &mut definition.segments {
         segments.offset += section_offset;
@@ -2388,6 +2389,9 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         relations.offset += section_offset;
         for row in &mut relations.rows {
             row.offset += section_offset;
+        }
+        if let Some(end) = &mut relations.rows_end {
+            *end += section_offset;
         }
         if let Some(table) = &mut relations.skamps {
             table.shift_offsets(section_offset);

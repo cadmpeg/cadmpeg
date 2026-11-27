@@ -50,8 +50,6 @@ pub(crate) enum PvzLossCode {
     StructurePropertyKeyDropped,
     /// The definitions do not have exactly one root.
     StructureRootAmbiguous,
-    /// Occurrence expansion stopped at its count or depth limit.
-    StructureOccurrenceTruncated,
     /// A placement basis is not a uniformly scaled rotation; the placement
     /// was kept as a general affine transform.
     StructurePlacementNotSimilarity,
@@ -134,7 +132,6 @@ impl PvzLossCode {
         Self::StructurePropertyAttributes,
         Self::StructurePropertyKeyDropped,
         Self::StructureRootAmbiguous,
-        Self::StructureOccurrenceTruncated,
         Self::StructurePlacementNotSimilarity,
         Self::StructurePlacementInvalid,
         Self::GeometryMemberMissing,
@@ -179,7 +176,6 @@ impl PvzLossCode {
             Self::StructurePropertyAttributes => "structure.property-attributes-undecoded",
             Self::StructurePropertyKeyDropped => "structure.property-key-dropped",
             Self::StructureRootAmbiguous => "structure.root-ambiguous",
-            Self::StructureOccurrenceTruncated => "structure.occurrence-expansion-truncated",
             Self::StructurePlacementNotSimilarity => "structure.placement-not-similarity",
             Self::StructurePlacementInvalid => "structure.placement-invalid",
             Self::GeometryMemberMissing => "geometry.member-missing",
@@ -230,7 +226,6 @@ impl PvzLossCode {
             | Self::StructureOccurrenceUndecoded
             | Self::StructurePropertyKeyDropped
             | Self::StructureRootAmbiguous
-            | Self::StructureOccurrenceTruncated
             | Self::StructurePlacementNotSimilarity
             | Self::StructurePlacementInvalid
             | Self::GeometryMemberMissing
@@ -276,7 +271,6 @@ impl PvzLossCode {
             }
             Self::StructureOccurrenceUndecoded
             | Self::StructureRootAmbiguous
-            | Self::StructureOccurrenceTruncated
             | Self::StructurePlacementInvalid => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::StructurePlacementNotSimilarity => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryMemberMissing | Self::GeometryMemberUnreferenced => {

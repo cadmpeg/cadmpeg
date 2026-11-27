@@ -103,11 +103,25 @@ fn requests_over_the_cap_are_counted_as_bounded() {
     let records = (0..=MAX_HISTORY_BODIES)
         .map(|index| record(BASE_TAG, &format!("base{index}"), Some(0), Some(7)))
         .collect::<Vec<_>>();
-    let mut outcome = Outcome::default();
-    let wants = wants(&records, &mut outcome);
+    let mut built = Built::default();
+    let requested = wants(&records, &mut built.outcome);
+    let wants = bound(requested, &mut built).expect("bound");
     assert_eq!(wants.len(), MAX_HISTORY_BODIES);
-    assert_eq!(outcome.requested, MAX_HISTORY_BODIES + 1);
-    assert_eq!(outcome.bounded, 1);
+    assert_eq!(built.outcome.requested, MAX_HISTORY_BODIES + 1);
+    assert_eq!(built.outcome.bounded, 1);
+    assert_eq!(
+        given_up(&built),
+        [("inventor:history-body:nest#h0008", Unbuilt::Bounded)]
+    );
+}
+
+/// The nests that `built` gives up, by identity.
+fn given_up(built: &Built) -> Vec<(&str, Unbuilt)> {
+    built
+        .unbuilt
+        .iter()
+        .map(|(id, why)| (id.as_str(), *why))
+        .collect()
 }
 
 // Extraction of one body from a decoded state.
@@ -212,7 +226,7 @@ fn a_procedural_carrier_without_a_cache_is_absent() {
             .expect("identity"),
         cache: None,
     };
-    assert!(matches!(extract_cube(&geometry), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Unsolved));
 }
 
 #[test]
@@ -220,7 +234,7 @@ fn a_carrier_of_unknown_shape_is_absent() {
     let mut geometry = cube();
     geometry.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-    assert!(matches!(extract_cube(&geometry), Extract::Absent));
+    assert!(matches!(extract_cube(&geometry), Extract::Unsolved));
 }
 
 #[test]
@@ -241,6 +255,7 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
     };
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let want = Want {
+        index: 3,
         record: 0,
         ordinal: 2,
         state_id: 44,
@@ -248,7 +263,7 @@ fn a_nest_moves_into_its_own_scope_and_validates_as_a_document() {
         role: Role::Split,
     };
     let consumer = feature("split");
-    let body = nest(&ctx, 3, &want, consumer.id.clone(), *topology).expect("nest");
+    let body = nest(&ctx, &want, consumer.id.clone(), *topology).expect("nest");
     assert_eq!(body.id.as_str(), "inventor:history-body:nest#h0003");
     assert_eq!(body.consumed_by.as_ref(), Some(&consumer.id));
     assert!(body.produced_by.is_none());
@@ -387,6 +402,7 @@ fn a_body_key_that_the_older_state_lacks_gives_no_nest() {
     assert!(built.bodies.is_empty());
     assert_eq!(built.outcome.requested, 1);
     assert_eq!(built.outcome.undecoded, 1);
+    assert!(built.unbuilt.is_empty(), "{:?}", built.unbuilt);
 }
 
 #[test]
@@ -399,6 +415,10 @@ fn a_state_with_a_reference_to_no_slot_gives_no_nest() {
     );
     assert!(built.bodies.is_empty());
     assert_eq!(built.outcome.undecoded, 1);
+    assert_eq!(
+        given_up(&built),
+        [("inventor:history-body:nest#h0000", Unbuilt::Undecoded)]
+    );
 }
 
 #[test]
@@ -412,6 +432,10 @@ fn a_decoded_body_of_an_unprojected_feature_gives_no_nest() {
             unlinked: 1,
             ..Outcome::default()
         }
+    );
+    assert_eq!(
+        given_up(&built),
+        [("inventor:history-body:nest#h0000", Unbuilt::Unlinked)]
     );
 }
 
@@ -495,4 +519,55 @@ fn the_losses_name_each_count() {
         "{}",
         notes[1].message
     );
+}
+
+#[test]
+fn each_given_up_body_is_charged_by_its_nest() {
+    let nest = |index| nest_id(index).expect("nest id");
+    let notes = super::super::history_states::losses(&super::super::history_states::Projection {
+        schema_assumed: 0,
+        records: Vec::new(),
+        unread: None,
+        bodies: Built {
+            unbuilt: vec![
+                (nest(1), Unbuilt::NotClosed(Open::Edge)),
+                (nest(9), Unbuilt::Bounded),
+            ],
+            outcome: Outcome {
+                requested: 10,
+                open: [0, 0, 1],
+                bounded: 1,
+                ..Outcome::default()
+            },
+            ..Built::default()
+        },
+    });
+    let charges = notes
+        .iter()
+        .filter(|note| note.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
+        .map(|note| note.message.as_str())
+        .collect::<Vec<_>>();
+    let [closed, bounded] = charges.as_slice() else {
+        panic!("one charge per given-up body: {notes:#?}");
+    };
+    for (message, nest, code) in [
+        (
+            closed,
+            "h0001",
+            crate::loss::InventorLossCode::FeatureHistoryBodyNotClosed,
+        ),
+        (
+            bounded,
+            "h0009",
+            crate::loss::InventorLossCode::FeatureHistoryBodyBounded,
+        ),
+    ] {
+        assert!(
+            message.starts_with(&format!(
+                "record inventor:history-body:nest#{nest} given up: {}: ",
+                code.kind()
+            )),
+            "{message}"
+        );
+    }
 }

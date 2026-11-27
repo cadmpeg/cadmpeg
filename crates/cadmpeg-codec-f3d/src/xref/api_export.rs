@@ -63,20 +63,13 @@ pub(super) fn decode(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<Option<XrefTable>, CodecError> {
-    let Some(extension) = reference_extension(scan) else {
+    let Some(extension) = scan.manifest_reference_extension else {
         return Ok(None);
     };
+    if !extension.window().starts_with(&[0, 0, 0, 0, 1]) {
+        return Ok(None);
+    }
     parse(ctx, extension).map(Some).map_err(|error| error.0)
-}
-
-/// Whether the manifest stores a reference extension that holds a table.
-pub(super) fn declares_references(scan: &ContainerScan<'_>) -> bool {
-    reference_extension(scan).is_some()
-}
-
-fn reference_extension<'a>(scan: &ContainerScan<'a>) -> Option<View<'a>> {
-    scan.manifest_reference_extension
-        .filter(|extension| extension.window().starts_with(&[0, 0, 0, 0, 1]))
 }
 
 fn parse(ctx: &DecodeContext<'_>, mut view: View<'_>) -> Result<XrefTable, ReferenceError> {

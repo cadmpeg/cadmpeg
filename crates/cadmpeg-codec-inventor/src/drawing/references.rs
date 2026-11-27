@@ -50,27 +50,27 @@ pub(crate) struct Tables {
 }
 
 impl Tables {
+    /// The tables of metadata sections 7, 8, and 10, or the index in
+    /// `meta.tables.sections` of the section that does not read and its error.
     pub(super) fn read(
         ctx: &DecodeContext<'_>,
         token: &IdentityKey,
         meta: &SegmentMeta<'_>,
-    ) -> Result<Self, CodecError> {
-        let sections = [
-            &meta.tables.sections[6],
-            &meta.tables.sections[7],
-            &meta.tables.sections[9],
-        ];
+    ) -> Result<Self, (usize, CodecError)> {
+        let sections = SECTIONS.map(|index| &meta.tables.sections[index]);
         let counts = sections.map(|section| section.discriminator);
         let payloads = sections.map(|section| section.payload);
-        let (pairs, revisions, external) = parse(ctx, counts, payloads)?;
+        let (pairs, revisions, external) =
+            parse(ctx, counts, payloads).map_err(|(at, error)| (SECTIONS[at], error))?;
         let mut retained = [
             NativeBytes::default(),
             NativeBytes::default(),
             NativeBytes::default(),
         ];
-        for (target, payload) in retained.iter_mut().zip(payloads) {
-            let mut bytes =
-                ctx.alloc_filled(payload.remaining(), 0_u8, "retain drawing reference table")?;
+        for ((target, payload), index) in retained.iter_mut().zip(payloads).zip(SECTIONS) {
+            let mut bytes = ctx
+                .alloc_filled(payload.remaining(), 0_u8, "retain drawing reference table")
+                .map_err(|error| (index, error))?;
             bytes.copy_from_slice(payload.unread());
             *target = bytes.into();
         }
@@ -100,7 +100,7 @@ impl Tables {
             Ok((pairs, revisions, external)) => {
                 Ok(pairs == self.pairs && revisions == self.revisions && external == self.external)
             }
-            Err(error @ CodecError::ResourceLimit(_)) => Err(error),
+            Err((_, error @ CodecError::ResourceLimit(_))) => Err(error),
             Err(_) => Ok(false),
         }
     }
@@ -125,6 +125,10 @@ impl Tables {
 }
 
 type Parsed = (Vec<Pair>, Vec<Revision>, Vec<External>);
+
+/// The indices in the section list of the metadata sections 7, 8, and 10,
+/// which store the segment-pair, revision, and external-reference tables.
+const SECTIONS: [usize; 3] = [6, 7, 9];
 
 fn read_entries<T: Clone>(
     ctx: &DecodeContext<'_>,
@@ -154,11 +158,13 @@ fn read_entries<T: Clone>(
     Ok(entries)
 }
 
+/// The three tables, or the index in `payloads` of the table that does not
+/// read and its error.
 fn parse(
     ctx: &DecodeContext<'_>,
     counts: [u32; 3],
     payloads: [View<'_>; 3],
-) -> Result<Parsed, CodecError> {
+) -> Result<Parsed, (usize, CodecError)> {
     let pairs = read_entries(
         ctx,
         counts[0],
@@ -171,7 +177,8 @@ fn parse(
                 revision_id: reader::array(view, "drawing reference revision")?.into(),
             })
         },
-    )?;
+    )
+    .map_err(|error| (0, error))?;
     let revisions = read_entries(
         ctx,
         counts[1],
@@ -185,7 +192,8 @@ fn parse(
                 reference_count: reader::u16(view, "drawing revision reference count")?,
             })
         },
-    )?;
+    )
+    .map_err(|error| (1, error))?;
     let external = read_entries(
         ctx,
         counts[2],
@@ -199,7 +207,8 @@ fn parse(
                 header_id: reader::u16(view, "drawing external header identifier")?,
             })
         },
-    )?;
+    )
+    .map_err(|error| (2, error))?;
     Ok((pairs, revisions, external))
 }
 

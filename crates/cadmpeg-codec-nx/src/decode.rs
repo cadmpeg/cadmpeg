@@ -138,30 +138,17 @@ fn decode_scan(
 
     let mut admitted_entities = 0_u64;
     if ctx.container_only() {
-        let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, scan, &dialects)?;
+        let MetadataIr {
+            ir,
+            annotations,
+            unknowns,
+            losses: native_losses,
+            given_up,
+        } = build_metadata_ir(ctx, scan, &dialects)?;
         let mut body = build_container_body(scan, dialect_losses, notes);
         body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
         body.losses.extend(native_losses);
         report_untransferred_streams(scan, &mut body, TypedNative::ContainerOnly);
-        return decoded(
-            ctx,
-            decode_digest,
-            ir,
-            body,
-            annotations,
-            unknowns,
-            &mut admitted_entities,
-        );
-    }
-
-    if let Some((ir, body, annotations, unknowns, given_up)) = try_decode_geometry(
-        ctx,
-        scan,
-        &dialects,
-        &dialect_losses,
-        &notes,
-        &mut admitted_entities,
-    )? {
         let mut decoded = decoded(
             ctx,
             decode_digest,
@@ -175,11 +162,42 @@ fn decode_scan(
         return Ok(decoded);
     }
 
-    let (ir, annotations, unknowns, native_losses) = build_metadata_ir(ctx, scan, &dialects)?;
+    let refused = match try_decode_geometry(
+        ctx,
+        scan,
+        &dialects,
+        &dialect_losses,
+        &notes,
+        &mut admitted_entities,
+    )? {
+        Ok((ir, body, annotations, unknowns, given_up)) => {
+            let mut decoded = decoded(
+                ctx,
+                decode_digest,
+                ir,
+                body,
+                annotations,
+                unknowns,
+                &mut admitted_entities,
+            )?;
+            commit_given_up(ctx, &mut decoded, given_up)?;
+            return Ok(decoded);
+        }
+        Err(refused) => refused,
+    };
+
+    let MetadataIr {
+        ir,
+        annotations,
+        unknowns,
+        losses: native_losses,
+        mut given_up,
+    } = build_metadata_ir(ctx, scan, &dialects)?;
     let mut body = build_container_body(scan, dialect_losses, notes);
     body.losses.extend(native_losses);
+    given_up.extend(refused.given_up);
     report_untransferred_streams(scan, &mut body, TypedNative::Available);
-    decoded(
+    let mut decoded = decoded(
         ctx,
         decode_digest,
         ir,
@@ -187,7 +205,9 @@ fn decode_scan(
         annotations,
         unknowns,
         &mut admitted_entities,
-    )
+    )?;
+    commit_given_up(ctx, &mut decoded, given_up)?;
+    Ok(decoded)
 }
 
 fn decoded(
@@ -265,8 +285,7 @@ fn commit_given_up(
 }
 
 /// Gives up each container entry whose indexed object-model section search
-/// reached its work bound as an `om-entry` part. An entry larger than the
-/// retained-byte allowance keeps only its length and digest.
+/// reached its work bound as an `om-entry` part.
 fn give_up_bounded_om_entries(
     ctx: &DecodeContext<'_>,
     scan: &Scan<'_>,
@@ -300,17 +319,36 @@ fn give_up_bounded_om_entries(
         )
         .named(entry.name.clone())
         .in_stream(cadmpeg_ir::stream_name!("nx:container"));
-        let part =
-            if cadmpeg_core::decode::u64_from_index(bytes.len()) > ctx.retained_bytes_available() {
-                part.digest_only()
-            } else {
-                part
-            };
-        let part = ctx.give_up_part(part, Cause::Undecoded, CodecError::NotImplemented(why))?;
+        let part = ctx.give_up_part(
+            within_retained_ceiling(ctx, part, bytes.len()),
+            Cause::Undecoded,
+            CodecError::NotImplemented(why),
+        )?;
         let loss = part.commit(ctx, &mut decoded.ir, &mut decoded.source_fidelity)?;
         decoded.body.losses.push(loss);
     }
     Ok(())
+}
+
+/// `part`, whose bytes are `length` long, whole where the session's
+/// retained-byte ceiling leaves room for them, and as their length and digest
+/// otherwise.
+pub(crate) fn within_retained_ceiling<'a>(
+    ctx: &DecodeContext<'_>,
+    part: Part<'a>,
+    length: usize,
+) -> Part<'a> {
+    let length = cadmpeg_core::decode::u64_from_index(length);
+    let available = ctx.retained_bytes_available();
+    if length <= available {
+        return part;
+    }
+    part.digest_only().costing(format!(
+        "the session's retained-byte ceiling, with the caller's max_retained_bytes of {}, \
+         leaves {available} bytes for its {length} bytes, so the part keeps their length and \
+         digest",
+        ctx.policy().limits.max_retained_bytes
+    ))
 }
 
 fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native: TypedNative) {
@@ -402,19 +440,22 @@ impl Counts {
     }
 }
 
+/// The document of a decode that has no geometry, with the records and parts
+/// that its native model leaves out.
+struct MetadataIr {
+    ir: CadIr,
+    annotations: cadmpeg_ir::Annotations,
+    unknowns: Vec<UnknownRecord>,
+    losses: Vec<LossNote>,
+    given_up: Vec<GivenUpPart>,
+}
+
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
-) -> Result<
-    (
-        CadIr,
-        cadmpeg_ir::Annotations,
-        Vec<UnknownRecord>,
-        Vec<LossNote>,
-    ),
-    CodecError,
-> {
+) -> Result<MetadataIr, CodecError> {
+    let mut given_up = Vec::new();
     let mut unknowns = Vec::new();
     let mut ir = CadIr::decoded(source_meta(scan, dialects, None)?);
     ir.tolerances = cadmpeg_parasolid::precision::part_tolerances([]);
@@ -446,7 +487,9 @@ fn build_metadata_ir(
         )?;
     } else {
         let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
-        losses.extend(parsed.primary_losses());
+        let mut stream_parts = build::PendingParts::default();
+        build::give_up_unread(scan, &parsed, &mut stream_parts)?;
+        stream_parts.give_up(ctx, scan, |_| false, &mut given_up)?;
         let model = crate::native::model::NativeModel::extract(
             ctx,
             &scan.container,
@@ -454,7 +497,7 @@ fn build_metadata_ir(
             &mut parsed,
             None,
         )?;
-        crate::native::attach_annotations(
+        given_up.extend(crate::native::attach_annotations(
             ctx,
             &mut ir,
             &model,
@@ -462,9 +505,15 @@ fn build_metadata_ir(
             &mut annotations,
             &mut unknowns,
             &mut losses,
-        )?;
+        )?);
     }
-    Ok((ir, annotations.build(), unknowns, losses))
+    Ok(MetadataIr {
+        ir,
+        annotations: annotations.build(),
+        unknowns,
+        losses,
+        given_up,
+    })
 }
 
 fn build_container_body(

@@ -28,6 +28,7 @@ use crate::topology::{
 use crate::NxCodec;
 use cadmpeg_core::decode::View;
 
+mod give_ups;
 mod primary_edges;
 
 #[test]

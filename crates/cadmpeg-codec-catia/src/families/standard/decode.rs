@@ -1464,7 +1464,7 @@ fn associate_standard_freeform_e5_surfaces(
     let carrier_ids = standard_freeform_e5_carrier_ids(data);
 
     let mut surfaces = HashMap::<u32, Option<SurfaceGeometry>>::new();
-    for surface in crate::families::e5::records::e5_surfaces(data, refusal)? {
+    for surface in crate::families::e5::records::e5_surfaces(data, 0, refusal)? {
         if let Some(stored) = surfaces.get_mut(&surface.record_id) {
             if stored
                 .as_ref()
@@ -1620,6 +1620,9 @@ fn associate_standard_freeform_e5_rolling_ball_jets(
 
 #[derive(Debug, Clone)]
 struct StandardPopulationSelection {
+    /// The face row run the population takes, at its offsets in the main
+    /// data stream.
+    face_run: fbb::FbbFaceRun,
     spine: Vec<u8>,
     records: Vec<StandardSurfaceRecord>,
     supports: Vec<crate::families::standard::records::StandardCurveSupport>,
@@ -1657,6 +1660,7 @@ fn standard_population_selections(
             return Ok(None);
         };
         Ok(Some(StandardPopulationSelection {
+            face_run: layout.face_run,
             spine: spine.to_vec(),
             records: population.records,
             supports: population.supports,
@@ -1692,28 +1696,46 @@ pub(in crate::families) fn try_decode_standard(
         HashMap::new()
     };
     let e5_jets = crate::families::e5::records::e5_rolling_ball_jets(&scan.data);
-    match standard_population_selections(ctx, scan)? {
+    let selections = standard_population_selections(ctx, scan)?;
+    let output = match &selections {
         None => {
-            try_decode_standard_population(ctx, scan, None, refusal, &e5_jets, &surface_alias_tags)
+            try_decode_standard_population(ctx, scan, None, refusal, &e5_jets, &surface_alias_tags)?
         }
         Some((first, rest)) if rest.is_empty() => try_decode_standard_population(
             ctx,
             scan,
-            Some(&first),
+            Some(first),
             refusal,
             &e5_jets,
             &surface_alias_tags,
-        ),
+        )?,
         Some((first, rest)) => try_decode_standard_populations(
             ctx,
             scan,
-            &first,
-            &rest,
+            first,
+            rest,
             refusal,
             &e5_jets,
             &surface_alias_tags,
-        ),
-    }
+        )?,
+    };
+    let Some(mut output) = output else {
+        return Ok(None);
+    };
+    let Some(main) = scan.main_data_stream() else {
+        return Ok(Some(output));
+    };
+    let taken: Vec<fbb::FbbFaceRun> = match &selections {
+        None => fbb::selected_standard_run(ctx, main)?.into_iter().collect(),
+        Some((first, rest)) => std::iter::once(first)
+            .chain(rest)
+            .map(|selection| selection.face_run)
+            .collect(),
+    };
+    output
+        .given_up
+        .extend(fbb::give_up_untaken_face_rows(ctx, main, &taken)?);
+    Ok(Some(output))
 }
 
 fn retain_standard_population_model(ir: &mut CadIr) {
@@ -1771,6 +1793,26 @@ fn retain_standard_population_model(ir: &mut CadIr) {
         pmi,
         presentation_layers,
     );
+}
+
+/// Move the charges of a population's give-ups, and the notes naming records
+/// dropped with them, into the merged report under the population's scope.
+fn merge_population_give_ups(
+    merged: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    scope: &str,
+) -> Result<(), CodecError> {
+    for mut loss in losses {
+        if cadmpeg_ir::unknown::part::gives_up(&loss.code)
+            || cadmpeg_ir::unknown::part::needs(&loss).is_some()
+        {
+            cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |id| {
+                Ok(rescope_standard_id(id, scope))
+            })?;
+            merged.push(loss);
+        }
+    }
+    Ok(())
 }
 
 fn rescope_standard_id(text: &str, scope: &str) -> String {
@@ -1933,14 +1975,8 @@ fn try_decode_standard_populations(
         if output.report.transfer.geometry_transferred() {
             merged.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
         }
-        for mut loss in output.report.losses {
-            if cadmpeg_ir::unknown::part::gives_up(&loss.code) {
-                cadmpeg_ir::unknown::part::rescope_give_up(&mut loss, |id| {
-                    Ok(rescope_standard_id(id, &scope))
-                })?;
-                merged.report.losses.push(loss);
-            }
-        }
+        merge_population_give_ups(&mut merged.report.losses, output.report.losses, &scope)?;
+        merged.given_up.extend(output.given_up);
     }
 
     for (key, value) in population_coverage {
@@ -2651,16 +2687,28 @@ fn try_decode_standard_population(
     }
     let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
     let mut topology_annotations = annotations.copy_transaction();
-    match attach_standard_faces(
+    let faces_built = admitted!(attach_standard_faces(
         ctx,
         &mut topology_ir,
         &mut topology_annotations,
         &face_bindings,
         standard_spine,
         &mut admission,
-    ) {
-        Ok(()) => {}
-        Err(error) => return Some(Err(error)),
+    ));
+    let mut given_up = Vec::new();
+    if !faces_built {
+        let run = match selection {
+            Some(selection) => Some(selection.face_run),
+            None => admitted!(fbb::selected_standard_run(ctx, default_spine)),
+        };
+        if let Some(run) = run {
+            given_up = admitted!(fbb::give_up_face_rows(
+                ctx,
+                default_spine,
+                run.rows(),
+                "the decode builds no face for the face rows of the run the population takes",
+            ));
+        }
     }
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
@@ -3033,7 +3081,7 @@ topology_failure.map(StandardTopologyFailure::message));
         report,
         annotations,
         unknowns,
-        given_up: Vec::new(),
+        given_up,
         admitted_model_entities: admission.admitted(),
     }))
     })()
@@ -3904,7 +3952,7 @@ fn merge_standard_evidence_part<T: PartialEq>(
 }
 
 /// Attach standard analytic carriers to faces only when every FBB face has a
-/// decoded carrier and its stored sense byte.
+/// decoded carrier and its stored sense byte, and answer whether it did.
 fn attach_standard_faces(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -3912,10 +3960,10 @@ fn attach_standard_faces(
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
     admission: &mut FamilyEntityAdmission<'_, '_>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<bool, cadmpeg_core::CodecError> {
     let face_count = fbb::standard_face_count(ctx, brep)?.unwrap_or_default();
     if face_count == 0 || face_count != bindings.len() {
-        return Ok(());
+        return Ok(false);
     }
     let body_id = BodyId::mint("catia:standard:body#0".to_owned())
         .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4001,7 +4049,7 @@ fn attach_standard_faces(
     annotations.derived(&shell_id, "region")?;
     admission.charge()?;
     ir.geometry.shells.push(Shell::new(shell_id, region_id));
-    Ok(())
+    Ok(true)
 }
 
 fn partition_standard_face_components(

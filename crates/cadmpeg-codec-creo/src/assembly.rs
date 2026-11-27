@@ -191,6 +191,16 @@ const ROW_CONTINUES: u8 = 0xe3;
 /// Terminator after the final row.
 const TABLE_ENDS: u8 = 0xf4;
 
+/// The offset of each `members` field in `payload`.
+pub(crate) fn member_fields(payload: &[u8]) -> impl Iterator<Item = usize> + '_ {
+    let mut next = cadmpeg_core::bytes::find(payload, MEMBERS_FIELD);
+    std::iter::from_fn(move || {
+        let at = next?;
+        next = cadmpeg_core::bytes::find_from(payload, MEMBERS_FIELD, at + 1);
+        Some(at)
+    })
+}
+
 fn unique_field(payload: &[u8]) -> Option<usize> {
     let first = cadmpeg_core::bytes::find(payload, MEMBERS_FIELD)?;
     cadmpeg_core::bytes::find_from(payload, MEMBERS_FIELD, first + 1)

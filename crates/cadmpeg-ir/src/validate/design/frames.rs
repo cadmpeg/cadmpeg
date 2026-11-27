@@ -101,26 +101,16 @@ pub(super) fn values_frame(
 /// a transform: the container's object is a definition of its own, and its
 /// `placement` is the occurrence's transform (§5.2).
 fn linked(records: &DesignRecords<'_>, definition: &str) -> bool {
-    let model = &records.ir.model;
-    let placed = model
-        .occurrences
-        .iter()
-        .any(|occurrence| occurrence.prototype.as_str() == definition);
-    let Some(record) = model
-        .product_definitions
-        .iter()
-        .find(|record| record.id.as_str() == definition)
-    else {
+    if !records.is_placed(definition) {
+        return false;
+    }
+    let Some(record) = records.definitions.get(definition).copied() else {
         return false;
     };
-    placed
-        && records
-            .ir
-            .geometry
-            .bodies
-            .iter()
-            .filter(|body| record.bodies.contains(&body.id))
-            .all(|body| body.transform.is_none())
+    !record
+        .bodies
+        .iter()
+        .any(|body| records.has_transformed_body(body.as_str()))
 }
 
 /// `placement` read from the frame that `frame` maps into the same target:

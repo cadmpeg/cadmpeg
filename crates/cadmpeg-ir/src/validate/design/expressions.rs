@@ -517,8 +517,8 @@ pub(super) fn check_reference(
     let Some(path) = &reference.through else {
         return;
     };
-    let moved = super::selections::moved_occurrences(index.ir);
-    check_path(index, site.scope, path, &moved, entity, findings);
+    let moved = index.moved_occurrences();
+    check_path(index, site.scope, path, moved, entity, findings);
     let last = match path.0.last().map(|step| &step.occurrence) {
         Some(StepRef::Occurrence(occurrence)) => index.prototype(occurrence.as_str()),
         Some(StepRef::Native(_)) | None => None,

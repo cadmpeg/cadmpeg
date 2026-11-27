@@ -26,6 +26,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
     let incidence_relations = incidence_distance.relations.as_mut().expect("relations");
     incidence_relations.rows[0].operand_vectors = None;
     incidence_relations.skamps = Some(crate::feature::definitions::SolverSubtable::Declared {
+        rows_end: None,
         header: crate::feature::definitions::FeatureSolverTableHeader {
             declared_count: 1,
             entity_ref: 1,
@@ -50,6 +51,7 @@ fn section_solver_relation_incidence_and_angular_dimensions_require_complete_joi
         }],
     });
     incidence_relations.triples = Some(crate::feature::definitions::SolverSubtable::Declared {
+        rows_end: None,
         header: crate::feature::definitions::FeatureSolverTableHeader {
             declared_count: 1,
             entity_ref: 2,

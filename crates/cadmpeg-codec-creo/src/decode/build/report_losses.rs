@@ -9,6 +9,7 @@ use super::coverage::torus_parameter_coverage;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::unknown::part::{Cause, GivenUpRecord};
 use cadmpeg_ir::SourceProvenance;
+use std::collections::BTreeSet;
 
 pub(super) fn push_report_loss(
     losses: &mut Vec<LossNote>,
@@ -535,6 +536,7 @@ pub(super) fn push_unread_legacy_rows(
 pub(super) fn push_brep_transfer_note(
     losses: &mut Vec<LossNote>,
     diagnostics: &BrepTransferDiagnostics,
+    geometry: &cadmpeg_ir::document::Topology,
     geometry_section_count: usize,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (body_id, reason) in &diagnostics.rejected_extrusion_bodies {
@@ -637,6 +639,37 @@ pub(super) fn push_brep_transfer_note(
                 .loss()
             }),
     );
+    let held: BTreeSet<&str> = geometry
+        .surfaces
+        .iter()
+        .map(|record| record.id.as_str())
+        .chain(geometry.curves.iter().map(|record| record.id.as_str()))
+        .chain(geometry.pcurves.iter().map(|record| record.id.as_str()))
+        .chain(geometry.vertices.iter().map(|record| record.id.as_str()))
+        .chain(geometry.edges.iter().map(|record| record.id.as_str()))
+        .chain(geometry.coedges.iter().map(|record| record.id.as_str()))
+        .chain(geometry.loops.iter().map(|record| record.id.as_str()))
+        .chain(geometry.faces.iter().map(|record| record.id.as_str()))
+        .chain(geometry.shells.iter().map(|record| record.id.as_str()))
+        .chain(geometry.regions.iter().map(|record| record.id.as_str()))
+        .chain(geometry.bodies.iter().map(|record| record.id.as_str()))
+        .collect();
+    losses.extend(diagnostics.gated_faces.iter().map(|(face, dropped)| {
+        GivenUpRecord::new(
+            face.clone(),
+            Cause::Undecoded,
+            format_args!(
+                "{code}: the component admission gate withheld the face: {component_gate}"
+            ),
+        )
+        .dropping(
+            dropped
+                .iter()
+                .filter(|record| !held.contains(record.as_str()))
+                .cloned(),
+        )
+        .loss()
+    }));
     Ok(())
 }
 
@@ -1077,8 +1110,13 @@ mod tests {
         diagnostics.selected_body_count = Some(2);
         let losses = {
             let mut losses = Vec::new();
-            push_brep_transfer_note(&mut losses, &diagnostics, 4)
-                .expect("a rejected face id composes");
+            push_brep_transfer_note(
+                &mut losses,
+                &diagnostics,
+                &cadmpeg_ir::document::Topology::default(),
+                4,
+            )
+            .expect("a rejected face id composes");
             losses
         };
         let message = &losses[0].message;
@@ -1093,6 +1131,59 @@ mod tests {
         )));
         assert!(message.contains("Boundary evidence: 0 curve(s), 0 without a unique incidence pair, 0 with an unsolved endpoint vertex."));
         assert!(message.contains("0 solved. 4 PSB geometry section(s) were preserved"));
+    }
+
+    /// The admission gate withholds a face that reaches two curves. One of
+    /// them has no solved carrier, and the finished document keeps it as an
+    /// unknown carrier record. The charge of the face lists the other curve
+    /// alone.
+    #[test]
+    fn a_withheld_face_lists_no_record_that_the_finished_document_keeps() {
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+        use cadmpeg_ir::ids::{CurveId, FaceId, Identity};
+        let face = crate::identity::compose_checked::<FaceId>(&crate::identity::VISIBGEOM_FACE, 1)
+            .expect("a face id composes");
+        let [retained, withheld] = [10, 11].map(|curve| {
+            crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, curve)
+                .expect("a curve id composes")
+        });
+        let mut diagnostics = BrepTransferDiagnostics::default();
+        diagnostics.body_count_mismatch = true;
+        diagnostics.gated_faces.insert(
+            face.clone(),
+            vec![
+                Identity::from(retained.clone()),
+                Identity::from(withheld.clone()),
+            ],
+        );
+        let mut geometry = cadmpeg_ir::document::Topology::default();
+        geometry.curves.push(Curve {
+            id: retained,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            parameter_range: None,
+            source_object: None,
+            native_ref: None,
+        });
+        let mut losses = Vec::new();
+        push_brep_transfer_note(&mut losses, &diagnostics, &geometry, 0)
+            .expect("the withheld face id composes");
+        let charge = losses
+            .iter()
+            .find(|loss| loss.code == cadmpeg_ir::unknown::part::record_undecoded_kind())
+            .expect("the withheld face is charged");
+        assert_eq!(
+            charge.message.split_whitespace().nth(1),
+            Some(face.as_str()),
+            "{}",
+            charge.message
+        );
+        assert!(
+            charge
+                .message
+                .contains(&format!("dropped=[{}]", withheld.as_str())),
+            "{}",
+            charge.message
+        );
     }
 
     /// A refusal names the instance and the lane it happened in. The orbit

@@ -937,9 +937,7 @@ macro_rules! declare_topology {
                 S: Serializer,
             {
                 if !self.is_finalized() {
-                    let mut sorted = self.clone();
-                    sorted.finalize();
-                    return sorted.serialize_direct(serializer);
+                    return self.sorted().serialize(serializer);
                 }
                 TopologyWriteWire {
                     $($field: model_write_value!(self, $field),)*
@@ -1902,9 +1900,7 @@ macro_rules! declare_model_wire {
                 S: Serializer,
             {
                 if !self.is_finalized() {
-                    let mut sorted = self.clone();
-                    sorted.finalize();
-                    return sorted.serialize_direct(serializer);
+                    return self.sorted().serialize(serializer);
                 }
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
@@ -2945,10 +2941,40 @@ struct CadIrWriteWire<'a> {
     geometry: &'a Topology,
     #[serde(serialize_with = "Model::serialize_direct")]
     model: &'a Model,
-    design: &'a Design,
-    process: &'a Process,
+    #[cfg_attr(feature = "schema", schemars(with = "Design"))]
+    design: DesignWrite<'a>,
+    #[cfg_attr(feature = "schema", schemars(with = "Process"))]
+    process: ProcessWrite<'a>,
     #[cfg_attr(feature = "schema", schemars(with = "Native"))]
     native: NativeWrite<'a>,
+}
+
+enum DesignWrite<'a> {
+    Direct(&'a Design),
+    Sorted(Box<SortedDesign<'a>>),
+}
+
+impl Serialize for DesignWrite<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Direct(design) => design.serialize(serializer),
+            Self::Sorted(design) => design.serialize(serializer),
+        }
+    }
+}
+
+enum ProcessWrite<'a> {
+    Direct(&'a Process),
+    Sorted(Box<SortedProcess<'a>>),
+}
+
+impl Serialize for ProcessWrite<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Direct(process) => process.serialize(serializer),
+            Self::Sorted(process) => process.serialize(serializer),
+        }
+    }
 }
 
 /// How [`CadIr::serialize_wire`] writes the native records.
@@ -2966,6 +2992,8 @@ enum NativeText<'a, 'input> {
 enum NativeWrite<'a> {
     /// Each record through its own `Serialize`, for any serializer.
     Records(&'a Native),
+    /// Borrowed records sorted in canonical identity order, for any serializer.
+    SortedRecords(crate::native::SortedNative<'a>),
     /// Each record's stored text, for a pretty canonical JSON writer.
     Pretty(crate::hash::PrettyNative<'a, 'a>),
 }
@@ -2974,6 +3002,7 @@ impl Serialize for NativeWrite<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
             Self::Records(native) => native.serialize(serializer),
+            Self::SortedRecords(native) => native.serialize(serializer),
             Self::Pretty(native) => native.serialize(serializer),
         }
     }
@@ -3030,14 +3059,6 @@ impl CadIr {
         serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
         native: NativeText<'_, '_>,
     ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
-        if !(self.design.is_finalized()
-            && self.process.is_finalized()
-            && self.native.is_finalized())
-        {
-            let mut sorted = self.clone();
-            sorted.finalize();
-            return sorted.serialize_wire(serializer, native);
-        }
         CadIrWriteWire {
             ir_version: IrVersion,
             fragment: self.fragment,
@@ -3048,10 +3069,21 @@ impl CadIr {
             tolerances: &self.tolerances,
             geometry: &self.geometry,
             model: &self.model,
-            design: &self.design,
-            process: &self.process,
+            design: if self.design.is_finalized() {
+                DesignWrite::Direct(&self.design)
+            } else {
+                DesignWrite::Sorted(Box::new(self.design.sorted()))
+            },
+            process: if self.process.is_finalized() {
+                ProcessWrite::Direct(&self.process)
+            } else {
+                ProcessWrite::Sorted(Box::new(self.process.sorted()))
+            },
             native: match native {
-                NativeText::Records => NativeWrite::Records(&self.native),
+                NativeText::Records if self.native.is_finalized() => {
+                    NativeWrite::Records(&self.native)
+                }
+                NativeText::Records => NativeWrite::SortedRecords(self.native.sorted()),
                 NativeText::Stored(admission) => NativeWrite::Pretty(crate::hash::PrettyNative {
                     ctx: admission.context().map(|(ctx, _)| ctx),
                     native: &self.native,
@@ -3065,28 +3097,6 @@ impl CadIr {
         &self,
         serializer: cadmpeg_core::serde_erase::SerAdapter<'_>,
     ) -> Result<(), cadmpeg_core::serde_erase::SerError> {
-        let sorted_design;
-        let design = if self.design.is_finalized() {
-            &self.design
-        } else {
-            sorted_design = {
-                let mut design = self.design.clone();
-                design.finalize();
-                design
-            };
-            &sorted_design
-        };
-        let sorted_process;
-        let process = if self.process.is_finalized() {
-            &self.process
-        } else {
-            sorted_process = {
-                let mut process = self.process.clone();
-                process.finalize();
-                process
-            };
-            &sorted_process
-        };
         let empty_native = Native::default();
         CadIrWriteWire {
             ir_version: IrVersion,
@@ -3098,8 +3108,16 @@ impl CadIr {
             tolerances: &self.tolerances,
             geometry: &self.geometry,
             model: &self.model,
-            design,
-            process,
+            design: if self.design.is_finalized() {
+                DesignWrite::Direct(&self.design)
+            } else {
+                DesignWrite::Sorted(Box::new(self.design.sorted()))
+            },
+            process: if self.process.is_finalized() {
+                ProcessWrite::Direct(&self.process)
+            } else {
+                ProcessWrite::Sorted(Box::new(self.process.sorted()))
+            },
             native: NativeWrite::Records(&empty_native),
         }
         .serialize(serializer)

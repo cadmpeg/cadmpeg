@@ -439,3 +439,60 @@ pub(crate) fn loss_codes(
 pub(crate) mod move_face;
 
 pub(crate) mod typed_reference_scopes;
+
+/// The one `record.unreadable` loss of `losses` whose message starts with
+/// `head`, after checking that it names a stub of the F3D `unknowns` arena of
+/// `ir` and that its dropped list is `dropped`.
+pub(crate) fn charged_part<'a>(
+    ir: &CadIr,
+    losses: &'a [cadmpeg_ir::report::loss::LossNote],
+    head: &str,
+    dropped: &str,
+) -> &'a cadmpeg_ir::report::loss::LossNote {
+    let charges = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
+                && loss.message.starts_with(head)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(charges.len(), 1, "{head}: {losses:#?}");
+    let charge = charges[0];
+    assert!(
+        charge.message.contains(&format!("; dropped=[{dropped}]")),
+        "{}",
+        charge.message
+    );
+    let stubs = ir.native_unknowns("f3d").expect("the F3D unknowns arena");
+    assert!(
+        stubs
+            .iter()
+            .any(|stub| charge.message.contains(&format!("record={}:", stub.id))),
+        "the charge names no stub: {}",
+        charge.message
+    );
+    charge
+}
+
+/// Asserts that a pinned decode of `bytes` refuses through a
+/// `record.unreadable` loss whose message starts with `head`.
+pub(crate) fn assert_pinned_refusal(bytes: Vec<u8>, head: &str) {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = F3dCodec
+        .decode(&mut std::io::Cursor::new(bytes), &options)
+        .expect_err("a pinned decode refuses the given-up record");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(
+        rejection.loss().code,
+        cadmpeg_ir::unknown::part::record_unreadable_kind()
+    );
+    assert!(
+        rejection.loss().message.starts_with(head),
+        "{}",
+        rejection.loss().message
+    );
+}

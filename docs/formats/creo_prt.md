@@ -3380,6 +3380,12 @@ body and is the auxiliary field. The equation table ends before the following
 `scale`, `scales`, or `guesses` named record. The declared count and decoded row
 count are independent native values.
 
+When a feature table declares more rows than the reader decodes, the reader
+gives up the rows from the first row it does not decode as a
+`feature-table-rows` part. The part runs to the next table label or decoded
+row of the feature definition, or to the end of the definition, and retains
+its bytes.
+
 Within each `var_arr` row, `value` and `guess` are independent scalar lanes.
 The unresolved forms `00 <tail2>` and `34 <tail2>` occupy three bytes;
 `01 <tail3>` occupies four. Each lane retains its complete body and has no
@@ -6973,7 +6979,11 @@ constraints.
 A row whose frame is not a proper rigid placement is given up by the id of
 the occurrence that it places. When a row does not match the row grammar, the
 reader gives up the bytes from that row to the end of the section as a
-`component-rows` part (§10).
+`component-rows` part (§10). When a `NeuAsmSld` section holds a `members`
+field whose table the reader does not transfer, the reader gives up the bytes
+from that field to the end of the section as a `component-table` part (§10).
+This covers a field that opens no table array, a section with more than one
+`members` field, and a table in each of two or more `NeuAsmSld` sections.
 
 ### 9.1 Frame slots
 
@@ -7045,12 +7055,14 @@ give-up is one entry.
 | `pmi-attribute-row` part | A geometric-tolerance type row or a dimensional row has a null `ref_id` or `ref_type` (§8.9). | `record.undecoded` |
 | `component-rows` part | A row breaks the row grammar: a fixed token or field header differs, a field runs past the section, a name is not UTF-8, a repeat token starts a run or runs past its end, or a frame slot is not finite (§9). | `record.unreadable` |
 | `component-rows` part | A row holds a value form that the decoder does not read: a frame-slot token that §9.1 does not list, a `tha_ref` value other than `e1`, or an empty name or a name with a control character (§9). | `record.undecoded` |
+| `component-table` part | A `members` field opens no table array that the reader reads, its section holds more than one `members` field, or another `NeuAsmSld` section also holds a component table (§9). | `record.undecoded` |
+| `feature-table-rows` part | A feature table declares more rows than the reader decodes. | `record.undecoded` |
 | Placed occurrence | The row frame is not a proper rigid placement (§9). | `record.unreadable` |
 | Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | A scalar row without continuation rows holds text that breaks the scalar grammar of its type, or an array whose element runs all read has run counts that do not sum to the product of its extents (§1). | `record.unreadable` |
 | Legacy type-1, type-2, type-5, type-6, type-7, type-9, or type-11 value row | A scalar row has continuation rows, an array header has no element rows, an element row holds text that the decoder does not read, a run-count product is larger than the decoder index width, or a real word decodes to a non-finite value (§1). A `[1]` array and its direct element rows give one entry. | `record.undecoded` |
 | Legacy type-3, type-4, or type-10 scalar value row | The row uses an undefined continuation form. | `record.undecoded` |
 | PMI record of geometric-tolerance or dimensional attributes | The attributes form no PMI record. | `record.undecoded` |
-| Face | Face admission rejects the face. | `record.undecoded` |
+| Face | Face admission rejects the face, or the component admission gate withholds it. | `record.undecoded` |
 
 Three codes carry the strict floor `warning` (CADIR §3.2). Each reports a
 stated count that the input breaks and that the decoder reads past:
@@ -7061,7 +7073,8 @@ stated count that the input breaks and that the decoder reads past:
   has direct string rows that all read, and their count is not its first
   extent (§1).
 - `assembly.member-table-incomplete`: the component table closes with a row
-  count other than `count` (§9).
+  count other than `count`, or the section ends inside a row that a row
+  terminator announces (§9).
 
-`assembly.member-table-unread` reports an `ASSEMBLY` header whose component
-table the decoder does not read. It carries no strict floor.
+`assembly.member-table-unread` reports an `ASSEMBLY` header with no `members`
+field in a `NeuAsmSld` section. It carries no strict floor.

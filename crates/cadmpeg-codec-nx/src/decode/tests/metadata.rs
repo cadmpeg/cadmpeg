@@ -139,3 +139,41 @@ fn bounded_indexed_section_search_gives_up_its_entry_as_a_part() {
         Some(&file.as_slice()[start..end])
     );
 }
+
+/// The charge of an object-model entry of `length` bytes given up under a
+/// caller's retained-byte ceiling of 4096 bytes.
+fn om_entry_charge(length: usize) -> String {
+    use cadmpeg_ir::unknown::part::{Cause, DecodeParts, Part};
+    let bytes = vec![0x5a; length];
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| policy.limits.max_retained_bytes = 4096,
+        |ctx| {
+            let part = Part::at(
+                "nx",
+                "om-entry",
+                0,
+                &bytes,
+                [cadmpeg_core::decode::ArenaClass::Model],
+            );
+            ctx.give_up_part(
+                crate::decode::within_retained_ceiling(ctx, part, bytes.len()),
+                Cause::Undecoded,
+                cadmpeg_core::CodecError::NotImplemented("entry".into()),
+            )
+            .expect("the part is given up")
+            .loss()
+            .message
+        },
+    )
+}
+
+#[test]
+fn an_om_entry_keeps_only_a_digest_past_the_callers_retained_byte_ceiling() {
+    assert!(!om_entry_charge(1024).contains("max_retained_bytes"));
+    let past = om_entry_charge(8192);
+    assert!(
+        past.contains("max_retained_bytes of 4096") && past.contains("length and digest"),
+        "{past}"
+    );
+}

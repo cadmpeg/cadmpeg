@@ -1195,13 +1195,15 @@ names. A placement transfers only when its frame is a proper rigid transform.
 The first row that the row grammar does not admit ends the table; the rows
 before it transfer, and the decoder gives up the rest of the section as one
 `component-rows` part. A table that closes with a row count other than its
-declared count retains `assembly.member-table-incomplete`. An `ASSEMBLY`
-header without a component table retains `assembly.member-table-unread`.
+declared count retains `assembly.member-table-incomplete`. A `members` field
+whose table does not transfer is given up from the field to the end of its
+section as a `component-table` part. An `ASSEMBLY` header with no `members`
+field in a `NeuAsmSld` section retains `assembly.member-table-unread`.
 `assembly.components-external` counts the external occurrences and files, and
 `assembly.constraints-not-transferred` records that placement constraints do
 not transfer. Synthetic checks cover each frame-slot form, repeat runs, row
-order, offsets, declared-count and row-grammar stops, rigid-placement
-refusal, and the external prototypes and placements of a decoded assembly.
+order, offsets, declared-count and row-grammar stops, unframed, repeated and
+duplicated tables, rigid-placement refusal, and the external prototypes and placements of a decoded assembly.
 
 ## Native edge interval orientation
 

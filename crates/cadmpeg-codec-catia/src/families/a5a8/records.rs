@@ -26,6 +26,12 @@ const EPS_OWNED_ROLLING_BALL_RADIUS: f64 = 5.0e-7;
 const EPS_OWNED_ROLLING_BALL_ANGLE: f64 = 5.0e-7;
 const COLLAPSED_RAIL_TOLERANCE_MM: f64 = 0.00005;
 
+/// The parts a refused carrier record is given up as (`catia.md`, Partial
+/// decode).
+const A5_NURBS_CURVE_PART: &str = "a5-nurbs-curve";
+const A5_NURBS_SURFACE_PART: &str = "a5-nurbs-surface";
+const A8_NURBS_SURFACE_PART: &str = "a8-nurbs-surface";
+
 /// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]
 pub(crate) struct FreeformSurface {
@@ -836,10 +842,11 @@ fn parse_a5_nurbs_curve(
         ),
         refusal,
         format_args!("a5 NURBS curve record at byte {}", frame.pos),
-        cadmpeg_ir::ids::Identity::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-nurbs-curve-frame"),
-            frame.pos,
-        ),
+        crate::nurbs::SourceFrame {
+            kind: A5_NURBS_CURVE_PART,
+            offset: frame.pos,
+            bytes: data.get(frame.pos..frame.end)?,
+        },
     )
     .map(|geometry| A5NurbsCurve {
         pos: frame.pos,
@@ -1623,12 +1630,24 @@ pub(crate) fn a8_surfaces(
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurface>, CodecError> {
+    a8_surfaces_located(data, &|offset| offset, refusal)
+}
+
+/// [`a8_surfaces`] over bytes whose offset `offset` is offset
+/// `physical(offset)` of the `CATPart` image.
+fn a8_surfaces_located(
+    data: &[u8],
+    physical: &dyn Fn(usize) -> usize,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Vec<FreeformSurface>, CodecError> {
     let mut surfaces = Vec::new();
     for frame in a8_frames(data, 0x34) {
         let Some(parsed) = parse_a8_surface_header(data, frame) else {
             continue;
         };
-        if let Some(surface) = a8_surface_from_parsed(data, parsed, refusal)? {
+        if let Some(surface) =
+            a8_surface_from_parsed(data, parsed, refusal, A8Refusal::GiveUp(physical))?
+        {
             surfaces.push(surface);
         }
     }
@@ -1662,9 +1681,11 @@ pub(in crate::families) fn a8_surfaces_in_sources(
         let Some(first) = source.first() else {
             continue;
         };
+        let physical = |offset: usize| physical_offset(source, offset).unwrap_or(offset);
         let decoded = if contiguous {
-            a8_surfaces(
+            a8_surfaces_located(
                 &data[first.range().start..physical_end.unwrap_or(first.range().start)],
+                &physical,
                 refusal,
             )?
         } else {
@@ -1672,22 +1693,27 @@ pub(in crate::families) fn a8_surfaces_in_sources(
             for extent in source {
                 bytes.extend_from_slice(&data[extent.range()]);
             }
-            a8_surfaces(&bytes, refusal)?
+            a8_surfaces_located(&bytes, &physical, refusal)?
         };
         for mut surface in decoded {
-            let mut offset = surface.pos;
-            for extent in source {
-                let range = extent.range();
-                if offset < range.len() {
-                    surface.pos = range.start + offset;
-                    break;
-                }
-                offset -= range.len();
-            }
+            surface.pos = physical(surface.pos);
             surfaces.push(surface);
         }
     }
     Ok(surfaces)
+}
+
+/// The offset in the `CATPart` image of offset `offset` of the bytes of
+/// `source`'s extents in order.
+fn physical_offset(source: &[SourceExtent], mut offset: usize) -> Option<usize> {
+    for extent in source {
+        let range = extent.range();
+        if offset < range.len() {
+            return Some(range.start + offset);
+        }
+        offset -= range.len();
+    }
+    None
 }
 
 /// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
@@ -1710,6 +1736,9 @@ pub(in crate::families) fn a8_surface_header_from_object_frame(
 }
 
 /// Decode one selected `a8 <flag> 34` frame and its complete pole grid.
+///
+/// A frame whose lanes the IR refuses gives no surface. The face that refers
+/// to the frame takes an unknown surface, so the refusal is a note.
 pub(in crate::families) fn a8_surface_from_object_frame(
     data: &[u8],
     start: usize,
@@ -1720,7 +1749,7 @@ pub(in crate::families) fn a8_surface_from_object_frame(
     let Some(parsed) = parse_selected_a8_surface_header(data, start, end, object_id) else {
         return Ok(None);
     };
-    a8_surface_from_parsed(data, parsed, refusal)
+    a8_surface_from_parsed(data, parsed, refusal, A8Refusal::Note)
 }
 
 fn grid_rows<T>(values: Vec<T>, row_len: usize) -> Result<Vec<Vec<T>>, CodecError> {
@@ -1906,6 +1935,9 @@ fn a5_surface(
     let weights = weights
         .map(|values| grid_rows(values, v_count))
         .transpose()?;
+    let Some(frame_bytes) = data.get(pos..end) else {
+        return Ok(None);
+    };
     let geometry = crate::nurbs::give_up_refused(
         NurbsSurface::from_checked_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
@@ -1915,10 +1947,11 @@ fn a5_surface(
         ),
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
-        cadmpeg_ir::ids::Identity::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "cgm", "a5-surface-frame"),
-            pos,
-        ),
+        crate::nurbs::SourceFrame {
+            kind: A5_NURBS_SURFACE_PART,
+            offset: pos,
+            bytes: frame_bytes,
+        },
     );
     if geometry.is_some()
         && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
@@ -2113,10 +2146,21 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
     })
 }
 
+/// What the refusal of an `a8` surface frame costs the document.
+#[derive(Clone, Copy)]
+enum A8Refusal<'a> {
+    /// The frame leaves the document. The function maps an offset in the
+    /// bytes the reader reads to the offset in the `CATPart` image.
+    GiveUp(&'a dyn Fn(usize) -> usize),
+    /// The caller keeps the object in another form.
+    Note,
+}
+
 fn a8_surface_from_parsed(
     data: &[u8],
     parsed: ParsedA8SurfaceHeader,
     refusal: &mut crate::nurbs::LaneRefusals,
+    on_refusal: A8Refusal<'_>,
 ) -> Result<Option<FreeformSurface>, CodecError> {
     let ParsedA8SurfaceHeader {
         header,
@@ -2158,7 +2202,13 @@ fn a8_surface_from_parsed(
     let mut control_points = Vec::new();
 
     for _ in 0..poles {
-        let Some(point) = f64_point(data, pole_start) else {
+        let Some(point) = (|| {
+            Some(Point3::new(
+                View::f64_le_at(data, pole_start)?,
+                View::f64_le_at(data, pole_start.checked_add(8)?)?,
+                View::f64_le_at(data, pole_start.checked_add(16)?)?,
+            ))
+        })() else {
             return Ok(None);
         };
         control_points.push(point);
@@ -2175,9 +2225,7 @@ fn a8_surface_from_parsed(
         let mut weights = Vec::new();
 
         for _ in 0..poles {
-            let Some(weight) =
-                f64_le(data, pole_start).and_then(|value| NonZeroReal::new(value.get()))
-            else {
+            let Some(weight) = View::f64_le_at(data, pole_start) else {
                 return Ok(None);
             };
             weights.push(weight);
@@ -2194,39 +2242,53 @@ fn a8_surface_from_parsed(
     if a8_surface_suffix_start(data, pole_start, end).is_none() {
         return Ok(None);
     }
+    let Some(frame_bytes) = data.get(pos..end) else {
+        return Ok(None);
+    };
     // The pole count is bounded by the record bytes only after the pole and
     // weight lanes are read, so the knot vectors are expanded here.
-    let (u_knots, v_knots) = match header.expanded_knots() {
-        Ok(knots) => knots,
-        Err(error) => {
-            return Ok(crate::nurbs::give_up_refused(
-                Err(error),
-                refusal,
-                format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
-                cadmpeg_ir::ids::Identity::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "cgm", "surface"),
-                    object_id,
-                ),
-            ))
+    let lanes = header.expanded_knots().and_then(|knots| {
+        let poles = crate::nurbs::finite_poles("a8 surface poles", control_points)?;
+        let weights = if rational {
+            Some(crate::nurbs::usable_weights("a8 surface weights", weights)?)
+        } else {
+            None
+        };
+        Ok((knots, poles, weights))
+    });
+    let geometry = match lanes {
+        Ok(((u_knots, v_knots), control_points, weights)) => {
+            let control_points = grid_rows(control_points, v_count)?;
+            let weights = weights
+                .map(|weights| grid_rows(weights, v_count))
+                .transpose()?;
+            NurbsSurface::from_checked_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
+                false,
+            )
         }
+        Err(error) => Err(error),
     };
-    let control_points = grid_rows(control_points, v_count)?;
-    let weights = rational.then(|| grid_rows(weights, v_count)).transpose()?;
-    Ok(crate::nurbs::give_up_refused(
-        NurbsSurface::from_checked_lanes(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, weights),
-            false,
+    let geometry = match on_refusal {
+        A8Refusal::GiveUp(physical) => crate::nurbs::give_up_refused(
+            geometry,
+            refusal,
+            format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
+            crate::nurbs::SourceFrame {
+                kind: A8_NURBS_SURFACE_PART,
+                offset: physical(pos),
+                bytes: frame_bytes,
+            },
         ),
-        refusal,
-        format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
-        cadmpeg_ir::ids::Identity::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "cgm", "surface"),
-            object_id,
+        A8Refusal::Note => crate::nurbs::note_refusal(
+            geometry,
+            refusal,
+            format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
         ),
-    )
-    .map(|geometry| FreeformSurface {
+    };
+    Ok(geometry.map(|geometry| FreeformSurface {
         pos,
         identity: Some(object_id),
         geometry,

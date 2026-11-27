@@ -300,6 +300,66 @@ fn a_pinned_decode_refuses_an_exact_stream_that_does_not_decode() {
     assert_eq!(rejection.loss().message, given_up.message);
 }
 
+/// A package whose structure places one leaf definition `count` times.
+fn wide_package(count: usize) -> Vec<u8> {
+    use crate::test_support::pvs::{self, definition, occurrence, Node, Place};
+    let pool = Node::leaf(0x01, pvs::string_pool_payload(&[])).encode();
+    let children = (0..count)
+        .map(|_| occurrence(1, Place::Identity, ""))
+        .collect();
+    let structure = Node::list(
+        0x02,
+        vec![
+            definition("TOP.ASM", children),
+            definition("LEAF.PRT", vec![]),
+        ],
+    )
+    .encode();
+    let member = pvs::member("PV-PVS0304", &[(1, "", pool), (2, "", structure)]);
+    package(&[("model.pvs", &member)])
+}
+
+#[test]
+fn occurrences_past_the_limit_are_given_up_and_a_pinned_decode_refuses_them() {
+    let limit = crate::decode::MAX_OCCURRENCES;
+    let bytes = wide_package(limit + 2);
+    let admitted = decode(&bytes);
+    assert_eq!(admitted.ir().model.occurrences.len(), limit);
+    let charges: Vec<_> = admitted
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == record_unreadable_kind())
+        .collect();
+    let [given_up] = charges.as_slice() else {
+        panic!("one charge: {charges:?}");
+    };
+    let stopped = crate::ids::occurrence(limit);
+    let dropped = crate::ids::occurrence(limit + 1);
+    assert!(
+        given_up
+            .message
+            .starts_with(&format!("record {stopped} given up: ")),
+        "{given_up:?}"
+    );
+    assert!(
+        given_up
+            .message
+            .ends_with(&format!("; dropped=[{dropped}]")),
+        "{given_up:?}"
+    );
+
+    let mut options = DecodeOptions::default();
+    options.strictness.pinned = true;
+    let failure = PvzCodec
+        .decode(&mut Cursor::new(bytes.as_slice()), &options)
+        .expect_err("a pinned decode refuses the occurrences past the limit");
+    let cadmpeg_ir::DecodeFailure::StrictRejected { rejection } = &failure else {
+        panic!("expected a strict rejection, got {failure:?}");
+    };
+    assert_eq!(rejection.loss().message, given_up.message);
+}
+
 #[test]
 fn a_pinned_decode_accepts_a_member_with_two_exact_streams() {
     use crate::layout::token::{STREAM_ATTRIBUTES, STREAM_EXACT_F32, STREAM_EXACT_F64};
