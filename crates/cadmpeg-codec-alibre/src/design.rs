@@ -703,7 +703,7 @@ impl Projection<'_> {
             allowance,
             native_options,
             source_settings: NativeOptions::new(),
-            native_ref: Some(self.parameters[thickness_at].as_str().to_owned()),
+            native_ref: None,
         }))
     }
 

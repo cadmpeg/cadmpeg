@@ -447,10 +447,7 @@ fn a_sheet_metal_part_states_its_rule() {
     };
     assert_eq!(rule.scope, ir.model.product_definitions[0].id);
     assert_eq!(rule.id.as_str(), "alibre:step:sheet-metal-rule#201");
-    assert_eq!(
-        rule.native_ref.as_deref(),
-        Some("alibre:step:parameter#201")
-    );
+    assert!(rule.native_ref.is_none());
     let Some(Dimension::Parameter(thickness)) = &rule.thickness else {
         panic!("a thickness bound to its parameter");
     };
