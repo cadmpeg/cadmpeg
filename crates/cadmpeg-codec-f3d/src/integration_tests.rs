@@ -8,6 +8,7 @@ mod attribute_colors;
 mod body_reference_tails;
 mod cc0_controller;
 mod configuration_parameters;
+pub(crate) mod configuration_wire;
 mod design_containment;
 mod design_parameters;
 mod design_v11;

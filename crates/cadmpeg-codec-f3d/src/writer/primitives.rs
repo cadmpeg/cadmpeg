@@ -12,9 +12,10 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::parameters::{
-    ConfigurationFeatureState, DesignConfiguration as Configuration,
+    ConfigurationFeatureState, DesignConfiguration as Configuration, DesignParameter,
+    ParameterValue,
 };
-use cadmpeg_ir::features::{Feature, FeatureId};
+use cadmpeg_ir::features::{Feature, FeatureId, ParameterId};
 use cadmpeg_ir::topology::Sense;
 use serde::Serialize;
 
@@ -115,26 +116,69 @@ pub(super) fn decoded_configurations(
 /// [`differences`] compares.
 const INFERRED: &str = "suppression_inferred:";
 
-/// The state of each of `features` in a configuration that states none:
-/// the feature's own state (cadir-v11.md §5.11, Resolution).
-pub(super) fn bases(features: &[Feature]) -> BTreeMap<&FeatureId, ConfigurationFeatureState> {
-    features
-        .iter()
-        .map(|feature| (&feature.id, feature.configuration_state()))
-        .collect()
+/// What a configuration that states no override of a feature or a parameter
+/// resolves it to: the feature's own state, and the parameter's own
+/// expression and value (cadir-v11.md §5.11, Resolution).
+pub(super) struct Bases<'a> {
+    pub(super) features: BTreeMap<&'a FeatureId, ConfigurationFeatureState>,
+    pub(super) parameters: BTreeMap<&'a ParameterId, &'a DesignParameter>,
 }
 
-/// The state of `feature` in `configuration`: its own, else the one in
-/// `bases`.
-fn resolved<'s>(
-    configuration: &'s Configuration,
-    feature: &FeatureId,
-    bases: &'s BTreeMap<&FeatureId, ConfigurationFeatureState>,
-) -> Option<&'s ConfigurationFeatureState> {
-    configuration
-        .feature_states
-        .get(feature)
-        .or_else(|| bases.get(feature))
+/// The bases of `features` and `parameters`.
+pub(super) fn bases<'a>(features: &'a [Feature], parameters: &'a [DesignParameter]) -> Bases<'a> {
+    Bases {
+        features: features
+            .iter()
+            .map(|feature| (&feature.id, feature.configuration_state()))
+            .collect(),
+        parameters: parameters
+            .iter()
+            .map(|parameter| (&parameter.id, parameter))
+            .collect(),
+    }
+}
+
+impl Bases<'_> {
+    /// The state of `feature` in `configuration`: its own, else the base.
+    pub(super) fn feature<'s>(
+        &'s self,
+        configuration: &'s Configuration,
+        feature: &FeatureId,
+    ) -> Option<&'s ConfigurationFeatureState> {
+        configuration
+            .feature_states
+            .get(feature)
+            .or_else(|| self.features.get(feature))
+    }
+
+    /// The expression of `parameter` in `configuration`: its own, else the
+    /// base.
+    pub(super) fn expression<'s>(
+        &'s self,
+        configuration: &'s Configuration,
+        parameter: &ParameterId,
+    ) -> Option<&'s String> {
+        configuration
+            .parameter_overrides
+            .get(parameter)
+            .or_else(|| Some(&self.parameters.get(parameter)?.expression))
+    }
+
+    /// The value of `parameter` in `configuration`: its own where it
+    /// overrides the parameter, else the base.
+    pub(super) fn value<'s>(
+        &'s self,
+        configuration: &'s Configuration,
+        parameter: &ParameterId,
+    ) -> Option<&'s ParameterValue> {
+        if configuration.parameter_overrides.contains_key(parameter) {
+            return configuration.parameter_values.get(parameter);
+        }
+        configuration
+            .parameter_values
+            .get(parameter)
+            .or_else(|| self.parameters.get(parameter)?.value.as_ref())
+    }
 }
 
 /// A field of a configuration that the written file reads back otherwise.
@@ -184,13 +228,13 @@ fn differing<'k, K: Ord, V: PartialEq>(
 
 /// The fields that a table row states, other than its name, which `read`
 /// states otherwise than `stated`: material, bodies, properties, parameter
-/// overrides and values, and the evaluation, definition and dependencies of
-/// each feature state. A configuration that states no state of a feature
-/// resolves it to the feature's state in `bases`.
+/// expressions and values, and the evaluation, definition and dependencies
+/// of each feature state. A configuration that states no override of a
+/// feature or a parameter resolves it to its base in `bases`.
 pub(super) fn differences(
     stated: &Configuration,
     read: &Configuration,
-    bases: &BTreeMap<&FeatureId, ConfigurationFeatureState>,
+    bases: &Bases<'_>,
 ) -> Vec<Difference> {
     let mut fields = Vec::new();
     if stated.material != read.material {
@@ -218,24 +262,36 @@ pub(super) fn differences(
                 )
             }),
     );
-    fields.extend(
-        differing(&stated.parameter_overrides, &read.parameter_overrides).map(|parameter| {
-            Difference::of(
+    let parameters = stated
+        .parameter_overrides
+        .keys()
+        .chain(read.parameter_overrides.keys())
+        .chain(stated.parameter_values.keys())
+        .chain(read.parameter_values.keys())
+        .collect::<BTreeSet<_>>();
+    for parameter in &parameters {
+        let (left, right) = (
+            bases.expression(stated, parameter),
+            bases.expression(read, parameter),
+        );
+        if left != right {
+            fields.push(Difference::of(
                 format!("parameter_overrides.{parameter}"),
-                stated.parameter_overrides.get(parameter),
-                read.parameter_overrides.get(parameter),
-            )
-        }),
-    );
-    fields.extend(
-        differing(&stated.parameter_values, &read.parameter_values).map(|parameter| {
-            Difference::of(
+                left,
+                right,
+            ));
+        }
+    }
+    for parameter in &parameters {
+        let (left, right) = (bases.value(stated, parameter), bases.value(read, parameter));
+        if left != right {
+            fields.push(Difference::of(
                 format!("parameter_values.{parameter}"),
-                stated.parameter_values.get(parameter),
-                read.parameter_values.get(parameter),
-            )
-        }),
-    );
+                left,
+                right,
+            ));
+        }
+    }
     let features = stated
         .feature_states
         .keys()
@@ -243,10 +299,7 @@ pub(super) fn differences(
         .collect::<BTreeSet<_>>();
     for feature in features {
         let field = format!("feature_states.{feature}");
-        match (
-            resolved(stated, feature, bases),
-            resolved(read, feature, bases),
-        ) {
+        match (bases.feature(stated, feature), bases.feature(read, feature)) {
             (Some(stated), Some(read)) => {
                 if stated.evaluation != read.evaluation {
                     fields.push(Difference::of(
@@ -282,11 +335,7 @@ pub(super) fn differences(
 
 /// Whether `left` and `right` state the same table row: the same name and
 /// no [`differences`].
-pub(super) fn same_row(
-    left: &Configuration,
-    right: &Configuration,
-    bases: &BTreeMap<&FeatureId, ConfigurationFeatureState>,
-) -> bool {
+pub(super) fn same_row(left: &Configuration, right: &Configuration, bases: &Bases<'_>) -> bool {
     left.name == right.name && differences(left, right, bases).is_empty()
 }
 
@@ -299,7 +348,7 @@ pub(super) fn projects(
     targets: &ConfigurationTargets<'_>,
 ) -> Result<bool, CodecError> {
     let decoded = decoded_configurations(documents, targets)?.configurations;
-    let bases = bases(targets.neutral_features);
+    let bases = bases(targets.neutral_features, targets.neutral_parameters);
     let identity = |configuration: &Configuration| {
         (
             configuration.id.clone(),

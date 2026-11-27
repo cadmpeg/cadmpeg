@@ -4,7 +4,9 @@
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::records::configuration::table::{ConfigurationRow, ConfigurationTable, ConfiguredValue};
+use crate::records::configuration::table::{
+    ColumnTarget, ConfigurationRow, ConfigurationTable, ConfiguredValue,
+};
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -191,6 +193,62 @@ impl ConfigurationTargets<'_> {
         self.neutral_features
             .iter()
             .find(|feature| feature.id == id)
+    }
+
+    /// The target of a column that names the neutral parameter `id`: the
+    /// owner record of its parameter record, else the parameter record
+    /// itself (f3d.md §1.2). `None` where no single record names it.
+    pub(crate) fn parameter_column(
+        &self,
+        id: &cadmpeg_ir::features::ParameterId,
+    ) -> Option<ColumnTarget> {
+        let records = self
+            .parameters
+            .iter()
+            .filter(|parameter| crate::ids::neutral_parameter_id(parameter) == *id)
+            .collect::<Vec<_>>();
+        let [record] = records.as_slice() else {
+            return None;
+        };
+        let stream = crate::ids::native_stream(&record.id);
+        let owners = self
+            .owners
+            .iter()
+            .filter(|owner| {
+                owner.parameter_record_index() == record.record_index
+                    && crate::ids::native_stream(owner.id()) == stream
+            })
+            .collect::<Vec<_>>();
+        let (target, named) = match owners.as_slice() {
+            [] => (
+                ColumnTarget::Parameter(record.record_index),
+                self.parameter(record.record_index, None),
+            ),
+            [owner] => (
+                ColumnTarget::OwnedParameter(owner.record_index()),
+                self.owned_parameter(owner.record_index()),
+            ),
+            _ => return None,
+        };
+        (named.as_ref() == Some(id)).then_some(target)
+    }
+
+    /// The target of a column that names the neutral feature `id`: its
+    /// parameter scope record. `None` where no single record names it.
+    pub(crate) fn feature_column(
+        &self,
+        id: &cadmpeg_ir::features::FeatureId,
+    ) -> Option<ColumnTarget> {
+        let scopes = self
+            .scopes
+            .iter()
+            .filter(|scope| crate::ids::neutral_feature_id(scope) == *id)
+            .collect::<Vec<_>>();
+        let [scope] = scopes.as_slice() else {
+            return None;
+        };
+        (self.feature(scope.record_index)?.id == *id)
+            .then_some(ColumnTarget::Feature(scope.record_index))
     }
 
     /// The value of neutral parameter `id` whose evaluation in database

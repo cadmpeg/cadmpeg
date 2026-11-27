@@ -93,7 +93,7 @@ use crate::records::feature::direct_face;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::container::ContainerRole;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -122,9 +122,19 @@ pub(crate) struct DecodedParameterScopes {
 /// Decode every canonical sketch or construction-operation scope, including
 /// scopes that own no parameters and therefore have no owner-frame backlink.
 pub(crate) fn decode_parameter_scopes(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     sources: &ParameterScopeSources<'_>,
+) -> Result<DecodedParameterScopes, CodecError> {
+    decode_parameter_scopes_for(ctx, scan, sources, None)
+}
+
+/// Decode configuration-linked scopes through the shared scope reader.
+pub(crate) fn decode_parameter_scopes_for(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    sources: &ParameterScopeSources<'_>,
+    selected: Option<&std::collections::BTreeSet<u32>>,
 ) -> Result<DecodedParameterScopes, CodecError> {
     let &ParameterScopeSources {
         entities,
@@ -238,6 +248,9 @@ pub(crate) fn decode_parameter_scopes(
             }
         }
         for header in parameter_scope_candidate_headers(bytes, &records)? {
+            if selected.is_some_and(|selected| !selected.contains(&header.record_index)) {
+                continue;
+            }
             let Some(mut scope) = parse_parameter_scope_with_type_guid(
                 bytes,
                 &records,
