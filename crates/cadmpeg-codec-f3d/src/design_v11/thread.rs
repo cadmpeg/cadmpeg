@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::{decode::DecodeContext, text::NonBlankString, CodecError};
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::dressup::{StandardSize, Thread, ThreadLength, ThreadSpec};
 use cadmpeg_ir::design::options::{Hand, NativeOption};
 use cadmpeg_ir::design::selection::{Anchor, Picks, SetSelection};
@@ -124,11 +124,12 @@ pub(super) fn project(
             }
             continue;
         }
-        let Some(feature) = ir
-            .design
-            .features
-            .iter_mut()
-            .find(|feature| feature.id == legacy.id)
+        // A Thread item that the timeline projection could not pair with its
+        // v10 feature is keyed by its stream and scope record.
+        let item = crate::ids::native_stream(&scope.id).and_then(|stream| {
+            super::timeline::item_feature_id(stream, u64::from(scope.record_index)).ok()
+        });
+        let Some(feature) = thread_target(ir.design.features.iter_mut(), &legacy.id, item.as_ref())
         else {
             losses.push(unprojected(&legacy.id, "its design feature is absent"));
             continue;
@@ -146,6 +147,26 @@ pub(super) fn project(
         }));
     }
     Ok(())
+}
+
+/// The design feature that a Thread projects into: the one the v10 feature
+/// names, else the unresolved Thread item of its scope record.
+fn thread_target<'a>(
+    features: impl Iterator<Item = &'a mut cadmpeg_ir::design::feature::Feature>,
+    legacy: &cadmpeg_ir::features::FeatureId,
+    item: Option<&cadmpeg_ir::features::FeatureId>,
+) -> Option<&'a mut cadmpeg_ir::design::feature::Feature> {
+    let mut features = features;
+    features.find(|feature| {
+        feature.id == *legacy
+            || (Some(&feature.id) == item
+                && matches!(
+                    feature.definition.operation,
+                    FeatureOperation::Unresolved {
+                        family: OperationFamily::Thread
+                    }
+                ))
+    })
 }
 
 fn unprojected(

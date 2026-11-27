@@ -138,3 +138,40 @@ fn standard_thread_class_comes_from_its_fixed_prefix() {
         );
     }
 }
+
+#[test]
+fn an_unpaired_thread_item_is_found_by_its_scope_record_item() {
+    use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
+    let feature = |id: &FeatureId, family| Feature {
+        id: id.clone(),
+        name: None,
+        suppressed: None,
+        definition: cadmpeg_ir::design::feature::FeatureDefinition {
+            operation: FeatureOperation::Unresolved { family },
+            assembly: None,
+            refine: None,
+            fuzzy_tolerance: None,
+        },
+        placement: None,
+        component: None,
+        driven_by: None,
+        native_ref: None,
+    };
+    let id = |record| {
+        crate::design_v11::timeline::item_feature_id("f3d:Design/BulkStream.dat", record).unwrap()
+    };
+    let (other, legacy, item) = (id(1), id(2), id(3));
+    let mut features = vec![
+        feature(&other, OperationFamily::Thread),
+        feature(&item, OperationFamily::Thread),
+    ];
+    assert_eq!(
+        thread_target(features.iter_mut(), &legacy, Some(&item)).map(|found| found.id.clone()),
+        Some(item.clone())
+    );
+    assert!(thread_target(features.iter_mut(), &legacy, None).is_none());
+    features[1] = feature(&item, OperationFamily::Sketch);
+    assert!(thread_target(features.iter_mut(), &legacy, Some(&item)).is_none());
+    features[0] = feature(&legacy, OperationFamily::Sketch);
+    assert!(thread_target(features.iter_mut(), &legacy, None).is_some());
+}
