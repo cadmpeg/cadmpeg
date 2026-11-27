@@ -574,3 +574,75 @@ fn a_formula_cell_takes_the_kind_freecad_computes() {
         &id("A16")
     ));
 }
+
+#[test]
+fn text_times_a_number_a_linked_label_a_comparison_and_an_aggregate_take_freecads_kind() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object name="Sheet" type="Spreadsheet::Sheet"/><Object name="Vars" type="App::VarSet"/><Object name="Steel" type="App::FeaturePython"/></Objects>
+<ObjectData Count="3">
+<Object name="Steel"><Properties Count="1">
+<Property name="Label" type="App::PropertyString"><String value="S235"/></Property>
+</Properties></Object>
+<Object name="Vars"><Properties Count="3">
+<Property name="Flag" type="App::PropertyBool" status="1"><Bool value="true"/></Property>
+<Property name="Material" type="App::PropertyLink" status="1"><Link value="Steel"/></Property>
+<Property name="Other" type="App::PropertyXLink" status="1"><XLink file="" name="Steel"/></Property>
+</Properties></Object>
+<Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="15">
+<Cell address="A1" content="5 mm"/>
+<Cell address="B1" content="=str(A1) * Vars.Flag + &lt;&lt;-&gt;&gt; * (1 - Vars.Flag)"/>
+<Cell address="B2" content="=Vars.Material.Label"/>
+<Cell address="B3" content="=Vars.Other.Label2"/>
+<Cell address="B4" content="=(&lt;&lt;%s x %s&gt;&gt; % tuple(1; 2) + &lt;&lt;a&gt;&gt;) * Vars.Flag"/>
+<Cell address="B5" content="=Vars.Flag * (&lt;&lt;a&gt;&gt; + &lt;&lt;b&gt;&gt;)"/>
+<Cell address="B6" content="=&lt;&lt;a&gt;&gt; == 1"/>
+<Cell address="B7" content="=A1 &gt; 2"/>
+<Cell address="B8" content="=sum(&lt;&lt;a&gt;&gt;; 2 mm)"/>
+<Cell address="B9" content="=sum(C1:C2)"/>
+<Cell address="D1" content="=str(A1) * 2 mm"/>
+<Cell address="D2" content="=Vars.Material.Shape"/>
+<Cell address="C1" content="'abc"/>
+<Cell address="C2" content="3 mm"/>
+<Cell address="C3" content="=sum(C2:C2)"/>
+</Cells></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let (ir, losses) = decode_with_losses(document);
+    let id = |address: &str| format!("fcstd:design:parameter#Sheet:cell:{address}");
+    let cell = |address: &str| parameter(&ir, &id(address));
+    let assumed = |address: &str| {
+        charged(
+            &losses,
+            crate::loss::FreecadLossCode::ParameterQuantityAssumed,
+            &id(address),
+        )
+    };
+
+    // Python repeats text by an integer or a bool, and a link property's
+    // label is the named object's label.
+    for address in ["B1", "B2", "B3", "B4", "B5"] {
+        assert_eq!(cell(address).kind, ValueKind::Text, "{address}");
+        assert!(!assumed(address), "{address}: {losses:?}");
+    }
+
+    // A comparison is a bool, and an aggregate passes over a text value.
+    for (address, quantity) in [
+        ("B6", Quantity::REAL),
+        ("B7", Quantity::REAL),
+        ("B8", Quantity::LENGTH),
+        ("C3", Quantity::LENGTH),
+    ] {
+        assert_eq!(
+            cell(address).kind,
+            ValueKind::Quantity(quantity),
+            "{address}"
+        );
+        assert!(!assumed(address), "{address}: {losses:?}");
+    }
+
+    // FreeCAD refuses a range with a text cell, text times a length, and
+    // reads another property of a linked object at run time.
+    for address in ["B9", "D1", "D2"] {
+        assert_eq!(cell(address).kind, ValueKind::Quantity(Quantity::REAL));
+        assert!(assumed(address), "{address}: {losses:?}");
+    }
+}

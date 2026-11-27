@@ -1456,7 +1456,7 @@ const JOINT_VALUES: &str = r#"<Document SchemaVersion="4" FileVersion="1">
   <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="4"><Enum value="Fixed"/><Enum value="Angle"/><Enum value="Distance"/><Enum value="Slider"/></CustomEnumList></Property>
   <Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Bracket" sub="Face1"/></Property>
   <Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Pin" sub="Face2"/></Property>
-  <Property name="Angle" type="App::PropertyAngle"><Float value="-30"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="-330"/></Property>
   <Property name="Distance" type="App::PropertyLength"><Float value="5"/></Property>
  </Properties></Object>
  <Object name="OldTurn"><Properties Count="4">
@@ -1506,7 +1506,7 @@ const JOINT_VALUES: &str = r#"<Document SchemaVersion="4" FileVersion="1">
 fn joint_values_follow_what_the_joint_type_uses() {
     use cadmpeg_ir::design::construction::{FrameAxis, PostStep};
     use cadmpeg_ir::design::dimension::Dimension;
-    use cadmpeg_ir::design::ops::shared::{AxisLimits, JointKind, JointMotion};
+    use cadmpeg_ir::design::ops::shared::{Alignment, AxisLimits, JointKind, JointMotion};
     use cadmpeg_ir::design::options::NativeOption;
 
     let decoded = FcstdCodec
@@ -1525,19 +1525,21 @@ fn joint_values_follow_what_the_joint_type_uses() {
         other => panic!("{other:?}"),
     };
 
-    // FreeCAD solves an Angle joint for the magnitude of its angle; the
-    // stored sign and the unused distance are source settings.
+    // FreeCAD solves an Angle joint for the cosine of its angle: the angle
+    // reflected into a half turn. The stored value and the unused distance
+    // are source settings, and the joint states no alignment.
     let (_, turn) = joint_feature(ir, "Turn");
     let JointKind::Angle { angle, .. } = &turn.kind else {
         panic!("{:?}", turn.kind);
     };
     assert!((degrees(angle) - 30.0).abs() < 1e-9);
+    assert_eq!(turn.alignment, None);
     let Some(NativeOption::Angle(Dimension::Literal(signed))) =
         option(&turn.source_settings, "Angle")
     else {
         panic!("{:?}", turn.source_settings);
     };
-    assert!((signed.get().to_degrees() + 30.0).abs() < 1e-9);
+    assert!((signed.get().to_degrees() + 330.0).abs() < 1e-9);
     assert!(matches!(
         option(&turn.source_settings, "Distance"),
         Some(NativeOption::Length(Dimension::Literal(length))) if length.get() == 5.0
@@ -1567,10 +1569,13 @@ fn joint_values_follow_what_the_joint_type_uses() {
     };
     assert!(matches!(offset.z, Some(Dimension::Literal(z)) if z.get() == -2.0));
     assert_eq!(option(&gap.native_options, "Distance"), None);
+    assert_eq!(gap.alignment, Some(Alignment::Nearest));
 
-    // An Angle joint at a full turn holds the axes parallel.
+    // An Angle joint at a full turn holds the axes parallel in the nearer
+    // sense.
     let (_, still) = joint_feature(ir, "Still");
     assert_eq!(still.kind, JointKind::Parallel);
+    assert_eq!(still.alignment, Some(Alignment::Nearest));
     assert!(option(&still.source_settings, "Angle").is_some());
 
     // A limit whose flag is off, and a limit the joint type does not use, is
@@ -1593,6 +1598,7 @@ fn joint_values_follow_what_the_joint_type_uses() {
     };
     assert_eq!(bounds.min, None);
     assert!(matches!(bounds.max, Some(Dimension::Literal(length)) if length.get() == 9.0));
+    assert_eq!(slide.alignment, Some(Alignment::Nearest));
     for name in ["LengthMin", "EnableLengthMin", "AngleMin", "EnableAngleMin"] {
         assert!(option(&slide.source_settings, name).is_some(), "{name}");
     }

@@ -9,7 +9,9 @@ use cadmpeg_ir::design::construction::{
     kinds, AxisValue, Construction, ConstructionKind, FrameAxis, FrameValue, PlaneValue,
 };
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::ops::shared::{JointConnector, JointKind, JointMotion, JointOffset};
+use cadmpeg_ir::design::ops::shared::{
+    Alignment, JointConnector, JointKind, JointMotion, JointOffset,
+};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::procedural_surfaces::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::{
@@ -19,6 +21,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::topology::{EdgeCarrier, Face};
 
+use crate::loss::FreecadLossCode;
 use crate::native::{LinkTarget, ObjectRecord, PropertyRecord};
 use crate::topology_transfer::TopologyOccurrence;
 
@@ -246,20 +249,32 @@ pub(super) struct Restatement {
     pub(super) shapes: [Shape; 2],
     /// The axes also stay parallel, a fact the kind does not state.
     pub(super) parallel: bool,
+    /// `Nearest` where the solver holds the z axes parallel in either sense.
+    pub(super) alignment: Option<Alignment>,
 }
 
-/// The joint of form `form` with stored distance `distance`. `None` where
-/// the solver cannot satisfy it: a negative separation from an axis or of two
-/// points.
-pub(super) fn restatement(form: Form, distance: f64) -> Option<Restatement> {
-    let length = |value: f64| Length::new(value).map(Dimension::Literal);
-    let separation = |value: f64| (value >= 0.0).then(|| length(value)).flatten();
-    let restated = |kind, shapes| Restatement {
+/// The joint of form `form` with stored distance `distance`. The solver
+/// squares a separation from an axis, so a negative one is its magnitude.
+/// The code is the loss of a form with no joint: a negative separation of two
+/// points, which no placement satisfies, or a distance and radii with no
+/// finite sum.
+pub(super) fn restatement(form: Form, distance: f64) -> Result<Restatement, FreecadLossCode> {
+    let length = |value: f64| {
+        Length::new(value)
+            .map(Dimension::Literal)
+            .ok_or(FreecadLossCode::FeatureJointDistanceUnresolved)
+    };
+    let restated = |kind, shapes, alignment| Restatement {
         kind,
         shapes,
         parallel: false,
+        alignment,
     };
-    Some(match form {
+    let distance_kind = |distance| JointKind::Distance {
+        distance: Some(distance),
+        limits: None,
+    };
+    Ok(match form {
         Form::Planar => restated(
             JointKind::Motion {
                 motion: JointMotion::Planar { axis: FrameAxis::Z },
@@ -274,60 +289,65 @@ pub(super) fn restatement(form: Form, distance: f64) -> Option<Restatement> {
                 drives: Vec::new(),
             },
             [Shape::Frame, Shape::Frame],
+            Some(Alignment::Nearest),
         ),
         Form::PointInPlane { extra } => restated(
             JointKind::Coincident {
                 offset: Some(length(distance + extra)?),
             },
             [Shape::Plane, Shape::Point],
+            None,
         ),
         Form::LineInPlane { extra } => restated(
             JointKind::Coincident {
                 offset: Some(length(distance + extra)?),
             },
             [Shape::Plane, Shape::Axis],
+            None,
         ),
         Form::RevCyl { extra } => {
-            let value = distance + extra;
+            let value = (distance + extra).abs();
+            let separation = length(value)?;
             if value > 0.0 {
                 Restatement {
-                    kind: JointKind::Distance {
-                        distance: Some(length(value)?),
-                        limits: None,
-                    },
+                    kind: distance_kind(separation),
                     shapes: [Shape::Axis, Shape::Axis],
                     parallel: true,
+                    alignment: Some(Alignment::Nearest),
                 }
-            } else if value < 0.0 {
-                return None;
             } else {
-                restated(JointKind::Concentric, [Shape::Axis, Shape::Axis])
+                restated(
+                    JointKind::Concentric,
+                    [Shape::Axis, Shape::Axis],
+                    Some(Alignment::Nearest),
+                )
             }
         }
         Form::CylSph { extra } => restated(
-            JointKind::Distance {
-                distance: Some(separation(distance + extra)?),
-                limits: None,
-            },
+            distance_kind(length((distance + extra).abs())?),
             [Shape::Axis, Shape::Point],
+            None,
         ),
-        Form::SphSph { extra } => restated(
-            JointKind::Distance {
-                distance: Some(separation(distance + extra)?),
-                limits: None,
-            },
-            [Shape::Point, Shape::Point],
-        ),
+        Form::SphSph { extra } => {
+            let separation = length(distance + extra)?;
+            if distance + extra < 0.0 {
+                return Err(FreecadLossCode::FeatureJointDistanceUnsatisfiable);
+            }
+            restated(
+                distance_kind(separation),
+                [Shape::Point, Shape::Point],
+                None,
+            )
+        }
         Form::PointPoint if distance < super::CONFUSION => restated(
             JointKind::Coincident { offset: None },
             [Shape::Point, Shape::Point],
+            None,
         ),
         Form::PointPoint => restated(
-            JointKind::Distance {
-                distance: Some(length(distance)?),
-                limits: None,
-            },
+            distance_kind(length(distance)?),
             [Shape::Point, Shape::Point],
+            None,
         ),
     })
 }

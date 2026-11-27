@@ -370,7 +370,8 @@ impl<'a> Catalog<'a> {
 }
 
 /// The kind of the value of a property of type `type_name`, or of its
-/// component `sub` (§5.12, Kind).
+/// component `sub` (§5.12, Kind). A link property's `Label` and `Label2`
+/// are those of the object it names.
 fn property_kind(type_name: &str, sub: &[String]) -> Kind {
     let sub = sub.iter().map(String::as_str).collect::<Vec<_>>();
     let quantity = match (type_name.strip_prefix("App::Property"), sub.as_slice()) {
@@ -381,9 +382,11 @@ fn property_kind(type_name: &str, sub: &[String]) -> Kind {
             Some("Placement"),
             ["Rotation", "Axis", "x" | "y" | "z"] | ["Rotation", "Yaw" | "Pitch" | "Roll"],
         ) => Quantity::REAL,
-        (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font"), []) => {
-            return Kind::Text
-        }
+        (Some("String" | "Enumeration" | "File" | "FileIncluded" | "Font"), [])
+        | (
+            Some("Link" | "LinkChild" | "LinkGlobal" | "LinkHidden" | "XLink"),
+            ["Label" | "Label2"],
+        ) => return Kind::Text,
         (Some(name), []) => match property_quantity(name) {
             Some(quantity) => quantity,
             None => return Kind::Unknown,

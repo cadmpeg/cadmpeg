@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_ir::design::construction::FrameAxis;
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::ops::shared::{JointKind, JointMotion};
+use cadmpeg_ir::design::ops::shared::{Alignment, JointKind, JointMotion};
+
+use crate::loss::FreecadLossCode;
 
 use super::{
     classify, restatement, CurveType, Element, Form, Restatement, Shape, Side, SurfaceType,
@@ -222,6 +224,7 @@ fn a_planar_case_offsets_along_the_first_z_axis() {
     );
     assert!(limits.is_empty());
     assert_eq!(planar.shapes, [Shape::Frame, Shape::Frame]);
+    assert_eq!(planar.alignment, Some(Alignment::Nearest));
 }
 
 #[test]
@@ -234,6 +237,7 @@ fn an_in_plane_case_is_a_signed_coincidence() {
     assert_eq!(length(&line.kind), Some(-5.0));
     assert_eq!(line.shapes, [Shape::Plane, Shape::Axis]);
     assert!(!point.parallel && !line.parallel);
+    assert_eq!((point.alignment, line.alignment), (None, None));
 }
 
 #[test]
@@ -243,10 +247,16 @@ fn an_axis_pair_keeps_its_axes_parallel() {
     assert_eq!(length(&apart.kind), Some(6.0));
     assert_eq!(apart.shapes, [Shape::Axis, Shape::Axis]);
     assert!(apart.parallel);
+    assert_eq!(apart.alignment, Some(Alignment::Nearest));
     let coaxial = restated(Form::RevCyl { extra: 5.0 }, -5.0);
     assert_eq!(coaxial.kind, JointKind::Concentric);
     assert!(!coaxial.parallel);
-    assert_eq!(restatement(Form::RevCyl { extra: 0.0 }, -1.0), None);
+    assert_eq!(coaxial.alignment, Some(Alignment::Nearest));
+    // The solver squares the separation, so a negative one is its magnitude.
+    let crossed = restated(Form::RevCyl { extra: 0.0 }, -1.0);
+    assert_eq!(length(&crossed.kind), Some(1.0));
+    assert!(crossed.parallel);
+    assert_eq!(crossed.alignment, Some(Alignment::Nearest));
 }
 
 #[test]
@@ -254,11 +264,22 @@ fn a_separation_from_an_axis_or_a_point_adds_the_radii() {
     let axis = restated(Form::CylSph { extra: 2.0 }, -1.0);
     assert_eq!(length(&axis.kind), Some(1.0));
     assert_eq!(axis.shapes, [Shape::Axis, Shape::Point]);
-    assert_eq!(restatement(Form::CylSph { extra: 2.0 }, -3.0), None);
+    assert_eq!(axis.alignment, None);
+    // The solver squares the separation from an axis.
+    let crossed = restated(Form::CylSph { extra: 2.0 }, -3.0);
+    assert_eq!(length(&crossed.kind), Some(1.0));
     let points = restated(Form::SphSph { extra: 4.0 }, -1.5);
     assert_eq!(length(&points.kind), Some(2.5));
     assert_eq!(points.shapes, [Shape::Point, Shape::Point]);
-    assert_eq!(restatement(Form::SphSph { extra: 0.0 }, -0.5), None);
+    // The solver holds the length of the separation of two points.
+    assert_eq!(
+        restatement(Form::SphSph { extra: 0.0 }, -0.5),
+        Err(FreecadLossCode::FeatureJointDistanceUnsatisfiable)
+    );
+    assert_eq!(
+        restatement(Form::CylSph { extra: f64::MAX }, f64::MAX),
+        Err(FreecadLossCode::FeatureJointDistanceUnresolved)
+    );
 }
 
 #[test]

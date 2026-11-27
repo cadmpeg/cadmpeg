@@ -87,9 +87,9 @@ pub(crate) enum FreecadLossCode {
     /// another document or is not decoded, so the form `FreeCAD` solves the
     /// joint in is unknown; the joint keeps the distance as a native option.
     FeatureJointDistanceUnresolved,
-    /// An assembly `Distance` joint states a distance that `FreeCAD`'s solver
-    /// cannot satisfy for its element pair, a negative separation of an axis;
-    /// the joint keeps the distance as a native option.
+    /// An assembly `Distance` joint states a negative separation of two
+    /// points, which `FreeCAD`'s solver cannot satisfy; the joint keeps the
+    /// distance as a native option.
     FeatureJointDistanceUnsatisfiable,
     /// A design parameter stores an empty expression; its stored value stands
     /// as its definition.

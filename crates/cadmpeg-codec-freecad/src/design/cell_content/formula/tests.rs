@@ -138,10 +138,13 @@ fn a_reference_takes_the_kind_of_what_it_names() {
 #[test]
 fn a_range_takes_the_quantity_its_cells_share() {
     let mut scope = Names {
-        range: Some(vec![LENGTH, Kind::Text, LENGTH]),
+        range: Some(vec![LENGTH, LENGTH]),
         ..Names::default()
     };
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), LENGTH);
+    // An aggregate stops at a text cell of a range.
+    scope.range = Some(vec![LENGTH, Kind::Text, LENGTH]);
+    assert_eq!(kind_in("sum(A1:A3)", &mut scope), Kind::Unknown);
     scope.range = Some(vec![LENGTH, AREA]);
     assert_eq!(kind_in("sum(A1:A3)", &mut scope), Kind::Unknown);
     let node = parse("sum(A1:A3) + B1").unwrap();

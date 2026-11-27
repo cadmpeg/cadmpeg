@@ -637,16 +637,19 @@ value cell whose number is not finite has no value and emits `parameter.value-no
 formula cell stores no value. Its value kind is the kind of its result under `FreeCAD`'s unit
 rules, with the cells it references read first in dependency order:
 
-- A `<<…>>` string, `str()`, `address()`, the sum of two strings, and a string `%` a value are text.
+- A `<<…>>` string, `str()`, `address()`, the sum of two strings, a string `%` a value, and the
+  product of a string and a dimensionless number, which repeats the string, are text.
 - A reference to a cell, by alias, address, or `.address`, takes that cell's kind. A reference to a
   typed property of an object, or a placement or vector component, takes the property's quantity;
-  a string, enumeration, or file property is text.
-- Addition and subtraction of equal quantities keep the quantity, and a comparison of equal
-  quantities is a real; a product and a quotient add and subtract the exponents of the units;
+  a string, enumeration, or file property is text. `Label` and `Label2` of the object that a link
+  property names are text.
+- Addition and subtraction of equal quantities keep the quantity, and a comparison is a real; a
+  product and a quotient add and subtract the exponents of the units;
   `x ^ n` and `pow(x, n)` multiply each exponent by the constant `n` where each product is an
   integer.
 - `abs`, `round`, `trunc`, `ceil`, `floor`, `mod`, `hypot`, `cath`, `href`, `sum`, `min`, `max`,
-  `average`, and `stddev` keep the quantity of their values; `sqrt` and `cbrt` divide its
+  `average`, and `stddev` keep the quantity of their values, and an aggregate passes over a text
+  argument and stops at a text cell of a range; `sqrt` and `cbrt` divide its
   exponents; `cos`, `sin`, `tan`, `exp`, `log`, `log10`, `sinh`, `cosh`, `tanh`, `not`, `and`, `or`,
   `count`, and `vdot` give a real; `acos`, `asin`, `atan`, `atan2`, and `vangle` give an angle; and
   `vlinedist` and `vplanedist` give a length.
@@ -888,13 +891,19 @@ and `qw`, the stored position and quaternion (Rule N case (a)). Fixed, revolute,
 are motions about the connector frame's z axis, with their enabled limits: angle limits on
 revolute and cylindrical joints, and length limits on cylindrical and slider joints. Parallel,
 perpendicular, and angle joints are relations of those kinds. An angle joint's angle is the
-magnitude of `Angle`, or of a float `Distance`. An angle joint whose angle is less than `1e-7`
-radians from a multiple of a full turn is a parallel joint. Rack-pinion, screw, gears, and belt
+magnitude of `Angle`, or of a float `Distance`, reflected into a half turn: the solver holds the
+cosine of the angle between the z axes. An angle joint whose angle is less than `1e-7`
+radians from a multiple of a full turn is a parallel joint. The solver holds the z axes of fixed,
+revolute, cylindrical, slider, and parallel joints, of planar and concentric distance joints, and
+of distance joints between parallel axes, in either sense. The pre-solve of fixed, revolute,
+cylindrical, and slider joints, and the solver's iteration from the stored placements for the
+others, keep the nearer sense: these joints have the alignment `nearest`. Rack-pinion, screw, gears, and belt
 joints are couplings whose pitch radius,
 pitch, or radii are `Distance` and `Distance2`. Another family is a native kind with its source
 label. `Suppressed` is the feature's suppression. Each other stored joint value is a source setting
 under its property name, `fcstd:<name>` (Rule N case (b)): a value the kind does not use, a limit
-whose enable flag is false and that flag, a negative angle whose magnitude is the joint angle, and
+whose enable flag is false and that flag, an angle outside zero to a half turn whose reflection is
+the joint angle, and
 `Detach1` and `Detach2`. An angle is an `Angle` option in radians, a length a `Length` option in
 millimetres, and a flag a `Bool` option. A native kind keeps these values as native options (Rule N case (a)). A
 `JointGroup` is an unordered `Group` of its joints; the document's `Group` holds each other joint.
@@ -916,7 +925,8 @@ face before an edge, an edge before a vertex, a plane, cylinder, cone, torus, an
 order, and a line before a circle. Where it reverses the order, it swaps `Reference1` with
 `Reference2` and `Placement1` with `Placement2`; `Offset1`, `Offset2`, `Detach1`, and `Detach2`
 stay with their connector slots, and each connector is built from its slot's swapped reference and
-placement.
+placement. A swapped placement holds the offset of the other slot: an attached connector's resolved
+frame is that placement with the other slot's offset removed and its own offset applied.
 With `d` the stored `Distance` (zero where it is absent), and `r1` and `r2` the radii of the first
 and second ordered elements (the radius of a cylinder, a sphere, or a circle, and zero for other
 types), the joint is:
@@ -927,8 +937,8 @@ types), the joint is:
 | plane and sphere | The same, offset `d + r2` |
 | line and plane | Coincidence of the second connector's axis with the first connector's plane, offset `d` |
 | plane and cylinder | The same, offset `d + r2` |
-| line and line, line and circle, circle and circle, cylinder and cylinder, cylinder and torus | With `v` equal to `d`, `d + r2`, `d + r1 + r2`, `d + r1 + r2`, and `d + r1`: for `v` greater than zero, distance `v` between the connectors' axes and the native option `fcstd:parallelAxes` (Bool `true`) for the parallel axes; for `v` equal to zero, a concentric joint |
-| cylinder and sphere, torus and sphere, point and cylinder, point and line | Distance `d + r1 + r2`, `d + r2`, `d + r1`, and `d` from the first connector's axis to the second connector's point |
+| line and line, line and circle, circle and circle, cylinder and cylinder, cylinder and torus | With `v` equal to the magnitude of `d`, `d + r2`, `d + r1 + r2`, `d + r1 + r2`, and `d + r1`: for `v` greater than zero, distance `v` between the connectors' axes and the native option `fcstd:parallelAxes` (Bool `true`) for the parallel axes; for `v` equal to zero, a concentric joint |
+| cylinder and sphere, torus and sphere, point and cylinder, point and line | Distance equal to the magnitude of `d + r1 + r2`, `d + r2`, `d + r1`, and `d` from the first connector's axis to the second connector's point |
 | sphere and sphere, point and sphere | Distance `d + r1 + r2` and `d + r1` between the connectors' points |
 | vertex and vertex | Coincidence of the connectors' points for `d` less than `1e-7`, and distance `d` between them for other `d` |
 | each other pair | Planar motion along the first connector frame's z axis with z offset `d` |
@@ -937,9 +947,10 @@ A point connector is the origin of the connector frame, an axis connector its or
 and a plane connector its origin, z axis as normal, and x axis. Where an element's object is in
 another document, or a face or edge that the order reads has no decoded surface or curve, the
 joint is a distance joint with no distance, `Distance` is the native option `fcstd:Distance`
-(Length, Rule N case (a)), and the joint emits `feature.joint-distance-unresolved`. A distance
-`v` less than zero between axes, from an axis to a point, or between points has no solution: the
-joint is a distance joint with no distance, keeps `fcstd:Distance`, and emits
+(Length, Rule N case (a)), and the joint emits `feature.joint-distance-unresolved`. The joint is
+the same where a distance and radii have no finite sum. The solver squares a separation from an
+axis and holds the length of a separation of two points. A distance less than zero between the
+points of a sphere and sphere or a point and sphere has no solution: the joint is a distance joint with no distance, keeps `fcstd:Distance`, and emits
 `feature.joint-distance-unsatisfiable`.
 
 ## 10. Drawing graph

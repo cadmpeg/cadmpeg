@@ -5,6 +5,7 @@
 //! `Group` of its joints.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::f64::consts::{PI, TAU};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
@@ -17,7 +18,8 @@ use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::{CodecName, NativeName, NativeNameValue};
 use cadmpeg_ir::design::ops::shared::{
-    AxisLimits, Bounds, Coupling, Joint, JointConnector, JointKind, JointMotion, JointOffset,
+    Alignment, AxisLimits, Bounds, Coupling, Joint, JointConnector, JointKind, JointMotion,
+    JointOffset,
 };
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
 use cadmpeg_ir::design::refs::Member;
@@ -123,7 +125,8 @@ pub(super) fn project(
                     distance::classify([&first, &second])
                 });
                 // `swapJCS` exchanges the references and placements of the two
-                // slots; each slot keeps its offset and detach flag.
+                // slots; each slot keeps its offset and detach flag, and an
+                // attached slot's placement is rebuilt with its own offset.
                 let placed = match classified {
                     Some(Ok((true, _))) => [second, first],
                     _ => [first, second],
@@ -136,7 +139,7 @@ pub(super) fn project(
                             return products.connector(
                                 definition,
                                 reference,
-                                placed.placement,
+                                reslotted(placed.placement, placed.offset, slot.offset),
                                 slot.offset,
                             );
                         }
@@ -194,14 +197,14 @@ pub(super) fn project(
                     Some(code @ FreecadLossCode::FeatureJointDistanceUnresolved) => {
                         losses.push(code.note(format!(
                             "distance joint {} names an element whose shape is in another \
-                             document or is not decoded; its distance stays the native option \
-                             fcstd:Distance",
+                             document or is not decoded, or a distance and radii with no finite \
+                             sum; its distance stays the native option fcstd:Distance",
                             record.object()
                         )));
                     }
                     Some(code) => losses.push(code.note(format!(
-                        "distance joint {} states a distance that the solver cannot satisfy \
-                         for its elements; it stays the native option fcstd:Distance",
+                        "distance joint {} states a negative separation of two points, which \
+                         the solver cannot satisfy; it stays the native option fcstd:Distance",
                         record.object()
                     ))),
                     None => {}
@@ -301,6 +304,11 @@ fn joint(
         coupling,
         joints: None,
     };
+    let mut alignment = matches!(
+        family.as_str(),
+        "fixed" | "revolute" | "cylindrical" | "slider" | "parallel"
+    )
+    .then_some(Alignment::Nearest);
     let kind = match family.as_str() {
         "fixed" => motion(JointMotion::Rigid, Vec::new()),
         "revolute" => motion(
@@ -324,10 +332,7 @@ fn joint(
             let restated = classified
                 .unwrap_or(Err(distance::Unresolved))
                 .map_err(|_| FreecadLossCode::FeatureJointDistanceUnresolved)
-                .and_then(|form| {
-                    distance::restatement(form, stored.unwrap_or(0.0))
-                        .ok_or(FreecadLossCode::FeatureJointDistanceUnsatisfiable)
-                });
+                .and_then(|form| distance::restatement(form, stored.unwrap_or(0.0)));
             match restated {
                 Ok(restatement) => {
                     let [first, second] = connectors;
@@ -336,6 +341,7 @@ fn joint(
                         distance::connector(first, first_shape),
                         distance::connector(second, second_shape),
                     ];
+                    alignment = restatement.alignment;
                     if restatement.parallel {
                         native_options.extend(
                             key("parallelAxes")
@@ -361,9 +367,8 @@ fn joint(
         "angle" => {
             let name = if old_angle { "Distance" } else { "Angle" };
             match parameters.scalar_value(name) {
-                Some(angle)
-                    if (angle.get().to_radians().abs() % std::f64::consts::TAU) < CONFUSION =>
-                {
+                Some(angle) if (angle.get().to_radians().abs() % TAU) < CONFUSION => {
+                    alignment = Some(Alignment::Nearest);
                     JointKind::Parallel
                 }
                 _ => JointKind::Angle {
@@ -400,12 +405,27 @@ fn joint(
         Joint {
             connectors,
             kind,
-            alignment: None,
+            alignment,
             native_options,
             source_settings,
         },
         charge,
     ))
+}
+
+/// Frame `placement`, which `FreeCAD` built with offset `from`, rebuilt with
+/// offset `to` (`updateJCSPlacements` after `swapJCS`).
+fn reslotted(placement: FiniteFrame, from: FiniteFrame, to: FiniteFrame) -> FiniteFrame {
+    if from == to {
+        return placement;
+    }
+    from.transform()
+        .try_inverse_affine()
+        .and_then(|inverse| placement.transform().compose(inverse))
+        .and_then(|base| base.compose(to.transform()))
+        .ok()
+        .and_then(|frame| FiniteFrame::try_from(frame.rows()).ok())
+        .unwrap_or(placement)
 }
 
 /// `Precision::Confusion()`, the tolerance of `FreeCAD`'s joint cases: an
@@ -440,13 +460,15 @@ impl Read<'_> {
         Some(Dimension::Literal(value))
     }
 
-    /// The magnitude of angle `name`, stored in degrees, which is the angle
-    /// `FreeCAD` solves for. A negative stored value stays a parameter the
-    /// joint does not hold, since its sign has no effect.
+    /// The angle `FreeCAD` solves for from angle `name`, stored in degrees:
+    /// the solver holds the cosine of its magnitude, so the angle is that
+    /// magnitude reflected into a half turn. A stored value outside a half
+    /// turn stays a parameter the joint does not hold.
     fn magnitude(&mut self, name: &'static str) -> Option<Dimension<Angle>> {
         let stored = self.parameters.scalar_value(name)?.get();
-        let value = Angle::new(stored.abs().to_radians())?;
-        if stored >= 0.0 {
+        let turn = stored.abs().to_radians() % TAU;
+        let value = Angle::new(if turn > PI { TAU - turn } else { turn })?;
+        if (0.0..=180.0).contains(&stored) {
             self.used.insert(name);
         }
         Some(Dimension::Literal(value))

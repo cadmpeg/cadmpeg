@@ -6,7 +6,7 @@ use cadmpeg_ir::design::construction::{FrameAxis, InputReference};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::names::NativeNameValue;
-use cadmpeg_ir::design::ops::shared::{Joint, JointConnector, JointKind, JointMotion};
+use cadmpeg_ir::design::ops::shared::{Alignment, Joint, JointConnector, JointKind, JointMotion};
 use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::selection::{PickContext, Picks, StepRef};
 
@@ -168,6 +168,7 @@ fn two_planar_faces_are_a_planar_joint_offset_by_the_distance() {
         panic!("{:?}", decoded.joint.kind);
     };
     assert_eq!(length(offset.z.as_ref()), Some(4.0));
+    assert_eq!(decoded.joint.alignment, Some(Alignment::Nearest));
     assert_eq!(
         decoded.joint.connectors.each_ref().map(connector),
         [
@@ -194,6 +195,7 @@ fn a_line_and_a_circle_hold_parallel_axes_apart_by_the_distance_and_radius() {
         panic!("{:?}", decoded.joint.kind);
     };
     assert_eq!(length(distance.as_ref()), Some(5.0));
+    assert_eq!(decoded.joint.alignment, Some(Alignment::Nearest));
     assert_eq!(
         decoded.joint.connectors.each_ref().map(connector),
         [
@@ -256,27 +258,40 @@ fn two_vertices_at_no_distance_coincide() {
 }
 
 #[test]
-fn an_axis_separation_below_the_radii_stays_native() {
+fn an_axis_separation_below_the_radius_is_its_magnitude() {
+    // The pin's first edge is a circle of radius 3; the solver squares the
+    // separation of the axes.
     let decoded = decode(
         &link("BracketOccurrence", "Edge1"),
-        &link("PinOccurrence", "Edge3"),
+        &link("PinOccurrence", "Edge1"),
         -5.0,
     );
-    assert_eq!(
-        decoded.joint.kind,
-        JointKind::Distance {
-            distance: None,
-            limits: None
-        }
-    );
-    assert!(matches!(
-        native(&decoded.joint, "Distance"),
-        Some(NativeOption::Length(Dimension::Literal(length))) if length.get() == -5.0
-    ));
-    assert!(charged(
+    let JointKind::Distance { distance, .. } = &decoded.joint.kind else {
+        panic!("{:?}", decoded.joint.kind);
+    };
+    assert_eq!(length(distance.as_ref()), Some(2.0));
+    assert_eq!(native(&decoded.joint, "Distance"), None);
+    assert!(!charged(
         &decoded,
         FreecadLossCode::FeatureJointDistanceUnsatisfiable
     ));
+}
+
+#[test]
+fn a_swapped_attached_slot_takes_the_frame_of_its_own_offset() {
+    // The joint stores the first reference's frame (20, 6, 3) built with
+    // offset +0.5 along z; the swap moves that reference to the attached
+    // second slot, whose offset is -0.5 along z.
+    let decoded = decode(
+        &link("PinOccurrence", "Face1"),
+        &link("BracketOccurrence", "Face1"),
+        1.0,
+    );
+    let JointConnector::Axis(second) = &decoded.joint.connectors[1] else {
+        panic!("{:?}", decoded.joint.connectors[1]);
+    };
+    let origin = second.resolved.as_ref().unwrap().origin.get();
+    assert_eq!([origin.x, origin.y, origin.z], [20.0, 6.0, 2.0]);
 }
 
 #[test]

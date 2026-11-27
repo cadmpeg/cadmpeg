@@ -266,14 +266,15 @@ fn unit_kind(unit: &Unit) -> Kind {
 }
 
 /// The kind of `left op right` (`OperatorExpression`, Python's number
-/// protocol for `%`).
+/// protocol): text times an integer or a bool repeats the text, and a
+/// comparison is a bool.
 fn binary(op: Operator, left: Kind, right: Kind, exponent: Option<f64>) -> Kind {
     let quantity = |quantity: Option<Quantity>| quantity.map_or(Kind::Unknown, Kind::Quantity);
     match (op, left, right) {
-        (Operator::Add, Kind::Text, Kind::Text) | (Operator::Remainder, Kind::Text, _) => {
-            Kind::Text
-        }
-        (Operator::Compare, Kind::Text, Kind::Text) => Kind::Quantity(Quantity::REAL),
+        (Operator::Add, Kind::Text, Kind::Text)
+        | (Operator::Remainder, Kind::Text, _)
+        | (Operator::Multiply, Kind::Text, Kind::Quantity(Quantity::REAL))
+        | (Operator::Multiply, Kind::Quantity(Quantity::REAL), Kind::Text) => Kind::Text,
         (_, Kind::Quantity(left), Kind::Quantity(right)) => match op {
             Operator::Add | Operator::Subtract => quantity((left == right).then_some(left)),
             Operator::Multiply => quantity(combine(left, right, 1)),
@@ -282,8 +283,9 @@ fn binary(op: Operator, left: Kind, right: Kind, exponent: Option<f64>) -> Kind 
                 quantity((left != Quantity::REAL || right == Quantity::REAL).then_some(left))
             }
             Operator::Power => power(left, right, exponent),
-            Operator::Compare => quantity((left == right).then_some(Quantity::REAL)),
+            Operator::Compare => Kind::Quantity(Quantity::REAL),
         },
+        (Operator::Compare, _, _) => Kind::Quantity(Quantity::REAL),
         _ => Kind::Unknown,
     }
 }
@@ -411,21 +413,21 @@ fn call(name: &str, args: &[Argument<'_>], scope: &mut dyn Scope) -> Kind {
     }
 }
 
-/// The kind of an aggregate: the quantity its values share. A range takes
-/// the quantities of its cells and passes over its text cells.
+/// The kind of an aggregate: the quantity its values share. It passes over a
+/// text value, and a text cell of a range has no quantity.
 fn aggregate(args: &[Argument<'_>], scope: &mut dyn Scope) -> Kind {
     let mut found: Option<Quantity> = None;
     for arg in args {
         let kinds = match arg {
-            Argument::Value(node) => vec![node.kind(scope)],
+            Argument::Value(node) => match node.kind(scope) {
+                Kind::Text => Vec::new(),
+                kind => vec![kind],
+            },
             Argument::Range(from, to) => {
                 let Some(kinds) = scope.range(from, to) else {
                     return Kind::Unknown;
                 };
                 kinds
-                    .into_iter()
-                    .filter(|kind| *kind != Kind::Text)
-                    .collect()
             }
         };
         for kind in kinds {
