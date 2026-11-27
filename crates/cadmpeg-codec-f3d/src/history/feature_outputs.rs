@@ -6,7 +6,7 @@ use super::body_closures::{bodies_touching, changed_topology_family_refs};
 use super::face_resolution::historical_brep_source;
 use super::historical_index::HistoricalBodyIndex;
 use super::history_states::{
-    bound_history_state_pair, effective_scope_previous_history_state_id, unique_history_state_pair,
+    bound_history_state_pair, unique_history_state_pair, PreviousState, ScopeStates, StateConflict,
 };
 use super::output_properties::{
     classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
@@ -23,6 +23,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub(crate) struct BoundFeatureOutputs {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) sweep_kinds: crate::design::feature_project::sweep_fallback::OutputFacts,
+    /// Pattern features, their result states, and the generated body slots
+    /// that no model body joins.
+    pub(crate) omitted_copies: Vec<(cadmpeg_ir::features::FeatureId, i64, Vec<i64>)>,
 }
 
 pub(crate) fn bind_feature_outputs(
@@ -37,6 +40,7 @@ pub(crate) fn bind_feature_outputs(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
+    let mut omitted_copies_out = Vec::new();
     let mut sweep_kinds = crate::design::feature_project::sweep_fallback::OutputFacts::default();
     let mut inferred_histories = Vec::new();
     let mut datum_plane_frames = HashMap::<
@@ -54,15 +58,19 @@ pub(crate) fn bind_feature_outputs(
             }
         }
     }
-    let feature_states = features
+    let placements = features
         .iter()
-        .map(|feature| feature_history_states(feature, scopes, histories))
+        .map(|feature| feature_history_states(feature, scopes, histories, scope_histories))
         .collect::<Vec<_>>();
     let feature_sources = features
         .iter()
-        .zip(&feature_states)
-        .map(|(feature, states)| {
-            let (state_id, previous_state_id) = (*states)?;
+        .zip(&placements)
+        .map(|(feature, placement)| {
+            let placement = (*placement)?;
+            let PreviousState::Linked(previous_state_id) = placement.from.previous else {
+                return None;
+            };
+            let state_id = placement.state_id;
             let scope = feature.native_ref.as_deref()?;
             let (history, _, previous) = if scope_histories.contains_key(scope) {
                 bound_history_state_pair(
@@ -101,26 +109,30 @@ pub(crate) fn bind_feature_outputs(
     losses.append(&mut inferred_histories);
     let output_chains = features
         .iter()
-        .enumerate()
-        .map(|(index, feature)| {
-            let (current, previous) = feature_states[index]?;
+        .zip(&placements)
+        .zip(&feature_sources)
+        .map(|((feature, placement), source)| {
+            let placement = (*placement)?;
+            let PreviousState::Linked(previous) = placement.from.previous else {
+                return None;
+            };
             super::output_chain::OutputChain::resolve(
                 histories,
-                current,
+                placement.state_id,
                 previous,
                 feature
                     .native_ref
                     .as_deref()
                     .and_then(|id| scope_histories.get(id))
                     .map(String::as_str)
-                    .or_else(|| feature_sources[index].map(|source| histories[source].id.as_str())),
+                    .or_else(|| source.map(|index| histories[index].id.as_str())),
             )
         })
         .collect::<Vec<_>>();
     let output_states = feature_sources
         .iter()
-        .zip(&feature_states)
-        .filter_map(|(source, states)| Some(((*source)?, (*states)?.0)))
+        .zip(&placements)
+        .filter_map(|(source, placement)| Some(((*source)?, (*placement)?.state_id)))
         .chain(output_chains.iter().flatten().flat_map(|chain| {
             chain
                 .states
@@ -129,11 +141,14 @@ pub(crate) fn bind_feature_outputs(
         }))
         .collect::<HashSet<_>>();
     let mut measured_states = output_states.clone();
-    for (source, states) in feature_sources.iter().zip(&feature_states) {
-        if let (Some(history_index), Some((_, previous_state_id))) = (*source, *states) {
-            measured_states.insert((history_index, previous_state_id));
-        }
-    }
+    measured_states.extend(feature_sources.iter().zip(&placements).filter_map(
+        |(source, placement)| {
+            let PreviousState::Linked(previous) = (*placement)?.from.previous else {
+                return None;
+            };
+            Some(((*source)?, previous))
+        },
+    ));
     measured_states.extend(
         histories
             .iter()
@@ -153,9 +168,13 @@ pub(crate) fn bind_feature_outputs(
     );
     let mut treatment_states = HashMap::<(usize, i64), Vec<EdgeMidpointRequest>>::new();
     for (feature_index, feature) in features.iter().enumerate() {
-        let Some((state_id, previous_state_id)) = feature_states[feature_index] else {
+        let Some(placement) = placements[feature_index] else {
             continue;
         };
+        let PreviousState::Linked(previous_state_id) = placement.from.previous else {
+            continue;
+        };
+        let state_id = placement.state_id;
         let op = match feature.evaluation.definition() {
             FeatureDefinition::Operation(op) => op,
             FeatureDefinition::PostProcess { operation, .. } => operation,
@@ -607,9 +626,28 @@ pub(crate) fn bind_feature_outputs(
         {
             continue;
         }
-        let Some((state_id, previous_state_id)) = feature_states[idx] else {
+        let Some(placement) = placements[idx] else {
             continue;
         };
+        let PreviousState::Linked(previous_state_id) = placement.from.previous else {
+            if let Some(reason) = unlinked_reason(placement.from.previous) {
+                if feature.evaluation.outputs().is_empty()
+                    && super::stored_bodies::bound_result_bodies(feature).is_none()
+                    && !super::stored_bodies::has_projection_bound_base_feature_outputs(
+                        feature, scopes,
+                    )
+                {
+                    losses.push(
+                        crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.note(format!(
+                            "{} has state {} of scope {} in the body history, and {reason}.",
+                            feature.id, placement.from.state_id, placement.scope
+                        )),
+                    );
+                }
+            }
+            continue;
+        };
+        let state_id = placement.state_id;
         let bound_history = feature_sources[idx];
         let history_source = bound_history.and_then(|h| historical_brep_source(&histories[h].id));
         let cur_key = bound_history.map(|h| (h, state_id));
@@ -979,7 +1017,10 @@ pub(crate) fn bind_feature_outputs(
             }
             entry.extend(newly_absorbed);
         }
-        if state_id == previous_state_id {
+        if state_id == previous_state_id
+            || super::stored_bodies::bound_result_bodies(feature).is_some()
+            || super::stored_bodies::has_projection_bound_base_feature_outputs(feature, scopes)
+        {
             continue;
         }
         let chain_outputs = output_chains
@@ -1000,11 +1041,6 @@ pub(crate) fn bind_feature_outputs(
             &state_outputs,
             outputs,
         );
-        if super::stored_bodies::bound_result_bodies(feature).is_some()
-            || super::stored_bodies::has_projection_bound_base_feature_outputs(feature, scopes)
-        {
-            continue;
-        }
         let source = historical_brep_source(&histories[history_index].id);
         let mut resolved = Vec::new();
         let mut saved_edges = Vec::new();
@@ -1014,6 +1050,21 @@ pub(crate) fn bind_feature_outputs(
             } else if stored_active.is_saved_edge(*slot, source) {
                 saved_edges.push(slot.to_string());
             }
+        }
+        let bound_states = histories[history_index].states();
+        let omitted_copies =
+            omitted_pattern_copies(feature, &outputs, (before_solid, after_solid), |slot| {
+                !stored_active.contains_in_source(slot, source)
+                    && !bound_states.iter().any(|state| {
+                        state.state_id != state_id
+                            && state
+                                .transition
+                                .as_ref()
+                                .is_some_and(|t| t.topology.bodies.deleted.contains(&slot))
+                    })
+            });
+        if !omitted_copies.is_empty() {
+            omitted_copies_out.push((feature.id.clone(), state_id, omitted_copies));
         }
         if resolved.len() + saved_edges.len() != outputs.len() {
             losses.push(crate::loss::F3dLossCode::FeatureOutputBodyUnbound.note(format!(
@@ -1066,7 +1117,104 @@ pub(crate) fn bind_feature_outputs(
     Ok(BoundFeatureOutputs {
         losses,
         sweep_kinds,
+        omitted_copies: omitted_copies_out,
     })
+}
+
+/// The solid body slots that a pattern's result state adds to its input state
+/// and that `omitted` accepts, in increasing order.
+pub(super) fn omitted_pattern_copies(
+    feature: &cadmpeg_ir::features::Feature,
+    outputs: &[i64],
+    (before, after): (Option<&BTreeSet<i64>>, Option<&BTreeSet<i64>>),
+    omitted: impl Fn(i64) -> bool,
+) -> Vec<i64> {
+    let is_pattern = matches!(
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Pattern { .. }
+        )
+    );
+    let (true, Some(before), Some(after)) = (is_pattern, before, after) else {
+        return Vec::new();
+    };
+    let mut slots = outputs
+        .iter()
+        .copied()
+        .filter(|slot| after.contains(slot) && !before.contains(slot) && omitted(*slot))
+        .collect::<Vec<_>>();
+    slots.sort_unstable();
+    slots.dedup();
+    slots
+}
+
+/// Whether a Combine selects generated bodies of `producer` as its target or tools.
+pub(crate) fn combine_consumes_generated_bodies(
+    features: &[cadmpeg_ir::features::Feature],
+    producer: &cadmpeg_ir::features::FeatureId,
+) -> bool {
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    features.iter().any(|feature| {
+        let (FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })
+        | FeatureDefinition::PostProcess {
+            operation: FeatureOperation::Combine { operands, .. },
+            ..
+        }) = feature.evaluation.definition()
+        else {
+            return false;
+        };
+        [operands.target(), operands.tools()]
+            .into_iter()
+            .any(|selection| {
+                matches!(selection, BodySelection::Generated { bodies, .. }
+                if bodies.iter().any(|body| &body.feature == producer))
+            })
+    })
+}
+
+/// The loss note and the result state of a pattern whose generated bodies at
+/// `slots` the model omits.
+pub(crate) fn omitted_copy_outputs(
+    feature: &cadmpeg_ir::features::Feature,
+    state_id: i64,
+    slots: &[i64],
+) -> (
+    cadmpeg_ir::report::loss::LossNote,
+    Option<cadmpeg_ir::features::evaluation::FeatureResultTopology>,
+) {
+    let note = crate::loss::F3dLossCode::FeaturePatternCopyBodyOmitted.note(format!(
+        "{} generates separate body slot(s) {} that its history keeps and no Combine selects; the Design body map names no body at them, so the model omits them.",
+        feature.id,
+        slots.iter().map(i64::to_string).collect::<Vec<_>>().join(",")
+    ));
+    (note, omitted_copy_result(feature, state_id, slots))
+}
+
+fn omitted_copy_result(
+    feature: &cadmpeg_ir::features::Feature,
+    state_id: i64,
+    slots: &[i64],
+) -> Option<cadmpeg_ir::features::evaluation::FeatureResultTopology> {
+    let bodies = slots
+        .iter()
+        .map(|slot| cadmpeg_core::text::NonBlankString::new(slot.to_string()))
+        .collect::<Option<Vec<_>>>()?;
+    let members = cadmpeg_ir::features::evaluation::FeatureResultMembers::new(
+        bodies,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .ok()?;
+    Some(
+        cadmpeg_ir::features::evaluation::FeatureResultTopology::new(
+            crate::ids::history_result_state_id(&feature.id, state_id),
+            feature.id.clone(),
+            members,
+            None,
+        ),
+    )
 }
 
 pub(super) fn combine_states_applied_operation(
@@ -1083,24 +1231,61 @@ pub(super) fn combine_states_applied_operation(
         })
 }
 
-/// The history state a feature's scope produces and the state it follows.
-pub(super) fn feature_history_states(
+/// Where a feature's scopes place it in the body history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct FeatureStates<'a> {
+    /// The history state the feature produces.
+    pub(super) state_id: i64,
+    /// The scope whose previous state the feature follows.
+    pub(super) scope: &'a str,
+    /// The states of that scope.
+    pub(super) from: ScopeStates,
+}
+
+/// The history state a feature's scope produces and the states of the scope
+/// whose previous state it follows. A derived base group produces the state
+/// of its last scope from the previous state of its first.
+pub(super) fn feature_history_states<'a>(
     feature: &cadmpeg_ir::features::Feature,
-    scopes: &[crate::records::feature::scope::DesignParameterScope],
+    scopes: &'a [crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
-) -> Option<(i64, i64)> {
+    scope_histories: &HashMap<String, String>,
+) -> Option<FeatureStates<'a>> {
     let scope = feature
         .native_ref
         .as_deref()
         .and_then(|id| scopes.iter().find(|scope| scope.id == id))?;
-    if let Some(group) =
-        crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes)
-    {
-        return crate::records::feature::derived_base::group_history_states(&group);
+    let (first, state_id) =
+        match crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes) {
+            Some(group) => (*group.first()?, group.last()?.history_state_id()?),
+            None => (scope, scope.history_state_id()?),
+        };
+    Some(FeatureStates {
+        state_id,
+        scope: &first.id,
+        from: super::history_states::scope_states(first, scope_histories, histories)?,
+    })
+}
+
+/// Why the histories give a held scope state no previous state.
+fn unlinked_reason(previous: PreviousState) -> Option<String> {
+    match previous {
+        PreviousState::Linked(_) | PreviousState::Unheld => None,
+        PreviousState::Unnamed => {
+            Some("no history that holds it links it to a previous state".into())
+        }
+        PreviousState::Conflicting(StateConflict::Histories(first, second)) => Some(format!(
+            "the histories that hold it link it to previous states {first} and {second}"
+        )),
+        PreviousState::Conflicting(StateConflict::TransitionAndHeader(transition, header)) => {
+            Some(format!(
+                "a history that holds it links it to previous state {transition} by its transition and to previous state {header} by its header"
+            ))
+        }
+        PreviousState::Conflicting(StateConflict::HeldTwice) => {
+            Some("a history holds it twice".into())
+        }
     }
-    let state_id = scope.history_state_id()?;
-    let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
-    Some((state_id, previous_state_id))
 }
 
 pub(super) fn bind_base_feature_output_selection(
