@@ -751,6 +751,38 @@ mod synthetic {
         );
     }
 
+    #[test]
+    fn a_sheet_metal_setting_of_another_kind_is_charged_and_not_projected() {
+        let cases = [
+            ("AD_KFactor", ParameterKind::Length),
+            ("AD_BendReliefType", ParameterKind::Real),
+            ("AD_MinimumBendRadius", ParameterKind::Real),
+            ("AD_MINIMUM_RIP_WIDTH", ParameterKind::Integer(1)),
+        ];
+        for (name, kind) in cases {
+            let mut history = sheet_metal_history(1.0);
+            history.parameters.retain(|p| p.name != name);
+            history.parameters.push(Parameter {
+                kind,
+                ..parameter(40, name, None, 0.25)
+            });
+            let (ir, losses) = project_of(&history);
+            let [rule] = ir.design.sheet_metal_rules.as_slice() else {
+                panic!("{name}: one rule");
+            };
+            assert!(rule.native_options.is_empty(), "{name}");
+            if name == "AD_KFactor" {
+                assert!(rule.allowance.is_none(), "{name}");
+            }
+            assert!(
+                losses.iter().any(|loss| loss.code
+                    == AlibreLossCode::HistorySheetMetalSettingsUnmapped.kind()
+                    && loss.message.contains(name)),
+                "{name}: {losses:?}"
+            );
+        }
+    }
+
     fn project() -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
         project_of(&history())
     }

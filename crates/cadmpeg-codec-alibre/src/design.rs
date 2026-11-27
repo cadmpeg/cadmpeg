@@ -600,10 +600,21 @@ impl Projection<'_> {
         Some(Expression::Neutral(Neutral(node)))
     }
 
-    /// The parameter with this name, where its kind satisfies `kind`.
-    fn typed(&self, name: &str, kind: impl Fn(ParameterKind) -> bool) -> Option<usize> {
+    /// The parameter with this name, where its kind satisfies `kind`. A
+    /// parameter of another kind is named in `unread`.
+    fn typed(
+        &self,
+        name: &str,
+        kind: impl Fn(ParameterKind) -> bool,
+        unread: &mut Vec<String>,
+    ) -> Option<usize> {
         let at = self.parameter_named(name)?;
-        kind(self.history.parameters[at].kind).then_some(at)
+        if kind(self.history.parameters[at].kind) {
+            Some(at)
+        } else {
+            unread.push(name.to_owned());
+            None
+        }
     }
 
     /// A positive length that binds the parameter with this name. A parameter
@@ -645,24 +656,38 @@ impl Projection<'_> {
         let depth = self.positive_length("AD_BendReliefDepth", &mut unread);
         let bound = |at: usize| self.parameters[at].clone();
         let allowance = self
-            .typed("AD_KFactor", |kind| kind == ParameterKind::Real)
+            .typed(
+                "AD_KFactor",
+                |kind| kind == ParameterKind::Real,
+                &mut unread,
+            )
             .map(|at| BendAllowance::KFactor(Dimension::Parameter(bound(at))));
         let mut native_options = NativeOptions::new();
-        if let Some(at) = self.typed("AD_MinimumBendRadius", |kind| kind == ParameterKind::Length) {
+        if let Some(at) = self.typed(
+            "AD_MinimumBendRadius",
+            |kind| kind == ParameterKind::Length,
+            &mut unread,
+        ) {
             native_options.insert(
                 cadmpeg_ir::codec_name!("alibre:minimum-bend-radius"),
                 NativeOption::Length(Dimension::Parameter(bound(at))),
             );
         }
-        if let Some(at) = self.typed("AD_MINIMUM_RIP_WIDTH", |kind| kind == ParameterKind::Length) {
+        if let Some(at) = self.typed(
+            "AD_MINIMUM_RIP_WIDTH",
+            |kind| kind == ParameterKind::Length,
+            &mut unread,
+        ) {
             native_options.insert(
                 cadmpeg_ir::codec_name!("alibre:minimum-rip-width"),
                 NativeOption::Length(Dimension::Parameter(bound(at))),
             );
         }
-        if let Some(at) = self.typed("AD_BendReliefType", |kind| {
-            matches!(kind, ParameterKind::Integer(_))
-        }) {
+        if let Some(at) = self.typed(
+            "AD_BendReliefType",
+            |kind| matches!(kind, ParameterKind::Integer(_)),
+            &mut unread,
+        ) {
             native_options.insert(
                 cadmpeg_ir::codec_name!("alibre:bend-relief-type"),
                 NativeOption::Integer(Dimension::Parameter(bound(at))),
@@ -676,7 +701,7 @@ impl Projection<'_> {
         if !unread.is_empty() {
             losses.push(
                 AlibreLossCode::HistorySheetMetalSettingsUnmapped.note(format!(
-                    "the sheet-metal parameters {} are no positive length and are not projected",
+                    "the sheet-metal parameters {} are not of their expected kind (a positive length, a unitless real for AD_KFactor, an integer for AD_BendReliefType) and are not projected",
                     unread.join(", ")
                 )),
             );
