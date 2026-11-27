@@ -103,7 +103,7 @@ pub(crate) struct Seed {
 }
 
 /// What removing one seed did to the document.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct Released {
     /// The record's path in the document.
     pub(crate) path: String,
@@ -120,6 +120,10 @@ pub(crate) struct Released {
     /// member entry names a removed definition: no delta states that an
     /// occurrence leaves a state (§5.4, §6.7).
     pub(crate) unstatable: BTreeMap<String, BTreeSet<String>>,
+    /// Each record that named a removed record, with the removed ids it
+    /// named: a record that names one by a reference, and a record that the
+    /// removed one owns.
+    pub(crate) needs: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// The part a given-up seed leaves.
@@ -135,10 +139,21 @@ impl Released {
     fn new(path: String) -> Self {
         Self {
             path,
-            dropped: BTreeSet::new(),
-            marked: BTreeSet::new(),
-            states: BTreeMap::new(),
-            unstatable: BTreeMap::new(),
+            ..Self::default()
+        }
+    }
+
+    /// Adds what `other` released to what this one did.
+    fn absorb(&mut self, other: Self) {
+        self.dropped.extend(other.dropped);
+        self.marked.extend(other.marked);
+        self.marked.retain(|record| !self.dropped.contains(record));
+        self.states.extend(other.states);
+        self.states
+            .retain(|(_, state), _| !self.dropped.contains(state));
+        self.unstatable.extend(other.unstatable);
+        for (record, named) in other.needs {
+            self.needs.entry(record).or_default().extend(named);
         }
     }
 
@@ -231,8 +246,11 @@ impl Holder {
     /// by ids, or a `native_ref` names an id that `lookup` finds (§3.3), so
     /// that a label that equals an id names nothing; for a native record,
     /// by [`Self::of`]. A walk that reads no native record
-    /// ([`NativeLinks::Unread`]) asks for no native holder.
+    /// ([`NativeLinks::Unread`]) asks for no native holder. A walk that
+    /// reads them ([`NativeLinks::Read`]) also names by [`Self::of`] for a
+    /// record of an arena the schema does not hold.
     pub(crate) fn named<'k, T: Serialize>(
+        native_links: NativeLinks,
         arena: &Arena,
         id: &str,
         entity: &T,
@@ -241,8 +259,12 @@ impl Holder {
         let Arena::Home { home, field } = arena else {
             return Self::of(arena, id, entity, lookup);
         };
+        let schema = restate::Schema::cadir()?;
+        if native_links == NativeLinks::Read && !schema.holds(home, field) {
+            return Self::of(arena, id, entity, lookup);
+        }
         let value = crate::hash::finite_json::to_json_value(entity).ok()?;
-        let names = restate::Schema::cadir()?.references(home, field, &value, &lookup);
+        let names = schema.references(home, field, &value, &lookup);
         (!names.is_empty()).then(|| Self {
             arena: arena.clone(),
             id: id.to_owned(),
@@ -252,21 +274,23 @@ impl Holder {
 
     /// The holder `entity`, a record of `arena`, is: for a record of an
     /// arena the CADIR wire omits, whose records the CADIR schema does not
-    /// type, where its typed references or its `native_ref` values name an id
-    /// that `lookup` finds; otherwise by [`Self::named`]. A typed reference
-    /// names at the path `references`, and a `native_ref` value at the path
-    /// `native_ref`.
+    /// type, in a walk that reads no native record
+    /// ([`NativeLinks::Unread`]), where its typed references or its
+    /// `native_ref` values name an id that `lookup` finds; otherwise by
+    /// [`Self::named`]. A typed reference names at the path `references`,
+    /// and a `native_ref` value at the path `native_ref`.
     pub(crate) fn named_record<'k, T: EntitySchema>(
+        native_links: NativeLinks,
         arena: &Arena,
         id: &str,
         entity: &T,
         lookup: impl Fn(&str) -> Option<&'k str>,
     ) -> Option<Self> {
         let Arena::Home { home, field } = arena else {
-            return Self::named(arena, id, entity, lookup);
+            return Self::named(native_links, arena, id, entity, lookup);
         };
-        if !wire_omitted(home, field) {
-            return Self::named(arena, id, entity, lookup);
+        if native_links == NativeLinks::Read || !wire_omitted(home, field) {
+            return Self::named(native_links, arena, id, entity, lookup);
         }
         let policy = DecodePolicy::default();
         let session = DecodeArena::new();
@@ -366,9 +390,10 @@ pub(crate) enum NativeLinks {
     /// (`dropped_with`).
     #[default]
     Unread,
-    /// A native record names each id its values state: the drop of a write,
-    /// which omits a native record that holds a reference the write does
-    /// not resolve (Rule W1).
+    /// A native record, and a record of an arena the CADIR schema does not
+    /// hold, names each id its values state: the drop of a write, which
+    /// omits a native record that holds a reference the write does not
+    /// resolve (Rule W1).
     Read,
 }
 
@@ -426,7 +451,7 @@ impl References {
     /// counted so far. The caller counts every record first.
     pub(crate) fn add<T: Serialize>(&mut self, arena: &Arena, id: &str, entity: &T) {
         let held = &self.held;
-        let Some(holder) = Holder::named(arena, id, entity, |text| {
+        let Some(holder) = Holder::named(self.native_links, arena, id, entity, |text| {
             held.get_key_value(text).map(|(key, _)| key.as_str())
         }) else {
             return;
@@ -445,7 +470,14 @@ impl References {
         records: &[T],
     ) {
         let walk = match arena {
-            Arena::Home { home, field } => Walk::of(home, field),
+            Arena::Home { home, field } => match Walk::of(home, field) {
+                Walk::Typed
+                    if self.native_links == NativeLinks::Read && wire_omitted(home, field) =>
+                {
+                    Walk::Json
+                }
+                walk => walk,
+            },
             Arena::Native { .. } => Walk::Json,
         };
         #[cfg(test)]
@@ -522,6 +554,38 @@ impl References {
         })
     }
 
+    /// The seeds of `candidates` that no record names other than one of
+    /// `dropped` or of these seeds: a candidate that another record names
+    /// is kept, and so is each candidate that a kept one names.
+    fn unnamed(&self, candidates: Vec<Seed>, dropped: &[Seed]) -> Vec<Seed> {
+        let dropped: BTreeSet<&str> = dropped.iter().map(|seed| seed.id.as_str()).collect();
+        let mut left: BTreeSet<String> = candidates.iter().map(|seed| seed.id.clone()).collect();
+        loop {
+            let named: Vec<String> = left
+                .iter()
+                .filter(|id| {
+                    self.named_by.get(id.as_str()).is_some_and(|slots| {
+                        slots.iter().any(|slot| {
+                            let holder = self.holders[*slot].1.as_str();
+                            !dropped.contains(holder) && !left.contains(holder)
+                        })
+                    })
+                })
+                .cloned()
+                .collect();
+            if named.is_empty() {
+                break;
+            }
+            for id in named {
+                left.remove(&id);
+            }
+        }
+        candidates
+            .into_iter()
+            .filter(|seed| left.contains(&seed.id))
+            .collect()
+    }
+
     /// Each record that names an id of `gone`, once.
     fn naming(&self, gone: &BTreeSet<String>) -> BTreeSet<&(Arena, String)> {
         gone.iter()
@@ -550,7 +614,9 @@ impl Walk {
     /// The typed walk of a topology leaves the ids local to it, which the
     /// schema types as ids, so an arena whose records can hold a topology
     /// is read through the JSON of its records. The schema types no record
-    /// of an arena the wire omits, so such an arena is read by its types.
+    /// of an arena the wire omits, so such an arena is read by its types;
+    /// a walk that reads native records ([`NativeLinks::Read`]) reads it
+    /// through the JSON of its records instead ([`References::add_records`]).
     fn of(home: &'static str, field: &'static str) -> Self {
         static WALKS: OnceLock<HashMap<(&'static str, &'static str), Walk>> = OnceLock::new();
         WALKS
@@ -635,11 +701,11 @@ pub(crate) use add_references;
 /// is, by [`Holder::named_record`] for a home whose records have typed
 /// references, and by [`Holder::named`] otherwise.
 macro_rules! named_holder {
-    (model, $arena:expr, $id:expr, $entity:expr, $lookup:expr) => {
-        $crate::give_up::Holder::named_record($arena, $id, $entity, $lookup)
+    (model, $links:expr, $arena:expr, $id:expr, $entity:expr, $lookup:expr) => {
+        $crate::give_up::Holder::named_record($links, $arena, $id, $entity, $lookup)
     };
-    ($home:ident, $arena:expr, $id:expr, $entity:expr, $lookup:expr) => {
-        $crate::give_up::Holder::named($arena, $id, $entity, $lookup)
+    ($home:ident, $links:expr, $arena:expr, $id:expr, $entity:expr, $lookup:expr) => {
+        $crate::give_up::Holder::named($links, $arena, $id, $entity, $lookup)
     };
 }
 pub(crate) use named_holder;
@@ -680,7 +746,7 @@ pub(crate) fn give_up(
     mut loss: impl FnMut(&Seed, &Released, &Retained) -> LossNote,
 ) -> Result<Vec<LossNote>, CodecError> {
     let before = (!fidelity.annotations.is_empty()).then(|| Removed::before(ir));
-    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Unread)?;
+    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Unread, &BTreeSet::new())?;
     let mut losses = Vec::new();
     for seed in seeds {
         let Some(text) = text(ir, &seed.arena, &seed.id) else {
@@ -731,7 +797,7 @@ pub(crate) fn drop_records(
     ir: &mut CadIr,
     seeds: Vec<Seed>,
 ) -> Result<Vec<(Seed, Released)>, CodecError> {
-    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Read)?;
+    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Read, &BTreeSet::new())?;
     let mut removed = Vec::new();
     for seed in seeds {
         if let Some(released) = remove(ctx, ir, &mut cascade, &seed)? {
@@ -739,6 +805,59 @@ pub(crate) fn drop_records(
         }
     }
     Ok(removed)
+}
+
+/// Removes from `ir` each seed as [`drop_records`] does, and each record of
+/// `unnamed` that no record outside `seeds` and `unnamed` names, directly or
+/// through records of `unnamed` it keeps; then each record that needs an id
+/// of `gone`, which `ir` no longer holds, and each record that needs one of
+/// those, transitively, as [`drop_records`] removes the records that need a
+/// seed; then each carrier that the removals left with no user. Returns what
+/// the removals released together. The seeds go first, so that a record that
+/// needs a seed names the seed among its needs.
+///
+/// # Errors
+///
+/// A resource refusal for a rewritten `unknowns` arena or for the walk of
+/// the carriers.
+pub(crate) fn drop_records_needing(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    gone: BTreeSet<String>,
+    seeds: Vec<Seed>,
+    unnamed: Vec<Seed>,
+) -> Result<Released, CodecError> {
+    let mut cascade = Cascade::new(ctx, ir, NativeLinks::Read, &gone)?;
+    let unnamed = cascade.references.unnamed(unnamed, &seeds);
+    let mut released = Released::default();
+    let mut removed_any = false;
+    for seed in seeds.into_iter().chain(unnamed) {
+        if let Some(removed) = remove(ctx, ir, &mut cascade, &seed)? {
+            removed_any = true;
+            released.absorb(removed);
+        }
+    }
+    release(
+        ctx,
+        ir,
+        &mut cascade.references,
+        &cascade.lazy,
+        gone,
+        Vec::new(),
+        &mut released,
+    )?;
+    if !removed_any && released.dropped.is_empty() && released.states.is_empty() {
+        return Ok(released);
+    }
+    drop_orphans(
+        ctx,
+        ir,
+        &mut cascade.references,
+        &cascade.lazy,
+        &cascade.unreached,
+        &mut released,
+    )?;
+    Ok(released)
 }
 
 /// States `Source` each expression of the records of each seed whose tree
@@ -786,31 +905,28 @@ struct Lazy {
 
 impl Cascade {
     /// The state of a batch of removals from `ir`, which it puts in
-    /// identity order.
+    /// identity order, walking native records by `native_links`, where
+    /// `gone` holds the ids that records of `ir` name and `ir` no longer
+    /// holds.
     fn new(
         ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         native_links: NativeLinks,
+        gone: &BTreeSet<String>,
     ) -> Result<Self, CodecError> {
-        ir.finalize();
-        Ok(Self {
-            references: ir.references_from(References::new(native_links)),
-            lazy: Lazy::default(),
-            unreached: crate::validate::carriers_parameterization::unreached_carriers(ctx, ir)?,
-        })
+        Self::filling(ctx, ir, References::new(native_links), gone)
     }
 
-    /// The state of a batch of releases of `lost`, ids that no record of
-    /// `ir` may hold, so that the walk of the references, which fills
-    /// `named`, finds the records that name them.
-    fn naming(
+    /// The state of a batch of removals from `ir`, as [`Self::new`], whose
+    /// walk of the references fills `named`.
+    fn filling(
         ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
-        lost: &[String],
         mut named: References,
+        gone: &BTreeSet<String>,
     ) -> Result<Self, CodecError> {
         ir.finalize();
-        for id in lost {
+        for id in gone {
             named.name(id);
         }
         Ok(Self {
@@ -842,6 +958,13 @@ fn remove(
         return Ok(None);
     }
     let mut released = Released::new(format!("{}/{}", seed.arena, seed.id));
+    for (_, record) in &owned {
+        released
+            .needs
+            .entry(record.clone())
+            .or_default()
+            .insert(seed.id.clone());
+    }
     mark_parents(ir, &parents, &mut released.marked);
     let gone = references.release(&seed.id, copies);
     release(
@@ -887,7 +1010,8 @@ pub(crate) fn release_lost(
     references: References,
     released: &mut Vec<(String, Released)>,
 ) -> Result<(), CodecError> {
-    let mut cascade = Cascade::naming(ctx, ir, ids, references)?;
+    let lost: BTreeSet<String> = ids.iter().cloned().collect();
+    let mut cascade = Cascade::filling(ctx, ir, references, &lost)?;
     let Cascade {
         references,
         lazy,
@@ -1261,6 +1385,11 @@ fn release(
             let Some(mut holder) = ir.holder(references.native_links, arena, id, here) else {
                 continue;
             };
+            released
+                .needs
+                .entry(holder.id.clone())
+                .or_default()
+                .extend(holder.names.iter().map(|(_, target)| target.clone()));
             if holder
                 .names
                 .iter()
@@ -1304,7 +1433,16 @@ fn release(
         let mut next = BTreeSet::new();
         for (arena, ids) in drops {
             let parents: Vec<String> = ids.iter().flat_map(|id| parents(ir, &arena, id)).collect();
-            carried.extend(ids.iter().flat_map(|id| owned(ir, &arena, id)));
+            for id in &ids {
+                for (owned_arena, record) in owned(ir, &arena, id) {
+                    released
+                        .needs
+                        .entry(record.clone())
+                        .or_default()
+                        .insert(id.clone());
+                    carried.push((owned_arena, record));
+                }
+            }
             for (id, copies) in ir.remove_ids(&arena, &ids) {
                 if references.release(&id, copies) {
                     next.insert(id.clone());
@@ -1321,6 +1459,9 @@ fn release(
     released
         .marked
         .retain(|record| !released.dropped.contains(record));
+    released
+        .states
+        .retain(|(_, state), _| !released.dropped.contains(state));
     Ok(all_gone)
 }
 
@@ -1458,7 +1599,7 @@ pub(crate) fn drop_state_records(
 ) -> Result<Option<Released>, CodecError> {
     let Cascade {
         references, lazy, ..
-    } = Cascade::new(ctx, ir, NativeLinks::Read)?;
+    } = Cascade::new(ctx, ir, NativeLinks::Read, &BTreeSet::new())?;
     let naming = lazy.stated.get_or_init(|| states_naming(ir));
     let elsewhere = |id: &str| {
         naming

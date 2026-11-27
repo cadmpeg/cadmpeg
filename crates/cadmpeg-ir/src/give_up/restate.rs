@@ -29,6 +29,11 @@ impl Schema {
         home.get("properties")?.get(field)?.get("items")
     }
 
+    /// Whether the schema holds the arena `field` of `home`.
+    pub(crate) fn holds(&self, home: &str, field: &str) -> bool {
+        self.record(home, field).is_some()
+    }
+
     /// The committed CADIR schema, read once, or `None` where it does not
     /// parse.
     pub(crate) fn cadir() -> Option<&'static Self> {

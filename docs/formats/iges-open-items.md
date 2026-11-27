@@ -143,7 +143,7 @@ from a conformant file.
 
 **Question.** What disposition applies when the preserved source image for byte-exact replay is unavailable?
 
-**Known.** The writer declines replay, regenerates semantically, and charges `iges/source.preserved-image-unavailable` (`writer/target.rs:141`). `iges.md` states the replay rule for an intact source baseline.
+**Known.** The writer declines replay and regenerates semantically; the export report's synthesis cause states that the source fidelity holds no IGES source image (`writer/target.rs`). `iges.md` states the replay rule for an intact source baseline.
 
 **Need.** Source-less edit workflows must establish when regeneration is accepted and when it is refused.
 

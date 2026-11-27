@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::json;
 
-use super::{give_up, Arena, Seed};
+use super::{give_up, Arena, References, Seed};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use crate::document::CadIr;
 use crate::ids::{FaceId, Identity};
@@ -102,7 +102,7 @@ fn gone(ir: &CadIr, seed: &str, outcome: &Outcome) -> BTreeSet<String> {
 }
 
 fn holds(ir: &CadIr, id: &str) -> bool {
-    ir.references_from(super::References::default())
+    ir.references_from(References::default())
         .held
         .contains_key(id)
 }

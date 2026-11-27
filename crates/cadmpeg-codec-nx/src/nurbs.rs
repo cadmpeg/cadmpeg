@@ -450,13 +450,22 @@ impl CarrierRefusal {
 }
 
 pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
-    let lanes = cadmpeg_parasolid::records::PrimaryRecords::read(bytes)
+    let primary = cadmpeg_parasolid::records::PrimaryRecords::read(bytes)
         .ok()
-        .flatten()
+        .flatten();
+    parse_with_graph_and_primary(bytes, graph, primary.as_ref())
+}
+
+pub(crate) fn parse_with_graph_and_primary(
+    bytes: &[u8],
+    graph: &Graph,
+    primary: Option<&cadmpeg_parasolid::records::PrimaryRecords<'_>>,
+) -> Parsed {
+    let lanes = primary
         .filter(|primary| primary.is_terminated() && nodes::has_lane_fields(primary))
         .map_or_else(
             || scanned_lanes(bytes, graph),
-            |primary| nodes::lanes(bytes, &primary),
+            |primary| nodes::lanes(bytes, primary),
         );
     let mut refusals = Vec::new();
     Parsed {

@@ -2862,7 +2862,7 @@ pub(super) fn associate_free_geometric_set_members(
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
 ) {
-    for set in exchange.records().values() {
+    for (_, set) in exchange.entities_any(&["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
         };
@@ -2919,12 +2919,10 @@ pub(super) fn associate_free_representation_members(
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
 ) {
-    for representation in exchange.records().values().filter(|record| {
-        record
-            .partials
-            .iter()
-            .any(|partial| super::representation::is_representation_name(&partial.name))
-    }) {
+    for representation in exchange
+        .matching_entity_ids(super::representation::is_representation_name)
+        .map(|id| &exchange.records()[&id])
+    {
         let Some(items) = representation_items(representation) else {
             continue;
         };
@@ -3619,7 +3617,7 @@ fn retained_surface_curve_ids(
         }
     }
 
-    for set in exchange.records().values() {
+    for (_, set) in exchange.entities_any(&["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) {
         let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
         };
@@ -3633,12 +3631,10 @@ fn retained_surface_curve_ids(
         }
     }
 
-    for representation in exchange.records().values().filter(|record| {
-        record
-            .partials
-            .iter()
-            .any(|partial| super::representation::is_representation_name(&partial.name))
-    }) {
+    for representation in exchange
+        .matching_entity_ids(super::representation::is_representation_name)
+        .map(|id| &exchange.records()[&id])
+    {
         let Some(items) = representation_items(representation) else {
             continue;
         };

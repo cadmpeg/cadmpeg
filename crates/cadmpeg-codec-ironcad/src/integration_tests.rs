@@ -18,6 +18,11 @@ const SCENE: &str = "Ironcad_2025_simple_test_parts.ics";
 const ACIS_BLOCK: &str = "Block_ACIS_100x50x20.ics";
 /// Agreement of a decoded corner with the modelled block dimensions.
 const EPS_POINT_MM: f64 = 1.0e-9;
+/// Agreement of a stored rotation coefficient with the cosine or sine of the
+/// modelled angle.
+const EPS_ROTATION: f64 = 1.0e-12;
+/// Agreement of a converted density with the stored steel density.
+const EPS_DENSITY_KG_PER_MM3: f64 = 1.0e-15;
 
 fn detect(bytes: &[u8]) -> Confidence {
     let arena = DecodeArena::new();
@@ -32,6 +37,15 @@ fn decode(name: &str) -> DecodeResult {
     IronCadCodec
         .decode(&mut Cursor::new(corpus(name)), &DecodeOptions::default())
         .unwrap()
+}
+
+fn given_up(result: &DecodeResult) -> usize {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| gives_up(&loss.code))
+        .count()
 }
 
 fn count(result: &DecodeResult, code: IronCadLossCode) -> usize {
@@ -92,7 +106,18 @@ fn inspect_lists_scene_streams() {
 fn single_part_scenes_hold_two_parasolid_records() {
     for name in [BOX, CYLINDER] {
         let result = decode(name);
-        assert_eq!(count(&result, IronCadLossCode::BodiesPending), 2, "{name}");
+        assert_eq!(
+            count(&result, IronCadLossCode::FeatureShapeRetained),
+            1,
+            "{name}"
+        );
+        assert_eq!(given_up(&result), 0, "{name}");
+        assert_eq!(
+            count(&result, IronCadLossCode::ParasolidBodyPartial),
+            0,
+            "{name}"
+        );
+        assert_eq!(result.ir().geometry.bodies.len(), 1, "{name}");
         assert_eq!(count(&result, IronCadLossCode::KernelPrologueUnreadable), 0);
         assert_eq!(count(&result, IronCadLossCode::RecordHeaderUnrecognized), 0);
         let formats = layer_formats(&result);
@@ -111,9 +136,25 @@ fn single_part_scenes_hold_two_parasolid_records() {
 #[test]
 fn mixed_kernel_scene_holds_parasolid_and_acis_records() {
     let result = decode(SCENE);
-    assert_eq!(count(&result, IronCadLossCode::BodiesPending), 10);
-    assert_eq!(count(&result, IronCadLossCode::FeatureShapeRetained), 1);
-    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(count(&result, IronCadLossCode::FeatureShapeRetained), 7);
+    assert_eq!(given_up(&result), 0);
+    let mut faces: Vec<_> = result
+        .ir()
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| {
+            result
+                .ir()
+                .geometry
+                .faces
+                .iter()
+                .filter(|face| face.id.as_str().starts_with(body_scope(body.id.as_str())))
+                .count()
+        })
+        .collect();
+    faces.sort_unstable();
+    assert_eq!(faces, [3, 3, 6, 6, 10]);
     assert_eq!(count(&result, IronCadLossCode::KernelPrologueUnreadable), 0);
     assert_eq!(count(&result, IronCadLossCode::KernelUnrecognized), 0);
     let formats = layer_formats(&result);
@@ -169,7 +210,8 @@ fn container_depth_reads_no_records() {
     let result = IronCadCodec
         .decode(&mut Cursor::new(corpus(SCENE)), &options)
         .unwrap();
-    assert_eq!(count(&result, IronCadLossCode::BodiesPending), 0);
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert_eq!(count(&result, IronCadLossCode::FeatureShapeRetained), 0);
 }
 
 #[test]
@@ -186,20 +228,36 @@ fn acis_block_decodes_one_closed_box_in_the_part_frame() {
     assert_eq!(geometry.bodies.len(), 1);
     assert_eq!(geometry.faces.len(), 6);
     assert_eq!(geometry.edges.len(), 12);
+    assert_point_box(&result, [-50.0, -25.0, 0.0, 50.0, 25.0, 20.0]);
+}
+
+#[test]
+fn parasolid_box_decodes_one_closed_box_in_the_part_frame() {
+    let result = decode(BOX);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.faces.len(), 6);
+    assert_eq!(geometry.edges.len(), 12);
+    assert_point_box(&result, [-25.0, -20.0, 0.0, 25.0, 20.0, 25.0]);
+}
+
+/// The identity prefix that the entities of a qualified body share.
+fn body_scope(body: &str) -> &str {
+    body.find("/brep:").map_or(body, |end| &body[..=end])
+}
+
+/// Asserts the low and high corners of the box of every decoded point.
+fn assert_point_box(result: &DecodeResult, expected: [f64; 6]) {
     let mut low = [f64::INFINITY; 3];
     let mut high = [f64::NEG_INFINITY; 3];
-    for point in &geometry.points {
+    for point in &result.ir().geometry.points {
         let position = point.position().get();
         for (axis, value) in [position.x, position.y, position.z].into_iter().enumerate() {
             low[axis] = low[axis].min(value);
             high[axis] = high[axis].max(value);
         }
     }
-    for (value, expected) in low
-        .iter()
-        .chain(&high)
-        .zip([-50.0, -25.0, 0.0, 50.0, 25.0, 20.0])
-    {
+    for (value, expected) in low.iter().chain(&high).zip(expected) {
         assert!((value - expected).abs() <= EPS_POINT_MM, "{low:?} {high:?}");
     }
 }
@@ -245,4 +303,306 @@ fn a_brep_data_frame_that_does_not_read_is_one_unreadable_give_up() {
     IronCadCodec
         .decode(&mut Cursor::new(bytes), &options)
         .expect_err("a pinned decode refuses an unreadable frame");
+}
+
+#[test]
+fn parasolid_records_rewrite_into_framed_neutral_transmits() {
+    for name in [BOX, CYLINDER, SCENE, "Block_Parasolid_100x50x20.ics"] {
+        let bytes = corpus(name);
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let snapshot = crate::container::open(&ctx, root).unwrap();
+        let entry = snapshot.stream(crate::container::BREP_DATA).unwrap();
+        let stream = snapshot.open(&ctx, entry).unwrap();
+        let payload = crate::frame::payload(&ctx, stream).unwrap();
+        let records = crate::tree::read(payload).unwrap().records;
+        for record in records
+            .iter()
+            .filter(|record| record.kernel == crate::tree::Kernel::Parasolid)
+        {
+            let neutral = cadmpeg_parasolid::native::to_neutral(record.bytes.window()).unwrap();
+            let framed = cadmpeg_parasolid::records::PrimaryRecords::read(&neutral)
+                .unwrap()
+                .unwrap();
+            assert!(
+                framed.is_terminated(),
+                "{name}: stopped at {:?}",
+                framed.stop_offset()
+            );
+            assert!(!framed.records().is_empty(), "{name}");
+        }
+        drop(snapshot);
+        ctx.finish_session().unwrap();
+    }
+}
+
+#[test]
+fn scene_parts_are_placed_by_their_public_access_matrices() {
+    let result = decode(SCENE);
+    assert_eq!(count(&result, IronCadLossCode::PlacementBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::PlacementUnbound), 0);
+    assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
+    let model = &result.ir().model;
+    let mut names: Vec<_> = model
+        .occurrences
+        .iter()
+        .map(|occurrence| occurrence.name.as_deref().unwrap())
+        .collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        [
+            "Assembly",
+            "Box_Parasolid",
+            "Compound_part",
+            "Cylinder_ACIS",
+            "Part4",
+            "Part6"
+        ]
+    );
+    let translation = |name: &str| {
+        let occurrence = model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.name.as_deref() == Some(name))
+            .unwrap();
+        let rows = occurrence.transform.unwrap().affine_rows();
+        for (axis, row) in rows.iter().enumerate() {
+            for (column, value) in row[..3].iter().enumerate() {
+                let expected = if axis == column { 1.0 } else { 0.0 };
+                assert!((value - expected).abs() <= EPS_POINT_MM, "{name}: {rows:?}");
+            }
+        }
+        rows.map(|row| row[3])
+    };
+    assert_eq!(translation("Box_Parasolid"), [0.0; 3]);
+    let block = translation("Part6");
+    let cylinder = translation("Part4");
+    assert!((block[2] - (cylinder[2] + 50.0)).abs() <= EPS_POINT_MM);
+    let root = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap();
+    assert_eq!(root.occurrences.len(), 4);
+    assert!(root.bodies.is_empty());
+}
+
+#[test]
+fn single_part_scenes_place_their_part_at_the_origin() {
+    let result = decode(BOX);
+    let occurrence = &result.ir().model.occurrences[0];
+    assert_eq!(
+        occurrence.transform.unwrap().affine_rows(),
+        cadmpeg_ir::transform::Transform::identity().affine_rows()
+    );
+    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
+}
+
+#[test]
+fn part_properties_mass_and_scene_units_are_transferred() {
+    let result = decode(SCENE);
+    let model = &result.ir().model;
+    let part = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.source_name.as_deref() == Some("Compound_part"))
+        .unwrap();
+    assert_eq!(
+        part.native_ref.as_deref(),
+        Some("{D511A408-89F1-4138-8BAE-FC2721E6DBAE}")
+    );
+    let height = part
+        .bom_properties
+        .iter()
+        .find(|(key, _)| key.as_str() == "SizeboxHeight")
+        .map(|(_, value)| value.parse::<f64>().unwrap())
+        .unwrap();
+    assert!((height - 0.075).abs() <= EPS_POINT_MM);
+    assert!(!part
+        .bom_properties
+        .keys()
+        .any(|key| key.as_str() == "PartMass" || key.as_str() == "MassDensity"));
+    assert_eq!(model.mass_properties.len(), 6);
+    let density = model.mass_properties[0].density.unwrap().get();
+    assert!((density - 7.8e-6).abs() <= EPS_DENSITY_KG_PER_MM3);
+    assert!(model.mass_properties[0].mass.is_none());
+    let root = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap();
+    let units = root.units.as_ref().unwrap();
+    assert_eq!(units.length, cadmpeg_ir::design::units::UnitSymbol::Mm);
+    assert_eq!(units.angle, cadmpeg_ir::design::units::UnitSymbol::Deg);
+    assert_eq!(units.mass, Some(cadmpeg_ir::design::units::UnitSymbol::Kg));
+}
+
+#[test]
+fn every_face_carries_its_kernel_colour() {
+    let result = decode(SCENE);
+    let faces = &result.ir().geometry.faces;
+    assert!(faces.iter().all(|face| face.color.is_some()));
+    let beige = cadmpeg_ir::topology::Color::new(230.0 / 255.0, 211.0 / 255.0, 198.0 / 255.0, 1.0);
+    let parasolid_faces = faces
+        .iter()
+        .filter(|face| face.id.as_str().contains("/brep:face#"))
+        .count();
+    assert_eq!(
+        faces.iter().filter(|face| face.color == beige).count(),
+        parasolid_faces
+    );
+}
+
+/// The affine rows of the occurrence named `name`.
+fn placement(result: &DecodeResult, name: &str) -> [[f64; 4]; 3] {
+    result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some(name))
+        .unwrap()
+        .transform
+        .unwrap()
+        .affine_rows()
+}
+
+/// Asserts the rotation block and the translation of `rows`.
+fn assert_placement(rows: [[f64; 4]; 3], rotation: [[f64; 3]; 3], translation: [f64; 3]) {
+    for (row, expected) in rows.iter().zip(rotation) {
+        for (value, expected) in row[..3].iter().zip(expected) {
+            assert!((value - expected).abs() <= EPS_ROTATION, "{rows:?}");
+        }
+    }
+    for (row, expected) in rows.iter().zip(translation) {
+        assert!((row[3] - expected).abs() <= EPS_POINT_MM, "{rows:?}");
+    }
+}
+
+const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+
+#[test]
+fn a_moved_block_is_placed_at_its_translation() {
+    let result = decode("Block_moved.ics");
+    assert_placement(
+        placement(&result, "Block_Parasolid_100x50x20"),
+        IDENTITY,
+        [30.0, -20.0, 10.0],
+    );
+    assert_point_box(&result, [-50.0, -25.0, 0.0, 50.0, 25.0, 20.0]);
+}
+
+#[test]
+fn a_rotated_block_is_turned_30_degrees_about_z() {
+    let result = decode("Block_rotated.ics");
+    let (sin, cos) = 30.0_f64.to_radians().sin_cos();
+    assert_placement(
+        placement(&result, "Block_Parasolid_100x50x20"),
+        [[cos, -sin, 0.0], [sin, cos, 0.0], [0.0, 0.0, 1.0]],
+        [0.0; 3],
+    );
+}
+
+#[test]
+fn an_assembly_matrix_places_its_member_parts() {
+    let result = decode("Assembly_moved.ics");
+    assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+    assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
+    assert_placement(
+        placement(&result, "Assembly1"),
+        IDENTITY,
+        [30.0, -20.0, 10.0],
+    );
+    assert_placement(placement(&result, "Part1"), IDENTITY, [0.0; 3]);
+    assert_placement(placement(&result, "Part2"), IDENTITY, [0.0, 0.0, 25.0]);
+    let model = &result.ir().model;
+    let definition = |name: &str| {
+        model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.source_name.as_deref() == Some(name))
+            .unwrap()
+    };
+    let members: Vec<_> = definition("Assembly1")
+        .occurrences
+        .iter()
+        .map(|id| {
+            let occurrence = model.occurrences.iter().find(|o| &o.id == id).unwrap();
+            occurrence.name.as_deref().unwrap()
+        })
+        .collect();
+    assert_eq!(members, ["Part1", "Part2"]);
+    let root = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap();
+    assert_eq!(root.occurrences.len(), 1);
+}
+
+/// The names of the occurrences that the definition `name` holds.
+fn members(result: &DecodeResult, name: Option<&str>) -> Vec<String> {
+    let model = &result.ir().model;
+    let definition = model
+        .product_definitions
+        .iter()
+        .find(|definition| match name {
+            Some(name) => definition.source_name.as_deref() == Some(name),
+            None => definition.is_root(),
+        })
+        .unwrap();
+    definition
+        .occurrences
+        .iter()
+        .map(|id| {
+            let occurrence = model.occurrences.iter().find(|o| &o.id == id).unwrap();
+            occurrence.name.clone().unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn a_member_assembly_is_placed_in_the_assembly_that_holds_it() {
+    for (name, outer_rotation, outer_translation) in [
+        ("Assembly_nested.ics", IDENTITY, [30.0, -20.0, 10.0]),
+        (
+            "Assembly_nested_moved.ics",
+            [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+            [100.0, 50.0, 10.0],
+        ),
+    ] {
+        let result = decode(name);
+        assert_eq!(count(&result, IronCadLossCode::AssemblyBoundByOrder), 1);
+        assert_eq!(count(&result, IronCadLossCode::AssemblyFlattened), 0);
+        assert_eq!(members(&result, None), ["Outer"]);
+        assert_eq!(members(&result, Some("Outer")), ["PartC", "Inner"]);
+        assert_eq!(members(&result, Some("Inner")), ["PartA", "PartB"]);
+        assert_placement(
+            placement(&result, "Outer"),
+            outer_rotation,
+            outer_translation,
+        );
+        assert_placement(placement(&result, "Inner"), IDENTITY, [0.0, 0.0, 10.0]);
+        assert_placement(placement(&result, "PartA"), IDENTITY, [0.0; 3]);
+        assert_placement(placement(&result, "PartB"), IDENTITY, [0.0, 0.0, 25.0]);
+        assert_placement(placement(&result, "PartC"), IDENTITY, [0.0; 3]);
+    }
+}
+
+#[test]
+fn an_inch_scene_states_inch_units() {
+    let result = decode("Block_inch.ics");
+    let root = result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap();
+    let units = root.units.as_ref().unwrap();
+    assert_eq!(units.length, cadmpeg_ir::design::units::UnitSymbol::In);
+    assert_point_box(&result, [-50.8, -25.4, 0.0, 50.8, 25.4, 25.4]);
 }

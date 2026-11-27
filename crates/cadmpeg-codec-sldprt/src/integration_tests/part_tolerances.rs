@@ -125,7 +125,7 @@ fn a_negative_stored_resolution_is_not_a_tolerance() {
 /// of the written part read back.
 fn written_linear_tolerance(ir: &CadIr) -> (Vec<LossNote>, f64) {
     let plan = SldprtCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(ir, None).with_target(TargetRequest::Inherit))
         .expect("part plans");
     let losses = plan.report().losses.clone();
     let mut written = Vec::new();
@@ -189,7 +189,7 @@ fn a_cube_written_at_a_100_mm_tolerance_reads_back_with_its_body() {
     let mut ir = crate::test_support::ir::source_less_cube();
     ir.tolerances.linear = PositiveLength::new(LINEAR_MM).expect("positive length");
     let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .plan(EncodeInput::new(&ir, None).with_target(TargetRequest::Inherit))
         .expect("part plans");
     assert!(
         !charges_linear_tolerance(&plan.report().losses),

@@ -109,8 +109,8 @@ pub(crate) fn plan_at(
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
     crate::IgesCodec.plan(
-        EncodeInput::new(ir, fidelity),
-        TargetRequest::Explicit(version.descriptor().id.as_str()),
+        EncodeInput::new(ir, fidelity)
+            .with_target(TargetRequest::Explicit(version.descriptor().id.as_str())),
     )
 }
 

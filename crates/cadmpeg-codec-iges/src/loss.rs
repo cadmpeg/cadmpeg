@@ -128,8 +128,6 @@ loss_codes! {
     /// The Global version flag is not an integer, or is below `1`; the
     /// decoder recovered an effective version.
     SourceVersionFlagInvalid => "source.version-flag-invalid",
-    /// Preserved source image required for a byte-exact write was unavailable.
-    PreservedSourceUnavailable => "source.preserved-image-unavailable",
     /// Procedural definitions were reduced to writable solved carriers.
     ProceduralReduced => "geometry.procedural-reduced",
     /// Different coedge pcurves were compared at discrete parameters.
@@ -193,9 +191,7 @@ impl IgesLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::PreservedSourceUnavailable | Self::GlobalLengthUnitUnresolved => {
-                Severity::Blocking
-            }
+            Self::GlobalLengthUnitUnresolved => Severity::Blocking,
             Self::ProceduralReduced | Self::VertexToleranceWidened => Severity::Info,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 Severity::Warning
@@ -318,7 +314,6 @@ impl IgesLossCode {
             Self::SourceDialectUnverified | Self::SourceVersionFlagInvalid => {
                 LossTaxonomy::SourceDialectUnverified
             }
-            Self::PreservedSourceUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::ProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
@@ -430,7 +425,6 @@ mod tests {
                 "global.noncanonical-framing",
                 "source.dialect-unverified",
                 "source.version-flag-invalid",
-                "source.preserved-image-unavailable",
                 "geometry.procedural-reduced",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",

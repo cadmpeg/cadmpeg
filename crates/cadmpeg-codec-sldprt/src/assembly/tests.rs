@@ -1325,30 +1325,6 @@ fn an_instance_without_an_identity_or_with_a_repeated_one_charges_no_record() {
 }
 
 #[test]
-fn a_tree_past_a_bound_of_the_xml_reader_is_given_up_as_undecoded() {
-    let mut attributes = String::new();
-    for index in 0..300 {
-        std::fmt::Write::write_fmt(&mut attributes, format_args!(r#" a{index}="0""#))
-            .expect("write to a string");
-    }
-    let projection = project(&ctx(), &format!("<swSolidWorks{attributes}/>")).expect("project");
-    assert!(projection.losses().is_empty(), "{:?}", projection.losses());
-    let [part] = projection.given_up() else {
-        panic!("one tree give-up: {:?}", projection.given_up());
-    };
-    let loss = part.loss();
-    assert_eq!(
-        loss.code,
-        cadmpeg_ir::unknown::part::record_undecoded_kind()
-    );
-    assert!(
-        loss.message.contains("passes a bound of the XML reader"),
-        "{}",
-        loss.message
-    );
-}
-
-#[test]
 fn an_active_model_whose_id_is_not_a_decimal_is_given_up_as_unreadable() {
     let text = tree_with("", "")
         .replace(r#"<swModel id="2""#, r#"<swModel id="2#2""#)

@@ -539,22 +539,44 @@ pub(crate) fn decode(
         .map_or(native::MAX_PRODUCT_OCCURRENCE_DEPTH, |policy| {
             policy.min(native::MAX_PRODUCT_OCCURRENCE_DEPTH)
         });
-    decode_with_occurrence_limits(
+    decode_with_limits(
         parse_bytes,
         source_bytes,
         representation,
-        output,
-        depth,
+        DecodeLimits {
+            occurrences: native::ProductOccurrenceLimits::new(output, depth),
+            projection: entities::geometry::ProjectionLimits::DEFAULT,
+        },
         ctx,
     )
 }
 
-fn decode_with_occurrence_limits(
+/// The caps one decode applies.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DecodeLimits {
+    pub(crate) occurrences: native::ProductOccurrenceLimits,
+    pub(crate) projection: entities::geometry::ProjectionLimits,
+}
+
+#[cfg(test)]
+impl DecodeLimits {
+    /// The caps of a decode under the default policy, with `projection`.
+    pub(crate) const fn with_projection(projection: entities::geometry::ProjectionLimits) -> Self {
+        Self {
+            occurrences: native::ProductOccurrenceLimits::new(
+                native::MAX_PRODUCT_OCCURRENCES,
+                native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+            ),
+            projection,
+        }
+    }
+}
+
+fn decode_with_limits(
     parse_bytes: &[u8],
     source_bytes: &[u8],
     representation: Representation,
-    product_occurrence_output_limit: usize,
-    product_occurrence_depth_limit: usize,
+    limits: DecodeLimits,
     ctx: &DecodeContext<'_>,
 ) -> Result<Decoded, CodecError> {
     let mut parse = PhysicalParse::run(parse_bytes, ctx)?;
@@ -589,6 +611,7 @@ fn decode_with_occurrence_limits(
             &parse.parameters,
             &parse.trailing_pointer_analysis,
             &context,
+            limits.projection,
             ctx,
         )?,
         None => entities::geometry::Projection::default(),
@@ -618,10 +641,7 @@ fn decode_with_occurrence_limits(
             },
             &mut parse.references,
             global,
-            native::ProductOccurrenceLimits::new(
-                product_occurrence_output_limit,
-                product_occurrence_depth_limit,
-            ),
+            limits.occurrences,
             ctx,
         )?,
         global::GlobalRecord::Unfinished => {
@@ -927,20 +947,16 @@ fn invalid_semantic_ir(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<LossNo
 }
 
 #[cfg(test)]
-pub(crate) fn decode_with_test_occurrence_limits(
+pub(crate) fn decode_with_test_limits(
     bytes: &[u8],
     options: &DecodeOptions,
-    output_limit: usize,
-    depth_limit: usize,
+    limits: DecodeLimits,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
     use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, FormatId};
 
-    struct OccurrenceLimitCodec {
-        output_limit: usize,
-        depth_limit: usize,
-    }
+    struct LimitedCodec(DecodeLimits);
 
-    impl CodecBackend for OccurrenceLimitCodec {
+    impl CodecBackend for LimitedCodec {
         const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
         fn detect_impl(
@@ -964,22 +980,18 @@ pub(crate) fn decode_with_test_occurrence_limits(
             ctx: &DecodeContext<'_>,
             root: cadmpeg_core::decode::View<'_>,
         ) -> Result<Decoded, CodecError> {
-            decode_with_occurrence_limits(
+            decode_with_limits(
                 root.window(),
                 root.window(),
                 Representation::FixedAscii,
-                self.output_limit,
-                self.depth_limit,
+                self.0,
                 ctx,
             )
         }
     }
 
     Codec::decode(
-        &OccurrenceLimitCodec {
-            output_limit,
-            depth_limit,
-        },
+        &LimitedCodec(limits),
         &mut std::io::Cursor::new(bytes),
         options,
     )

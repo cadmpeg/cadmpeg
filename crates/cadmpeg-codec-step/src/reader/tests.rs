@@ -287,6 +287,45 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     }));
 }
 
+/// A record that holds literals only metadata admission reads stays a
+/// record. The accounting lexer, under metadata admission, reads each record
+/// token by token to its end, so the accounting walk reads past it.
+#[test]
+fn byte_accounting_reads_past_a_record_with_metadata_only_literals() {
+    let input = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COLOUR_RGB('',1.E999,\"5F\",0.);\n#2=UNKNOWN_ITEM(2);\nENDSEC;END-ISO-10303-21;\n";
+    let (exchange, _) = crate::test_support::with_service_context(input, crate::parse::parse_inner)
+        .expect("parse the exchange");
+    assert!(exchange.records().contains_key(&1));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
+        .expect("context");
+    for record in exchange.records().values() {
+        let mut lexer = crate::lex::Lexer::new(input, &ctx);
+        lexer.set_literal_admission(crate::lex::LiteralAdmission::Metadata);
+        lexer.seek(record.span.start);
+        let mut end = record.span.start;
+        while end < record.span.end {
+            end = lexer
+                .next_token()
+                .expect("the record lexes")
+                .expect("the record holds a token")
+                .span
+                .end;
+        }
+        assert_eq!(end, record.span.end);
+    }
+
+    let counts =
+        byte_accounting(input, &exchange, &HashSet::new(), &[], &ctx).expect("byte classes");
+
+    assert_eq!(counts.unclassified, 0);
+    assert_eq!(
+        counts.structural + counts.typed + counts.opaque,
+        input.len()
+    );
+}
+
 #[test]
 fn byte_accounting_claims_controls_inside_print_directives() {
     let input = b"1\\\x01N\x02\\2";
