@@ -171,6 +171,9 @@ pub(crate) fn bind_face_operand_history_candidates(
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
         operand.historical_support_contexts.clear();
+        operand.first_reference_support_contexts.clear();
+        operand.tangent_boundary_edge_slots.clear();
+        operand.undetermined_continuity_edge_slots.clear();
         operand.resolved_face_slots.clear();
         operand.resolved_active_face = None;
         let stream = crate::ids::native_stream(&operand.id);
@@ -518,6 +521,38 @@ pub(super) fn bind_historical_face_operand_candidates<'a>(
         &changed_faces,
         topology_queries,
     );
+    if matches!(
+        feature_family,
+        Some(
+            crate::design::DesignFeatureFamily::Fillet
+                | crate::design::DesignFeatureFamily::Chamfer
+        )
+    ) && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+    {
+        if let Some(reference) = operand.recipe_references.first() {
+            operand.first_reference_support_contexts =
+                super::face_support::historical_face_support_contexts(
+                    &reference.candidate_faces,
+                    history,
+                    topology,
+                    &changed_faces,
+                    topology_queries,
+                );
+        }
+    }
+    if feature_family == Some(crate::design::DesignFeatureFamily::Chamfer)
+        && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+    {
+        let continuities = super::edge_continuity::support_boundary_edge_continuities(
+            operand
+                .first_reference_support_contexts
+                .iter()
+                .chain(&operand.historical_support_contexts),
+            topology,
+        )?;
+        operand.tangent_boundary_edge_slots = continuities.tangent;
+        operand.undetermined_continuity_edge_slots = continuities.undetermined;
+    }
     if direct_face_candidates.is_some() {
         operand.resolved_face_slots = operand
             .preceding_candidate_faces
