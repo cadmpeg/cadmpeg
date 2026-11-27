@@ -255,6 +255,13 @@ little-endian `u32` values.
 | entries | `M` pairs of `0` and an object identifier |
 | final word | |
 
+The final word does not depend on the kind of any feature. In a document
+where no feature is suppressed, it equals the number
+of feature-tree items that are not feature-tree folders, plus one. A mirror
+copy and a pattern each count once, as do a swept, lofted, revolved or
+sheet-metal feature. A feature-tree folder adds an entry and does not change
+the word. Suppression of a feature can raise the word above this value. The word is not a feature count.
+
 One more `u32` can follow the final word. The object then ends. The first
 three entries are the three base reference planes, of class
 `ReferencePlaneObject`. The other `M` − 3 entries are the feature-tree
@@ -282,6 +289,7 @@ byte. The function names are:
 | `JMThinwallAssocFunctionNew` | thin wall |
 | `JMBaseTabFunction` | sheet-metal base tab |
 | `JMFlangeFunction` | sheet-metal flange |
+| `JMMultiFlangeFunction` | sheet-metal flange |
 
 A `CLSID_JMGroup` feature is a mirror copy or a pattern.
 
@@ -338,9 +346,9 @@ profile items.
 
 A `CLSID_JMPart` feature with function `JMProtrusionFunction`,
 `JMCutoutFunction`, `JMRevolvedProtrusionFunction`,
-`JMMultiSweepProtrusionFunction`, `JMLoftedProtrusionFunction` or
-`JMBaseTabFunction` stores the identifier of its profile as the `u32` 72
-bytes after the end of its function name (§4.2). For
+`JMMultiSweepProtrusionFunction` or `JMBaseTabFunction` stores the identifier
+of its profile as the `u32` 72 bytes after the end of its function name
+(§4.2). For
 `JMMultiSweepProtrusionFunction` that profile is the sweep path, and the
 `u32` 104 bytes after the end of the function name is the identifier of the
 section profile. A feature with function
@@ -349,6 +357,14 @@ section profile. A feature with function
 name. The identifier names a
 `CLSID_JProfile` object, or a `CLSID_JPatternProfile` object for a pattern
 profile. At most one feature names a profile.
+
+A feature with function `JMLoftedProtrusionFunction` stores the identifiers
+of its section profiles in loft order. The first is the `u32` 72 bytes after
+the end of its function name. Each later one is 20 bytes after the one
+before it, and each entry is a `u32` identifier followed by 16 bytes. The
+list ends at the first entry whose identifier does not name a
+`CLSID_JProfile` object. Each section lies on the frame of its profile
+(§5.1), and its curves are in that frame (§5.2).
 
 ## 6. Feature extents
 
@@ -363,6 +379,7 @@ as `u32` object identifiers after the end of its function name (§4.2):
 | 72 | the profile (§5.3) |
 | 100 | the extent kind |
 | 128 | the side |
+| 156 | the second side word (§6.2) |
 | 184 | the depth of an extruded feature, or the axis of a revolved feature |
 | 212 | the sweep angle of a revolved feature |
 
@@ -380,6 +397,10 @@ profile normal `A` (§5.1), value `1` extends it against the normal, and
 value `3` extends it to both sides of the profile plane. For a revolved
 feature, value `2` sweeps towards the profile normal and value `1` away
 from it.
+
+The second side word is a `Double Value Object`. The first feature of a
+document stores no object in this slot. A later extruded feature stores the
+object.
 
 ### 6.3 Depth
 
@@ -441,6 +462,14 @@ A `CLSID_JMHolePropData` object stores:
 A hole of type `3` is threaded with the stored thread. A hole of another
 type can keep thread values from an earlier type; they do not apply.
 
+A hole of type `2` removes a bore of the diameter at offset 12 and a
+counterbore of the diameter at offset 20. The depth of the counterbore is the
+dimension of slot 124, or the `f64` at offset 28 when the slot is `0`. Both
+start at the profile plane. The depth of the hole is measured from the
+profile plane and includes the counterbore depth. A tapped hole with no
+selected thread is of type `2`, and it stores `-1` at offsets 1053 and 1061.
+Its thread depth does not change the solid.
+
 ### 7.3 Rounds
 
 A `CLSID_JMPart` feature with function `JMRoundFunction` holds `n` edge sets.
@@ -454,7 +483,17 @@ Its object identifiers after the end of its function name are:
 
 `k` runs from `0` to `n` − 1. Set kind `1` is a constant radius. The count
 `n` is the number of consecutive `CLSID_JMTopologyProxy` identifiers from
-72 bytes after the name.
+72 bytes after the name. A round of the three edges that meet at one corner
+holds three sets of kind `1`, one for each edge, each with its own radius.
+
+Set kind `2` is a variable radius. In a round of one set of kind `2`, the
+radius slot of the set holds `0`. The vertex proxies follow: `m` consecutive
+`CLSID_JMTopologyProxy` identifiers, 20 bytes apart, start 168 bytes after the
+name. The `m` radii follow: `m` `CLSID_JDim` identifiers, 20 bytes apart, start
+12 bytes after the last vertex proxy. Vertex `j` and radius `j` form one
+station. A vertex proxy (§7.6) holds an end point of the edge of the set. The
+station is at the start of the edge when the vertex is the start point of the
+edge, and at its end when the vertex is the end point.
 
 ### 7.4 Chamfers
 
@@ -487,18 +526,34 @@ these object identifiers after the end of its function name:
 Type `4` hollows the body inward by the thickness, with the open faces
 removed.
 
-### 7.6 Edge selections
+### 7.6 Topology proxies
 
-A `CLSID_JMTopologyProxy` object of 559 bytes selects one straight edge. Its
-`f64` values at object offsets 121, 129 and 137 are the edge start point,
-the `f64` values at offsets 145, 153 and 161 are the unit edge direction,
-and the `f64` at offset 177 is the edge length. Lengths are metres.
+A `CLSID_JMTopologyProxy` object holds the geometry of the entity it selects,
+in the part frame and in metres. The geometry class identifier is the first
+16-byte sequence in the object whose last ten bytes are `CE 11 9A 5E 08 00 36
+9B 41 02`. The geometry record starts at the byte after it. The first six
+bytes of the identifier give the geometry class:
 
-A proxy of another size `S` stores the edge start point at offset `S` - 438.
-The unit edge direction follows the start point after 24 bytes, and the edge
-length follows it after 56 bytes. The 559-byte offsets above are the case
-`S` = 559. A proxy of 563 bytes stores an 8-byte header extension. A proxy of
-575 bytes stores two more `(u32 0, u32 n << 16)` pairs in its name list.
+| First six bytes | Selected entity | Geometry record |
+| --- | --- | --- |
+| `74 0C 54 25 15 3A` | straight edge | `u8` `3`, `f64` start point (3), `f64` unit direction (3), `f64` `0`, `f64` length |
+| `76 E3 FE 7C 16 3A` | planar face | `u8` `14`, `f64` point (3), `f64` unit normal (3), `f64` unit vector (3) |
+| `72 C7 D4 1D 15 3A` | vertex | `f64` point (3) |
+| `92 DA 66 66 16 3A` | circular edge | `u8` `15`, `f64` center (3), `f64` unit axis (3) |
+
+The end point of a straight edge is the start point plus the length times the
+direction. The unit normal of a planar face points out of the material.
+
+A proxy of 559 bytes that selects a straight edge holds the geometry class
+identifier at object offset 104, so that its geometry record starts at offset
+120 and the edge start point, the unit direction and the length are at object
+offsets 121, 145 and 177.
+
+A proxy of another size holds the geometry class identifier at another
+offset, and its geometry record follows it as above. The geometry record of a
+straight-edge proxy of size `S` starts at offset `S` - 439. A proxy of 563
+bytes stores an 8-byte header extension. A proxy of 575 bytes stores two more
+`(u32 0, u32 n << 16)` pairs in its name list.
 
 ## 8. Patterns and mirrors
 
@@ -604,6 +659,30 @@ A second file moniker of the same layout follows in the stream. Its up-level
 count is `1` and its path is relative to the folder of the assembly
 document.
 
+### 9.4 Occurrence visibility
+
+The stream `IOT/Default` of an assembly states which occurrences are hidden.
+It has `108 + 12 m` bytes, where `m` is the number of hidden occurrences. The
+first 104 bytes are a header that states no visibility. The `u32` `m` is at
+offset 104. `m` records of 12 bytes follow, from offset 108:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | `u32` `0x40000002` |
+| 4 | `u32` `0` |
+| 8 | `u32` identifier of a hidden `CLSID_JAsmReference` object (§9.2) |
+
+An occurrence is hidden if and only if a record names its object. The records
+are in the order of the occurrence list (§9.1). An assembly with no hidden
+occurrence has `m` `0`. The stream `Preview/Structure/IOT` has the header of
+16 bytes, a `u32` occurrence count at offset 16, and from offset 20 one record of
+20 bytes per occurrence: a `u32` flag word, a `u32`, the `u32` identifier of
+the `CLSID_JAsmReference` object at offset 8, `u32` `0x80000027`, and a `u32`
+sequence number. Bit `0x02` of the flag word is set for a hidden occurrence and
+clear for a shown one. Hiding an occurrence does not change its
+`CLSID_JAsmReference` object, `JAsmRefAttr`, `JSitesList` or `PSMroots`. The
+stream `JVisibleData` does not state visibility.
+
 ## 10. Sheet metal
 
 ### 10.1 Variable table
@@ -639,11 +718,18 @@ record. The indices are:
 | 10 | deviational tolerance |
 | 11 | bend deduction |
 | 12 | bend allowance |
-| 13 | bend method: `0` neutral factor, `1` bend deduction |
+| 13 | bend method: `0` neutral factor, `1` bend deduction, `2` bend allowance |
 
 The referenced object of a variable also stores the variable name as
 UTF-16 text. The neutral factor is the K-factor: the distance of the neutral
 surface from the inside of a bend, as a fraction of the thickness.
+
+The bend method selects the variable that sets the flat length of a bend:
+method `0` the neutral factor, method `1` the bend deduction and method `2`
+the bend allowance. The three variables keep their values under every
+method. The bend method and the three values do not depend on a flange angle
+or the material thickness. The referenced object of the bend method stores the
+UTF-16 text `0=Neutral Factor; 1=Bend Deduction; 2=Bend Allowance`.
 
 ### 10.2 Base tab
 
@@ -731,15 +817,24 @@ to the top of the flange. The angle `CLSID_JDim` stores the entered angle
 `a`; the flange turns through the angle pi - `a` from the plane of the face
 that bounds the edge.
 
-The values at offsets 296, 324, 380 and 408 are objects of the flange, each
-bound to a document variable of §10.1 by one `Assoc subsystem Standard
-Relation implementation` object of 161 bytes. The `u32` at object offset 99
+The values at offsets 296, 324, 380, 408, 832, 860 and 888 are variable
+objects of the flange, each a `Double Value Object` that holds the value of the
+flange. A flange variable follows the document variable of the same name
+(§10.1) when one `Assoc subsystem Standard Relation implementation` object of
+161 bytes relates them. The `u32` at object offset 99
 is the identifier of the flange object. The `u32` at object offset 127 is
-the identifier of the document variable object (§10.1). A value that has a
-relation follows the document variable. A value that has no relation is set
-on the flange and holds its own number. The `u16` at object offset 18 of the
-objects at offsets 296, 324, 380 and 408 is `149` where a relation binds the
-object and `157` where none does.
+the identifier of the document variable object (§10.1). A variable that has a
+relation follows the document variable and holds its value. A variable that
+has no relation is set on the flange and holds its own number. The `u16` at
+object offset 18 of the objects at offsets 296, 324, 380 and 408 is `149`
+where a relation binds the object and `157` where none does.
+
+The bend-method object at offset 832 stores the same UTF-16 text as the
+document bend-method object (§10.1). A flange with its own bend method has no
+relation object for its bend-method variable and none for the variable of that
+method (neutral factor, bend deduction or bend allowance); the relation
+objects of its other variables remain. Its variable of the selected method
+holds the value of the flange, and the document variable keeps its own value.
 
 A `JMBendTable` object stores 362 bytes and one 93-byte record per bend. In
 record `k`, the `f64` at object offset 374 + 93`k` is the inside bend radius

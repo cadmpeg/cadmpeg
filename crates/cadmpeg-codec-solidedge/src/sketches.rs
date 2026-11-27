@@ -58,6 +58,11 @@ pub(crate) const PROFILE_AFTER_NAME_SHORT: usize = 68;
 /// a swept protrusion (§5.3). The profile at [`PROFILE_AFTER_NAME`] is its
 /// path.
 pub(crate) const SWEEP_SECTION_AFTER_NAME: usize = 104;
+/// The function of a lofted protrusion.
+pub(crate) const LOFT_FUNCTION: &str = "JMLoftedProtrusionFunction";
+/// Bytes between the section profile identifiers of a lofted protrusion
+/// (§5.3). The first section is at [`PROFILE_AFTER_NAME`].
+pub(crate) const LOFT_SECTION_STRIDE: usize = 20;
 
 /// Millimetres per metre.
 const MM_PER_M: f64 = 1000.0;
@@ -79,7 +84,6 @@ fn profile_offsets(function: &str) -> &'static [usize] {
         "JMProtrusionFunction"
         | "JMCutoutFunction"
         | "JMRevolvedProtrusionFunction"
-        | "JMLoftedProtrusionFunction"
         | "JMBaseTabFunction" => &[PROFILE_AFTER_NAME],
         "JMMultiSweepProtrusionFunction" => &[PROFILE_AFTER_NAME, SWEEP_SECTION_AFTER_NAME],
         "JMHoleFunction"
@@ -95,6 +99,27 @@ pub(crate) fn sketch_id(profile: u32) -> SketchId {
         &cadmpeg_ir::identity_namespace!("solidedge", "model", "sketch"),
         profile,
     )
+}
+
+/// The sketch of profile object `profile` where the feature `owner` owns it.
+/// The error names `what` as the profile that is not a stated sketch.
+pub(crate) fn stated_sketch(
+    ir: &CadIr,
+    owner: &cadmpeg_ir::features::FeatureId,
+    profile: u32,
+    what: &str,
+) -> Result<SketchId, String> {
+    let id = sketch_id(profile);
+    if ir
+        .design
+        .sketches
+        .iter()
+        .any(|sketch| sketch.id == id && &sketch.owner == owner)
+    {
+        Ok(id)
+    } else {
+        Err(format!("the {what} profile is not a stated sketch"))
+    }
 }
 
 fn entity_id(member: u32) -> SketchEntityId {
@@ -314,13 +339,56 @@ pub(crate) fn profile_frame(
     frame(object.bytes)
 }
 
+/// The section profile identifiers of a lofted feature whose function name
+/// ends at `end`, in loft order (§5.3). The list holds the first slot, then
+/// each following slot while it names a profile object. An error stands for
+/// a stored block that is too short to hold the first slot.
+pub(crate) fn loft_section_words(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    object: &Object<'_>,
+    end: usize,
+) -> Vec<Result<u32, ()>> {
+    let word_at = |index: usize| {
+        index
+            .checked_mul(LOFT_SECTION_STRIDE)
+            .and_then(|step| step.checked_add(PROFILE_AFTER_NAME))
+            .and_then(|after| end.checked_add(after))
+            .and_then(|at| View::u32_le_at(object.bytes, at))
+    };
+    let names_profile = |id: u32| {
+        cluster.object(id).is_some_and(|target| {
+            types.class_name(target.form, target.flags) == Some(PROFILE_CLASS)
+        })
+    };
+    let Some(first) = word_at(0) else {
+        return vec![Err(())];
+    };
+    let mut words = vec![Ok(first)];
+    if names_profile(first) {
+        let mut index = 1;
+        while let Some(id) = word_at(index).filter(|id| names_profile(*id)) {
+            words.push(Ok(id));
+            index += 1;
+        }
+    }
+    words
+}
+
 /// The profile identifiers a feature object stores, in offset order. An
 /// error stands for a stored block that is too short to hold one. Empty where
 /// the object's function stores no profile.
-fn profile_words(object: &Object<'_>) -> Vec<Result<u32, ()>> {
+fn profile_words(
+    cluster: &Cluster<'_>,
+    types: &TypeTable,
+    object: &Object<'_>,
+) -> Vec<Result<u32, ()>> {
     let Some((function, end)) = function_span(object) else {
         return Vec::new();
     };
+    if function == LOFT_FUNCTION {
+        return loft_section_words(cluster, types, object, end);
+    }
     profile_offsets(&function)
         .iter()
         .map(|after| {
@@ -356,7 +424,7 @@ pub(crate) fn project(
         if types.class_name(object.form, object.flags) != Some(PART_CLASS) {
             continue;
         }
-        for stored in profile_words(&object) {
+        for stored in profile_words(cluster, types, &object) {
             let Ok(profile_id) = stored else {
                 losses.push(SolidEdgeLossCode::SketchUnread.note(format!(
                     "feature object {:#x} stores no profile identifier; no sketch is stated",

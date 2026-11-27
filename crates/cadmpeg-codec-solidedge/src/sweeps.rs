@@ -18,7 +18,7 @@ use crate::extents::{output, profile_selection, slot, PART_CLASS};
 use crate::features::{feature_id, function_span, Kind, Listed};
 use crate::loss::SolidEdgeLossCode;
 use crate::psm::{Cluster, Object, TypeTable};
-use crate::sketches::{sketch_id, PROFILE_AFTER_NAME, SWEEP_SECTION_AFTER_NAME};
+use crate::sketches::{stated_sketch, PROFILE_AFTER_NAME, SWEEP_SECTION_AFTER_NAME};
 
 /// The function of a swept protrusion.
 const SWEEP_FUNCTION: &str = "JMMultiSweepProtrusionFunction";
@@ -33,17 +33,7 @@ fn sketch_at(
     after: usize,
     what: &str,
 ) -> Result<SketchId, String> {
-    let id = sketch_id(slot(object, end, after)?);
-    if ir
-        .design
-        .sketches
-        .iter()
-        .any(|sketch| sketch.id == id && &sketch.owner == owner)
-    {
-        Ok(id)
-    } else {
-        Err(format!("the {what} profile is not a stated sketch"))
-    }
+    stated_sketch(ir, owner, slot(object, end, after)?, what)
 }
 
 fn sweep(

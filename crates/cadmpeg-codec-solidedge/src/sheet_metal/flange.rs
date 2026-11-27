@@ -24,13 +24,13 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, NonNegativeLength, PositiveLength};
 
 use super::{option_key, positive};
-use crate::edge::edge_selection_from_end;
 use crate::extents::{
     dimension_value, double_slot, is, named, slot, DIMENSION_CLASS, MM_PER_M, PART_CLASS,
 };
 use crate::features::{feature_id, function_span, Kind, Listed};
 use crate::layout::standard_relation;
 use crate::loss::SolidEdgeLossCode;
+use crate::proxy::edge_selection;
 use crate::psm::{Cluster, Object, TypeTable};
 
 /// The function of a flange.
@@ -177,7 +177,7 @@ impl Slots<'_, '_> {
         if class != PROXY_CLASS {
             return Err(format!("the edge object is of class {class}"));
         }
-        let (selection, stated) = edge_selection_from_end(&proxy);
+        let (selection, stated) = edge_selection(&proxy);
         if stated {
             Ok(selection)
         } else {

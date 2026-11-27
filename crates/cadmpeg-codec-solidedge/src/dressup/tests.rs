@@ -10,7 +10,7 @@ use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::dressup::ShellFeature;
 use cadmpeg_ir::design::ops::dressup::{
     CenterSource, Chamfer, ChamferSize, Fillet, FilletSet, FilletSize, Hole, HoleHead,
-    HolePositions, HoleShape,
+    HolePositions, HoleShape, StationAt,
 };
 use cadmpeg_ir::design::ops::shared::Limit;
 use cadmpeg_ir::design::ops::sketch::{EntityDefinition, PlanarCurve};
@@ -429,6 +429,93 @@ fn round_with_two_sets() {
     assert!(near(radius(&fillet.sets[1]), 3.0));
 }
 
+/// A variable-radius round on the edge from `start` along +x of `length`,
+/// whose vertices are `vertices` with the radii `radii`.
+fn variable_round(vertices: [[f64; 3]; 2], radii: [f64; 2], length: f64) -> DecodeResult {
+    let start = [-0.02, -0.015, 0.02];
+    decode(dressup_document(
+        ROUND,
+        None,
+        &[
+            (
+                72,
+                Dress::Edge {
+                    start,
+                    direction: [1.0, 0.0, 0.0],
+                    length,
+                },
+            ),
+            (104, Dress::Value(Slot::Double(2.0))),
+            (168, Dress::Vertex(vertices[0])),
+            (188, Dress::Vertex(vertices[1])),
+            (220, Dress::Value(Slot::Dim(radii[0]))),
+            (240, Dress::Value(Slot::Dim(radii[1]))),
+        ],
+    ))
+}
+
+fn stations(result: &DecodeResult) -> Vec<(f64, f64)> {
+    match &fillet(result).sets[0] {
+        FilletSet::Edges { section, .. } => match &section.size {
+            Some(FilletSize::Variable(stations)) => stations
+                .points
+                .iter()
+                .map(|point| {
+                    let StationAt::Parameter {
+                        fraction: Dimension::Literal(fraction),
+                        ..
+                    } = &point.at
+                    else {
+                        panic!("expected a station at a fraction");
+                    };
+                    let Dimension::Literal(value) = &point.value else {
+                        panic!("expected a literal radius");
+                    };
+                    (fraction.get(), value.get())
+                })
+                .collect(),
+            other => panic!("expected a variable radius, found {other:?}"),
+        },
+        other => panic!("expected an edge set, found {other:?}"),
+    }
+}
+
+#[test]
+fn variable_radius_round_states_a_station_at_each_vertex() {
+    let result = variable_round(
+        [[-0.02, -0.015, 0.02], [0.02, -0.015, 0.02]],
+        [0.002, 0.004],
+        0.04,
+    );
+    let found = stations(&result);
+    assert_eq!(found.len(), 2);
+    assert!(near(found[0].0, 0.0) && near(found[0].1, 2.0));
+    assert!(near(found[1].0, 1.0) && near(found[1].1, 4.0));
+}
+
+#[test]
+fn variable_radius_stations_follow_the_vertex_order() {
+    let result = variable_round(
+        [[0.02, -0.015, 0.02], [-0.02, -0.015, 0.02]],
+        [0.005, 0.002],
+        0.04,
+    );
+    let found = stations(&result);
+    assert!(near(found[0].0, 1.0) && near(found[0].1, 5.0));
+    assert!(near(found[1].0, 0.0) && near(found[1].1, 2.0));
+}
+
+#[test]
+fn variable_radius_vertex_off_the_edge_stays_unresolved() {
+    let result = variable_round(
+        [[-0.02, -0.015, 0.02], [0.01, -0.015, 0.02]],
+        [0.002, 0.004],
+        0.04,
+    );
+    assert!(unresolved(&result, OperationFamily::Fillet));
+    assert!(codes(&result).contains(&"feature.dressup-unread".to_owned()));
+}
+
 #[test]
 fn round_set_of_another_kind_stays_unresolved() {
     let result = round_with(&[Slot::Dim(0.002), Slot::Dim(0.003)], &[1.0, 2.0]);
@@ -556,6 +643,31 @@ fn thread_values_of_a_hole_of_another_type_do_not_apply() {
 }
 
 #[test]
+fn counterbore_hole_without_a_selected_thread_states_bore_head_and_depth() {
+    let mut stored = props(2, 0.005);
+    stored.head_diameter = 0.011;
+    stored.head_depth = 0.001;
+    stored.thread = Some((-1.0, -1.0, ""));
+    let extra = [
+        (124, Dress::Value(Slot::Dim(0.005))),
+        (264, Dress::Value(Slot::Dim(0.015))),
+    ];
+    let result = hole_with(stored, 13.0, 1.0, &[[0.0, 0.0]], &extra);
+    let hole = hole(&result);
+    assert!(near(mm(bore(hole).diameter.as_ref()), 5.0));
+    match &bore(hole).head {
+        Some(HoleHead::Counterbore { diameter, depth }) => {
+            assert!(near(mm(diameter.as_ref()), 11.0));
+            assert!(near(mm(depth.as_ref()), 5.0));
+        }
+        other => panic!("expected a counterbore, found {other:?}"),
+    }
+    assert!(near(blind_mm(hole), 15.0));
+    assert_eq!(hole.thread, None);
+    assert!(!codes(&result).contains(&"feature.thread-unread".to_owned()));
+}
+
+#[test]
 fn a_designation_that_is_not_printable_ascii_leaves_the_thread_unread() {
     let mut stored = props(3, 0.005);
     stored.thread = Some((4.917, 6.0, "M6\u{e9}"));
@@ -634,7 +746,11 @@ fn chamfer_of_a_straight_edge_states_the_edge_line() {
             (68, Dress::Value(Slot::Double(41.0))),
             (
                 128,
-                Dress::EdgeProxy(EDGE_START, EDGE_DIRECTION, EDGE_LENGTH),
+                Dress::Edge {
+                    start: EDGE_START,
+                    direction: EDGE_DIRECTION,
+                    length: EDGE_LENGTH,
+                },
             ),
             (156, Dress::Value(Slot::Dim(0.003))),
         ],
@@ -651,7 +767,11 @@ fn round_of_a_straight_edge_states_the_edge_line() {
         &[
             (
                 72,
-                Dress::EdgeProxy(EDGE_START, EDGE_DIRECTION, EDGE_LENGTH),
+                Dress::Edge {
+                    start: EDGE_START,
+                    direction: EDGE_DIRECTION,
+                    length: EDGE_LENGTH,
+                },
             ),
             (104, Dress::Value(Slot::Double(1.0))),
             (136, Dress::Value(Slot::Dim(0.002))),

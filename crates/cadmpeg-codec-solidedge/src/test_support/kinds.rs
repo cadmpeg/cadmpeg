@@ -86,6 +86,12 @@ pub(crate) fn kind_document(
         Operand::Edge(_) | Operand::BlankEdge => {
             let mut proxy = vec![0_u8; 559 - 8];
             if let Operand::Edge(edge) = operand {
+                // The geometry class identifier ends at object offset 119 and
+                // the geometry kind byte of a straight edge is at offset 120
+                // (§7.6).
+                proxy[110 - 8..120 - 8]
+                    .copy_from_slice(&[0xce, 0x11, 0x9a, 0x5e, 0x08, 0x00, 0x36, 0x9b, 0x41, 0x02]);
+                proxy[120 - 8] = 3;
                 put_reals(&mut proxy, 121, &edge.start);
                 put_reals(&mut proxy, 145, &edge.direction);
                 put_reals(&mut proxy, 177, &[edge.length]);

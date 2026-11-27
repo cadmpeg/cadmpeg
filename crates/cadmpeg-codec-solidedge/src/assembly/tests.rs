@@ -8,7 +8,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 
 use crate::test_support::{
-    assembly_document, mirror_document, MirrorSpec, OccurrenceSpec, SiteSpec,
+    assembly_document, assembly_document_with_table, assembly_document_with_visibility,
+    mirror_document, visibility_stream, MirrorSpec, OccurrenceSpec, SiteSpec,
 };
 use crate::SolidEdgeCodec;
 
@@ -279,4 +280,81 @@ fn document_without_a_collection_adds_nothing() {
     assert!(codes(&result)
         .iter()
         .all(|code| !code.starts_with("assembly.")));
+}
+
+/// Four occurrences, objects 20 to 23, of the site, with a visibility table
+/// that hides `hidden`.
+fn four_with_visibility(hidden: &[u32]) -> DecodeResult {
+    let specs: Vec<OccurrenceSpec> = (20..24)
+        .map(|id| OccurrenceSpec::at_identity(id, SITE))
+        .collect();
+    decode(assembly_document_with_visibility(
+        &[20, 21, 22, 23],
+        &specs,
+        &[site()],
+        hidden,
+    ))
+}
+
+fn visible_states(result: &DecodeResult) -> Vec<Option<bool>> {
+    occurrences(result)
+        .iter()
+        .map(|occurrence| occurrence.visible)
+        .collect()
+}
+
+#[test]
+fn empty_visibility_table_states_every_occurrence_visible() {
+    let result = four_with_visibility(&[]);
+    assert_eq!(visible_states(&result), vec![Some(true); 4]);
+    assert_eq!(count(&result, "assembly.visibility-unread"), 0);
+}
+
+#[test]
+fn listed_objects_are_hidden() {
+    for hidden in [&[20][..], &[20, 21], &[20, 21, 22], &[21, 23]] {
+        let result = four_with_visibility(hidden);
+        let want: Vec<Option<bool>> = (20..24).map(|id| Some(!hidden.contains(&id))).collect();
+        assert_eq!(visible_states(&result), want);
+        assert_eq!(count(&result, "assembly.visibility-unread"), 0);
+    }
+}
+
+#[test]
+fn hidden_object_that_is_no_occurrence_changes_nothing() {
+    let result = four_with_visibility(&[99]);
+    assert_eq!(visible_states(&result), vec![Some(true); 4]);
+}
+
+#[test]
+fn absent_visibility_table_states_no_visibility() {
+    let result = single(|_| {});
+    assert_eq!(occurrences(&result)[0].visible, None);
+    assert_eq!(count(&result, "assembly.visibility-unread"), 1);
+}
+
+#[test]
+fn visibility_table_shorter_than_its_count_states_no_visibility() {
+    let mut table = visibility_stream(&[20, 21]);
+    table.truncate(table.len() - 4);
+    let result = decode(assembly_document_with_table(
+        &[20],
+        &[OccurrenceSpec::at_identity(20, SITE)],
+        &[site()],
+        Some(table),
+    ));
+    assert_eq!(occurrences(&result)[0].visible, None);
+    assert_eq!(count(&result, "assembly.visibility-unread"), 1);
+}
+
+#[test]
+fn visibility_table_without_a_count_states_no_visibility() {
+    let result = decode(assembly_document_with_table(
+        &[20],
+        &[OccurrenceSpec::at_identity(20, SITE)],
+        &[site()],
+        Some(vec![0; 100]),
+    ));
+    assert_eq!(occurrences(&result)[0].visible, None);
+    assert_eq!(count(&result, "assembly.visibility-unread"), 1);
 }

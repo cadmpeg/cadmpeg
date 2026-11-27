@@ -475,6 +475,7 @@ pub(crate) fn project<'a>(
     crate::sheet_metal::contour::project(&cluster, &types, &listed, ir, losses);
     crate::sheet_metal::unfold::project(&cluster, &types, &listed, ir, losses);
     crate::sheet_metal::corner::project(&cluster, &types, &listed, ir);
+    crate::lofts::project(&cluster, &types, &listed, ir, losses);
     crate::dressup::project(&cluster, &types, &listed, ir, losses);
     crate::patterns::project(&cluster, &types, &listed, ir, losses);
     crate::sketches::name_untyped_profiles(&listed, ir);

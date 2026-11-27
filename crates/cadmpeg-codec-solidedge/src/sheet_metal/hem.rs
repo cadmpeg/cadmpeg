@@ -21,10 +21,10 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::{code_of, features_of, millimetres, option_key};
-use crate::edge::edge_selection_from_end;
 use crate::extents::{double_slot, is, named, slot};
 use crate::features::{feature_id, Listed};
 use crate::loss::SolidEdgeLossCode;
+use crate::proxy::edge_selection;
 use crate::psm::{Cluster, Object, TypeTable};
 
 /// The function of a hem.
@@ -59,7 +59,7 @@ fn edges(
     if class != PROXY_CLASS {
         return Err(format!("the edge object is of class {class}"));
     }
-    let (selection, stated) = edge_selection_from_end(&proxy);
+    let (selection, stated) = edge_selection(&proxy);
     if stated {
         Ok(selection)
     } else {
