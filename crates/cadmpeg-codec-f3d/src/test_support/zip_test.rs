@@ -201,14 +201,22 @@ pub(crate) fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8],
 }
 
 pub(crate) fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) -> Vec<u8> {
+    f3d_with_configurations(smbh, &[(name, payload)])
+}
+
+/// An archive of `smbh` with a configuration table document of each name and
+/// payload of `documents`.
+pub(crate) fn f3d_with_configurations(smbh: &[u8], documents: &[(&str, &[u8])]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(smbh).unwrap();
-    zip.start_file(name, stored).unwrap();
-    zip.write_all(payload).unwrap();
+    for (name, payload) in documents {
+        zip.start_file(*name, stored).unwrap();
+        zip.write_all(payload).unwrap();
+    }
     zip.finish().unwrap().into_inner()
 }
 
