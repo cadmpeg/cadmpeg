@@ -216,7 +216,7 @@ pub(super) fn check_evaluations(
         .max()
         .and_then(|&deepest| crate::validate::state_chain_refusal(max_chain_depth, deepest))
     {
-        return Err(refusal);
+        return Err(CodecError::ResourceLimit(refusal));
     }
     let mut keys = BTreeMap::new();
     for evaluation in &index.ir.design.evaluations {

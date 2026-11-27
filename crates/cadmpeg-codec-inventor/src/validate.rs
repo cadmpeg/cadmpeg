@@ -216,9 +216,19 @@ pub(crate) fn validate_native(
     ) {
         findings.push(finding(Check::NativeLinks, detail, None));
     }
-    validate_design(&data, ir, &mut findings);
-    validate_sketches(&data, ir, &mut findings);
-    validate_features(ctx, ir, &data, &mut findings)?;
+    let raw_records = data
+        .records
+        .iter()
+        .map(|record| {
+            (
+                (record.token.as_str(), record.ordinal),
+                record.type_id.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    validate_design(&data, &raw_records, ir, &mut findings);
+    validate_sketches_with_raw(&data, &raw_records, ir, &mut findings);
+    validate_features_with_raw(ctx, ir, &data, &raw_records, &mut findings)?;
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.as_str()),
@@ -236,7 +246,7 @@ pub(crate) fn validate_native(
     validate_protein_record_coverage(&data, &mut findings);
     validate_ufrx(ir, &data, &mut findings);
     validate_assembly(ctx, ir, &data, &mut findings)?;
-    validate_presentation(ir, &data, &mut findings);
+    validate_presentation(ir, &data, &raw_records, &mut findings);
     for issue in &data.structural_issues {
         findings.push(finding(
             Check::NativeLinks,
@@ -298,17 +308,12 @@ fn design_v11_findings(
     Ok(findings)
 }
 
-fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
-    let raw = data
-        .records
-        .iter()
-        .map(|record| {
-            (
-                (record.token.as_str(), record.ordinal),
-                record.type_id.as_str(),
-            )
-        })
-        .collect::<HashMap<_, _>>();
+fn validate_design(
+    data: &NativeData,
+    raw: &HashMap<(&str, u32), &str>,
+    ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) {
     let resolves =
         |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
@@ -437,7 +442,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
             ));
         }
     }
-    validate_parameter_scopes(data, &raw, findings);
+    validate_parameter_scopes(data, raw, findings);
     let native_parameter_ids = data
         .pm_dc_parameters
         .iter()
@@ -563,6 +568,7 @@ fn sketch_point(
     Some(position)
 }
 
+#[cfg(test)]
 fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
     let raw = data
         .records
@@ -574,6 +580,15 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             )
         })
         .collect::<HashMap<_, _>>();
+    validate_sketches_with_raw(data, &raw, ir, findings);
+}
+
+fn validate_sketches_with_raw(
+    data: &NativeData,
+    raw: &HashMap<(&str, u32), &str>,
+    ir: &CadIr,
+    findings: &mut Vec<Finding>,
+) {
     let record_is_exact = |token: &str, ordinal: u32, type_id: &str| {
         raw.get(&(token, ordinal)).copied() == Some(type_id)
     };
@@ -1186,15 +1201,13 @@ fn tagging_definition_matches(
         && !has_result
 }
 
+#[cfg(test)]
 fn validate_features(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     data: &NativeData,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let mirror_outputs = mirror::validate_mirrors(ctx, ir, data, findings)?;
-    sheet_metal::records(data, findings);
-    sheet_metal::definitions(ir, data, findings);
     let raw = data
         .records
         .iter()
@@ -1205,6 +1218,19 @@ fn validate_features(
             )
         })
         .collect::<HashMap<_, _>>();
+    validate_features_with_raw(ctx, ir, data, &raw, findings)
+}
+
+fn validate_features_with_raw(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    data: &NativeData,
+    raw: &HashMap<(&str, u32), &str>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let mirror_outputs = mirror::validate_mirrors(ctx, ir, data, findings)?;
+    sheet_metal::records(data, raw, findings);
+    sheet_metal::definitions(ir, data, findings);
     let resolves =
         |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
@@ -2951,7 +2977,12 @@ fn face_property_is_admitted<'a>(
     }
 }
 
-fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
+fn validate_presentation(
+    ir: &CadIr,
+    data: &NativeData,
+    raw_records: &HashMap<(&str, u32), &str>,
+    findings: &mut Vec<Finding>,
+) {
     unique(
         findings,
         data.pm_app_default_styles
@@ -3052,16 +3083,6 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         }
     }
 
-    let raw_records = data
-        .records
-        .iter()
-        .map(|record| {
-            (
-                (record.token.as_str(), record.ordinal),
-                record.type_id.as_str(),
-            )
-        })
-        .collect::<HashMap<_, _>>();
     let raw_keys = raw_records.keys().copied().collect::<HashSet<_>>();
     let rendering_keys = data
         .pm_app_rendering_styles

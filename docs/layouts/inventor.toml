@@ -4790,6 +4790,45 @@ source = "spec"
 anchor = "store cached line selections"
 
 [[record]]
+name = "pm_dc_pattern_cached_line_chain_entry"
+kind = "byte"
+section = "13.6"
+anchor = "store cached line selections"
+size = 54
+note = "Entry of a cached line chain with selection form 2 or more. The first entry shares its zero and curve form with the single-line prefix."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/pattern.rs"
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "store cached line selections"
+value = 0
+
+[[record.field]]
+name = "curve_form"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "store cached line selections"
+value = 23
+
+[[record.field]]
+name = "origin"
+offset = 6
+type = "f64[3]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record.field]]
+name = "span"
+offset = 30
+type = "f64[3]"
+source = "spec"
+anchor = "store cached line selections"
+
+[[record]]
 name = "pm_dc_pattern_suppression_prefix"
 kind = "byte"
 section = "13.6"

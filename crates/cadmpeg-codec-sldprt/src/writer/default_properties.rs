@@ -27,12 +27,12 @@ pub(super) fn unwritten(
     ir: &CadIr,
     records: &[crate::SourceRecord<'_>],
     annotations: &Annotations,
+    policy: &DecodePolicy,
 ) -> Result<BTreeMap<String, Held>, CodecError> {
     let scan = carrier_scan(records, annotations);
     let input = scan.blocks.iter().map(|block| block.payload.len()).sum();
     let arena = DecodeArena::new();
-    let ctx =
-        DecodeContext::for_loaded_input(&arena, &DecodePolicy::desktop(), u64_from_index(input))?;
+    let ctx = DecodeContext::for_loaded_input(&arena, policy, u64_from_index(input))?;
     let stored = crate::metadata::saved_property_rows(&ctx, &scan)?;
     let carriers = scan
         .blocks
