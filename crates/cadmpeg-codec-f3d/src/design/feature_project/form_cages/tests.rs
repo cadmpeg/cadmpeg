@@ -1094,6 +1094,15 @@ fn body_construction(
     scope: &crate::records::feature::scope::DesignParameterScope,
     cages: &[cadmpeg_ir::SubdSurface],
 ) -> FormConstruction {
+    body_construction_with_losses(bytes, meta, scope, cages).0
+}
+
+fn body_construction_with_losses(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    cages: &[cadmpeg_ir::SubdSurface],
+) -> (FormConstruction, Vec<cadmpeg_ir::report::loss::LossNote>) {
     use std::io::{Cursor, Write};
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -1109,6 +1118,7 @@ fn body_construction(
     }
     let archive = archive.finish().unwrap().into_inner();
     let mut result = None;
+    let mut losses = Vec::new();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
             let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
@@ -1143,7 +1153,7 @@ fn body_construction(
                 (&types, &serializers),
                 (&mut facts, &mut groups),
                 None,
-                &mut Vec::new(),
+                &mut losses,
             )?;
             result = Some(
                 FormConstruction::try_new(facts.inputs, facts.observations, membership).unwrap(),
@@ -1152,7 +1162,7 @@ fn body_construction(
         })
     })
     .unwrap();
-    result.unwrap()
+    (result.unwrap(), losses)
 }
 
 #[test]
@@ -1352,6 +1362,30 @@ fn form_body_records_bind_the_owning_scope_cages_in_body_record_order() {
             ..
         }
     )));
+}
+
+#[test]
+fn form_body_record_index_order_is_the_source_cage_order() {
+    let bytes = two_body_form_stream();
+    let cages = [
+        neutral_form_cage("f3d:model:subd#2", SECOND_CAGE_UUID),
+        neutral_form_cage("f3d:model:subd#1", FIRST_CAGE_UUID),
+    ];
+    let scope = form_scope(201, vec![205, 207]);
+    let (complete, losses) =
+        body_construction_with_losses(&bytes, &two_body_form_meta(), &scope, &cages);
+    assert!(losses.is_empty(), "{losses:?}");
+    let FormMembership::Complete { order, .. } = complete.membership() else {
+        panic!("complete");
+    };
+    assert_eq!(*order, FormKnownOrder::Source);
+    let (partial, _) =
+        body_construction_with_losses(&bytes, &two_body_form_meta(), &scope, &cages[..1]);
+    let FormMembership::Partial { order, members, .. } = partial.membership() else {
+        panic!("partial");
+    };
+    assert_eq!(*order, FormOrder::Source);
+    assert_eq!(members.len(), 2);
 }
 
 #[test]

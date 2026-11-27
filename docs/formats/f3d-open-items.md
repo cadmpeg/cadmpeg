@@ -1434,18 +1434,6 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** Controlled exports that vary evaluation time, operation order, and the relevant Boolean state must separate the scalar unit, ordinal allocation rule, flag meaning, and flag-width selector. A neutral Form writer also needs an explicit tracking-member-to-cage identity join.
 
-### DR-324. Cage order of a Form bound through body records
-
-**Question.** In which order does a Form scope that several Form body records name hold its cages?
-
-**Known.** `f3d.md` §1.1.1 "**Form body-record cage join.**" binds each cage to its owning Form scope through one Form body record. The scope's reference table holds a result-owner record and a Form selection group, and its selection members are tracking records. The decoder orders the cages by ascending body-record index and reports `feature.form-cage-order-assumed` for each such Form with two or more cages.
-
-**Need.** Controlled saves of one Form session that creates two bodies in one order and then changes the first body, to compare the body order of the session with the body-record index order.
-
-**Conflict.** None.
-
-**Note.** None.
-
 ### DR-645. Legacy sole-scope serializer membership and order
 
 **Question.** Which native relations establish complete cage membership and order in the sole-scope legacy Form envelope?
