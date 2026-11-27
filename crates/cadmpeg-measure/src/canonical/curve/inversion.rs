@@ -4,8 +4,9 @@
 mod boundary;
 mod speed;
 
+use crate::FastMap;
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap};
+use std::collections::BinaryHeap;
 
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
@@ -33,7 +34,7 @@ const MAX_CACHED_CURVE_POINTS: usize = 1 << 12;
 
 #[derive(Default)]
 struct CurvePoints {
-    values: HashMap<u64, Option<FinitePoint3>>,
+    values: FastMap<u64, Option<FinitePoint3>>,
 }
 
 impl CurvePoints {

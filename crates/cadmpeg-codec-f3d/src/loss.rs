@@ -508,6 +508,8 @@ pub(crate) enum F3dLossCode {
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
     FeatureOutputBodyUnbound,
+    /// A pattern result state holds a generated solid body that no model body joins.
+    FeaturePatternCopyBodyOmitted,
     /// A derived base scope stores a copy of a source and frame that the archive does not contain.
     FeatureDerivedBaseUnresolved,
     /// A Pipe section is inferred as a circle from its result faces.
@@ -703,6 +705,13 @@ pub(crate) enum F3dLossCode {
     /// A two-face treatment group takes the edges its transition deletes; the
     /// treated set is assumed to equal the deleted set.
     HistoricalEdgeSelectionDeletedSetAssumed,
+    /// A treatment group takes the transition edges that the other groups of
+    /// its scope do not take.
+    HistoricalEdgeSelectionLeftoverAssumed,
+    /// A Chamfer face member keeps a loop edge of its face whose continuity
+    /// with the adjacent face is undetermined, with the assumption that the
+    /// edge is sharp.
+    HistoricalEdgeContinuityAssumedSharp,
     /// A fillet with no bound history takes the one history, among several
     /// that hold its state pair, in which every edge group resolves.
     HistoricalEdgeHistoryInferred,
@@ -1260,6 +1269,11 @@ pub(crate) enum F3dLossCode {
     /// its closing matrix without a component-path proof; the reference frame
     /// of that matrix is assumed.
     LocalOccurrenceMarkedPreludeAssumed,
+    /// An object-prelude carrier without a source marker takes its placement
+    /// from its closing matrix in a Design stream whose component-path
+    /// carriers all name an expanded occurrence and none names this carrier;
+    /// the reference frame of that matrix is assumed.
+    LocalOccurrenceObjectPreludeAssumed,
     /// A nested occurrence that only some placements of its definition hold
     /// is owned by the definition, so every placement shows it.
     PlacementChildrenDiffer,
@@ -1308,8 +1322,6 @@ pub(crate) enum F3dLossCode {
     NurbsSurfaceCarrier,
     /// Procedural curve records were decoded into NURBS carriers from cache.
     NurbsCurveCarrier,
-    /// Faces were omitted because their required surface reference was dangling.
-    FaceSurfaceReferenceDangling,
     /// Faces rest on spline or procedural surfaces whose shape was not decoded.
     SurfaceShapeNotDecoded,
     /// Faces use zero-payload `mesh_surface` sentinels; exact surfaces are absent.
@@ -1354,8 +1366,6 @@ pub(crate) enum F3dLossCode {
     TsplineRadialMapUnresolved,
     /// A T-spline control cage was not decoded.
     TsplineCageUndecoded,
-    /// Preserved source image required for a byte-exact write was unavailable.
-    SourcePreservedImageUnavailable,
     /// The document was read with a grammar its own declarations do not select.
     SourceDialectUnverified,
     /// Export omits records named by the counted loss message.
@@ -1398,8 +1408,6 @@ pub(crate) enum F3dLossCode {
     WriterRollbackAssumed,
     /// An appearance was not written.
     WriterAppearanceOmitted,
-    /// The retained source could not carry an edit; the file was regenerated.
-    WriterPatchDeclined,
     /// The history arenas of a document read from CADIR JSON were not
     /// restored from its retained source; the file was written from its
     /// `design` records.
@@ -1763,6 +1771,7 @@ impl F3dLossCode {
         Self::FeatureRectangularPatternDirectionRecordDisagrees,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
+        Self::FeaturePatternCopyBodyOmitted,
         Self::FeatureDerivedBaseUnresolved,
         Self::FeaturePipeCircularSectionInferred,
         Self::FeaturePipeWholePathExtentAssumed,
@@ -1884,6 +1893,8 @@ impl F3dLossCode {
         Self::HistoricalFilletEdgeInferred,
         Self::HistoricalEdgeSelectionInferred,
         Self::HistoricalEdgeSelectionDeletedSetAssumed,
+        Self::HistoricalEdgeSelectionLeftoverAssumed,
+        Self::HistoricalEdgeContinuityAssumedSharp,
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
         Self::HistoricalEdgeRecipeHistoryInferred,
@@ -2211,6 +2222,7 @@ impl F3dLossCode {
         Self::LocalOccurrencePathPoseDisagrees,
         Self::LocalOccurrencePathPoseInferred,
         Self::LocalOccurrenceMarkedPreludeAssumed,
+        Self::LocalOccurrenceObjectPreludeAssumed,
         Self::PlacementChildrenDiffer,
         Self::InstanceReferenceShared,
         Self::XrefContainedPose,
@@ -2231,7 +2243,6 @@ impl F3dLossCode {
         Self::NurbsSurfaceCarrier,
         Self::SketchRegionBodyOmitted,
         Self::NurbsCurveCarrier,
-        Self::FaceSurfaceReferenceDangling,
         Self::SurfaceShapeNotDecoded,
         Self::MeshSurfaceSentinel,
         Self::ProceduralCurveUndecoded,
@@ -2252,7 +2263,6 @@ impl F3dLossCode {
         Self::TsplineRecordUntyped,
         Self::TsplineRadialMapUnresolved,
         Self::TsplineCageUndecoded,
-        Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::WriterAppearancePropertiesOmitted,
         Self::WriterProceduralReduced,
@@ -2272,7 +2282,6 @@ impl F3dLossCode {
         Self::WriterEdgeRangeAssumed,
         Self::WriterRollbackAssumed,
         Self::WriterAppearanceOmitted,
-        Self::WriterPatchDeclined,
         Self::WriterHistoryUnrestored,
         Self::WriterAppearanceGuidAllocated,
         Self::KernelDialectUnverified,
@@ -2643,6 +2652,7 @@ impl F3dLossCode {
             }
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
+            Self::FeaturePatternCopyBodyOmitted => "feature.pattern-copy-body-omitted",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
             Self::FeaturePipeCircularSectionInferred => "feature.pipe-circular-section-inferred",
             Self::FeaturePipeWholePathExtentAssumed => "feature.pipe-whole-path-extent-assumed",
@@ -2949,6 +2959,10 @@ impl F3dLossCode {
             Self::HistoricalEdgeSelectionDeletedSetAssumed => {
                 "history.edge-selection-deleted-set-assumed"
             }
+            Self::HistoricalEdgeSelectionLeftoverAssumed => {
+                "history.edge-selection-leftover-assumed"
+            }
+            Self::HistoricalEdgeContinuityAssumedSharp => "history.edge-continuity-assumed-sharp",
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
             Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
             Self::HistoricalEdgeRecipeHistoryInferred => "history.edge-recipe-history-inferred",
@@ -3452,6 +3466,9 @@ impl F3dLossCode {
             Self::LocalOccurrenceMarkedPreludeAssumed => {
                 "assembly.local-occurrence-marked-prelude-assumed"
             }
+            Self::LocalOccurrenceObjectPreludeAssumed => {
+                "assembly.local-occurrence-object-prelude-assumed"
+            }
             Self::PlacementChildrenDiffer => "assembly.placement-children-differ",
             Self::InstanceReferenceShared => "assembly.instance-reference-shared",
             Self::XrefContainedPose => "xref.contained-pose",
@@ -3472,7 +3489,6 @@ impl F3dLossCode {
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
             Self::SketchRegionBodyOmitted => "geometry.sketch-region-body-omitted",
             Self::NurbsCurveCarrier => "geometry.nurbs-curve-carrier",
-            Self::FaceSurfaceReferenceDangling => "geometry.face-surface-dangling",
             Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
             Self::ProceduralCurveUndecoded => "geometry.procedural-curve-undecoded",
@@ -3495,7 +3511,6 @@ impl F3dLossCode {
             Self::TsplineRecordUntyped => "tspline.record-untyped",
             Self::TsplineRadialMapUnresolved => "tspline.radial-map-unresolved",
             Self::TsplineCageUndecoded => "tspline.cage-undecoded",
-            Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::WriterAppearancePropertiesOmitted => "writer.appearance-properties-omitted",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
@@ -3515,7 +3530,6 @@ impl F3dLossCode {
             Self::WriterEdgeRangeAssumed => "writer.edge-range-assumed",
             Self::WriterRollbackAssumed => "writer.rollback-assumed",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
-            Self::WriterPatchDeclined => "writer.patch-declined",
             Self::WriterHistoryUnrestored => "writer.history-unrestored",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
             Self::WriterDesignRecordOmitted => "writer.design-record-omitted",
@@ -3627,7 +3641,6 @@ impl F3dLossCode {
             Self::WriterEdgeRangeAssumed => Severity::Warning,
             Self::WriterRollbackAssumed => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
-            Self::WriterPatchDeclined => Severity::Warning,
             Self::WriterHistoryUnrestored => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
             Self::WriterDesignRecordOmitted => Severity::Warning,
@@ -3679,9 +3692,7 @@ impl F3dLossCode {
             | Self::XrefMemberUndecoded
             | Self::TsplineCageUndecoded
             | Self::DesignIntentUndecoded => Severity::Error,
-            Self::GeometryNotTransferred
-            | Self::TopologyNotTransferred
-            | Self::SourcePreservedImageUnavailable => Severity::Blocking,
+            Self::GeometryNotTransferred | Self::TopologyNotTransferred => Severity::Blocking,
             Self::OperationPoseDisagrees
             | Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -3797,6 +3808,7 @@ impl F3dLossCode {
             | Self::FeatureHistoryBodyConsumedWithheld
             | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
+            | Self::FeaturePatternCopyBodyOmitted
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
@@ -4034,6 +4046,8 @@ impl F3dLossCode {
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
+            | Self::HistoricalEdgeSelectionLeftoverAssumed
+            | Self::HistoricalEdgeContinuityAssumedSharp
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::HistoricalEdgeRecipeHistoryInferred
@@ -4348,6 +4362,7 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
             | Self::LocalOccurrenceMarkedPreludeAssumed
+            | Self::LocalOccurrenceObjectPreludeAssumed
             | Self::PlacementChildrenDiffer
             | Self::InstanceReferenceShared
             | Self::XrefContainedPoseDisagrees
@@ -4358,7 +4373,6 @@ impl F3dLossCode {
             | Self::JointPlacedOccurrenceUnsolved
             | Self::MeshVertexPrecisionReduced
             | Self::MeshBodyIdentityAssumed
-            | Self::FaceSurfaceReferenceDangling
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
             | Self::ProceduralSupportChartUnresolved
@@ -4480,7 +4494,6 @@ impl F3dLossCode {
             Self::WriterEdgeRangeAssumed => LossTaxonomy::TopologyGaugeSubstituted,
             Self::WriterRollbackAssumed => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
-            Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterHistoryUnrestored => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterDesignRecordOmitted => LossTaxonomy::ParametricRecordOmitted,
@@ -4543,6 +4556,7 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
             | Self::LocalOccurrenceMarkedPreludeAssumed
+            | Self::LocalOccurrenceObjectPreludeAssumed
             | Self::PlacementChildrenDiffer
             | Self::InstanceReferenceShared
             | Self::XrefContainedPose
@@ -4589,6 +4603,7 @@ impl F3dLossCode {
             | Self::FeatureHistoryBodyConsumedWithheld
             | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
+            | Self::FeaturePatternCopyBodyOmitted
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
@@ -4832,6 +4847,8 @@ impl F3dLossCode {
             | Self::HistoricalFilletEdgeInferred
             | Self::HistoricalEdgeSelectionInferred
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
+            | Self::HistoricalEdgeSelectionLeftoverAssumed
+            | Self::HistoricalEdgeContinuityAssumedSharp
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::HistoricalEdgeRecipeHistoryInferred
@@ -5171,7 +5188,6 @@ impl F3dLossCode {
             | Self::SketchGeometryGroupMemberUnlisted
             | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::DesignBodyBindingUnresolved
-            | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
             Self::SketchNameComposedFromFeatureOrdinal
             | Self::ReferenceImageNativeRetained
@@ -5229,7 +5245,6 @@ impl F3dLossCode {
             Self::TopologyNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyFaceBoundaryUnstated => LossTaxonomy::TopologyNotTransferred,
             Self::MissingGeometryStream => LossTaxonomy::MissingGeometryStream,
-            Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
             Self::SourceDialectUnverified | Self::KernelDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
@@ -5679,6 +5694,7 @@ mod tests {
                 "feature.rectangular-pattern-direction-record-disagrees",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
+                "feature.pattern-copy-body-omitted",
                 "feature.derived-base-unresolved",
                 "feature.pipe-circular-section-inferred",
                 "feature.pipe-whole-path-extent-assumed",
@@ -5800,6 +5816,8 @@ mod tests {
                 "history.fillet-edge-inferred",
                 "history.edge-selection-inferred",
                 "history.edge-selection-deleted-set-assumed",
+                "history.edge-selection-leftover-assumed",
+                "history.edge-continuity-assumed-sharp",
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
                 "history.edge-recipe-history-inferred",
@@ -6127,6 +6145,7 @@ mod tests {
                 "assembly.local-occurrence-path-pose-disagrees",
                 "assembly.local-occurrence-path-pose-inferred",
                 "assembly.local-occurrence-marked-prelude-assumed",
+                "assembly.local-occurrence-object-prelude-assumed",
                 "assembly.placement-children-differ",
                 "assembly.instance-reference-shared",
                 "xref.contained-pose",
@@ -6147,7 +6166,6 @@ mod tests {
                 "geometry.nurbs-surface-carrier",
                 "geometry.sketch-region-body-omitted",
                 "geometry.nurbs-curve-carrier",
-                "geometry.face-surface-dangling",
                 "geometry.surface-shape-not-decoded",
                 "geometry.mesh-surface-sentinel",
                 "geometry.procedural-curve-undecoded",
@@ -6168,7 +6186,6 @@ mod tests {
                 "tspline.record-untyped",
                 "tspline.radial-map-unresolved",
                 "tspline.cage-undecoded",
-                "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "writer.appearance-properties-omitted",
                 "writer.procedural-reduced",
@@ -6188,7 +6205,6 @@ mod tests {
                 "writer.edge-range-assumed",
                 "writer.rollback-assumed",
                 "writer.appearance-omitted",
-                "writer.patch-declined",
                 "writer.history-unrestored",
                 "writer.appearance-guid-allocated",
                 "source.kernel-dialect-unverified",

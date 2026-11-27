@@ -264,6 +264,7 @@ mod tests {
             reference_signature: None,
             suffix: None,
             suffix_schema_selection: None,
+            cached_value_views: crate::native::entity_record::CachedValueViews::default(),
         }
     }
 

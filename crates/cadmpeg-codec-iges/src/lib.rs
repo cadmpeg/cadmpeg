@@ -206,15 +206,17 @@ impl EncoderBackend for IgesCodec {
     /// Writes B-rep and product data only; design arenas are refused, not
     /// read.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REUSES_SOURCE: bool = true;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(IgesVersion::TARGETS, Some(4));
 
     fn plan_resolved(
         &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+        writer::target::plan(ctx, input, &target)
     }
 }
 

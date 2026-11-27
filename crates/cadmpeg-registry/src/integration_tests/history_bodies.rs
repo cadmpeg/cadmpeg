@@ -2,7 +2,6 @@
 //! No encoder reads a history body: a document that holds one exports the
 //! bytes and the report of the same document without it.
 
-use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::CadIr;
 
@@ -10,7 +9,7 @@ use crate::{build_encoder, Format};
 
 fn export(format: Format, ir: &CadIr) -> Result<(Vec<u8>, String), String> {
     let plan = build_encoder(format)
-        .plan(EncodeInput::new(ir, None), TargetRequest::Unnamed)
+        .plan(EncodeInput::new(ir, None))
         .map_err(|error| error.to_string())?;
     let mut bytes = Vec::new();
     let report = plan

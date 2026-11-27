@@ -63,6 +63,7 @@ pub(crate) mod profile;
 pub(crate) mod revolve;
 pub(crate) mod sheet_metal;
 pub(crate) mod split;
+pub(crate) mod stitch;
 pub(crate) mod tagging;
 pub(crate) mod thicken;
 pub(crate) mod thread;
@@ -182,6 +183,12 @@ const SURFACE_TYPE: [u8; 16] = [
 ];
 /// Surface-form value of a plane in a surface record.
 const PLANE_SURFACE_FORM: u32 = 25;
+/// Surface form 29 and the byte length of its class parameters after the value.
+const FORM_29_SURFACE_FORM: u32 = 29;
+const FORM_29_PARAMETER_BYTES: usize = 116;
+/// Surface form 73 and the byte length of its class parameters after the value.
+const FORM_73_SURFACE_FORM: u32 = 73;
+const FORM_73_PARAMETER_BYTES: usize = 156;
 /// First segment major version whose surface records store a u32 extension
 /// value after the three references.
 const SURFACE_EXTENSION_FIRST_MAJOR: u8 = 22;
@@ -234,6 +241,9 @@ pub(crate) struct FeatureProjection {
     pub(crate) revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) loft_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Surface lofts that stay native because an earlier feature names their
+    /// result wrapper.
+    pub(crate) refused_surface_lofts: std::collections::HashSet<String>,
     pub(crate) split_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) thicken_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) plate_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -250,7 +260,7 @@ pub(crate) struct PmDcFeaturePropertyPayload {
     pub(crate) kind: PmDcFeaturePropertyKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub(crate) enum PmDcFeaturePropertyKind {
     Derived {
@@ -358,6 +368,20 @@ pub(crate) enum PmDcFeaturePropertyKind {
         values: Vec<u32>,
         origin: [cadmpeg_ir::scalar::FiniteReal; 3],
         references: [PmDcReferenceList; 2],
+    },
+    /// A parametric face surface of form 29 or 73. The record keeps its
+    /// fixed fields; the class parameters that follow them select no body face.
+    ParametricSurface {
+        references: [crate::pmdc::PmDcReference; 3],
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_surface_extension"
+        )]
+        extension: Option<u32>,
+        state: u8,
+        surface_form: u32,
+        value: u32,
     },
     PlaneSurface {
         references: [crate::pmdc::PmDcReference; 3],
@@ -1578,6 +1602,31 @@ fn parse_surface(
         .transpose()?;
     let state = cursor.u8("surface state")?;
     let form = cursor.u32("surface form")?;
+    let parameter_bytes = match form {
+        FORM_29_SURFACE_FORM => Some(FORM_29_PARAMETER_BYTES),
+        FORM_73_SURFACE_FORM => Some(FORM_73_PARAMETER_BYTES),
+        _ => None,
+    };
+    if let Some(parameter_bytes) = parameter_bytes {
+        let value = cursor.u32("surface value")?;
+        if cursor.remaining() != parameter_bytes {
+            return Err(CodecError::malformed(format_args!(
+                "Inventor PmDc form {form} surface has {} class-parameter bytes, expected {parameter_bytes}",
+                cursor.remaining()
+            )));
+        }
+        return Ok(Some(property(
+            version,
+            header,
+            PmDcFeaturePropertyKind::ParametricSurface {
+                references,
+                extension,
+                state,
+                surface_form: form,
+                value,
+            },
+        )));
+    }
     if form != PLANE_SURFACE_FORM {
         return Ok(None);
     }
@@ -1967,10 +2016,12 @@ pub(crate) enum FeatureFamily {
     Shell,
     Sweep,
     Loft,
+    SurfaceLoft,
     Revolve,
     Motion,
     Combine,
     Split,
+    Stitch,
 }
 
 impl FeatureFamily {
@@ -1989,6 +2040,7 @@ impl FeatureFamily {
             Self::Shell => &[SHELL_CLASS_ID],
             Self::Sweep => &[loft_sweep::slots::SWEEP_CLASS],
             Self::Loft => &[loft_sweep::slots::LOFT_CLASS],
+            Self::SurfaceLoft => &[loft_sweep::slots::SURFACE_LOFT_CLASS],
             Self::Revolve => &[REVOLVE_CLASS_ID],
             Self::Motion => &[
                 motion::MOVE_CLASS_ID,
@@ -1997,6 +2049,7 @@ impl FeatureFamily {
             ],
             Self::Combine => &[combine::CLASS_ID],
             Self::Split => &[split::CLASS_ID],
+            Self::Stitch => &[stitch::CLASS_ID],
         }
     }
 
@@ -2026,11 +2079,13 @@ impl FeatureFamily {
             Self::Shell => 9,
             Self::Sweep => 15,
             Self::Loft => 13,
+            Self::SurfaceLoft => 6,
             Self::Revolve => 17,
             Self::Motion if source.properties.references().len() == 13 => 8,
             Self::Motion => 0,
             Self::Combine => 0,
             Self::Split => 9,
+            Self::Stitch => stitch::RESULT_SLOT,
         }
     }
 
@@ -2048,10 +2103,12 @@ impl FeatureFamily {
             Self::Shell,
             Self::Sweep,
             Self::Loft,
+            Self::SurfaceLoft,
             Self::Revolve,
             Self::Motion,
             Self::Combine,
             Self::Split,
+            Self::Stitch,
         ]
         .into_iter()
         .find(|family| family.class_ids().contains(&class_id))
@@ -2113,6 +2170,9 @@ impl FeatureFamily {
                 Self::Loft,
                 FeatureDefinition::Operation(FeatureOperation::Loft { solid: true, .. })
             ) | (
+                Self::SurfaceLoft,
+                FeatureDefinition::Operation(FeatureOperation::Loft { solid: false, .. })
+            ) | (
                 Self::Revolve,
                 FeatureDefinition::Operation(FeatureOperation::Revolve { .. })
             ) | (
@@ -2131,6 +2191,9 @@ impl FeatureFamily {
                         | FeatureOperation::TrimBodies { .. }
                         | FeatureOperation::TrimBodiesAtPlane { .. }
                 )
+            ) | (
+                Self::Stitch,
+                FeatureDefinition::Operation(FeatureOperation::SewBodies { .. })
             )
         )
     }
@@ -2158,6 +2221,9 @@ impl FeatureFamily {
             FeatureDefinition::Operation(FeatureOperation::Loft { solid: true, .. }) => {
                 Some(Self::Loft)
             }
+            FeatureDefinition::Operation(FeatureOperation::Loft { solid: false, .. }) => {
+                Some(Self::SurfaceLoft)
+            }
             FeatureDefinition::Operation(FeatureOperation::Revolve { .. }) => Some(Self::Revolve),
             FeatureDefinition::Operation(
                 FeatureOperation::MoveBody { .. } | FeatureOperation::MoveFace { .. },
@@ -2169,6 +2235,7 @@ impl FeatureFamily {
                 | FeatureOperation::TrimBodies { .. }
                 | FeatureOperation::TrimBodiesAtPlane { .. },
             ) => Some(Self::Split),
+            FeatureDefinition::Operation(FeatureOperation::SewBodies { .. }) => Some(Self::Stitch),
             _ => None,
         }
     }
@@ -2259,6 +2326,7 @@ pub(crate) fn project(
             revolve_losses: Vec::new(),
             edge_treatment_losses: Vec::new(),
             loft_losses: Vec::new(),
+            refused_surface_lofts: std::collections::HashSet::new(),
             split_losses: Vec::new(),
             thicken_losses: Vec::new(),
             plate_losses: (!inventory.sheet_metal_flanges.is_empty())
@@ -2493,6 +2561,7 @@ pub(crate) fn project(
     let mut revolve_losses = Vec::new();
     let mut edge_treatment_losses = Vec::new();
     let mut loft_losses = Vec::new();
+    let mut refused_surface_lofts = std::collections::HashSet::new();
     let mut split_losses = Vec::new();
     let mut thicken_losses = Vec::new();
     let mut plate_refusals = sheet_metal::projection::Refusals::default();
@@ -2575,14 +2644,35 @@ pub(crate) fn project(
                         project_thicken(ctx, feature, label, &index, inventory)
                     }
                     FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
-                    FeatureFamily::Sweep | FeatureFamily::Loft => loft_sweep::projection::project(
-                        ctx,
-                        feature,
-                        label,
-                        &index,
-                        family,
-                        &mut loft_losses,
-                    ),
+                    FeatureFamily::Sweep | FeatureFamily::Loft | FeatureFamily::SurfaceLoft => {
+                        if matches!(family, FeatureFamily::SurfaceLoft)
+                            && loft_sweep::projection::refuse_used_wrapper(
+                                feature,
+                                &inventory.features,
+                                &index.positions,
+                                &mut loft_losses,
+                            )
+                        {
+                            refused_surface_lofts.insert(feature.id());
+                            None
+                        } else {
+                            loft_sweep::projection::project(
+                                ctx,
+                                feature,
+                                label,
+                                &index,
+                                family,
+                                |ordinal| {
+                                    inventory
+                                        .record_types
+                                        .get(&feature.identity.segment_token)?
+                                        .get(&ordinal)?
+                                        .as_deref()
+                                },
+                                &mut loft_losses,
+                            )
+                        }
+                    }
                     FeatureFamily::Revolve => {
                         project_revolve(ctx, feature, label, &index, &mut revolve_losses)
                     }
@@ -2591,6 +2681,7 @@ pub(crate) fn project(
                     FeatureFamily::Split => {
                         split::project(ctx, feature, label, &index, &history, &mut split_losses)
                     }
+                    FeatureFamily::Stitch => stitch::project(ctx, feature, label, &index),
                 }
                 .map(|result| result.map(|(feature, result)| (feature, Some(result))))
                 .transpose()?,
@@ -2910,15 +3001,18 @@ pub(crate) fn project(
                     if groups.iter().any(|group| group.spec.is_unresolved()))
         })
         .count();
-    let unresolved_extrusion_profiles = features
+    let native_operand_features = features
         .iter()
-        .filter(|feature| extrusion::has_native_profile(feature.evaluation.definition()))
+        .filter(|feature| {
+            extrusion::has_native_profile(feature.evaluation.definition())
+                || loft_sweep::controls::has_native_section(feature.evaluation.definition())
+        })
         .count();
     Ok(FeatureProjection {
         unresolved_features: total
             .checked_sub(neutral)
             .and_then(|unresolved| unresolved.checked_add(unresolved_chamfers))
-            .and_then(|unresolved| unresolved.checked_add(unresolved_extrusion_profiles))
+            .and_then(|unresolved| unresolved.checked_add(native_operand_features))
             .ok_or_else(|| {
                 CodecError::malformed("Inventor feature projection exceeds inventory")
             })?,
@@ -2927,6 +3021,7 @@ pub(crate) fn project(
         revolve_losses,
         edge_treatment_losses,
         loft_losses,
+        refused_surface_lofts,
         split_losses,
         thicken_losses,
         plate_losses: plate_refusals
@@ -3219,6 +3314,7 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             FeatureFamily::Shell => NativeFeatureKind::Other("Shell".into()),
             FeatureFamily::Sweep => NativeFeatureKind::Other("Sweep".into()),
             FeatureFamily::Loft => NativeFeatureKind::Other("Loft".into()),
+            FeatureFamily::SurfaceLoft => NativeFeatureKind::Other("LoftSurface".into()),
             FeatureFamily::Revolve => NativeFeatureKind::Other("Revolve".into()),
             FeatureFamily::Motion => NativeFeatureKind::Other(
                 NATIVE_CLASSES
@@ -3229,10 +3325,8 @@ fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeature
             ),
             FeatureFamily::Combine => NativeFeatureKind::Other("Combine".into()),
             FeatureFamily::Split => NativeFeatureKind::Other("Split".into()),
+            FeatureFamily::Stitch => NativeFeatureKind::Other("Stitch".into()),
         };
-    }
-    if let Some(family) = loft_sweep::slots::Family::from_class_id(class_id) {
-        return NativeFeatureKind::Other(family.native_name().into());
     }
     NATIVE_CLASSES
         .iter()
@@ -4023,11 +4117,16 @@ fn extrusion_side(
             if side_has_point(source, slots) {
                 return None;
             }
-            let (plane, native, source) = extent_target_plane(source, index, 11, 13, 18)?;
-            LinearTermination::ToPlane {
-                plane,
-                native,
-                source: Some(source),
+            match extent_target_plane(source, index, 11, 13, 18) {
+                Some((plane, native, source)) => LinearTermination::ToPlane {
+                    plane,
+                    native,
+                    source: Some(source),
+                },
+                None if extent == EXTENT_TO => {
+                    extent_target_parametric_face(source, index, 11, 13, 18)?
+                }
+                None => return None,
             }
         }
         _ => return None,
@@ -4179,6 +4278,59 @@ fn extent_target_plane(
         native,
         cadmpeg_ir::features::extents::PlaneTargetSource::FaceSurface,
     ))
+}
+
+/// The extent-7 target that is a model face whose surface record has form 29
+/// or 73. The record stores no carrier that selects the face, so the
+/// termination names the surface record as a native face selection.
+fn extent_target_parametric_face(
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+    plane_slot: usize,
+    flag_slot: usize,
+    surface_slot: usize,
+) -> Option<LinearTermination> {
+    let references = source.properties.references();
+    if references.get(plane_slot)?.index() != 0 {
+        return None;
+    }
+    let token = source.identity.segment_token.as_str();
+    let flag = resolve_property(token, references.get(flag_slot)?.index(), index)?;
+    if flag.identity.type_id.as_str() != type_id_string(TERMINATION_FLAG_TYPE)
+        || !matches!(
+            flag.kind,
+            PmDcFeaturePropertyKind::TerminationFlag { value: 1 }
+        )
+    {
+        return None;
+    }
+    let surface = resolve_property(token, references.get(surface_slot)?.index(), index)?;
+    if surface.identity.type_id.as_str() != type_id_string(SURFACE_TYPE) {
+        return None;
+    }
+    let PmDcFeaturePropertyKind::ParametricSurface {
+        references: surface_references,
+        extension,
+        state,
+        value,
+        ..
+    } = surface.kind
+    else {
+        return None;
+    };
+    if !extrusion::zero_surface_controls(
+        surface.save_version_major,
+        surface_references,
+        extension,
+        state,
+    ) || value != 1
+    {
+        return None;
+    }
+    Some(LinearTermination::ToFace {
+        face: cadmpeg_ir::features::selections::FaceSelection::Native(surface.id()),
+        offset: None,
+    })
 }
 
 /// Build a model-space plane frame from an origin in centimetres and two
@@ -4884,6 +5036,20 @@ fn length_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) ->
         ParameterValue::Length(value) if value.get() >= 0.0 => Some(*value),
         _ => None,
     }
+}
+
+/// The model value of a parameter record as a length in millimetres. The
+/// record stores centimetres.
+fn raw_length_reference(
+    token: &str,
+    reference: u32,
+    index: &ProjectionIndex<'_>,
+) -> Option<Length> {
+    let parameter = index
+        .parameters
+        .get(&(token, reference.checked_sub(1)?))
+        .and_then(Option::as_ref)?;
+    stitch::millimetres(parameter)
 }
 
 fn angle_parameter(

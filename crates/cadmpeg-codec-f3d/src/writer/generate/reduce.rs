@@ -21,7 +21,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::edge_ranges::{open_edge_ranges, vertex_positions};
 use cadmpeg_ir::codec::write::subset_lowering::UnloweredSubset;
@@ -330,6 +330,8 @@ impl Failure {
 #[derive(Clone)]
 pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
+    /// The encode session.
+    ctx: &'a DecodeContext<'a>,
     losses: Vec<LossNote>,
     /// The `f3d` records are written but those a fallback drops (W1).
     native: NativeDispositions,
@@ -354,12 +356,17 @@ pub(super) struct Reduction<'a> {
 }
 
 impl<'a> Reduction<'a> {
-    pub(super) fn new(ir: &'a CadIr, missing_states: MissingStateForm) -> Self {
+    pub(super) fn new(
+        ctx: &'a DecodeContext<'a>,
+        ir: &'a CadIr,
+        missing_states: MissingStateForm,
+    ) -> Self {
         let mut native = NativeDispositions::dropped("which the F3D writer does not write");
         native.namespace("f3d", NativeDisposition::Written);
         Self {
             missing_states,
             ir: Cow::Borrowed(ir),
+            ctx,
             losses: Vec::new(),
             native,
             design_dropped: false,
@@ -732,11 +739,10 @@ impl<'a> Reduction<'a> {
     }
 
     fn tolerant_use_curve_coedges(&self) -> HashSet<String> {
-        let Some(native) = self
-            .ir
-            .native
-            .namespace("f3d")
-            .and_then(|namespace| crate::native::F3dNative::load(namespace).ok())
+        let Some(native) =
+            self.ir.native.namespace("f3d").and_then(|namespace| {
+                crate::native::F3dNative::load_inner(self.ctx, namespace).ok()
+            })
         else {
             return HashSet::new();
         };
@@ -877,6 +883,7 @@ impl<'a> Reduction<'a> {
     fn state_open_edge_ranges(&mut self) -> Result<(), CodecError> {
         let owners = ProceduralOwners::new(&self.ir);
         let Some(plan) = open_edge_ranges(
+            self.ctx,
             &self.ir,
             |curve| {
                 owners
@@ -1003,7 +1010,7 @@ impl<'a> Reduction<'a> {
             .map(|body| body.id.to_string())
             .collect::<Vec<_>>();
         let kept = kept.iter().map(String::as_str).collect::<BTreeSet<_>>();
-        let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
+        let unreachable = retain_bodies(self.ctx, self.ir.to_mut(), &kept)?;
         self.losses.extend(losses);
         self.charge_removed(
             &unreachable,
@@ -1105,13 +1112,14 @@ impl<'a> Reduction<'a> {
             if edge.ends.is_some() {
                 continue;
             }
-            let start = closed_curve_start(edge, &curves, tolerance)?.and_then(|position| {
-                let point = PointId::mint(format!("{}/start-point", edge.id))
-                    .map_err(|error| error.to_string())?;
-                let vertex = VertexId::mint(format!("{}/start-vertex", edge.id))
-                    .map_err(|error| error.to_string())?;
-                Ok((point, vertex, position))
-            });
+            let start =
+                closed_curve_start(edge, &curves, tolerance, self.ctx)?.and_then(|position| {
+                    let point = PointId::mint(format!("{}/start-point", edge.id))
+                        .map_err(|error| error.to_string())?;
+                    let vertex = VertexId::mint(format!("{}/start-vertex", edge.id))
+                        .map_err(|error| error.to_string())?;
+                    Ok((point, vertex, position))
+                });
             match start {
                 Ok(start) => starts.push((index, start)),
                 Err(reason) => omitted.push((edge.id.clone(), reason)),
@@ -1369,7 +1377,7 @@ impl<'a> Reduction<'a> {
             .map(|body| body.id.to_string())
             .collect::<Vec<_>>();
         let kept = bodies.iter().map(String::as_str).collect::<BTreeSet<_>>();
-        let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
+        let unreachable = retain_bodies(self.ctx, self.ir.to_mut(), &kept)?;
         split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched);
         let kinds = super::preconditions::derived_body_kinds(&self.ir.geometry);
         for (body, kind) in self.ir.to_mut().geometry.bodies.iter_mut().zip(kinds) {
@@ -1782,7 +1790,7 @@ impl<'a> Reduction<'a> {
         if bodies.is_empty() {
             return Ok(false);
         }
-        let reach = Reach::new(&self.ir.geometry)?;
+        let reach = Reach::new(self.ctx, &self.ir.geometry)?;
         let writes = |group: &[String]| {
             let mut alone = CadIr::empty();
             alone.tolerances = self.ir.tolerances;
@@ -1860,7 +1868,7 @@ impl<'a> Reduction<'a> {
                 "body {body} was not written, with the topology and geometry only it uses: {reason}"
             )));
         }
-        let mut removed = retain_bodies(self.ir.to_mut(), kept)?;
+        let mut removed = retain_bodies(self.ctx, self.ir.to_mut(), kept)?;
         let omitted = dropped_bodies
             .iter()
             .filter(|body| removed.remove(body.as_str()))
@@ -1877,7 +1885,7 @@ impl<'a> Reduction<'a> {
         kept: &BTreeSet<&str>,
         reason: &str,
     ) -> Result<BTreeSet<String>, CodecError> {
-        let removed = retain_bodies(self.ir.to_mut(), kept)?;
+        let removed = retain_bodies(self.ctx, self.ir.to_mut(), kept)?;
         self.charge_removed(&removed, &BTreeSet::new(), reason);
         Ok(removed)
     }
@@ -1971,6 +1979,7 @@ fn closed_curve_start(
     edge: &cadmpeg_ir::topology::Edge,
     curves: &HashMap<&str, &cadmpeg_ir::geometry::Curve>,
     tolerance: f64,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Result<FinitePoint3, String>, CodecError> {
     let Some(curve) = edge.curve() else {
         return Ok(Err("it has no curve".into()));
@@ -1989,7 +1998,7 @@ fn closed_curve_start(
         },
     };
     let point =
-        |parameter| match curve_point_solved(EvaluationAdmission::Standard, solved, parameter) {
+        |parameter| match curve_point_solved(EvaluationAdmission::Write(ctx), solved, parameter) {
             Ok(point) => Ok(Some(point)),
             Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::ResourceLimit(limit)),
             Err(_) => Ok(None),
@@ -2606,9 +2615,10 @@ fn unranged_open_edges(geometry: &cadmpeg_ir::document::Topology) -> Option<Loss
 }
 
 impl Reach {
-    fn new(geometry: &cadmpeg_ir::document::Topology) -> Result<Self, CodecError> {
-        let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+    fn new(
+        ctx: &DecodeContext<'_>,
+        geometry: &cadmpeg_ir::document::Topology,
+    ) -> Result<Self, CodecError> {
         let mut adjacency = HashMap::<String, Vec<String>>::new();
         let mut every = BTreeSet::new();
         let mut rows = HashMap::new();
@@ -2619,7 +2629,7 @@ impl Reach {
                     let owner = row.id.as_str();
                     every.insert(owner.to_owned());
                     rows.insert(owner.to_owned(), (arena_ordinal, row_ordinal));
-                    row.visit_identity_references(&ctx, &mut |target| {
+                    row.visit_identity_references(ctx, &mut |target| {
                         if target != owner {
                             adjacency.entry(owner.to_owned()).or_default().push(target.to_owned());
                         }
@@ -2749,8 +2759,12 @@ pub(super) fn without_native_carrier_metadata(target: &CadIr) -> Cow<'_, CadIr> 
 
 /// Keep the bodies in `kept` and every topology and geometry record they
 /// reach; remove the rest. Returns the removed ids.
-fn retain_bodies(ir: &mut CadIr, kept: &BTreeSet<&str>) -> Result<BTreeSet<String>, CodecError> {
-    let reach = Reach::new(&ir.geometry)?;
+fn retain_bodies(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    kept: &BTreeSet<&str>,
+) -> Result<BTreeSet<String>, CodecError> {
+    let reach = Reach::new(ctx, &ir.geometry)?;
     let reachable = reach.from(kept.iter().copied());
     let removed = reach
         .every

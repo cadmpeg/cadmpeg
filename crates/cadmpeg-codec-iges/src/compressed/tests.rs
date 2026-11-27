@@ -261,8 +261,9 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     // compressed bytes while the plan claimed Fixed ASCII.
     let plan = IgesCodec
         .plan(
-            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())).with_target(
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            ),
         )
         .unwrap();
     assert!(matches!(
@@ -308,10 +309,10 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
             .unwrap(),
     );
     let plan = IgesCodec
-        .plan(
-            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
+        .plan(EncodeInput::new(
+            result.ir(),
+            Some(result.source_fidelity()),
+        ))
         .unwrap();
 
     assert!(matches!(

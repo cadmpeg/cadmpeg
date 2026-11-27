@@ -1045,10 +1045,13 @@ pub(crate) fn expression_records_with_model_name(
                 {
                     return Ok(None);
                 }
-                let body_end = payload[body_start..end]
-                    .windows(1)
-                    .position(|window| window[0] == psb::token::NAMED_RECORD)
-                    .map_or(end, |relative| body_start + relative);
+                let body_end = cadmpeg_core::bytes::find_byte_in(
+                    payload,
+                    psb::token::NAMED_RECORD,
+                    body_start,
+                    end,
+                )
+                .unwrap_or(end);
                 let body = payload[body_start..body_end].to_vec();
                 Ok(Some(CurveExpressionLocalSystem {
                     dimensions,
